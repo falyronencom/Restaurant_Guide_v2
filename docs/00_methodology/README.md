@@ -104,7 +104,7 @@ flutter run -d chrome
 
 Рекомендуем начать изучение проекта в следующем порядке:
 
-1. **[Методология разработки](docs/00_methodology/collaborative_development_v5.md)** — философия проекта и подходы к со-творчеству с AI
+1. **[Методология разработки v8.0](methodology_v8.0.md)** — The Agentic Framework для распределённого интеллекта
 2. **[Функциональная спецификация v3](docs/01_specifications/functional_spec_v3.md)** — полное описание функциональности и бизнес-требований
 3. **[Схема базы данных v2.0](docs/02_architecture/database_schema_v2.0.sql)** — структура данных и отношения
 4. **[API Спецификация v2.0](docs/02_architecture/api_specification_v2.0.yaml)** — OpenAPI описание всех endpoints
@@ -152,7 +152,7 @@ flutter run -d chrome
 
 ## Contributing
 
-Проект находится в стадии активной разработки. Методология работы с AI-ассистентами описана в [документации по методологии](docs/00_methodology/collaborative_development_v5.md).
+Проект находится в стадии активной разработки. Методология работы с AI-ассистентами описана в [Methodology v8.0](methodology_v8.0.md).
 
 ## License
 
