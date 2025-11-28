@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -11,21 +14,37 @@ void main() {
   runApp(const RestaurantGuideApp());
 }
 
-/// Root application widget
+/// Root application widget with state management
 class RestaurantGuideApp extends StatelessWidget {
   const RestaurantGuideApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Restaurant Guide Belarus',
-      debugShowCheckedModeBanner: false,
+    // Wrap application in MultiProvider for state management
+    return MultiProvider(
+      providers: [
+        // Authentication provider
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(),
+        ),
 
-      // Application theme from Phase B
-      theme: AppTheme.lightTheme,
+        // Establishments provider
+        ChangeNotifierProvider(
+          create: (_) => EstablishmentsProvider(),
+        ),
 
-      // Home screen - placeholder for validation
-      home: const PlaceholderHomeScreen(),
+        // Additional providers can be added here as needed
+      ],
+      child: MaterialApp(
+        title: 'Restaurant Guide Belarus',
+        debugShowCheckedModeBanner: false,
+
+        // Application theme from Phase B
+        theme: AppTheme.lightTheme,
+
+        // Home screen - placeholder for validation
+        home: const PlaceholderHomeScreen(),
+      ),
     );
   }
 }
@@ -77,17 +96,56 @@ class PlaceholderHomeScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Phase B: Design System Complete',
+                        'Phase D: State Management Complete',
                         style: theme.textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 12),
                       _buildStatusRow(context, 'Environment', Environment.environmentName),
                       _buildStatusRow(context, 'API Base URL', Environment.apiBaseUrl),
                       _buildStatusRow(context, 'Theme', 'Material 3 Ready'),
-                      _buildStatusRow(context, 'Platform', 'Android & iOS'),
+                      _buildStatusRow(context, 'Providers', 'Active'),
                     ],
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Provider state demonstration
+              Consumer<AuthProvider>(
+                builder: (context, authProvider, child) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Provider State Demo',
+                            style: theme.textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildStatusRow(
+                            context,
+                            'Auth Status',
+                            authProvider.isAuthenticated ? 'Authenticated' : 'Not Authenticated',
+                          ),
+                          _buildStatusRow(
+                            context,
+                            'Auth Loading',
+                            authProvider.isLoading ? 'Yes' : 'No',
+                          ),
+                          if (authProvider.user != null)
+                            _buildStatusRow(
+                              context,
+                              'User Name',
+                              authProvider.userName ?? 'N/A',
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
 
               const SizedBox(height: 24),
@@ -125,7 +183,7 @@ class PlaceholderHomeScreen extends StatelessWidget {
 
               const SizedBox(height: 24),
               Text(
-                'Design system established with orange primary,\ngreen success, and comprehensive theming.\nProceeding to Phase C: API Client.',
+                'State management with Provider established.\nAuth and Establishments providers active.\nProceeding to Phase E: Navigation Framework.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.secondary,
                 ),
