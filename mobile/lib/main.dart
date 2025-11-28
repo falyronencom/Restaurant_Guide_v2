@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -20,15 +21,10 @@ class RestaurantGuideApp extends StatelessWidget {
       title: 'Restaurant Guide Belarus',
       debugShowCheckedModeBanner: false,
 
-      // Theme will be configured in Phase B
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF6B35), // Orange primary color
-        ),
-        useMaterial3: true,
-      ),
+      // Application theme from Phase B
+      theme: AppTheme.lightTheme,
 
-      // Home screen - placeholder for Phase A
+      // Home screen - placeholder for validation
       home: const PlaceholderHomeScreen(),
     );
   }
@@ -41,71 +37,97 @@ class PlaceholderHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Restaurant Guide Belarus'),
-        backgroundColor: const Color(0xFFFF6B35),
-        foregroundColor: Colors.white,
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.restaurant,
                 size: 80,
-                color: Color(0xFFFF6B35),
+                color: theme.colorScheme.primary,
               ),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'Restaurant Guide Belarus',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: theme.textTheme.displaySmall,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Mobile Application v2.0',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.secondary,
                 ),
               ),
               const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Phase A: Project Structure Complete',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+
+              // Phase status card
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Phase B: Design System Complete',
+                        style: theme.textTheme.headlineSmall,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildStatusRow('Environment', Environment.environmentName),
-                    _buildStatusRow('API Base URL', Environment.apiBaseUrl),
-                    _buildStatusRow('Flutter', 'Ready'),
-                    _buildStatusRow('Platform', 'Android & iOS'),
-                  ],
+                      const SizedBox(height: 12),
+                      _buildStatusRow(context, 'Environment', Environment.environmentName),
+                      _buildStatusRow(context, 'API Base URL', Environment.apiBaseUrl),
+                      _buildStatusRow(context, 'Theme', 'Material 3 Ready'),
+                      _buildStatusRow(context, 'Platform', 'Android & iOS'),
+                    ],
+                  ),
                 ),
               ),
+
               const SizedBox(height: 24),
-              const Text(
-                'Foundation architecture established.\nProceeding to Phase B: Design System.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
+
+              // Theme demonstration
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Theme Components Demo',
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {},
+                        child: const Text('Primary Button'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: () {},
+                        child: const Text('Outlined Button'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () {},
+                        child: const Text('Text Button'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              Text(
+                'Design system established with orange primary,\ngreen success, and comprehensive theming.\nProceeding to Phase C: API Client.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.secondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -116,24 +138,23 @@ class PlaceholderHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusRow(String label, String value) {
+  Widget _buildStatusRow(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Text(
             '$label: ',
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 14,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.secondary,
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
               ),
               overflow: TextOverflow.ellipsis,
             ),
