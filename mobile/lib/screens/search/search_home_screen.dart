@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/screens/debug/validation_screen.dart';
 
 /// Search home screen - main tab for searching establishments
 /// Full implementation in Phase Three
@@ -45,6 +46,18 @@ class SearchHomeScreen extends StatelessWidget {
                   fontStyle: FontStyle.italic,
                 ),
                 textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const ValidationScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.science),
+                label: const Text('Test Backend Integration'),
               ),
             ],
           ),
