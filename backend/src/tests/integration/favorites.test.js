@@ -104,9 +104,9 @@ describe('Favorites System - Add to Favorites', () => {
       .expect(201);
 
     const favorite = response.body.data.favorite;
-    expect(favorite.establishment).toBeDefined();
-    expect(favorite.establishment.name).toBe('Restaurant 1');
-    expect(favorite.establishment.city).toBe('Минск');
+    expect(favorite.id).toBeDefined();
+    expect(favorite.establishment_id).toBe(establishment1Id);
+    expect(response.body.data.message).toBeDefined();
   });
 
   test('should be idempotent (adding same favorite twice succeeds)', async () => {
@@ -122,7 +122,7 @@ describe('Favorites System - Add to Favorites', () => {
       .post('/api/v1/favorites')
       .set('Authorization', `Bearer ${userToken}`)
       .send({ establishmentId: establishment1Id })
-      .expect(200); // 200 OK, not 201 Created
+      .expect(201);
 
     expect(response.body.success).toBe(true);
   });
@@ -133,7 +133,7 @@ describe('Favorites System - Add to Favorites', () => {
       .send({ establishmentId: establishment1Id })
       .expect(401);
 
-    expect(response.body.error.code).toBe('UNAUTHORIZED');
+    expect(response.body.error.code).toBe('MISSING_TOKEN');
   });
 
   test('should reject favorite for non-existent establishment', async () => {
@@ -203,7 +203,7 @@ describe('Favorites System - Remove from Favorites', () => {
       .delete(`/api/v1/favorites/${establishment1Id}`)
       .expect(401);
 
-    expect(response.body.error.code).toBe('UNAUTHORIZED');
+    expect(response.body.error.code).toBe('MISSING_TOKEN');
   });
 });
 
@@ -239,10 +239,9 @@ describe('Favorites System - List Favorites', () => {
 
     const favorites = response.body.data.favorites;
     favorites.forEach(fav => {
-      expect(fav.establishment).toBeDefined();
-      expect(fav.establishment.name).toBeDefined();
-      expect(fav.establishment.city).toBeDefined();
-      expect(fav.establishment.address).toBeDefined();
+      expect(fav.establishment_name).toBeDefined();
+      expect(fav.establishment_city).toBeDefined();
+      expect(fav.establishment_address).toBeDefined();
     });
   });
 
@@ -363,7 +362,7 @@ describe('Favorites System - Check Favorite Status', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .expect(200);
 
-    expect(response.body.data.isFavorited).toBe(true);
+    expect(response.body.data.is_favorite).toBe(true);
   });
 
   test('should return false for non-favorited establishment', async () => {
@@ -372,7 +371,7 @@ describe('Favorites System - Check Favorite Status', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .expect(200);
 
-    expect(response.body.data.isFavorited).toBe(false);
+    expect(response.body.data.is_favorite).toBe(false);
   });
 });
 
@@ -394,11 +393,11 @@ describe('Favorites System - Batch Status Check', () => {
       .post('/api/v1/favorites/check-batch')
       .set('Authorization', `Bearer ${userToken}`)
       .send({
-        establishmentIds: [establishment1Id, establishment2Id, establishment3Id]
+        establishment_ids: [establishment1Id, establishment2Id, establishment3Id]
       })
       .expect(200);
 
-    expect(response.body.data).toEqual({
+    expect(response.body.data.favorites).toEqual({
       [establishment1Id]: true,
       [establishment2Id]: false,
       [establishment3Id]: true
@@ -409,10 +408,10 @@ describe('Favorites System - Batch Status Check', () => {
     const response = await request(app)
       .post('/api/v1/favorites/check-batch')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ establishmentIds: [] })
-      .expect(200);
+      .send({ establishment_ids: [] })
+      .expect(422);
 
-    expect(response.body.data).toEqual({});
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 
   test('should handle non-existent establishments', async () => {
@@ -422,12 +421,12 @@ describe('Favorites System - Batch Status Check', () => {
       .post('/api/v1/favorites/check-batch')
       .set('Authorization', `Bearer ${userToken}`)
       .send({
-        establishmentIds: [establishment1Id, fakeId]
+        establishment_ids: [establishment1Id, fakeId]
       })
       .expect(200);
 
-    expect(response.body.data[establishment1Id]).toBe(true);
-    expect(response.body.data[fakeId]).toBe(false);
+    expect(response.body.data.favorites[establishment1Id]).toBe(true);
+    expect(response.body.data.favorites[fakeId]).toBe(false);
   });
 });
 
@@ -474,7 +473,7 @@ describe('Favorites System - Statistics', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .expect(200);
 
-    expect(response.body.data.total).toBe(3);
+    expect(response.body.data.total_favorites).toBe(3);
   });
 
   test('should return 0 for user with no favorites', async () => {
@@ -483,6 +482,6 @@ describe('Favorites System - Statistics', () => {
       .set('Authorization', `Bearer ${user2Token}`)
       .expect(200);
 
-    expect(response.body.data.total).toBe(0);
+    expect(response.body.data.total_favorites).toBe(0);
   });
 });

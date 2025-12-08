@@ -249,16 +249,18 @@ describe('E2E Journey: Partner Establishment Management', () => {
     });
 
     test('Partner cannot submit establishment without required fields', async () => {
-      // Create incomplete establishment
-      const result = await createEstablishment(partner.accessToken, {
-        name: 'Неполное Заведение',
-        city: 'Минск',
-        // Missing required fields: description, latitude, longitude, etc.
-      });
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .send({
+          name: 'Неполное Заведение',
+          city: 'Минск',
+          // Missing required fields: description, latitude, longitude, etc.
+        });
 
       // Should fail with validation error
-      expect(result.response.status).toBe(422);
-      expect(result.response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
     });
 
     test('Partner can list only their own establishments', async () => {

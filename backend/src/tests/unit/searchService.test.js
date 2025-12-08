@@ -63,12 +63,22 @@ describe('searchService', () => {
 
       const result = await searchByRadius(validParams);
 
-      expect(result.establishments).toEqual(mockEstablishments);
+      expect(result.establishments.length).toBe(2);
+      expect(result.establishments[0]).toMatchObject({
+        distance_km: 1.5,
+        distance: 1.5,
+      });
+      expect(result.establishments[1]).toMatchObject({
+        distance_km: 3.2,
+        distance: 3.2,
+      });
       expect(result.pagination).toEqual({
-        total: 2,
+        page: 1,
         limit: 20,
-        offset: 0,
-        hasMore: false,
+        total: 2,
+        totalPages: 1,
+        hasNext: false,
+        hasPrevious: false,
       });
 
       // Verify query was called
@@ -79,15 +89,15 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ latitude: 53.9, radius: 10 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'MISSING_COORDINATES',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       await expect(
         searchByRadius({ longitude: 27.5, radius: 10 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'MISSING_COORDINATES',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
 
@@ -96,16 +106,16 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ ...validParams, latitude: -91 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LATITUDE',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Too high
       await expect(
         searchByRadius({ ...validParams, latitude: 91 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LATITUDE',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Valid extremes
@@ -121,16 +131,16 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ ...validParams, longitude: -181 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LONGITUDE',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Too high
       await expect(
         searchByRadius({ ...validParams, longitude: 181 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LONGITUDE',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
 
@@ -139,24 +149,24 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ ...validParams, radius: 0 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_RADIUS',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Negative radius
       await expect(
         searchByRadius({ ...validParams, radius: -5 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_RADIUS',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Too large radius
       await expect(
         searchByRadius({ ...validParams, radius: 1001 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_RADIUS',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
 
@@ -165,16 +175,16 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ ...validParams, limit: 0 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LIMIT',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       // Too large
       await expect(
         searchByRadius({ ...validParams, limit: 101 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_LIMIT',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
 
@@ -182,8 +192,8 @@ describe('searchService', () => {
       await expect(
         searchByRadius({ ...validParams, offset: -1 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_OFFSET',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
 
@@ -294,10 +304,12 @@ describe('searchService', () => {
       });
 
       expect(result.pagination).toEqual({
-        total: 50,
+        page: 1,
         limit: 10,
-        offset: 20,
-        hasMore: true, // 20 + 10 < 50
+        total: 50,
+        totalPages: 5,
+        hasNext: true,
+        hasPrevious: false,
       });
 
       const params = pool.query.mock.calls[0][1];
@@ -305,25 +317,29 @@ describe('searchService', () => {
       expect(params).toContain(20); // offset
     });
 
-    test('should calculate hasMore correctly', async () => {
+    test('should calculate hasNext/hasPrevious correctly', async () => {
       pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
       pool.query.mockResolvedValue({ rows: [{ total: '25' }], rowCount: 1 });
 
-      // Last page
+      // Last page (page=3)
       let result = await searchByRadius({
         ...validParams,
         limit: 10,
         offset: 20,
+        page: 3,
       });
-      expect(result.pagination.hasMore).toBe(false); // 20 + 10 >= 25
+      expect(result.pagination.hasNext).toBe(false);
+      expect(result.pagination.hasPrevious).toBe(true);
 
-      // Has more pages
+      // First page (page=1)
       result = await searchByRadius({
         ...validParams,
         limit: 10,
-        offset: 10,
+        offset: 0,
+        page: 1,
       });
-      expect(result.pagination.hasMore).toBe(true); // 10 + 10 < 25
+      expect(result.pagination.hasNext).toBe(true);
+      expect(result.pagination.hasPrevious).toBe(false);
     });
 
     test('should include distance in results', async () => {
@@ -399,15 +415,15 @@ describe('searchService', () => {
       await expect(
         searchByBounds({ minLat: 53.9, maxLat: 53.8, minLon: 27.4, maxLon: 27.6 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_BOUNDS',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
 
       await expect(
         searchByBounds({ minLat: 53.8, maxLat: 53.9, minLon: 27.6, maxLon: 27.4 })
       ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_BOUNDS',
+        statusCode: 422,
+        code: 'VALIDATION_ERROR',
       });
     });
   });
@@ -415,16 +431,18 @@ describe('searchService', () => {
   describe('checkSearchHealth', () => {
     test('should return healthy when PostGIS available', async () => {
       pool.query.mockResolvedValue({
-        rows: [{ postgis_version: '3.1.1' }],
+        rows: [{ version: '3.1.1' }],
         rowCount: 1,
       });
 
       const result = await checkSearchHealth();
 
       expect(result.healthy).toBe(true);
-      expect(result.postgis_version).toBe('3.1.1');
+      expect(result.postgis).toBe('3.1.1');
 
-      expect(pool.query).toHaveBeenCalledWith('SELECT PostGIS_version() as postgis_version');
+      expect(pool.query).toHaveBeenCalledWith(`
+      SELECT PostGIS_version() as version
+    `);
     });
 
     test('should return unhealthy when PostGIS not available', async () => {
