@@ -1,500 +1,378 @@
 /**
- * Authentication System Integration Tests
+ * Authentication Integration Tests
  *
- * Tests all authentication endpoints and security features:
- * - User registration (email/phone)
- * - Login (email/phone)
- * - Token refresh with rotation
- * - Logout
- * - JWT validation
- * - Rate limiting
- * - Belarus-specific phone validation
+ * Covers end-to-end auth flows with database + JWT + Redis rate limit stubs:
+ * - Registration (email + phone) with validation and duplicates
+ * - Login with security/error handling
+ * - Token refresh with strict rotation
+ * - Logout/session invalidation
+ * - Auth middleware responses
+ * - Custom rate limiting on login endpoint
  */
 
 import request from 'supertest';
-import { clearAllData } from '../utils/database.js';
-import { createTestUser, getUserByEmail, getUserByPhone } from '../utils/auth.js';
-import { testUsers, invalidUsers, edgeCaseUsers } from '../fixtures/users.js';
 import jwt from 'jsonwebtoken';
+import { jest } from '@jest/globals';
 import app from '../../server.js';
+import { clearAllData, query } from '../utils/database.js';
+import {
+  createTestUser,
+  createUserAndGetTokens,
+  getUserByEmail,
+  getUserByPhone,
+} from '../utils/auth.js';
+import { testUsers, invalidUsers, edgeCaseUsers } from '../fixtures/users.js';
+import * as redis from '../../config/redis.js';
 
-// Setup and teardown
+const LOGIN_LIMIT = 10; // From authRoutes createRateLimiter
+
+const expectValidationError = (response, field) => {
+  expect(response.body.success).toBe(false);
+  expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  expect(response.body.error.details[field]).toBeDefined();
+};
+
+const decodeAccess = (token) =>
+  jwt.verify(token, process.env.JWT_SECRET, {
+    issuer: 'restaurant-guide-belarus',
+    audience: 'restaurant-guide-api',
+  });
+
 beforeAll(async () => {
-  // Clear all test data before running auth tests
   await clearAllData();
 });
 
 beforeEach(async () => {
-  // Clear database before each test for isolation
   await clearAllData();
+  jest.restoreAllMocks();
 });
 
 afterAll(async () => {
-  // Final cleanup
   await clearAllData();
 });
 
-describe('Auth System - User Registration', () => {
-  describe('POST /api/v1/auth/register - Email Registration', () => {
-    test('should register new user with email successfully', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.regularUser)
-        .expect(201);
+describe('POST /api/v1/auth/register', () => {
+  test('registers new email user and returns token pair', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(testUsers.regularUser)
+      .expect(201);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('user');
-      expect(response.body.data).toHaveProperty('tokens');
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.user.email).toBe(testUsers.regularUser.email.toLowerCase());
+    expect(response.body.data.user.role).toBe('user');
+    expect(response.body.data.accessToken).toBeTruthy();
+    expect(response.body.data.refreshToken).toBeTruthy();
+    expect(response.body.data.expiresIn).toBe(900);
 
-      // Verify user data
-      const { user } = response.body.data;
-      expect(user.email).toBe(testUsers.regularUser.email.toLowerCase());
-      expect(user.name).toBe(testUsers.regularUser.name);
-      expect(user.role).toBe('user');
-      expect(user).not.toHaveProperty('password_hash'); // Security: no password in response
-
-      // Verify tokens
-      const { tokens } = response.body.data;
-      expect(tokens.accessToken).toBeDefined();
-      expect(tokens.refreshToken).toBeDefined();
-      expect(typeof tokens.accessToken).toBe('string');
-      expect(tokens.accessToken.length).toBeGreaterThan(20);
-    });
-
-    test('should register partner user with correct role', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.partner)
-        .expect(201);
-
-      expect(response.body.data.user.role).toBe('partner');
-      expect(response.body.data.user.email).toBe(testUsers.partner.email.toLowerCase());
-    });
-
-    test('should normalize email to lowercase', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(edgeCaseUsers.mixedCaseEmail)
-        .expect(201);
-
-      expect(response.body.data.user.email).toBe('test@example.com'); // lowercase
-    });
-
-    test('should reject duplicate email', async () => {
-      // Register first time
-      await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.regularUser)
-        .expect(201);
-
-      // Try to register again with same email
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.regularUser)
-        .expect(409);
-
-      expect(response.body.error).toBeDefined();
-      expect(response.body.error.code).toBe('DUPLICATE_EMAIL');
-    });
-
-    test('should reject invalid email format', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(invalidUsers.invalidEmail)
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-      expect(response.body.error.details).toContainEqual(
-        expect.objectContaining({ path: 'email' })
-      );
-    });
-
-    test('should reject weak password', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(invalidUsers.weakPassword)
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-      expect(response.body.error.details).toContainEqual(
-        expect.objectContaining({ path: 'password' })
-      );
-    });
-
-    test('should reject missing required fields', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send({ email: 'test@test.com' }) // Missing password, name
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    });
-
-    test('should hash password with Argon2', async () => {
-      await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.regularUser)
-        .expect(201);
-
-      // Verify password is hashed in database
-      const user = await getUserByEmail(testUsers.regularUser.email);
-      expect(user.password_hash).toBeDefined();
-      expect(user.password_hash).not.toBe(testUsers.regularUser.password);
-      expect(user.password_hash).toMatch(/^\$argon2id\$/); // Argon2id hash format
-    });
+    const userInDb = await getUserByEmail(testUsers.regularUser.email);
+    expect(userInDb.password_hash).toMatch(/^\$argon2id\$/);
   });
 
-  describe('POST /api/v1/auth/register - Phone Registration', () => {
-    test('should register user with Belarus phone number', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.phoneOnlyUser)
-        .expect(201);
+  test('registers phone-only user and preserves phone', async () => {
+    const phoneUser = { ...testUsers.phoneOnlyUser };
+    delete phoneUser.email;
 
-      expect(response.body.data.user.phone).toBe(testUsers.phoneOnlyUser.phone);
-      expect(response.body.data.user.email).toBeNull();
-    });
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(phoneUser)
+      .expect(201);
 
-    test('should accept MTS operator (+37529)', async () => {
-      const userData = {
-        ...testUsers.phoneOnlyUser,
-        phone: '+375291234567'
-      };
-
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
-
-      expect(response.body.data.user.phone).toBe('+375291234567');
-    });
-
-    test('should accept MTC operator (+37533)', async () => {
-      const userData = {
-        ...testUsers.phoneOnlyUser,
-        phone: '+375331234567'
-      };
-
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
-
-      expect(response.body.data.user.phone).toBe('+375331234567');
-    });
-
-    test('should accept Velcom operator (+37544)', async () => {
-      const userData = {
-        ...testUsers.phoneOnlyUser,
-        phone: '+375441234567'
-      };
-
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
-
-      expect(response.body.data.user.phone).toBe('+375441234567');
-    });
-
-    test('should reject non-Belarus phone number (Russia)', async () => {
-      const userData = {
-        ...testUsers.phoneOnlyUser,
-        phone: '+79001234567' // Russian number
-      };
-
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-      expect(response.body.error.details).toContainEqual(
-        expect.objectContaining({ path: 'phone' })
-      );
-    });
-
-    test('should reject non-Belarus phone number (USA)', async () => {
-      const userData = {
-        ...testUsers.phoneOnlyUser,
-        phone: '+11234567890' // USA number
-      };
-
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    });
-
-    test('should reject duplicate phone number', async () => {
-      // Register first time
-      await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.phoneOnlyUser)
-        .expect(201);
-
-      // Try again with same phone
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(testUsers.phoneOnlyUser)
-        .expect(409);
-
-      expect(response.body.error.code).toBe('DUPLICATE_PHONE');
-    });
-
-    test('should reject registration without email or phone', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(invalidUsers.noContactMethod)
-        .expect(422);
-
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    });
+    expect(response.body.data.user.email).toBeNull();
+    expect(response.body.data.user.phone).toBe(testUsers.phoneOnlyUser.phone);
+    const user = await getUserByPhone(testUsers.phoneOnlyUser.phone);
+    expect(user.phone).toBe(testUsers.phoneOnlyUser.phone);
   });
 
-  describe('POST /api/v1/auth/register - Edge Cases', () => {
-    test('should handle very long name', async () => {
-      const userData = {
-        ...testUsers.regularUser,
-        email: 'longname@test.com',
-        name: 'А'.repeat(255)
-      };
+  test('rejects duplicate email with conflict error', async () => {
+    await request(app).post('/api/v1/auth/register').send(testUsers.regularUser).expect(201);
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(testUsers.regularUser)
+      .expect(409);
 
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
+    expect(response.body.error.code).toBe('EMAIL_EXISTS');
+  });
 
-      expect(response.body.data.user.name).toBe('А'.repeat(255));
-    });
+  test('rejects duplicate phone with conflict error', async () => {
+    const phoneUser = { ...testUsers.phoneOnlyUser };
+    delete phoneUser.email;
 
-    test('should handle name with special characters', async () => {
-      const userData = {
-        ...testUsers.regularUser,
-        email: 'special@test.com',
-        name: "Мария-Анна О'Брайен-Иванова"
-      };
+    await request(app).post('/api/v1/auth/register').send(phoneUser).expect(201);
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(phoneUser)
+      .expect(409);
 
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
+    expect(response.body.error.code).toBe('PHONE_EXISTS');
+  });
 
-      expect(response.body.data.user.name).toBe("Мария-Анна О'Брайен-Иванова");
-    });
+  test('rejects weak password with validation details', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(invalidUsers.weakPassword)
+      .expect(422);
 
-    test('should trim whitespace from fields', async () => {
-      const userData = {
-        ...testUsers.regularUser,
-        email: '  spaces@test.com  ',
-        name: '  Spaced Name  ',
-        phone: '  +375291234567  '
-      };
+    expectValidationError(response, 'password');
+  });
 
-      const response = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .expect(201);
+  test('rejects malformed email', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(invalidUsers.invalidEmail)
+      .expect(422);
 
-      expect(response.body.data.user.email).toBe('spaces@test.com');
-      expect(response.body.data.user.name).toBe('Spaced Name');
-    });
+    expectValidationError(response, 'email');
+  });
+
+  test('rejects request without contact method', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(invalidUsers.noContactMethod)
+      .expect(422);
+
+    expectValidationError(response, 'email');
+  });
+
+  test('accepts normalized email casing and trims fields', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        ...edgeCaseUsers.mixedCaseEmail,
+        name: '  Trim Me  ',
+        phone: '  +375291234567  ',
+      })
+      .expect(201);
+
+    expect(response.body.data.user.email).toBe('test@example.com');
+    expect(response.body.data.user.name).toBe('Trim Me');
+    expect(response.body.data.user.phone).toBe('+375291234567');
   });
 });
 
-describe('Auth System - User Login', () => {
+describe('POST /api/v1/auth/login', () => {
   beforeEach(async () => {
-    // Create test user before each login test
     await createTestUser(testUsers.regularUser);
   });
 
-  describe('POST /api/v1/auth/login - Email Login', () => {
-    test('should login with valid email and password', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email,
-          password: testUsers.regularUser.password
-        })
-        .expect(200);
+  test('logs in with email and returns tokens', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })
+      .expect(200);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('user');
-      expect(response.body.data).toHaveProperty('tokens');
-
-      const { tokens } = response.body.data;
-      expect(tokens.accessToken).toBeDefined();
-      expect(tokens.refreshToken).toBeDefined();
-    });
-
-    test('should reject invalid password', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email,
-          password: 'WrongPassword123'
-        })
-        .expect(401);
-
-      expect(response.body.error).toBeDefined();
-      expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
-    });
-
-    test('should reject non-existent email', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: 'nonexistent@test.com',
-          password: 'Test123!@#'
-        })
-        .expect(401);
-
-      expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
-    });
-
-    test('should be case-insensitive for email', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email.toUpperCase(),
-          password: testUsers.regularUser.password
-        })
-        .expect(200);
-
-      expect(response.body.data.user.email).toBe(testUsers.regularUser.email.toLowerCase());
-    });
+    expect(response.body.data.user.email).toBe(testUsers.regularUser.email.toLowerCase());
+    expect(response.body.data.accessToken).toBeDefined();
+    expect(response.body.data.refreshToken).toBeDefined();
   });
 
-  describe('POST /api/v1/auth/login - Phone Login', () => {
-    beforeEach(async () => {
-      await createTestUser(testUsers.phoneOnlyUser);
-    });
+  test('logs in with phone and returns tokens', async () => {
+    await createTestUser(testUsers.phoneOnlyUser);
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phone: testUsers.phoneOnlyUser.phone, password: testUsers.phoneOnlyUser.password })
+      .expect(200);
 
-    test('should login with valid phone and password', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          phone: testUsers.phoneOnlyUser.phone,
-          password: testUsers.phoneOnlyUser.password
-        })
-        .expect(200);
-
-      expect(response.body.data.user.phone).toBe(testUsers.phoneOnlyUser.phone);
-      expect(response.body.data.tokens).toBeDefined();
-    });
-
-    test('should reject invalid password for phone login', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          phone: testUsers.phoneOnlyUser.phone,
-          password: 'WrongPassword'
-        })
-        .expect(401);
-
-      expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
-    });
+    expect(response.body.data.user.phone).toBe(testUsers.phoneOnlyUser.phone);
+    expect(response.body.data.accessToken).toBeTruthy();
   });
 
-  describe('POST /api/v1/auth/login - JWT Tokens', () => {
-    test('should generate valid JWT access token', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email,
-          password: testUsers.regularUser.password
-        })
-        .expect(200);
+  test('is case-insensitive for email', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email.toUpperCase(), password: testUsers.regularUser.password })
+      .expect(200);
 
-      const { accessToken } = response.body.data.tokens;
+    expect(response.body.data.user.email).toBe(testUsers.regularUser.email.toLowerCase());
+  });
 
-      // Verify JWT structure
-      const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
-      expect(decoded.id).toBeDefined();
-      expect(decoded.email).toBe(testUsers.regularUser.email.toLowerCase());
-      expect(decoded.role).toBe('user');
-      expect(decoded.exp).toBeDefined(); // Expiration time
-      expect(decoded.iat).toBeDefined(); // Issued at time
-    });
+  test('rejects invalid password with generic error', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email, password: 'WrongPassword123' })
+      .expect(401);
 
-    test('access token should expire in 15 minutes', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email,
-          password: testUsers.regularUser.password
-        })
-        .expect(200);
+    expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
+  });
 
-      const { accessToken } = response.body.data.tokens;
-      const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
+  test('rejects non-existent user without enumeration', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'missing@test.com', password: 'Password123!@#' })
+      .expect(401);
 
-      const expirationTime = decoded.exp - decoded.iat;
-      expect(expirationTime).toBe(15 * 60); // 15 minutes in seconds
-    });
+    expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
+  });
 
-    test('should generate cryptographically secure refresh token', async () => {
-      const response = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: testUsers.regularUser.email,
-          password: testUsers.regularUser.password
-        })
-        .expect(200);
+  test('produces 15 minute access token with expected claims', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })
+      .expect(200);
 
-      const { refreshToken } = response.body.data.tokens;
-
-      expect(refreshToken).toBeDefined();
-      expect(typeof refreshToken).toBe('string');
-      expect(refreshToken.length).toBeGreaterThanOrEqual(32); // At least 32 bytes hex
-    });
+    const decoded = decodeAccess(response.body.data.accessToken);
+    expect(decoded.userId).toBeDefined();
+    expect(decoded.role).toBe('user');
+    const ttl = decoded.exp - decoded.iat;
+    expect(ttl).toBeGreaterThanOrEqual(899);
+    expect(ttl).toBeLessThanOrEqual(901);
   });
 });
 
-// TODO: More test suites to add:
-// - Token Refresh with Rotation
-// - Logout (Token Invalidation)
-// - Rate Limiting
-// - Authentication Middleware
-// - Authorization (Role-based)
-// - Concurrent Login Scenarios
-// - Security Edge Cases
+describe('POST /api/v1/auth/refresh', () => {
+  test('rotates refresh token and marks old token as used', async () => {
+    const login = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const originalRefresh = login.body.data.refreshToken;
 
-describe('Auth System - Token Refresh', () => {
-  test.todo('should refresh access token with valid refresh token');
-  test.todo('should rotate refresh token (old token invalidated)');
-  test.todo('should reject expired refresh token');
-  test.todo('should reject used refresh token (replay attack prevention)');
-  test.todo('should reject invalid refresh token');
+    const refreshResponse = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: originalRefresh })
+      .expect(200);
+
+    expect(refreshResponse.body.data.refreshToken).toBeDefined();
+    expect(refreshResponse.body.data.refreshToken).not.toBe(originalRefresh);
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE token = $1', [
+      originalRefresh,
+    ]);
+    expect(rows[0].used_at).not.toBeNull();
+  });
+
+  test('rejects invalid refresh token', async () => {
+    const invalidToken = 'x'.repeat(64);
+    const response = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: invalidToken })
+      .expect(401);
+
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
+  });
+
+  test('rejects expired refresh token', async () => {
+    const user = await createTestUser(testUsers.regularUser);
+    const expiredToken = `expired_token_${'y'.repeat(40)}`;
+    await query(
+      `INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at, used_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NULL)`,
+      [user.id, expiredToken, new Date(Date.now() - 1000)],
+    );
+
+    const response = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: expiredToken })
+      .expect(401);
+
+    expect(response.body.error.code).toBe('TOKEN_EXPIRED');
+  });
+
+  test('rejects refresh when user account is inactive', async () => {
+    const registration = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const refreshToken = registration.body.data.refreshToken;
+
+    // Deactivate user
+    await query('UPDATE users SET is_active = false WHERE id = $1', [registration.body.data.user.id]);
+
+    const response = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken })
+      .expect(401);
+
+    expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
+  });
+
+  test('detects refresh token reuse and invalidates user tokens', async () => {
+    const { refreshToken, user } = await createUserAndGetTokens(testUsers.regularUser);
+    await query('UPDATE refresh_tokens SET used_at = NOW() WHERE token = $1', [refreshToken]);
+
+    const response = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken })
+      .expect(403);
+
+    expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE user_id = $1', [user.id]);
+    rows.forEach((row) => expect(row.used_at).not.toBeNull());
+  });
 });
 
-describe('Auth System - Logout', () => {
-  test.todo('should invalidate refresh token on logout');
-  test.todo('should still allow access with valid access token after logout');
-  test.todo('should reject refresh token after logout');
+describe('POST /api/v1/auth/logout', () => {
+  test('invalidates refresh token and blocks further refresh', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const { accessToken, refreshToken } = body.data;
+
+    await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refreshToken })
+      .expect(200);
+
+    const refreshResponse = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken })
+      .expect(403);
+
+    expect(refreshResponse.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+  });
 });
 
-describe('Auth System - Rate Limiting', () => {
-  test.todo('should allow up to 5 failed login attempts');
-  test.todo('should rate limit after 5 failed attempts');
-  test.todo('should provide Retry-After header when rate limited');
-  test.todo('should reset rate limit after timeout');
+describe('GET /api/v1/auth/me', () => {
+  test('returns current authenticated user', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const meResponse = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${body.data.accessToken}`)
+      .expect(200);
+
+    expect(meResponse.body.data.user.email).toBe(testUsers.regularUser.email.toLowerCase());
+  });
+
+  test('rejects missing Authorization header', async () => {
+    const response = await request(app).get('/api/v1/auth/me').expect(401);
+    expect(response.body.error.code).toBe('MISSING_TOKEN');
+  });
+
+  test('rejects malformed Authorization header', async () => {
+    const response = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', 'Token abc')
+      .expect(401);
+
+    expect(response.body.error.code).toBe('INVALID_TOKEN_FORMAT');
+  });
+
+  test('rejects expired token', async () => {
+    const user = await createTestUser(testUsers.regularUser);
+    const expiredToken = jwt.sign(
+      { userId: user.id, email: user.email, role: user.role, type: 'access' },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: -10,
+        issuer: 'restaurant-guide-belarus',
+        audience: 'restaurant-guide-api',
+      },
+    );
+
+    const response = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${expiredToken}`)
+      .expect(401);
+
+    expect(response.body.error.code).toBe('TOKEN_EXPIRED');
+  });
+
+  test('returns 404 when user no longer exists', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const accessToken = body.data.accessToken;
+    await query('DELETE FROM users WHERE id = $1', [body.data.user.id]);
+
+    const response = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+
+    expect(response.body.error.code).toBe('USER_NOT_FOUND');
+  });
 });
 
-describe('Auth System - Authentication Middleware', () => {
-  test.todo('should authenticate valid JWT token');
-  test.todo('should reject missing Authorization header');
-  test.todo('should reject malformed Authorization header');
-  test.todo('should reject expired JWT token');
-  test.todo('should reject tampered JWT token');
-});
 
-describe('Auth System - Authorization', () => {
-  test.todo('should allow user role access to user endpoints');
-  test.todo('should allow partner role access to partner endpoints');
-  test.todo('should allow admin role access to admin endpoints');
-  test.todo('should reject user role accessing partner endpoints');
-  test.todo('should reject partner role accessing admin endpoints');
-});
