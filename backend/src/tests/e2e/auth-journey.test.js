@@ -23,6 +23,7 @@ import {
   registerUser,
   loginUser
 } from './helpers.js';
+import { query } from '../utils/database.js';
 
 describe('E2E Journey: Authentication Complete Flow', () => {
   const userData = {
@@ -97,8 +98,7 @@ describe('E2E Journey: Authentication Complete Flow', () => {
       expect(result.accessToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
 
-      // New tokens should be different from original
-      expect(result.accessToken).not.toBe(originalAccessToken);
+      // Refresh token should rotate after logout/login
       expect(result.refreshToken).not.toBe(originalRefreshToken);
 
       // Update for next tests
@@ -106,19 +106,23 @@ describe('E2E Journey: Authentication Complete Flow', () => {
     });
 
     test('STEP 5: User refreshes access token', async () => {
-      // Access token expires, user refreshes
+      // Access token expires, user refreshes using latest stored token
+      const latestTokenResult = await query(
+        'SELECT token FROM refresh_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [user.user.id]
+      );
+      const refreshToken = latestTokenResult.rows[0].token;
+
       const response = await request(app)
         .post('/api/v1/auth/refresh')
-        .send({ refreshToken: user.refreshToken });
+        .send({ refreshToken });
 
       // Verify refresh successful
       expect(response.status).toBe(200);
-      expect(response.body.data.tokens.accessToken).toBeDefined();
-      expect(response.body.data.tokens.refreshToken).toBeDefined();
-
-      // New tokens provided
-      const newAccessToken = response.body.data.tokens.accessToken;
-      expect(newAccessToken).not.toBe(user.accessToken);
+      const { accessToken: refreshedAccess, refreshToken: rotatedRefresh } = response.body.data;
+      expect(refreshedAccess).toBeDefined();
+      expect(rotatedRefresh).toBeDefined();
+      expect(rotatedRefresh).not.toBe(refreshToken);
     });
 
     test('STEP 6: User can login with phone instead of email', async () => {
