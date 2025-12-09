@@ -24,6 +24,8 @@ jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   softDeleteReview: jest.fn(),
   findReviewsByEstablishment: jest.fn(),
   countReviewsByEstablishment: jest.fn(),
+  findReviewsByUser: jest.fn(),
+  countReviewsByUser: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../config/redis.js', () => ({
@@ -49,6 +51,10 @@ const {
   updateReview,
   deleteReview,
   getEstablishmentReviews,
+  getReviewById,
+  getUserReviews,
+  getEstablishmentAggregates,
+  getUserReviewQuota,
 } = await import('../../services/reviewService.js');
 
 import { createMockUser, createMockReview, createMockEstablishment } from '../mocks/helpers.js';
@@ -312,6 +318,38 @@ describe('reviewService', () => {
 
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalled();
     });
+
+    test('should throw error when no fields provided', async () => {
+      await expect(updateReview(reviewId, userId, {})).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'NO_UPDATE_FIELDS',
+      });
+
+      expect(ReviewModel.updateReview).not.toHaveBeenCalled();
+    });
+
+    test('should not update aggregates when rating unchanged', async () => {
+      ReviewModel.findReviewById
+        .mockReset()
+        .mockResolvedValueOnce(mockReview)
+        .mockResolvedValueOnce({ ...mockReview, content: 'Only content changed' });
+      ReviewModel.updateReview.mockResolvedValue({ ...mockReview, content: 'Only content changed' });
+
+      await updateReview(reviewId, userId, { content: 'Only content changed' });
+
+      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
+    });
+
+    test('should map constraint violation to app error', async () => {
+      const dbError = new Error('constraint');
+      dbError.code = '23514';
+      ReviewModel.updateReview.mockRejectedValue(dbError);
+
+      await expect(updateReview(reviewId, userId, updates)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'CONSTRAINT_VIOLATION',
+      });
+    });
   });
 
   describe('deleteReview', () => {
@@ -343,6 +381,24 @@ describe('reviewService', () => {
       });
 
       expect(ReviewModel.softDeleteReview).not.toHaveBeenCalled();
+    });
+
+    test('should throw error when review not found', async () => {
+      ReviewModel.findReviewById.mockResolvedValue(null);
+
+      await expect(deleteReview(reviewId, userId)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+      });
+    });
+
+    test('should handle already deleted review', async () => {
+      ReviewModel.softDeleteReview.mockResolvedValue(false);
+
+      await expect(deleteReview(reviewId, userId)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+      });
     });
   });
 
@@ -417,6 +473,144 @@ describe('reviewService', () => {
         establishmentId,
         expect.objectContaining({ limit: 200 })
       );
+    });
+
+    test('should default to newest sort when invalid sort provided', async () => {
+      ReviewModel.findReviewsByEstablishment.mockResolvedValue([]);
+      ReviewModel.countReviewsByEstablishment.mockResolvedValue(0);
+
+      await getEstablishmentReviews(establishmentId, { sort: 'invalid', page: 2, limit: 5 });
+
+      expect(ReviewModel.findReviewsByEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ sortBy: 'newest', offset: 5, limit: 5 })
+      );
+    });
+
+    test('should throw when establishment does not exist', async () => {
+      ReviewModel.establishmentExists.mockResolvedValue(false);
+
+      await expect(getEstablishmentReviews(establishmentId)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'ESTABLISHMENT_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('getReviewById', () => {
+    test('should return review when found', async () => {
+      const review = createMockReview({ id: 'review-1' });
+      ReviewModel.findReviewById.mockResolvedValue(review);
+
+      const result = await getReviewById('review-1');
+
+      expect(result).toEqual(review);
+      expect(ReviewModel.findReviewById).toHaveBeenCalledWith('review-1');
+    });
+
+    test('should throw when review missing', async () => {
+      ReviewModel.findReviewById.mockResolvedValue(null);
+
+      await expect(getReviewById('missing')).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('getUserReviews', () => {
+    const userId = 'user-1';
+    const reviews = [
+      {
+        id: 'r1',
+        establishment_id: 'e1',
+        rating: 4,
+        content: 'Solid',
+        is_edited: false,
+        created_at: new Date(),
+        updated_at: new Date(),
+        establishment_name: 'Test Restaurant',
+        establishment_city: 'Минск',
+        establishment_category: 'Ресторан',
+      },
+    ];
+
+    test('should return formatted reviews with pagination', async () => {
+      ReviewModel.getUserById.mockResolvedValue(createMockUser({ id: userId }));
+      ReviewModel.findReviewsByUser.mockResolvedValue(reviews);
+      ReviewModel.countReviewsByUser.mockResolvedValue(1);
+
+      const result = await getUserReviews(userId, { page: 1, limit: 10 });
+
+      expect(ReviewModel.findReviewsByUser).toHaveBeenCalledWith(userId, { limit: 10, offset: 0 });
+      expect(result.reviews[0]).toMatchObject({
+        id: 'r1',
+        establishment: {
+          id: 'e1',
+          name: 'Test Restaurant',
+          city: 'Минск',
+          category: 'Ресторан',
+        },
+      });
+      expect(result.pagination).toEqual({
+        page: 1,
+        limit: 10,
+        total: 1,
+        pages: 1,
+        hasNext: false,
+        hasPrevious: false,
+      });
+    });
+
+    test('should throw when user not found', async () => {
+      ReviewModel.getUserById.mockResolvedValue(null);
+
+      await expect(getUserReviews(userId)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'USER_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('getEstablishmentAggregates', () => {
+    const establishmentId = 'estab-1';
+
+    test('should return aggregates when establishment exists', async () => {
+      ReviewModel.establishmentExists.mockResolvedValue(true);
+      ReviewModel.updateEstablishmentAggregates.mockResolvedValue({
+        average_rating: 4.5,
+        review_count: 3,
+      });
+
+      const result = await getEstablishmentAggregates(establishmentId);
+
+      expect(result).toEqual({ average_rating: 4.5, review_count: 3 });
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(establishmentId);
+    });
+
+    test('should throw when establishment missing', async () => {
+      ReviewModel.establishmentExists.mockResolvedValue(false);
+
+      await expect(getEstablishmentAggregates(establishmentId)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'ESTABLISHMENT_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('getUserReviewQuota', () => {
+    test('should return quota breakdown', async () => {
+      getCounter.mockResolvedValue(4);
+
+      const result = await getUserReviewQuota('user-1');
+
+      expect(result).toEqual({
+        limit: 10,
+        used: 4,
+        remaining: 6,
+        resetIn: 86400,
+      });
+      expect(getCounter).toHaveBeenCalledWith('reviews:ratelimit:user-1');
     });
   });
 });
