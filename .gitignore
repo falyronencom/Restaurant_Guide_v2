@@ -49,3 +49,6 @@ build/
 .pub-cache/
 .pub/
 
+# Backend seed images - large files should not be in Git
+backend/scripts/seed-images/
+
