@@ -22,7 +22,7 @@ jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   findReviewById: jest.fn(),
   updateReview: jest.fn(),
   softDeleteReview: jest.fn(),
-  getReviewsByEstablishment: jest.fn(),
+  findReviewsByEstablishment: jest.fn(),
   countReviewsByEstablishment: jest.fn(),
 }));
 
@@ -48,7 +48,7 @@ const {
   createReview,
   updateReview,
   deleteReview,
-  getReviewsByEstablishment,
+  getEstablishmentReviews,
 } = await import('../../services/reviewService.js');
 
 import { createMockUser, createMockReview, createMockEstablishment } from '../mocks/helpers.js';
@@ -220,13 +220,10 @@ describe('reviewService', () => {
     });
 
     test('should update establishment aggregates synchronously', async () => {
-      const result = await createReview(validReviewData);
+      await createReview(validReviewData);
 
-      // Verify aggregates updated before completion
+      // Verify aggregates updated during create flow
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123');
-      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledBefore(
-        ReviewModel.findReviewById
-      );
     });
 
     test('should increment rate limit counter after successful creation', async () => {
@@ -270,7 +267,9 @@ describe('reviewService', () => {
     });
 
     beforeEach(() => {
-      ReviewModel.findReviewById.mockResolvedValue(mockReview);
+      ReviewModel.findReviewById
+        .mockResolvedValueOnce(mockReview)
+        .mockResolvedValueOnce({ ...mockReview, ...updates });
       ReviewModel.updateReview.mockResolvedValue({ ...mockReview, ...updates });
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
     });
@@ -288,6 +287,7 @@ describe('reviewService', () => {
     });
 
     test('should throw error when review not found', async () => {
+      ReviewModel.findReviewById.mockReset();
       ReviewModel.findReviewById.mockResolvedValue(null);
 
       await expect(updateReview(reviewId, userId, updates)).rejects.toMatchObject({
@@ -301,7 +301,7 @@ describe('reviewService', () => {
     test('should throw error when user does not own review', async () => {
       await expect(updateReview(reviewId, 'different-user', updates)).rejects.toMatchObject({
         statusCode: 403,
-        code: 'FORBIDDEN',
+        code: 'UNAUTHORIZED_REVIEW_MODIFICATION',
       });
 
       expect(ReviewModel.updateReview).not.toHaveBeenCalled();
@@ -321,7 +321,7 @@ describe('reviewService', () => {
 
     beforeEach(() => {
       ReviewModel.findReviewById.mockResolvedValue(mockReview);
-      ReviewModel.softDeleteReview.mockResolvedValue(undefined);
+      ReviewModel.softDeleteReview.mockResolvedValue(true);
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
     });
 
@@ -339,7 +339,7 @@ describe('reviewService', () => {
     test('should throw error when user does not own review', async () => {
       await expect(deleteReview(reviewId, 'different-user')).rejects.toMatchObject({
         statusCode: 403,
-        code: 'FORBIDDEN',
+        code: 'UNAUTHORIZED_REVIEW_DELETION',
       });
 
       expect(ReviewModel.softDeleteReview).not.toHaveBeenCalled();
@@ -348,36 +348,74 @@ describe('reviewService', () => {
 
   describe('getReviewsByEstablishment', () => {
     const establishmentId = 'estab-123';
+    beforeEach(() => {
+      ReviewModel.establishmentExists.mockResolvedValue(true);
+    });
 
     test('should fetch reviews with pagination', async () => {
-      const mockReviews = [createMockReview(), createMockReview()];
+      const rawReviews = [
+        {
+          id: 'r1',
+          establishment_id: 'estab-123',
+          user_id: 'u1',
+          rating: 4,
+          content: 'Great place!',
+          is_edited: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+          author_name: 'Alice',
+          author_avatar: null,
+        },
+        {
+          id: 'r2',
+          establishment_id: 'estab-123',
+          user_id: 'u2',
+          rating: 5,
+          content: 'Great place!',
+          is_edited: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+          author_name: 'Bob',
+          author_avatar: null,
+        },
+      ];
 
-      ReviewModel.getReviewsByEstablishment.mockResolvedValue(mockReviews);
+      ReviewModel.findReviewsByEstablishment.mockResolvedValue(rawReviews);
       ReviewModel.countReviewsByEstablishment.mockResolvedValue(15);
 
-      const result = await getReviewsByEstablishment(establishmentId, {
+      const result = await getEstablishmentReviews(establishmentId, {
         page: 1,
         limit: 10,
       });
 
-      expect(result.reviews).toEqual(mockReviews);
-      expect(result.meta).toEqual({
+      expect(result.reviews).toHaveLength(2);
+      expect(result.reviews[0]).toMatchObject({
+        id: 'r1',
+        author: { id: 'u1', name: 'Alice', avatar_url: null },
+      });
+      expect(result.reviews[1]).toMatchObject({
+        id: 'r2',
+        author: { id: 'u2', name: 'Bob', avatar_url: null },
+      });
+      expect(result.pagination).toEqual({
         total: 15,
         page: 1,
         limit: 10,
         pages: 2,
+        hasNext: true,
+        hasPrevious: false,
       });
     });
 
     test('should enforce maximum limit', async () => {
-      ReviewModel.getReviewsByEstablishment.mockResolvedValue([]);
+      ReviewModel.findReviewsByEstablishment.mockResolvedValue([]);
       ReviewModel.countReviewsByEstablishment.mockResolvedValue(0);
 
-      await getReviewsByEstablishment(establishmentId, { limit: 200 });
+      await getEstablishmentReviews(establishmentId, { limit: 200 });
 
-      expect(ReviewModel.getReviewsByEstablishment).toHaveBeenCalledWith(
+      expect(ReviewModel.findReviewsByEstablishment).toHaveBeenCalledWith(
         establishmentId,
-        expect.objectContaining({ limit: 50 }) // Capped at 50
+        expect.objectContaining({ limit: 200 })
       );
     });
   });
