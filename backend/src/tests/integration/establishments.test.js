@@ -776,18 +776,87 @@ describe('Establishments System - List & Read Operations', () => {
   });
 });
 
-// Status workflow tests, update tests, and more to be added...
 describe('Establishments System - Update Operations', () => {
-  test.todo('should update establishment name');
-  test.todo('should update establishment description');
-  test.todo('should update coordinates');
-  test.todo('should update categories and cuisines');
-  test.todo('should reject updates by non-owner');
+  let establishmentId;
+
+  beforeEach(async () => {
+    const response = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ ...testEstablishments[0], name: 'Update Target' });
+
+    establishmentId = response.body.data.establishment.id;
+  });
+
+  test('should update establishment description', async () => {
+    const response = await request(app)
+      .put(`/api/v1/partner/establishments/${establishmentId}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ description: 'Updated description' })
+      .expect(200);
+
+    expect(response.body.data.establishment.description).toBe('Updated description');
+    expect(response.body.data.establishment.id).toBe(establishmentId);
+  });
+
+  test('should reset active establishment to pending on major change', async () => {
+    await query('UPDATE establishments SET status = $1 WHERE id = $2', ['active', establishmentId]);
+
+    const response = await request(app)
+      .put(`/api/v1/partner/establishments/${establishmentId}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({
+        name: 'Updated Name',
+        categories: ['Ресторан'],
+        cuisines: ['Европейская'],
+      })
+      .expect(200);
+
+    expect(response.body.data.establishment.status).toBe('pending');
+    expect(response.body.data.establishment.name).toBe('Updated Name');
+  });
+
+  test('should reject updates by non-owner partner', async () => {
+    await request(app)
+      .put(`/api/v1/partner/establishments/${establishmentId}`)
+      .set('Authorization', `Bearer ${partner2Token}`)
+      .send({ description: 'Should fail' })
+      .expect(403);
+  });
 });
 
 describe('Establishments System - Status Workflow', () => {
-  test.todo('should submit draft for moderation (draft → pending)');
-  test.todo('should reject submitting already pending establishment');
-  test.todo('should reset to pending on major changes to active establishment');
-  test.todo('should track status history');
+  let establishmentId;
+
+  beforeEach(async () => {
+    const response = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ ...testEstablishments[0], name: 'Submit Target' });
+
+    establishmentId = response.body.data.establishment.id;
+  });
+
+  test('should submit draft for moderation (draft → pending)', async () => {
+    const response = await request(app)
+      .post(`/api/v1/partner/establishments/${establishmentId}/submit`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    expect(response.body.data.establishment.status).toBe('pending');
+  });
+
+  test('should reject submitting already pending establishment', async () => {
+    await request(app)
+      .post(`/api/v1/partner/establishments/${establishmentId}/submit`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    const second = await request(app)
+      .post(`/api/v1/partner/establishments/${establishmentId}/submit`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(400);
+
+    expect(second.body.error.code).toBe('INVALID_STATUS_FOR_SUBMISSION');
+  });
 });
