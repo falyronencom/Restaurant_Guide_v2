@@ -49,3 +49,6 @@ build/
 .pub-cache/
 .pub/
 
+# Seed data images (keep locally, exclude from Git)
+backend/scripts/seed-images/
+
