@@ -22,6 +22,7 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
   checkDuplicateName: jest.fn(),
   updateEstablishment: jest.fn(),
   deleteEstablishment: jest.fn(),
+  submitForModeration: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
@@ -42,6 +43,7 @@ const {
   getPartnerEstablishments,
   getEstablishmentById,
   updateEstablishment,
+  submitEstablishmentForModeration,
 } = await import('../../services/establishmentService.js');
 
 import { createMockEstablishment, createMockPartner } from '../mocks/helpers.js';
@@ -538,6 +540,206 @@ describe('establishmentService', () => {
       });
 
       expect(EstablishmentModel.updateEstablishment).not.toHaveBeenCalled();
+    });
+
+    test('should throw when establishment is suspended', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'suspended',
+      });
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { description: 'New' })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'ESTABLISHMENT_SUSPENDED',
+      });
+    });
+
+    test('should validate categories and cuisines on update', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(mockEstablishment);
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { categories: [] })
+      ).rejects.toMatchObject({
+        code: 'INVALID_CATEGORIES_LENGTH',
+      });
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { categories: ['Invalid'] })
+      ).rejects.toMatchObject({
+        code: 'INVALID_CATEGORY_VALUE',
+      });
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { cuisines: [] })
+      ).rejects.toMatchObject({
+        code: 'INVALID_CUISINES_LENGTH',
+      });
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { cuisines: ['Invalid'] })
+      ).rejects.toMatchObject({
+        code: 'INVALID_CUISINE_VALUE',
+      });
+    });
+
+    test('should reset status to pending when major fields change on active establishment', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'active',
+      });
+      EstablishmentModel.checkDuplicateName.mockResolvedValue(false);
+      const updated = { ...mockEstablishment, status: 'pending' };
+      EstablishmentModel.updateEstablishment.mockResolvedValue(updated);
+
+      const updates = { name: 'New Name', categories: ['Ресторан'], cuisines: ['Европейская'] };
+
+      await updateEstablishment(establishmentId, partnerId, updates);
+
+      expect(EstablishmentModel.updateEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ status: 'pending' })
+      );
+    });
+
+    test('should remove direct status changes when no major fields changed', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(mockEstablishment);
+      EstablishmentModel.updateEstablishment.mockResolvedValue(mockEstablishment);
+
+      await updateEstablishment(establishmentId, partnerId, { status: 'active' });
+
+      expect(EstablishmentModel.updateEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.not.objectContaining({ status: 'active' })
+      );
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    test('should prevent duplicate names during update', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        name: 'Old Name',
+      });
+      EstablishmentModel.checkDuplicateName.mockResolvedValue(true);
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { name: 'New Name' })
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'DUPLICATE_ESTABLISHMENT',
+      });
+    });
+
+    test('should map database constraint violation on update', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(mockEstablishment);
+      const dbError = new Error('constraint');
+      dbError.code = '23514';
+      EstablishmentModel.updateEstablishment.mockRejectedValue(dbError);
+
+      await expect(
+        updateEstablishment(establishmentId, partnerId, { description: 'New' })
+      ).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'CONSTRAINT_VIOLATION',
+      });
+    });
+  });
+
+  describe('getEstablishmentById formatting', () => {
+    test('should parse numeric strings to numbers', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        latitude: '53.9',
+        longitude: '27.5',
+        average_rating: '4.5',
+      });
+
+      const result = await getEstablishmentById('est-1', partnerId);
+
+      expect(result.latitude).toBeCloseTo(53.9);
+      expect(result.longitude).toBeCloseTo(27.5);
+      expect(result.average_rating).toBeCloseTo(4.5);
+    });
+  });
+
+  describe('submitEstablishmentForModeration', () => {
+    const establishmentId = 'establishment-999';
+
+    test('should reject when user is not owner', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(false);
+
+      await expect(
+        submitEstablishmentForModeration(establishmentId, partnerId)
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    });
+
+    test('should reject when establishment not found', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
+
+      await expect(
+        submitEstablishmentForModeration(establishmentId, partnerId)
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'ESTABLISHMENT_NOT_FOUND',
+      });
+    });
+
+    test('should reject submission when status not draft', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'pending',
+      });
+
+      await expect(
+        submitEstablishmentForModeration(establishmentId, partnerId)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_STATUS_FOR_SUBMISSION',
+      });
+    });
+
+    test('should reject when required fields missing', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'draft',
+        name: null,
+      });
+
+      await expect(
+        submitEstablishmentForModeration(establishmentId, partnerId)
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INCOMPLETE_ESTABLISHMENT',
+      });
+    });
+
+    test('should submit draft and return pending status', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'draft',
+      });
+      const submitted = { id: establishmentId, status: 'pending', updated_at: new Date() };
+      EstablishmentModel.submitForModeration.mockResolvedValue(submitted);
+
+      const result = await submitEstablishmentForModeration(establishmentId, partnerId);
+
+      expect(EstablishmentModel.submitForModeration).toHaveBeenCalledWith(establishmentId);
+      expect(result).toEqual(submitted);
     });
   });
 });
