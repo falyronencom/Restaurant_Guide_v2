@@ -9,7 +9,8 @@
       "Bash(set NODE_ENV=test)",
       "Bash(git push:*)",
       "Bash(Select-Object -Last 30)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(timeout 10 sleep:*)"
     ],
     "deny": [],
     "ask": []

@@ -306,8 +306,16 @@ export const minimalEstablishment = {
   latitude: 53.9,
   longitude: 27.5,
   categories: ['Кофейня'],
-  cuisines: ['Европейская']
-  // No phone, email, website, working_hours - all optional
+  cuisines: ['Европейская'],
+  working_hours: {
+    monday: { open: '09:00', close: '18:00' },
+    tuesday: { open: '09:00', close: '18:00' },
+    wednesday: { open: '09:00', close: '18:00' },
+    thursday: { open: '09:00', close: '18:00' },
+    friday: { open: '09:00', close: '18:00' },
+    saturday: { open: '10:00', close: '18:00' },
+    sunday: { open: '10:00', close: '18:00' }
+  }
 };
 
 export default {

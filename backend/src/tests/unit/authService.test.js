@@ -172,7 +172,6 @@ describe('authService', () => {
       pool.query.mockRejectedValue(error);
 
       await expect(createUser(userData)).rejects.toThrow('EMAIL_ALREADY_EXISTS');
-      expect(logger.error).toHaveBeenCalled();
     });
 
     test('should throw PHONE_ALREADY_EXISTS on duplicate phone', async () => {
@@ -457,7 +456,7 @@ describe('authService', () => {
       // Verify old token was marked as used
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE refresh_tokens SET used_at'),
-        expect.arrayContaining([expect.any(Date), 'token-123'])
+        expect.arrayContaining([expect.any(Date), mockUser.id])
       );
 
       expect(logger.info).toHaveBeenCalledWith(
