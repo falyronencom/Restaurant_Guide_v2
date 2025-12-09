@@ -16,8 +16,8 @@ class ApiClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: Environment.apiBaseUrl,
-        connectTimeout: Duration(seconds: Environment.apiConnectTimeout),
-        receiveTimeout: Duration(seconds: Environment.apiTimeout),
+        connectTimeout: const Duration(seconds: Environment.apiConnectTimeout),
+        receiveTimeout: const Duration(seconds: Environment.apiTimeout),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -145,7 +145,8 @@ class ApiClient {
           if (retryCount < Environment.maxRetryAttempts) {
             // Wait before retry (exponential backoff)
             final retryCountInt = retryCount as int;
-            await Future.delayed(Duration(milliseconds: 500 * (retryCountInt + 1)));
+            await Future.delayed(
+                Duration(milliseconds: 500 * (retryCountInt + 1)));
 
             error.requestOptions.extra['retryCount'] = retryCount + 1;
             try {
@@ -242,7 +243,8 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        userMessage = 'Connection timeout. Please check your internet connection.';
+        userMessage =
+            'Connection timeout. Please check your internet connection.';
         break;
 
       case DioExceptionType.badResponse:
