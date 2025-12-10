@@ -151,8 +151,8 @@ export const createEstablishment = async (establishmentData) => {
     logger.info('Establishment created', {
       establishmentId: result.rows[0].id,
       partnerId: partner_id,
-      name: name,
-      city: city,
+      name,
+      city,
     });
 
     return result.rows[0];
@@ -160,7 +160,7 @@ export const createEstablishment = async (establishmentData) => {
     logger.error('Error creating establishment', {
       error: error.message,
       partnerId: partner_id,
-      name: name,
+      name,
     });
     throw error;
   }
@@ -460,7 +460,7 @@ export const updateEstablishment = async (establishmentId, updates) => {
   }
 
   // Always update updated_at timestamp
-  fields.push(`updated_at = CURRENT_TIMESTAMP`);
+  fields.push('updated_at = CURRENT_TIMESTAMP');
 
   // Add establishmentId as the last parameter
   values.push(establishmentId);

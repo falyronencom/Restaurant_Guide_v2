@@ -73,7 +73,7 @@ export const createReview = async (reviewData) => {
     throw new AppError(
       'Review rate limit exceeded. You can create up to 10 reviews per day.',
       429,
-      'RATE_LIMIT_EXCEEDED'
+      'RATE_LIMIT_EXCEEDED',
     );
   }
 
@@ -84,7 +84,7 @@ export const createReview = async (reviewData) => {
     throw new AppError(
       'You have already reviewed this establishment. Please update your existing review instead.',
       409,
-      'DUPLICATE_REVIEW'
+      'DUPLICATE_REVIEW',
     );
   }
 
@@ -124,7 +124,7 @@ export const createReview = async (reviewData) => {
       throw new AppError(
         'You have already reviewed this establishment',
         409,
-        'DUPLICATE_REVIEW'
+        'DUPLICATE_REVIEW',
       );
     }
     if (error.code === '23503') {
@@ -132,7 +132,7 @@ export const createReview = async (reviewData) => {
       throw new AppError(
         'Invalid user or establishment reference',
         400,
-        'INVALID_REFERENCE'
+        'INVALID_REFERENCE',
       );
     }
     if (error.code === '23514') {
@@ -140,7 +140,7 @@ export const createReview = async (reviewData) => {
       throw new AppError(
         'Review data violates database constraints',
         400,
-        'CONSTRAINT_VIOLATION'
+        'CONSTRAINT_VIOLATION',
       );
     }
 
@@ -156,7 +156,7 @@ export const createReview = async (reviewData) => {
     throw new AppError(
       'Failed to create review',
       500,
-      'REVIEW_CREATION_FAILED'
+      'REVIEW_CREATION_FAILED',
     );
   }
 };
@@ -350,7 +350,7 @@ export const updateReview = async (reviewId, userId, updates) => {
     throw new AppError(
       'At least one field (rating or content) must be provided for update',
       400,
-      'NO_UPDATE_FIELDS'
+      'NO_UPDATE_FIELDS',
     );
   }
 
@@ -365,7 +365,7 @@ export const updateReview = async (reviewId, userId, updates) => {
     throw new AppError(
       'You can only modify your own reviews',
       403,
-      'UNAUTHORIZED_REVIEW_MODIFICATION'
+      'UNAUTHORIZED_REVIEW_MODIFICATION',
     );
   }
 
@@ -405,7 +405,7 @@ export const updateReview = async (reviewId, userId, updates) => {
       throw new AppError(
         'Review data violates database constraints',
         400,
-        'CONSTRAINT_VIOLATION'
+        'CONSTRAINT_VIOLATION',
       );
     }
 
@@ -426,7 +426,7 @@ export const updateReview = async (reviewId, userId, updates) => {
     throw new AppError(
       'Failed to update review',
       500,
-      'REVIEW_UPDATE_FAILED'
+      'REVIEW_UPDATE_FAILED',
     );
   }
 };
@@ -458,7 +458,7 @@ export const deleteReview = async (reviewId, userId) => {
     throw new AppError(
       'You can only delete your own reviews',
       403,
-      'UNAUTHORIZED_REVIEW_DELETION'
+      'UNAUTHORIZED_REVIEW_DELETION',
     );
   }
 
@@ -501,7 +501,7 @@ export const deleteReview = async (reviewId, userId) => {
     throw new AppError(
       'Failed to delete review',
       500,
-      'REVIEW_DELETION_FAILED'
+      'REVIEW_DELETION_FAILED',
     );
   }
 };
@@ -577,7 +577,7 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
     throw new AppError(
       'You can only respond to reviews on your own establishments',
       403,
-      'UNAUTHORIZED_PARTNER_RESPONSE'
+      'UNAUTHORIZED_PARTNER_RESPONSE',
     );
   }
 
@@ -611,7 +611,7 @@ export const deletePartnerResponse = async (reviewId, partnerId) => {
     throw new AppError(
       'You can only manage responses for your own establishments',
       403,
-      'UNAUTHORIZED_PARTNER_RESPONSE'
+      'UNAUTHORIZED_PARTNER_RESPONSE',
     );
   }
 

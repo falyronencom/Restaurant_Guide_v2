@@ -110,7 +110,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         `Invalid city. Must be one of: ${VALID_CITIES.join(', ')}`,
         422,
-        'INVALID_CITY'
+        'INVALID_CITY',
       );
     }
 
@@ -119,7 +119,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         'Categories must be an array with 1-2 items',
         422,
-        'INVALID_CATEGORIES_LENGTH'
+        'INVALID_CATEGORIES_LENGTH',
       );
     }
 
@@ -128,7 +128,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         `Invalid categories: ${invalidCategories.join(', ')}. Valid categories: ${VALID_CATEGORIES.join(', ')}`,
         422,
-        'INVALID_CATEGORY_VALUE'
+        'INVALID_CATEGORY_VALUE',
       );
     }
 
@@ -137,7 +137,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         'Cuisines must be an array with 1-3 items',
         422,
-        'INVALID_CUISINES_LENGTH'
+        'INVALID_CUISINES_LENGTH',
       );
     }
 
@@ -146,7 +146,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         `Invalid cuisines: ${invalidCuisines.join(', ')}. Valid cuisines: ${VALID_CUISINES.join(', ')}`,
         422,
-        'INVALID_CUISINE_VALUE'
+        'INVALID_CUISINE_VALUE',
       );
     }
 
@@ -155,7 +155,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
         422,
-        'INVALID_LATITUDE'
+        'INVALID_LATITUDE',
       );
     }
 
@@ -163,7 +163,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
         422,
-        'INVALID_LONGITUDE'
+        'INVALID_LONGITUDE',
       );
     }
 
@@ -173,7 +173,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         'You already have an establishment with this name',
         409,
-        'DUPLICATE_ESTABLISHMENT'
+        'DUPLICATE_ESTABLISHMENT',
       );
     }
 
@@ -217,7 +217,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         'An establishment with this information already exists',
         409,
-        'DUPLICATE_ESTABLISHMENT'
+        'DUPLICATE_ESTABLISHMENT',
       );
     }
 
@@ -226,7 +226,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(
         'Establishment data violates database constraints',
         422,
-        'CONSTRAINT_VIOLATION'
+        'CONSTRAINT_VIOLATION',
       );
     }
 
@@ -240,7 +240,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     throw new AppError(
       'Failed to create establishment',
       500,
-      'ESTABLISHMENT_CREATE_FAILED'
+      'ESTABLISHMENT_CREATE_FAILED',
     );
   }
 };
@@ -278,7 +278,7 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
         status,
         limit: effectiveLimit,
         offset,
-      }
+      },
     );
 
     // Get total count for pagination metadata
@@ -313,7 +313,7 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
     throw new AppError(
       'Failed to fetch establishments',
       500,
-      'ESTABLISHMENTS_FETCH_FAILED'
+      'ESTABLISHMENTS_FETCH_FAILED',
     );
   }
 };
@@ -337,7 +337,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       throw new AppError(
         'Establishment not found or access denied',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -348,7 +348,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       throw new AppError(
         'Establishment not found',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -357,7 +357,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       ...establishment,
       latitude: establishment.latitude ? parseFloat(establishment.latitude) : establishment.latitude,
       longitude: establishment.longitude ? parseFloat(establishment.longitude) : establishment.longitude,
-      average_rating: establishment.average_rating ? parseFloat(establishment.average_rating) : establishment.average_rating
+      average_rating: establishment.average_rating ? parseFloat(establishment.average_rating) : establishment.average_rating,
     };
   } catch (error) {
     if (error instanceof AppError) {
@@ -373,7 +373,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     throw new AppError(
       'Failed to fetch establishment',
       500,
-      'ESTABLISHMENT_FETCH_FAILED'
+      'ESTABLISHMENT_FETCH_FAILED',
     );
   }
 };
@@ -401,21 +401,21 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       throw new AppError(
         'Access denied. You can only update your own establishments.',
         403,
-        'FORBIDDEN'
+        'FORBIDDEN',
       );
     }
 
     // Fetch current establishment to check status and for comparison
     const currentEstablishment = await EstablishmentModel.findEstablishmentById(
       establishmentId,
-      true
+      true,
     );
 
     if (!currentEstablishment) {
       throw new AppError(
         'Establishment not found',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -424,7 +424,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       throw new AppError(
         'Cannot update suspended establishment. Contact support.',
         403,
-        'ESTABLISHMENT_SUSPENDED'
+        'ESTABLISHMENT_SUSPENDED',
       );
     }
 
@@ -434,7 +434,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         throw new AppError(
           'Categories must be an array with 1-2 items',
           422,
-          'INVALID_CATEGORIES_LENGTH'
+          'INVALID_CATEGORIES_LENGTH',
         );
       }
 
@@ -443,7 +443,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         throw new AppError(
           `Invalid categories: ${invalidCategories.join(', ')}`,
           422,
-          'INVALID_CATEGORY_VALUE'
+          'INVALID_CATEGORY_VALUE',
         );
       }
     }
@@ -453,7 +453,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         throw new AppError(
           'Cuisines must be an array with 1-3 items',
           422,
-          'INVALID_CUISINES_LENGTH'
+          'INVALID_CUISINES_LENGTH',
         );
       }
 
@@ -462,7 +462,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         throw new AppError(
           `Invalid cuisines: ${invalidCuisines.join(', ')}`,
           422,
-          'INVALID_CUISINE_VALUE'
+          'INVALID_CUISINE_VALUE',
         );
       }
     }
@@ -472,13 +472,13 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       const isDuplicate = await EstablishmentModel.checkDuplicateName(
         partnerId,
         updates.name,
-        establishmentId
+        establishmentId,
       );
       if (isDuplicate) {
         throw new AppError(
           'You already have an establishment with this name',
           409,
-          'DUPLICATE_ESTABLISHMENT'
+          'DUPLICATE_ESTABLISHMENT',
         );
       }
     }
@@ -530,7 +530,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Update establishment
     const updatedEstablishment = await EstablishmentModel.updateEstablishment(
       establishmentId,
-      updates
+      updates,
     );
 
     // Extract features and capacity from attributes for response compatibility
@@ -561,7 +561,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       throw new AppError(
         'Establishment data violates database constraints',
         422,
-        'CONSTRAINT_VIOLATION'
+        'CONSTRAINT_VIOLATION',
       );
     }
 
@@ -575,7 +575,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     throw new AppError(
       'Failed to update establishment',
       500,
-      'ESTABLISHMENT_UPDATE_FAILED'
+      'ESTABLISHMENT_UPDATE_FAILED',
     );
   }
 };
@@ -605,7 +605,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       throw new AppError(
         'Access denied. You can only update your own establishments.',
         403,
-        'FORBIDDEN'
+        'FORBIDDEN',
       );
     }
 
@@ -616,7 +616,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       throw new AppError(
         'Establishment not found',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -625,7 +625,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       throw new AppError(
         `Cannot submit establishment with status '${establishment.status}'. Only draft establishments can be submitted.`,
         400,
-        'INVALID_STATUS_FOR_SUBMISSION'
+        'INVALID_STATUS_FOR_SUBMISSION',
       );
     }
 
@@ -644,7 +644,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       throw new AppError(
         `Missing required fields: ${missingFields.join(', ')}`,
         400,
-        'INCOMPLETE_ESTABLISHMENT'
+        'INCOMPLETE_ESTABLISHMENT',
       );
     }
 
@@ -679,7 +679,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
     throw new AppError(
       'Failed to submit establishment for moderation',
       500,
-      'ESTABLISHMENT_SUBMIT_FAILED'
+      'ESTABLISHMENT_SUBMIT_FAILED',
     );
   }
 };

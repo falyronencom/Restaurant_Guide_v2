@@ -40,7 +40,8 @@ import logger from '../utils/logger.js';
  */
 export async function register(req, res, next) {
   try {
-    let { email, phone, password, name, authMethod } = req.body;
+    const { email, phone, password, name } = req.body;
+    let { authMethod } = req.body;
     
     // Validate that at least email or phone is provided
     if (!email && !phone) {
@@ -48,8 +49,8 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Either email or phone must be provided'
-        }
+          message: 'Either email or phone must be provided',
+        },
       });
     }
     
@@ -71,8 +72,8 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Email is required when auth_method is email'
-        }
+          message: 'Email is required when auth_method is email',
+        },
       });
     }
     
@@ -81,8 +82,8 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Phone is required when auth_method is phone'
-        }
+          message: 'Phone is required when auth_method is phone',
+        },
       });
     }
     
@@ -92,7 +93,7 @@ export async function register(req, res, next) {
       phone,
       password,
       name,
-      authMethod
+      authMethod,
     });
     
     // Generate token pair for immediate login
@@ -110,13 +111,13 @@ export async function register(req, res, next) {
           name: user.name,
           role: user.role,
           authMethod: user.auth_method,
-          createdAt: user.created_at
+          createdAt: user.created_at,
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         tokenType: 'Bearer',
-        expiresIn: tokens.expiresIn
-      }
+        expiresIn: tokens.expiresIn,
+      },
     });
     
   } catch (error) {
@@ -126,8 +127,8 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'EMAIL_EXISTS',
-          message: 'An account with this email already exists'
-        }
+          message: 'An account with this email already exists',
+        },
       });
     }
     
@@ -136,8 +137,8 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'PHONE_EXISTS',
-          message: 'An account with this phone number already exists'
-        }
+          message: 'An account with this phone number already exists',
+        },
       });
     }
     
@@ -175,8 +176,8 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Either email or phone must be provided'
-        }
+          message: 'Either email or phone must be provided',
+        },
       });
     }
     
@@ -185,8 +186,8 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Password is required'
-        }
+          message: 'Password is required',
+        },
       });
     }
     
@@ -194,7 +195,7 @@ export async function login(req, res, next) {
     const user = await authService.verifyCredentials({
       email,
       phone,
-      password
+      password,
     });
     
     // If credentials invalid, return generic error message
@@ -205,8 +206,8 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_CREDENTIALS',
-          message: 'Invalid email/phone or password'
-        }
+          message: 'Invalid email/phone or password',
+        },
       });
     }
     
@@ -224,13 +225,13 @@ export async function login(req, res, next) {
           name: user.name,
           role: user.role,
           authMethod: user.auth_method,
-          lastLoginAt: user.last_login_at
+          lastLoginAt: user.last_login_at,
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         tokenType: 'Bearer',
-        expiresIn: tokens.expiresIn
-      }
+        expiresIn: tokens.expiresIn,
+      },
     });
     
   } catch (error) {
@@ -267,8 +268,8 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Refresh token is required'
-        }
+          message: 'Refresh token is required',
+        },
       });
     }
     
@@ -284,13 +285,13 @@ export async function refresh(req, res, next) {
           email: result.user.email,
           phone: result.user.phone,
           name: result.user.name,
-          role: result.user.role
+          role: result.user.role,
         },
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         tokenType: 'Bearer',
-        expiresIn: result.expiresIn
-      }
+        expiresIn: result.expiresIn,
+      },
     });
     
   } catch (error) {
@@ -300,8 +301,8 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_TOKEN',
-          message: 'Invalid or expired refresh token'
-        }
+          message: 'Invalid or expired refresh token',
+        },
       });
     }
     
@@ -310,8 +311,8 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'TOKEN_EXPIRED',
-          message: 'Refresh token has expired. Please log in again.'
-        }
+          message: 'Refresh token has expired. Please log in again.',
+        },
       });
     }
     
@@ -321,8 +322,8 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'TOKEN_REUSE_DETECTED',
-          message: 'Security alert: Token reuse detected. All sessions have been invalidated. Please log in again.'
-        }
+          message: 'Security alert: Token reuse detected. All sessions have been invalidated. Please log in again.',
+        },
       });
     }
     
@@ -331,8 +332,8 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_INACTIVE',
-          message: 'User account is inactive'
-        }
+          message: 'User account is inactive',
+        },
       });
     }
     
@@ -369,8 +370,8 @@ export async function logout(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Refresh token is required'
-        }
+          message: 'Refresh token is required',
+        },
       });
     }
     
@@ -379,15 +380,15 @@ export async function logout(req, res, next) {
     
     // Log the logout for audit trail
     logger.info('User logged out', { 
-      userId: req.user.userId // Set by authentication middleware
+      userId: req.user.userId, // Set by authentication middleware
     });
     
     // Return success response
     return res.status(200).json({
       success: true,
       data: {
-        message: 'Logged out successfully'
-      }
+        message: 'Logged out successfully',
+      },
     });
     
   } catch (error) {
@@ -424,8 +425,8 @@ export async function getCurrentUser(req, res, next) {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'User not found'
-        }
+          message: 'User not found',
+        },
       });
     }
     
@@ -441,9 +442,9 @@ export async function getCurrentUser(req, res, next) {
           authMethod: user.auth_method,
           emailVerified: user.email_verified,
           phoneVerified: user.phone_verified,
-          createdAt: user.created_at
-        }
-      }
+          createdAt: user.created_at,
+        },
+      },
     });
     
   } catch (error) {

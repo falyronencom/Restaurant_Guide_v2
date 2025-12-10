@@ -52,7 +52,7 @@ export const addToFavorites = async (userId, establishmentId) => {
     throw new AppError(
       'Establishment not found or is no longer active',
       404,
-      'ESTABLISHMENT_NOT_FOUND'
+      'ESTABLISHMENT_NOT_FOUND',
     );
   }
 
@@ -285,7 +285,7 @@ export const checkMultipleFavoriteStatus = async (userId, establishmentIds) => {
         establishment_id: establishmentId,
         is_favorite: isFavorite,
       };
-    })
+    }),
   );
 
   // Convert array to object mapping for easier frontend consumption

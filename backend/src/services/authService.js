@@ -33,7 +33,7 @@ const ARGON2_OPTIONS = {
   type: argon2.argon2id,
   memoryCost: 16384, // 16MB in KB
   timeCost: 3,
-  parallelism: 1
+  parallelism: 1,
 };
 
 /**
@@ -85,7 +85,7 @@ export async function createUser(userData) {
       false, // Phone verification will be handled in future enhancement
       true,  // New accounts are active by default
       new Date(),
-      new Date()
+      new Date(),
     ];
     
     const result = await pool.query(query, values);
@@ -144,7 +144,7 @@ export async function verifyCredentials(credentials) {
     
     const values = [
       email ? email.toLowerCase().trim() : null,
-      phone ? phone.trim() : null
+      phone ? phone.trim() : null,
     ];
     
     const result = await pool.query(query, values);
@@ -165,7 +165,7 @@ export async function verifyCredentials(credentials) {
         // Update last login timestamp
         await pool.query(
           'UPDATE users SET last_login_at = $1 WHERE id = $2',
-          [new Date(), user.id]
+          [new Date(), user.id],
         );
         
         // Remove password_hash from returned object for security
@@ -173,7 +173,7 @@ export async function verifyCredentials(credentials) {
         
         logger.info('User login successful', { 
           userId: user.id,
-          authMethod: user.auth_method 
+          authMethod: user.auth_method, 
         });
         
         return user;
@@ -183,7 +183,7 @@ export async function verifyCredentials(credentials) {
       // to maintain constant response time
       await argon2.verify(
         '$argon2id$v=19$m=16384,t=3,p=1$dummysaltdummysalt$dummyhashdummyhashdummyhashdummy',
-        password
+        password,
       );
     }
     
@@ -191,7 +191,7 @@ export async function verifyCredentials(credentials) {
     logger.warn('Login attempt failed', { 
       email: email || 'not_provided',
       phone: phone || 'not_provided',
-      reason: result.rows.length === 0 ? 'user_not_found' : 'invalid_password'
+      reason: result.rows.length === 0 ? 'user_not_found' : 'invalid_password',
     });
     
     return null;
@@ -221,7 +221,7 @@ export async function generateTokenPair(user) {
     const accessToken = generateAccessToken({
       userId: user.id,
       role: user.role,
-      email: user.email || null
+      email: user.email || null,
     });
     
     // Generate long-lived refresh token
@@ -247,26 +247,26 @@ export async function generateTokenPair(user) {
       refreshToken,
       expiresAt,
       new Date(),
-      null // used_at starts as null, set when token is used for refresh
+      null, // used_at starts as null, set when token is used for refresh
     ];
     
     await pool.query(query, values);
     
     logger.info('Token pair generated', { 
       userId: user.id,
-      tokenId 
+      tokenId, 
     });
     
     return {
       accessToken,
       refreshToken,
-      expiresIn: 900 // 15 minutes in seconds
+      expiresIn: 900, // 15 minutes in seconds
     };
     
   } catch (error) {
     logger.error('Failed to generate token pair', { 
       userId: user.id,
-      error: error.message 
+      error: error.message, 
     });
     throw error;
   }
@@ -300,7 +300,7 @@ export async function refreshAccessToken(refreshToken) {
     const result = await pool.query(query, [refreshToken]);
     
     if (result.rows.length === 0) {
-      logger.warn('Refresh token not found', { token: refreshToken.substring(0, 10) + '...' });
+      logger.warn('Refresh token not found', { token: `${refreshToken.substring(0, 10)  }...` });
       throw new Error('INVALID_REFRESH_TOKEN');
     }
     
@@ -310,7 +310,7 @@ export async function refreshAccessToken(refreshToken) {
     if (new Date(tokenData.expires_at) < new Date()) {
       logger.warn('Expired refresh token used', { 
         userId: tokenData.user_id,
-        tokenId: tokenData.id 
+        tokenId: tokenData.id, 
       });
       throw new Error('REFRESH_TOKEN_EXPIRED');
     }
@@ -322,7 +322,7 @@ export async function refreshAccessToken(refreshToken) {
       logger.error('SECURITY ALERT: Refresh token reuse detected', {
         userId: tokenData.user_id,
         tokenId: tokenData.id,
-        originalUseTime: tokenData.used_at
+        originalUseTime: tokenData.used_at,
       });
       
       // Invalidate ALL refresh tokens for this user as security measure
@@ -339,7 +339,7 @@ export async function refreshAccessToken(refreshToken) {
     // Mark the old token as used (atomic operation)
     await pool.query(
       'UPDATE refresh_tokens SET used_at = $1 WHERE id = $2',
-      [new Date(), tokenData.id]
+      [new Date(), tokenData.id],
     );
     
     // Generate new token pair for the user
@@ -348,19 +348,19 @@ export async function refreshAccessToken(refreshToken) {
       email: tokenData.email,
       phone: tokenData.phone,
       name: tokenData.name,
-      role: tokenData.role
+      role: tokenData.role,
     };
     
     const tokens = await generateTokenPair(user);
     
     logger.info('Access token refreshed successfully', { 
       userId: user.id,
-      oldTokenId: tokenData.id 
+      oldTokenId: tokenData.id, 
     });
     
     return {
       ...tokens,
-      user
+      user,
     };
     
   } catch (error) {
@@ -380,14 +380,14 @@ export async function invalidateRefreshToken(refreshToken) {
     // Mark token as used to prevent further refresh operations
     const result = await pool.query(
       'UPDATE refresh_tokens SET used_at = $1 WHERE token = $2 AND used_at IS NULL',
-      [new Date(), refreshToken]
+      [new Date(), refreshToken],
     );
     
     const wasInvalidated = result.rowCount > 0;
     
     if (wasInvalidated) {
       logger.info('Refresh token invalidated', { 
-        token: refreshToken.substring(0, 10) + '...' 
+        token: `${refreshToken.substring(0, 10)  }...`, 
       });
     }
     
@@ -413,12 +413,12 @@ export async function invalidateAllUserTokens(userId) {
   try {
     const result = await pool.query(
       'UPDATE refresh_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL',
-      [new Date(), userId]
+      [new Date(), userId],
     );
     
     logger.warn('All refresh tokens invalidated for user', { 
       userId,
-      tokenCount: result.rowCount 
+      tokenCount: result.rowCount, 
     });
     
     return result.rowCount;
@@ -426,7 +426,7 @@ export async function invalidateAllUserTokens(userId) {
   } catch (error) {
     logger.error('Failed to invalidate all user tokens', { 
       userId,
-      error: error.message 
+      error: error.message, 
     });
     throw error;
   }

@@ -47,7 +47,7 @@ const validateListSearch = [
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-        'Боулинг', 'Караоке', 'Бильярд'
+        'Боулинг', 'Караоке', 'Бильярд',
       ];
       
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));
@@ -66,7 +66,7 @@ const validateListSearch = [
       const validCuisines = [
         'Народная', 'Авторская', 'Азиатская', 'Американская',
         'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-        'Смешанная', 'Континентальная'
+        'Смешанная', 'Континентальная',
       ];
       
       const invalidCuisines = cuisines.filter(cui => !validCuisines.includes(cui));
@@ -99,7 +99,7 @@ const validateListSearch = [
       const features = value.split(',').map(f => f.trim());
       const validFeatures = [
         'delivery', 'wifi', 'banquet', 'terrace',
-        'smoking_area', 'kids_zone', 'pet_friendly', 'parking'
+        'smoking_area', 'kids_zone', 'pet_friendly', 'parking',
       ];
       
       const invalidFeatures = features.filter(feat => !validFeatures.includes(feat));
@@ -133,7 +133,7 @@ const validateListSearch = [
   query('page_size')
     .optional()
     .isInt({ min: 1, max: 100 }).withMessage('Page size must be between 1 and 100')
-    .toInt()
+    .toInt(),
 ];
 
 /**
@@ -205,7 +205,7 @@ const validateMapSearch = [
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-        'Боулинг', 'Караоке', 'Бильярд'
+        'Боулинг', 'Караоке', 'Бильярд',
       ];
       
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));
@@ -223,7 +223,7 @@ const validateMapSearch = [
       const validCuisines = [
         'Народная', 'Авторская', 'Азиатская', 'Американская',
         'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-        'Смешанная', 'Континентальная'
+        'Смешанная', 'Континентальная',
       ];
       
       const invalidCuisines = cuisines.filter(cui => !validCuisines.includes(cui));
@@ -254,7 +254,7 @@ const validateMapSearch = [
       const features = value.split(',').map(f => f.trim());
       const validFeatures = [
         'delivery', 'wifi', 'banquet', 'terrace',
-        'smoking_area', 'kids_zone', 'pet_friendly', 'parking'
+        'smoking_area', 'kids_zone', 'pet_friendly', 'parking',
       ];
       
       const invalidFeatures = features.filter(feat => !validFeatures.includes(feat));
@@ -273,7 +273,7 @@ const validateMapSearch = [
   query('limit')
     .optional()
     .isInt({ min: 1, max: 500 }).withMessage('Limit must be between 1 and 500')
-    .toInt()
+    .toInt(),
 ];
 
 /**
@@ -293,7 +293,7 @@ function handleValidationErrors(req, res, next) {
     const formattedErrors = errors.array().map(error => ({
       field: error.param,
       message: error.msg,
-      value: error.value
+      value: error.value,
     }));
 
     return res.status(422).json({
@@ -301,8 +301,8 @@ function handleValidationErrors(req, res, next) {
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Request validation failed',
-        details: formattedErrors
-      }
+        details: formattedErrors,
+      },
     });
   }
 
@@ -319,23 +319,23 @@ function getValidationConstants() {
     categories: [
       'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
       'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-      'Боулинг', 'Караоке', 'Бильярд'
+      'Боулинг', 'Караоке', 'Бильярд',
     ],
     cuisines: [
       'Народная', 'Авторская', 'Азиатская', 'Американская',
       'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-      'Смешанная', 'Континентальная'
+      'Смешанная', 'Континентальная',
     ],
     features: [
       'delivery', 'wifi', 'banquet', 'terrace',
-      'smoking_area', 'kids_zone', 'pet_friendly', 'parking'
+      'smoking_area', 'kids_zone', 'pet_friendly', 'parking',
     ],
     priceRanges: ['$', '$$', '$$$'],
     hoursFilters: ['until_22', 'until_morning', '24_hours'],
     radiusLimits: { min: 100, max: 50000 },
     boundingBoxLimits: { maxSpan: 10 },
     paginationLimits: { minPageSize: 1, maxPageSize: 100 },
-    mapLimits: { minLimit: 1, maxLimit: 500 }
+    mapLimits: { minLimit: 1, maxLimit: 500 },
   };
 }
 
@@ -343,6 +343,6 @@ export {
   validateListSearch,
   validateMapSearch,
   handleValidationErrors,
-  getValidationConstants
+  getValidationConstants,
 };
 

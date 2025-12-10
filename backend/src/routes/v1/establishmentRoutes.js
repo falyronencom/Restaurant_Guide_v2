@@ -54,7 +54,7 @@ router.get(
   '/',
   EstablishmentValidation.validateList,
   validate,
-  EstablishmentController.listPartnerEstablishments
+  EstablishmentController.listPartnerEstablishments,
 );
 
 /**
@@ -78,7 +78,7 @@ router.post(
   '/',
   EstablishmentValidation.validateCreate,
   validate,
-  EstablishmentController.createEstablishment
+  EstablishmentController.createEstablishment,
 );
 
 /**
@@ -102,7 +102,7 @@ router.get(
   '/:id',
   EstablishmentValidation.validateGetDetails,
   validate,
-  EstablishmentController.getEstablishmentDetails
+  EstablishmentController.getEstablishmentDetails,
 );
 
 /**
@@ -132,7 +132,7 @@ router.put(
   '/:id',
   EstablishmentValidation.validateUpdate,
   validate,
-  EstablishmentController.updateEstablishment
+  EstablishmentController.updateEstablishment,
 );
 
 /**
@@ -163,7 +163,7 @@ router.post(
   '/:id/submit',
   EstablishmentValidation.validateSubmit,
   validate,
-  EstablishmentController.submitForModeration
+  EstablishmentController.submitForModeration,
 );
 
 /**
