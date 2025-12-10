@@ -301,3 +301,42 @@ export const getReviewQuota = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Add or update partner response to a review
+ * 
+ * POST /api/v1/reviews/:id/response
+ * 
+ * Protected: Yes (partner)
+ */
+export const addPartnerResponse = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { response } = req.body;
+  const partnerId = req.user.userId;
+
+  const review = await ReviewService.addPartnerResponse(id, partnerId, response);
+
+  res.status(200).json({
+    success: true,
+    data: { review },
+  });
+});
+
+/**
+ * Delete partner response from a review
+ * 
+ * DELETE /api/v1/reviews/:id/response
+ * 
+ * Protected: Yes (partner)
+ */
+export const deletePartnerResponse = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const partnerId = req.user.userId;
+
+  const review = await ReviewService.deletePartnerResponse(id, partnerId);
+
+  res.status(200).json({
+    success: true,
+    data: { review },
+  });
+});
+

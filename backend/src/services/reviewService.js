@@ -230,6 +230,9 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
     establishment_id: review.establishment_id,
     rating: review.rating,
     content: review.content,
+    partner_response: review.partner_response,
+    partner_response_at: review.partner_response_at,
+    partner_responder_id: review.partner_responder_id,
     is_edited: review.is_edited,
     created_at: review.created_at,
     updated_at: review.updated_at,
@@ -295,6 +298,9 @@ export const getUserReviews = async (userId, options = {}) => {
     establishment_id: review.establishment_id,
     rating: review.rating,
     content: review.content,
+    partner_response: review.partner_response,
+    partner_response_at: review.partner_response_at,
+    partner_responder_id: review.partner_responder_id,
     is_edited: review.is_edited,
     created_at: review.created_at,
     updated_at: review.updated_at,
@@ -544,5 +550,80 @@ export const getUserReviewQuota = async (userId) => {
     remaining: Math.max(0, RATE_LIMIT_MAX_REVIEWS - currentCount),
     resetIn: RATE_LIMIT_WINDOW_SECONDS, // Seconds until counter resets
   };
+};
+
+/**
+ * Add or update a partner response to a review
+ * 
+ * Business rules:
+ * - Review must exist and not be deleted
+ * - Partner must own the establishment for the review
+ * - One response per review (subsequent calls update existing response)
+ * - Response text length validation handled by controller/validator
+ * 
+ * @param {string} reviewId - UUID of the review
+ * @param {string} partnerId - UUID of the partner user
+ * @param {string} responseText - Response content
+ * @returns {Promise<Object>} Updated review with response data
+ */
+export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
+  const reviewWithEstablishment = await ReviewModel.getReviewWithEstablishment(reviewId);
+
+  if (!reviewWithEstablishment || reviewWithEstablishment.is_deleted) {
+    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+  }
+
+  if (reviewWithEstablishment.partner_id !== partnerId) {
+    throw new AppError(
+      'You can only respond to reviews on your own establishments',
+      403,
+      'UNAUTHORIZED_PARTNER_RESPONSE'
+    );
+  }
+
+  await ReviewModel.addPartnerResponse(reviewId, partnerId, responseText);
+
+  const updatedReview = await ReviewModel.findReviewById(reviewId);
+
+  logger.info('Partner response saved', {
+    reviewId,
+    partnerId,
+  });
+
+  return updatedReview;
+};
+
+/**
+ * Delete partner response from a review
+ * 
+ * @param {string} reviewId - UUID of the review
+ * @param {string} partnerId - UUID of the partner user
+ * @returns {Promise<Object>} Updated review without partner response
+ */
+export const deletePartnerResponse = async (reviewId, partnerId) => {
+  const reviewWithEstablishment = await ReviewModel.getReviewWithEstablishment(reviewId);
+
+  if (!reviewWithEstablishment || reviewWithEstablishment.is_deleted) {
+    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+  }
+
+  if (reviewWithEstablishment.partner_id !== partnerId) {
+    throw new AppError(
+      'You can only manage responses for your own establishments',
+      403,
+      'UNAUTHORIZED_PARTNER_RESPONSE'
+    );
+  }
+
+  await ReviewModel.deletePartnerResponse(reviewId);
+
+  const updatedReview = await ReviewModel.findReviewById(reviewId);
+
+  logger.info('Partner response deleted', {
+    reviewId,
+    partnerId,
+  });
+
+  return updatedReview;
 };
 
