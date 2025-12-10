@@ -29,6 +29,7 @@ import { healthCheck } from '../../controllers/healthController.js';
 import authRoutes from './authRoutes.js';
 import searchRoutes from './searchRoutes.js';
 import reviewRoutes from './reviewRoutes.js';
+import { getEstablishmentReviews, getUserReviews } from './reviewRoutes.js';
 import favoriteRoutes from './favoriteRoutes.js';
 import establishmentRoutes from './establishmentRoutes.js';
 
@@ -123,6 +124,10 @@ router.use('/search', searchRoutes);
  * establishment), aggregate statistics caching, and comprehensive validation.
  */
 router.use('/reviews', reviewRoutes);
+
+// Public review listings
+router.get('/establishments/:id/reviews', getEstablishmentReviews);
+router.get('/users/:id/reviews', getUserReviews);
 
 /**
  * /api/v1/favorites/*
