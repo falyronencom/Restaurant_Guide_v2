@@ -220,3 +220,38 @@ export const validateDeleteReview = [
  */
 export const validateGetQuota = [];
 
+/**
+ * Validation for partner response creation/update
+ * 
+ * POST /api/v1/reviews/:id/response
+ */
+export const validatePartnerResponse = [
+  param('id')
+    .trim()
+    .notEmpty()
+    .withMessage('Review ID is required')
+    .isUUID()
+    .withMessage('Review ID must be a valid UUID'),
+
+  body('response')
+    .trim()
+    .notEmpty()
+    .withMessage('Response text is required')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Response text must be between 10 and 1000 characters'),
+];
+
+/**
+ * Validation for deleting partner response
+ * 
+ * DELETE /api/v1/reviews/:id/response
+ */
+export const validateDeletePartnerResponse = [
+  param('id')
+    .trim()
+    .notEmpty()
+    .withMessage('Review ID is required')
+    .isUUID()
+    .withMessage('Review ID must be a valid UUID'),
+];
+
