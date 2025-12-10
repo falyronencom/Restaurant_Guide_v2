@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Unit Tests: searchService.js
  *
@@ -29,7 +31,6 @@ const {
 } = await import('../../services/searchService.js');
 
 import { createMockEstablishment } from '../mocks/helpers.js';
-import { AppError } from '../../middleware/errorHandler.js';
 
 describe('searchService', () => {
   beforeEach(() => {

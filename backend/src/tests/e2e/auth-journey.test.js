@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * E2E Journey Test: Authentication Complete Flow
  *

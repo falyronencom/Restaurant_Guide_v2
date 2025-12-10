@@ -1,12 +1,10 @@
+/* eslint comma-dangle: 0 */
 /**
  * Establishment Test Fixtures
  *
  * Realistic Belarus establishment data for testing.
  * Uses authentic Belarusian restaurant names, categories, and cuisines.
  */
-
-import { belarusCities, minskLocations } from './coordinates.js';
-
 /**
  * Valid establishment data for testing CRUD operations
  */

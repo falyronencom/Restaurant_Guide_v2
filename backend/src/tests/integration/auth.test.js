@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Authentication Integration Tests
  *
@@ -22,9 +24,6 @@ import {
   getUserByPhone,
 } from '../utils/auth.js';
 import { testUsers, invalidUsers, edgeCaseUsers } from '../fixtures/users.js';
-import * as redis from '../../config/redis.js';
-
-const LOGIN_LIMIT = 10; // From authRoutes createRateLimiter
 
 const expectValidationError = (response, field) => {
   expect(response.body.success).toBe(false);
@@ -374,5 +373,3 @@ describe('GET /api/v1/auth/me', () => {
     expect(response.body.error.code).toBe('USER_NOT_FOUND');
   });
 });
-
-

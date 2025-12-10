@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Unit Tests: establishmentService.js
  *
@@ -46,7 +48,7 @@ const {
   submitEstablishmentForModeration,
 } = await import('../../services/establishmentService.js');
 
-import { createMockEstablishment, createMockPartner } from '../mocks/helpers.js';
+import { createMockEstablishment } from '../mocks/helpers.js';
 import { AppError } from '../../middleware/errorHandler.js';
 
 describe('establishmentService', () => {

@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Unit Tests: jwt.js
  *
@@ -77,6 +79,7 @@ describe('jwt utilities', () => {
       };
 
       const token1 = generateAccessToken(payload);
+      expect(token1).toBeDefined();
 
       // Wait 1ms to ensure different iat (issued at) timestamp
       const token2 = new Promise(resolve => {

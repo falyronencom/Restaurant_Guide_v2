@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Unit Tests: authService.js
  *
@@ -61,7 +63,6 @@ const {
 
 import {
   createMockUser,
-  createMockRefreshToken,
 } from '../mocks/helpers.js';
 
 describe('authService', () => {

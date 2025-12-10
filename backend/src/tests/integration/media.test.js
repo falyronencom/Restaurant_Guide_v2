@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Media Management System Integration Tests
  *
@@ -12,14 +14,9 @@
  */
 
 import request from 'supertest';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
 import { clearAllData } from '../utils/database.js';
 import { createPartnerAndGetToken, createTestEstablishment } from '../utils/auth.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // For ES modules, we'll mock Cloudinary functions in beforeAll
 // since jest.mock() doesn't work with ES modules in Node's experimental mode
