@@ -16,9 +16,9 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query, countRecords } from '../utils/database.js';
-import { createUserAndGetTokens } from '../utils/auth.js';
+import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
+import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
 import { testUsers } from '../fixtures/users.js';
-import { testReviews } from '../fixtures/reviews.js';
 
 let userToken;
 let user2Token;
@@ -27,6 +27,9 @@ let userId;
 let user2Id;
 let partnerId;
 let establishmentId;
+let redisReady = false;
+
+const rateLimitKeyFor = (user) => `reviews:ratelimit:${user}`;
 
 // Default working hours for test establishments
 const defaultWorkingHours = JSON.stringify({
@@ -668,10 +671,121 @@ describe('Reviews System - Delete Review', () => {
 });
 
 describe('Reviews System - Daily Quota', () => {
-  test.todo('should allow 10 reviews in one day');
-  test.todo('should reject 11th review (quota exceeded)');
-  test.todo('should reset quota at midnight');
-  test.todo('should track quota per user independently');
+  const createUniqueEstablishment = async () => {
+    const establishment = await createTestEstablishment(partnerId);
+    return establishment.id;
+  };
+
+  const submitReview = (token, estId, suffix) => {
+    return request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        establishmentId: estId,
+        rating: 5,
+        content: `${longContent} ${suffix}`
+      });
+  };
+
+  beforeAll(async () => {
+    if (!redisClient.isOpen) {
+      redisReady = await connectRedis();
+    } else {
+      redisReady = true;
+    }
+
+    if (!redisReady) {
+      throw new Error('Redis connection is required for quota enforcement tests');
+    }
+  });
+
+  beforeEach(async () => {
+    if (!redisReady) return;
+
+    await Promise.all([
+      deleteKey(rateLimitKeyFor(userId)),
+      deleteKey(rateLimitKeyFor(user2Id))
+    ]);
+  });
+
+  afterAll(async () => {
+    if (!redisReady) return;
+
+    await Promise.all([
+      deleteKey(rateLimitKeyFor(userId)),
+      deleteKey(rateLimitKeyFor(user2Id))
+    ]);
+  });
+
+  test('should allow 10 reviews in one day', async () => {
+    for (let i = 0; i < 10; i++) {
+      const estId = await createUniqueEstablishment();
+      const response = await submitReview(userToken, estId, `within-quota-${i}`).expect(201);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.review.user_id).toBe(userId);
+    }
+
+    const reviewCount = await countRecords('reviews', 'WHERE user_id = $1', [userId]);
+    expect(reviewCount).toBe(10);
+  });
+
+  test('should reject 11th review (quota exceeded)', async () => {
+    for (let i = 0; i < 10; i++) {
+      const estId = await createUniqueEstablishment();
+      await submitReview(userToken, estId, `quota-fill-${i}`).expect(201);
+    }
+
+    const overflowEstablishmentId = await createUniqueEstablishment();
+    const response = await submitReview(userToken, overflowEstablishmentId, 'over-quota').expect(429);
+
+    expect(response.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+    const message = response.body.message || response.body.error?.message || '';
+    expect(message.toLowerCase()).toContain('limit');
+  });
+
+  test('should reset quota at midnight', async () => {
+    for (let i = 0; i < 10; i++) {
+      const estId = await createUniqueEstablishment();
+      await submitReview(userToken, estId, `pre-reset-${i}`).expect(201);
+    }
+
+    // Move existing reviews to "yesterday" to simulate prior-day activity
+    await query('UPDATE reviews SET created_at = NOW() - INTERVAL \'1 day\', updated_at = created_at');
+
+    // Simulate rate limit window expiration (midnight reset) by clearing the Redis counter
+    await deleteKey(rateLimitKeyFor(userId));
+
+    const newDayEstablishmentId = await createUniqueEstablishment();
+    const response = await submitReview(userToken, newDayEstablishmentId, 'post-reset').expect(201);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.review.user_id).toBe(userId);
+
+    const totalReviews = await countRecords('reviews', 'WHERE user_id = $1', [userId]);
+    expect(totalReviews).toBe(11);
+  });
+
+  test('should track quota per user independently', async () => {
+    for (let i = 0; i < 10; i++) {
+      const estId = await createUniqueEstablishment();
+      await submitReview(userToken, estId, `user1-${i}`).expect(201);
+    }
+
+    const userBEstablishmentId = await createUniqueEstablishment();
+    const userBResponse = await submitReview(user2Token, userBEstablishmentId, 'user2-first').expect(201);
+
+    expect(userBResponse.body.success).toBe(true);
+    expect(userBResponse.body.data.review.user_id).toBe(user2Id);
+
+    const blockedResponse = await submitReview(userToken, await createUniqueEstablishment(), 'user1-blocked').expect(429);
+    expect(blockedResponse.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+
+    const user1Reviews = await countRecords('reviews', 'WHERE user_id = $1', [userId]);
+    const user2Reviews = await countRecords('reviews', 'WHERE user_id = $1', [user2Id]);
+    expect(user1Reviews).toBe(10);
+    expect(user2Reviews).toBe(1);
+  });
 });
 
 describe('Reviews System - Partner Responses', () => {
