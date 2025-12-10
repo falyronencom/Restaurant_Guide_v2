@@ -13,7 +13,7 @@
 import express from 'express';
 import * as ReviewController from '../../controllers/reviewController.js';
 import * as ReviewValidation from '../../validators/reviewValidation.js';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
 
 const router = express.Router();
@@ -59,6 +59,38 @@ router.post(
   ReviewValidation.validateCreateReview,
   validate,
   ReviewController.createReview
+);
+
+/**
+ * Add or update partner response to a review
+ * 
+ * POST /api/v1/reviews/:id/response
+ * 
+ * Protected: Yes (partner role + ownership)
+ */
+router.post(
+  '/:id/response',
+  authenticate,
+  authorize(['partner']),
+  ReviewValidation.validatePartnerResponse,
+  validate,
+  ReviewController.addPartnerResponse
+);
+
+/**
+ * Delete partner response from a review
+ * 
+ * DELETE /api/v1/reviews/:id/response
+ * 
+ * Protected: Yes (partner role + ownership)
+ */
+router.delete(
+  '/:id/response',
+  authenticate,
+  authorize(['partner']),
+  ReviewValidation.validateDeletePartnerResponse,
+  validate,
+  ReviewController.deletePartnerResponse
 );
 
 /**

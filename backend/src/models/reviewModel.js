@@ -75,6 +75,9 @@ export const findReviewById = async (reviewId, includeDeleted = false) => {
       r.establishment_id,
       r.rating,
       COALESCE(r.content, r.text) as content,
+      r.partner_response,
+      r.partner_response_at,
+      r.partner_responder_id,
       r.is_deleted,
       r.is_visible,
       r.is_edited,
@@ -134,6 +137,9 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
       r.establishment_id, 
       r.rating, 
       COALESCE(r.content, r.text) as content, 
+      r.partner_response,
+      r.partner_response_at,
+      r.partner_responder_id,
       r.is_deleted,
       r.is_visible,
       r.is_edited,
@@ -214,6 +220,9 @@ export const findReviewsByUser = async (userId, options = {}) => {
       r.establishment_id, 
       r.rating, 
       COALESCE(r.content, r.text) as content, 
+      r.partner_response,
+      r.partner_response_at,
+      r.partner_responder_id,
       r.is_deleted,
       r.is_visible,
       r.is_edited,
@@ -351,7 +360,10 @@ export const updateReview = async (reviewId, updates) => {
       user_id, 
       establishment_id, 
       rating, 
-      content, 
+      content,
+      partner_response,
+      partner_response_at,
+      partner_responder_id,
       is_deleted,
       is_visible,
       is_edited,
@@ -499,6 +511,153 @@ export const updateEstablishmentAggregates = async (establishmentId) => {
     logger.error('Error updating establishment aggregates', {
       error: error.message,
       establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Get review with establishment ownership information
+ * 
+ * @param {string} reviewId - UUID of the review
+ * @returns {Promise<Object|null>} Review + establishment ownership data
+ */
+export const getReviewWithEstablishment = async (reviewId) => {
+  const query = `
+    SELECT
+      r.id,
+      r.establishment_id,
+      r.user_id,
+      r.partner_response,
+      r.partner_response_at,
+      r.partner_responder_id,
+      r.is_deleted,
+      e.partner_id
+    FROM reviews r
+    JOIN establishments e ON r.establishment_id = e.id
+    WHERE r.id = $1
+  `;
+
+  try {
+    const result = await pool.query(query, [reviewId]);
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error getting review with establishment', {
+      error: error.message,
+      reviewId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Add partner response to a review (creates or overwrites existing response)
+ * 
+ * @param {string} reviewId - UUID of the review
+ * @param {string} partnerId - UUID of the partner user writing the response
+ * @param {string} responseText - Response content
+ * @returns {Promise<Object>} Updated review row
+ */
+export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
+  const query = `
+    UPDATE reviews
+    SET
+      partner_response = $1,
+      partner_response_at = CURRENT_TIMESTAMP,
+      partner_responder_id = $2,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    AND is_deleted = false
+    RETURNING
+      id,
+      user_id,
+      establishment_id,
+      rating,
+      content,
+      partner_response,
+      partner_response_at,
+      partner_responder_id,
+      is_deleted,
+      is_visible,
+      is_edited,
+      created_at,
+      updated_at
+  `;
+
+  try {
+    const result = await pool.query(query, [responseText, partnerId, reviewId]);
+
+    if (result.rows.length === 0) {
+      throw new Error('Review not found or already deleted');
+    }
+
+    logger.info('Partner response added/updated', {
+      reviewId,
+      partnerId,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error adding partner response', {
+      error: error.message,
+      reviewId,
+      partnerId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Update partner response (alias to addPartnerResponse for clarity)
+ */
+export const updatePartnerResponse = addPartnerResponse;
+
+/**
+ * Delete partner response from a review
+ * 
+ * @param {string} reviewId - UUID of the review
+ * @returns {Promise<Object>} Updated review row
+ */
+export const deletePartnerResponse = async (reviewId) => {
+  const query = `
+    UPDATE reviews
+    SET
+      partner_response = NULL,
+      partner_response_at = NULL,
+      partner_responder_id = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    AND is_deleted = false
+    RETURNING
+      id,
+      user_id,
+      establishment_id,
+      rating,
+      content,
+      partner_response,
+      partner_response_at,
+      partner_responder_id,
+      is_deleted,
+      is_visible,
+      is_edited,
+      created_at,
+      updated_at
+  `;
+
+  try {
+    const result = await pool.query(query, [reviewId]);
+
+    if (result.rows.length === 0) {
+      throw new Error('Review not found or already deleted');
+    }
+
+    logger.info('Partner response deleted', { reviewId });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error deleting partner response', {
+      error: error.message,
+      reviewId,
     });
     throw error;
   }
