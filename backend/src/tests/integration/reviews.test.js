@@ -436,14 +436,14 @@ describe('Reviews System - Read Reviews', () => {
   beforeEach(async () => {
     // Create test reviews directly to avoid rate limits/validation drift
     await query(
-      `INSERT INTO reviews (id, user_id, establishment_id, rating, text, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, 5, $3, NOW(), NOW())`,
+      `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 5, $3, $3, NOW(), NOW())`,
       [userId, establishmentId, `${longContent} excellent`]
     );
 
     await query(
-      `INSERT INTO reviews (id, user_id, establishment_id, rating, text, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, 3, $3, NOW(), NOW())`,
+      `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 3, $3, $3, NOW(), NOW())`,
       [user2Id, establishmentId, `${longContent} ok`]
     );
   });
@@ -461,9 +461,12 @@ describe('Reviews System - Read Reviews', () => {
   });
 
   test('should list reviews for establishment', async () => {
-    await request(app)
+    const response = await request(app)
       .get(`/api/v1/establishments/${establishmentId}/reviews`)
-      .expect(404);
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.reviews.length).toBeGreaterThanOrEqual(2);
   });
 
   test('should paginate reviews', async () => {
@@ -478,30 +481,46 @@ describe('Reviews System - Read Reviews', () => {
       await request(app)
         .post('/api/v1/reviews')
         .set('Authorization', `Bearer ${user.accessToken}`)
-        .send({ establishmentId, rating: 4, content: `Review ${i}` });
+        .send({ establishmentId, rating: 4, content: `Review ${i} content goes here and is long enough.` })
+        .expect(201);
     }
 
     // Get page 1
-    await request(app)
+    const page1 = await request(app)
       .get(`/api/v1/establishments/${establishmentId}/reviews?page=1&limit=10`)
-      .expect(404);
+      .expect(200);
+
+    expect(page1.body.data.pagination.page).toBe(1);
+    expect(page1.body.data.reviews.length).toBe(10);
 
     // Get page 2
-    await request(app)
+    const page2 = await request(app)
       .get(`/api/v1/establishments/${establishmentId}/reviews?page=2&limit=10`)
-      .expect(404);
+      .expect(200);
+
+    expect(page2.body.data.pagination.page).toBe(2);
+    expect(page2.body.data.reviews.length).toBeGreaterThan(0);
   });
 
   test('should sort reviews by newest', async () => {
-    await request(app)
+    const response = await request(app)
       .get(`/api/v1/establishments/${establishmentId}/reviews?sort=newest`)
-      .expect(404);
+      .expect(200);
+
+    const { reviews } = response.body.data;
+    const timestamps = reviews.map(r => new Date(r.created_at).getTime());
+    const sorted = [...timestamps].sort((a, b) => b - a);
+    expect(timestamps).toEqual(sorted);
   });
 
   test('should sort reviews by highest rating', async () => {
-    await request(app)
+    const response = await request(app)
       .get(`/api/v1/establishments/${establishmentId}/reviews?sort=highest`)
-      .expect(404);
+      .expect(200);
+
+    const ratings = response.body.data.reviews.map(r => r.rating);
+    const sorted = [...ratings].sort((a, b) => b - a);
+    expect(ratings).toEqual(sorted);
   });
 });
 
@@ -510,8 +529,8 @@ describe('Reviews System - Update Review', () => {
 
   beforeEach(async () => {
     const inserted = await query(
-      `INSERT INTO reviews (id, user_id, establishment_id, rating, text, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, 5, $3, NOW(), NOW())
+      `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 5, $3, $3, NOW(), NOW())
        RETURNING id`,
       [userId, establishmentId, `${longContent} original`]
     );
@@ -520,14 +539,19 @@ describe('Reviews System - Update Review', () => {
   });
 
   test('should update own review', async () => {
-    await request(app)
+    const response = await request(app)
       .put(`/api/v1/reviews/${reviewId}`)
       .set('Authorization', `Bearer ${userToken}`)
       .send({
         rating: 4,
         content: `${longContent} updated`
       })
-      .expect(500);
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.review.rating).toBe(4);
+    expect(response.body.data.review.content).toContain('updated');
+    expect(response.body.data.review.is_edited).toBe(true);
   });
 
   test('should reject updating other user review', async () => {
@@ -548,7 +572,8 @@ describe('Reviews System - Update Review', () => {
     await request(app)
       .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${user2Token}`)
-      .send({ establishmentId, rating: 3, content: 'Second review' });
+      .send({ establishmentId, rating: 3, content: 'Second review content goes here' })
+      .expect(201);
 
     // Current avg: (5+3)/2 = 4.0
 
@@ -556,9 +581,16 @@ describe('Reviews System - Update Review', () => {
     await request(app)
       .put(`/api/v1/reviews/${reviewId}`)
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ rating: 1, content: `${longContent} changed` });
+      .send({ rating: 1, content: `${longContent} changed` })
+      .expect(200);
 
-    // Metrics not asserted due to current API behavior
+    const metrics = await query(
+      'SELECT average_rating, review_count FROM establishments WHERE id = $1',
+      [establishmentId]
+    );
+
+    expect(parseFloat(metrics.rows[0].average_rating)).toBeCloseTo(2.0);
+    expect(metrics.rows[0].review_count).toBe(2);
   });
 });
 
@@ -567,8 +599,8 @@ describe('Reviews System - Delete Review', () => {
 
   beforeEach(async () => {
     const inserted = await query(
-      `INSERT INTO reviews (id, user_id, establishment_id, rating, text, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, 5, $3, NOW(), NOW())
+      `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 5, $3, $3, NOW(), NOW())
        RETURNING id`,
       [userId, establishmentId, `${longContent} to delete`]
     );
@@ -577,17 +609,27 @@ describe('Reviews System - Delete Review', () => {
   });
 
   test('should soft delete own review', async () => {
-    await request(app)
+    const response = await request(app)
       .delete(`/api/v1/reviews/${reviewId}`)
       .set('Authorization', `Bearer ${userToken}`)
-      .expect(500);
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.message).toMatch(/deleted successfully/i);
   });
 
   test('should not show deleted review in list', async () => {
     await request(app)
       .delete(`/api/v1/reviews/${reviewId}`)
       .set('Authorization', `Bearer ${userToken}`)
-      .expect(500);
+      .expect(200);
+
+    const listResponse = await request(app)
+      .get(`/api/v1/establishments/${establishmentId}/reviews`)
+      .expect(200);
+
+    const ids = listResponse.body.data.reviews.map(r => r.id);
+    expect(ids).not.toContain(reviewId);
   });
 
   test('should reject deleting other user review', async () => {
@@ -604,7 +646,8 @@ describe('Reviews System - Delete Review', () => {
     await request(app)
       .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${user2Token}`)
-      .send({ establishmentId, rating: 3, content: 'Second' });
+      .send({ establishmentId, rating: 3, content: 'Second review for metrics' })
+      .expect(201);
 
     // Current: avg=4.0, count=2
 
@@ -612,7 +655,15 @@ describe('Reviews System - Delete Review', () => {
     await request(app)
       .delete(`/api/v1/reviews/${reviewId}`)
       .set('Authorization', `Bearer ${userToken}`)
-      .expect(500);
+      .expect(200);
+
+    const metrics = await query(
+      'SELECT average_rating, review_count FROM establishments WHERE id = $1',
+      [establishmentId]
+    );
+
+    expect(parseFloat(metrics.rows[0].average_rating)).toBeCloseTo(3.0);
+    expect(metrics.rows[0].review_count).toBe(1);
   });
 });
 
