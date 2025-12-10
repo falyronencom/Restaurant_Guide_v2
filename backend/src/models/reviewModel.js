@@ -28,14 +28,14 @@ export const createReview = async (reviewData) => {
   const { user_id, establishment_id, rating, content } = reviewData;
 
   const query = `
-    INSERT INTO reviews (user_id, establishment_id, rating, text)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO reviews (user_id, establishment_id, rating, content, text)
+    VALUES ($1, $2, $3, $4, $4)
     RETURNING
       id,
       user_id,
       establishment_id,
       rating,
-      text as content,
+      content,
       created_at,
       updated_at
   `;
@@ -74,7 +74,10 @@ export const findReviewById = async (reviewId, includeDeleted = false) => {
       r.user_id,
       r.establishment_id,
       r.rating,
-      r.text as content,
+      COALESCE(r.content, r.text) as content,
+      r.is_deleted,
+      r.is_visible,
+      r.is_edited,
       r.created_at,
       r.updated_at,
       u.name as author_name,
@@ -130,7 +133,7 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
       r.user_id, 
       r.establishment_id, 
       r.rating, 
-      r.content, 
+      COALESCE(r.content, r.text) as content, 
       r.is_deleted,
       r.is_visible,
       r.is_edited,
@@ -210,7 +213,7 @@ export const findReviewsByUser = async (userId, options = {}) => {
       r.user_id, 
       r.establishment_id, 
       r.rating, 
-      r.content, 
+      COALESCE(r.content, r.text) as content, 
       r.is_deleted,
       r.is_visible,
       r.is_edited,
@@ -281,7 +284,7 @@ export const findExistingReview = async (userId, establishmentId) => {
       user_id,
       establishment_id,
       rating,
-      text as content,
+      COALESCE(content, text) as content,
       created_at,
       updated_at
     FROM reviews
@@ -326,6 +329,7 @@ export const updateReview = async (reviewId, updates) => {
 
   if (updates.content !== undefined) {
     fields.push(`content = $${paramCount}`);
+    fields.push(`text = $${paramCount}`); // keep legacy column in sync
     values.push(updates.content);
     paramCount++;
   }
@@ -462,11 +466,13 @@ export const updateEstablishmentAggregates = async (establishmentId) => {
         SELECT AVG(rating)::DECIMAL(3,2)
         FROM reviews
         WHERE establishment_id = $1
+        AND is_deleted = false
       ),
       review_count = (
         SELECT COUNT(*)
         FROM reviews
         WHERE establishment_id = $1
+        AND is_deleted = false
       ),
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
