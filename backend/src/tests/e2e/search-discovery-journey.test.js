@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * E2E Journey Test: Search & Discovery Complete Flow
  *
@@ -28,7 +30,7 @@ import request from 'supertest';
 
 describe('E2E Journey: Search & Discovery Complete Flow', () => {
   let partner;
-  let establishments = [];
+  const establishments = [];
 
   beforeAll(async () => {
     await cleanDatabase();

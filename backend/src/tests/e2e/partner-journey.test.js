@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * E2E Journey Test: Partner Establishment Management
  *
@@ -25,7 +27,6 @@ import {
   createEstablishment,
   createReview
 } from './helpers.js';
-import { testUsers } from '../fixtures/users.js';
 import { testEstablishments } from '../fixtures/establishments.js';
 
 describe('E2E Journey: Partner Establishment Management', () => {

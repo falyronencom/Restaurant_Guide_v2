@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Unit Tests: reviewService.js
  *
@@ -57,8 +59,7 @@ const {
   getUserReviewQuota,
 } = await import('../../services/reviewService.js');
 
-import { createMockUser, createMockReview, createMockEstablishment } from '../mocks/helpers.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { createMockUser, createMockReview } from '../mocks/helpers.js';
 
 describe('reviewService', () => {
   beforeEach(() => {

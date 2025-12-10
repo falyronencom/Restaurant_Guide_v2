@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * E2E Journey Test: Reviews & Favorites Integration
  *
@@ -34,8 +36,8 @@ import { testEstablishments } from '../fixtures/establishments.js';
 describe('E2E Journey: Reviews & Favorites Integration', () => {
   let user;
   let partner;
-  let establishments = [];
-  let userReviews = {};
+  const establishments = [];
+  const userReviews = {};
 
   beforeAll(async () => {
     await cleanDatabase();

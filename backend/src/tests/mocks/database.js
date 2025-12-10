@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Database Mock for Unit Tests
  *
@@ -114,7 +116,7 @@ export class MockDatabaseError extends Error {
 
   static uniqueViolation(field = 'email') {
     return new MockDatabaseError(
-      `duplicate key value violates unique constraint`,
+      'duplicate key value violates unique constraint',
       '23505',
       `Key (${field})=(...) already exists.`
     );
