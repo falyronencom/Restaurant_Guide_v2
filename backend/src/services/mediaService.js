@@ -77,7 +77,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         `Invalid media type. Must be one of: ${VALID_MEDIA_TYPES.join(', ')}`,
         422,
-        'INVALID_MEDIA_TYPE'
+        'INVALID_MEDIA_TYPE',
       );
     }
 
@@ -87,7 +87,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         'Establishment not found or access denied',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -97,7 +97,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         'Establishment not found',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -114,7 +114,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         `Upload limit reached for ${type} photos. Your ${establishment.subscription_tier} tier allows ${limit} ${limitType} photos. Upgrade subscription to upload more.`,
         403,
-        'MEDIA_LIMIT_EXCEEDED'
+        'MEDIA_LIMIT_EXCEEDED',
       );
     }
 
@@ -123,7 +123,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC',
         422,
-        'INVALID_FILE_TYPE'
+        'INVALID_FILE_TYPE',
       );
     }
 
@@ -132,7 +132,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       throw new AppError(
         'File size exceeds 10MB limit',
         422,
-        'FILE_TOO_LARGE'
+        'FILE_TOO_LARGE',
       );
     }
 
@@ -140,7 +140,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     const uploadResult = await CloudinaryUtil.uploadImage(
       file.path,
       establishmentId,
-      type
+      type,
     );
 
     // Generate URLs for all three resolutions
@@ -193,7 +193,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     throw new AppError(
       'Failed to upload media',
       500,
-      'MEDIA_UPLOAD_FAILED'
+      'MEDIA_UPLOAD_FAILED',
     );
   }
 };
@@ -218,7 +218,7 @@ export const getMediaList = async (partnerId, establishmentId, filters = {}) => 
       throw new AppError(
         'Establishment not found or access denied',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -247,7 +247,7 @@ export const getMediaList = async (partnerId, establishmentId, filters = {}) => 
     throw new AppError(
       'Failed to fetch media',
       500,
-      'MEDIA_FETCH_FAILED'
+      'MEDIA_FETCH_FAILED',
     );
   }
 };
@@ -278,7 +278,7 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
       throw new AppError(
         'Establishment not found or access denied',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -288,7 +288,7 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
       throw new AppError(
         'Media not found or does not belong to this establishment',
         404,
-        'MEDIA_NOT_FOUND'
+        'MEDIA_NOT_FOUND',
       );
     }
 
@@ -323,7 +323,7 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
     throw new AppError(
       'Failed to update media',
       500,
-      'MEDIA_UPDATE_FAILED'
+      'MEDIA_UPDATE_FAILED',
     );
   }
 };
@@ -356,7 +356,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
       throw new AppError(
         'Establishment not found or access denied',
         404,
-        'ESTABLISHMENT_NOT_FOUND'
+        'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
@@ -366,7 +366,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
       throw new AppError(
         'Media not found or does not belong to this establishment',
         404,
-        'MEDIA_NOT_FOUND'
+        'MEDIA_NOT_FOUND',
       );
     }
 
@@ -401,7 +401,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
       throw new AppError(
         'Media not found',
         404,
-        'MEDIA_NOT_FOUND'
+        'MEDIA_NOT_FOUND',
       );
     }
 
@@ -446,7 +446,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
     throw new AppError(
       'Failed to delete media',
       500,
-      'MEDIA_DELETE_FAILED'
+      'MEDIA_DELETE_FAILED',
     );
   }
 };

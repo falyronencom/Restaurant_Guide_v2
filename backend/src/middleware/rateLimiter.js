@@ -134,7 +134,7 @@ export const rateLimiter = async (req, res, next) => {
             window: isAuthenticated ? '1 minute' : '1 hour',
             retry_after: ttl,
             reset_at: new Date(resetTime * 1000).toISOString(),
-          }
+          },
         },
         timestamp: new Date().toISOString(),
       });
@@ -217,7 +217,7 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
               window: `${windowSeconds} seconds`,
               retry_after: ttl,
               reset_at: new Date(resetTime * 1000).toISOString(),
-            }
+            },
           },
           timestamp: new Date().toISOString(),
         });

@@ -43,7 +43,7 @@ export class AppError extends Error {
  * This middleware must be registered LAST in the Express middleware chain,
  * after all routes and other middleware.
  */
-export const errorHandler = (err, req, res, next) => {
+export const errorHandler = (err, req, res, _next) => {
   // Default to 500 Internal Server Error if status not specified
   let statusCode = err.statusCode || 500;
   let errorCode = err.code || 'INTERNAL_ERROR';
@@ -118,7 +118,7 @@ export const errorHandler = (err, req, res, next) => {
     success: false,
     message,
     error: {
-      code: errorCode
+      code: errorCode,
     },
     timestamp: new Date().toISOString(),
   };
@@ -198,7 +198,7 @@ export const validate = (req, res, next) => {
     const formattedErrors = errors.array().map(err => ({
       field: err.path || err.param,
       message: err.msg,
-      value: err.value
+      value: err.value,
     }));
 
     logger.warn('Request validation failed', {
@@ -213,7 +213,7 @@ export const validate = (req, res, next) => {
       message: 'Validation failed',
       error: {
         code: 'VALIDATION_ERROR',
-        details: formattedErrors
+        details: formattedErrors,
       },
       timestamp: new Date().toISOString(),
     });
@@ -244,7 +244,7 @@ export const notFoundHandler = (req, res) => {
     success: false,
     message: `Route ${req.method} ${req.path} not found`,
     error: {
-      code: 'NOT_FOUND'
+      code: 'NOT_FOUND',
     },
     timestamp: new Date().toISOString(),
   });

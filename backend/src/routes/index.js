@@ -26,8 +26,8 @@ router.get('/', (req, res) => {
     endpoints: {
       v1: '/api/v1',
       health: '/api/v1/health',
-      docs: '/api/v1/docs' // Future: API documentation
-    }
+      docs: '/api/v1/docs', // Future: API documentation
+    },
   });
 });
 

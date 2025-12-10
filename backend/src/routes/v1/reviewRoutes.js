@@ -34,7 +34,7 @@ const router = express.Router();
 router.get(
   '/quota',
   authenticate,
-  ReviewController.getReviewQuota
+  ReviewController.getReviewQuota,
 );
 
 /**
@@ -58,7 +58,7 @@ router.post(
   authenticate,
   ReviewValidation.validateCreateReview,
   validate,
-  ReviewController.createReview
+  ReviewController.createReview,
 );
 
 /**
@@ -74,7 +74,7 @@ router.post(
   authorize(['partner']),
   ReviewValidation.validatePartnerResponse,
   validate,
-  ReviewController.addPartnerResponse
+  ReviewController.addPartnerResponse,
 );
 
 /**
@@ -90,7 +90,7 @@ router.delete(
   authorize(['partner']),
   ReviewValidation.validateDeletePartnerResponse,
   validate,
-  ReviewController.deletePartnerResponse
+  ReviewController.deletePartnerResponse,
 );
 
 /**
@@ -107,7 +107,7 @@ router.get(
   '/:id',
   ReviewValidation.validateGetReview,
   validate,
-  ReviewController.getReview
+  ReviewController.getReview,
 );
 
 /**
@@ -127,7 +127,7 @@ router.put(
   authenticate,
   ReviewValidation.validateUpdateReview,
   validate,
-  ReviewController.updateReview
+  ReviewController.updateReview,
 );
 
 /**
@@ -147,7 +147,7 @@ router.delete(
   authenticate,
   ReviewValidation.validateDeleteReview,
   validate,
-  ReviewController.deleteReview
+  ReviewController.deleteReview,
 );
 
 export default router;

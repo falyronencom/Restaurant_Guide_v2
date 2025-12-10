@@ -26,7 +26,7 @@ export const authenticate = async (req, res, next) => {
         success: false,
         message: 'No authorization token provided',
         error: {
-          code: 'MISSING_TOKEN'
+          code: 'MISSING_TOKEN',
         },
         timestamp: new Date().toISOString(),
       });
@@ -39,7 +39,7 @@ export const authenticate = async (req, res, next) => {
         success: false,
         message: 'Invalid authorization header format. Expected: Bearer <token>',
         error: {
-          code: 'INVALID_TOKEN_FORMAT'
+          code: 'INVALID_TOKEN_FORMAT',
         },
         timestamp: new Date().toISOString(),
       });
@@ -82,7 +82,7 @@ export const authenticate = async (req, res, next) => {
       success: false,
       message,
       error: {
-        code: errorCode
+        code: errorCode,
       },
       timestamp: new Date().toISOString(),
     });
@@ -127,7 +127,7 @@ export const authorize = (allowedRoles) => {
         success: false,
         message: 'Internal server error: authorization misconfigured',
         error: {
-          code: 'AUTH_MISCONFIGURATION'
+          code: 'AUTH_MISCONFIGURATION',
         },
         timestamp: new Date().toISOString(),
       });
@@ -149,7 +149,7 @@ export const authorize = (allowedRoles) => {
           details: {
             required_roles: allowedRoles,
             your_role: req.user.role,
-          }
+          },
         },
         timestamp: new Date().toISOString(),
       });

@@ -12,7 +12,6 @@ if (process.env.NODE_ENV !== 'test') {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '15m';
-const JWT_REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '30d';
 
 /**
  * Validates that JWT_SECRET is properly configured.

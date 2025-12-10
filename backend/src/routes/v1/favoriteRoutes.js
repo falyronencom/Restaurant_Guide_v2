@@ -74,7 +74,7 @@ router.post(
   authenticate,
   FavoriteValidation.validateAddFavorite,
   validate,
-  FavoriteController.addFavorite
+  FavoriteController.addFavorite,
 );
 
 /**
@@ -112,7 +112,7 @@ router.delete(
   authenticate,
   FavoriteValidation.validateRemoveFavorite,
   validate,
-  FavoriteController.removeFavorite
+  FavoriteController.removeFavorite,
 );
 
 /**
@@ -178,7 +178,7 @@ router.get(
   authenticate,
   FavoriteValidation.validateGetFavorites,
   validate,
-  FavoriteController.getUserFavorites
+  FavoriteController.getUserFavorites,
 );
 
 /**
@@ -220,7 +220,7 @@ router.get(
   authenticate,
   FavoriteValidation.validateCheckFavorite,
   validate,
-  FavoriteController.checkFavoriteStatus
+  FavoriteController.checkFavoriteStatus,
 );
 
 /**
@@ -273,7 +273,7 @@ router.post(
   authenticate,
   FavoriteValidation.validateCheckBatchFavorites,
   validate,
-  FavoriteController.checkBatchFavoriteStatus
+  FavoriteController.checkBatchFavoriteStatus,
 );
 
 /**
@@ -311,7 +311,7 @@ router.post(
 router.get(
   '/stats',
   authenticate,
-  FavoriteController.getFavoritesStats
+  FavoriteController.getFavoritesStats,
 );
 
 /**

@@ -70,7 +70,7 @@ function handleValidationErrors(req, res, next) {
     
     logger.warn('Validation failed', { 
       errors: formattedErrors,
-      path: req.path 
+      path: req.path, 
     });
     
     return res.status(422).json({
@@ -78,8 +78,8 @@ function handleValidationErrors(req, res, next) {
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid input data',
-        details: formattedErrors
-      }
+        details: formattedErrors,
+      },
     });
   }
   
@@ -114,7 +114,7 @@ export const validateRegister = [
     .withMessage('Email is too long')
     .normalizeEmail({ 
       gmail_remove_dots: false, // Don't remove dots from Gmail addresses
-      gmail_remove_subaddress: false // Don't remove +tags from Gmail addresses
+      gmail_remove_subaddress: false, // Don't remove +tags from Gmail addresses
     }),
   
   // Phone validation (optional but must be valid if provided)
@@ -167,7 +167,7 @@ export const validateRegister = [
     return true;
   }),
   
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
@@ -187,7 +187,7 @@ export const validateLogin = [
     .withMessage('Invalid email format')
     .normalizeEmail({ 
       gmail_remove_dots: false,
-      gmail_remove_subaddress: false
+      gmail_remove_subaddress: false,
     }),
   
   // Phone validation (optional but must be valid if provided)
@@ -212,7 +212,7 @@ export const validateLogin = [
     return true;
   }),
   
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
@@ -232,7 +232,7 @@ export const validateRefresh = [
     .isLength({ min: 32, max: 500 })
     .withMessage('Invalid refresh token format'),
   
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
@@ -251,7 +251,7 @@ export const validateLogout = [
     .isLength({ min: 32, max: 500 })
     .withMessage('Invalid refresh token format'),
   
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 /**
@@ -268,7 +268,7 @@ export const validateEmail = body('email')
   .withMessage('Email is too long')
   .normalizeEmail({ 
     gmail_remove_dots: false,
-    gmail_remove_subaddress: false
+    gmail_remove_subaddress: false,
   });
 
 /**
