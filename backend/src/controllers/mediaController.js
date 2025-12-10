@@ -51,7 +51,7 @@ export const uploadMedia = asyncHandler(async (req, res) => {
       success: false,
       message: 'No file uploaded',
       error: {
-        code: 'FILE_REQUIRED'
+        code: 'FILE_REQUIRED',
       },
     });
   }
@@ -68,7 +68,7 @@ export const uploadMedia = asyncHandler(async (req, res) => {
     partnerId,
     establishmentId,
     req.file,
-    metadata
+    metadata,
   );
 
   logger.info('Media uploaded via API', {
@@ -110,7 +110,7 @@ export const getMedia = asyncHandler(async (req, res) => {
   const media = await MediaService.getMediaList(
     partnerId,
     establishmentId,
-    filters
+    filters,
   );
 
   logger.info('Media list fetched via API', {
@@ -165,7 +165,7 @@ export const updateMedia = asyncHandler(async (req, res) => {
     partnerId,
     establishmentId,
     mediaId,
-    updates
+    updates,
   );
 
   logger.info('Media updated via API', {
@@ -200,7 +200,7 @@ export const deleteMedia = asyncHandler(async (req, res) => {
   const result = await MediaService.deleteMedia(
     partnerId,
     establishmentId,
-    mediaId
+    mediaId,
   );
 
   logger.info('Media deleted via API', {

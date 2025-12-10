@@ -54,7 +54,7 @@ export const addFavorite = asyncHandler(async (req, res) => {
   // Log successful favorite creation for monitoring
   logger.info('Favorite added via API', {
     userId,
-    establishmentId: establishmentId,
+    establishmentId,
     endpoint: 'POST /api/v1/favorites',
   });
 
@@ -145,7 +145,7 @@ export const getUserFavorites = asyncHandler(async (req, res) => {
       success: false,
       message: 'Page and limit must be positive integers',
       error: {
-        code: 'INVALID_PAGINATION'
+        code: 'INVALID_PAGINATION',
       },
     });
   }
@@ -253,7 +253,7 @@ export const checkBatchFavoriteStatus = asyncHandler(async (req, res) => {
       success: false,
       message: 'establishment_ids must be an array',
       error: {
-        code: 'INVALID_INPUT'
+        code: 'INVALID_INPUT',
       },
     });
   }

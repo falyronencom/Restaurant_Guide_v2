@@ -19,7 +19,7 @@ import {
   validateRegister,
   validateLogin,
   validateRefresh,
-  validateLogout
+  validateLogout,
 } from '../../validators/authValidation.js';
 import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
@@ -45,10 +45,10 @@ router.post(
   createRateLimiter({
     limit: 20,
     windowSeconds: 60, // 1 minute
-    keyPrefix: 'register'
+    keyPrefix: 'register',
   }),
   validateRegister,
-  authController.register
+  authController.register,
 );
 
 /**
@@ -71,10 +71,10 @@ router.post(
   createRateLimiter({
     limit: 10,
     windowSeconds: 60, // 1 minute
-    keyPrefix: 'login'
+    keyPrefix: 'login',
   }),
   validateLogin,
-  authController.login
+  authController.login,
 );
 
 /**
@@ -97,10 +97,10 @@ router.post(
   createRateLimiter({
     limit: 50,
     windowSeconds: 60, // 1 minute
-    keyPrefix: 'refresh'
+    keyPrefix: 'refresh',
   }),
   validateRefresh,
-  authController.refresh
+  authController.refresh,
 );
 
 /**
@@ -120,7 +120,7 @@ router.post(
   '/logout',
   authenticate,
   validateLogout,
-  authController.logout
+  authController.logout,
 );
 
 /**
@@ -138,7 +138,7 @@ router.post(
 router.get(
   '/me',
   authenticate,
-  authController.getCurrentUser
+  authController.getCurrentUser,
 );
 
 export default router;

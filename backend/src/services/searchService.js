@@ -33,7 +33,7 @@ export async function searchByRadius({
   minRating = null,
   limit = 20,
   offset = 0,
-  page = 1
+  page = 1,
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -153,7 +153,7 @@ export async function searchByRadius({
     latitude: parseFloat(row.latitude),
     longitude: parseFloat(row.longitude),
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
-    review_count: parseInt(row.review_count) || 0
+    review_count: parseInt(row.review_count) || 0,
   }));
 
   return {
@@ -164,8 +164,8 @@ export async function searchByRadius({
       total,
       totalPages,
       hasNext,
-      hasPrevious
-    }
+      hasPrevious,
+    },
   };
 }
 
@@ -193,7 +193,7 @@ export async function searchByBounds({
   cuisines = null,
   priceRange = null,
   minRating = null,
-  limit = 100
+  limit = 100,
 }) {
   // Validate bounds (use strict null check to allow 0 values)
   if (minLat == null || maxLat == null || minLon == null || maxLon == null) {
@@ -274,12 +274,12 @@ export async function searchByBounds({
   const establishments = result.rows.map(row => ({
     ...row,
     latitude: parseFloat(row.latitude),
-    longitude: parseFloat(row.longitude)
+    longitude: parseFloat(row.longitude),
   }));
 
   return {
     establishments,
-    total: establishments.length
+    total: establishments.length,
   };
 }
 
@@ -298,13 +298,13 @@ export async function checkSearchHealth() {
     return {
       healthy: true,
       postgis: result.rows[0].version,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   } catch (error) {
     return {
       healthy: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }
@@ -312,5 +312,5 @@ export async function checkSearchHealth() {
 export default {
   searchByRadius,
   searchByBounds,
-  checkSearchHealth
+  checkSearchHealth,
 };

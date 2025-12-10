@@ -47,7 +47,7 @@ const pool = new Pool(poolConfig);
  * These are errors that occur outside of query execution, such as network failures
  * or database server crashes. Logging these helps diagnose infrastructure issues.
  */
-pool.on('error', (err, client) => {
+pool.on('error', (err, _client) => {
   logger.error('Unexpected error on idle database client', {
     error: err.message,
     stack: err.stack,

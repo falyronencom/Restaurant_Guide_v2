@@ -176,7 +176,7 @@ export const validateCheckBatchFavorites = [
         throw new Error(
           `Invalid UUID format for establishment IDs: ${invalidIds.slice(0, 3).join(', ')}${
             invalidIds.length > 3 ? '...' : ''
-          }`
+          }`,
         );
       }
 
@@ -198,29 +198,6 @@ export const validateCheckBatchFavorites = [
  * which is the only requirement for this endpoint.
  */
 export const validateGetStats = [];
-
-/**
- * Common validation helper for UUID parameters
- * 
- * This is a reusable validation chain that can be composed into other
- * validation rules. It's not exported because the specific validators
- * above are sufficient for current needs, but it demonstrates how
- * validation logic can be modularized and reused.
- * 
- * Future enhancement: If we add more endpoints that accept establishment
- * IDs, we could export this helper and compose it into their validation rules
- * to reduce duplication.
- */
-const validateUUID = (fieldName, location = 'param') => {
-  const validator = location === 'param' ? param : location === 'body' ? body : query;
-  
-  return validator(fieldName)
-    .trim()
-    .notEmpty()
-    .withMessage(`${fieldName} is required`)
-    .isUUID()
-    .withMessage(`${fieldName} must be a valid UUID`);
-};
 
 /**
  * Validation error messages guide

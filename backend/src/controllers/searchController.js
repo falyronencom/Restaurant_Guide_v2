@@ -34,7 +34,7 @@ export async function searchEstablishments(req, res, next) {
       minRating,
       limit,
       page,
-      offset
+      offset,
     } = req.query;
 
     // Parse coordinates
@@ -105,12 +105,12 @@ export async function searchEstablishments(req, res, next) {
       minRating: minRatingValue,
       limit: limitValue,
       offset: finalOffset,
-      page: finalPage
+      page: finalPage,
     });
 
     res.status(200).json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error) {
     next(error);
@@ -147,7 +147,7 @@ export async function searchMap(req, res, next) {
       cuisines,
       priceRange,
       minRating,
-      limit
+      limit,
     } = req.query;
 
     // Parse bounds (support both ne/sw and min/max formats)
@@ -155,7 +155,7 @@ export async function searchMap(req, res, next) {
       minLat: parseFloat(swLat || minLat),
       maxLat: parseFloat(neLat || maxLat),
       minLon: parseFloat(swLon || minLon),
-      maxLon: parseFloat(neLon || maxLon)
+      maxLon: parseFloat(neLon || maxLon),
     };
 
     if (Object.values(bounds).some(isNaN)) {
@@ -188,12 +188,12 @@ export async function searchMap(req, res, next) {
       cuisines: cuisineList,
       priceRange,
       minRating: minRatingValue,
-      limit: limitValue
+      limit: limitValue,
     });
 
     res.status(200).json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error) {
     next(error);
@@ -212,7 +212,7 @@ export async function searchHealth(req, res, next) {
 
     res.status(statusCode).json({
       success: health.healthy,
-      data: health
+      data: health,
     });
   } catch (error) {
     next(error);
@@ -222,5 +222,5 @@ export async function searchHealth(req, res, next) {
 export default {
   searchEstablishments,
   searchMap,
-  searchHealth
+  searchHealth,
 };

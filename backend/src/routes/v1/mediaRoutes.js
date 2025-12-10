@@ -87,8 +87,8 @@ const fileFilter = (req, file, cb) => {
  * Create multer upload instance with configuration
  */
 const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
+  storage,
+  fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB maximum file size
   },
@@ -137,7 +137,7 @@ router.post(
   upload.single('file'), // Process file upload with field name 'file'
   MediaValidation.validateUpload,
   validate,
-  MediaController.uploadMedia
+  MediaController.uploadMedia,
 );
 
 /**
@@ -162,7 +162,7 @@ router.get(
   '/',
   MediaValidation.validateGetMedia,
   validate,
-  MediaController.getMedia
+  MediaController.getMedia,
 );
 
 /**
@@ -198,7 +198,7 @@ router.put(
   '/:mediaId',
   MediaValidation.validateUpdate,
   validate,
-  MediaController.updateMedia
+  MediaController.updateMedia,
 );
 
 /**
@@ -230,7 +230,7 @@ router.delete(
   '/:mediaId',
   MediaValidation.validateDelete,
   validate,
-  MediaController.deleteMedia
+  MediaController.deleteMedia,
 );
 
 /**
@@ -249,7 +249,7 @@ router.use((error, req, res, next) => {
         success: false,
         message: 'File size exceeds 10MB limit',
         error: {
-          code: 'FILE_TOO_LARGE'
+          code: 'FILE_TOO_LARGE',
         },
       });
     }
@@ -259,7 +259,7 @@ router.use((error, req, res, next) => {
         success: false,
         message: 'Unexpected field in file upload',
         error: {
-          code: 'INVALID_UPLOAD_FIELD'
+          code: 'INVALID_UPLOAD_FIELD',
         },
       });
     }
@@ -269,7 +269,7 @@ router.use((error, req, res, next) => {
       success: false,
       message: error.message,
       error: {
-        code: 'UPLOAD_ERROR'
+        code: 'UPLOAD_ERROR',
       },
     });
   }
@@ -280,7 +280,7 @@ router.use((error, req, res, next) => {
       success: false,
       message: error.message,
       error: {
-        code: 'INVALID_FILE_TYPE'
+        code: 'INVALID_FILE_TYPE',
       },
     });
   }

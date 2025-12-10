@@ -40,7 +40,7 @@ export const createEstablishment = asyncHandler(async (req, res) => {
   // Call service layer to create establishment with business logic
   const establishment = await EstablishmentService.createEstablishment(
     partnerId,
-    establishmentData
+    establishmentData,
   );
 
   // Log successful establishment creation for monitoring
@@ -121,7 +121,7 @@ export const getEstablishmentDetails = asyncHandler(async (req, res) => {
   // Call service layer which verifies ownership and fetches data
   const establishment = await EstablishmentService.getEstablishmentById(
     establishmentId,
-    partnerId
+    partnerId,
   );
 
   logger.info('Establishment details fetched via API', {
@@ -164,7 +164,7 @@ export const updateEstablishment = asyncHandler(async (req, res) => {
   const updatedEstablishment = await EstablishmentService.updateEstablishment(
     establishmentId,
     partnerId,
-    updates
+    updates,
   );
 
   logger.info('Establishment updated via API', {
@@ -205,7 +205,7 @@ export const submitForModeration = asyncHandler(async (req, res) => {
   // Call service layer which validates and submits
   const submittedEstablishment = await EstablishmentService.submitEstablishmentForModeration(
     establishmentId,
-    partnerId
+    partnerId,
   );
 
   logger.info('Establishment submitted for moderation via API', {

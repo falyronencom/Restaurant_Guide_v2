@@ -67,7 +67,7 @@ export const createReview = async (reviewData) => {
  * @param {boolean} includeDeleted - Whether to include soft-deleted reviews (default: false)
  * @returns {Promise<Object|null>} The review object or null if not found
  */
-export const findReviewById = async (reviewId, includeDeleted = false) => {
+export const findReviewById = async (reviewId, _includeDeleted = false) => {
   const query = `
     SELECT
       r.id,
@@ -344,8 +344,8 @@ export const updateReview = async (reviewId, updates) => {
   }
 
   // Always update updated_at timestamp and set is_edited flag
-  fields.push(`updated_at = CURRENT_TIMESTAMP`);
-  fields.push(`is_edited = true`);
+  fields.push('updated_at = CURRENT_TIMESTAMP');
+  fields.push('is_edited = true');
 
   // Add reviewId as the last parameter
   values.push(reviewId);

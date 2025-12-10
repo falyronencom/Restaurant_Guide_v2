@@ -175,7 +175,6 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
     });
 
     test('STEP 7: User updates their first review (changes rating)', async () => {
-      // Get review ID directly from database (listing endpoint not exposed)
       const userReview = userReviews.first;
       expect(userReview).toBeDefined();
 
@@ -183,13 +182,14 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
         .put(`/api/v1/reviews/${userReview.id}`)
         .set('Authorization', `Bearer ${user.accessToken}`)
         .send({
-          rating: 4, // Changed from 5 to 4
-          content: 'Обновил отзыв. Всё ещё хорошо, но немного снизил оценку.'
-        });
+          rating: 4,
+          content: 'Обновил отзыв. Всё ещё хорошо, но немного снизил оценку.',
+        })
+        .expect(200);
 
-      // Known backend issue: endpoint currently responds with 500 (REVIEW_UPDATE_FAILED)
-      expect(response.status).toBe(500);
-      expect(response.body.error.code).toBe('REVIEW_UPDATE_FAILED');
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.review.rating).toBe(4);
+      expect(response.body.data.review.id).toBe(userReview.id);
     });
 
     test('STEP 8: User deletes review for third establishment', async () => {
@@ -198,11 +198,11 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
 
       const response = await request(app)
         .delete(`/api/v1/reviews/${userReview.id}`)
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(200);
 
-      // Known backend issue: endpoint currently responds with 500 (REVIEW_DELETION_FAILED)
-      expect(response.status).toBe(500);
-      expect(response.body.error.code).toBe('REVIEW_DELETION_FAILED');
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.message).toMatch(/deleted/i);
     });
 
     test('STEP 9: User removes establishment from favorites', async () => {

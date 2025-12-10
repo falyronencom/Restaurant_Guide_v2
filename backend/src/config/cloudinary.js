@@ -42,17 +42,6 @@ cloudinary.config({
 });
 
 /**
- * Base optimization parameters applied to all images
- * 
- * These parameters enable Cloudinary's automatic optimization features:
- * - f_auto: Automatically serves WebP for modern clients (25-35% smaller),
- *           JPEG fallback for older browsers
- * - q_auto: Content-aware automatic quality adjustment
- * - fl_progressive: Progressive JPEG encoding for faster perceived loading
- */
-const OPTIMIZATION_PARAMS = 'f_auto,q_auto,fl_progressive';
-
-/**
  * Image resolution configurations for the three-tier system
  * 
  * Each uploaded image is available in three resolutions to optimize

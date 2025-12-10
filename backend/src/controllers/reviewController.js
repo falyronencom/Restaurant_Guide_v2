@@ -50,7 +50,7 @@ export const createReview = asyncHandler(async (req, res) => {
   logger.info('Review created via API', {
     reviewId: review.id,
     userId: user_id,
-    establishmentId: establishmentId,
+    establishmentId,
     endpoint: 'POST /api/v1/reviews',
   });
 
