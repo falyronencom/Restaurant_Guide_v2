@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Reviews System Integration Tests
  *
@@ -16,7 +18,7 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query, countRecords } from '../utils/database.js';
-import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
+import { createUserAndGetTokens, createTestEstablishment, createPartnerAndGetToken } from '../utils/auth.js';
 import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
 import { testUsers } from '../fixtures/users.js';
 
@@ -789,7 +791,139 @@ describe('Reviews System - Daily Quota', () => {
 });
 
 describe('Reviews System - Partner Responses', () => {
-  test.todo('should allow partner to respond to review on their establishment');
-  test.todo('should reject partner responding to review on other establishment');
-  test.todo('should reject regular user adding partner response');
+  const responseText = 'Спасибо за ваш отзыв! Мы ценим обратную связь.';
+
+  const createReview = async (token = userToken, contentSuffix = 'base') => {
+    const reviewResponse = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        establishmentId,
+        rating: 5,
+        content: `${longContent} ${contentSuffix}`,
+      })
+      .expect(201);
+
+    return reviewResponse.body.data.review.id;
+  };
+
+  test('should allow partner to respond to review on their establishment', async () => {
+    const reviewId = await createReview(userToken, 'partner-responds');
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.review.partner_response).toBe(responseText);
+    expect(response.body.data.review.partner_responder_id).toBe(partnerId);
+
+    const detail = await request(app)
+      .get(`/api/v1/reviews/${reviewId}`)
+      .expect(200);
+
+    expect(detail.body.data.review.partner_response).toBe(responseText);
+    expect(detail.body.data.review.partner_responder_id).toBe(partnerId);
+  });
+
+  test('should reject partner responding to review on other establishment', async () => {
+    const otherPartner = await createPartnerAndGetToken();
+    const reviewId = await createReview(userToken, 'other-partner');
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${otherPartner.token}`)
+      .send({ response: responseText })
+      .expect(403);
+
+    expect(response.body.error.code).toBe('UNAUTHORIZED_PARTNER_RESPONSE');
+
+    const detail = await request(app)
+      .get(`/api/v1/reviews/${reviewId}`)
+      .expect(200);
+
+    expect(detail.body.data.review.partner_response).toBeNull();
+  });
+
+  test('should reject regular user adding partner response', async () => {
+    const reviewId = await createReview(userToken, 'regular-user-response');
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ response: responseText })
+      .expect(403);
+
+    expect(response.body.error.code).toBe('FORBIDDEN');
+
+    const detail = await request(app)
+      .get(`/api/v1/reviews/${reviewId}`)
+      .expect(200);
+
+    expect(detail.body.data.review.partner_response).toBeNull();
+  });
+
+  test('should update existing response when partner responds again', async () => {
+    const reviewId = await createReview(userToken, 'update-response');
+
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    const updatedText = 'Обновлённый ответ партнёра на отзыв.';
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: updatedText })
+      .expect(200);
+
+    expect(response.body.data.review.partner_response).toBe(updatedText);
+    expect(response.body.data.review.partner_responder_id).toBe(partnerId);
+  });
+
+  test('should delete partner response', async () => {
+    const reviewId = await createReview(userToken, 'delete-response');
+
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    const deleteResponse = await request(app)
+      .delete(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    expect(deleteResponse.body.data.review.partner_response).toBeNull();
+
+    const detail = await request(app)
+      .get(`/api/v1/reviews/${reviewId}`)
+      .expect(200);
+
+    expect(detail.body.data.review.partner_response).toBeNull();
+  });
+
+  test('should include partner_response in review details', async () => {
+    const reviewId = await createReview(userToken, 'detail-response');
+
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    const detail = await request(app)
+      .get(`/api/v1/reviews/${reviewId}`)
+      .expect(200);
+
+    expect(detail.body.data.review.partner_response).toBe(responseText);
+    expect(detail.body.data.review.partner_responder_id).toBe(partnerId);
+    expect(detail.body.data.review.partner_response_at).toBeTruthy();
+  });
 });
