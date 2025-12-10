@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Redis Mock for Unit Tests
  *
@@ -17,7 +19,7 @@ export const mockRedis = {
     return store.get(key) || null;
   }),
 
-  set: jest.fn(async (key, value, ...args) => {
+  set: jest.fn(async (key, value, ..._args) => {
     store.set(key, value);
     return 'OK';
   }),
@@ -42,7 +44,7 @@ export const mockRedis = {
     return keys.filter(key => store.has(key)).length;
   }),
 
-  expire: jest.fn(async (key, seconds) => {
+  expire: jest.fn(async (key, _seconds) => {
     return store.has(key) ? 1 : 0;
   }),
 

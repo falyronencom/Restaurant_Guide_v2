@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Establishments Management System Integration Tests
  *
@@ -13,7 +15,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query, countRecords } from '../utils/database.js';
+import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import {
@@ -26,7 +28,6 @@ let partnerToken;
 let partner2Token;
 let userToken;
 let partnerId;
-let partner2Id;
 
 // Setup and teardown
 beforeAll(async () => {
@@ -39,7 +40,6 @@ beforeAll(async () => {
   partner2Token = partner2.accessToken;
   userToken = user.accessToken;
   partnerId = partner1.user.id;
-  partner2Id = partner2.user.id;
 });
 
 beforeEach(async () => {
@@ -633,7 +633,6 @@ describe('Establishments System - Create Establishment', () => {
 
 describe('Establishments System - List & Read Operations', () => {
   let establishment1Id;
-  let establishment2Id;
 
   beforeEach(async () => {
     // Create test establishments
@@ -643,11 +642,10 @@ describe('Establishments System - List & Read Operations', () => {
       .send(testEstablishments[0]);
     establishment1Id = response1.body.data.establishment.id;
 
-    const response2 = await request(app)
+    await request(app)
       .post('/api/v1/partner/establishments')
       .set('Authorization', `Bearer ${partnerToken}`)
       .send({ ...testEstablishments[1], name: 'Second Establishment' });
-    establishment2Id = response2.body.data.establishment.id;
   });
 
   describe('GET /api/v1/partner/establishments - List Own Establishments', () => {

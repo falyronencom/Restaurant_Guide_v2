@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 import { jest } from '@jest/globals';
 
 // Mock Redis helpers before importing middleware

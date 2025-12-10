@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Mock Helpers for Unit Tests
  *
@@ -134,7 +136,7 @@ export function createMockRefreshToken(overrides = {}) {
  * Mock bcrypt for password hashing
  */
 export const mockBcrypt = {
-  hash: jest.fn(async (password, rounds) => {
+  hash: jest.fn(async (password, _rounds) => {
     return `hashed_${password}`;
   }),
 

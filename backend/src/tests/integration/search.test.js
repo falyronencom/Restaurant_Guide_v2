@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Search & Discovery System Integration Tests
  *
@@ -17,10 +19,7 @@ import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
-import { testEstablishments } from '../fixtures/establishments.js';
-import { belarusCities, invalidCoordinates } from '../fixtures/coordinates.js';
 
-let partnerToken;
 let partnerId;
 
 // Default working hours for test establishments
@@ -36,7 +35,6 @@ const defaultWorkingHours = JSON.stringify({
 
 beforeAll(async () => {
   const partner = await createUserAndGetTokens(testUsers.partner);
-  partnerToken = partner.accessToken;
   partnerId = partner.user.id;
 });
 

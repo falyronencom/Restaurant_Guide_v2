@@ -1,3 +1,7 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * E2E Journey Test: New User Complete Flow
  *
@@ -14,7 +18,6 @@
 
 import { query } from '../utils/database.js';
 import {
-  app,
   cleanDatabase,
   registerUser,
   searchEstablishments,
@@ -22,14 +25,13 @@ import {
   createReview,
   getUserFavorites,
   createEstablishment,
-  registerUser as createPartner
+  registerUser as createPartner,
 } from './helpers.js';
 import { testUsers } from '../fixtures/users.js';
 import { testEstablishments } from '../fixtures/establishments.js';
 
 describe('E2E Journey: New User Complete Flow', () => {
   let regularUser;
-  let partnerUser;
   let establishment;
 
   beforeAll(async () => {
@@ -40,14 +42,13 @@ describe('E2E Journey: New User Complete Flow', () => {
     const partner = await createPartner({
       ...testUsers.partner,
       email: 'partner@journey.test',
-      phone: '+375291111111'
+      phone: '+375291111111',
     });
-    partnerUser = partner;
 
     const estab = await createEstablishment(partner.accessToken, {
       ...testEstablishments[0],
       latitude: 53.9, // Minsk center
-      longitude: 27.5
+      longitude: 27.5,
     });
     establishment = estab.establishment;
 

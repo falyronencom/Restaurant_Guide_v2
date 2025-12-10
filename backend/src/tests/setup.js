@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Jest Global Setup
  *
@@ -33,7 +35,7 @@ export default async function globalSetup() {
 
   // Verify test database name
   if (!process.env.DB_NAME || !process.env.DB_NAME.includes('test')) {
-    throw new Error('Test database name must contain "test"! Current: ' + process.env.DB_NAME);
+    throw new Error(`Test database name must contain "test"! Current: ${process.env.DB_NAME}`);
   }
 
   console.log('✅ Environment: test');

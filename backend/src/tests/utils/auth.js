@@ -1,3 +1,5 @@
+/* eslint comma-dangle: 0 */
+/* eslint quote-props: 0 */
 /**
  * Authentication Test Helpers
  *

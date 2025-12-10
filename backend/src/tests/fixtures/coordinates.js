@@ -1,3 +1,4 @@
+/* eslint comma-dangle: 0 */
 /**
  * Belarus Geography Test Fixtures
  *

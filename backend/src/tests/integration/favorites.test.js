@@ -1,3 +1,5 @@
+/* eslint-env jest */
+/* eslint comma-dangle: 0 */
 /**
  * Favorites System Integration Tests
  *
@@ -20,9 +22,7 @@ import { testUsers } from '../fixtures/users.js';
 
 let userToken;
 let user2Token;
-let partnerToken;
 let userId;
-let user2Id;
 let partnerId;
 let establishment1Id;
 let establishment2Id;
@@ -35,9 +35,7 @@ beforeAll(async () => {
 
   userToken = user.accessToken;
   user2Token = user2.accessToken;
-  partnerToken = partner.accessToken;
   userId = user.user.id;
-  user2Id = user2.user.id;
   partnerId = partner.user.id;
 });
 
