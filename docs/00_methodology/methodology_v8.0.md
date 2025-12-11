@@ -364,38 +364,50 @@ When a complex bug is solved or a non-obvious solution is discovered, the Leaf a
 - Echo: Build and dependency conflicts
 - Foxtrot: Test infrastructure issues
 
-### 5.2 The Handoff Report
+### 5.2 The Handoff Report (Forward-Looking Structure)
 
-When a session ends — whether from successful completion, context limits, or blocking issues — the agent produces a structured report for Trunk continuity.
+When a session ends, the agent produces a continuation document for the next session. The handoff report is not a retrospective narrative — it functions as GPS coordinates for immediate forward progress. The fact that a handoff exists already signals that previous questions are resolved; the new session inherits results, not the process of achieving them.
+
+**Core Principle:** Every sentence in a handoff report occupies space in the next session's limited context window. Retrospective elements ("we faced problem X", "after consideration we chose Y over Z") require the new agent to reconstruct mental states it cannot access. This creates cognitive noise. Instead, provide only what enables immediate continuation.
 
 **Required Sections:**
 
 ```
-# Session Report: [Date] - [Brief Description]
+# Handoff: [Feature/Task Name]
 
-## Status
-What percentage of the directive was completed?
-What is the overall state of the feature/task?
+## Current State
+What exists and works right now.
+- Files that are in place (with paths)
+- Tests that pass (with count or names)
+- Functionality that is operational
+- Current test coverage or completion percentage
 
-## Completed Work
-- Specific files created or modified
-- Tests added and their pass/fail status
-- Documentation updated
+## Continuation Point
+Exact coordinates for immediate resumption.
+- Specific file to open first
+- Specific function or component to work on next
+- The single next action to take
+- Expected outcome of that action
 
-## Issues Encountered
-- Problems faced during implementation
-- How they were resolved (or why they remain unresolved)
-- Entries added to Bank of Failures if applicable
+## Dependencies (if any)
+What must be in place before continuation.
+- Services that must be running
+- Environment variables required
+- External resources needed
+- Blocking issues awaiting resolution (with owner)
 
-## Next Steps
-Immediate next logical task for continuation.
-Prerequisites that must be in place.
-Estimated complexity of remaining work.
-
-## Context Notes
-Specific file names, variable names, or architectural decisions
-that the next session must know about to continue effectively.
+## Context Anchors
+Minimal set of specific names and decisions the next session must know.
+State as facts without explanation of reasoning.
+- Key variable or class names introduced
+- Architectural patterns being followed (reference only)
+- Constraints that must be maintained
+- If Bank of Failures was updated, reference the entry title
 ```
+
+**What to Exclude:** Problem narratives and resolution stories. Alternative approaches that were considered. Emotional or evaluative language ("this was challenging", "finally resolved"). Explanation of why decisions were made — only state what was decided. Redundant context that exists in codebase or documentation.
+
+**Length Guideline:** A well-formed handoff report is typically 15-25 lines. If it exceeds 40 lines, it likely contains retrospective content that should be trimmed.
 
 ### 5.3 External Memory Continuity
 
@@ -552,6 +564,21 @@ git checkout -b refactor/safe-mode  # Safety branch
 | Delta | State management |
 | Echo | Build and dependencies |
 | Foxtrot | Test infrastructure |
+
+### Handoff Report Structure
+
+| Section | Purpose | Content Type |
+|---------|---------|--------------|
+| Current State | What exists now | Files, tests, working functionality |
+| Continuation Point | Where to resume | Specific file, function, next action |
+| Dependencies | What must be ready | Services, environment, blockers |
+| Context Anchors | Essential facts | Names, patterns, constraints (no rationale) |
+
+**Handoff Anti-Patterns to Avoid:**
+- Problem narratives ("we struggled with...")
+- Resolution stories ("after trying X, Y worked")
+- Decision rationale ("we chose A because...")
+- Evaluative language ("challenging", "finally")
 
 ---
 
