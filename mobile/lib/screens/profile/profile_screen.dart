@@ -35,13 +35,13 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      authProvider.userName ?? 'Пользователь',
+                      authProvider.currentUser?.name ?? 'Пользователь',
                       style: theme.textTheme.headlineMedium,
                     ),
-                    if (authProvider.userEmail != null) ...[
+                    if (authProvider.currentUser?.email != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        authProvider.userEmail!,
+                        authProvider.currentUser!.email!,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.secondary,
                         ),
