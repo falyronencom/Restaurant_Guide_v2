@@ -1,20 +1,44 @@
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
+
+/// Authentication status enum
+enum AuthenticationStatus {
+  /// User is not authenticated
+  unauthenticated,
+
+  /// Authentication operation in progress
+  authenticating,
+
+  /// User is authenticated
+  authenticated,
+
+  /// User is in verification process (SMS/email)
+  verifying,
+}
 
 /// Authentication state provider
 /// Manages user authentication status and profile data
 class AuthProvider with ChangeNotifier {
   final AuthService _authService;
 
-  // Authentication state
-  bool _isAuthenticated = false;
+  // ============================================================================
+  // State
+  // ============================================================================
+
+  AuthenticationStatus _status = AuthenticationStatus.unauthenticated;
+  User? _currentUser;
   bool _isLoading = false;
-  String? _error;
-  Map<String, dynamic>? _user;
+  String? _errorMessage;
+
+  // Registration state
+  String? _verificationToken;
+  String? _pendingEmail;
+  String? _pendingPhone;
+  String? _authMethod; // 'email' or 'phone'
 
   AuthProvider({AuthService? authService})
       : _authService = authService ?? AuthService() {
-    // Check authentication status on initialization
     _initialize();
   }
 
@@ -22,26 +46,32 @@ class AuthProvider with ChangeNotifier {
   // Getters
   // ============================================================================
 
-  /// Whether user is currently authenticated
-  bool get isAuthenticated => _isAuthenticated;
+  /// Current authentication status
+  AuthenticationStatus get status => _status;
 
-  /// Whether an authentication operation is in progress
+  /// Whether user is authenticated
+  bool get isAuthenticated => _status == AuthenticationStatus.authenticated;
+
+  /// Whether operation is in progress
   bool get isLoading => _isLoading;
 
-  /// Current error message, if any
-  String? get error => _error;
+  /// Current error message
+  String? get errorMessage => _errorMessage;
 
-  /// Current user data
-  Map<String, dynamic>? get user => _user;
+  /// Current authenticated user
+  User? get currentUser => _currentUser;
 
-  /// User's display name
-  String? get userName => _user?['name'] as String?;
+  /// Verification token from registration
+  String? get verificationToken => _verificationToken;
 
-  /// User's email
-  String? get userEmail => _user?['email'] as String?;
+  /// Pending email awaiting verification
+  String? get pendingEmail => _pendingEmail;
 
-  /// User's phone number
-  String? get userPhone => _user?['phone'] as String?;
+  /// Pending phone awaiting verification
+  String? get pendingPhone => _pendingPhone;
+
+  /// Authentication method being used
+  String? get authMethod => _authMethod;
 
   // ============================================================================
   // Initialization
@@ -58,45 +88,114 @@ class AuthProvider with ChangeNotifier {
       if (hasToken) {
         // Try to get current user to validate token
         try {
-          final userData = await _authService.getCurrentUser();
-          _user = userData;
-          _isAuthenticated = true;
+          final user = await _authService.getCurrentUser();
+          _currentUser = user;
+          _status = AuthenticationStatus.authenticated;
         } catch (e) {
           // Token is invalid, clear authentication
-          _isAuthenticated = false;
-          _user = null;
+          _status = AuthenticationStatus.unauthenticated;
+          _currentUser = null;
+          await _authService.clearAuthData();
         }
       }
     } catch (e) {
       _setError('Failed to initialize authentication');
+      _status = AuthenticationStatus.unauthenticated;
     } finally {
       _setLoading(false);
     }
   }
 
   // ============================================================================
-  // Authentication Operations
+  // Registration Flow
   // ============================================================================
 
-  /// Login with email and password
-  Future<bool> login({
+  /// Register new user with email
+  Future<bool> registerWithEmail({
     required String email,
     required String password,
   }) async {
     _setLoading(true);
     _clearError();
+    _status = AuthenticationStatus.authenticating;
+    notifyListeners();
 
     try {
-      final userData = await _authService.login(
+      await _authService.register(
         email: email,
         password: password,
+        authMethod: 'email',
       );
 
-      _user = userData;
-      _isAuthenticated = true;
+      // Store verification details for later use
+      _pendingEmail = email;
+      _authMethod = 'email';
+      _status = AuthenticationStatus.verifying;
       _setLoading(false);
 
-      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _status = AuthenticationStatus.unauthenticated;
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Register new user with phone
+  Future<bool> registerWithPhone({
+    required String phone,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+    _status = AuthenticationStatus.authenticating;
+    notifyListeners();
+
+    try {
+      final response = await _authService.register(
+        phone: phone,
+        password: password,
+        authMethod: 'phone',
+      );
+
+      // Store verification token and details
+      _verificationToken = response.verificationToken;
+      _pendingPhone = phone;
+      _authMethod = 'phone';
+      _status = AuthenticationStatus.verifying;
+      _setLoading(false);
+
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _status = AuthenticationStatus.unauthenticated;
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Verify SMS code
+  Future<bool> verifyCode({required String code}) async {
+    if (_verificationToken == null) {
+      _setError('No verification token available');
+      return false;
+    }
+
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final authResponse = await _authService.verifyCode(
+        code: code,
+        verificationToken: _verificationToken!,
+      );
+
+      _currentUser = authResponse.user;
+      _status = AuthenticationStatus.authenticated;
+      _clearVerificationState();
+      _setLoading(false);
+
       return true;
     } catch (e) {
       _setError(_extractErrorMessage(e));
@@ -105,32 +204,108 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Register new user
-  Future<bool> register({
-    required String email,
-    required String password,
-    required String name,
-    String? phone,
-  }) async {
+  /// Verify email with token
+  Future<bool> verifyEmail({required String emailToken}) async {
     _setLoading(true);
     _clearError();
 
     try {
-      final userData = await _authService.register(
-        email: email,
-        password: password,
-        name: name,
-        phone: phone,
+      final authResponse = await _authService.verifyEmail(
+        emailToken: emailToken,
       );
 
-      _user = userData;
-      _isAuthenticated = true;
+      _currentUser = authResponse.user;
+      _status = AuthenticationStatus.authenticated;
+      _clearVerificationState();
       _setLoading(false);
 
-      notifyListeners();
       return true;
     } catch (e) {
       _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Check verification status (for email verification polling)
+  Future<bool> checkVerificationStatus() async {
+    if (!isAuthenticated) {
+      try {
+        final user = await _authService.getCurrentUser();
+        if (user.isVerified) {
+          _currentUser = user;
+          _status = AuthenticationStatus.authenticated;
+          _clearVerificationState();
+          notifyListeners();
+          return true;
+        }
+      } catch (e) {
+        // Not verified yet or error
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// Resend verification code
+  Future<bool> resendVerification() async {
+    if (_authMethod == null) {
+      _setError('No authentication method set');
+      return false;
+    }
+
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final response = await _authService.resendVerification(
+        email: _pendingEmail,
+        phone: _pendingPhone,
+        authMethod: _authMethod!,
+      );
+
+      // Update verification token if phone method
+      if (_authMethod == 'phone') {
+        _verificationToken = response.verificationToken;
+      }
+
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // Login Flow
+  // ============================================================================
+
+  /// Login with email or phone and password
+  Future<bool> login({
+    required String emailOrPhone,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+    _status = AuthenticationStatus.authenticating;
+    notifyListeners();
+
+    try {
+      final authResponse = await _authService.login(
+        emailOrPhone: emailOrPhone,
+        password: password,
+      );
+
+      _currentUser = authResponse.user;
+      _status = AuthenticationStatus.authenticated;
+      _setLoading(false);
+
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _status = AuthenticationStatus.unauthenticated;
       _setLoading(false);
       return false;
     }
@@ -146,9 +321,10 @@ class AuthProvider with ChangeNotifier {
       // Continue with local logout even if API call fails
     }
 
-    _isAuthenticated = false;
-    _user = null;
+    _currentUser = null;
+    _status = AuthenticationStatus.unauthenticated;
     _clearError();
+    _clearVerificationState();
     _setLoading(false);
 
     notifyListeners();
@@ -160,11 +336,11 @@ class AuthProvider with ChangeNotifier {
 
   /// Refresh current user data
   Future<void> refreshUser() async {
-    if (!_isAuthenticated) return;
+    if (!isAuthenticated) return;
 
     try {
-      final userData = await _authService.getCurrentUser();
-      _user = userData;
+      final user = await _authService.getCurrentUser();
+      _currentUser = user;
       notifyListeners();
     } catch (e) {
       // If refresh fails, user might be logged out
@@ -178,25 +354,22 @@ class AuthProvider with ChangeNotifier {
   /// Update user profile
   Future<bool> updateProfile({
     String? name,
-    String? phone,
-    String? email,
+    String? avatarUrl,
   }) async {
-    if (!_isAuthenticated) return false;
+    if (!isAuthenticated) return false;
 
     _setLoading(true);
     _clearError();
 
     try {
-      final userData = await _authService.updateProfile(
+      final user = await _authService.updateProfile(
         name: name,
-        phone: phone,
-        email: email,
+        avatarUrl: avatarUrl,
       );
 
-      _user = userData;
+      _currentUser = user;
       _setLoading(false);
 
-      notifyListeners();
       return true;
     } catch (e) {
       _setError(_extractErrorMessage(e));
@@ -210,7 +383,7 @@ class AuthProvider with ChangeNotifier {
     required String currentPassword,
     required String newPassword,
   }) async {
-    if (!_isAuthenticated) return false;
+    if (!isAuthenticated) return false;
 
     _setLoading(true);
     _clearError();
@@ -222,7 +395,22 @@ class AuthProvider with ChangeNotifier {
       );
 
       _setLoading(false);
-      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Request password reset
+  Future<bool> requestPasswordReset({required String email}) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _authService.requestPasswordReset(email);
+      _setLoading(false);
       return true;
     } catch (e) {
       _setError(_extractErrorMessage(e));
@@ -243,14 +431,21 @@ class AuthProvider with ChangeNotifier {
 
   /// Set error message
   void _setError(String message) {
-    _error = message;
+    _errorMessage = message;
     notifyListeners();
   }
 
   /// Clear error message
   void _clearError() {
-    _error = null;
-    // Don't notify here, will be notified by caller
+    _errorMessage = null;
+  }
+
+  /// Clear verification state
+  void _clearVerificationState() {
+    _verificationToken = null;
+    _pendingEmail = null;
+    _pendingPhone = null;
+    _authMethod = null;
   }
 
   /// Extract user-friendly error message from exception
@@ -268,10 +463,28 @@ class AuthProvider with ChangeNotifier {
 
     // Common error patterns
     if (errorStr.contains('401') || errorStr.contains('Unauthorized')) {
-      return 'Invalid credentials. Please check your email and password.';
+      return 'Invalid credentials. Please check your email/phone and password.';
+    }
+    if (errorStr.contains('Email already registered') ||
+        errorStr.contains('EMAIL_TAKEN')) {
+      return 'This email is already registered. Please login instead.';
+    }
+    if (errorStr.contains('Phone already registered') ||
+        errorStr.contains('PHONE_TAKEN')) {
+      return 'This phone number is already registered. Please login instead.';
+    }
+    if (errorStr.contains('Invalid verification code') ||
+        errorStr.contains('INVALID_CODE')) {
+      return 'Invalid verification code. Please check and try again.';
+    }
+    if (errorStr.contains('Code expired') || errorStr.contains('CODE_EXPIRED')) {
+      return 'Verification code has expired. Please request a new code.';
     }
     if (errorStr.contains('404')) {
       return 'Service not found. Please try again later.';
+    }
+    if (errorStr.contains('429') || errorStr.contains('Too many requests')) {
+      return 'Too many attempts. Please wait a moment and try again.';
     }
     if (errorStr.contains('500')) {
       return 'Server error. Please try again later.';
