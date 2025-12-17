@@ -1,5 +1,6 @@
 /// Form validation utilities
 /// Provides validators for email, phone, password, and other inputs
+library;
 
 /// Email validation
 /// Returns null if valid, error message if invalid
