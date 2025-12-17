@@ -9,6 +9,7 @@ import 'package:restaurant_guide_mobile/screens/auth/email_registration_screen.d
 import 'package:restaurant_guide_mobile/screens/auth/email_verification_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/phone_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/phone_verification_screen.dart';
+import 'package:restaurant_guide_mobile/screens/auth/login_screen.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -55,6 +56,7 @@ class RestaurantGuideApp extends StatelessWidget {
           '/home': (context) => const MainNavigationScreen(),
           '/auth/method-selection': (context) =>
               const MethodSelectionScreen(),
+          '/auth/login': (context) => const LoginScreen(),
           '/auth/email-registration': (context) =>
               const EmailRegistrationScreen(),
           '/auth/email-verification': (context) =>
