@@ -4,6 +4,9 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
+import 'package:restaurant_guide_mobile/screens/auth/method_selection_screen.dart';
+import 'package:restaurant_guide_mobile/screens/auth/email_registration_screen.dart';
+import 'package:restaurant_guide_mobile/screens/auth/email_verification_screen.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -44,6 +47,17 @@ class RestaurantGuideApp extends StatelessWidget {
 
         // Main navigation with bottom tabs from Phase E
         home: const MainNavigationScreen(),
+
+        // Named routes for navigation
+        routes: {
+          '/home': (context) => const MainNavigationScreen(),
+          '/auth/method-selection': (context) =>
+              const MethodSelectionScreen(),
+          '/auth/email-registration': (context) =>
+              const EmailRegistrationScreen(),
+          '/auth/email-verification': (context) =>
+              const EmailVerificationScreen(),
+        },
       ),
     );
   }

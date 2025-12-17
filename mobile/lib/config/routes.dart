@@ -37,6 +37,11 @@ class AppRoutes {
   // Authentication routes (for Phase Two)
   static const String login = '/auth/login';
   static const String register = '/auth/register';
+  static const String methodSelection = '/auth/method-selection';
+  static const String emailRegistration = '/auth/email-registration';
+  static const String emailVerification = '/auth/email-verification';
+  static const String phoneRegistration = '/auth/phone-registration';
+  static const String phoneVerification = '/auth/phone-verification';
   static const String forgotPassword = '/auth/forgot-password';
   static const String resetPassword = '/auth/reset-password';
 
