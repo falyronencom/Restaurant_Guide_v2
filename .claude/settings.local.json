@@ -10,7 +10,15 @@
       "Bash(git push:*)",
       "Bash(Select-Object -Last 30)",
       "Bash(git checkout:*)",
-      "Bash(timeout 10 sleep:*)"
+      "Bash(timeout 10 sleep:*)",
+      "Bash(claude mcp list:*)",
+      "Bash(claude mcp add-from-claude-desktop:*)",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(claude mcp add:*)",
+      "Bash(claude mcp get:*)",
+      "Bash(ls:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter analyze:*)"
     ],
     "deny": [],
     "ask": []
