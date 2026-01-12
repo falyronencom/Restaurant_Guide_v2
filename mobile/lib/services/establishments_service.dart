@@ -29,6 +29,7 @@ class EstablishmentsService {
   /// [longitude] - User longitude for distance calculation
   /// [maxDistance] - Maximum distance in kilometers
   /// [search] - Search query for name/description
+  /// [sortBy] - Sort order (distance, rating, price_asc, price_desc)
   Future<PaginatedEstablishments> searchEstablishments({
     int page = 1,
     int perPage = 20,
@@ -41,6 +42,7 @@ class EstablishmentsService {
     double? longitude,
     double? maxDistance,
     String? search,
+    String? sortBy,
   }) async {
     final queryParams = <String, dynamic>{
       'page': page,
@@ -57,6 +59,7 @@ class EstablishmentsService {
     if (longitude != null) queryParams['longitude'] = longitude;
     if (maxDistance != null) queryParams['max_distance'] = maxDistance;
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    if (sortBy != null) queryParams['sort_by'] = sortBy;
 
     try {
       final response = await _apiClient.get(
