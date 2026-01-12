@@ -2,6 +2,42 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 
+/// Sort options for establishment list
+enum SortOption {
+  distance,
+  rating,
+  priceAsc,
+  priceDesc;
+
+  /// Convert to API parameter value
+  String toApiValue() {
+    switch (this) {
+      case SortOption.distance:
+        return 'distance';
+      case SortOption.rating:
+        return 'rating';
+      case SortOption.priceAsc:
+        return 'price_asc';
+      case SortOption.priceDesc:
+        return 'price_desc';
+    }
+  }
+
+  /// Display label in Russian
+  String get displayLabel {
+    switch (this) {
+      case SortOption.distance:
+        return 'По расстоянию';
+      case SortOption.rating:
+        return 'По рейтингу';
+      case SortOption.priceAsc:
+        return 'По цене ↑';
+      case SortOption.priceDesc:
+        return 'По цене ↓';
+    }
+  }
+}
+
 /// Establishments state provider
 /// Manages search results, filters, and establishment details
 class EstablishmentsProvider with ChangeNotifier {
@@ -11,7 +47,11 @@ class EstablishmentsProvider with ChangeNotifier {
   List<Establishment> _establishments = [];
   PaginationMeta? _paginationMeta;
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   String? _error;
+
+  // Sort state
+  SortOption _currentSort = SortOption.rating;
 
   // Current filters
   String? _selectedCity;
@@ -41,11 +81,17 @@ class EstablishmentsProvider with ChangeNotifier {
   /// Pagination metadata
   PaginationMeta? get paginationMeta => _paginationMeta;
 
-  /// Whether establishments are being loaded
+  /// Whether establishments are being loaded (initial load)
   bool get isLoading => _isLoading;
+
+  /// Whether more establishments are being loaded (pagination)
+  bool get isLoadingMore => _isLoadingMore;
 
   /// Current error message, if any
   String? get error => _error;
+
+  /// Current sort option
+  SortOption get currentSort => _currentSort;
 
   /// Whether there are more pages to load
   bool get hasMorePages {
@@ -107,15 +153,16 @@ class EstablishmentsProvider with ChangeNotifier {
     bool append = false,
   }) async {
     // Don't start new search if already loading
-    if (_isLoading) return;
-
-    _isLoading = true;
-    _error = null;
-
-    if (!append) {
+    if (append) {
+      if (_isLoadingMore) return;
+      _isLoadingMore = true;
+    } else {
+      if (_isLoading) return;
+      _isLoading = true;
       _establishments = [];
     }
 
+    _error = null;
     notifyListeners();
 
     try {
@@ -127,28 +174,33 @@ class EstablishmentsProvider with ChangeNotifier {
         priceRange: _selectedPriceRange,
         minRating: _minRating,
         search: _searchQuery,
+        sortBy: _currentSort.toApiValue(),
       );
 
       if (append) {
         _establishments.addAll(result.data);
+        _isLoadingMore = false;
       } else {
         _establishments = result.data;
+        _isLoading = false;
       }
 
       _paginationMeta = result.meta;
-      _isLoading = false;
-
       notifyListeners();
     } catch (e) {
       _error = _extractErrorMessage(e);
-      _isLoading = false;
+      if (append) {
+        _isLoadingMore = false;
+      } else {
+        _isLoading = false;
+      }
       notifyListeners();
     }
   }
 
   /// Load next page of results
   Future<void> loadMore() async {
-    if (!hasMorePages || _isLoading) return;
+    if (!hasMorePages || _isLoading || _isLoadingMore) return;
 
     await searchEstablishments(
       page: currentPage + 1,
@@ -159,6 +211,15 @@ class EstablishmentsProvider with ChangeNotifier {
   /// Refresh current search
   Future<void> refresh() async {
     await searchEstablishments(page: 1, append: false);
+  }
+
+  /// Set sort option and refresh results
+  void setSort(SortOption sort) {
+    if (_currentSort == sort) return;
+    _currentSort = sort;
+    notifyListeners();
+    // Trigger new search with updated sort
+    searchEstablishments(page: 1, append: false);
   }
 
   // ============================================================================
