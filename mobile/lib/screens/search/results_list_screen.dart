@@ -71,7 +71,37 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
       return;
     }
 
-    context.read<EstablishmentsProvider>().toggleFavorite(establishmentId);
+    final provider = context.read<EstablishmentsProvider>();
+    final wasFavorite = provider.isFavorite(establishmentId);
+
+    provider.toggleFavorite(establishmentId).then((_) {
+      // Show success snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              wasFavorite
+                  ? 'Удалено из избранного'
+                  : 'Добавлено в избранное',
+            ),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }).catchError((error) {
+      // Show error snackbar on failure
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Не удалось обновить избранное'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
   }
 
   /// Show login prompt dialog
