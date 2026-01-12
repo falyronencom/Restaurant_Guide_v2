@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "figma": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:\\Users\\Honor\\AppData\\Roaming\\Claude\\Claude Extensions\\ant.dir.ant.figma.figma\\server\\index.js"
+      ],
+      "env": {}
+    }
+  }
+}
