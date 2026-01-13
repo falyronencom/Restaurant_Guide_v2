@@ -415,8 +415,8 @@ Comprehensive documentation всего Phase One Foundation с:
 
 ## Текущий статус проекта
 
-**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-2 ✅ Завершены, Sub-Phase 3 ⏳ Следующий приоритет
-**Последнее обновление**: Декабрь 16, 2025
+**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-2 ✅ Завершены, Sub-Phase 3.1 ✅ Results List Complete
+**Последнее обновление**: Январь 13, 2026
 **Backend Status**: Production-ready с comprehensive test coverage (64%, 400+ tests)
 **Mobile Foundation**: Production-ready architecture с полной backend интеграцией
 **Mobile Authentication**: Complete authentication flows (email, phone, login) ready для backend API integration
@@ -672,13 +672,11 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 - ✅ Pixel-perfect Figma design implementation
 - 📄 Handoff documentation ([PHASE_TWO_COMPLETION_REPORT.md](PHASE_TWO_COMPLETION_REPORT.md))
 
-**Sub-Phase 3: Core Search UI** ⏳ (Следующий приоритет)
-- Search home screen с city selection и filters
-- Establishments list screen с pagination
-- Establishment detail screen с full information
-- Filter panel (category, cuisine, price range, rating)
-- Sort options (distance, rating, price)
-- Error handling и empty states
+**Sub-Phase 3: Core Search UI** ⏳ (В разработке)
+- ✅ **Phase 3.1: Results List** - Establishments list screen с pagination, sorting, favorites (Январь 2026)
+- ⏳ Phase 3.2: Filter panel (category, cuisine, price range, rating, distance)
+- ⏳ Phase 3.3: Search home screen с city selection + Establishment detail screen
+- ⏳ Error handling и empty states (базовая реализация в 3.1)
 
 **Sub-Phase 4: Extended Features** 📋 (Запланировано)
 - Map view с establishment markers
@@ -852,6 +850,36 @@ Proprietary - все права защищены.
 
 ## Recent Updates
 
+### Январь 12-13, 2026 - Mobile Phase 3.1: Results List Enhancement Complete
+- ✅ **Phase 3.1 Results List Enhancement** полностью завершена (VSCode Session)
+  * Phase A: Enhanced EstablishmentsProvider с SortOption enum, isLoadingMore state, setSort() method
+  * Phase B: Results list screen с ScrollController pagination (200px threshold)
+  * Phase C: Pull-to-refresh (RefreshIndicator) + Sort options bottom sheet
+  * Phase D: Empty states, error handling, favorites integration с authentication check
+  * Phase E: Integration testing и Figma MCP UI polish
+- ✅ **Key Features Implemented**:
+  * Infinite scroll pagination с efficient lazy loading
+  * 4 sort options: По расстоянию, По рейтингу, По цене ↑, По цене ↓
+  * Sort bottom sheet с checkbox-style selection (Figma design)
+  * Favorites toggle с login prompt для unauthenticated users
+  * Optimistic UI updates с automatic rollback on failure
+  * Russian localization для всех UI элементов
+- ✅ **Figma MCP Integration**: UI elements refined using Figma design context
+  * Sort button стиль (swap_vert icon + text)
+  * Sort bottom sheet с X button и centered title
+  * Checkbox indicators для selected sort option
+  * Favorite icon color: orange (#FF6B35) per brand guidelines
+- ✅ **5 Git commits** (one per phase A-E) + comprehensive session report
+- 📄 **Session Report**: [mobile/session_reports/phase_3_1_results_list_report.md](mobile/session_reports/phase_3_1_results_list_report.md)
+- **Files Modified/Created**:
+  * `lib/providers/establishments_provider.dart` - SortOption, pagination states
+  * `lib/services/establishments_service.dart` - sortBy parameter
+  * `lib/screens/search/results_list_screen.dart` - New results list screen
+  * `lib/widgets/establishment_card.dart` - Favorite button color fix
+  * `lib/main.dart` - /search/results route
+- 🎯 **Status**: Results list production-ready, 77 establishments across 7 cities
+- 🎯 **Next**: Phase 3.2 (Filtering) или Phase 3.3 (Search Home/Detail View)
+
 ### Декабрь 16, 2025 - Mobile Phase Two: Authentication Flows Complete
 - ✅ **Phase Two Mobile Development** полностью завершена (VSCode Integration Session)
   * Phase A: Enhanced AuthProvider с comprehensive authentication methods
@@ -940,6 +968,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Декабрь 2025 (Codex Max Integration Session + Partner Responses Feature)*
+*Последнее обновление: Январь 2026 (Phase 3.1 Results List Enhancement)*
 *Статус документа: Production-Ready*
-*Next Review: После завершения Mobile Phase Two (Core Search UI)*
+*Next Review: После завершения Phase 3.2 (Filtering) или Phase 3.3 (Search Home/Detail)*
