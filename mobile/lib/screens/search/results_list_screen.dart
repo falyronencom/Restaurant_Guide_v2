@@ -242,6 +242,46 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Результаты поиска'),
+        actions: [
+          // Filter button with badge
+          Consumer<EstablishmentsProvider>(
+            builder: (context, provider, child) => Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  onPressed: () => Navigator.of(context).pushNamed('/filter'),
+                  tooltip: 'Фильтры',
+                ),
+                if (provider.activeFilterCount > 0)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        '${provider.activeFilterCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) {
