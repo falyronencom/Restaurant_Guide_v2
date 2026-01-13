@@ -52,13 +52,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
 
   /// Navigate to establishment detail screen
   void _navigateToDetail(int establishmentId) {
-    // Placeholder navigation - detail screen will be implemented in Phase 3.3
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Detail view for ID: $establishmentId'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    Navigator.of(context).pushNamed('/establishment/$establishmentId');
   }
 
   /// Toggle favorite status with authentication check
