@@ -415,7 +415,7 @@ Comprehensive documentation всего Phase One Foundation с:
 
 ## Текущий статус проекта
 
-**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-2 ✅ Завершены, Sub-Phase 3.1-3.2 ✅ Complete
+**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-2 ✅ Завершены, Sub-Phase 3.1-3.3 ✅ Complete
 **Последнее обновление**: Январь 13, 2026
 **Backend Status**: Production-ready с comprehensive test coverage (64%, 400+ tests)
 **Mobile Foundation**: Production-ready architecture с полной backend интеграцией
@@ -672,11 +672,11 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 - ✅ Pixel-perfect Figma design implementation
 - 📄 Handoff documentation ([PHASE_TWO_COMPLETION_REPORT.md](PHASE_TWO_COMPLETION_REPORT.md))
 
-**Sub-Phase 3: Core Search UI** ⏳ (В разработке)
+**Sub-Phase 3: Core Search UI** ✅ (Завершена - Январь 2026)
 - ✅ **Phase 3.1: Results List** - Establishments list screen с pagination, sorting, favorites (Январь 2026)
 - ✅ **Phase 3.2: Filter System** - Comprehensive filter panel с 6 секциями фильтров (Январь 2026)
-- ⏳ Phase 3.3: Search home screen с city selection + Establishment detail screen
-- ⏳ Error handling и empty states (базовая реализация в 3.1)
+- ✅ **Phase 3.3: Search Home & Detail View** - Search home screen с city selector + Establishment detail screen (Январь 2026)
+- ✅ Error handling и empty states (реализовано в 3.1-3.3)
 
 **Sub-Phase 4: Extended Features** 📋 (Запланировано)
 - Map view с establishment markers
@@ -850,6 +850,51 @@ Proprietary - все права защищены.
 
 ## Recent Updates
 
+### Январь 13, 2026 - Mobile Phase 3.3: Search Home & Detail View Complete
+- ✅ **Phase 3.3 Search Home & Detail View** полностью реализована (VSCode Session)
+  * Phase A: Search Home Screen с NIRIVIO branding, city selector, search bar
+  * Phase B: Establishment Detail View Core с hero section и info overlay
+  * Phase C: Photo Gallery с PageView, swipe navigation, fullscreen viewer
+  * Phase D: Reviews Section и Map placeholder
+  * Phase E: Integration Testing и City Selector refinement
+- ✅ **Search Home Screen**:
+  * Full-screen background image с dark overlay
+  * NIRIVIO logo + tagline "Мы скажем, куда сходить"
+  * City selector button → modal с 7 городами Беларуси
+  * Filter button с badge для active filters
+  * Search input с orange submit button
+- ✅ **City Selector Modal** (Figma-accurate):
+  * Header: "Местоположение" + chevron back + "Сброс"
+  * Section title: "Ваш город"
+  * Cities с областями (Минск, Гродно, Брест, Гомель, Витебск, Могилёв, Бобруйск)
+  * Orange checkboxes (#EC723D) для selection
+  * "Применить" button (#DB4F13) с bottom gradient
+- ✅ **Establishment Detail Screen** (1367 lines):
+  * Hero section (657px) с photo gallery PageView
+  * Info overlay: name, category, cuisine, status, address, phone, Instagram
+  * Rating badge (green square) + price indicator
+  * Menu section с working hours и photo carousel
+  * Attributes section с Material Icons в circles
+  * Map section placeholder
+  * Reviews section (dark background) с horizontal carousel
+  * Fullscreen gallery с InteractiveViewer и pinch-to-zoom
+- ✅ **New Files Created**:
+  * `lib/screens/establishment/detail_screen.dart` - Detail view (1367 lines)
+  * `lib/models/review.dart` - Review model
+  * `lib/services/reviews_service.dart` - Reviews API service
+  * `mobile/session_reports/phase_3_3_search_detail_report.md` - Session report
+- ✅ **Files Modified**:
+  * `lib/screens/search/search_home_screen.dart` - Complete rewrite
+  * `lib/main.dart` - onGenerateRoute для `/establishment/:id`
+  * `lib/screens/search/results_list_screen.dart` - Navigation to detail
+  * `pubspec.yaml` - Assets configuration
+- ✅ **Build**: app-debug.apk успешно собран
+- ✅ **1 Git commit** + comprehensive session report
+- 📄 **Session Report**: [mobile/session_reports/phase_3_3_search_detail_report.md](mobile/session_reports/phase_3_3_search_detail_report.md)
+- **Code Metrics**: +2,327 lines, 9 files changed
+- 🎯 **Status**: Sub-Phase 3 (Core Search UI) полностью завершена
+- 🎯 **Next**: Sub-Phase 4 (Extended Features: Map, Favorites, Profile screens)
+
 ### Январь 13, 2026 - Mobile Phase 3.2: Filter System Implementation Complete
 - ✅ **Phase 3.2 Filter System** полностью реализована (VSCode Session)
   * Phase A: Filter enums (DistanceOption, PriceRange, HoursFilter) + FilterConstants
@@ -1002,6 +1047,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Январь 13, 2026 (Phase 3.2 Filter System Implementation)*
+*Последнее обновление: Январь 13, 2026 (Phase 3.3 Search Home & Detail View Complete)*
 *Статус документа: Production-Ready*
-*Next Review: После завершения Phase 3.3 (Search Home + Establishment Detail)*
+*Next Review: После завершения Sub-Phase 4 (Extended Features)*
