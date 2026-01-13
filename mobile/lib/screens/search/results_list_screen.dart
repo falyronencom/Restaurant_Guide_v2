@@ -130,24 +130,49 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     );
   }
 
-  /// Show sort options bottom sheet
+  /// Show sort options bottom sheet (Figma design)
   void _showSortOptions() {
     showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Header with X button and centered title
               Padding(
-                padding: const EdgeInsets.all(AppDimensions.paddingM),
-                child: Text(
-                  'Сортировка',
-                  style: Theme.of(context).textTheme.titleLarge,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.paddingM,
+                  vertical: AppDimensions.paddingS,
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Centered title
+                    Text(
+                      'Сортировка',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    // X button on the left
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const Divider(height: 1),
+              // Sort options with checkboxes
               ...SortOption.values.map((option) => _buildSortOption(
                     option: option,
                     isSelected: provider.currentSort == option,
@@ -164,26 +189,49 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     );
   }
 
-  /// Build single sort option tile
+  /// Build single sort option with checkbox (Figma design)
   Widget _buildSortOption({
     required SortOption option,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final theme = Theme.of(context);
-
-    return ListTile(
-      title: Text(
-        option.displayLabel,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isSelected ? theme.colorScheme.primary : null,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimensions.paddingL,
+          vertical: AppDimensions.paddingM,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              option.displayLabel,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            // Checkbox style indicator
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.black : Colors.transparent,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: isSelected ? Colors.black : Colors.grey.shade400,
+                  width: 1.5,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(
+                      Icons.check,
+                      size: 16,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+          ],
         ),
       ),
-      trailing: isSelected
-          ? Icon(Icons.check, color: theme.colorScheme.primary)
-          : null,
-      onTap: onTap,
     );
   }
 
@@ -194,14 +242,6 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Результаты поиска'),
-        actions: [
-          // Sort button
-          IconButton(
-            icon: const Icon(Icons.sort),
-            onPressed: _showSortOptions,
-            tooltip: 'Сортировка',
-          ),
-        ],
       ),
       body: Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) {
@@ -267,54 +307,84 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     );
   }
 
-  /// Build results header with count and sort indicator
+  /// Build results header with sort and map buttons (Figma design)
   Widget _buildResultsHeader(ThemeData theme, EstablishmentsProvider provider) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingM,
-        vertical: AppDimensions.paddingS,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border(
-          bottom: BorderSide(
-            color: theme.dividerColor,
-            width: 1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Sort and Map buttons row
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimensions.paddingM,
+            vertical: AppDimensions.paddingS,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Sort button
+              GestureDetector(
+                onTap: _showSortOptions,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.swap_vert,
+                      size: 22,
+                    ),
+                    const SizedBox(width: AppDimensions.spacingS),
+                    Text(
+                      'Сортировка',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Map button (placeholder for Phase 3.3)
+              GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Карта будет доступна в следующем обновлении'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.map_outlined,
+                      size: 22,
+                    ),
+                    const SizedBox(width: AppDimensions.spacingS),
+                    Text(
+                      'Карта',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Найдено: ${provider.totalResults}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+        // Results count
+        Padding(
+          padding: const EdgeInsets.only(
+            left: AppDimensions.paddingM,
+            bottom: AppDimensions.paddingS,
+          ),
+          child: Text(
+            'Результаты: ${provider.totalResults}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.secondary,
             ),
           ),
-          // Current sort indicator
-          GestureDetector(
-            onTap: _showSortOptions,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.sort,
-                  size: AppDimensions.iconS,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: AppDimensions.spacingXs),
-                Text(
-                  provider.currentSort.displayLabel,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

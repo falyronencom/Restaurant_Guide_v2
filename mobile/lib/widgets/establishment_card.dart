@@ -260,11 +260,15 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build favorite button
+  /// Orange color when active, grey outline when inactive (per Figma design)
   Widget _buildFavoriteButton() {
+    // Orange color from Figma design
+    const favoriteColor = Color(0xFFFF6B35);
+
     return IconButton(
       icon: Icon(
         isFavorite ? Icons.favorite : Icons.favorite_border,
-        color: isFavorite ? Colors.red : Colors.grey,
+        color: isFavorite ? favoriteColor : Colors.grey,
       ),
       onPressed: onFavoriteToggle,
       iconSize: AppDimensions.iconM,
