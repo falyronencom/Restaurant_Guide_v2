@@ -8,6 +8,8 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
+import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -979,9 +981,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                 // Reviews count with arrow
                 GestureDetector(
                   onTap: () {
-                    // TODO: Navigate to all reviews
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Страница отзывов в разработке')),
+                    // Navigate to all reviews screen
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => ReviewsListScreen(
+                          establishment: _establishment!,
+                        ),
+                      ),
                     );
                   },
                   child: Row(
@@ -1023,15 +1029,25 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               height: 44,
               child: ElevatedButton(
                 onPressed: () {
-                  // TODO: Navigate to write review
+                  // Check authentication before navigating to write review
                   final authProvider = context.read<AuthProvider>();
                   if (!authProvider.isAuthenticated) {
                     _showLoginPrompt();
                     return;
                   }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Написание отзыва в разработке')),
-                  );
+                  // Navigate to write review screen
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => WriteReviewScreen(
+                        establishment: _establishment!,
+                      ),
+                    ),
+                  ).then((result) {
+                    // Refresh reviews if a new review was submitted
+                    if (result == true) {
+                      _loadData();
+                    }
+                  });
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _secondaryOrange,
@@ -1065,10 +1081,22 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _reviews.length,
         itemBuilder: (context, index) {
-          return Container(
-            width: 348,
-            margin: EdgeInsets.only(right: index < _reviews.length - 1 ? 10 : 0),
-            child: _buildReviewCard(_reviews[index]),
+          return GestureDetector(
+            onTap: () {
+              // Navigate to all reviews screen when tapping a review card
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => ReviewsListScreen(
+                    establishment: _establishment!,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              width: 348,
+              margin: EdgeInsets.only(right: index < _reviews.length - 1 ? 10 : 0),
+              child: _buildReviewCard(_reviews[index]),
+            ),
           );
         },
       ),

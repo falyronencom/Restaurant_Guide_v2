@@ -680,9 +680,10 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 
 **Sub-Phase 4: Extended Features** ⏳ (В разработке - Январь 2026)
 - ✅ **Phase 4.1: Favorites Tab** - Full favorites screen с 5 states, pull-to-refresh, optimistic UI (Январь 14, 2026)
-- 📋 Phase 4.2: Profile screen implementation
-- 📋 Phase 4.3: News screen implementation
-- 📋 Phase 4.4: Map view с establishment markers
+- ✅ **Phase 4.2: Write Review & Reviews List** - Write review screen с star rating, reviews list с reactions (Январь 14, 2026)
+- 📋 Phase 4.3: Profile screen implementation
+- 📋 Phase 4.4: News screen implementation
+- 📋 Phase 4.5: Map view с establishment markers
 - 📋 Maps integration (Google Maps)
 - 📋 Offline support foundation
 
@@ -848,6 +849,39 @@ Proprietary - все права защищены.
 ---
 
 ## Recent Updates
+
+### Январь 14, 2026 - Mobile Phase 4.2: Write Review & Reviews List Complete
+- ✅ **Phase 4.2 Write Review & Reviews List** полностью реализована (VSCode Session)
+  * WriteReviewScreen с star rating selector (5 пятиконечных звёзд)
+  * ReviewsListScreen с pagination, сортировкой, лайками/дизлайками
+  * Навигация из detail_screen к обоим экранам
+  * Error handling для 409 (duplicate) и 429 (quota) responses
+- ✅ **WriteReviewScreen Features**:
+  * 5-star rating selector (жёлтые активные, серые неактивные)
+  * Text field с character counter (0/1000)
+  * Form validation (rating required, min 10 chars text)
+  * Submit button с loading state
+  * Error messages на русском языке
+- ✅ **ReviewsListScreen Features**:
+  * Dark theme (Figma design)
+  * Review cards с avatar, name, stars, date, text
+  * Like/Dislike reactions под каждым отзывом (UI-ready)
+  * Sort options: новые, старые, высокий/низкий рейтинг
+  * Infinite scroll pagination
+- ✅ **Navigation Integration**:
+  * "Написать отзыв" button → WriteReviewScreen (auth check)
+  * Review card tap → ReviewsListScreen
+  * "N отзывов" link → ReviewsListScreen
+  * Success callback refreshes detail screen
+- ✅ **Build**: app-debug.apk успешно собран (0 errors)
+- ✅ **Files Created**:
+  * `lib/screens/reviews/write_review_screen.dart` - 340 lines
+  * `lib/screens/reviews/reviews_list_screen.dart` - 480 lines
+- ✅ **Files Modified**:
+  * `lib/screens/establishment/detail_screen.dart` - navigation integration
+- 📄 **Session Report**: [mobile/session_reports/phase_4_2_write_review_report.md](mobile/session_reports/phase_4_2_write_review_report.md)
+- 🎯 **Status**: Write Review & Reviews List production-ready
+- 🎯 **Next**: Phase 4.3 (Profile screen) или Phase 4.4 (News screen)
 
 ### Январь 14, 2026 - Mobile Phase 4.1: Favorites Tab Implementation Complete
 - ✅ **Phase 4.1 Favorites Tab** полностью реализована (VSCode Session)
@@ -1075,6 +1109,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Январь 14, 2026 (Phase 4.1 Favorites Tab Complete)*
+*Последнее обновление: Январь 14, 2026 (Phase 4.2 Write Review & Reviews List Complete)*
 *Статус документа: Production-Ready*
 *Next Review: После завершения Sub-Phase 4 (Extended Features)*
