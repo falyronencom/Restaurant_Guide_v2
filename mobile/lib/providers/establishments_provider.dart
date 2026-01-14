@@ -72,6 +72,9 @@ class EstablishmentsProvider with ChangeNotifier {
 
   // Favorites state
   Set<int> _favoriteIds = {};
+  List<Establishment> _favoriteEstablishments = [];
+  bool _isFavoritesLoading = false;
+  String? _favoritesError;
 
   EstablishmentsProvider({EstablishmentsService? service})
       : _service = service ?? EstablishmentsService();
@@ -161,6 +164,15 @@ class EstablishmentsProvider with ChangeNotifier {
   // ============================================================================
 
   Set<int> get favoriteIds => _favoriteIds;
+
+  /// List of favorite establishments with full data
+  List<Establishment> get favoriteEstablishments => _favoriteEstablishments;
+
+  /// Whether favorites are being loaded
+  bool get isFavoritesLoading => _isFavoritesLoading;
+
+  /// Error message for favorites loading
+  String? get favoritesError => _favoritesError;
 
   bool isFavorite(int establishmentId) {
     return _favoriteIds.contains(establishmentId);
@@ -423,9 +435,18 @@ class EstablishmentsProvider with ChangeNotifier {
   Future<void> toggleFavorite(int establishmentId) async {
     final wasFavorite = _favoriteIds.contains(establishmentId);
 
+    // Store removed establishment for potential revert
+    Establishment? removedEstablishment;
+    if (wasFavorite) {
+      removedEstablishment = _favoriteEstablishments
+          .where((e) => e.id == establishmentId)
+          .firstOrNull;
+    }
+
     // Optimistic update
     if (wasFavorite) {
       _favoriteIds.remove(establishmentId);
+      _removeFromFavoritesList(establishmentId);
     } else {
       _favoriteIds.add(establishmentId);
     }
@@ -441,6 +462,10 @@ class EstablishmentsProvider with ChangeNotifier {
       // Revert on error
       if (wasFavorite) {
         _favoriteIds.add(establishmentId);
+        // Restore removed establishment to list
+        if (removedEstablishment != null) {
+          _favoriteEstablishments.add(removedEstablishment);
+        }
       } else {
         _favoriteIds.remove(establishmentId);
       }
@@ -454,13 +479,38 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Load favorites from server
   Future<void> loadFavorites() async {
+    _isFavoritesLoading = true;
+    _favoritesError = null;
+    notifyListeners();
+
     try {
       final favorites = await _service.getFavorites();
+      _favoriteEstablishments = favorites;
       _favoriteIds = favorites.map((e) => e.id).toSet();
+      _isFavoritesLoading = false;
       notifyListeners();
     } catch (e) {
-      // Silently fail - favorites will be empty
+      _favoritesError = _extractErrorMessage(e);
+      _isFavoritesLoading = false;
+      notifyListeners();
     }
+  }
+
+  /// Refresh favorites list (for pull-to-refresh)
+  Future<void> refreshFavorites() async {
+    await loadFavorites();
+  }
+
+  /// Remove establishment from favorites list (optimistic update)
+  void _removeFromFavoritesList(int establishmentId) {
+    _favoriteEstablishments.removeWhere((e) => e.id == establishmentId);
+    notifyListeners();
+  }
+
+  /// Clear favorites error
+  void clearFavoritesError() {
+    _favoritesError = null;
+    notifyListeners();
   }
 
   // ============================================================================
