@@ -131,4 +131,37 @@ class ReviewsService {
       return false;
     }
   }
+
+  /// Get current user's reviews (requires authentication)
+  ///
+  /// [page] - Page number (default: 1)
+  /// [perPage] - Items per page (default: 20)
+  Future<UserReviewsResponse> getUserReviews({
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/users/me/reviews',
+        queryParameters: {
+          'page': page,
+          'per_page': perPage,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return UserReviewsResponse.fromJson(response.data as Map<String, dynamic>);
+      } else {
+        throw Exception('Unexpected response format');
+      }
+    } catch (e) {
+      // Return empty reviews on error
+      return UserReviewsResponse(
+        reviews: [],
+        total: 0,
+        page: 1,
+        totalPages: 0,
+      );
+    }
+  }
 }

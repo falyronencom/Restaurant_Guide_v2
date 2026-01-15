@@ -415,8 +415,8 @@ Comprehensive documentation всего Phase One Foundation с:
 
 ## Текущий статус проекта
 
-**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-3 ✅ Завершены, Sub-Phase 4.1 ✅ Complete
-**Последнее обновление**: Январь 14, 2026
+**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-3 ✅ Завершены, Sub-Phase 4.1-4.4 ✅ Complete
+**Последнее обновление**: Январь 15, 2026
 **Backend Status**: Production-ready с comprehensive test coverage (64%, 400+ tests)
 **Mobile Foundation**: Production-ready architecture с полной backend интеграцией
 **Mobile Authentication**: Complete authentication flows (email, phone, login) ready для backend API integration
@@ -681,10 +681,9 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 **Sub-Phase 4: Extended Features** ⏳ (В разработке - Январь 2026)
 - ✅ **Phase 4.1: Favorites Tab** - Full favorites screen с 5 states, pull-to-refresh, optimistic UI (Январь 14, 2026)
 - ✅ **Phase 4.2: Write Review & Reviews List** - Write review screen с star rating, reviews list с reactions (Январь 14, 2026)
-- 📋 Phase 4.3: Profile screen implementation
-- 📋 Phase 4.4: News screen implementation
-- 📋 Phase 4.5: Map view с establishment markers
-- 📋 Maps integration (Google Maps)
+- ✅ **Phase 4.3: Map Tab** - Yandex MapKit integration с markers и clustering (Январь 15, 2026)
+- ✅ **Phase 4.4: Profile Management** - ProfileScreen + EditProfileScreen с user reviews list (Январь 15, 2026)
+- 📋 Phase 4.5: News screen implementation
 - 📋 Offline support foundation
 
 ### 📋 Фаза 6: User Features Integration
@@ -849,6 +848,51 @@ Proprietary - все права защищены.
 ---
 
 ## Recent Updates
+
+### Январь 15, 2026 - Mobile Phase 4.4: Profile Management Complete
+- ✅ **Phase 4.4 Profile Management** полностью реализована (VSCode Session)
+  * Phase A: Added getUserReviews() method to ReviewsService
+  * Phase B: ProfileScreen with two internal screens (main profile + profile detail)
+  * Phase C: EditProfileScreen with avatar section and form fields
+  * Phase D: Navigation integration (/profile/edit route)
+  * Phase E: Testing (flutter analyze + build APK)
+- ✅ **ProfileScreen Features**:
+  * Main profile tab: settings menu, profile card, "Разместить ваше заведение" partner section
+  * Profile detail screen: user stats (reviews/favorites count), user's reviews list
+  * Logout confirmation dialog with Material Design
+  * Avatar with initials fallback (navy blue background)
+- ✅ **EditProfileScreen Features**:
+  * Large avatar with "Поменять фото" button
+  * Form fields: Name (editable), Location (placeholder), Email (read-only), Phone (read-only)
+  * Save button with loading state
+  * ImagePicker integration for avatar selection (gallery/camera)
+- ✅ **User Reviews Section**:
+  * Displays user's own reviews with establishment context
+  * Review cards with establishment name, image, type, cuisine
+  * Star rating display and relative date formatting
+  * "Показать больше" pagination support
+- ✅ **New Models Added**:
+  * UserReview model with establishment context
+  * UserReviewsResponse for paginated user reviews
+- ✅ **Build**: app-debug.apk успешно собран (0 errors)
+- ✅ **Files Created/Modified**:
+  * `lib/models/review.dart` - Added UserReview, UserReviewsResponse models
+  * `lib/services/reviews_service.dart` - Added getUserReviews() method
+  * `lib/screens/profile/profile_screen.dart` - Complete rewrite (~957 lines)
+  * `lib/screens/profile/edit_profile_screen.dart` - New file (~500 lines)
+  * `lib/main.dart` - Added /profile/edit route
+- 📄 **Session Report**: [mobile/session_reports/phase_4_4_profile_management_report.md](mobile/session_reports/phase_4_4_profile_management_report.md)
+- 🎯 **Status**: Profile Management production-ready
+- 🎯 **Next**: Phase 4.5 (News screen)
+
+### Январь 15, 2026 - Mobile Phase 4.3: Map Tab with Yandex MapKit Complete
+- ✅ **Phase 4.3 Map Tab** полностью реализована (VSCode Session)
+  * Yandex MapKit Flutter integration
+  * Map markers for establishments
+  * Marker clustering для производительности
+  * Info panel при выборе маркера
+  * Navigation to detail screen from map
+- 🎯 **Status**: Map Tab production-ready
 
 ### Январь 14, 2026 - Mobile Phase 4.2: Write Review & Reviews List Complete
 - ✅ **Phase 4.2 Write Review & Reviews List** полностью реализована (VSCode Session)
@@ -1109,6 +1153,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Январь 14, 2026 (Phase 4.2 Write Review & Reviews List Complete)*
+*Последнее обновление: Январь 15, 2026 (Phase 4.4 Profile Management Complete)*
 *Статус документа: Production-Ready*
-*Next Review: После завершения Sub-Phase 4 (Extended Features)*
+*Next Review: После завершения Phase 4.5 (News Screen)*
