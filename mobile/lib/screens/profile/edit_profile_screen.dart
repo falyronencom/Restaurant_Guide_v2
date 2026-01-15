@@ -114,7 +114,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Загрузка аватара будет доступна в следующей версии'),
+                content:
+                    Text('Загрузка аватара будет доступна в следующей версии'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -143,8 +144,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     try {
       final success = await context.read<AuthProvider>().updateProfile(
-        name: _nameController.text.trim(),
-      );
+            name: _nameController.text.trim(),
+          );
 
       if (mounted) {
         if (success) {
@@ -422,7 +423,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         border: Border(
           bottom: BorderSide(
             color: _greyDivider,
@@ -461,7 +462,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       contentPadding: EdgeInsets.zero,
                       border: InputBorder.none,
                       hintText: hint,
-                      hintStyle: TextStyle(
+                      hintStyle: const TextStyle(
                         fontFamily: 'Avenir Next',
                         fontSize: 15,
                         color: _greyText,
@@ -474,14 +475,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     style: TextStyle(
                       fontFamily: 'Avenir Next',
                       fontSize: 15,
-                      color: value?.isNotEmpty == true ? Colors.black : _greyText,
+                      color:
+                          value?.isNotEmpty == true ? Colors.black : _greyText,
                     ),
                   ),
               ],
             ),
           ),
           if (isEditable)
-            Icon(
+            const Icon(
               Icons.edit_outlined,
               size: 28,
               color: _greyText,
