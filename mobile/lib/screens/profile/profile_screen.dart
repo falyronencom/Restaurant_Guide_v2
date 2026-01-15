@@ -31,8 +31,8 @@ class ProfileScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 40),
                   // Title
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
                       'Профиль',
                       style: TextStyle(
@@ -123,7 +123,7 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       isAuthenticated ? 'Показать профиль' : 'Войти в аккаунт',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: 'Avenir Next',
                         fontSize: 14,
                         color: _greyText,
@@ -133,7 +133,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
               // Arrow
-              Icon(
+              const Icon(
                 Icons.chevron_right,
                 color: _greyText,
                 size: 22,
@@ -187,7 +187,7 @@ class ProfileScreen extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               colors: [_secondaryOrange, _primaryOrange],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -218,7 +218,8 @@ class ProfileScreen extends StatelessWidget {
   }
 
   /// Build settings section
-  Widget _buildSettingsSection(BuildContext context, AuthProvider authProvider) {
+  Widget _buildSettingsSection(
+      BuildContext context, AuthProvider authProvider) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -326,7 +327,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(
+            const Icon(
               Icons.chevron_right,
               color: _greyText,
               size: 22,
@@ -504,7 +505,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          Text(
+          const Text(
             'Ваш профиль',
             style: TextStyle(
               fontFamily: 'Unbounded',
@@ -580,7 +581,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
+                          const Text(
                             '{Гость}',
                             style: TextStyle(
                               fontFamily: 'Avenir Next',
@@ -719,7 +720,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
           if (_isLoading)
             const Center(
               child: Padding(
@@ -735,12 +735,12 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                   children: [
                     Text(
                       _error!,
-                      style: TextStyle(color: _greyText),
+                      style: const TextStyle(color: _greyText),
                     ),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: _loadUserReviews,
-                      child: Text(
+                      child: const Text(
                         'Повторить',
                         style: TextStyle(color: _primaryOrange),
                       ),
@@ -750,9 +750,9 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               ),
             )
           else if (_reviews.isEmpty)
-            Center(
+            const Center(
               child: Padding(
-                padding: const EdgeInsets.all(32),
+                padding: EdgeInsets.all(32),
                 child: Text(
                   'У вас пока нет отзывов',
                   style: TextStyle(
@@ -780,7 +780,8 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
   Widget _buildReviewCard(UserReview review) {
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).pushNamed('/establishment/${review.establishmentId}');
+        Navigator.of(context)
+            .pushNamed('/establishment/${review.establishmentId}');
       },
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -852,7 +853,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       if (review.establishmentCuisine != null)
                         Text(
                           '{${review.establishmentCuisine}}',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontFamily: 'Avenir Next',
                             fontSize: 13,
                             color: _greyText,
@@ -885,7 +886,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    const Text(
                       'Ваша оценка',
                       style: TextStyle(
                         fontFamily: 'Avenir Next',
