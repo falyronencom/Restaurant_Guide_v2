@@ -85,7 +85,8 @@ class ProfileScreen extends StatelessWidget {
               ),
             );
           } else {
-            Navigator.of(context).pushNamed('/auth/login');
+            // Use rootNavigator to navigate from nested tab Navigator
+            Navigator.of(context, rootNavigator: true).pushNamed('/auth/login');
           }
         },
         borderRadius: BorderRadius.circular(10),

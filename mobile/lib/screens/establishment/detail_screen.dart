@@ -235,7 +235,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build hero section with photo and overlay info
   Widget _buildHeroSection() {
-    final photos = _establishment!.media ?? [];
+    // Filter only establishment photos (not menu)
+    final photos = (_establishment!.media ?? [])
+        .where((m) => m.type == 'photo')
+        .toList();
     final hasPhotos = photos.isNotEmpty;
 
     return SizedBox(
@@ -684,62 +687,73 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build menu carousel
   Widget _buildMenuCarousel() {
-    final photos = _establishment!.media!;
+    // Filter only menu photos
+    final menuPhotos = _establishment!.media!
+        .where((m) => m.type == 'menu')
+        .toList();
+
+    if (menuPhotos.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return SizedBox(
       height: 275,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: photos.length > 4 ? 4 : photos.length,
+        itemCount: menuPhotos.length > 4 ? 4 : menuPhotos.length,
         itemBuilder: (context, index) {
-          final photo = photos[index];
+          final photo = menuPhotos[index];
           final imageUrl = photo.previewUrl ?? photo.url ?? photo.thumbnailUrl;
+          final maxIndex = (menuPhotos.length > 4 ? 4 : menuPhotos.length) - 1;
 
-          return Container(
-            width: 165,
-            margin: EdgeInsets.only(right: index < 3 ? 10 : 0),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.only(
-                topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
-                topRight: const Radius.circular(10),
-                bottomLeft: const Radius.circular(10),
-                bottomRight: index == 3 ? const Radius.circular(30) : const Radius.circular(10),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.04),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: const Offset(4, 4),
+          return GestureDetector(
+            onTap: () => _openMenuGallery(index),
+            child: Container(
+              width: 165,
+              margin: EdgeInsets.only(right: index < maxIndex ? 10 : 0),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.only(
+                  topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
+                  topRight: const Radius.circular(10),
+                  bottomLeft: const Radius.circular(10),
+                  bottomRight: index == maxIndex ? const Radius.circular(30) : const Radius.circular(10),
                 ),
-                BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.04),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: const Offset(-4, -4),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.only(
-                topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
-                topRight: const Radius.circular(10),
-                bottomLeft: const Radius.circular(10),
-                bottomRight: index == 3 ? const Radius.circular(30) : const Radius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(4, 4),
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(-4, -4),
+                  ),
+                ],
               ),
-              child: imageUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: Colors.grey[200],
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.error),
-                      ),
-                    )
-                  : Container(color: Colors.grey[200]),
+              child: ClipRRect(
+                borderRadius: BorderRadius.only(
+                  topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
+                  topRight: const Radius.circular(10),
+                  bottomLeft: const Radius.circular(10),
+                  bottomRight: index == maxIndex ? const Radius.circular(30) : const Radius.circular(10),
+                ),
+                child: imageUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.error),
+                        ),
+                      )
+                    : Container(color: Colors.grey[200]),
+              ),
             ),
           );
         },
@@ -781,7 +795,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       if (attributes['live_music'] == true) {
         amenities.add({'name': 'Живая музыка', 'icon': Icons.music_note});
       }
-      if (attributes['kids_friendly'] == true) {
+      if (attributes['kids_zone'] == true) {
         amenities.add({'name': 'Детская зона', 'icon': Icons.child_friendly});
       }
     }
@@ -796,31 +810,45 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          const Text(
-            'Атрибуты',
-            style: TextStyle(
-              fontFamily: 'Unbounded',
-              fontSize: 30,
-              fontWeight: FontWeight.w400,
-              color: Colors.black,
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Атрибуты',
+              style: TextStyle(
+                fontFamily: 'Unbounded',
+                fontSize: 30,
+                fontWeight: FontWeight.w400,
+                color: Colors.black,
+              ),
             ),
           ),
           const SizedBox(height: 24),
 
-          // Amenities row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: amenities.take(3).map((amenity) {
-              return _buildAmenityItem(
-                amenity['name'] as String,
-                amenity['icon'] as IconData,
-              );
-            }).toList(),
+          // Amenities horizontal carousel
+          SizedBox(
+            height: 120,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: amenities.length,
+              itemBuilder: (context, index) {
+                final amenity = amenities[index];
+                return Padding(
+                  padding: EdgeInsets.only(
+                    right: index < amenities.length - 1 ? 24 : 0,
+                  ),
+                  child: _buildAmenityItem(
+                    amenity['name'] as String,
+                    amenity['icon'] as IconData,
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1227,15 +1255,34 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return '${date.day} ${months[date.month - 1]}';
   }
 
-  /// Open fullscreen gallery
+  /// Open fullscreen gallery for establishment photos
   void _openFullscreenGallery(int initialIndex) {
-    final photos = _establishment!.media ?? [];
+    final photos = (_establishment!.media ?? [])
+        .where((m) => m.type == 'photo')
+        .toList();
     if (photos.isEmpty) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _FullscreenGallery(
           photos: photos,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
+  /// Open fullscreen gallery for menu photos
+  void _openMenuGallery(int initialIndex) {
+    final menuPhotos = (_establishment!.media ?? [])
+        .where((m) => m.type == 'menu')
+        .toList();
+    if (menuPhotos.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _FullscreenGallery(
+          photos: menuPhotos,
           initialIndex: initialIndex,
         ),
       ),
