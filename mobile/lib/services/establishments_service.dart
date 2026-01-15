@@ -155,6 +155,16 @@ class EstablishmentsService {
   ///
   /// [id] - Establishment ID
   Future<Establishment> getEstablishmentById(int id) async {
+    // Return mock data if enabled
+    if (useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300)); // Simulate network
+      final establishment = _mockEstablishments.where((e) => e.id == id).firstOrNull;
+      if (establishment != null) {
+        return establishment;
+      }
+      throw Exception('Establishment not found');
+    }
+
     try {
       final response = await _apiClient.get('/api/v1/establishments/$id');
 
@@ -361,6 +371,30 @@ class EstablishmentsService {
       longitude: 27.5619,
       thumbnailUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
       status: 'active',
+      workingHours: {
+        'monday': {'open': '10:00', 'close': '23:00'},
+        'tuesday': {'open': '10:00', 'close': '23:00'},
+        'wednesday': {'open': '10:00', 'close': '23:00'},
+        'thursday': {'open': '10:00', 'close': '23:00'},
+        'friday': {'open': '10:00', 'close': '00:00'},
+        'saturday': {'open': '11:00', 'close': '00:00'},
+        'sunday': {'open': '11:00', 'close': '22:00'},
+      },
+      attributes: {
+        'wifi': true,
+        'parking': true,
+        'terrace': true,
+        'delivery': false,
+        'live_music': true,
+        'kids_zone': true,
+      },
+      media: [
+        EstablishmentMedia(id: 1, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 2, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 3, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=800', position: 2, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 4, establishmentId: 1, type: 'menu', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 5, establishmentId: 1, type: 'menu', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+      ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
@@ -378,6 +412,28 @@ class EstablishmentsService {
       longitude: 27.5547,
       thumbnailUrl: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
       status: 'active',
+      workingHours: {
+        'monday': {'open': '08:00', 'close': '22:00'},
+        'tuesday': {'open': '08:00', 'close': '22:00'},
+        'wednesday': {'open': '08:00', 'close': '22:00'},
+        'thursday': {'open': '08:00', 'close': '22:00'},
+        'friday': {'open': '08:00', 'close': '23:00'},
+        'saturday': {'open': '09:00', 'close': '23:00'},
+        'sunday': {'open': '09:00', 'close': '21:00'},
+      },
+      attributes: {
+        'wifi': true,
+        'parking': false,
+        'terrace': true,
+        'delivery': true,
+        'live_music': false,
+        'kids_zone': false,
+      },
+      media: [
+        EstablishmentMedia(id: 10, establishmentId: 2, type: 'photo', url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 11, establishmentId: 2, type: 'photo', url: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 12, establishmentId: 2, type: 'menu', url: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+      ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
@@ -395,6 +451,28 @@ class EstablishmentsService {
       longitude: 27.5510,
       thumbnailUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400',
       status: 'active',
+      workingHours: {
+        'monday': {'open': '11:00', 'close': '23:00'},
+        'tuesday': {'open': '11:00', 'close': '23:00'},
+        'wednesday': {'open': '11:00', 'close': '23:00'},
+        'thursday': {'open': '11:00', 'close': '23:00'},
+        'friday': {'open': '11:00', 'close': '00:00'},
+        'saturday': {'open': '12:00', 'close': '00:00'},
+        'sunday': {'open': '12:00', 'close': '22:00'},
+      },
+      attributes: {
+        'wifi': true,
+        'parking': true,
+        'terrace': false,
+        'delivery': true,
+        'live_music': false,
+        'kids_zone': true,
+      },
+      media: [
+        EstablishmentMedia(id: 20, establishmentId: 3, type: 'photo', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 21, establishmentId: 3, type: 'photo', url: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 22, establishmentId: 3, type: 'menu', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+      ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
@@ -412,6 +490,28 @@ class EstablishmentsService {
       longitude: 27.5482,
       thumbnailUrl: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400',
       status: 'active',
+      workingHours: {
+        'monday': {'open': '12:00', 'close': '23:00'},
+        'tuesday': {'open': '12:00', 'close': '23:00'},
+        'wednesday': {'open': '12:00', 'close': '23:00'},
+        'thursday': {'open': '12:00', 'close': '23:00'},
+        'friday': {'open': '12:00', 'close': '00:00'},
+        'saturday': {'open': '12:00', 'close': '00:00'},
+        'sunday': {'open': '12:00', 'close': '22:00'},
+      },
+      attributes: {
+        'wifi': true,
+        'parking': true,
+        'terrace': false,
+        'delivery': true,
+        'live_music': false,
+        'kids_zone': false,
+      },
+      media: [
+        EstablishmentMedia(id: 30, establishmentId: 4, type: 'photo', url: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 31, establishmentId: 4, type: 'photo', url: 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 32, establishmentId: 4, type: 'menu', url: 'https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+      ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
