@@ -6,6 +6,9 @@ import 'package:restaurant_guide_mobile/services/api_client.dart';
 class EstablishmentsService {
   final ApiClient _apiClient;
 
+  /// Use mock data instead of real API (for testing without backend)
+  static bool useMockData = true;
+
   // Singleton pattern
   static final EstablishmentsService _instance = EstablishmentsService._internal();
   factory EstablishmentsService() => _instance;
@@ -44,6 +47,12 @@ class EstablishmentsService {
     String? search,
     String? sortBy,
   }) async {
+    // Return mock data if enabled
+    if (useMockData) {
+      await Future.delayed(const Duration(milliseconds: 500)); // Simulate network
+      return _getMockEstablishments(page: page, perPage: perPage, search: search);
+    }
+
     final queryParams = <String, dynamic>{
       'page': page,
       'per_page': perPage,
@@ -295,4 +304,184 @@ class EstablishmentsService {
       'Восточная',
     ];
   }
+
+  // ============================================================================
+  // Mock Data (for testing without backend)
+  // ============================================================================
+
+  /// Get mock establishments for testing
+  PaginatedEstablishments _getMockEstablishments({
+    int page = 1,
+    int perPage = 20,
+    String? search,
+  }) {
+    final allEstablishments = _mockEstablishments;
+
+    // Filter by search if provided
+    var filtered = allEstablishments;
+    if (search != null && search.isNotEmpty) {
+      final query = search.toLowerCase();
+      filtered = allEstablishments.where((e) =>
+        e.name.toLowerCase().contains(query) ||
+        e.description?.toLowerCase().contains(query) == true
+      ).toList();
+    }
+
+    // Paginate
+    final startIndex = (page - 1) * perPage;
+    final endIndex = startIndex + perPage;
+    final pageData = filtered.length > startIndex
+      ? filtered.sublist(startIndex, endIndex.clamp(0, filtered.length))
+      : <Establishment>[];
+
+    return PaginatedEstablishments(
+      data: pageData,
+      meta: PaginationMeta(
+        page: page,
+        perPage: perPage,
+        total: filtered.length,
+        totalPages: (filtered.length / perPage).ceil(),
+      ),
+    );
+  }
+
+  /// Mock establishments data
+  static final List<Establishment> _mockEstablishments = [
+    Establishment(
+      id: 1,
+      name: 'Васильки',
+      description: 'Сеть ресторанов белорусской кухни с уютной атмосферой и традиционными блюдами.',
+      address: 'пр-т Независимости, 16',
+      city: 'Минск',
+      category: 'Ресторан',
+      cuisine: 'Белорусская',
+      priceRange: '\$\$',
+      rating: 4.5,
+      latitude: 53.9022,
+      longitude: 27.5619,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 2,
+      name: 'Grand Café',
+      description: 'Элегантное кафе в центре города с европейской кухней и изысканными десертами.',
+      address: 'ул. Карла Маркса, 21',
+      city: 'Минск',
+      category: 'Кафе',
+      cuisine: 'Европейская',
+      priceRange: '\$\$\$',
+      rating: 4.7,
+      latitude: 53.8986,
+      longitude: 27.5547,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 3,
+      name: 'Pizzeria Bella',
+      description: 'Аутентичная итальянская пиццерия с дровяной печью и свежими ингредиентами.',
+      address: 'ул. Немига, 5',
+      city: 'Минск',
+      category: 'Пиццерия',
+      cuisine: 'Итальянская',
+      priceRange: '\$\$',
+      rating: 4.3,
+      latitude: 53.9045,
+      longitude: 27.5510,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 4,
+      name: 'Sushi Master',
+      description: 'Японский ресторан с широким выбором суши, роллов и традиционных блюд.',
+      address: 'пр-т Победителей, 84',
+      city: 'Минск',
+      category: 'Ресторан',
+      cuisine: 'Японская',
+      priceRange: '\$\$\$',
+      rating: 4.6,
+      latitude: 53.9156,
+      longitude: 27.5482,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 5,
+      name: 'Хинкальная №1',
+      description: 'Грузинский ресторан с настоящими хинкали, хачапури и домашним вином.',
+      address: 'ул. Интернациональная, 25',
+      city: 'Минск',
+      category: 'Ресторан',
+      cuisine: 'Грузинская',
+      priceRange: '\$\$',
+      rating: 4.8,
+      latitude: 53.8998,
+      longitude: 27.5601,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 6,
+      name: 'Burger King',
+      description: 'Популярная сеть быстрого питания с фирменными бургерами и картофелем фри.',
+      address: 'ТЦ Галилео, пр-т Независимости, 40',
+      city: 'Минск',
+      category: 'Фастфуд',
+      cuisine: 'Американская',
+      priceRange: '\$',
+      rating: 4.0,
+      latitude: 53.9089,
+      longitude: 27.5734,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 7,
+      name: 'Sweet Dreams',
+      description: 'Уютная кондитерская с авторскими тортами, пирожными и ароматным кофе.',
+      address: 'ул. Ленина, 8',
+      city: 'Минск',
+      category: 'Кондитерская',
+      cuisine: 'Европейская',
+      priceRange: '\$\$',
+      rating: 4.9,
+      latitude: 53.8967,
+      longitude: 27.5512,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+    Establishment(
+      id: 8,
+      name: 'The Irish Pub',
+      description: 'Аутентичный ирландский паб с живой музыкой, крафтовым пивом и закусками.',
+      address: 'ул. Зыбицкая, 6',
+      city: 'Минск',
+      category: 'Бар',
+      cuisine: 'Европейская',
+      priceRange: '\$\$',
+      rating: 4.4,
+      latitude: 53.9012,
+      longitude: 27.5578,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=400',
+      status: 'active',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 1),
+    ),
+  ];
 }

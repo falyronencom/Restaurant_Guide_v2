@@ -43,9 +43,11 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     final provider = context.read<EstablishmentsProvider>();
     _searchController.text = provider.searchQuery ?? '';
 
-    // Set default city if not set
+    // Set default city if not set (deferred to avoid calling during build)
     if (provider.selectedCity == null) {
-      provider.setCity('Минск');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        provider.setCity('Минск');
+      });
     }
   }
 
@@ -292,7 +294,8 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
   /// Navigate to filter screen
   void _openFilters() {
-    Navigator.of(context).pushNamed('/filter');
+    // Use rootNavigator to navigate outside tab navigator
+    Navigator.of(context, rootNavigator: true).pushNamed('/filter');
   }
 
   /// Execute search and navigate to results
@@ -303,8 +306,8 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     // Clear previous results and search
     provider.searchEstablishments();
 
-    // Navigate to results
-    Navigator.of(context).pushNamed('/search/results');
+    // Navigate to results using rootNavigator to navigate outside tab navigator
+    Navigator.of(context, rootNavigator: true).pushNamed('/search/results');
   }
 
   @override
@@ -458,6 +461,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
         const SizedBox(width: 25),
         // Filter button with badge
         GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: _openFilters,
           child: Stack(
             children: [
@@ -545,6 +549,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
         ),
         // Search button
         GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: _executeSearch,
           child: Container(
             width: 64,
