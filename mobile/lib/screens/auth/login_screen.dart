@@ -231,8 +231,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFF06B32),
                     minimumSize: const Size(double.infinity, 48),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -280,8 +280,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: null, // Disabled for now
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 45),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(11.301),
                     ),
@@ -332,8 +332,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     minimumSize: const Size(double.infinity, 45),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(11.301),
                     ),
@@ -380,8 +380,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 1.15, // 15/13
                           color: const Color(0xFF5F5F5F).withValues(alpha: 0.7),
                         ),
-                        children: [
-                          const TextSpan(text: 'Еще нету профиля? '),
+                        children: const [
+                          TextSpan(text: 'Еще нету профиля? '),
                           TextSpan(
                             text: 'Регистрация',
                             style: TextStyle(
