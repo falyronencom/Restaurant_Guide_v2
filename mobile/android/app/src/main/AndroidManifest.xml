@@ -35,10 +35,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Google Maps API Key - To be configured in Phase Three -->
+        <!-- Yandex MapKit API Key -->
         <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="PLACEHOLDER_GOOGLE_MAPS_API_KEY" />
+            android:name="com.yandex.android.mapkit.MAPKIT_API_KEY"
+            android:value="e585b056-a3fe-4667-9fd8-210fef26236e" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
