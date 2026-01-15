@@ -105,3 +105,70 @@ class ReviewsPaginationMeta {
     );
   }
 }
+
+/// User review with establishment information
+/// Used in profile screen to show user's reviews with establishment context
+class UserReview {
+  final int id;
+  final int establishmentId;
+  final String establishmentName;
+  final String? establishmentImage;
+  final String? establishmentType;
+  final String? establishmentCuisine;
+  final int rating;
+  final String? text;
+  final DateTime createdAt;
+
+  UserReview({
+    required this.id,
+    required this.establishmentId,
+    required this.establishmentName,
+    this.establishmentImage,
+    this.establishmentType,
+    this.establishmentCuisine,
+    required this.rating,
+    this.text,
+    required this.createdAt,
+  });
+
+  factory UserReview.fromJson(Map<String, dynamic> json) {
+    return UserReview(
+      id: json['id'] as int,
+      establishmentId: json['establishment_id'] as int,
+      establishmentName: json['establishment_name'] as String? ?? 'Заведение',
+      establishmentImage: json['establishment_image'] as String?,
+      establishmentType: json['establishment_type'] as String?,
+      establishmentCuisine: json['establishment_cuisine'] as String?,
+      rating: json['rating'] as int,
+      text: json['text'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
+/// Response for user's reviews list
+class UserReviewsResponse {
+  final List<UserReview> reviews;
+  final int total;
+  final int page;
+  final int totalPages;
+
+  UserReviewsResponse({
+    required this.reviews,
+    required this.total,
+    required this.page,
+    required this.totalPages,
+  });
+
+  factory UserReviewsResponse.fromJson(Map<String, dynamic> json) {
+    final reviewsData = json['data'] ?? json['reviews'] ?? [];
+    return UserReviewsResponse(
+      reviews: (reviewsData as List)
+          .map((e) => UserReview.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: json['total'] as int? ?? 0,
+      page: json['page'] as int? ?? 1,
+      totalPages: json['total_pages'] as int? ?? 0,
+    );
+  }
+}
