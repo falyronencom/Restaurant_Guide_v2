@@ -18,7 +18,11 @@
       "Bash(claude mcp get:*)",
       "Bash(ls:*)",
       "Bash(flutter pub get:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "mcp__figma__get_screenshot",
+      "mcp__figma__get_design_context",
+      "Bash(git reset:*)",
+      "Bash(flutter build:*)"
     ],
     "deny": [],
     "ask": []
