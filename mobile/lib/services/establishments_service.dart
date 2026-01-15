@@ -94,6 +94,51 @@ class EstablishmentsService {
   }
 
   // ============================================================================
+  // Map Operations
+  // ============================================================================
+
+  /// Search establishments within map bounds
+  ///
+  /// [north] - Northern latitude bound
+  /// [south] - Southern latitude bound
+  /// [east] - Eastern longitude bound
+  /// [west] - Western longitude bound
+  /// [limit] - Maximum number of results (default: 100)
+  Future<List<Establishment>> searchByMapBounds({
+    required double north,
+    required double south,
+    required double east,
+    required double west,
+    int limit = 100,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/search/map',
+        queryParameters: {
+          'north': north,
+          'south': south,
+          'east': east,
+          'west': west,
+          'limit': limit,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        final establishments = data['data']?['establishments'] as List? ?? [];
+
+        return establishments
+            .map((e) => Establishment.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } else {
+        throw Exception('Unexpected response format');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
   // Detail Operations
   // ============================================================================
 
