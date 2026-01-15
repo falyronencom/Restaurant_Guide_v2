@@ -64,7 +64,7 @@ class EstablishmentsProvider with ChangeNotifier {
   HoursFilter? _hoursFilter;
   Set<String> _categoryFilters = {};
   Set<String> _cuisineFilters = {};
-  Set<String> _amenityFilters = {};
+  final Set<String> _amenityFilters = {};
 
   // Detail view state
   Establishment? _selectedEstablishment;
@@ -204,7 +204,8 @@ class EstablishmentsProvider with ChangeNotifier {
       final result = await _service.searchEstablishments(
         page: page,
         city: _selectedCity,
-        category: _categoryFilters.isNotEmpty ? _categoryFilters.join(',') : null,
+        category:
+            _categoryFilters.isNotEmpty ? _categoryFilters.join(',') : null,
         cuisine: _cuisineFilters.isNotEmpty ? _cuisineFilters.join(',') : null,
         priceRange: _priceFilters.isNotEmpty
             ? _priceFilters.map((p) => p.apiValue).join(',')
