@@ -3,14 +3,23 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
+import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/widgets/partner_establishment_card.dart';
 
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
-class ProfileScreen extends StatelessWidget {
+/// Updated Phase 5.2: Partner establishments section
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _primaryOrange = Color(0xFFDB4F13);
@@ -19,12 +28,24 @@ class ProfileScreen extends StatelessWidget {
   static const Color _greyText = Color(0xFFABABAB);
 
   @override
+  void initState() {
+    super.initState();
+    // Load partner establishments if authenticated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isAuthenticated) {
+        context.read<PartnerDashboardProvider>().initializeIfNeeded();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _backgroundColor,
       body: SafeArea(
-        child: Consumer<AuthProvider>(
-          builder: (context, authProvider, child) {
+        child: Consumer2<AuthProvider, PartnerDashboardProvider>(
+          builder: (context, authProvider, partnerProvider, child) {
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,7 +73,7 @@ class ProfileScreen extends StatelessWidget {
 
                   // Partner section (only for authenticated users)
                   if (authProvider.isAuthenticated)
-                    _buildPartnerSection(context),
+                    _buildPartnerSection(context, partnerProvider),
 
                   const SizedBox(height: 24),
 
@@ -169,8 +190,99 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// Build partner section (orange card)
-  Widget _buildPartnerSection(BuildContext context) {
+  /// Build partner section
+  /// Shows establishments if partner has any, otherwise shows "Add establishment" card
+  Widget _buildPartnerSection(
+    BuildContext context,
+    PartnerDashboardProvider partnerProvider,
+  ) {
+    // If partner has establishments, show them
+    if (partnerProvider.hasEstablishments) {
+      return _buildEstablishmentsSection(context, partnerProvider);
+    }
+
+    // Otherwise show "Add establishment" card
+    return _buildAddEstablishmentCard(context);
+  }
+
+  /// Build establishments section with cards
+  Widget _buildEstablishmentsSection(
+    BuildContext context,
+    PartnerDashboardProvider partnerProvider,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section title
+          const Text(
+            'Основные заведения',
+            style: TextStyle(
+              fontFamily: 'Avenir Next',
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Loading state
+          if (partnerProvider.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(color: _primaryOrange),
+              ),
+            )
+          // Error state
+          else if (partnerProvider.error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text(
+                      partnerProvider.error!,
+                      style: const TextStyle(color: _greyText),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => partnerProvider.refresh(),
+                      child: const Text(
+                        'Повторить',
+                        style: TextStyle(color: _primaryOrange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          // Establishments list
+          else
+            ...partnerProvider.establishments.map(
+              (establishment) => Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: PartnerEstablishmentCard(
+                  establishment: establishment,
+                  onTap: () => _onEstablishmentTap(context, establishment),
+                  onEditTap: () => _onEditEstablishmentTap(context, establishment),
+                  onPromotionTap: () => _onPromotionTap(context, establishment),
+                ),
+              ),
+            ),
+
+          // Add establishment button
+          const SizedBox(height: 8),
+          _buildAddEstablishmentButton(context),
+        ],
+      ),
+    );
+  }
+
+  /// Build "Add establishment" card for non-partners
+  Widget _buildAddEstablishmentCard(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: InkWell(
@@ -208,6 +320,66 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Build "Add establishment" button for existing partners
+  Widget _buildAddEstablishmentButton(BuildContext context) {
+    return Center(
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pushNamed('/partner/register');
+        },
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: _secondaryOrange, width: 1),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: const Text(
+            '+ Добавить заведение',
+            style: TextStyle(
+              fontFamily: 'Avenir Next',
+              fontSize: 15,
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Handle tap on establishment card
+  void _onEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
+    // TODO: Navigate to establishment detail/analytics screen (Phase 5.2b)
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Просмотр: ${establishment.name}'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Handle tap on edit establishment
+  void _onEditEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
+    // TODO: Navigate to edit establishment screen (Phase 5.2b)
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Редактирование: ${establishment.name}'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Handle tap on promotion button
+  void _onPromotionTap(BuildContext context, PartnerEstablishment establishment) {
+    // TODO: Navigate to promotion/subscription screen (future feature)
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Продвижение: ${establishment.name}'),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
