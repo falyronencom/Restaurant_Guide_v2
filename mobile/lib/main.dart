@@ -15,6 +15,7 @@ import 'package:restaurant_guide_mobile/screens/search/filter_screen.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/edit_profile_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -44,7 +45,10 @@ class RestaurantGuideApp extends StatelessWidget {
           create: (_) => EstablishmentsProvider(),
         ),
 
-        // Additional providers can be added here as needed
+        // Partner Dashboard provider (Phase 5.2)
+        ChangeNotifierProvider(
+          create: (_) => PartnerDashboardProvider(),
+        ),
       ],
       child: MaterialApp(
         title: 'Restaurant Guide Belarus',
