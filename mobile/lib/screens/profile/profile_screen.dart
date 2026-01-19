@@ -175,13 +175,7 @@ class ProfileScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: InkWell(
         onTap: () {
-          // TODO: Navigate to partner registration
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Регистрация партнёров скоро будет доступна'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          Navigator.of(context).pushNamed('/partner/register');
         },
         borderRadius: BorderRadius.circular(10),
         child: Container(
