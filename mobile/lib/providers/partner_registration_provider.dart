@@ -134,10 +134,13 @@ class PartnerRegistrationProvider with ChangeNotifier {
     final name = _data.name ?? '';
     final description = _data.description ?? '';
     final phone = _data.phone ?? '';
+    final priceRange = _data.priceRange;
 
     return name.length >= 3 &&
         description.length >= 20 &&
-        _isValidPhone(phone);
+        _isValidPhone(phone) &&
+        priceRange != null &&
+        priceRange.isNotEmpty;
   }
 
   /// Validate Step 4: Media
@@ -304,6 +307,16 @@ class PartnerRegistrationProvider with ChangeNotifier {
   bool isAttributeSelected(String attributeId) {
     return _data.attributes.contains(attributeId);
   }
+
+  /// Update weekly working hours
+  void updateWeeklyWorkingHours(WeeklyWorkingHours hours) {
+    _data = _data.copyWith(weeklyWorkingHours: hours);
+    notifyListeners();
+  }
+
+  /// Get current weekly working hours or create default
+  WeeklyWorkingHours get weeklyWorkingHours =>
+      _data.weeklyWorkingHours ?? const WeeklyWorkingHours();
 
   // ============================================================================
   // Data Updates - Step 4: Media

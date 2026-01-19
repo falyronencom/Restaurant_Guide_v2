@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/category_step.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/cuisine_step.dart';
+import 'package:restaurant_guide_mobile/screens/partner/steps/basic_info_step.dart';
+import 'package:restaurant_guide_mobile/screens/partner/steps/media_step.dart';
 
 /// Partner Registration Wizard Screen
 /// 6-step wizard for registering establishment on the platform
@@ -62,10 +64,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
                         const CategoryStep(),
                         // Step 2: Cuisine
                         const CuisineStep(),
-                        // Step 3: Basic Info (Phase 5.1b)
-                        _buildPlaceholderStep('Основная информация', 3),
-                        // Step 4: Media (Phase 5.1b)
-                        _buildPlaceholderStep('Медиа', 4),
+                        // Step 3: Basic Info
+                        const BasicInfoStep(),
+                        // Step 4: Media
+                        const MediaStep(),
                         // Step 5: Address (Phase 5.1c)
                         _buildPlaceholderStep('Адрес', 5),
                         // Step 6: Legal Info (Phase 5.1c)
