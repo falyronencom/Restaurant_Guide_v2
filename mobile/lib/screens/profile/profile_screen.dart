@@ -353,24 +353,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// Handle tap on establishment card
   void _onEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
-    // TODO: Navigate to establishment detail/analytics screen (Phase 5.2b)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Просмотр: ${establishment.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    // Navigate to establishment statistics screen (Phase 5.2b)
+    Navigator.of(context).pushNamed('/partner/statistics/${establishment.id}');
   }
 
   /// Handle tap on edit establishment
   void _onEditEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
-    // TODO: Navigate to edit establishment screen (Phase 5.2b)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Редактирование: ${establishment.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    // Navigate to edit establishment screen (Phase 5.2b)
+    Navigator.of(context).pushNamed('/partner/edit/${establishment.id}');
   }
 
   /// Handle tap on promotion button

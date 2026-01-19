@@ -697,6 +697,16 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 - **Code Metrics**: ~4,800 lines, 12 files created across 3 sessions
 - 📄 **Final Report**: [mobile/session_reports/phase_5_1_partner_registration_report.md](mobile/session_reports/phase_5_1_partner_registration_report.md)
 
+**Phase 5.2: Partner Dashboard** ✅ (Завершена - Январь 19, 2026)
+- ✅ **Segment 5.2a**: PartnerEstablishment model, PartnerService, PartnerDashboardProvider, PartnerEstablishmentCard
+- ✅ **Segment 5.2b**: PartnerStatisticsScreen, PartnerReviewsScreen, EditEstablishmentScreen
+- ✅ **Statistics Screen**: Detailed analytics с metrics, charts, rating distribution
+- ✅ **Reviews Screen**: Partner reviews list с date filter и sorting options
+- ✅ **Edit Menu Screen**: Menu-style screen для редактирования параметров заведения
+- ✅ **ProfileScreen Integration**: Partner establishments section в профиле
+- **Code Metrics**: ~2,300 lines (5.2a: ~1,020 lines, 5.2b: ~1,770 lines), 7 files created
+- 📄 **Session Report**: [mobile/session_reports/phase_5_2_partner_dashboard_report.md](mobile/session_reports/phase_5_2_partner_dashboard_report.md)
+
 ### 📋 Фаза 6: User Features Integration
 - Authentication flow в mobile app
 - Reviews создание и просмотр
@@ -899,7 +909,54 @@ Proprietary - все права защищены.
   * `lib/screens/partner/establishment_preview_screen.dart` - Preview (780 lines)
 - 📄 **Final Report**: [mobile/session_reports/phase_5_1_partner_registration_report.md](mobile/session_reports/phase_5_1_partner_registration_report.md)
 - 🎯 **Status**: Partner Registration production-ready
-- 🎯 **Next**: Phase 5.2b (Establishment Management screens)
+- 🎯 **Next**: Phase 5.2 Partner Dashboard (completed)
+
+### Январь 19, 2026 - Phase 5.2b: Partner Dashboard (Segment 2) Complete
+- ✅ **Phase 5.2b Partner Dashboard** полностью реализована (Segment 2 of 2)
+  * Phase D: PartnerStatisticsScreen - детальная аналитика заведения
+  * Phase E: PartnerReviewsScreen - просмотр отзывов с фильтрацией по дате
+  * Phase F: EditEstablishmentScreen - меню редактирования параметров заведения
+- ✅ **PartnerStatisticsScreen Features** (~700 lines):
+  * Карточка заведения с названием и статусом
+  * Период выбора (Неделя, Месяц, Год)
+  * Метрики: просмотры, репосты, в избранном, переходы по ссылке
+  * Гистограмма посещений по дням недели
+  * Распределение оценок (5 звёзд - 1 звезда)
+  * Кнопка "Просмотр отзывов" внизу экрана
+- ✅ **PartnerReviewsScreen Features** (~480 lines):
+  * Фильтр по дате (от/до) с DatePicker
+  * Сортировка: по дате (новые/старые), по рейтингу (высокий/низкий)
+  * Карточки отзывов с аватаром, именем, рейтингом, датой, текстом
+  * Pull-to-refresh для обновления списка
+  * Empty state для периодов без отзывов
+- ✅ **EditEstablishmentScreen Features** (~590 lines):
+  * Header с названием заведения и статусом
+  * Секция "Информация" (7 пунктов меню):
+    - Ваши данные, Категория заведения, Категория кухни
+    - О заведении, Медиа, Время работы, Адрес
+  * Секция "Статус заведения":
+    - Приостановить или удалить заведение (красная кнопка)
+  * Навигация к существующим экранам регистрации для редактирования
+  * Disabled state для заведений на модерации
+- ✅ **Routes Added** to main.dart:
+  * `/partner/statistics/:id` - Statistics screen
+  * `/partner/reviews` - Reviews screen (with arguments)
+  * `/partner/edit/:id` - Edit establishment menu
+- ✅ **Navigation Integration**:
+  * Tap on card in ProfileScreen → Statistics screen
+  * "Редактировать" button → Edit menu screen
+  * "Просмотр отзывов" button → Reviews screen
+- ✅ **Build**: flutter analyze passed, APK successfully built
+- ✅ **Files Created**:
+  * `lib/screens/partner/partner_statistics_screen.dart` (~700 lines)
+  * `lib/screens/partner/partner_reviews_screen.dart` (~480 lines)
+  * `lib/screens/partner/edit_establishment_screen.dart` (~590 lines)
+- ✅ **Files Modified**:
+  * `lib/main.dart` - Added routes and imports
+  * `lib/screens/profile/profile_screen.dart` - Updated navigation handlers
+- 📄 **Session Report**: [mobile/session_reports/phase_5_2_partner_dashboard_report.md](mobile/session_reports/phase_5_2_partner_dashboard_report.md)
+- 🎯 **Status**: Phase 5.2 Partner Dashboard полностью завершена
+- 🎯 **Next**: Phase 5.3 (Partner Promotions) или Phase 4.5 (News screen)
 
 ### Январь 19, 2026 - Phase 5.2a: Partner Dashboard (Segment 1) Complete
 - ✅ **Phase 5.2a Partner Dashboard** частично реализована (Segment 1 of 2)
@@ -1244,6 +1301,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Январь 19, 2026 (Phase 5.1 Partner Registration Complete)*
+*Последнее обновление: Январь 19, 2026 (Phase 5.2 Partner Dashboard Complete)*
 *Статус документа: Production-Ready*
-*Next Review: После завершения Phase 4.5 (News Screen) или Phase 5.2 (Partner Dashboard)*
+*Next Review: После завершения Phase 4.5 (News Screen) или Phase 5.3 (Partner Promotions)*
