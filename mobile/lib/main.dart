@@ -15,6 +15,9 @@ import 'package:restaurant_guide_mobile/screens/search/filter_screen.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/edit_profile_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_statistics_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/edit_establishment_screen.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
@@ -96,6 +99,50 @@ class RestaurantGuideApp extends StatelessWidget {
               );
             }
           }
+
+          // Partner statistics route: /partner/statistics/:id
+          if (settings.name != null &&
+              settings.name!.startsWith('/partner/statistics/')) {
+            final idString = settings.name!.split('/').last;
+            final id = int.tryParse(idString);
+            if (id != null) {
+              return MaterialPageRoute(
+                builder: (context) => PartnerStatisticsScreen(
+                  establishmentId: id,
+                ),
+                settings: settings,
+              );
+            }
+          }
+
+          // Partner reviews route: /partner/reviews (with arguments)
+          if (settings.name == '/partner/reviews') {
+            final id = settings.arguments as int?;
+            if (id != null) {
+              return MaterialPageRoute(
+                builder: (context) => PartnerReviewsScreen(
+                  establishmentId: id,
+                ),
+                settings: settings,
+              );
+            }
+          }
+
+          // Partner edit establishment route: /partner/edit/:id
+          if (settings.name != null &&
+              settings.name!.startsWith('/partner/edit/')) {
+            final idString = settings.name!.split('/').last;
+            final id = int.tryParse(idString);
+            if (id != null) {
+              return MaterialPageRoute(
+                builder: (context) => EditEstablishmentScreen(
+                  establishmentId: id,
+                ),
+                settings: settings,
+              );
+            }
+          }
+
           return null;
         },
       ),
