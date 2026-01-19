@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 
 /// Partner Registration wizard state provider
 /// Manages the 6-step registration flow for establishment partners
@@ -9,7 +10,7 @@ class PartnerRegistrationProvider with ChangeNotifier {
   // Constants
   // ============================================================================
 
-  static const int totalSteps = 6;
+  static const int totalSteps = 7;
 
   // ============================================================================
   // State
@@ -112,6 +113,8 @@ class PartnerRegistrationProvider with ChangeNotifier {
         return _validateAddressStep();
       case 5:
         return _validateLegalInfoStep();
+      case 6:
+        return _validateSummaryStep();
       default:
         return false;
     }
@@ -170,6 +173,16 @@ class PartnerRegistrationProvider with ChangeNotifier {
         _isValidUNP(unp) &&
         contactPerson.isNotEmpty &&
         _isValidEmail(contactEmail);
+  }
+
+  /// Validate Step 7: Summary (all previous steps must be valid)
+  bool _validateSummaryStep() {
+    return _validateCategoryStep() &&
+        _validateCuisineStep() &&
+        _validateBasicInfoStep() &&
+        _validateMediaStep() &&
+        _validateAddressStep() &&
+        _validateLegalInfoStep();
   }
 
   /// Validate phone number format
@@ -423,11 +436,13 @@ class PartnerRegistrationProvider with ChangeNotifier {
   // Submission
   // ============================================================================
 
+  final EstablishmentsService _establishmentsService = EstablishmentsService();
+
   /// Submit registration to API
   /// Returns true on success, false on failure
   Future<bool> submit() async {
-    if (!canProceed()) {
-      _setError('Please complete all required fields');
+    if (!_validateSummaryStep()) {
+      _setError('Пожалуйста, заполните все обязательные поля');
       return false;
     }
 
@@ -436,17 +451,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // TODO: Implement API call in Phase 5.1c
-      // final response = await _establishmentsService.createEstablishment(_data);
-
-      // Simulate API call for now
-      await Future.delayed(const Duration(seconds: 2));
+      // Call API to create establishment
+      await _establishmentsService.createEstablishment(_data);
 
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Failed to submit registration: ${e.toString()}');
+      _setError('Ошибка при отправке: ${e.toString()}');
       _isSubmitting = false;
       notifyListeners();
       return false;

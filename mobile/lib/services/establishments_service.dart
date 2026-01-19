@@ -1,4 +1,5 @@
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Service for establishment-related API operations
@@ -177,6 +178,62 @@ class EstablishmentsService {
         return Establishment.fromJson(establishmentData as Map<String, dynamic>);
       } else {
         throw Exception('Unexpected response format');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // Partner Registration Operations (requires authentication)
+  // ============================================================================
+
+  /// Create a new establishment from partner registration data
+  ///
+  /// [data] - PartnerRegistration model with all establishment data
+  /// Returns the created Establishment on success
+  Future<Establishment> createEstablishment(PartnerRegistration data) async {
+    // Return mock response if enabled
+    if (useMockData) {
+      await Future.delayed(const Duration(seconds: 2)); // Simulate network
+
+      // Create a mock establishment from registration data
+      return Establishment(
+        id: DateTime.now().millisecondsSinceEpoch,
+        name: data.name ?? 'Новое заведение',
+        description: data.description,
+        address: '${data.street ?? ''}, ${data.building ?? ''}',
+        city: data.city ?? 'Минск',
+        category: data.categories.isNotEmpty ? data.categories.first : 'Ресторан',
+        cuisine: data.cuisineTypes.isNotEmpty ? data.cuisineTypes.first : null,
+        priceRange: data.priceRange,
+        rating: null,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        thumbnailUrl: data.primaryPhotoUrl,
+        status: 'pending', // New establishments are pending moderation
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
+
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/establishments',
+        data: data.toJson(),
+      );
+
+      if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
+        final responseData = response.data as Map<String, dynamic>;
+
+        // Backend may wrap in 'data' key or return directly
+        final establishmentData = responseData.containsKey('data')
+            ? responseData['data']['establishment']
+            : responseData;
+
+        return Establishment.fromJson(establishmentData as Map<String, dynamic>);
+      } else {
+        throw Exception('Failed to create establishment: Unexpected response');
       }
     } catch (e) {
       rethrow;
