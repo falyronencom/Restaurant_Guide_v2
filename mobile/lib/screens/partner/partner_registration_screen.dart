@@ -5,6 +5,9 @@ import 'package:restaurant_guide_mobile/screens/partner/steps/category_step.dart
 import 'package:restaurant_guide_mobile/screens/partner/steps/cuisine_step.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/basic_info_step.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/media_step.dart';
+import 'package:restaurant_guide_mobile/screens/partner/steps/address_step.dart';
+import 'package:restaurant_guide_mobile/screens/partner/steps/legal_info_step.dart';
+import 'package:restaurant_guide_mobile/screens/partner/steps/summary_step.dart';
 
 /// Partner Registration Wizard Screen
 /// 6-step wizard for registering establishment on the platform
@@ -68,16 +71,19 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
                         const BasicInfoStep(),
                         // Step 4: Media
                         const MediaStep(),
-                        // Step 5: Address (Phase 5.1c)
-                        _buildPlaceholderStep('Адрес', 5),
-                        // Step 6: Legal Info (Phase 5.1c)
-                        _buildPlaceholderStep('Юридическая информация', 6),
+                        // Step 5: Address
+                        const AddressStep(),
+                        // Step 6: Legal Info
+                        const LegalInfoStep(),
+                        // Step 7: Summary
+                        SummaryStep(onSubmit: () => _handleSubmit(provider)),
                       ],
                     ),
                   ),
 
-                  // Bottom navigation
-                  _buildBottomNavigation(context, provider),
+                  // Bottom navigation (hidden on summary step)
+                  if (!provider.isLastStep)
+                    _buildBottomNavigation(context, provider),
                 ],
               ),
             ),
@@ -333,38 +339,4 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
     );
   }
 
-  /// Build placeholder for steps not yet implemented
-  Widget _buildPlaceholderStep(String title, int stepNumber) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.construction,
-            size: 64,
-            color: _greyStroke,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Шаг $stepNumber: $title',
-            style: const TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 20,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Будет реализован в следующей сессии',
-            style: TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 15,
-              color: _greyStroke,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
