@@ -899,7 +899,46 @@ Proprietary - все права защищены.
   * `lib/screens/partner/establishment_preview_screen.dart` - Preview (780 lines)
 - 📄 **Final Report**: [mobile/session_reports/phase_5_1_partner_registration_report.md](mobile/session_reports/phase_5_1_partner_registration_report.md)
 - 🎯 **Status**: Partner Registration production-ready
-- 🎯 **Next**: Phase 4.5 (News screen) или Phase 5.2 (Partner Dashboard)
+- 🎯 **Next**: Phase 5.2b (Establishment Management screens)
+
+### Январь 19, 2026 - Phase 5.2a: Partner Dashboard (Segment 1) Complete
+- ✅ **Phase 5.2a Partner Dashboard** частично реализована (Segment 1 of 2)
+  * Phase A: PartnerEstablishment model с EstablishmentStatus enum, EstablishmentStats model
+  * Phase B: PartnerDashboardProvider с establishments list state management
+  * Phase C: PartnerEstablishmentCard widget + ProfileScreen integration
+- ✅ **Partner Establishments in Profile**:
+  * ProfileScreen расширен для отображения секции "Основные заведения"
+  * PartnerEstablishmentCard с метриками (views, shares, favorites)
+  * Status badge под карточкой (На модерации / Одобрено / Отклонено)
+  * "+ Добавить заведение" кнопка для создания новых заведений
+  * Кнопка "Редактировать" под каждой карточкой
+  * Кнопка "Продвижение" на карточке
+- ✅ **PartnerService** с mock data support:
+  * getMyEstablishments() - список заведений партнёра
+  * getEstablishmentDetails(id) - детали заведения
+  * updateEstablishment(id, data) - обновление заведения
+  * Mock mode flag для разработки без бэкенда
+- ✅ **Status Colors** (per Figma):
+  * Pending: Orange (#FFA500) - "На модерации"
+  * Approved: Green (#34C759) - "Одобрено"
+  * Rejected: Red (#FF3B30) - "Отклонено"
+  * Suspended: Grey (#8E8E93) - "Приостановлено"
+- ✅ **Card Design** (per Figma):
+  * Premium tier: dark background (#000000)
+  * Free tier: light background (#F4F1EC)
+  * Stats icons: eye, share, heart
+  * "Продвижение" button with tier-based styling
+- ✅ **Build**: flutter analyze passed (8 info), APK successfully built
+- ✅ **Files Created**:
+  * `lib/models/partner_establishment.dart` - Model + Status enum (~310 lines)
+  * `lib/services/partner_service.dart` - API service with mock (~230 lines)
+  * `lib/providers/partner_dashboard_provider.dart` - State management (~170 lines)
+  * `lib/widgets/partner_establishment_card.dart` - Card widget (~310 lines)
+- ✅ **Files Modified**:
+  * `lib/screens/profile/profile_screen.dart` - Partner section integration
+  * `lib/main.dart` - PartnerDashboardProvider registration
+- 🎯 **Status**: Phase 5.2a complete, ready for 5.2b
+- 🎯 **Next**: Phase 5.2b (PartnerEstablishmentScreen, EditEstablishmentScreen, Analytics)
 
 ### Январь 15, 2026 - Mobile Phase 4.4: Profile Management Complete
 - ✅ **Phase 4.4 Profile Management** полностью реализована (VSCode Session)
