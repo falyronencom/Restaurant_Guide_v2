@@ -36,7 +36,7 @@ class WorkingHoursPeriod {
   }
 }
 
-/// Working hours container for weekdays and weekends
+/// Working hours container for weekdays and weekends (legacy)
 class WorkingHours {
   final WorkingHoursPeriod? weekdays;
   final WorkingHoursPeriod? weekends;
@@ -71,6 +71,160 @@ class WorkingHours {
       weekends: weekends ?? this.weekends,
     );
   }
+}
+
+/// Working hours for a single day
+class DayWorkingHours {
+  final bool isOpen;
+  final String? openTime;
+  final String? closeTime;
+
+  const DayWorkingHours({
+    this.isOpen = false,
+    this.openTime,
+    this.closeTime,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'is_open': isOpen,
+        if (openTime != null) 'open': openTime,
+        if (closeTime != null) 'close': closeTime,
+      };
+
+  factory DayWorkingHours.fromJson(Map<String, dynamic> json) {
+    return DayWorkingHours(
+      isOpen: json['is_open'] as bool? ?? false,
+      openTime: json['open'] as String?,
+      closeTime: json['close'] as String?,
+    );
+  }
+
+  DayWorkingHours copyWith({
+    bool? isOpen,
+    String? openTime,
+    String? closeTime,
+  }) {
+    return DayWorkingHours(
+      isOpen: isOpen ?? this.isOpen,
+      openTime: openTime ?? this.openTime,
+      closeTime: closeTime ?? this.closeTime,
+    );
+  }
+}
+
+/// Weekly working hours with all 7 days
+class WeeklyWorkingHours {
+  final DayWorkingHours monday;
+  final DayWorkingHours tuesday;
+  final DayWorkingHours wednesday;
+  final DayWorkingHours thursday;
+  final DayWorkingHours friday;
+  final DayWorkingHours saturday;
+  final DayWorkingHours sunday;
+
+  const WeeklyWorkingHours({
+    this.monday = const DayWorkingHours(),
+    this.tuesday = const DayWorkingHours(),
+    this.wednesday = const DayWorkingHours(),
+    this.thursday = const DayWorkingHours(),
+    this.friday = const DayWorkingHours(),
+    this.saturday = const DayWorkingHours(),
+    this.sunday = const DayWorkingHours(),
+  });
+
+  /// Get working hours by day index (0 = Monday, 6 = Sunday)
+  DayWorkingHours getDay(int index) {
+    switch (index) {
+      case 0:
+        return monday;
+      case 1:
+        return tuesday;
+      case 2:
+        return wednesday;
+      case 3:
+        return thursday;
+      case 4:
+        return friday;
+      case 5:
+        return saturday;
+      case 6:
+        return sunday;
+      default:
+        return monday;
+    }
+  }
+
+  /// Create copy with updated day
+  WeeklyWorkingHours updateDay(int index, DayWorkingHours hours) {
+    return WeeklyWorkingHours(
+      monday: index == 0 ? hours : monday,
+      tuesday: index == 1 ? hours : tuesday,
+      wednesday: index == 2 ? hours : wednesday,
+      thursday: index == 3 ? hours : thursday,
+      friday: index == 4 ? hours : friday,
+      saturday: index == 5 ? hours : saturday,
+      sunday: index == 6 ? hours : sunday,
+    );
+  }
+
+  /// Check if any day is configured
+  bool get hasAnyHours =>
+      monday.isOpen ||
+      tuesday.isOpen ||
+      wednesday.isOpen ||
+      thursday.isOpen ||
+      friday.isOpen ||
+      saturday.isOpen ||
+      sunday.isOpen;
+
+  Map<String, dynamic> toJson() => {
+        'monday': monday.toJson(),
+        'tuesday': tuesday.toJson(),
+        'wednesday': wednesday.toJson(),
+        'thursday': thursday.toJson(),
+        'friday': friday.toJson(),
+        'saturday': saturday.toJson(),
+        'sunday': sunday.toJson(),
+      };
+
+  factory WeeklyWorkingHours.fromJson(Map<String, dynamic> json) {
+    return WeeklyWorkingHours(
+      monday: json['monday'] != null
+          ? DayWorkingHours.fromJson(json['monday'])
+          : const DayWorkingHours(),
+      tuesday: json['tuesday'] != null
+          ? DayWorkingHours.fromJson(json['tuesday'])
+          : const DayWorkingHours(),
+      wednesday: json['wednesday'] != null
+          ? DayWorkingHours.fromJson(json['wednesday'])
+          : const DayWorkingHours(),
+      thursday: json['thursday'] != null
+          ? DayWorkingHours.fromJson(json['thursday'])
+          : const DayWorkingHours(),
+      friday: json['friday'] != null
+          ? DayWorkingHours.fromJson(json['friday'])
+          : const DayWorkingHours(),
+      saturday: json['saturday'] != null
+          ? DayWorkingHours.fromJson(json['saturday'])
+          : const DayWorkingHours(),
+      sunday: json['sunday'] != null
+          ? DayWorkingHours.fromJson(json['sunday'])
+          : const DayWorkingHours(),
+    );
+  }
+}
+
+/// Day names in Russian
+class DayNames {
+  static const List<String> days = [
+    'Понедельник',
+    'Вторник',
+    'Среда',
+    'Четверг',
+    'Пятница',
+    'Суббота',
+    'Воскресенье',
+  ];
 }
 
 /// Address information for establishment
@@ -116,6 +270,7 @@ class PartnerRegistration {
   final String? email;
   final String? instagram;
   final WorkingHours? workingHours;
+  final WeeklyWorkingHours? weeklyWorkingHours;
   final String? priceRange;
   final List<String> attributes;
 
@@ -147,6 +302,7 @@ class PartnerRegistration {
     this.email,
     this.instagram,
     this.workingHours,
+    this.weeklyWorkingHours,
     this.priceRange,
     this.attributes = const [],
     this.interiorPhotos = const [],
@@ -175,6 +331,8 @@ class PartnerRegistration {
       if (email != null) 'email': email,
       if (instagram != null) 'instagram': instagram,
       if (workingHours != null) 'working_hours': workingHours!.toJson(),
+      if (weeklyWorkingHours != null)
+        'weekly_working_hours': weeklyWorkingHours!.toJson(),
       if (priceRange != null) 'price_range': priceRange,
       'attributes': attributes,
       'address': {
@@ -203,6 +361,7 @@ class PartnerRegistration {
     String? email,
     String? instagram,
     WorkingHours? workingHours,
+    WeeklyWorkingHours? weeklyWorkingHours,
     String? priceRange,
     List<String>? attributes,
     List<String>? interiorPhotos,
@@ -228,6 +387,7 @@ class PartnerRegistration {
       email: email ?? this.email,
       instagram: instagram ?? this.instagram,
       workingHours: workingHours ?? this.workingHours,
+      weeklyWorkingHours: weeklyWorkingHours ?? this.weeklyWorkingHours,
       priceRange: priceRange ?? this.priceRange,
       attributes: attributes ?? this.attributes,
       interiorPhotos: interiorPhotos ?? this.interiorPhotos,
