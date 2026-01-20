@@ -24,15 +24,13 @@ const router = express.Router();
 
 /**
  * Apply authentication to all routes in this router
- * 
- * All establishment management endpoints require:
- * 1. Valid JWT token (authenticate middleware)
- * 2. 'partner' role (authorize middleware)
- * 
- * This is more efficient than repeating authentication on each route.
+ *
+ * All establishment management endpoints require valid JWT token.
+ * Role requirements vary by endpoint:
+ * - POST / (create): 'user' or 'partner' (user auto-upgrades to partner on first creation)
+ * - All other endpoints: 'partner' role required
  */
 router.use(authenticate);
-router.use(authorize('partner'));
 
 /**
  * Get all establishments for the authenticated partner
@@ -52,6 +50,7 @@ router.use(authorize('partner'));
  */
 router.get(
   '/',
+  authorize('partner'),
   EstablishmentValidation.validateList,
   validate,
   EstablishmentController.listPartnerEstablishments,
@@ -59,23 +58,27 @@ router.get(
 
 /**
  * Create a new establishment
- * 
+ *
  * POST /api/v1/partner/establishments
- * 
+ *
  * Creates a new establishment in 'draft' status, allowing partners to build
  * their listing incrementally before submission.
- * 
+ *
  * Request body: Complete establishment data (see validation for schema)
- * 
- * Flow: Authentication → Authorization → Validation → Controller → Service → Model
- * 
+ *
+ * Flow: Authentication → Validation → Controller → Service → Model → Role Upgrade
+ *
  * Returns: Created establishment with 201 status
- * 
- * Protected: Yes (partner role required)
- * Rate Limited: Yes (100 requests/minute per partner)
+ *
+ * Protected: Yes (user or partner role - user auto-upgrades to partner on first creation)
+ * Rate Limited: Yes (100 requests/minute per user)
+ *
+ * Note: Regular users creating their first establishment will automatically
+ * be upgraded to 'partner' role upon successful creation.
  */
 router.post(
   '/',
+  authorize(['user', 'partner']),
   EstablishmentValidation.validateCreate,
   validate,
   EstablishmentController.createEstablishment,
@@ -100,6 +103,7 @@ router.post(
  */
 router.get(
   '/:id',
+  authorize('partner'),
   EstablishmentValidation.validateGetDetails,
   validate,
   EstablishmentController.getEstablishmentDetails,
@@ -130,6 +134,7 @@ router.get(
  */
 router.put(
   '/:id',
+  authorize('partner'),
   EstablishmentValidation.validateUpdate,
   validate,
   EstablishmentController.updateEstablishment,
@@ -161,6 +166,7 @@ router.put(
  */
 router.post(
   '/:id/submit',
+  authorize('partner'),
   EstablishmentValidation.validateSubmit,
   validate,
   EstablishmentController.submitForModeration,

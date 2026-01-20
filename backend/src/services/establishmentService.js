@@ -13,6 +13,7 @@
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { upgradeUserToPartner } from './authService.js';
 
 /**
  * Valid city values for Belarus
@@ -196,6 +197,19 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       special_hours,
       attributes,
     });
+
+    // Auto-upgrade user to partner role if this is their first establishment
+    // This enables the partner registration flow where regular users can become partners
+    try {
+      await upgradeUserToPartner(partnerId);
+    } catch (upgradeError) {
+      // Log but don't fail the establishment creation
+      // User might already be a partner or admin
+      logger.warn('Could not upgrade user role', {
+        partnerId,
+        error: upgradeError.message,
+      });
+    }
 
     logger.info('Establishment created successfully', {
       establishmentId: establishment.id,
