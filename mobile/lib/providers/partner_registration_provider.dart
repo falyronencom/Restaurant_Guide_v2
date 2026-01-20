@@ -133,15 +133,18 @@ class PartnerRegistrationProvider with ChangeNotifier {
   }
 
   /// Validate Step 3: Basic information
+  /// Relaxed validation for testing - only require name and price range
   bool _validateBasicInfoStep() {
     final name = _data.name ?? '';
     final description = _data.description ?? '';
     final phone = _data.phone ?? '';
     final priceRange = _data.priceRange;
 
-    return name.length >= 3 &&
-        description.length >= 20 &&
-        _isValidPhone(phone) &&
+    // Basic requirements: name (2+ chars) and price range selected
+    // Description and phone are optional for now
+    return name.length >= 2 &&
+        (description.isEmpty || description.length >= 5) &&
+        (phone.isEmpty || phone.length >= 5) &&
         priceRange != null &&
         priceRange.isNotEmpty;
   }

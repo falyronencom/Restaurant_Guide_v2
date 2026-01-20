@@ -441,18 +441,77 @@ export async function invalidateAllUserTokens(userId) {
 export async function findUserById(userId) {
   try {
     const query = `
-      SELECT id, email, phone, name, role, auth_method, 
+      SELECT id, email, phone, name, role, auth_method,
              email_verified, phone_verified, is_active, created_at
       FROM users
       WHERE id = $1 AND is_active = true
     `;
-    
+
     const result = await pool.query(query, [userId]);
-    
+
     return result.rows.length > 0 ? result.rows[0] : null;
-    
+
   } catch (error) {
     logger.error('Error finding user by ID', { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Upgrades a user's role from 'user' to 'partner'
+ *
+ * This function is called when a regular user creates their first establishment.
+ * The upgrade happens automatically as part of the partner registration flow.
+ *
+ * @param {string} userId - The ID of the user to upgrade
+ * @returns {Promise<Object>} Updated user object with new role
+ * @throws {Error} If user not found or already a partner/admin
+ */
+export async function upgradeUserToPartner(userId) {
+  try {
+    // First check current role
+    const checkQuery = `
+      SELECT id, role FROM users WHERE id = $1 AND is_active = true
+    `;
+    const checkResult = await pool.query(checkQuery, [userId]);
+
+    if (checkResult.rows.length === 0) {
+      throw new Error('USER_NOT_FOUND');
+    }
+
+    const currentRole = checkResult.rows[0].role;
+
+    // Only upgrade if currently a 'user' role
+    if (currentRole === 'partner' || currentRole === 'admin') {
+      logger.debug('User already has elevated role, no upgrade needed', {
+        userId,
+        currentRole,
+      });
+      return checkResult.rows[0];
+    }
+
+    // Upgrade role to partner
+    const updateQuery = `
+      UPDATE users
+      SET role = 'partner', updated_at = $1
+      WHERE id = $2
+      RETURNING id, email, phone, name, role, auth_method, created_at
+    `;
+
+    const result = await pool.query(updateQuery, [new Date(), userId]);
+
+    logger.info('User upgraded to partner role', {
+      userId,
+      previousRole: currentRole,
+      newRole: 'partner',
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Failed to upgrade user to partner', {
+      userId,
+      error: error.message,
+    });
     throw error;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/category_step.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/cuisine_step.dart';
@@ -307,20 +308,28 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
 
   /// Handle form submission
   Future<void> _handleSubmit(PartnerRegistrationProvider provider) async {
+    // Capture references before async gap
+    final authProvider = context.read<AuthProvider>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     final success = await provider.submit();
 
     if (success && mounted) {
+      // Refresh user data to get updated role (user -> partner)
+      await authProvider.refreshUser();
+
       // Show success message and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         const SnackBar(
           content: Text('Заявка успешно отправлена!'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Color(0xFF34C759),
         ),
       );
-      Navigator.of(context).pop();
+      navigator.pop();
     } else if (mounted && provider.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(provider.error!),
           behavior: SnackBarBehavior.floating,
