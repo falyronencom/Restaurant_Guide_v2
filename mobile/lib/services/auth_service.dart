@@ -23,13 +23,14 @@ class AuthService {
 
   /// Register new user with email or phone
   ///
-  /// Returns RegisterResponse containing verification_token for SMS
-  /// or emailSent confirmation for email verification
+  /// Returns RegisterResponse containing verification_token for SMS,
+  /// emailSent confirmation for email verification, or direct auth tokens
   Future<RegisterResponse> register({
     String? email,
     String? phone,
     required String password,
     required String authMethod, // 'email' or 'phone'
+    String? name,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -37,6 +38,7 @@ class AuthService {
         data: {
           if (email != null) 'email': email,
           if (phone != null) 'phone': phone,
+          if (name != null) 'name': name,
           'password': password,
           'auth_method': authMethod,
         },
@@ -48,7 +50,15 @@ class AuthService {
         // Extract data from 'data' field if present, otherwise use root
         final responseData = data['data'] as Map<String, dynamic>? ?? data;
 
-        return RegisterResponse.fromJson(responseData);
+        final registerResponse = RegisterResponse.fromJson(responseData);
+
+        // If backend returned direct auth tokens, store them immediately
+        if (registerResponse.hasDirectAuth) {
+          final authResponse = AuthResponse.fromJson(responseData);
+          await _storeAuthData(authResponse);
+        }
+
+        return registerResponse;
       } else {
         throw Exception('Registration failed');
       }
