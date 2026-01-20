@@ -321,34 +321,109 @@ class PartnerRegistration {
   });
 
   /// Convert to JSON for API submission
+  /// Maps Flutter field names to backend expected format
   Map<String, dynamic> toJson() {
+    // Build address string from components
+    final addressParts = <String>[];
+    if (street != null && street!.isNotEmpty) addressParts.add(street!);
+    if (building != null && building!.isNotEmpty) addressParts.add(building!);
+    final addressString = addressParts.join(', ');
+
+    // Convert attributes array to object format
+    final attributesObject = <String, bool>{};
+    for (final attr in attributes) {
+      attributesObject[attr] = true;
+    }
+
+    // Build working hours - use weekly if available, otherwise create default
+    Map<String, dynamic> workingHoursJson;
+    if (weeklyWorkingHours != null) {
+      workingHoursJson = weeklyWorkingHours!.toJson();
+    } else if (workingHours != null) {
+      workingHoursJson = workingHours!.toJson();
+    } else {
+      // Default working hours (required by backend)
+      workingHoursJson = {
+        'monday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
+        'tuesday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
+        'wednesday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
+        'thursday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
+        'friday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
+        'saturday': {'is_open': true, 'open': '10:00', 'close': '22:00'},
+        'sunday': {'is_open': true, 'open': '10:00', 'close': '22:00'},
+      };
+    }
+
     return {
       'name': name,
-      'description': description,
-      'category': categories,
-      'cuisine_type': cuisineTypes,
-      'phone': phone,
-      if (email != null) 'email': email,
-      if (instagram != null) 'instagram': instagram,
-      if (workingHours != null) 'working_hours': workingHours!.toJson(),
-      if (weeklyWorkingHours != null)
-        'weekly_working_hours': weeklyWorkingHours!.toJson(),
+      if (description != null) 'description': description,
+      // Backend expects 'categories' with Russian names
+      'categories': categories.map((id) => _categoryIdToName(id)).toList(),
+      // Backend expects 'cuisines' with Russian names
+      'cuisines': cuisineTypes.map((id) => _cuisineIdToName(id)).toList(),
+      // City at root level (not inside address object)
+      'city': city ?? 'Минск',
+      // Address as string
+      'address': addressString.isNotEmpty ? addressString : 'Не указан',
+      // Coordinates
+      'latitude': latitude ?? 53.9,
+      'longitude': longitude ?? 27.5667,
+      // Working hours (required)
+      'working_hours': workingHoursJson,
+      // Optional fields
+      if (phone != null && phone!.isNotEmpty) 'phone': phone,
+      if (email != null && email!.isNotEmpty) 'email': email,
+      if (instagram != null && instagram!.isNotEmpty) 'website': instagram,
       if (priceRange != null) 'price_range': priceRange,
-      'attributes': attributes,
-      'address': {
-        'city': city,
-        'street': street,
-        'building': building,
-      },
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
-      'legal_name': legalName,
-      'unp': unp,
-      'contact_person': contactPerson,
-      'contact_email': contactEmail,
-      'photos': [...interiorPhotos, ...menuPhotos],
+      // Attributes as object (not array)
+      if (attributesObject.isNotEmpty) 'attributes': attributesObject,
+      // Legal info (optional for backend)
+      if (legalName != null) 'legal_name': legalName,
+      if (unp != null) 'unp': unp,
+      if (contactPerson != null) 'contact_person': contactPerson,
+      if (contactEmail != null) 'contact_email': contactEmail,
+      // Photos
+      if (interiorPhotos.isNotEmpty || menuPhotos.isNotEmpty)
+        'photos': [...interiorPhotos, ...menuPhotos],
       if (primaryPhotoUrl != null) 'primary_photo': primaryPhotoUrl,
     };
+  }
+
+  /// Convert category ID to Russian name for backend
+  static String _categoryIdToName(String id) {
+    const mapping = {
+      'restaurant': 'Ресторан',
+      'coffee': 'Кофейня',
+      'fastfood': 'Фаст-фуд',
+      'bar': 'Бар',
+      'confectionery': 'Кондитерская',
+      'pizzeria': 'Пиццерия',
+      'bakery': 'Пекарня',
+      'pub': 'Паб',
+      'canteen': 'Столовая',
+      'hookah': 'Кальян',
+      'bowling': 'Боулинг',
+      'karaoke': 'Караоке',
+      'billiards': 'Бильярд',
+    };
+    return mapping[id] ?? id;
+  }
+
+  /// Convert cuisine ID to Russian name for backend
+  static String _cuisineIdToName(String id) {
+    const mapping = {
+      'national': 'Народная',
+      'author': 'Авторская',
+      'asian': 'Азиатская',
+      'american': 'Американская',
+      'italian': 'Итальянская',
+      'japanese': 'Японская',
+      'georgian': 'Грузинская',
+      'vegetarian': 'Вегетарианская',
+      'mixed': 'Смешанная',
+      'continental': 'Континентальная',
+    };
+    return mapping[id] ?? id;
   }
 
   /// Create a copy with updated fields
@@ -501,11 +576,12 @@ class AttributeItem {
 }
 
 /// Belarus cities for Step 5
+/// Names must match backend validation exactly
 class CityOptions {
   static const List<String> cities = [
     'Минск',
     'Гомель',
-    'Могилёв',
+    'Могилев',  // Backend uses 'Могилев' without ё
     'Витебск',
     'Гродно',
     'Брест',
