@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/category_step.dart';
 import 'package:restaurant_guide_mobile/screens/partner/steps/cuisine_step.dart';
@@ -308,27 +309,41 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
 
   /// Handle form submission
   Future<void> _handleSubmit(PartnerRegistrationProvider provider) async {
+    debugPrint('SUBMIT: Starting submission...');
+
     // Capture references before async gap
     final authProvider = context.read<AuthProvider>();
+    final partnerDashboardProvider = context.read<PartnerDashboardProvider>();
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
     final success = await provider.submit();
+    debugPrint('SUBMIT: Creation result: $success');
 
     if (success && mounted) {
-      // Refresh user data to get updated role (user -> partner)
-      await authProvider.refreshUser();
+      // Step 1: Update user role in AuthProvider (fast, no network call)
+      await authProvider.updateUserRole('partner');
+      debugPrint('SUBMIT: Role updated to partner');
 
-      // Show success message and navigate back
+      // Step 2: Reset and reload partner dashboard to show new establishment
+      partnerDashboardProvider.reset();
+      await partnerDashboardProvider.loadEstablishments();
+      debugPrint('SUBMIT: Partner dashboard reloaded');
+
+      // Step 3: Show success message
       scaffoldMessenger.showSnackBar(
         const SnackBar(
-          content: Text('Заявка успешно отправлена!'),
+          content: Text('Заведение успешно создано!'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Color(0xFF34C759),
         ),
       );
+
+      // Step 4: Navigate back to profile
+      debugPrint('SUBMIT: Navigating back...');
       navigator.pop();
     } else if (mounted && provider.error != null) {
+      debugPrint('SUBMIT: Error - ${provider.error}');
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(provider.error!),
