@@ -114,6 +114,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> registerWithEmail({
     required String email,
     required String password,
+    String? name,
   }) async {
     _setLoading(true);
     _clearError();
@@ -121,13 +122,22 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      await _authService.register(
+      final response = await _authService.register(
         email: email,
         password: password,
         authMethod: 'email',
+        name: name,
       );
 
-      // Store verification details for later use
+      // Check if backend returned direct auth tokens (no verification needed)
+      if (response.hasDirectAuth && response.user != null) {
+        _currentUser = User.fromJson(response.user!);
+        _status = AuthenticationStatus.authenticated;
+        _setLoading(false);
+        return true;
+      }
+
+      // Otherwise, store verification details for later use
       _pendingEmail = email;
       _authMethod = 'email';
       _status = AuthenticationStatus.verifying;
@@ -146,6 +156,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> registerWithPhone({
     required String phone,
     required String password,
+    String? name,
   }) async {
     _setLoading(true);
     _clearError();
@@ -157,9 +168,18 @@ class AuthProvider with ChangeNotifier {
         phone: phone,
         password: password,
         authMethod: 'phone',
+        name: name,
       );
 
-      // Store verification token and details
+      // Check if backend returned direct auth tokens (no verification needed)
+      if (response.hasDirectAuth && response.user != null) {
+        _currentUser = User.fromJson(response.user!);
+        _status = AuthenticationStatus.authenticated;
+        _setLoading(false);
+        return true;
+      }
+
+      // Otherwise, store verification token and details
       _verificationToken = response.verificationToken;
       _pendingPhone = phone;
       _authMethod = 'phone';

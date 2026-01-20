@@ -58,11 +58,22 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
       await authProvider.registerWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        name: _nameController.text.trim(),
       );
 
-      // Navigate to email verification screen
-      // Pass name to update profile after verification
-      if (mounted) {
+      if (!mounted) return;
+
+      // Check if auto-login succeeded (no verification needed)
+      if (authProvider.isAuthenticated) {
+        // Navigate to home (name already saved during registration)
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/home',
+          (route) => false,
+        );
+      } else {
+        // Navigate to email verification screen
+        // Pass name to update profile after verification
         Navigator.pushNamed(
           context,
           '/auth/email-verification',
