@@ -302,6 +302,10 @@ class PartnerEstablishmentCard extends StatelessWidget {
     String statusText;
 
     switch (establishment.status) {
+      case EstablishmentStatus.draft:
+        statusColor = _statusPending;
+        statusText = 'Черновик';
+        break;
       case EstablishmentStatus.pending:
         statusColor = _statusPending;
         statusText = 'На модерации';

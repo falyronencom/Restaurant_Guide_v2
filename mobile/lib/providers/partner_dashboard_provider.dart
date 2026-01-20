@@ -74,6 +74,7 @@ class PartnerDashboardProvider with ChangeNotifier {
   Future<void> loadEstablishments() async {
     if (_isLoading) return;
 
+    debugPrint('PartnerDashboard: Loading establishments...');
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -82,8 +83,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       _establishments = await _partnerService.getMyEstablishments();
       _isInitialized = true;
       _error = null;
+      debugPrint('PartnerDashboard: Loaded ${_establishments.length} establishments');
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
+      debugPrint('PartnerDashboard: Error loading establishments: $_error');
       // Keep existing data on error if we have any
       if (!_isInitialized) {
         _establishments = [];
