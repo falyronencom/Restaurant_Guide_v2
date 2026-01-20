@@ -287,7 +287,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).pushNamed('/partner/register');
+          Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
         },
         borderRadius: BorderRadius.circular(10),
         child: Container(
@@ -329,7 +329,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Center(
       child: InkWell(
         onTap: () {
-          Navigator.of(context).pushNamed('/partner/register');
+          Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
         },
         borderRadius: BorderRadius.circular(11),
         child: Container(
@@ -529,6 +529,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              context.read<PartnerDashboardProvider>().reset();
               context.read<AuthProvider>().logout();
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),

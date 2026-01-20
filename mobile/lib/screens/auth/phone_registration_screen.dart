@@ -58,11 +58,22 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
       await authProvider.registerWithPhone(
         phone: _phoneController.text.trim(),
         password: _passwordController.text,
+        name: _nameController.text.trim(),
       );
 
-      // Navigate to phone verification screen
-      // Pass name to update profile after verification
-      if (mounted) {
+      if (!mounted) return;
+
+      // Check if auto-login succeeded (no verification needed)
+      if (authProvider.isAuthenticated) {
+        // Navigate to home (name already saved during registration)
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/home',
+          (route) => false,
+        );
+      } else {
+        // Navigate to phone verification screen
+        // Pass name to update profile after verification
         Navigator.pushNamed(
           context,
           '/auth/phone-verification',

@@ -8,7 +8,7 @@ class PartnerService {
   final ApiClient _apiClient;
 
   // Mock mode flag - set to true for development without backend
-  static const bool useMock = true;
+  static const bool useMock = false;
 
   // Singleton pattern
   static final PartnerService _instance = PartnerService._internal();
@@ -29,7 +29,7 @@ class PartnerService {
     }
 
     try {
-      final response = await _apiClient.get('/api/v1/partners/me/establishments');
+      final response = await _apiClient.get('/api/v1/partner/establishments');
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
