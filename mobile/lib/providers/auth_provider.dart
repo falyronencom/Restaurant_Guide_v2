@@ -383,6 +383,19 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  /// Updates user role after backend role change (e.g., user → partner)
+  /// Called after receiving new tokens with updated role
+  /// Uses local state update without network call for speed and reliability
+  Future<void> updateUserRole(String newRole) async {
+    if (_currentUser != null) {
+      debugPrint('AuthProvider: Updating role from ${_currentUser!.role} to $newRole');
+      _currentUser = _currentUser!.copyWith(role: newRole);
+      _status = AuthenticationStatus.authenticated;
+      notifyListeners();
+      debugPrint('AuthProvider: User role updated to $newRole');
+    }
+  }
+
   /// Update user profile
   Future<bool> updateProfile({
     String? name,

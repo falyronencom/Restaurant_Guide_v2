@@ -5,10 +5,42 @@ library partner_establishment;
 
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
+// =============================================================================
+// Safe JSON parsing helpers (handle both String and num types from backend)
+// =============================================================================
+
+/// Safely parse int from dynamic value (handles String and num)
+int _parseIntSafe(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
+/// Safely parse nullable int from dynamic value
+int? _parseIntNullable(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+/// Safely parse double from dynamic value (handles String and num)
+double? _parseDoubleSafe(dynamic value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
 /// Establishment moderation status
 enum EstablishmentStatus {
+  draft,     // Черновик (только создано)
   pending,   // На модерации
-  approved,  // Одобрено
+  approved,  // Одобрено (активно)
   rejected,  // Отклонено
   suspended, // Приостановлено
 }
@@ -18,6 +50,8 @@ extension EstablishmentStatusExtension on EstablishmentStatus {
   /// Get Russian label for status
   String get label {
     switch (this) {
+      case EstablishmentStatus.draft:
+        return 'Черновик';
       case EstablishmentStatus.pending:
         return 'На модерации';
       case EstablishmentStatus.approved:
@@ -32,6 +66,7 @@ extension EstablishmentStatusExtension on EstablishmentStatus {
   /// Check if establishment can be edited
   bool get canEdit {
     switch (this) {
+      case EstablishmentStatus.draft:
       case EstablishmentStatus.pending:
       case EstablishmentStatus.approved:
       case EstablishmentStatus.rejected:
@@ -71,14 +106,14 @@ class EstablishmentStats {
 
   factory EstablishmentStats.fromJson(Map<String, dynamic> json) {
     return EstablishmentStats(
-      views: json['views'] as int? ?? 0,
-      viewsTrend: json['views_trend'] as int?,
-      shares: json['shares'] as int? ?? 0,
-      sharesTrend: json['shares_trend'] as int?,
-      favorites: json['favorites'] as int? ?? 0,
-      favoritesTrend: json['favorites_trend'] as int?,
-      reviews: json['reviews'] as int? ?? 0,
-      averageRating: (json['average_rating'] as num?)?.toDouble(),
+      views: _parseIntSafe(json['views']),
+      viewsTrend: _parseIntNullable(json['views_trend']),
+      shares: _parseIntSafe(json['shares']),
+      sharesTrend: _parseIntNullable(json['shares_trend']),
+      favorites: _parseIntSafe(json['favorites']),
+      favoritesTrend: _parseIntNullable(json['favorites_trend']),
+      reviews: _parseIntSafe(json['reviews']),
+      averageRating: _parseDoubleSafe(json['average_rating']),
     );
   }
 
@@ -202,23 +237,55 @@ class PartnerEstablishment {
   bool get isPremium => subscriptionTier == 'Премиум';
 
   factory PartnerEstablishment.fromJson(Map<String, dynamic> json) {
+    // Extract primary image URL from different possible formats
+    String? primaryImage;
+    if (json['primary_photo'] is Map) {
+      primaryImage = json['primary_photo']['url'] as String?
+          ?? json['primary_photo']['thumbnail_url'] as String?;
+    } else {
+      primaryImage = json['primary_image_url'] as String?;
+    }
+
+    // Build stats from flat fields or nested stats object
+    EstablishmentStats stats;
+    if (json['stats'] != null) {
+      stats = EstablishmentStats.fromJson(json['stats'] as Map<String, dynamic>);
+    } else {
+      stats = EstablishmentStats(
+        views: _parseIntSafe(json['view_count']),
+        favorites: _parseIntSafe(json['favorite_count']),
+        reviews: _parseIntSafe(json['review_count']),
+        averageRating: _parseDoubleSafe(json['average_rating']),
+      );
+    }
+
     return PartnerEstablishment(
       id: json['id'].toString(),
-      name: json['name'] as String,
+      name: json['name'] as String? ?? '',
       status: _parseStatus(json['status'] as String?),
       statusMessage: json['status_message'] as String?,
-      primaryImageUrl: json['primary_image_url'] as String?,
-      categories: (json['category'] as List<dynamic>?)
-          ?.map((e) => e as String)
+      primaryImageUrl: primaryImage,
+      // Backend uses 'categories' (array), not 'category'
+      categories: (json['categories'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ??
+          (json['category'] as List<dynamic>?)
+          ?.map((e) => e.toString())
           .toList() ?? [],
-      cuisineTypes: (json['cuisine_type'] as List<dynamic>?)
-          ?.map((e) => e as String)
+      // Backend uses 'cuisines' (array), not 'cuisine_type'
+      cuisineTypes: (json['cuisines'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ??
+          (json['cuisine_type'] as List<dynamic>?)
+          ?.map((e) => e.toString())
           .toList() ?? [],
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      stats: json['stats'] != null
-          ? EstablishmentStats.fromJson(json['stats'] as Map<String, dynamic>)
-          : const EstablishmentStats(),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
+      stats: stats,
       description: json['description'] as String?,
       phone: json['phone'] as String?,
       email: json['email'] as String?,
@@ -227,18 +294,19 @@ class PartnerEstablishment {
           ? WeeklyWorkingHours.fromJson(json['weekly_working_hours'] as Map<String, dynamic>)
           : null,
       attributes: (json['attributes'] as List<dynamic>?)
-          ?.map((e) => e as String)
+          ?.map((e) => e.toString())
           .toList() ?? [],
-      city: json['address']?['city'] as String?,
-      street: json['address']?['street'] as String?,
-      building: json['address']?['building'] as String?,
-      latitude: (json['latitude'] as num?)?.toDouble(),
-      longitude: (json['longitude'] as num?)?.toDouble(),
+      // Backend returns 'city' as separate field, 'address' as string
+      city: json['city'] as String?,
+      street: json['address'] as String?,  // address is the street/full address string
+      building: null,  // Backend doesn't have separate building field
+      latitude: _parseDoubleSafe(json['latitude']),
+      longitude: _parseDoubleSafe(json['longitude']),
       interiorPhotos: (json['interior_photos'] as List<dynamic>?)
-          ?.map((e) => e as String)
+          ?.map((e) => e.toString())
           .toList() ?? [],
       menuPhotos: (json['menu_photos'] as List<dynamic>?)
-          ?.map((e) => e as String)
+          ?.map((e) => e.toString())
           .toList() ?? [],
       priceRange: json['price_range'] as String?,
       subscriptionTier: json['subscription_tier'] as String? ?? 'Бесплатный',
@@ -334,16 +402,19 @@ class PartnerEstablishment {
   /// Parse status string to enum
   static EstablishmentStatus _parseStatus(String? status) {
     switch (status) {
+      case 'draft':
+        return EstablishmentStatus.draft;
       case 'pending':
         return EstablishmentStatus.pending;
       case 'approved':
+      case 'active':  // Backend uses 'active' for approved establishments
         return EstablishmentStatus.approved;
       case 'rejected':
         return EstablishmentStatus.rejected;
       case 'suspended':
         return EstablishmentStatus.suspended;
       default:
-        return EstablishmentStatus.pending;
+        return EstablishmentStatus.draft;  // New establishments start as draft
     }
   }
 }
