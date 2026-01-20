@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 /// Figma design: Profile/Admin (Отзывы) frame
 /// Phase 5.2b - Partner Dashboard
 class PartnerReviewsScreen extends StatefulWidget {
-  final int establishmentId;
+  final String establishmentId;
 
   const PartnerReviewsScreen({
     super.key,

@@ -55,8 +55,8 @@ class AppRoutes {
   // ============================================================================
 
   /// Generate establishment detail route with ID
-  static String establishmentDetailWithId(int id) {
-    return establishmentDetail.replaceAll(':id', id.toString());
+  static String establishmentDetailWithId(String id) {
+    return establishmentDetail.replaceAll(':id', id);
   }
 
   /// Generate news detail route with ID
@@ -65,8 +65,8 @@ class AppRoutes {
   }
 
   /// Generate reviews list route for establishment
-  static String reviewsListWithId(int establishmentId) {
-    return reviewsList.replaceAll(':id', establishmentId.toString());
+  static String reviewsListWithId(String establishmentId) {
+    return reviewsList.replaceAll(':id', establishmentId);
   }
 
   /// Generate review edit route with ID

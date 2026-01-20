@@ -43,6 +43,22 @@ router.get('/health', searchController.searchHealth);
 router.get('/establishments', searchController.searchEstablishments);
 
 /**
+ * GET /api/v1/search/establishments/:id
+ *
+ * Get establishment details by ID
+ * Public endpoint - no authentication required
+ *
+ * Path Parameters:
+ * - id (required): Establishment UUID
+ *
+ * Response includes:
+ * - Complete establishment object with all details
+ *
+ * Note: Only active establishments are returned
+ */
+router.get('/establishments/:id', searchController.getEstablishmentById);
+
+/**
  * GET /api/v1/search/map
  *
  * Search establishments within geographic bounds (map view)

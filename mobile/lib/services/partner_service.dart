@@ -50,7 +50,7 @@ class PartnerService {
   // ============================================================================
 
   /// Get detailed information about a single establishment
-  Future<PartnerEstablishment> getEstablishmentDetails(int id) async {
+  Future<PartnerEstablishment> getEstablishmentDetails(String id) async {
     if (useMock) {
       await Future.delayed(const Duration(milliseconds: 300));
       return _getMockEstablishmentDetails(id);
@@ -78,7 +78,7 @@ class PartnerService {
 
   /// Update establishment information
   Future<PartnerEstablishment> updateEstablishment(
-    int id,
+    String id,
     Map<String, dynamic> updateData,
   ) async {
     if (useMock) {
@@ -127,7 +127,7 @@ class PartnerService {
   List<PartnerEstablishment> _getMockEstablishments() {
     return [
       PartnerEstablishment(
-        id: 1,
+        id: '1',
         name: 'Fiori',
         status: EstablishmentStatus.approved,
         primaryImageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
@@ -156,7 +156,7 @@ class PartnerService {
         priceRange: '30-50 BYN',
       ),
       PartnerEstablishment(
-        id: 2,
+        id: '2',
         name: 'Новое кафе',
         status: EstablishmentStatus.pending,
         primaryImageUrl: null,
@@ -178,7 +178,7 @@ class PartnerService {
         subscriptionTier: 'Бесплатный',
       ),
       PartnerEstablishment(
-        id: 3,
+        id: '3',
         name: 'Тестовый бар',
         status: EstablishmentStatus.rejected,
         statusMessage: 'Недостаточно фотографий интерьера. Пожалуйста, добавьте минимум 3 фотографии.',
@@ -203,7 +203,7 @@ class PartnerService {
   }
 
   /// Mock establishment details
-  PartnerEstablishment _getMockEstablishmentDetails(int id) {
+  PartnerEstablishment _getMockEstablishmentDetails(String id) {
     final establishments = _getMockEstablishments();
     return establishments.firstWhere(
       (e) => e.id == id,
@@ -212,7 +212,7 @@ class PartnerService {
   }
 
   /// Mock update establishment
-  PartnerEstablishment _updateMockEstablishment(int id, Map<String, dynamic> data) {
+  PartnerEstablishment _updateMockEstablishment(String id, Map<String, dynamic> data) {
     final establishment = _getMockEstablishmentDetails(id);
 
     // In mock mode, return updated establishment
