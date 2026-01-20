@@ -88,9 +88,8 @@ class RestaurantGuideApp extends StatelessWidget {
           // Establishment detail route: /establishment/:id
           if (settings.name != null &&
               settings.name!.startsWith('/establishment/')) {
-            final idString = settings.name!.split('/').last;
-            final id = int.tryParse(idString);
-            if (id != null) {
+            final id = settings.name!.split('/').last;
+            if (id.isNotEmpty) {
               return MaterialPageRoute(
                 builder: (context) => EstablishmentDetailScreen(
                   establishmentId: id,
@@ -103,9 +102,8 @@ class RestaurantGuideApp extends StatelessWidget {
           // Partner statistics route: /partner/statistics/:id
           if (settings.name != null &&
               settings.name!.startsWith('/partner/statistics/')) {
-            final idString = settings.name!.split('/').last;
-            final id = int.tryParse(idString);
-            if (id != null) {
+            final id = settings.name!.split('/').last;
+            if (id.isNotEmpty) {
               return MaterialPageRoute(
                 builder: (context) => PartnerStatisticsScreen(
                   establishmentId: id,
@@ -117,7 +115,7 @@ class RestaurantGuideApp extends StatelessWidget {
 
           // Partner reviews route: /partner/reviews (with arguments)
           if (settings.name == '/partner/reviews') {
-            final id = settings.arguments as int?;
+            final id = settings.arguments as String?;
             if (id != null) {
               return MaterialPageRoute(
                 builder: (context) => PartnerReviewsScreen(
@@ -131,9 +129,8 @@ class RestaurantGuideApp extends StatelessWidget {
           // Partner edit establishment route: /partner/edit/:id
           if (settings.name != null &&
               settings.name!.startsWith('/partner/edit/')) {
-            final idString = settings.name!.split('/').last;
-            final id = int.tryParse(idString);
-            if (id != null) {
+            final id = settings.name!.split('/').last;
+            if (id.isNotEmpty) {
               return MaterialPageRoute(
                 builder: (context) => EditEstablishmentScreen(
                   establishmentId: id,

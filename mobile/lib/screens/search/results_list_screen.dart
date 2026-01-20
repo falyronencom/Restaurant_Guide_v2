@@ -51,12 +51,12 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   }
 
   /// Navigate to establishment detail screen
-  void _navigateToDetail(int establishmentId) {
+  void _navigateToDetail(String establishmentId) {
     Navigator.of(context).pushNamed('/establishment/$establishmentId');
   }
 
   /// Toggle favorite status with authentication check
-  void _toggleFavorite(int establishmentId) {
+  void _toggleFavorite(String establishmentId) {
     final authProvider = context.read<AuthProvider>();
 
     if (!authProvider.isAuthenticated) {

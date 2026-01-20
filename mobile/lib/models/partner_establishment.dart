@@ -100,7 +100,7 @@ class EstablishmentStats {
 /// Partner establishment model
 /// Contains all data for a partner's establishment including status and stats
 class PartnerEstablishment {
-  final int id;
+  final String id;
   final String name;
   final EstablishmentStatus status;
   final String? statusMessage;       // Rejection reason if rejected
@@ -203,7 +203,7 @@ class PartnerEstablishment {
 
   factory PartnerEstablishment.fromJson(Map<String, dynamic> json) {
     return PartnerEstablishment(
-      id: json['id'] as int,
+      id: json['id'].toString(),
       name: json['name'] as String,
       status: _parseStatus(json['status'] as String?),
       statusMessage: json['status_message'] as String?,
@@ -276,7 +276,7 @@ class PartnerEstablishment {
   };
 
   PartnerEstablishment copyWith({
-    int? id,
+    String? id,
     String? name,
     EstablishmentStatus? status,
     String? statusMessage,

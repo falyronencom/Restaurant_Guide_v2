@@ -8,7 +8,7 @@ class EstablishmentsService {
   final ApiClient _apiClient;
 
   /// Use mock data instead of real API (for testing without backend)
-  static bool useMockData = true;
+  static bool useMockData = false;
 
   // Singleton pattern
   static final EstablishmentsService _instance = EstablishmentsService._internal();
@@ -125,25 +125,44 @@ class EstablishmentsService {
       final response = await _apiClient.get(
         '/api/v1/search/map',
         queryParameters: {
-          'north': north,
-          'south': south,
-          'east': east,
-          'west': west,
+          'neLat': north,  // Northeast latitude (max)
+          'swLat': south,  // Southwest latitude (min)
+          'neLon': east,   // Northeast longitude (max)
+          'swLon': west,   // Southwest longitude (min)
           'limit': limit,
         },
       );
 
+      print('[SERVICE] Response statusCode: ${response.statusCode}');
+      print('[SERVICE] Response data type: ${response.data.runtimeType}');
+      print('[SERVICE] Response data: ${response.data}');
+
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
+        print('[SERVICE] Parsed data keys: ${data.keys}');
+        print('[SERVICE] data["data"]: ${data['data']}');
         final establishments = data['data']?['establishments'] as List? ?? [];
+        print('[SERVICE] Establishments count: ${establishments.length}');
 
-        return establishments
-            .map((e) => Establishment.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final result = <Establishment>[];
+        for (var i = 0; i < establishments.length; i++) {
+          try {
+            final e = establishments[i] as Map<String, dynamic>;
+            print('[SERVICE] Parsing establishment $i: ${e['name']}');
+            result.add(Establishment.fromJson(e));
+            print('[SERVICE] Successfully parsed: ${e['name']}');
+          } catch (parseError) {
+            print('[SERVICE] Error parsing establishment $i: $parseError');
+          }
+        }
+        print('[SERVICE] Total parsed: ${result.length}');
+        return result;
       } else {
+        print('[SERVICE] Unexpected response: statusCode=${response.statusCode}, data type=${response.data.runtimeType}');
         throw Exception('Unexpected response format');
       }
     } catch (e) {
+      print('[SERVICE] Exception in searchByMapBounds: $e');
       rethrow;
     }
   }
@@ -155,7 +174,7 @@ class EstablishmentsService {
   /// Get detailed information about a specific establishment
   ///
   /// [id] - Establishment ID
-  Future<Establishment> getEstablishmentById(int id) async {
+  Future<Establishment> getEstablishmentById(String id) async {
     // Return mock data if enabled
     if (useMockData) {
       await Future.delayed(const Duration(milliseconds: 300)); // Simulate network
@@ -167,12 +186,12 @@ class EstablishmentsService {
     }
 
     try {
-      final response = await _apiClient.get('/api/v1/establishments/$id');
+      final response = await _apiClient.get('/api/v1/search/establishments/$id');
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
 
-        // Backend may wrap in 'data' key or return directly
+        // Backend wraps in 'data' key
         final establishmentData = data.containsKey('data') ? data['data'] : data;
 
         return Establishment.fromJson(establishmentData as Map<String, dynamic>);
@@ -199,7 +218,7 @@ class EstablishmentsService {
 
       // Create a mock establishment from registration data
       return Establishment(
-        id: DateTime.now().millisecondsSinceEpoch,
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: data.name ?? 'Новое заведение',
         description: data.description,
         address: '${data.street ?? ''}, ${data.building ?? ''}',
@@ -265,7 +284,7 @@ class EstablishmentsService {
   }
 
   /// Add establishment to favorites
-  Future<void> addToFavorites(int establishmentId) async {
+  Future<void> addToFavorites(String establishmentId) async {
     try {
       await _apiClient.post(
         '/api/v1/favorites',
@@ -277,7 +296,7 @@ class EstablishmentsService {
   }
 
   /// Remove establishment from favorites
-  Future<void> removeFromFavorites(int establishmentId) async {
+  Future<void> removeFromFavorites(String establishmentId) async {
     try {
       await _apiClient.delete('/api/v1/favorites/$establishmentId');
     } catch (e) {
@@ -286,7 +305,7 @@ class EstablishmentsService {
   }
 
   /// Check if establishment is in favorites
-  Future<bool> isFavorite(int establishmentId) async {
+  Future<bool> isFavorite(String establishmentId) async {
     try {
       final response = await _apiClient.get(
         '/api/v1/favorites/check/$establishmentId',
@@ -415,7 +434,7 @@ class EstablishmentsService {
   /// Mock establishments data
   static final List<Establishment> _mockEstablishments = [
     Establishment(
-      id: 1,
+      id: '1',
       name: 'Васильки',
       description: 'Сеть ресторанов белорусской кухни с уютной атмосферой и традиционными блюдами.',
       address: 'пр-т Независимости, 16',
@@ -446,17 +465,17 @@ class EstablishmentsService {
         'kids_zone': true,
       },
       media: [
-        EstablishmentMedia(id: 1, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 2, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 3, establishmentId: 1, type: 'photo', url: 'https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=800', position: 2, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 4, establishmentId: 1, type: 'menu', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 5, establishmentId: 1, type: 'menu', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 1, establishmentId: '1', type: 'photo', url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 2, establishmentId: '1', type: 'photo', url: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 3, establishmentId: '1', type: 'photo', url: 'https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=800', position: 2, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 4, establishmentId: '1', type: 'menu', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 5, establishmentId: '1', type: 'menu', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
       ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 2,
+      id: '2',
       name: 'Grand Café',
       description: 'Элегантное кафе в центре города с европейской кухней и изысканными десертами.',
       address: 'ул. Карла Маркса, 21',
@@ -487,15 +506,15 @@ class EstablishmentsService {
         'kids_zone': false,
       },
       media: [
-        EstablishmentMedia(id: 10, establishmentId: 2, type: 'photo', url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 11, establishmentId: 2, type: 'photo', url: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 12, establishmentId: 2, type: 'menu', url: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 10, establishmentId: '2', type: 'photo', url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 11, establishmentId: '2', type: 'photo', url: 'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 12, establishmentId: '2', type: 'menu', url: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
       ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 3,
+      id: '3',
       name: 'Pizzeria Bella',
       description: 'Аутентичная итальянская пиццерия с дровяной печью и свежими ингредиентами.',
       address: 'ул. Немига, 5',
@@ -526,15 +545,15 @@ class EstablishmentsService {
         'kids_zone': true,
       },
       media: [
-        EstablishmentMedia(id: 20, establishmentId: 3, type: 'photo', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 21, establishmentId: 3, type: 'photo', url: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 22, establishmentId: 3, type: 'menu', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 20, establishmentId: '3', type: 'photo', url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 21, establishmentId: '3', type: 'photo', url: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 22, establishmentId: '3', type: 'menu', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
       ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 4,
+      id: '4',
       name: 'Sushi Master',
       description: 'Японский ресторан с широким выбором суши, роллов и традиционных блюд.',
       address: 'пр-т Победителей, 84',
@@ -565,15 +584,15 @@ class EstablishmentsService {
         'kids_zone': false,
       },
       media: [
-        EstablishmentMedia(id: 30, establishmentId: 4, type: 'photo', url: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 31, establishmentId: 4, type: 'photo', url: 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
-        EstablishmentMedia(id: 32, establishmentId: 4, type: 'menu', url: 'https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 30, establishmentId: '4', type: 'photo', url: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 31, establishmentId: '4', type: 'photo', url: 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=800', position: 1, createdAt: DateTime(2024, 1, 1)),
+        EstablishmentMedia(id: 32, establishmentId: '4', type: 'menu', url: 'https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=800', position: 0, createdAt: DateTime(2024, 1, 1)),
       ],
       createdAt: DateTime(2024, 1, 1),
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 5,
+      id: '5',
       name: 'Хинкальная №1',
       description: 'Грузинский ресторан с настоящими хинкали, хачапури и домашним вином.',
       address: 'ул. Интернациональная, 25',
@@ -590,7 +609,7 @@ class EstablishmentsService {
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 6,
+      id: '6',
       name: 'Burger King',
       description: 'Популярная сеть быстрого питания с фирменными бургерами и картофелем фри.',
       address: 'ТЦ Галилео, пр-т Независимости, 40',
@@ -607,7 +626,7 @@ class EstablishmentsService {
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 7,
+      id: '7',
       name: 'Sweet Dreams',
       description: 'Уютная кондитерская с авторскими тортами, пирожными и ароматным кофе.',
       address: 'ул. Ленина, 8',
@@ -624,7 +643,7 @@ class EstablishmentsService {
       updatedAt: DateTime(2024, 1, 1),
     ),
     Establishment(
-      id: 8,
+      id: '8',
       name: 'The Irish Pub',
       description: 'Аутентичный ирландский паб с живой музыкой, крафтовым пивом и закусками.',
       address: 'ул. Зыбицкая, 6',

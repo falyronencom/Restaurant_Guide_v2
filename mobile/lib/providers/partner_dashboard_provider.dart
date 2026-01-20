@@ -111,7 +111,7 @@ class PartnerDashboardProvider with ChangeNotifier {
   // ============================================================================
 
   /// Load details for a specific establishment
-  Future<void> loadEstablishmentDetails(int id) async {
+  Future<void> loadEstablishmentDetails(String id) async {
     _isLoadingDetails = true;
     notifyListeners();
 
@@ -136,7 +136,7 @@ class PartnerDashboardProvider with ChangeNotifier {
   // ============================================================================
 
   /// Update an establishment
-  Future<bool> updateEstablishment(int id, Map<String, dynamic> data) async {
+  Future<bool> updateEstablishment(String id, Map<String, dynamic> data) async {
     try {
       final updated = await _partnerService.updateEstablishment(id, data);
 

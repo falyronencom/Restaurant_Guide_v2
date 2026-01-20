@@ -22,7 +22,7 @@ class ReviewsService {
   /// [page] - Page number (default: 1)
   /// [perPage] - Items per page (default: 10)
   Future<PaginatedReviews> getReviewsForEstablishment(
-    int establishmentId, {
+    String establishmentId, {
     int page = 1,
     int perPage = 10,
   }) async {
@@ -72,7 +72,7 @@ class ReviewsService {
 
   /// Create a new review (requires authentication)
   Future<Review?> createReview({
-    required int establishmentId,
+    required String establishmentId,
     required int rating,
     String? text,
   }) async {

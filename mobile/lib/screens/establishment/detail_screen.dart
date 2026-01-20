@@ -14,7 +14,7 @@ import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
 class EstablishmentDetailScreen extends StatefulWidget {
-  final int establishmentId;
+  final String establishmentId;
 
   const EstablishmentDetailScreen({
     super.key,

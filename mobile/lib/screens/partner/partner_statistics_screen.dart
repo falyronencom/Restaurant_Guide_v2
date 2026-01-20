@@ -8,7 +8,7 @@ import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dar
 /// Figma design: Statistics frame
 /// Phase 5.2b - Partner Dashboard
 class PartnerStatisticsScreen extends StatefulWidget {
-  final int establishmentId;
+  final String establishmentId;
 
   const PartnerStatisticsScreen({
     super.key,
@@ -16,7 +16,8 @@ class PartnerStatisticsScreen extends StatefulWidget {
   });
 
   @override
-  State<PartnerStatisticsScreen> createState() => _PartnerStatisticsScreenState();
+  State<PartnerStatisticsScreen> createState() =>
+      _PartnerStatisticsScreenState();
 }
 
 class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
@@ -32,14 +33,21 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
 
   // Selected period
   String _selectedPeriod = '1 неделя';
-  final List<String> _periods = ['1 неделя', '1 месяц', '3 месяца', 'Всё время'];
+  final List<String> _periods = [
+    '1 неделя',
+    '1 месяц',
+    '3 месяца',
+    'Всё время'
+  ];
 
   @override
   void initState() {
     super.initState();
     // Load establishment details
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PartnerDashboardProvider>().loadEstablishmentDetails(widget.establishmentId);
+      context
+          .read<PartnerDashboardProvider>()
+          .loadEstablishmentDetails(widget.establishmentId);
     });
   }
 
@@ -52,7 +60,9 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           builder: (context, provider, child) {
             // Find establishment from list or use selected
             final establishment = provider.selectedEstablishment ??
-                provider.establishments.where((e) => e.id == widget.establishmentId).firstOrNull;
+                provider.establishments
+                    .where((e) => e.id == widget.establishmentId)
+                    .firstOrNull;
 
             if (provider.isLoadingDetails) {
               return const Center(
@@ -127,7 +137,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                           title: 'Избранное',
                           value: establishment.stats.favorites,
                           trend: establishment.stats.favoritesTrend,
-                          trendText: '+20% сохранений, чем за период 1 Сен – 7 Сен',
+                          trendText:
+                              '+20% сохранений, чем за период 1 Сен – 7 Сен',
                         ),
 
                         // Ratings section with distribution
@@ -359,22 +370,24 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ),
             const SizedBox(height: 16),
             ..._periods.map((period) => ListTile(
-              title: Text(
-                period,
-                style: TextStyle(
-                  fontFamily: 'Avenir Next',
-                  fontSize: 16,
-                  color: period == _selectedPeriod ? _primaryOrange : Colors.black,
-                ),
-              ),
-              trailing: period == _selectedPeriod
-                  ? const Icon(Icons.check, color: _primaryOrange)
-                  : null,
-              onTap: () {
-                setState(() => _selectedPeriod = period);
-                Navigator.pop(context);
-              },
-            )),
+                  title: Text(
+                    period,
+                    style: TextStyle(
+                      fontFamily: 'Avenir Next',
+                      fontSize: 16,
+                      color: period == _selectedPeriod
+                          ? _primaryOrange
+                          : Colors.black,
+                    ),
+                  ),
+                  trailing: period == _selectedPeriod
+                      ? const Icon(Icons.check, color: _primaryOrange)
+                      : null,
+                  onTap: () {
+                    setState(() => _selectedPeriod = period);
+                    Navigator.pop(context);
+                  },
+                )),
             const SizedBox(height: 16),
           ],
         ),
@@ -385,7 +398,20 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   /// Get date range text based on selected period
   String _getDateRangeText() {
     final now = DateTime.now();
-    final months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+    final months = [
+      'Янв',
+      'Фев',
+      'Мар',
+      'Апр',
+      'Май',
+      'Июн',
+      'Июл',
+      'Авг',
+      'Сен',
+      'Окт',
+      'Ноя',
+      'Дек'
+    ];
 
     switch (_selectedPeriod) {
       case '1 неделя':
@@ -412,7 +438,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           Expanded(
             child: _buildMetricItem(
               title: 'Средняя оценка',
-              value: establishment.stats.averageRating?.toStringAsFixed(1).replaceAll('.', ',') ?? '-',
+              value: establishment.stats.averageRating
+                      ?.toStringAsFixed(1)
+                      .replaceAll('.', ',') ??
+                  '-',
               trend: -0.1,
               showStar: true,
             ),
@@ -448,7 +477,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
     bool showStar = false,
   }) {
     final isPositive = trend != null && trend > 0;
-    final trendColor = trend == null ? _greyText : (isPositive ? _navyBlue : _redColor);
+    final trendColor =
+        trend == null ? _greyText : (isPositive ? _navyBlue : _redColor);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,7 +557,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
               ),
               Text(
-                _formatNumber(establishment.stats.views * 100), // Mock multiplier
+                _formatNumber(
+                    establishment.stats.views * 100), // Mock multiplier
                 style: const TextStyle(
                   fontFamily: 'Avenir Next',
                   fontSize: 18,
@@ -567,22 +598,46 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
     // Mock data for 7 days
     final data = [44, 30, 69, 74, 129, 150, 87];
     final maxValue = data.reduce((a, b) => a > b ? a : b).toDouble();
-    final labels = ['8 Сен', '9 Сен', '10 Сен', '11 Сен', '12 Сен', '13 Сен', '14 Сен'];
+    final labels = [
+      '8 Сен',
+      '9 Сен',
+      '10 Сен',
+      '11 Сен',
+      '12 Сен',
+      '13 Сен',
+      '14 Сен'
+    ];
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         // Y-axis labels
-        SizedBox(
+        const SizedBox(
           width: 30,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('1к', style: TextStyle(fontSize: 13, color: _greyText, fontFamily: 'Avenir Next')),
-              const Text('500', style: TextStyle(fontSize: 13, color: _greyText, fontFamily: 'Avenir Next')),
-              const Text('100', style: TextStyle(fontSize: 13, color: _greyText, fontFamily: 'Avenir Next')),
-              const Text('0', style: TextStyle(fontSize: 13, color: _greyText, fontFamily: 'Avenir Next')),
+              Text('1к',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: _greyText,
+                      fontFamily: 'Avenir Next')),
+              Text('500',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: _greyText,
+                      fontFamily: 'Avenir Next')),
+              Text('100',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: _greyText,
+                      fontFamily: 'Avenir Next')),
+              Text('0',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: _greyText,
+                      fontFamily: 'Avenir Next')),
             ],
           ),
         ),
@@ -614,11 +669,23 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  Text(labels[0], style: const TextStyle(fontSize: 13, color: Colors.black, fontFamily: 'Avenir Next')),
+                  Text(labels[0],
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black,
+                          fontFamily: 'Avenir Next')),
                   const Spacer(),
-                  Text(labels[3], style: const TextStyle(fontSize: 13, color: Colors.black, fontFamily: 'Avenir Next')),
+                  Text(labels[3],
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black,
+                          fontFamily: 'Avenir Next')),
                   const Spacer(),
-                  Text(labels[6], style: const TextStyle(fontSize: 13, color: Colors.black, fontFamily: 'Avenir Next')),
+                  Text(labels[6],
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black,
+                          fontFamily: 'Avenir Next')),
                 ],
               ),
             ],
@@ -636,10 +703,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Взаимодействия',
                 style: TextStyle(
                   fontFamily: 'Avenir Next',
@@ -648,7 +715,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   color: Colors.black,
                 ),
               ),
-              const Text(
+              Text(
                 '641',
                 style: TextStyle(
                   fontFamily: 'Avenir Next',
@@ -831,7 +898,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
                 child: Center(
                   child: Text(
-                    establishment.stats.averageRating?.toStringAsFixed(1).replaceAll('.', ',') ?? '-',
+                    establishment.stats.averageRating
+                            ?.toStringAsFixed(1)
+                            .replaceAll('.', ',') ??
+                        '-',
                     style: const TextStyle(
                       fontFamily: 'Avenir Next',
                       fontSize: 28,
@@ -860,7 +930,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     ...List.generate(5, (index) {
                       final star = 5 - index;
                       final count = ratingsDistribution[star] ?? 0;
-                      final percentage = totalRatings > 0 ? count / totalRatings : 0.0;
+                      final percentage =
+                          totalRatings > 0 ? count / totalRatings : 0.0;
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -878,7 +949,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Icon(Icons.star, color: _secondaryOrange, size: 15),
+                            const Icon(Icons.star,
+                                color: _secondaryOrange, size: 15),
                             const SizedBox(width: 8),
                             // Progress bar
                             Expanded(
@@ -935,7 +1007,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   }
 
   /// Build reviews button
-  Widget _buildReviewsButton(BuildContext context, PartnerEstablishment establishment) {
+  Widget _buildReviewsButton(
+      BuildContext context, PartnerEstablishment establishment) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: SizedBox(
@@ -975,8 +1048,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
       return '${(number / 1000).toStringAsFixed(number % 1000 == 0 ? 0 : 1)}k';
     }
     return number.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (match) => '${match[1]} ',
-    );
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (match) => '${match[1]} ',
+        );
   }
 }

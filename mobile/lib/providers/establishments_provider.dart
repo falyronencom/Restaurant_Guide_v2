@@ -71,7 +71,7 @@ class EstablishmentsProvider with ChangeNotifier {
   bool _isLoadingDetail = false;
 
   // Favorites state
-  Set<int> _favoriteIds = {};
+  Set<String> _favoriteIds = {};
   List<Establishment> _favoriteEstablishments = [];
   bool _isFavoritesLoading = false;
   String? _favoritesError;
@@ -163,7 +163,7 @@ class EstablishmentsProvider with ChangeNotifier {
   // Getters - Favorites
   // ============================================================================
 
-  Set<int> get favoriteIds => _favoriteIds;
+  Set<String> get favoriteIds => _favoriteIds;
 
   /// List of favorite establishments with full data
   List<Establishment> get favoriteEstablishments => _favoriteEstablishments;
@@ -174,8 +174,8 @@ class EstablishmentsProvider with ChangeNotifier {
   /// Error message for favorites loading
   String? get favoritesError => _favoritesError;
 
-  bool isFavorite(int establishmentId) {
-    return _favoriteIds.contains(establishmentId);
+  bool isFavorite(dynamic establishmentId) {
+    return _favoriteIds.contains(establishmentId.toString());
   }
 
   // ============================================================================
@@ -406,7 +406,7 @@ class EstablishmentsProvider with ChangeNotifier {
   // ============================================================================
 
   /// Load detailed information for specific establishment
-  Future<void> loadEstablishmentDetail(int id) async {
+  Future<void> loadEstablishmentDetail(String id) async {
     _isLoadingDetail = true;
     _error = null;
     notifyListeners();
@@ -433,7 +433,7 @@ class EstablishmentsProvider with ChangeNotifier {
   // ============================================================================
 
   /// Toggle favorite status for establishment
-  Future<void> toggleFavorite(int establishmentId) async {
+  Future<void> toggleFavorite(String establishmentId) async {
     final wasFavorite = _favoriteIds.contains(establishmentId);
 
     // Store removed establishment for potential revert
@@ -503,7 +503,7 @@ class EstablishmentsProvider with ChangeNotifier {
   }
 
   /// Remove establishment from favorites list (optimistic update)
-  void _removeFromFavoritesList(int establishmentId) {
+  void _removeFromFavoritesList(String establishmentId) {
     _favoriteEstablishments.removeWhere((e) => e.id == establishmentId);
     notifyListeners();
   }

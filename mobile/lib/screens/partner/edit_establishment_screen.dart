@@ -10,7 +10,7 @@ import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dar
 /// This screen shows a list of editable sections.
 /// Each item navigates to the corresponding registration step screen.
 class EditEstablishmentScreen extends StatefulWidget {
-  final int establishmentId;
+  final String establishmentId;
 
   const EditEstablishmentScreen({
     super.key,
