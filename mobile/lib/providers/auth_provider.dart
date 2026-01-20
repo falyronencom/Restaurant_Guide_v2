@@ -92,10 +92,22 @@ class AuthProvider with ChangeNotifier {
           _currentUser = user;
           _status = AuthenticationStatus.authenticated;
         } catch (e) {
-          // Token is invalid, clear authentication
-          _status = AuthenticationStatus.unauthenticated;
-          _currentUser = null;
-          await _authService.clearAuthData();
+          final errorStr = e.toString();
+          // Only clear auth data if token is actually invalid (401)
+          // Don't clear on rate limit (429) or network errors
+          if (errorStr.contains('401') || errorStr.contains('Unauthorized')) {
+            _status = AuthenticationStatus.unauthenticated;
+            _currentUser = null;
+            await _authService.clearAuthData();
+          } else if (errorStr.contains('429')) {
+            // Rate limited - keep token, assume authenticated
+            // User can refresh later
+            _status = AuthenticationStatus.authenticated;
+          } else {
+            // Network or other error - keep token but mark as unauthenticated
+            // Don't clear data, allow retry
+            _status = AuthenticationStatus.unauthenticated;
+          }
         }
       }
     } catch (e) {

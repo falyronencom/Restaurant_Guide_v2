@@ -426,4 +426,13 @@ class AuthService {
     await _storage.delete(key: 'refresh_token');
     await _storage.delete(key: 'user_data');
   }
+
+  /// Update tokens (e.g., after role upgrade from user to partner)
+  Future<void> updateTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    await _storage.write(key: 'access_token', value: accessToken);
+    await _storage.write(key: 'refresh_token', value: refreshToken);
+  }
 }

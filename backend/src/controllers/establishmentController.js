@@ -13,6 +13,7 @@
 import * as EstablishmentService from '../services/establishmentService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 
 /**
  * Create a new establishment
@@ -36,6 +37,7 @@ export const createEstablishment = asyncHandler(async (req, res) => {
   // Get authenticated partner ID from JWT token (set by authenticate middleware)
   // Never trust partner_id from request body - always use authenticated context
   const partnerId = req.user.userId;
+  const originalRole = req.user.role;
 
   // Call service layer to create establishment with business logic
   const establishment = await EstablishmentService.createEstablishment(
@@ -52,14 +54,38 @@ export const createEstablishment = asyncHandler(async (req, res) => {
     endpoint: 'POST /api/v1/partner/establishments',
   });
 
-  // Return 201 Created with the full establishment object
-  res.status(201).json({
+  // Build response
+  const response = {
     success: true,
     data: {
       establishment,
     },
     message: 'Establishment created successfully in draft status',
-  });
+  };
+
+  // If user was upgraded from 'user' to 'partner', generate new tokens
+  // This allows the client to immediately use partner-only endpoints
+  if (originalRole === 'user') {
+    const tokenPayload = {
+      userId: partnerId,
+      email: req.user.email,
+      role: 'partner', // New role after upgrade
+    };
+
+    response.data.tokens = {
+      accessToken: generateAccessToken(tokenPayload),
+      refreshToken: generateRefreshToken(tokenPayload),
+    };
+
+    logger.info('Generated new tokens for upgraded user', {
+      partnerId,
+      previousRole: originalRole,
+      newRole: 'partner',
+    });
+  }
+
+  // Return 201 Created with the full establishment object (and new tokens if upgraded)
+  res.status(201).json(response);
 });
 
 /**

@@ -1,6 +1,7 @@
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
+import 'package:restaurant_guide_mobile/services/auth_service.dart';
 
 /// Service for establishment-related API operations
 /// Handles search, retrieval, and filtering of restaurants/cafes
@@ -244,6 +245,16 @@ class EstablishmentsService {
 
       if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
         final responseData = response.data as Map<String, dynamic>;
+
+        // Check if backend returned new tokens (user was upgraded to partner)
+        final tokens = responseData['data']?['tokens'];
+        if (tokens != null && tokens['accessToken'] != null) {
+          // Save new tokens with partner role
+          await AuthService().updateTokens(
+            accessToken: tokens['accessToken'],
+            refreshToken: tokens['refreshToken'],
+          );
+        }
 
         // Backend wraps in 'data' -> 'establishment'
         try {
