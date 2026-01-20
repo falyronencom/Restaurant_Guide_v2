@@ -23,7 +23,7 @@ class Environment {
         // For Android emulator: use 10.0.2.2
         // For iOS simulator: use localhost or 127.0.0.1
         // For real device: use your computer's IP address
-        return 'http://localhost:3000';
+        return 'http://10.0.2.2:3000';
     }
   }
 

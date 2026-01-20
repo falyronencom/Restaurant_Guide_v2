@@ -1,11 +1,13 @@
 /// Establishment model representing a restaurant/cafe
 /// Matches backend API response format
 class Establishment {
-  final int id;
+  final String id;  // UUID from backend (String for new API, kept for compatibility)
   final String name;
   final String? description;
-  final String category;
-  final String? cuisine;
+  final String category;  // Primary category (first from categories array)
+  final List<String>? categories;  // All categories
+  final String? cuisine;  // Primary cuisine (first from cuisines array)
+  final List<String>? cuisines;  // All cuisines
   final String? priceRange;
   final double? rating;
   final String address;
@@ -25,7 +27,9 @@ class Establishment {
     required this.name,
     this.description,
     required this.category,
+    this.categories,
     this.cuisine,
+    this.cuisines,
     this.priceRange,
     this.rating,
     required this.address,
@@ -43,16 +47,28 @@ class Establishment {
 
   /// Create from JSON
   factory Establishment.fromJson(Map<String, dynamic> json) {
+    // Parse categories array
+    final categoriesList = json['categories'] != null
+        ? (json['categories'] as List).map((e) => e.toString()).toList()
+        : <String>[];
+
+    // Parse cuisines array
+    final cuisinesList = json['cuisines'] != null
+        ? (json['cuisines'] as List).map((e) => e.toString()).toList()
+        : <String>[];
+
     return Establishment(
-      id: json['id'] as int,
+      id: json['id'].toString(),  // UUID as String
       name: json['name'] as String,
       description: json['description'] as String?,
-      category: json['category'] as String,
-      cuisine: json['cuisine'] as String?,
+      category: categoriesList.isNotEmpty ? categoriesList.first : 'restaurant',
+      categories: categoriesList,
+      cuisine: cuisinesList.isNotEmpty ? cuisinesList.first : null,
+      cuisines: cuisinesList,
       priceRange: json['price_range'] as String?,
-      rating: json['rating'] != null
-          ? (json['rating'] as num).toDouble()
-          : null,
+      rating: json['average_rating'] != null
+          ? double.tryParse(json['average_rating'].toString())
+          : (json['rating'] != null ? (json['rating'] as num).toDouble() : null),
       address: json['address'] as String,
       city: json['city'] as String,
       latitude: json['latitude'] != null
@@ -69,7 +85,7 @@ class Establishment {
               .map((m) => EstablishmentMedia.fromJson(m as Map<String, dynamic>))
               .toList()
           : null,
-      thumbnailUrl: json['thumbnail_url'] as String?,
+      thumbnailUrl: json['thumbnail_url'] ?? json['primary_image_url'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -101,11 +117,13 @@ class Establishment {
 
   /// Copy with modifications
   Establishment copyWith({
-    int? id,
+    String? id,
     String? name,
     String? description,
     String? category,
+    List<String>? categories,
     String? cuisine,
+    List<String>? cuisines,
     String? priceRange,
     double? rating,
     String? address,
@@ -125,7 +143,9 @@ class Establishment {
       name: name ?? this.name,
       description: description ?? this.description,
       category: category ?? this.category,
+      categories: categories ?? this.categories,
       cuisine: cuisine ?? this.cuisine,
+      cuisines: cuisines ?? this.cuisines,
       priceRange: priceRange ?? this.priceRange,
       rating: rating ?? this.rating,
       address: address ?? this.address,
@@ -146,7 +166,7 @@ class Establishment {
 /// Media associated with an establishment
 class EstablishmentMedia {
   final int id;
-  final int establishmentId;
+  final String establishmentId;
   final String type;
   final String? thumbnailUrl;
   final String? previewUrl;
@@ -168,7 +188,7 @@ class EstablishmentMedia {
   factory EstablishmentMedia.fromJson(Map<String, dynamic> json) {
     return EstablishmentMedia(
       id: json['id'] as int,
-      establishmentId: json['establishment_id'] as int,
+      establishmentId: json['establishment_id'].toString(),
       type: json['type'] as String,
       thumbnailUrl: json['thumbnail_url'] as String?,
       previewUrl: json['preview_url'] as String?,

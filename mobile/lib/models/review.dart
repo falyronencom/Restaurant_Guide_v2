@@ -2,7 +2,7 @@
 /// Matches backend API response format
 class Review {
   final int id;
-  final int establishmentId;
+  final String establishmentId;
   final int userId;
   final String userName;
   final String? userAvatar;
@@ -27,7 +27,7 @@ class Review {
   factory Review.fromJson(Map<String, dynamic> json) {
     return Review(
       id: json['id'] as int,
-      establishmentId: json['establishment_id'] as int,
+      establishmentId: json['establishment_id'].toString(),
       userId: json['user_id'] as int,
       userName: json['user_name'] as String? ?? 'Аноним',
       userAvatar: json['user_avatar'] as String?,
@@ -110,7 +110,7 @@ class ReviewsPaginationMeta {
 /// Used in profile screen to show user's reviews with establishment context
 class UserReview {
   final int id;
-  final int establishmentId;
+  final String establishmentId;
   final String establishmentName;
   final String? establishmentImage;
   final String? establishmentType;
@@ -134,7 +134,7 @@ class UserReview {
   factory UserReview.fromJson(Map<String, dynamic> json) {
     return UserReview(
       id: json['id'] as int,
-      establishmentId: json['establishment_id'] as int,
+      establishmentId: json['establishment_id'].toString(),
       establishmentName: json['establishment_name'] as String? ?? 'Заведение',
       establishmentImage: json['establishment_image'] as String?,
       establishmentType: json['establishment_type'] as String?,

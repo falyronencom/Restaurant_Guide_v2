@@ -284,6 +284,43 @@ export async function searchByBounds({
 }
 
 /**
+ * Get establishment by ID (public endpoint)
+ *
+ * @param {string} id - Establishment UUID
+ * @returns {Promise<Object>} Establishment details
+ */
+export async function getEstablishmentById(id) {
+  if (!id) {
+    throw new AppError('Establishment ID is required', 422, 'VALIDATION_ERROR');
+  }
+
+  const query = `
+    SELECT
+      e.*,
+      u.name AS partner_name,
+      u.email AS partner_email
+    FROM establishments e
+    LEFT JOIN users u ON e.partner_id = u.id
+    WHERE e.id = $1 AND e.status = 'active'
+  `;
+
+  const result = await pool.query(query, [id]);
+
+  if (result.rows.length === 0) {
+    throw new AppError('Establishment not found', 404, 'NOT_FOUND');
+  }
+
+  const row = result.rows[0];
+  return {
+    ...row,
+    latitude: parseFloat(row.latitude),
+    longitude: parseFloat(row.longitude),
+    average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
+    review_count: parseInt(row.review_count) || 0,
+  };
+}
+
+/**
  * Health check for search system
  *
  * @returns {Promise<Object>} Health status
@@ -312,5 +349,6 @@ export async function checkSearchHealth() {
 export default {
   searchByRadius,
   searchByBounds,
+  getEstablishmentById,
   checkSearchHealth,
 };

@@ -201,6 +201,28 @@ export async function searchMap(req, res, next) {
 }
 
 /**
+ * Get establishment by ID (public)
+ * GET /api/v1/search/establishments/:id
+ *
+ * Path Parameters:
+ * - id (required): Establishment UUID
+ */
+export async function getEstablishmentById(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const establishment = await searchService.getEstablishmentById(id);
+
+    res.status(200).json({
+      success: true,
+      data: establishment,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Search system health check
  * GET /api/v1/search/health
  */
@@ -222,5 +244,6 @@ export async function searchHealth(req, res, next) {
 export default {
   searchEstablishments,
   searchMap,
+  getEstablishmentById,
   searchHealth,
 };

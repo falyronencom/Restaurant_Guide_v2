@@ -33,12 +33,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   /// Navigate to establishment detail screen
-  void _navigateToDetail(int establishmentId) {
+  void _navigateToDetail(String establishmentId) {
     Navigator.of(context).pushNamed('/establishment/$establishmentId');
   }
 
   /// Toggle favorite status with snackbar feedback
-  void _toggleFavorite(int establishmentId) {
+  void _toggleFavorite(String establishmentId) {
     final provider = context.read<EstablishmentsProvider>();
     final wasFavorite = provider.isFavorite(establishmentId);
 
