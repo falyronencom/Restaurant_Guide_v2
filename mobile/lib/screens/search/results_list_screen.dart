@@ -6,7 +6,7 @@ import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 
 /// Results list screen displaying search results with pagination
-/// Implements ScrollController for infinite scroll pagination
+/// Implements Figma design with dark header area and light results list
 class ResultsListScreen extends StatefulWidget {
   const ResultsListScreen({super.key});
 
@@ -16,15 +16,36 @@ class ResultsListScreen extends StatefulWidget {
 
 class _ResultsListScreenState extends State<ResultsListScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+
+  // Figma colors
+  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _greyText = Color(0xFFABABAB);
+  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _secondaryOrange = Color(0xFFEC723D);
+  static const Color _darkOrange = Color(0xFFDB4F13);
+
+  // Belarus cities with regions (Figma design)
+  static const List<Map<String, String>> _citiesWithRegions = [
+    {'city': 'Минск', 'region': 'Минская область'},
+    {'city': 'Гродно', 'region': 'Гродненская область'},
+    {'city': 'Брест', 'region': 'Брестская область'},
+    {'city': 'Гомель', 'region': 'Гомельская область'},
+    {'city': 'Витебск', 'region': 'Витебская область'},
+    {'city': 'Могилёв', 'region': 'Могилёвская область'},
+    {'city': 'Бобруйск', 'region': 'Могилёвская область'},
+  ];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
 
-    // Initial data fetch
+    // Initialize search query from provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EstablishmentsProvider>().searchEstablishments();
+      final provider = context.read<EstablishmentsProvider>();
+      _searchController.text = provider.searchQuery ?? '';
+      provider.searchEstablishments();
     });
   }
 
@@ -32,6 +53,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -120,6 +142,230 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             child: const Text('Войти'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Execute search and refresh results
+  void _executeSearch() {
+    final provider = context.read<EstablishmentsProvider>();
+    provider.setSearchQuery(_searchController.text);
+    provider.searchEstablishments();
+  }
+
+  /// Navigate to filter screen
+  void _openFilters() {
+    Navigator.of(context).pushNamed('/filter');
+  }
+
+  /// Show city selection bottom sheet (Figma design)
+  void _showCityPicker() {
+    String? tempSelectedCity;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final provider = context.read<EstablishmentsProvider>();
+          tempSelectedCity ??= provider.selectedCity;
+
+          return SizedBox(
+            height: MediaQuery.of(context).size.height * 0.85,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: _greyStroke, width: 0.5),
+                    ),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Positioned(
+                        left: 16,
+                        child: GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: const Icon(
+                            Icons.chevron_left,
+                            size: 25,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                      const Text(
+                        'Местоположение',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Positioned(
+                        right: 16,
+                        child: GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              tempSelectedCity = 'Минск';
+                            });
+                          },
+                          child: const Text(
+                            'Сброс',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Ваш город',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _citiesWithRegions.length,
+                    itemBuilder: (context, index) {
+                      final cityData = _citiesWithRegions[index];
+                      final city = cityData['city']!;
+                      final region = cityData['region']!;
+                      final isSelected = tempSelectedCity == city;
+
+                      return _buildCityOption(
+                        city: city,
+                        region: region,
+                        isSelected: isSelected,
+                        onTap: () {
+                          setModalState(() {
+                            tempSelectedCity = city;
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: 0),
+                        _secondaryOrange.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    24,
+                    16,
+                    MediaQuery.of(context).padding.bottom + 24,
+                  ),
+                  child: SizedBox(
+                    width: 136,
+                    height: 47,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (tempSelectedCity != null) {
+                          provider.setCity(tempSelectedCity!);
+                          provider.searchEstablishments();
+                        }
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _darkOrange,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Применить',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Build city option tile
+  Widget _buildCityOption({
+    required String city,
+    required String region,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    city,
+                    style: const TextStyle(fontSize: 15, color: Colors.black),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    region,
+                    style: const TextStyle(fontSize: 13, color: _greyText),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: isSelected ? _secondaryOrange : Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: isSelected ? _secondaryOrange : _greyStroke,
+                  width: 1,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -232,108 +478,112 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Результаты поиска'),
-        actions: [
-          // Filter button with badge
-          Consumer<EstablishmentsProvider>(
-            builder: (context, provider, child) => Stack(
-              alignment: Alignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  onPressed: () => Navigator.of(context).pushNamed('/filter'),
-                  tooltip: 'Фильтры',
-                ),
-                if (provider.activeFilterCount > 0)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        '${provider.activeFilterCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      backgroundColor: _backgroundColor,
       body: Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) {
-          // Initial loading state
+          // Loading state
           if (provider.isLoading && provider.establishments.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(),
+            return Column(
+              children: [
+                _buildDarkHeader(provider, 1.0, topPadding),
+                const Expanded(
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
             );
           }
 
-          // Error state with no data
+          // Error state
           if (provider.error != null && provider.establishments.isEmpty) {
-            return _buildErrorState(theme, provider);
+            return Column(
+              children: [
+                _buildDarkHeader(provider, 1.0, topPadding),
+                Expanded(child: _buildErrorState(theme, provider)),
+              ],
+            );
           }
 
           // Empty state
           if (!provider.isLoading && provider.establishments.isEmpty) {
-            return _buildEmptyState(theme);
+            return Column(
+              children: [
+                _buildDarkHeader(provider, 1.0, topPadding),
+                Expanded(child: _buildEmptyState(theme)),
+              ],
+            );
           }
 
-          // Results list
-          return Column(
-            children: [
-              // Result count header
-              _buildResultsHeader(theme, provider),
+          // Results with collapsing header
+          return CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              // Collapsing header
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _CollapsingHeaderDelegate(
+                  expandedHeight: 270 + topPadding,
+                  collapsedHeight: 50 + topPadding,
+                  topPadding: topPadding,
+                  provider: provider,
+                  onCityTap: _showCityPicker,
+                  onFilterTap: _openFilters,
+                  onBackTap: () => Navigator.of(context).pop(),
+                  onSortTap: _showSortOptions,
+                  onMapTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Карта будет доступна в следующем обновлении'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  searchController: _searchController,
+                  onSearchSubmitted: _executeSearch,
+                ),
+              ),
 
-              // Establishments list
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () => provider.refresh(),
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppDimensions.paddingS,
+              // Results count
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Результаты: ${provider.totalResults}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black,
                     ),
-                    // Add 1 for loading indicator if more pages available
-                    itemCount: provider.establishments.length +
-                        (provider.hasMorePages ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      // Loading indicator at bottom
-                      if (index == provider.establishments.length) {
-                        return _buildPaginationLoader(provider);
-                      }
-
-                      final establishment = provider.establishments[index];
-                      final isFavorite = provider.isFavorite(establishment.id);
-
-                      return EstablishmentCard(
-                        establishment: establishment,
-                        isFavorite: isFavorite,
-                        onTap: () => _navigateToDetail(establishment.id),
-                        onFavoriteToggle: () =>
-                            _toggleFavorite(establishment.id),
-                      );
-                    },
                   ),
                 ),
               ),
+
+              // Results list
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (index == provider.establishments.length) {
+                      return _buildPaginationLoader(provider);
+                    }
+
+                    final establishment = provider.establishments[index];
+                    final isFavorite = provider.isFavorite(establishment.id);
+
+                    return EstablishmentCard(
+                      establishment: establishment,
+                      isFavorite: isFavorite,
+                      onTap: () => _navigateToDetail(establishment.id),
+                      onFavoriteToggle: () => _toggleFavorite(establishment.id),
+                    );
+                  },
+                  childCount: provider.establishments.length +
+                      (provider.hasMorePages ? 1 : 0),
+                ),
+              ),
+
+              // Bottom padding
+              const SliverPadding(padding: EdgeInsets.only(bottom: 20)),
             ],
           );
         },
@@ -341,84 +591,291 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     );
   }
 
-  /// Build results header with sort and map buttons (Figma design)
-  Widget _buildResultsHeader(ThemeData theme, EstablishmentsProvider provider) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Sort and Map buttons row
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.paddingM,
-            vertical: AppDimensions.paddingS,
+  /// Build dark header area with background image (Figma design)
+  /// [shrinkFactor] - 1.0 = fully expanded, 0.0 = fully collapsed
+  Widget _buildDarkHeader(EstablishmentsProvider provider, double shrinkFactor, double topPadding) {
+    final expandedHeight = 270 + topPadding;
+    final collapsedHeight = 50 + topPadding;
+    final currentHeight = collapsedHeight + (expandedHeight - collapsedHeight) * shrinkFactor;
+
+    return SizedBox(
+      height: currentHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Background image
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/search_background.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(color: Colors.black);
+              },
+            ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Dark overlay
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.6),
+            ),
+          ),
+          // Bottom gradient shadow
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 50,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    const Color(0xFFC8714B).withValues(alpha: 0.08),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Content
+          Positioned(
+            top: topPadding,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  // City and Filter buttons row - fade out when collapsed
+                  Opacity(
+                    opacity: shrinkFactor.clamp(0.0, 1.0),
+                    child: SizedBox(
+                      height: 43 * shrinkFactor,
+                      child: shrinkFactor > 0.3
+                          ? _buildCityFilterRow(provider)
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  SizedBox(height: 16 * shrinkFactor),
+                  // Search bar - fade out when collapsed
+                  Opacity(
+                    opacity: shrinkFactor.clamp(0.0, 1.0),
+                    child: SizedBox(
+                      height: 64 * shrinkFactor,
+                      child: shrinkFactor > 0.3
+                          ? _buildSearchBar()
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  SizedBox(height: 16 * shrinkFactor),
+                  // Sort and Map buttons - always visible
+                  _buildSortMapRow(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build city selector and filter button row (Figma design)
+  Widget _buildCityFilterRow(EstablishmentsProvider provider) {
+    return Row(
+      children: [
+        // City button
+        GestureDetector(
+          onTap: _showCityPicker,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _backgroundColor, width: 1),
+            ),
+            child: Text(
+              provider.selectedCity ?? 'Минск',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: _backgroundColor,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 25),
+        // Filter button with badge
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _openFilters,
+          child: Stack(
             children: [
-              // Sort button
-              GestureDetector(
-                onTap: _showSortOptions,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.swap_vert,
-                      size: 22,
-                    ),
-                    const SizedBox(width: AppDimensions.spacingS),
-                    Text(
-                      'Сортировка',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+              Container(
+                width: 53,
+                height: 43,
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _backgroundColor, width: 1),
+                ),
+                child: const Icon(
+                  Icons.tune,
+                  color: _backgroundColor,
+                  size: 20,
                 ),
               ),
-              // Map button (placeholder for Phase 3.3)
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Карта будет доступна в следующем обновлении'),
-                      duration: Duration(seconds: 2),
+              if (provider.activeFilterCount > 0)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFD5F1B),
+                      shape: BoxShape.circle,
                     ),
-                  );
-                },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.map_outlined,
-                      size: 22,
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
                     ),
-                    const SizedBox(width: AppDimensions.spacingS),
-                    Text(
-                      'Карта',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
+                    child: Text(
+                      '${provider.activeFilterCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                  ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
-        // Results count
-        Padding(
-          padding: const EdgeInsets.only(
-            left: AppDimensions.paddingM,
-            bottom: AppDimensions.paddingS,
+      ],
+    );
+  }
+
+  /// Build search bar (Figma design)
+  Widget _buildSearchBar() {
+    return Row(
+      children: [
+        // Back button
+        GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: Container(
+            width: 40,
+            height: 64,
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.chevron_left,
+              color: Colors.black,
+              size: 25,
+            ),
           ),
-          child: Text(
-            'Результаты: ${provider.totalResults}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.secondary,
+        ),
+        // Search input field
+        Expanded(
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.black,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'С чего начнем?',
+                hintStyle: TextStyle(
+                  fontSize: 18,
+                  color: _greyText,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
+              ),
+              onSubmitted: (_) => _executeSearch(),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// Build sort and map buttons row (Figma design - white text on dark bg)
+  Widget _buildSortMapRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Sort button
+          GestureDetector(
+            onTap: _showSortOptions,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.rotate(
+                  angle: 1.5708, // 90 degrees
+                  child: const Icon(
+                    Icons.compare_arrows,
+                    size: 22,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Сортировка',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Map button
+          GestureDetector(
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Карта будет доступна в следующем обновлении'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.map_outlined,
+                  size: 23,
+                  color: Colors.white,
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Карта',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -501,6 +958,336 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Custom delegate for collapsing header animation
+class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double expandedHeight;
+  final double collapsedHeight;
+  final double topPadding;
+  final EstablishmentsProvider provider;
+  final VoidCallback onCityTap;
+  final VoidCallback onFilterTap;
+  final VoidCallback onBackTap;
+  final VoidCallback onSortTap;
+  final VoidCallback onMapTap;
+  final TextEditingController searchController;
+  final VoidCallback onSearchSubmitted;
+
+  _CollapsingHeaderDelegate({
+    required this.expandedHeight,
+    required this.collapsedHeight,
+    required this.topPadding,
+    required this.provider,
+    required this.onCityTap,
+    required this.onFilterTap,
+    required this.onBackTap,
+    required this.onSortTap,
+    required this.onMapTap,
+    required this.searchController,
+    required this.onSearchSubmitted,
+  });
+
+  // Figma colors
+  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _greyText = Color(0xFFABABAB);
+
+  @override
+  double get minExtent => collapsedHeight;
+
+  @override
+  double get maxExtent => expandedHeight;
+
+  @override
+  bool shouldRebuild(covariant _CollapsingHeaderDelegate oldDelegate) {
+    return expandedHeight != oldDelegate.expandedHeight ||
+        collapsedHeight != oldDelegate.collapsedHeight ||
+        provider != oldDelegate.provider;
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    // Calculate shrink factor (1.0 = fully expanded, 0.0 = fully collapsed)
+    final shrinkFactor =
+        1.0 - (shrinkOffset / (maxExtent - minExtent)).clamp(0.0, 1.0);
+
+    return SizedBox(
+      height: maxExtent - shrinkOffset.clamp(0.0, maxExtent - minExtent),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Background image
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/search_background.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(color: Colors.black);
+              },
+            ),
+          ),
+          // Dark overlay
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.6),
+            ),
+          ),
+          // Bottom gradient shadow
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 50,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    const Color(0xFFC8714B).withValues(alpha: 0.08),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Content
+          Positioned(
+            top: topPadding,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  // City and Filter buttons row - fade out when collapsed
+                  Opacity(
+                    opacity: shrinkFactor.clamp(0.0, 1.0),
+                    child: SizedBox(
+                      height: 43 * shrinkFactor,
+                      child: shrinkFactor > 0.3
+                          ? _buildCityFilterRow()
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  SizedBox(height: 16 * shrinkFactor),
+                  // Search bar - fade out when collapsed
+                  Opacity(
+                    opacity: shrinkFactor.clamp(0.0, 1.0),
+                    child: SizedBox(
+                      height: 64 * shrinkFactor,
+                      child: shrinkFactor > 0.3
+                          ? _buildSearchBar()
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  SizedBox(height: 16 * shrinkFactor),
+                  // Sort and Map buttons - always visible
+                  _buildSortMapRow(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build city selector and filter button row
+  Widget _buildCityFilterRow() {
+    return Row(
+      children: [
+        // City button
+        GestureDetector(
+          onTap: onCityTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _backgroundColor, width: 1),
+            ),
+            child: Text(
+              provider.selectedCity ?? 'Минск',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: _backgroundColor,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 25),
+        // Filter button with badge
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onFilterTap,
+          child: Stack(
+            children: [
+              Container(
+                width: 53,
+                height: 43,
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _backgroundColor, width: 1),
+                ),
+                child: const Icon(
+                  Icons.tune,
+                  color: _backgroundColor,
+                  size: 20,
+                ),
+              ),
+              if (provider.activeFilterCount > 0)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFD5F1B),
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      '${provider.activeFilterCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build search bar
+  Widget _buildSearchBar() {
+    return Row(
+      children: [
+        // Back button
+        GestureDetector(
+          onTap: onBackTap,
+          child: Container(
+            width: 40,
+            height: 64,
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.chevron_left,
+              color: Colors.black,
+              size: 25,
+            ),
+          ),
+        ),
+        // Search input field
+        Expanded(
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: TextField(
+              controller: searchController,
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.black,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'С чего начнем?',
+                hintStyle: TextStyle(
+                  fontSize: 18,
+                  color: _greyText,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
+              ),
+              onSubmitted: (_) => onSearchSubmitted(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build sort and map buttons row
+  Widget _buildSortMapRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Sort button
+          GestureDetector(
+            onTap: onSortTap,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.rotate(
+                  angle: 1.5708, // 90 degrees
+                  child: const Icon(
+                    Icons.compare_arrows,
+                    size: 22,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Сортировка',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Map button
+          GestureDetector(
+            onTap: onMapTap,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.map_outlined,
+                  size: 23,
+                  color: Colors.white,
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Карта',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
