@@ -524,7 +524,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _CollapsingHeaderDelegate(
-                  expandedHeight: 270 + topPadding,
+                  expandedHeight: 210 + topPadding,
                   collapsedHeight: 50 + topPadding,
                   topPadding: topPadding,
                   provider: provider,
@@ -594,7 +594,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   /// Build dark header area with background image (Figma design)
   /// [shrinkFactor] - 1.0 = fully expanded, 0.0 = fully collapsed
   Widget _buildDarkHeader(EstablishmentsProvider provider, double shrinkFactor, double topPadding) {
-    final expandedHeight = 270 + topPadding;
+    final expandedHeight = 210 + topPadding;
     final collapsedHeight = 50 + topPadding;
     final currentHeight = collapsedHeight + (expandedHeight - collapsedHeight) * shrinkFactor;
 
