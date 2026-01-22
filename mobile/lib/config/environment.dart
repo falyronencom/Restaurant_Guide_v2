@@ -49,7 +49,7 @@ class Environment {
   static const int apiTimeout = 30;
 
   /// API connect timeout in seconds
-  static const int apiConnectTimeout = 10;
+  static const int apiConnectTimeout = 30;
 
   /// Maximum retry attempts for failed requests
   static const int maxRetryAttempts = 3;

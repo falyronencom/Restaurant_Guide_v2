@@ -44,12 +44,20 @@ enum SortOption {
 class EstablishmentsProvider with ChangeNotifier {
   final EstablishmentsService _service;
 
+  // Default coordinates for Minsk city center
+  static const double _defaultLatitude = 53.9006;
+  static const double _defaultLongitude = 27.5590;
+
   // Search results state
   List<Establishment> _establishments = [];
   PaginationMeta? _paginationMeta;
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String? _error;
+
+  // User location (null = use default Minsk coordinates)
+  double? _userLatitude;
+  double? _userLongitude;
 
   // Sort state
   SortOption _currentSort = SortOption.rating;
@@ -201,6 +209,10 @@ class EstablishmentsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Use user location if available, otherwise default to Minsk center
+      final latitude = _userLatitude ?? _defaultLatitude;
+      final longitude = _userLongitude ?? _defaultLongitude;
+
       final result = await _service.searchEstablishments(
         page: page,
         city: _selectedCity,
@@ -210,6 +222,8 @@ class EstablishmentsProvider with ChangeNotifier {
         priceRange: _priceFilters.isNotEmpty
             ? _priceFilters.map((p) => p.apiValue).join(',')
             : null,
+        latitude: latitude,
+        longitude: longitude,
         maxDistance: _distanceFilter.toMeters()?.toDouble(),
         search: _searchQuery,
         sortBy: _currentSort.toApiValue(),
@@ -263,6 +277,14 @@ class EstablishmentsProvider with ChangeNotifier {
   // ============================================================================
   // Filter Management
   // ============================================================================
+
+  /// Set user location for distance-based search
+  /// If not set, defaults to Minsk city center
+  void setUserLocation(double? latitude, double? longitude) {
+    _userLatitude = latitude;
+    _userLongitude = longitude;
+    notifyListeners();
+  }
 
   /// Set city filter
   void setCity(String? city) {
