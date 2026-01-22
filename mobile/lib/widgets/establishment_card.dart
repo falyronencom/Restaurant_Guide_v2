@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
-import 'package:restaurant_guide_mobile/config/dimensions.dart';
 
 /// Reusable card component for displaying establishment information
-/// Used in search results, favorites list, and other establishment lists
+/// Figma design implementation with image on left, content on right
 class EstablishmentCard extends StatelessWidget {
   final Establishment establishment;
   final bool isFavorite;
@@ -21,259 +21,362 @@ class EstablishmentCard extends StatelessWidget {
     this.distanceKm,
   });
 
+  // Figma colors
+  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _greenColor = Color(0xFF34C759);
+  static const Color _orangeHeart = Color(0xFFFD5F1B);
+  static const Color _greyText = Color(0xFFAAAAAA);
+
+  // Figma dimensions
+  static const double _cardHeight = 291.0;
+  static const double _imageWidth = 172.0;
+  static const double _ratingSize = 31.0;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingM,
-        vertical: AppDimensions.paddingS,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        child: Container(
-          height: AppDimensions.establishmentCardHeight,
-          padding: const EdgeInsets.all(AppDimensions.paddingS),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Thumbnail image
-              _buildThumbnail(),
-
-              const SizedBox(width: AppDimensions.spacingM),
-
-              // Information column
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Name and rating
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildName(theme)),
-                        if (establishment.rating != null)
-                          _buildRatingBadge(theme),
-                      ],
-                    ),
-
-                    const SizedBox(height: AppDimensions.spacingXs),
-
-                    // Category and cuisine
-                    _buildCategoryAndCuisine(theme),
-
-                    const SizedBox(height: AppDimensions.spacingXs),
-
-                    // Price range and status
-                    Row(
-                      children: [
-                        if (establishment.priceRange != null)
-                          _buildPriceRange(theme),
-                        const Spacer(),
-                        _buildStatus(theme),
-                      ],
-                    ),
-
-                    const Spacer(),
-
-                    // Distance and address
-                    Row(
-                      children: [
-                        Expanded(child: _buildAddress(theme)),
-                        if (distanceKm != null) _buildDistance(theme),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // Favorite button
-              _buildFavoriteButton(),
-            ],
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: _cardHeight,
+        margin: const EdgeInsets.symmetric(horizontal: 13, vertical: 15),
+        child: Row(
+          children: [
+            // Left: Image with custom shape
+            _buildImage(),
+            // Right: Content area
+            Expanded(child: _buildContentArea()),
+          ],
         ),
       ),
     );
   }
 
-  /// Build thumbnail image widget
-  Widget _buildThumbnail() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+  /// Build image with rounded corners mask (Figma design)
+  Widget _buildImage() {
+    return ClipPath(
+      clipper: _ImageClipper(),
       child: SizedBox(
-        width: AppDimensions.cardThumbnailWidth,
-        height: AppDimensions.cardThumbnailHeight,
+        width: _imageWidth,
+        height: _cardHeight,
         child: establishment.thumbnailUrl != null
             ? CachedNetworkImage(
                 imageUrl: establishment.thumbnailUrl!,
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Container(
-                  color: Colors.grey[200],
+                  color: Colors.grey[300],
                   child: const Center(
-                    child: CircularProgressIndicator(),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
                 errorWidget: (context, url, error) => Container(
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.restaurant, size: 40),
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.restaurant, size: 48, color: Colors.grey),
                 ),
               )
             : Container(
-                color: Colors.grey[200],
-                child: const Icon(Icons.restaurant, size: 40),
+                color: Colors.grey[300],
+                child: const Icon(Icons.restaurant, size: 48, color: Colors.grey),
               ),
       ),
     );
   }
 
-  /// Build establishment name
-  Widget _buildName(ThemeData theme) {
-    return Text(
-      establishment.name,
-      style: theme.textTheme.headlineSmall,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
-
-  /// Build rating badge
-  Widget _buildRatingBadge(ThemeData theme) {
+  /// Build content area with beige background (Figma design)
+  Widget _buildContentArea() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingS,
-        vertical: AppDimensions.paddingXs,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.tertiary,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusS),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.star,
-            size: AppDimensions.iconS,
-            color: theme.colorScheme.onTertiary,
+      decoration: const BoxDecoration(
+        color: _backgroundColor,
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(10),
+          bottomRight: Radius.circular(40),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0AD35620),
+            offset: Offset(4, 4),
+            blurRadius: 15,
+            spreadRadius: 2,
           ),
-          const SizedBox(width: AppDimensions.spacingXs),
-          Text(
-            establishment.rating!.toStringAsFixed(1),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onTertiary,
-              fontWeight: FontWeight.bold,
-            ),
+          BoxShadow(
+            color: Color(0x0AD35620),
+            offset: Offset(-4, -4),
+            blurRadius: 15,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 38, 15, 16),
+      child: Stack(
+        children: [
+          // Main content column
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Name
+              _buildName(),
+              const SizedBox(height: 2),
+              // Category (type)
+              _buildCategory(),
+              // Cuisine in brackets
+              _buildCuisine(),
+              const SizedBox(height: 20),
+              // Status with closing time
+              _buildStatus(),
+              const SizedBox(height: 17),
+              // Distance
+              if (distanceKm != null) _buildDistance(),
+              // Address
+              _buildAddress(),
+            ],
+          ),
+          // Rating badge (top right)
+          Positioned(
+            top: -4,
+            right: 0,
+            child: _buildRatingAndPrice(),
+          ),
+          // Favorite button (bottom right)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: _buildFavoriteButton(),
           ),
         ],
       ),
     );
   }
 
-  /// Build category and cuisine
-  Widget _buildCategoryAndCuisine(ThemeData theme) {
-    final parts = <String>[];
-    parts.add(establishment.category);
-    if (establishment.cuisine != null) {
-      parts.add(establishment.cuisine!);
-    }
-
+  /// Build establishment name (Unbounded font, 18px)
+  Widget _buildName() {
     return Text(
-      parts.join(' • '),
-      style: theme.textTheme.bodyMedium?.copyWith(
-        color: theme.colorScheme.secondary,
+      establishment.name,
+      style: GoogleFonts.unbounded(
+        fontSize: 18,
+        fontWeight: FontWeight.w400,
+        color: Colors.black,
+        height: 25 / 18,
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
   }
 
-  /// Build price range indicator
-  Widget _buildPriceRange(ThemeData theme) {
+  /// Build category/type (Avenir Next, 13px)
+  Widget _buildCategory() {
     return Text(
-      establishment.priceRange!,
-      style: theme.textTheme.bodyMedium?.copyWith(
-        color: theme.colorScheme.secondary,
-        fontWeight: FontWeight.w600,
+      _getCategoryLabel(establishment.category),
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: Colors.black,
+        height: 20 / 13,
       ),
     );
   }
 
-  /// Build status (open/closed)
-  Widget _buildStatus(ThemeData theme) {
-    // For now, show as open
-    // Full working hours logic will be implemented in later phases
-    final isOpen = establishment.status == 'active';
+  /// Build cuisine in brackets (Avenir Next, 13px, grey)
+  Widget _buildCuisine() {
+    if (establishment.cuisine == null) return const SizedBox.shrink();
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingS,
-        vertical: AppDimensions.paddingXs,
-      ),
-      decoration: BoxDecoration(
-        color: isOpen
-            ? theme.colorScheme.tertiary.withValues(alpha: 0.1)
-            : theme.colorScheme.error.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
-      ),
-      child: Text(
-        isOpen ? 'Открыто' : 'Закрыто',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: isOpen ? theme.colorScheme.tertiary : theme.colorScheme.error,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  /// Build address
-  Widget _buildAddress(ThemeData theme) {
     return Text(
-      establishment.address,
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.secondary,
+      '{${establishment.cuisine}}',
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: _greyText,
+        height: 20 / 13,
       ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
     );
   }
 
-  /// Build distance indicator
-  Widget _buildDistance(ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  /// Build rating badge and price (Figma design)
+  Widget _buildRatingAndPrice() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(
-          Icons.location_on,
-          size: AppDimensions.iconS,
-          color: theme.colorScheme.secondary,
-        ),
-        const SizedBox(width: AppDimensions.spacingXs),
-        Text(
-          '${distanceKm!.toStringAsFixed(1)} км',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.secondary,
+        // Rating badge
+        if (establishment.rating != null)
+          Container(
+            width: _ratingSize,
+            height: _ratingSize,
+            decoration: BoxDecoration(
+              color: _greenColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              establishment.rating!.toStringAsFixed(1).replaceAll('.', ','),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+                color: _backgroundColor,
+                height: 25 / 16,
+              ),
+            ),
           ),
-        ),
+        const SizedBox(height: 6),
+        // Price range
+        if (establishment.priceRange != null)
+          Text(
+            establishment.priceRange!,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+              color: Colors.black,
+              height: 25 / 15,
+            ),
+          ),
       ],
     );
   }
 
-  /// Build favorite button
-  /// Orange color when active, grey outline when inactive (per Figma design)
-  Widget _buildFavoriteButton() {
-    // Orange color from Figma design
-    const favoriteColor = Color(0xFFFF6B35);
+  /// Build status with closing time (Figma design)
+  Widget _buildStatus() {
+    final isOpen = establishment.status == 'active';
+    final closingTime = _getClosingTime();
 
-    return IconButton(
-      icon: Icon(
-        isFavorite ? Icons.favorite : Icons.favorite_border,
-        color: isFavorite ? favoriteColor : Colors.grey,
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          height: 20 / 14,
+        ),
+        children: [
+          TextSpan(
+            text: isOpen ? 'Открыто' : 'Закрыто',
+            style: TextStyle(
+              color: isOpen ? _greenColor : Colors.red,
+            ),
+          ),
+          if (closingTime != null)
+            TextSpan(
+              text: '/до $closingTime',
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+        ],
       ),
-      onPressed: onFavoriteToggle,
-      iconSize: AppDimensions.iconM,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(),
     );
   }
+
+  /// Build distance text (Figma design)
+  Widget _buildDistance() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        '${distanceKm!.toStringAsFixed(1).replaceAll('.', ',')} км от вас',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: Colors.black,
+          height: 20 / 14,
+        ),
+      ),
+    );
+  }
+
+  /// Build address with underline (Figma design)
+  Widget _buildAddress() {
+    return Text(
+      establishment.address,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: Colors.black,
+        decoration: TextDecoration.underline,
+        height: 20 / 14,
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  /// Build favorite button (Figma design - heart icon)
+  Widget _buildFavoriteButton() {
+    return GestureDetector(
+      onTap: onFavoriteToggle,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(
+          isFavorite ? Icons.favorite : Icons.favorite_border,
+          size: 27,
+          color: isFavorite ? _orangeHeart : _orangeHeart,
+        ),
+      ),
+    );
+  }
+
+  /// Get category label in Russian
+  String _getCategoryLabel(String category) {
+    const categoryLabels = {
+      'restaurant': 'ресторан',
+      'cafe': 'кафе',
+      'bar': 'бар',
+      'coffee_shop': 'кофейня',
+      'fast_food': 'фастфуд',
+      'bakery': 'пекарня',
+      'pizzeria': 'пиццерия',
+    };
+    return categoryLabels[category.toLowerCase()] ?? category;
+  }
+
+  /// Get closing time from working hours
+  String? _getClosingTime() {
+    if (establishment.workingHours == null) return '23:00';
+
+    // Get current day of week
+    final now = DateTime.now();
+    final dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    final dayKey = dayNames[now.weekday - 1];
+
+    final dayHours = establishment.workingHours![dayKey];
+    if (dayHours == null) return null;
+
+    // Extract closing time (format: "10:00-23:00" or {"open": "10:00", "close": "23:00"})
+    if (dayHours is String) {
+      final parts = dayHours.split('-');
+      if (parts.length == 2) {
+        return parts[1].trim();
+      }
+    } else if (dayHours is Map) {
+      return dayHours['close'] as String?;
+    }
+
+    return '23:00';
+  }
+}
+
+/// Custom clipper for image with rounded LEFT corners (Figma design - "bathtub" shape)
+/// Top-left and bottom-left corners are rounded, right side is straight
+class _ImageClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    const radius = 40.0;
+
+    // Start from top-left corner (after curve)
+    path.moveTo(0, radius);
+    // Curve at top-left
+    path.quadraticBezierTo(0, 0, radius, 0);
+    // Line to top-right (straight)
+    path.lineTo(size.width, 0);
+    // Line down to bottom-right (straight)
+    path.lineTo(size.width, size.height);
+    // Line to bottom-left (before curve)
+    path.lineTo(radius, size.height);
+    // Curve at bottom-left
+    path.quadraticBezierTo(0, size.height, 0, size.height - radius);
+    // Line back to start
+    path.lineTo(0, radius);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
