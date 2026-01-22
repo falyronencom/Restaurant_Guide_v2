@@ -79,9 +79,27 @@ class EstablishmentsService {
       );
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        return PaginatedEstablishments.fromJson(
-          response.data as Map<String, dynamic>,
-        );
+        final responseData = response.data as Map<String, dynamic>;
+
+        // Backend returns: { success: true, data: { establishments: [...], pagination: {...} } }
+        // Transform to format expected by PaginatedEstablishments.fromJson
+        final innerData = responseData['data'] as Map<String, dynamic>?;
+        if (innerData != null) {
+          final pagination = innerData['pagination'] as Map<String, dynamic>? ?? {};
+          final transformed = {
+            'data': innerData['establishments'] ?? [],
+            'meta': {
+              'total': pagination['total'] ?? 0,
+              'page': pagination['page'] ?? 1,
+              'per_page': pagination['limit'] ?? 20, // backend uses 'limit'
+              'total_pages': pagination['totalPages'] ?? 1, // backend uses camelCase
+            },
+          };
+          return PaginatedEstablishments.fromJson(transformed);
+        }
+
+        // Fallback: try direct parsing (old format)
+        return PaginatedEstablishments.fromJson(responseData);
       } else {
         throw Exception('Unexpected response format');
       }

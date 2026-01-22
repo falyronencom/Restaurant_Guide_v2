@@ -8,13 +8,13 @@ import * as searchService from '../services/searchService.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
- * Search establishments by radius
+ * Search establishments by radius (or without location)
  * GET /api/v1/search/establishments
  *
  * Query Parameters:
- * - latitude (required): Center latitude
- * - longitude (required): Center longitude
- * - radius (optional): Search radius in km (default: 10, max: 1000)
+ * - latitude (optional): Center latitude - if provided with longitude, enables distance sorting
+ * - longitude (optional): Center longitude - if provided with latitude, enables distance sorting
+ * - radius (optional): Search radius in km (default: 10, max: 1000) - only used with coordinates
  * - categories (optional): Comma-separated categories
  * - cuisines (optional): Comma-separated cuisines
  * - priceRange (optional): Price range ($, $$, $$$, $$$$)
@@ -37,17 +37,19 @@ export async function searchEstablishments(req, res, next) {
       offset,
     } = req.query;
 
-    // Parse coordinates
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
+    // Parse coordinates (now optional)
+    const lat = latitude ? parseFloat(latitude) : null;
+    const lon = longitude ? parseFloat(longitude) : null;
 
-    if (isNaN(lat) || isNaN(lon)) {
-      throw new AppError('Invalid latitude or longitude', 422, 'VALIDATION_ERROR');
+    // Validate coordinates if provided
+    const hasCoordinates = lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon);
+    if ((latitude && !longitude) || (!latitude && longitude)) {
+      throw new AppError('Both latitude and longitude must be provided together', 422, 'VALIDATION_ERROR');
     }
 
-    // Parse radius (optional)
+    // Parse radius (optional, only used with coordinates)
     const radiusKm = radius ? parseFloat(radius) : 10;
-    if (isNaN(radiusKm)) {
+    if (radius && isNaN(radiusKm)) {
       throw new AppError('Invalid radius', 422, 'VALIDATION_ERROR');
     }
 
@@ -94,19 +96,34 @@ export async function searchEstablishments(req, res, next) {
       throw new AppError('Invalid limit parameter', 422, 'VALIDATION_ERROR');
     }
 
-    // Execute search
-    const result = await searchService.searchByRadius({
-      latitude: lat,
-      longitude: lon,
-      radius: radiusKm,
-      categories: categoryList,
-      cuisines: cuisineList,
-      priceRange,
-      minRating: minRatingValue,
-      limit: limitValue,
-      offset: finalOffset,
-      page: finalPage,
-    });
+    // Execute search - with or without coordinates
+    let result;
+    if (hasCoordinates) {
+      // Search with distance calculation
+      result = await searchService.searchByRadius({
+        latitude: lat,
+        longitude: lon,
+        radius: radiusKm,
+        categories: categoryList,
+        cuisines: cuisineList,
+        priceRange,
+        minRating: minRatingValue,
+        limit: limitValue,
+        offset: finalOffset,
+        page: finalPage,
+      });
+    } else {
+      // Search without coordinates - no distance filtering/sorting
+      result = await searchService.searchWithoutLocation({
+        categories: categoryList,
+        cuisines: cuisineList,
+        priceRange,
+        minRating: minRatingValue,
+        limit: limitValue,
+        offset: finalOffset,
+        page: finalPage,
+      });
+    }
 
     res.status(200).json({
       success: true,

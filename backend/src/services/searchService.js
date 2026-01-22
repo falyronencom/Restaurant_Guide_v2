@@ -170,6 +170,131 @@ export async function searchByRadius({
 }
 
 /**
+ * Search establishments without location (no distance calculation)
+ * Used when user doesn't provide coordinates
+ *
+ * @param {Object} params - Search parameters
+ * @param {string[]} params.categories - Filter by categories
+ * @param {string[]} params.cuisines - Filter by cuisines
+ * @param {string} params.priceRange - Filter by price range
+ * @param {number} params.minRating - Minimum average rating
+ * @param {number} params.limit - Results per page (default: 20, max: 100)
+ * @param {number} params.offset - Pagination offset (default: 0)
+ * @param {number} params.page - Page number for pagination metadata
+ * @returns {Promise<Object>} Search results sorted by rating
+ */
+export async function searchWithoutLocation({
+  categories = null,
+  cuisines = null,
+  priceRange = null,
+  minRating = null,
+  limit = 20,
+  offset = 0,
+  page = 1,
+}) {
+  // Validate pagination
+  if (limit < 1 || limit > 100) {
+    throw new AppError('Limit must be between 1 and 100', 422, 'VALIDATION_ERROR');
+  }
+
+  if (offset < 0) {
+    throw new AppError('Offset must be non-negative', 422, 'VALIDATION_ERROR');
+  }
+
+  // Build dynamic query
+  const conditions = ['e.status = $1'];
+  const params = ['active'];
+  let paramIndex = 2;
+
+  // Add category filter
+  if (categories && categories.length > 0) {
+    conditions.push(`e.categories && $${paramIndex}::varchar[]`);
+    params.push(categories);
+    paramIndex++;
+  }
+
+  // Add cuisine filter
+  if (cuisines && cuisines.length > 0) {
+    conditions.push(`e.cuisines && $${paramIndex}::varchar[]`);
+    params.push(cuisines);
+    paramIndex++;
+  }
+
+  // Add price range filter
+  if (priceRange) {
+    conditions.push(`e.price_range = $${paramIndex}`);
+    params.push(priceRange);
+    paramIndex++;
+  }
+
+  // Add rating filter
+  if (minRating) {
+    conditions.push(`e.average_rating >= $${paramIndex}`);
+    params.push(minRating);
+    paramIndex++;
+  }
+
+  const whereClause = conditions.join(' AND ');
+
+  // Main query - sorted by rating (no distance)
+  const query = `
+    SELECT
+      e.*,
+      u.name AS partner_name,
+      u.email AS partner_email
+    FROM establishments e
+    LEFT JOIN users u ON e.partner_id = u.id
+    WHERE ${whereClause}
+    ORDER BY e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC
+    LIMIT $${paramIndex}
+    OFFSET $${paramIndex + 1}
+  `;
+
+  params.push(limit, offset);
+
+  const result = await pool.query(query, params);
+
+  // Count total results for pagination
+  const countQuery = `
+    SELECT COUNT(*) as total
+    FROM establishments e
+    WHERE ${whereClause}
+  `;
+
+  const countParams = params.slice(0, -2); // Remove limit and offset
+  const countResult = await pool.query(countQuery, countParams);
+  const total = parseInt(countResult.rows[0].total);
+
+  // Calculate page-based pagination metadata
+  const totalPages = Math.ceil(total / limit);
+  const hasNext = page < totalPages;
+  const hasPrevious = page > 1;
+
+  // Transform results (no distance field)
+  const establishments = result.rows.map(row => ({
+    ...row,
+    distance: null, // No distance without coordinates
+    distance_km: null,
+    latitude: parseFloat(row.latitude),
+    longitude: parseFloat(row.longitude),
+    average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
+    review_count: parseInt(row.review_count) || 0,
+  }));
+
+  return {
+    establishments,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext,
+      hasPrevious,
+    },
+  };
+}
+
+/**
  * Search establishments within geographic bounds (for map view)
  *
  * @param {Object} params - Search parameters
@@ -349,6 +474,7 @@ export async function checkSearchHealth() {
 export default {
   searchByRadius,
   searchByBounds,
+  searchWithoutLocation,
   getEstablishmentById,
   checkSearchHealth,
 };
