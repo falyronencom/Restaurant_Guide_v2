@@ -287,17 +287,17 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildBackButton(),
           ),
 
-          // Share button
+          // Share button (Figma: right ~24px, near top)
           Positioned(
             top: MediaQuery.of(context).padding.top + 4,
-            right: 56,
+            right: 24,
             child: _buildShareButton(),
           ),
 
-          // Favorite button
+          // Favorite button (Figma: right ~69px, below share)
           Positioned(
             top: MediaQuery.of(context).padding.top + 42,
-            right: 70,
+            right: 69,
             child: _buildFavoriteButton(),
           ),
 
@@ -417,16 +417,20 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build share button
+  /// Build share button (Figma style - no padding)
   Widget _buildShareButton() {
-    return IconButton(
-      icon: const Icon(Icons.share, color: _backgroundColor, size: 24),
-      onPressed: () {
+    return GestureDetector(
+      onTap: () {
         // TODO: Implement share functionality
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Поделиться')),
         );
       },
+      child: const Icon(
+        Icons.ios_share,
+        color: _backgroundColor,
+        size: 28,
+      ),
     );
   }
 
@@ -566,14 +570,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build rating badge (green square)
+  /// Build rating badge (green square) - Figma: 50x50 with 12px radius
   Widget _buildRatingBadge() {
     return Column(
       children: [
         // Rating
         Container(
-          width: 56,
-          height: 56,
+          width: 50,
+          height: 50,
           decoration: BoxDecoration(
             color: _greenStatus,
             borderRadius: BorderRadius.circular(12),
@@ -589,7 +593,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         // Price
         Text(
           _getPriceSymbol(_establishment!.priceRange ?? ''),
