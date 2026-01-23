@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
+import 'package:restaurant_guide_mobile/services/media_service.dart';
 
 /// Step 4: Media Upload
 /// Allows user to upload establishment photos and menu
@@ -17,6 +18,7 @@ class MediaStep extends StatefulWidget {
 
 class _MediaStepState extends State<MediaStep> {
   final ImagePicker _picker = ImagePicker();
+  final MediaService _mediaService = MediaService();
   bool _isUploadingPhoto = false;
   bool _isUploadingMenu = false;
 
@@ -390,11 +392,9 @@ class _MediaStepState extends State<MediaStep> {
     );
   }
 
-  /// Pick photo from gallery
+  /// Pick photo from gallery and upload to Cloudinary
   Future<void> _pickPhoto(PartnerRegistrationProvider provider) async {
     try {
-      setState(() => _isUploadingPhoto = true);
-
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1920,
@@ -402,16 +402,34 @@ class _MediaStepState extends State<MediaStep> {
         imageQuality: 85,
       );
 
-      if (image != null) {
-        // For MVP, we store the local path
-        // In production, this would upload to Cloudinary and get URL
-        provider.addInteriorPhoto(image.path);
+      if (image == null) return;
+
+      setState(() => _isUploadingPhoto = true);
+
+      // Upload to Cloudinary via backend API
+      final uploadedMedia = await _mediaService.uploadImage(
+        filePath: image.path,
+        type: 'interior',
+      );
+
+      // Store Cloudinary URL instead of local path
+      provider.addInteriorPhoto(uploadedMedia.url);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Фото успешно загружено'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при выборе фото: $e'),
+            content: Text('Ошибка при загрузке фото: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
@@ -424,11 +442,9 @@ class _MediaStepState extends State<MediaStep> {
     }
   }
 
-  /// Pick menu photo from gallery
+  /// Pick menu photo from gallery and upload to Cloudinary
   Future<void> _pickMenuPhoto(PartnerRegistrationProvider provider) async {
     try {
-      setState(() => _isUploadingMenu = true);
-
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1920,
@@ -436,16 +452,34 @@ class _MediaStepState extends State<MediaStep> {
         imageQuality: 85,
       );
 
-      if (image != null) {
-        // For MVP, we store the local path
-        // In production, this would upload to Cloudinary and get URL
-        provider.addMenuPhoto(image.path);
+      if (image == null) return;
+
+      setState(() => _isUploadingMenu = true);
+
+      // Upload to Cloudinary via backend API
+      final uploadedMedia = await _mediaService.uploadImage(
+        filePath: image.path,
+        type: 'menu',
+      );
+
+      // Store Cloudinary URL instead of local path
+      provider.addMenuPhoto(uploadedMedia.url);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Фото меню успешно загружено'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при выборе фото: $e'),
+            content: Text('Ошибка при загрузке фото: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
