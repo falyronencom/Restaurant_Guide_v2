@@ -63,6 +63,7 @@ export const createEstablishment = async (establishmentData) => {
     working_hours,
     special_hours,
     attributes,
+    primary_image_url,
   } = establishmentData;
 
   const query = `
@@ -83,6 +84,7 @@ export const createEstablishment = async (establishmentData) => {
       working_hours,
       special_hours,
       attributes,
+      primary_image_url,
       status,
       subscription_tier,
       base_score,
@@ -92,7 +94,7 @@ export const createEstablishment = async (establishmentData) => {
       review_count,
       average_rating
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'draft', 'free', 0, 0, 0, 0, 0, 0.0)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', 'free', 0, 0, 0, 0, 0, 0.0)
     RETURNING 
       id,
       partner_id,
@@ -121,6 +123,7 @@ export const createEstablishment = async (establishmentData) => {
       favorite_count,
       review_count,
       average_rating,
+      primary_image_url,
       created_at,
       updated_at,
       published_at
@@ -143,6 +146,7 @@ export const createEstablishment = async (establishmentData) => {
     working_hours ? JSON.stringify(working_hours) : JSON.stringify({}), // Convert object to JSONB, default to empty object
     special_hours ? JSON.stringify(special_hours) : null,
     attributes ? JSON.stringify(attributes) : '{}',
+    primary_image_url || null,
   ];
 
   try {

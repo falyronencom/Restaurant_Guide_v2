@@ -103,6 +103,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     working_hours,
     special_hours,
     attributes,
+    primary_photo,
   } = establishmentData;
 
   try {
@@ -196,6 +197,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       working_hours,
       special_hours,
       attributes,
+      primary_image_url: primary_photo,
     });
 
     // Auto-upgrade user to partner role if this is their first establishment
