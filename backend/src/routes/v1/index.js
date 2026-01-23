@@ -32,6 +32,7 @@ import reviewRoutes from './reviewRoutes.js';
 import { getEstablishmentReviews, getUserReviews } from './reviewRoutes.js';
 import favoriteRoutes from './favoriteRoutes.js';
 import establishmentRoutes from './establishmentRoutes.js';
+import tempMediaRoutes from './tempMediaRoutes.js';
 
 const router = express.Router();
 
@@ -187,6 +188,22 @@ router.use('/favorites', favoriteRoutes);
  * status transition logic, and integration with the media management system.
  */
 router.use('/partner/establishments', establishmentRoutes);
+
+/**
+ * /api/v1/partner/media/*
+ *
+ * Temporary media upload endpoints for partner registration.
+ *
+ * Provides media upload functionality before establishment exists:
+ * - POST /partner/media/upload - Upload image to Cloudinary (user or partner)
+ *
+ * This endpoint is essential for the partner registration flow where users need
+ * to upload photos on the Media step before the establishment is created. The
+ * uploaded files are stored in Cloudinary and URLs are returned immediately.
+ *
+ * Protected: Yes (user or partner role required)
+ */
+router.use('/partner/media', tempMediaRoutes);
 
 /**
  * Placeholder for future route modules
