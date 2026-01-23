@@ -30,6 +30,7 @@ This seed infrastructure creates production-quality test data enabling comprehen
 3. **Seed Images:** Pre-curated images in `backend/scripts/seed-images/` subdirectories:
    - `interiors/` - Restaurant interior photos (18 images provided)
    - `menus/` - Menu photos (9 images provided)
+   - **NOTE:** Seed images are NOT in git repository. See `backend/scripts/seed-images/README.md` for how to obtain them.
 
 ### Basic Execution
 
@@ -398,6 +399,7 @@ Insufficient seed images. Ensure backend/scripts/seed-images/ contains interiors
 ```
 
 **Solution:**
+- **Seed images are NOT tracked in git.** See `backend/scripts/seed-images/README.md` for instructions on how to obtain them.
 - Verify `backend/scripts/seed-images/interiors/` contains at least 1 image
 - Verify `backend/scripts/seed-images/menus/` contains at least 1 image
 - Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`

@@ -49,3 +49,6 @@ temp/
 ehthumbs.db
 Thumbs.db
 
+# Seed images (large binary files should not be in git)
+scripts/seed-images/
+
