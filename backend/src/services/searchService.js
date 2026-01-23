@@ -15,6 +15,7 @@ import { AppError } from '../middleware/errorHandler.js';
  * @param {number} params.latitude - Center latitude
  * @param {number} params.longitude - Center longitude
  * @param {number} params.radius - Search radius in kilometers (default: 10)
+ * @param {string} params.city - Filter by city name (e.g., 'Минск', 'Гродно')
  * @param {string[]} params.categories - Filter by categories
  * @param {string[]} params.cuisines - Filter by cuisines
  * @param {string} params.priceRange - Filter by price range ($, $$, $$$, $$$$)
@@ -27,6 +28,7 @@ export async function searchByRadius({
   latitude,
   longitude,
   radius = 10,
+  city = null,
   categories = null,
   cuisines = null,
   priceRange = null,
@@ -67,6 +69,13 @@ export async function searchByRadius({
   const params = ['active']; // Only search active establishments
   let paramIndex = 2;
 
+  // Add city filter
+  if (city) {
+    conditions.push(`e.city = $${paramIndex}`);
+    params.push(city);
+    paramIndex++;
+  }
+
   // Add category filter
   if (categories && categories.length > 0) {
     conditions.push(`e.categories && $${paramIndex}::varchar[]`);
@@ -97,46 +106,80 @@ export async function searchByRadius({
 
   const whereClause = conditions.join(' AND ');
 
+  // If city is specified, don't filter by radius - just calculate distance for sorting
+  // If no city, filter by radius from coordinates
+  const useRadiusFilter = !city;
+
   // Main query with PostGIS distance calculation
-  const query = `
-    WITH nearby_establishments AS (
+  let query;
+  let countQuery;
+
+  if (useRadiusFilter) {
+    // Original behavior: filter by radius
+    query = `
+      WITH nearby_establishments AS (
+        SELECT
+          e.*,
+          ST_Distance(
+            ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
+            ST_MakePoint(e.longitude, e.latitude)::geography
+          ) / 1000.0 AS distance_km
+        FROM establishments e
+        WHERE ${whereClause}
+      )
+      SELECT
+        ne.*,
+        u.name AS partner_name,
+        u.email AS partner_email
+      FROM nearby_establishments ne
+      LEFT JOIN users u ON ne.partner_id = u.id
+      WHERE ne.distance_km <= $${paramIndex + 2}
+      ORDER BY ne.distance_km ASC, ne.average_rating DESC, ne.review_count DESC
+      LIMIT $${paramIndex + 3}
+      OFFSET $${paramIndex + 4}
+    `;
+    params.push(longitude, latitude, radius, limit, offset);
+
+    countQuery = `
+      SELECT COUNT(*) as total
+      FROM establishments e
+      WHERE ${whereClause}
+        AND ST_Distance(
+          ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
+          ST_MakePoint(e.longitude, e.latitude)::geography
+        ) / 1000.0 <= $${paramIndex + 2}
+    `;
+  } else {
+    // City specified: don't filter by radius, just sort by distance
+    query = `
       SELECT
         e.*,
         ST_Distance(
           ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
           ST_MakePoint(e.longitude, e.latitude)::geography
-        ) / 1000.0 AS distance_km
+        ) / 1000.0 AS distance_km,
+        u.name AS partner_name,
+        u.email AS partner_email
+      FROM establishments e
+      LEFT JOIN users u ON e.partner_id = u.id
+      WHERE ${whereClause}
+      ORDER BY e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC
+      LIMIT $${paramIndex + 2}
+      OFFSET $${paramIndex + 3}
+    `;
+    params.push(longitude, latitude, limit, offset);
+
+    countQuery = `
+      SELECT COUNT(*) as total
       FROM establishments e
       WHERE ${whereClause}
-    )
-    SELECT
-      ne.*,
-      u.name AS partner_name,
-      u.email AS partner_email
-    FROM nearby_establishments ne
-    LEFT JOIN users u ON ne.partner_id = u.id
-    WHERE ne.distance_km <= $${paramIndex + 2}
-    ORDER BY ne.distance_km ASC, ne.average_rating DESC, ne.review_count DESC
-    LIMIT $${paramIndex + 3}
-    OFFSET $${paramIndex + 4}
-  `;
-
-  params.push(longitude, latitude, radius, limit, offset);
+    `;
+  }
 
   const result = await pool.query(query, params);
 
   // Count total results for pagination
-  const countQuery = `
-    SELECT COUNT(*) as total
-    FROM establishments e
-    WHERE ${whereClause}
-      AND ST_Distance(
-        ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
-        ST_MakePoint(e.longitude, e.latitude)::geography
-      ) / 1000.0 <= $${paramIndex + 2}
-  `;
-
-  const countParams = params.slice(0, -2); // Remove limit and offset
+  const countParams = useRadiusFilter ? params.slice(0, -2) : params.slice(0, -4);
   const countResult = await pool.query(countQuery, countParams);
   const total = parseInt(countResult.rows[0].total);
 
@@ -174,6 +217,7 @@ export async function searchByRadius({
  * Used when user doesn't provide coordinates
  *
  * @param {Object} params - Search parameters
+ * @param {string} params.city - Filter by city name (e.g., 'Минск', 'Гродно')
  * @param {string[]} params.categories - Filter by categories
  * @param {string[]} params.cuisines - Filter by cuisines
  * @param {string} params.priceRange - Filter by price range
@@ -184,6 +228,7 @@ export async function searchByRadius({
  * @returns {Promise<Object>} Search results sorted by rating
  */
 export async function searchWithoutLocation({
+  city = null,
   categories = null,
   cuisines = null,
   priceRange = null,
@@ -205,6 +250,13 @@ export async function searchWithoutLocation({
   const conditions = ['e.status = $1'];
   const params = ['active'];
   let paramIndex = 2;
+
+  // Add city filter
+  if (city) {
+    conditions.push(`e.city = $${paramIndex}`);
+    params.push(city);
+    paramIndex++;
+  }
 
   // Add category filter
   if (categories && categories.length > 0) {

@@ -303,7 +303,7 @@ const STREET_NAMES = {
     'ул. Калинина',
     'ул. Замковая',
   ],
-  'Могилев': [
+  'Могилёв': [
     'пр-т Мира',
     'ул. Ленинская',
     'ул. Первомайская',
@@ -346,7 +346,7 @@ export const CITY_COORDINATES = {
   'Брест': { latitude: 52.0976, longitude: 23.7340 },
   'Гомель': { latitude: 52.4418, longitude: 30.9883 },
   'Витебск': { latitude: 55.1904, longitude: 30.2049 },
-  'Могилев': { latitude: 53.9007, longitude: 30.3313 },
+  'Могилёв': { latitude: 53.9007, longitude: 30.3313 },
   'Бобруйск': { latitude: 53.1384, longitude: 29.2214 },
 };
 
