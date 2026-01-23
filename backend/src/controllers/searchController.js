@@ -28,6 +28,7 @@ export async function searchEstablishments(req, res, next) {
       latitude,
       longitude,
       radius,
+      city,
       categories,
       cuisines,
       priceRange,
@@ -36,6 +37,10 @@ export async function searchEstablishments(req, res, next) {
       page,
       offset,
     } = req.query;
+
+    // Debug logging for city filter
+    console.log('[SEARCH] Query params:', { city, latitude, longitude, limit, page });
+    console.log('[SEARCH] City raw:', city, '| Type:', typeof city, '| Length:', city?.length);
 
     // Parse coordinates (now optional)
     const lat = latitude ? parseFloat(latitude) : null;
@@ -104,6 +109,7 @@ export async function searchEstablishments(req, res, next) {
         latitude: lat,
         longitude: lon,
         radius: radiusKm,
+        city,
         categories: categoryList,
         cuisines: cuisineList,
         priceRange,
@@ -115,6 +121,7 @@ export async function searchEstablishments(req, res, next) {
     } else {
       // Search without coordinates - no distance filtering/sorting
       result = await searchService.searchWithoutLocation({
+        city,
         categories: categoryList,
         cuisines: cuisineList,
         priceRange,

@@ -320,7 +320,7 @@ export const ESTABLISHMENT_CONFIGS = [
 
   // Edge Case 6: Multiple Categories (2 categories - maximum allowed)
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['restaurant', 'karaoke'],
     cuisines: ['european', 'asian'],
     price_range: '$$',
@@ -1086,7 +1086,7 @@ export const ESTABLISHMENT_CONFIGS = [
   // ========================================
 
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['restaurant'],
     cuisines: ['indian'],
     price_range: '$$',
@@ -1098,7 +1098,7 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['cafe'],
     cuisines: ['european'],
     price_range: '$',
@@ -1110,7 +1110,7 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['bar'],
     cuisines: ['international'],
     price_range: '$$',
@@ -1122,7 +1122,7 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['fast_food'],
     cuisines: ['american'],
     price_range: '$',
@@ -1134,7 +1134,7 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['bakery'],
     cuisines: ['european'],
     price_range: '$',
@@ -1146,7 +1146,7 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
   {
-    city: 'Могилев',
+    city: 'Могилёв',
     categories: ['billiards'],
     cuisines: ['american'],
     price_range: '$',
