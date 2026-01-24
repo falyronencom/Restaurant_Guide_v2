@@ -17,6 +17,9 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
+  // Track which tabs have been visited (for lazy loading heavy widgets like Map)
+  final Set<int> _visitedTabs = {0}; // Start with Search tab visited
+
   // Navigator keys for each tab to maintain independent navigation stacks
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
     GlobalKey<NavigatorState>(), // Search
@@ -34,6 +37,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     } else {
       setState(() {
         _currentIndex = index;
+        _visitedTabs.add(index); // Mark tab as visited for lazy loading
       });
     }
   }
@@ -90,7 +94,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           children: [
             _buildTabNavigator(0, const SearchHomeScreen()),
             _buildTabNavigator(1, const NewsScreen()),
-            _buildTabNavigator(2, const MapScreen()),
+            // Lazy load MapScreen - only create when user visits the tab
+            // This prevents Yandex Maps from blocking the main thread at startup
+            _visitedTabs.contains(2)
+                ? _buildTabNavigator(2, const MapScreen())
+                : const SizedBox.shrink(),
             _buildTabNavigator(3, const FavoritesScreen()),
             _buildTabNavigator(4, const ProfileScreen()),
           ],

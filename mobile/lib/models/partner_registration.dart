@@ -382,9 +382,9 @@ class PartnerRegistration {
       if (unp != null) 'unp': unp,
       if (contactPerson != null) 'contact_person': contactPerson,
       if (contactEmail != null) 'contact_email': contactEmail,
-      // Photos
-      if (interiorPhotos.isNotEmpty || menuPhotos.isNotEmpty)
-        'photos': [...interiorPhotos, ...menuPhotos],
+      // Photos - send separately by type for proper categorization in establishment_media
+      if (interiorPhotos.isNotEmpty) 'interior_photos': interiorPhotos,
+      if (menuPhotos.isNotEmpty) 'menu_photos': menuPhotos,
       if (primaryPhotoUrl != null) 'primary_photo': primaryPhotoUrl,
     };
   }
