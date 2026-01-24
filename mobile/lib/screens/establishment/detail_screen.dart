@@ -237,9 +237,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   Widget _buildHeroSection() {
     // Filter only establishment photos (not menu)
     final photos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'photo')
+        .where((m) => m.type == 'photo' || m.type == 'interior')
         .toList();
-    final hasPhotos = photos.isNotEmpty;
+
+    // Use thumbnailUrl (primary_image_url) as fallback if no media
+    final hasPrimaryImage = _establishment!.thumbnailUrl != null;
+    final hasPhotos = photos.isNotEmpty || hasPrimaryImage;
 
     return SizedBox(
       height: 657,
@@ -248,7 +251,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         children: [
           // Photo gallery
           hasPhotos
-              ? _buildPhotoGallery(photos)
+              ? (photos.isNotEmpty
+                  ? _buildPhotoGallery(photos)
+                  : _buildPrimaryImageFallback())
               : _buildNoPhotoPlaceholder(),
 
           // Gradient overlay at bottom
@@ -271,8 +276,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             ),
           ),
 
-          // Page indicator dots
-          if (hasPhotos && photos.length > 1)
+          // Page indicator dots (only if multiple photos in media array)
+          if (photos.length > 1)
             Positioned(
               top: 640,
               left: 0,
@@ -367,6 +372,24 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           size: 64,
           color: Colors.grey,
         ),
+      ),
+    );
+  }
+
+  /// Build primary image fallback when no media array but has thumbnailUrl
+  Widget _buildPrimaryImageFallback() {
+    return CachedNetworkImage(
+      imageUrl: _establishment!.thumbnailUrl!,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => Container(
+        color: Colors.grey[300],
+        child: const Center(
+          child: CircularProgressIndicator(color: _primaryOrange),
+        ),
+      ),
+      errorWidget: (context, url, error) => Container(
+        color: Colors.grey[300],
+        child: const Icon(Icons.error, size: 48),
       ),
     );
   }
