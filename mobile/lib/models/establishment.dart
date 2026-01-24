@@ -165,7 +165,7 @@ class Establishment {
 
 /// Media associated with an establishment
 class EstablishmentMedia {
-  final int id;
+  final String id;  // UUID from backend
   final String establishmentId;
   final String type;
   final String? thumbnailUrl;
@@ -187,7 +187,7 @@ class EstablishmentMedia {
 
   factory EstablishmentMedia.fromJson(Map<String, dynamic> json) {
     return EstablishmentMedia(
-      id: json['id'] as int,
+      id: json['id'].toString(),  // UUID as String
       establishmentId: json['establishment_id'].toString(),
       type: json['type'] as String,
       thumbnailUrl: json['thumbnail_url'] as String?,

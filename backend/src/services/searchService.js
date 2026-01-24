@@ -7,6 +7,7 @@
 
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import * as MediaModel from '../models/mediaModel.js';
 
 /**
  * Search establishments by radius
@@ -488,12 +489,17 @@ export async function getEstablishmentById(id) {
   }
 
   const row = result.rows[0];
+
+  // Load media from establishment_media table
+  const media = await MediaModel.getEstablishmentMedia(id);
+
   return {
     ...row,
     latitude: parseFloat(row.latitude),
     longitude: parseFloat(row.longitude),
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
     review_count: parseInt(row.review_count) || 0,
+    media, // Include all photos (interior, menu, etc.)
   };
 }
 
