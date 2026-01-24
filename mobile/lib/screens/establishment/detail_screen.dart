@@ -299,13 +299,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildShareButton(),
           ),
 
-          // Favorite button (Figma: right ~69px, below share)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 42,
-            right: 69,
-            child: _buildFavoriteButton(),
-          ),
-
           // Info overlay
           Positioned(
             bottom: 190,
@@ -319,6 +312,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             top: 370,
             right: 24,
             child: _buildRatingBadge(),
+          ),
+
+          // Favorite button (below rating badge)
+          Positioned(
+            top: 470,
+            right: 34,
+            child: _buildFavoriteButton(),
           ),
         ],
       ),
@@ -1285,7 +1285,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// Open fullscreen gallery for establishment photos
   void _openFullscreenGallery(int initialIndex) {
     final photos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'photo')
+        .where((m) => m.type == 'photo' || m.type == 'interior')
         .toList();
     if (photos.isEmpty) return;
 

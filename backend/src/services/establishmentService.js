@@ -11,6 +11,7 @@
  */
 
 import * as EstablishmentModel from '../models/establishmentModel.js';
+import * as MediaModel from '../models/mediaModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { upgradeUserToPartner } from './authService.js';
@@ -104,6 +105,8 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     special_hours,
     attributes,
     primary_photo,
+    interior_photos,
+    menu_photos,
   } = establishmentData;
 
   try {
@@ -199,6 +202,56 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       attributes,
       primary_image_url: primary_photo,
     });
+
+    // Save photos to establishment_media table
+    const allPhotos = [];
+
+    // Add interior photos
+    if (Array.isArray(interior_photos) && interior_photos.length > 0) {
+      interior_photos.forEach((url, index) => {
+        allPhotos.push({
+          url,
+          type: 'interior',
+          position: index,
+          is_primary: url === primary_photo,
+        });
+      });
+    }
+
+    // Add menu photos
+    if (Array.isArray(menu_photos) && menu_photos.length > 0) {
+      menu_photos.forEach((url, index) => {
+        allPhotos.push({
+          url,
+          type: 'menu',
+          position: index,
+          is_primary: url === primary_photo,
+        });
+      });
+    }
+
+    // Insert all photos into establishment_media
+    if (allPhotos.length > 0) {
+      const mediaPromises = allPhotos.map(photo =>
+        MediaModel.createMedia({
+          establishment_id: establishment.id,
+          type: photo.type,
+          url: photo.url,
+          thumbnail_url: photo.url, // Same URL for now, Cloudinary handles resizing via URL params
+          preview_url: photo.url,
+          position: photo.position,
+          is_primary: photo.is_primary,
+        })
+      );
+
+      await Promise.all(mediaPromises);
+
+      logger.info('Media saved to establishment_media', {
+        establishmentId: establishment.id,
+        interiorCount: interior_photos?.length || 0,
+        menuCount: menu_photos?.length || 0,
+      });
+    }
 
     // Auto-upgrade user to partner role if this is their first establishment
     // This enables the partner registration flow where regular users can become partners
