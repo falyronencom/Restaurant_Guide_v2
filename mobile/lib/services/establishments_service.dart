@@ -62,14 +62,15 @@ class EstablishmentsService {
 
     // Add optional filters
     if (city != null) queryParams['city'] = city;
+    // Use array notation for backend (categories[], cuisines[], price_range[])
     if (categories != null && categories.isNotEmpty) {
-      queryParams['categories'] = categories;
+      queryParams['categories[]'] = categories;
     }
     if (cuisines != null && cuisines.isNotEmpty) {
-      queryParams['cuisines'] = cuisines;
+      queryParams['cuisines[]'] = cuisines;
     }
     if (priceRanges != null && priceRanges.isNotEmpty) {
-      queryParams['price_range'] = priceRanges;
+      queryParams['price_range[]'] = priceRanges;
     }
     if (minRating != null) queryParams['min_rating'] = minRating;
     if (latitude != null) queryParams['latitude'] = latitude;
