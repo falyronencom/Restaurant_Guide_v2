@@ -10,6 +10,46 @@ import { AppError } from '../middleware/errorHandler.js';
 import * as MediaModel from '../models/mediaModel.js';
 
 /**
+ * Helper: Build ORDER BY clause based on sort parameter
+ *
+ * @param {string} sortBy - Sort option (rating, price_asc, price_desc, distance)
+ * @param {boolean} hasDistance - Whether distance_km column is available
+ * @returns {string} SQL ORDER BY clause
+ */
+function buildOrderByClause(sortBy, hasDistance = false) {
+  // Convert price range to numeric for sorting
+  const priceToNum = `(CASE e.price_range
+    WHEN '$' THEN 1
+    WHEN '$$' THEN 2
+    WHEN '$$$' THEN 3
+    WHEN '$$$$' THEN 4
+    ELSE 0
+  END)`;
+
+  switch (sortBy) {
+    case 'rating':
+      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+
+    case 'price_asc':
+      return `${priceToNum} ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+
+    case 'price_desc':
+      return `${priceToNum} DESC, e.average_rating DESC NULLS LAST, e.name ASC`;
+
+    case 'distance':
+      if (hasDistance) {
+        return 'distance_km ASC, e.average_rating DESC, e.name ASC';
+      }
+      // Fallback to rating if distance not available
+      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+
+    default:
+      // Default: rating-based
+      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+  }
+}
+
+/**
  * Search establishments by radius
  *
  * @param {Object} params - Search parameters
@@ -23,6 +63,7 @@ import * as MediaModel from '../models/mediaModel.js';
  * @param {number} params.minRating - Minimum average rating (1-5)
  * @param {number} params.limit - Results per page (default: 20, max: 100)
  * @param {number} params.offset - Pagination offset (default: 0)
+ * @param {string} params.sortBy - Sort order (distance, rating, price_asc, price_desc)
  * @returns {Promise<Object>} Search results with establishments and pagination
  */
 export async function searchByRadius({
@@ -37,6 +78,7 @@ export async function searchByRadius({
   limit = 20,
   offset = 0,
   page = 1,
+  sortBy = 'rating',
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -135,7 +177,7 @@ export async function searchByRadius({
       FROM nearby_establishments ne
       LEFT JOIN users u ON ne.partner_id = u.id
       WHERE ne.distance_km <= $${paramIndex + 2}
-      ORDER BY ne.distance_km ASC, ne.average_rating DESC, ne.review_count DESC
+      ORDER BY ${buildOrderByClause(sortBy, true).replace('e.', 'ne.')}
       LIMIT $${paramIndex + 3}
       OFFSET $${paramIndex + 4}
     `;
@@ -164,7 +206,7 @@ export async function searchByRadius({
       FROM establishments e
       LEFT JOIN users u ON e.partner_id = u.id
       WHERE ${whereClause}
-      ORDER BY e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC
+      ORDER BY ${buildOrderByClause(sortBy, true)}
       LIMIT $${paramIndex + 2}
       OFFSET $${paramIndex + 3}
     `;
@@ -237,6 +279,7 @@ export async function searchWithoutLocation({
   limit = 20,
   offset = 0,
   page = 1,
+  sortBy = 'rating',
 }) {
   // Validate pagination
   if (limit < 1 || limit > 100) {
@@ -298,7 +341,7 @@ export async function searchWithoutLocation({
     FROM establishments e
     LEFT JOIN users u ON e.partner_id = u.id
     WHERE ${whereClause}
-    ORDER BY e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC
+    ORDER BY ${buildOrderByClause(sortBy, false)}
     LIMIT $${paramIndex}
     OFFSET $${paramIndex + 1}
   `;

@@ -36,10 +36,21 @@ export async function searchEstablishments(req, res, next) {
       limit,
       page,
       offset,
+      sort_by,
     } = req.query;
 
-    // Debug logging for city filter
-    console.log('[SEARCH] Query params:', { city, latitude, longitude, limit, page });
+    // Debug logging for all important params
+    console.log('[SEARCH] Query params:', {
+      city,
+      latitude,
+      longitude,
+      categories,
+      cuisines,
+      priceRange,
+      sort_by,
+      limit,
+      page
+    });
     console.log('[SEARCH] City raw:', city, '| Type:', typeof city, '| Length:', city?.length);
 
     // Parse coordinates (now optional)
@@ -117,6 +128,7 @@ export async function searchEstablishments(req, res, next) {
         limit: limitValue,
         offset: finalOffset,
         page: finalPage,
+        sortBy: sort_by,
       });
     } else {
       // Search without coordinates - no distance filtering/sorting
@@ -129,6 +141,7 @@ export async function searchEstablishments(req, res, next) {
         limit: limitValue,
         offset: finalOffset,
         page: finalPage,
+        sortBy: sort_by,
       });
     }
 
