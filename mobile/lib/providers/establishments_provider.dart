@@ -216,11 +216,14 @@ class EstablishmentsProvider with ChangeNotifier {
       final result = await _service.searchEstablishments(
         page: page,
         city: _selectedCity,
-        category:
-            _categoryFilters.isNotEmpty ? _categoryFilters.join(',') : null,
-        cuisine: _cuisineFilters.isNotEmpty ? _cuisineFilters.join(',') : null,
-        priceRange: _priceFilters.isNotEmpty
-            ? _priceFilters.map((p) => p.apiValue).join(',')
+        categories: _categoryFilters.isNotEmpty
+            ? _categoryFilters.toList()
+            : null,
+        cuisines: _cuisineFilters.isNotEmpty
+            ? _cuisineFilters.toList()
+            : null,
+        priceRanges: _priceFilters.isNotEmpty
+            ? _priceFilters.map((p) => p.apiValue).toList()
             : null,
         latitude: latitude,
         longitude: longitude,
