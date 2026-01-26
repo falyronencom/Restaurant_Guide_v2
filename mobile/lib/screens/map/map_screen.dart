@@ -206,14 +206,7 @@ class _MapScreenState extends State<MapScreen> {
         west: west,
       );
 
-      // Debug logging
-      print('[MAP] Fetched ${establishments.length} establishments');
-      for (var e in establishments) {
-        print('[MAP] - ${e.name}: lat=${e.latitude}, lng=${e.longitude}');
-      }
-
       final placemarks = _createPlacemarks(establishments);
-      print('[MAP] Created ${placemarks.length} placemarks');
 
       setState(() {
         _placemarks = placemarks;
