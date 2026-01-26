@@ -22,6 +22,9 @@ class ApiClient {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
+        // Format arrays as repeated keys: categories=A&categories=B
+        // This matches Express query parser expectations
+        listFormat: ListFormat.multiCompatible,
       ),
     );
 

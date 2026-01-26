@@ -140,6 +140,30 @@ class FilterConstants {
     'Бильярд',
   ];
 
+  /// Map Russian category names to English API values
+  static const Map<String, String> categoryMapping = {
+    'Ресторан': 'restaurant',
+    'Кофейня': 'cafe',
+    'Фаст-фуд': 'fast_food',
+    'Пиццерия': 'pizzeria',
+    'Бар': 'bar',
+    'Паб': 'pub',
+    'Кондитерская': 'bakery',
+    'Пекарня': 'bakery',
+    'Караоке': 'karaoke',
+    'Столовая': 'canteen',
+    'Кальянная': 'hookah_bar',
+    'Боулинг': 'bowling',
+    'Бильярд': 'billiards',
+  };
+
+  /// Convert Russian category names to English API values
+  static List<String> categoriesToApi(List<String> russianCategories) {
+    return russianCategories
+        .map((russian) => categoryMapping[russian] ?? russian.toLowerCase())
+        .toList();
+  }
+
   /// Cuisine types (10 items from Figma)
   static const List<String> cuisines = [
     'Народная',
@@ -153,6 +177,27 @@ class FilterConstants {
     'Японская',
     'Авторская',
   ];
+
+  /// Map Russian cuisine names to English API values
+  static const Map<String, String> cuisineMapping = {
+    'Народная': 'belarusian',
+    'Американская': 'american',
+    'Азиатская': 'asian',
+    'Вегетарианская': 'vegetarian',
+    'Итальянская': 'italian',
+    'Смешанная': 'mixed',
+    'Грузинская': 'georgian',
+    'Европейская': 'european',
+    'Японская': 'japanese',
+    'Авторская': 'fusion',
+  };
+
+  /// Convert Russian cuisine names to English API values
+  static List<String> cuisinesToApi(List<String> russianCuisines) {
+    return russianCuisines
+        .map((russian) => cuisineMapping[russian] ?? russian.toLowerCase())
+        .toList();
+  }
 
   /// Amenities/features (14 items from Figma)
   /// Key = API code, Value = display label
