@@ -1,4 +1,4 @@
-# Leaf Session Operational Guide
+# Leaf Session Operational Guide v1.1
 ## Compact Protocol Reference for Claude Code
 
 **Purpose:** Operational rules for Leaf (Claude Code) sessions. This guide supplements Trunk directives when present, and serves as the primary reference for autonomous debugging/testing sessions.
@@ -220,6 +220,55 @@ tail -f server.log | grep -Ei "error|exception|status:[45]"
 
 ---
 
+## 9. Git Workflow Protocol
+
+**Commit Frequency:** Commit after each logical unit completion — a fixed bug, added feature, completed refactor. Creates rollback points without fragmenting history.
+
+**Commit Message Format:**
+```
+[type]: [brief description]
+
+Types:
+- feat: New functionality
+- fix: Bug fix
+- refactor: Code restructure without behavior change
+- docs: Documentation only
+- test: Test additions or fixes
+- chore: Maintenance tasks
+```
+
+**Examples:**
+- `fix: search filters not passing parameters to API`
+- `feat: add favorites toggle with optimistic UI update`
+- `refactor: extract JSON parsing helpers to utils`
+
+**WIP Commits:** Allowed when:
+- Context reaching critical threshold
+- Escalation required before completion
+- Session ending with work in progress
+- Coordinator requests immediate state preservation
+
+**WIP Format:** `WIP: [task] — [what works], [what pending]`
+
+**Example:** `WIP: favorites service — toggle working, list fetch pending`
+
+**Rollback Commands (reference):**
+```bash
+# Undo uncommitted changes to specific file
+git checkout -- [file]
+
+# Undo all uncommitted changes
+git checkout -- .
+
+# Undo last commit but keep changes
+git reset --soft HEAD~1
+
+# Undo last commit and discard changes
+git reset --hard HEAD~1
+```
+
+---
+
 ## Quick Reference Card
 
 **Before fixing errors:** Ask coordinator about infrastructure status
@@ -233,6 +282,22 @@ tail -f server.log | grep -Ei "error|exception|status:[45]"
 **Stuck on problem:** Use escalation format from Section 6
 
 **Need logs:** Request specific segments from coordinator
+
+**Commits:** After each logical unit; WIP allowed when context critical
+
+---
+
+## Changelog
+
+### v1.1 (January 2026)
+- Added Section 9: Git Workflow Protocol (commit frequency, message format, WIP commits, rollback commands)
+- Added Changelog section
+- Validated compatibility with Trunk Directive format
+
+### v1.0 (January 2026)
+- Initial protocol based on practical Claude Code session experience
+- Core sections 1-8: Infrastructure Diagnosis, Context Discipline, Auto-Compact vs Manual Handoff, Flutter Paradigm, Execution Discipline, Escalation Triggers, Code Quality, Log Access Protocol
+- Quick Reference Card
 
 ---
 
