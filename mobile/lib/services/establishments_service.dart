@@ -26,9 +26,9 @@ class EstablishmentsService {
   /// [page] - Page number (default: 1)
   /// [perPage] - Items per page (default: 20)
   /// [city] - Filter by city
-  /// [category] - Filter by category
-  /// [cuisine] - Filter by cuisine type
-  /// [priceRange] - Filter by price range
+  /// [categories] - Filter by categories (multiple allowed)
+  /// [cuisines] - Filter by cuisine types (multiple allowed)
+  /// [priceRanges] - Filter by price ranges (multiple allowed)
   /// [minRating] - Minimum rating filter
   /// [latitude] - User latitude for distance calculation
   /// [longitude] - User longitude for distance calculation
@@ -39,9 +39,9 @@ class EstablishmentsService {
     int page = 1,
     int perPage = 20,
     String? city,
-    String? category,
-    String? cuisine,
-    String? priceRange,
+    List<String>? categories,
+    List<String>? cuisines,
+    List<String>? priceRanges,
     double? minRating,
     double? latitude,
     double? longitude,
@@ -62,15 +62,25 @@ class EstablishmentsService {
 
     // Add optional filters
     if (city != null) queryParams['city'] = city;
-    if (category != null) queryParams['category'] = category;
-    if (cuisine != null) queryParams['cuisine'] = cuisine;
-    if (priceRange != null) queryParams['price_range'] = priceRange;
+    if (categories != null && categories.isNotEmpty) {
+      queryParams['categories'] = categories;
+    }
+    if (cuisines != null && cuisines.isNotEmpty) {
+      queryParams['cuisines'] = cuisines;
+    }
+    if (priceRanges != null && priceRanges.isNotEmpty) {
+      queryParams['price_range'] = priceRanges;
+    }
     if (minRating != null) queryParams['min_rating'] = minRating;
     if (latitude != null) queryParams['latitude'] = latitude;
     if (longitude != null) queryParams['longitude'] = longitude;
     if (maxDistance != null) queryParams['max_distance'] = maxDistance;
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (sortBy != null) queryParams['sort_by'] = sortBy;
+
+    // DEBUG: Log API request details
+    print('API REQUEST: /api/v1/search/establishments');
+    print('QUERY PARAMS: $queryParams');
 
     try {
       final response = await _apiClient.get(
