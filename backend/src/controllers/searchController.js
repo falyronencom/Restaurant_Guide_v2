@@ -39,20 +39,6 @@ export async function searchEstablishments(req, res, next) {
       sort_by,
     } = req.query;
 
-    // Debug logging for all important params
-    console.log('[SEARCH] Query params:', {
-      city,
-      latitude,
-      longitude,
-      categories,
-      cuisines,
-      priceRange,
-      sort_by,
-      limit,
-      page
-    });
-    console.log('[SEARCH] City raw:', city, '| Type:', typeof city, '| Length:', city?.length);
-
     // Parse coordinates (now optional)
     const lat = latitude ? parseFloat(latitude) : null;
     const lon = longitude ? parseFloat(longitude) : null;
@@ -77,6 +63,11 @@ export async function searchEstablishments(req, res, next) {
     // Parse cuisines (optional, comma-separated or array)
     const cuisineList = cuisines
       ? (Array.isArray(cuisines) ? cuisines : cuisines.split(',')).map(c => c.trim()).filter(Boolean)
+      : null;
+
+    // Parse priceRange (handle array from multi-select, take first element)
+    const priceRangeValue = priceRange
+      ? (Array.isArray(priceRange) ? priceRange[0] : priceRange)
       : null;
 
     // Parse minRating (optional)
@@ -123,7 +114,7 @@ export async function searchEstablishments(req, res, next) {
         city,
         categories: categoryList,
         cuisines: cuisineList,
-        priceRange,
+        priceRange: priceRangeValue,
         minRating: minRatingValue,
         limit: limitValue,
         offset: finalOffset,
@@ -136,7 +127,7 @@ export async function searchEstablishments(req, res, next) {
         city,
         categories: categoryList,
         cuisines: cuisineList,
-        priceRange,
+        priceRange: priceRangeValue,
         minRating: minRatingValue,
         limit: limitValue,
         offset: finalOffset,

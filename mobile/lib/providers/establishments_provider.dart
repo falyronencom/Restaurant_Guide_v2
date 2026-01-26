@@ -217,10 +217,10 @@ class EstablishmentsProvider with ChangeNotifier {
         page: page,
         city: _selectedCity,
         categories: _categoryFilters.isNotEmpty
-            ? _categoryFilters.toList()
+            ? FilterConstants.categoriesToApi(_categoryFilters.toList())
             : null,
         cuisines: _cuisineFilters.isNotEmpty
-            ? _cuisineFilters.toList()
+            ? FilterConstants.cuisinesToApi(_cuisineFilters.toList())
             : null,
         priceRanges: _priceFilters.isNotEmpty
             ? _priceFilters.map((p) => p.apiValue).toList()

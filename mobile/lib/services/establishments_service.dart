@@ -79,10 +79,6 @@ class EstablishmentsService {
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (sortBy != null) queryParams['sort_by'] = sortBy;
 
-    // DEBUG: Log API request details
-    print('API REQUEST: /api/v1/search/establishments');
-    print('QUERY PARAMS: $queryParams');
-
     try {
       final response = await _apiClient.get(
         '/api/v1/search/establishments',
@@ -163,36 +159,25 @@ class EstablishmentsService {
         },
       );
 
-      print('[SERVICE] Response statusCode: ${response.statusCode}');
-      print('[SERVICE] Response data type: ${response.data.runtimeType}');
-      print('[SERVICE] Response data: ${response.data}');
-
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
-        print('[SERVICE] Parsed data keys: ${data.keys}');
-        print('[SERVICE] data["data"]: ${data['data']}');
         final establishments = data['data']?['establishments'] as List? ?? [];
-        print('[SERVICE] Establishments count: ${establishments.length}');
 
         final result = <Establishment>[];
         for (var i = 0; i < establishments.length; i++) {
           try {
             final e = establishments[i] as Map<String, dynamic>;
-            print('[SERVICE] Parsing establishment $i: ${e['name']}');
             result.add(Establishment.fromJson(e));
-            print('[SERVICE] Successfully parsed: ${e['name']}');
           } catch (parseError) {
-            print('[SERVICE] Error parsing establishment $i: $parseError');
+            // Skip invalid establishments
+            continue;
           }
         }
-        print('[SERVICE] Total parsed: ${result.length}');
         return result;
       } else {
-        print('[SERVICE] Unexpected response: statusCode=${response.statusCode}, data type=${response.data.runtimeType}');
         throw Exception('Unexpected response format');
       }
     } catch (e) {
-      print('[SERVICE] Exception in searchByMapBounds: $e');
       rethrow;
     }
   }
