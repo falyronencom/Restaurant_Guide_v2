@@ -1,9 +1,9 @@
 /// Review model representing a user review for an establishment
 /// Matches backend API response format
 class Review {
-  final int id;
+  final String id;  // UUID from backend
   final String establishmentId;
-  final int userId;
+  final String userId;  // UUID from backend
   final String userName;
   final String? userAvatar;
   final int rating;
@@ -26,13 +26,15 @@ class Review {
   /// Create from JSON
   factory Review.fromJson(Map<String, dynamic> json) {
     return Review(
-      id: json['id'] as int,
+      id: json['id'].toString(),
       establishmentId: json['establishment_id'].toString(),
-      userId: json['user_id'] as int,
-      userName: json['user_name'] as String? ?? 'Аноним',
-      userAvatar: json['user_avatar'] as String?,
+      userId: json['user_id'].toString(),
+      // Backend returns author_name or user_name depending on endpoint
+      userName: json['author_name'] as String? ?? json['user_name'] as String? ?? 'Аноним',
+      userAvatar: json['author_avatar'] as String? ?? json['user_avatar'] as String?,
       rating: json['rating'] as int,
-      text: json['text'] as String?,
+      // Backend returns 'content', but also support 'text' for backwards compatibility
+      text: json['content'] as String? ?? json['text'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -47,7 +49,7 @@ class Review {
       'user_name': userName,
       'user_avatar': userAvatar,
       'rating': rating,
-      'text': text,
+      'content': text,  // Backend expects 'content'
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -109,7 +111,7 @@ class ReviewsPaginationMeta {
 /// User review with establishment information
 /// Used in profile screen to show user's reviews with establishment context
 class UserReview {
-  final int id;
+  final String id;  // UUID from backend
   final String establishmentId;
   final String establishmentName;
   final String? establishmentImage;
@@ -133,14 +135,15 @@ class UserReview {
 
   factory UserReview.fromJson(Map<String, dynamic> json) {
     return UserReview(
-      id: json['id'] as int,
+      id: json['id'].toString(),
       establishmentId: json['establishment_id'].toString(),
       establishmentName: json['establishment_name'] as String? ?? 'Заведение',
       establishmentImage: json['establishment_image'] as String?,
       establishmentType: json['establishment_type'] as String?,
       establishmentCuisine: json['establishment_cuisine'] as String?,
       rating: json['rating'] as int,
-      text: json['text'] as String?,
+      // Backend returns 'content', support 'text' for backwards compatibility
+      text: json['content'] as String? ?? json['text'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

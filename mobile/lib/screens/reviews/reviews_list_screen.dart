@@ -30,9 +30,9 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   int _totalPages = 1;
 
   // Local reactions state (UI only - no backend yet)
-  final Map<int, int> _likes = {};
-  final Map<int, int> _dislikes = {};
-  final Map<int, String?> _userReactions = {}; // 'like', 'dislike', or null
+  final Map<String, int> _likes = {};  // Key is review UUID
+  final Map<String, int> _dislikes = {};  // Key is review UUID
+  final Map<String, String?> _userReactions = {}; // 'like', 'dislike', or null
 
   // Scroll controller for pagination
   final ScrollController _scrollController = ScrollController();
@@ -92,10 +92,10 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         _currentPage = 1;
         _isLoading = false;
 
-        // Initialize reactions with mock data
+        // Initialize reactions with mock data (using hashCode for mock values)
         for (final review in _reviews) {
-          _likes[review.id] = (review.id % 10) + 1; // Mock likes
-          _dislikes[review.id] = review.id % 3; // Mock dislikes
+          _likes[review.id] = (review.id.hashCode.abs() % 10) + 1; // Mock likes
+          _dislikes[review.id] = review.id.hashCode.abs() % 3; // Mock dislikes
         }
       });
     } catch (e) {
@@ -126,10 +126,10 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         _currentPage++;
         _isLoadingMore = false;
 
-        // Initialize reactions for new reviews
+        // Initialize reactions for new reviews (using hashCode for mock values)
         for (final review in response.data) {
-          _likes[review.id] = (review.id % 10) + 1;
-          _dislikes[review.id] = review.id % 3;
+          _likes[review.id] = (review.id.hashCode.abs() % 10) + 1;
+          _dislikes[review.id] = review.id.hashCode.abs() % 3;
         }
       });
     } catch (e) {
@@ -140,7 +140,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   }
 
   /// Handle like tap
-  void _onLikeTap(int reviewId) {
+  void _onLikeTap(String reviewId) {
     setState(() {
       final currentReaction = _userReactions[reviewId];
 
@@ -160,7 +160,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   }
 
   /// Handle dislike tap
-  void _onDislikeTap(int reviewId) {
+  void _onDislikeTap(String reviewId) {
     setState(() {
       final currentReaction = _userReactions[reviewId];
 
