@@ -39,8 +39,8 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
   static const Color _starActiveColor = Color(0xFFFFB800); // Yellow for active stars
   static const Color _starInactiveColor = Color(0xFFD2D2D2); // Grey for inactive
 
-  // Validation constants
-  static const int _minTextLength = 10;
+  // Validation constants (must match backend: min 20, max 1000)
+  static const int _minTextLength = 20;
   static const int _maxTextLength = 1000;
 
   @override

@@ -311,11 +311,32 @@ class EstablishmentsService {
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
-        final favorites = data['data'] as List;
+        // Backend returns: { data: { favorites: [...], pagination: {...} } }
+        final innerData = data['data'] as Map<String, dynamic>;
+        final favorites = innerData['favorites'] as List;
 
-        return favorites
-            .map((e) => Establishment.fromJson(e as Map<String, dynamic>))
-            .toList();
+        return favorites.map((fav) {
+          final f = fav as Map<String, dynamic>;
+          // Transform flat structure to Establishment format
+          // Backend returns establishment_name, establishment_city, etc.
+          return Establishment.fromJson({
+            'id': f['establishment_id'],
+            'name': f['establishment_name'],
+            'description': f['establishment_description'],
+            'city': f['establishment_city'],
+            'address': f['establishment_address'],
+            'latitude': f['establishment_latitude'],
+            'longitude': f['establishment_longitude'],
+            'categories': f['establishment_categories'],
+            'cuisines': f['establishment_cuisines'],
+            'price_range': f['establishment_price_range'],
+            'average_rating': f['establishment_average_rating'],
+            'status': f['establishment_status'] ?? 'active',
+            'thumbnail_url': f['establishment_primary_image'],
+            'created_at': f['created_at'] ?? DateTime.now().toIso8601String(),
+            'updated_at': f['created_at'] ?? DateTime.now().toIso8601String(),
+          });
+        }).toList();
       } else {
         throw Exception('Unexpected response format');
       }
@@ -329,7 +350,7 @@ class EstablishmentsService {
     try {
       await _apiClient.post(
         '/api/v1/favorites',
-        data: {'establishment_id': establishmentId},
+        data: {'establishmentId': establishmentId},
       );
     } catch (e) {
       rethrow;
