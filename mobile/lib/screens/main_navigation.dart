@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/search/search_home_screen.dart';
 import 'package:restaurant_guide_mobile/screens/news/news_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
@@ -39,6 +42,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _currentIndex = index;
         _visitedTabs.add(index); // Mark tab as visited for lazy loading
       });
+      // Reload favorites when switching to Favorites tab (index 3)
+      if (index == 3) {
+        _reloadFavoritesIfAuthenticated();
+      }
+    }
+  }
+
+  /// Reload favorites list from server if user is authenticated
+  void _reloadFavoritesIfAuthenticated() {
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.isAuthenticated) {
+      context.read<EstablishmentsProvider>().loadFavorites();
     }
   }
 
