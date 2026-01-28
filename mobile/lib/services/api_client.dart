@@ -190,11 +190,20 @@ class ApiClient {
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
-        if (data.containsKey('accessToken')) {
+        // Backend wraps response: { success: true, data: { accessToken: ..., refreshToken: ... } }
+        final responseData = data['data'] as Map<String, dynamic>? ?? data;
+        if (responseData.containsKey('accessToken')) {
           await _storage.write(
             key: 'access_token',
-            value: data['accessToken'],
+            value: responseData['accessToken'] as String,
           );
+          // Also update refresh token if provided
+          if (responseData.containsKey('refreshToken')) {
+            await _storage.write(
+              key: 'refresh_token',
+              value: responseData['refreshToken'] as String,
+            );
+          }
           return true;
         }
       }

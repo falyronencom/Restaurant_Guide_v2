@@ -475,6 +475,7 @@ class EstablishmentsProvider with ChangeNotifier {
       _removeFromFavoritesList(establishmentId);
     } else {
       _favoriteIds.add(establishmentId);
+      _addToFavoritesList(establishmentId);
     }
     notifyListeners();
 
@@ -525,6 +526,19 @@ class EstablishmentsProvider with ChangeNotifier {
   /// Refresh favorites list (for pull-to-refresh)
   Future<void> refreshFavorites() async {
     await loadFavorites();
+  }
+
+  /// Add establishment to favorites list (optimistic update)
+  void _addToFavoritesList(String establishmentId) {
+    // Avoid duplicates
+    if (_favoriteEstablishments.any((e) => e.id == establishmentId)) return;
+
+    // Try to find establishment in current search results or selected detail
+    final est = _establishments.where((e) => e.id == establishmentId).firstOrNull ??
+        (_selectedEstablishment?.id == establishmentId ? _selectedEstablishment : null);
+    if (est != null) {
+      _favoriteEstablishments.add(est);
+    }
   }
 
   /// Remove establishment from favorites list (optimistic update)
