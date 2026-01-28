@@ -25,13 +25,29 @@ class Review {
 
   /// Create from JSON
   factory Review.fromJson(Map<String, dynamic> json) {
+    // Handle author info - backend returns nested 'author' object OR flat fields
+    String userName = 'Аноним';
+    String? userAvatar;
+    String? userId;
+
+    if (json['author'] is Map<String, dynamic>) {
+      // Nested author object format: { author: { id, name, avatar_url } }
+      final author = json['author'] as Map<String, dynamic>;
+      userName = author['name'] as String? ?? 'Аноним';
+      userAvatar = author['avatar_url'] as String?;
+      userId = author['id']?.toString();
+    } else {
+      // Flat format: { author_name, author_avatar, user_id }
+      userName = json['author_name'] as String? ?? json['user_name'] as String? ?? 'Аноним';
+      userAvatar = json['author_avatar'] as String? ?? json['user_avatar'] as String?;
+    }
+
     return Review(
       id: json['id'].toString(),
       establishmentId: json['establishment_id'].toString(),
-      userId: json['user_id'].toString(),
-      // Backend returns author_name or user_name depending on endpoint
-      userName: json['author_name'] as String? ?? json['user_name'] as String? ?? 'Аноним',
-      userAvatar: json['author_avatar'] as String? ?? json['user_avatar'] as String?,
+      userId: userId ?? json['user_id']?.toString() ?? '',
+      userName: userName,
+      userAvatar: userAvatar,
       rating: json['rating'] as int,
       // Backend returns 'content', but also support 'text' for backwards compatibility
       text: json['content'] as String? ?? json['text'] as String?,
@@ -67,11 +83,25 @@ class PaginatedReviews {
   });
 
   factory PaginatedReviews.fromJson(Map<String, dynamic> json) {
+    // Backend wraps response in { success: true, data: { reviews, pagination } }
+    // Unwrap 'data' if present
+    final innerData = json['data'] is Map<String, dynamic>
+        ? json['data'] as Map<String, dynamic>
+        : json;
+
+    // Backend returns 'reviews' array
+    final reviewsList = innerData['reviews'] ?? [];
+
+    // Backend returns 'pagination' object, support 'meta' for backwards compatibility
+    final paginationData = innerData['pagination'] ?? innerData['meta'];
+
     return PaginatedReviews(
-      data: (json['data'] as List)
+      data: (reviewsList as List)
           .map((e) => Review.fromJson(e as Map<String, dynamic>))
           .toList(),
-      meta: ReviewsPaginationMeta.fromJson(json['meta'] as Map<String, dynamic>),
+      meta: paginationData != null
+          ? ReviewsPaginationMeta.fromJson(paginationData as Map<String, dynamic>)
+          : ReviewsPaginationMeta(total: 0, page: 1, perPage: 10, totalPages: 0),
     );
   }
 }
@@ -96,10 +126,12 @@ class ReviewsPaginationMeta {
 
   factory ReviewsPaginationMeta.fromJson(Map<String, dynamic> json) {
     return ReviewsPaginationMeta(
-      total: json['total'] as int,
-      page: json['page'] as int,
-      perPage: json['per_page'] as int,
-      totalPages: json['total_pages'] as int,
+      total: json['total'] as int? ?? 0,
+      page: json['page'] as int? ?? 1,
+      // Backend returns 'limit', support 'per_page' for backwards compatibility
+      perPage: json['limit'] as int? ?? json['per_page'] as int? ?? 10,
+      // Backend returns 'pages', support 'total_pages' for backwards compatibility
+      totalPages: json['pages'] as int? ?? json['total_pages'] as int? ?? 0,
       averageRating: json['average_rating'] != null
           ? (json['average_rating'] as num).toDouble()
           : null,
