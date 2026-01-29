@@ -10,6 +10,32 @@ import { AppError } from '../middleware/errorHandler.js';
 import * as MediaModel from '../models/mediaModel.js';
 
 /**
+ * Helper: SQL fragment that extracts close_time from working_hours JSONB.
+ * Handles two data formats:
+ *   - String: "10:00-22:00" → extracts "22:00"
+ *   - Object: {"open":"10:00","close":"22:00"} → extracts "22:00"
+ *   - Object without close (e.g. {"is_open":false}) → NULL
+ *
+ * Used inside jsonb_each() via LATERAL join.
+ * Variable `val` refers to the JSONB value for each day.
+ */
+const CLOSE_TIME_SQL = `
+  LATERAL (SELECT
+    CASE jsonb_typeof(val)
+      WHEN 'string' THEN
+        CASE WHEN val #>> '{}' ~ '^[0-9]{1,2}:[0-9]{2}-[0-9]{1,2}:[0-9]{2}$'
+          THEN SPLIT_PART(val #>> '{}', '-', 2)
+          ELSE NULL END
+      WHEN 'object' THEN
+        CASE WHEN val->>'close' IS NOT NULL AND val->>'close' ~ '^[0-9]{1,2}:[0-9]{2}$'
+          THEN val->>'close'
+          ELSE NULL END
+      ELSE NULL
+    END AS close_time
+  ) ct
+`;
+
+/**
  * Helper: Build ORDER BY clause based on sort parameter
  *
  * @param {string} sortBy - Sort option (rating, price_asc, price_desc, distance)
@@ -79,6 +105,8 @@ export async function searchByRadius({
   offset = 0,
   page = 1,
   sortBy = 'rating',
+  hoursFilter = null,
+  features = null,
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -145,6 +173,75 @@ export async function searchByRadius({
     conditions.push(`e.average_rating >= $${paramIndex}`);
     params.push(minRating);
     paramIndex++;
+  }
+
+  // Add hours filter
+  // working_hours is JSONB with two possible value formats per day:
+  //   String: "10:00-22:00"
+  //   Object: {"open": "10:00", "close": "22:00"} or {"is_open": false}
+  // CLOSE_TIME_SQL handles extraction from both formats via LATERAL join.
+  if (hoursFilter) {
+    switch (hoursFilter) {
+      case 'until_22':
+        // Establishments that close by 22:00 on ALL days
+        // Exclude if ANY day closes after 22:00 (including 22:01+) or after midnight (00:xx-06:xx)
+        conditions.push(`
+          NOT EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND (
+              CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) > 22
+              OR (
+                CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) = 22
+                AND CAST(SPLIT_PART(ct.close_time, ':', 2) AS INTEGER) > 0
+              )
+              OR CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+            )
+          )
+        `);
+        break;
+      case 'until_morning':
+        // Late night establishments - at least one day closes after midnight (00:00-06:59)
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+          )
+        `);
+        break;
+      case '24_hours':
+        // 24-hour establishments
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE (
+              ct.close_time IS NOT NULL
+              AND ct.close_time IN ('23:59', '00:00')
+              AND SPLIT_PART(
+                CASE jsonb_typeof(val)
+                  WHEN 'string' THEN val #>> '{}'
+                  WHEN 'object' THEN val->>'open'
+                  ELSE NULL
+                END, ':', 1) = '0'
+            )
+            OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
+          )
+        `);
+        break;
+    }
+  }
+
+  // Add features filter (check attributes JSONB)
+  if (features && features.length > 0) {
+    features.forEach((feature) => {
+      conditions.push(`(e.attributes->>$${paramIndex})::boolean = true`);
+      params.push(feature);
+      paramIndex++;
+    });
   }
 
   const whereClause = conditions.join(' AND ');
@@ -280,6 +377,8 @@ export async function searchWithoutLocation({
   offset = 0,
   page = 1,
   sortBy = 'rating',
+  hoursFilter = null,
+  features = null,
 }) {
   // Validate pagination
   if (limit < 1 || limit > 100) {
@@ -328,6 +427,70 @@ export async function searchWithoutLocation({
     conditions.push(`e.average_rating >= $${paramIndex}`);
     params.push(minRating);
     paramIndex++;
+  }
+
+  // Add hours filter (same dual-format logic as searchByRadius)
+  if (hoursFilter) {
+    switch (hoursFilter) {
+      case 'until_22':
+        // Establishments that close by 22:00 on ALL days
+        conditions.push(`
+          NOT EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND (
+              CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) > 22
+              OR (
+                CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) = 22
+                AND CAST(SPLIT_PART(ct.close_time, ':', 2) AS INTEGER) > 0
+              )
+              OR CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+            )
+          )
+        `);
+        break;
+      case 'until_morning':
+        // Late night establishments - at least one day closes after midnight (00:00-06:59)
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+          )
+        `);
+        break;
+      case '24_hours':
+        // 24-hour establishments
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE (
+              ct.close_time IS NOT NULL
+              AND ct.close_time IN ('23:59', '00:00')
+              AND SPLIT_PART(
+                CASE jsonb_typeof(val)
+                  WHEN 'string' THEN val #>> '{}'
+                  WHEN 'object' THEN val->>'open'
+                  ELSE NULL
+                END, ':', 1) = '0'
+            )
+            OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
+          )
+        `);
+        break;
+    }
+  }
+
+  // Add features filter
+  if (features && features.length > 0) {
+    features.forEach((feature) => {
+      conditions.push(`(e.attributes->>$${paramIndex})::boolean = true`);
+      params.push(feature);
+      paramIndex++;
+    });
   }
 
   const whereClause = conditions.join(' AND ');

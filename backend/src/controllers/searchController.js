@@ -37,6 +37,8 @@ export async function searchEstablishments(req, res, next) {
       page,
       offset,
       sort_by,
+      hours_filter,
+      features,
     } = req.query;
 
     // Parse coordinates (now optional)
@@ -103,6 +105,17 @@ export async function searchEstablishments(req, res, next) {
       throw new AppError('Invalid limit parameter', 422, 'VALIDATION_ERROR');
     }
 
+    // Parse features (optional, array or comma-separated)
+    const featuresList = features
+      ? (Array.isArray(features) ? features : features.split(',')).map(f => f.trim()).filter(Boolean)
+      : null;
+
+    // Validate hours_filter if provided
+    const validHoursFilters = ['until_22', 'until_morning', '24_hours'];
+    if (hours_filter && !validHoursFilters.includes(hours_filter)) {
+      throw new AppError(`Invalid hours_filter. Must be one of: ${validHoursFilters.join(', ')}`, 422, 'VALIDATION_ERROR');
+    }
+
     // Execute search - with or without coordinates
     let result;
     if (hasCoordinates) {
@@ -120,6 +133,8 @@ export async function searchEstablishments(req, res, next) {
         offset: finalOffset,
         page: finalPage,
         sortBy: sort_by,
+        hoursFilter: hours_filter,
+        features: featuresList,
       });
     } else {
       // Search without coordinates - no distance filtering/sorting
@@ -133,6 +148,8 @@ export async function searchEstablishments(req, res, next) {
         offset: finalOffset,
         page: finalPage,
         sortBy: sort_by,
+        hoursFilter: hours_filter,
+        features: featuresList,
       });
     }
 

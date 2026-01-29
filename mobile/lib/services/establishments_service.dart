@@ -35,6 +35,8 @@ class EstablishmentsService {
   /// [maxDistance] - Maximum distance in kilometers
   /// [search] - Search query for name/description
   /// [sortBy] - Sort order (distance, rating, price_asc, price_desc)
+  /// [hoursFilter] - Operating hours filter (until_22, until_morning, 24_hours)
+  /// [features] - Amenity/feature filters (delivery, wifi, terrace, etc.)
   Future<PaginatedEstablishments> searchEstablishments({
     int page = 1,
     int perPage = 20,
@@ -48,6 +50,8 @@ class EstablishmentsService {
     double? maxDistance,
     String? search,
     String? sortBy,
+    String? hoursFilter,
+    List<String>? features,
   }) async {
     // Return mock data if enabled
     if (useMockData) {
@@ -78,6 +82,10 @@ class EstablishmentsService {
     if (maxDistance != null) queryParams['max_distance'] = maxDistance;
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (sortBy != null) queryParams['sort_by'] = sortBy;
+    if (hoursFilter != null) queryParams['hours_filter'] = hoursFilter;
+    if (features != null && features.isNotEmpty) {
+      queryParams['features'] = features;
+    }
 
     try {
       final response = await _apiClient.get(

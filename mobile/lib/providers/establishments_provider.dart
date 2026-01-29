@@ -230,6 +230,10 @@ class EstablishmentsProvider with ChangeNotifier {
         maxDistance: _distanceFilter.toMeters()?.toDouble(),
         search: _searchQuery,
         sortBy: _currentSort.toApiValue(),
+        hoursFilter: _hoursFilter?.apiValue,
+        features: _amenityFilters.isNotEmpty
+            ? _amenityFilters.toList()
+            : null,
       );
 
       if (append) {

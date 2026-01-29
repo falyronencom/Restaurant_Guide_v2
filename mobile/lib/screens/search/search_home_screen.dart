@@ -412,7 +412,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   /// Build logo text
   Widget _buildLogo() {
     return const Text(
-      'NIRIVIO',
+      'NYAMA',
       style: TextStyle(
         fontSize: 48,
         fontWeight: FontWeight.w400,
