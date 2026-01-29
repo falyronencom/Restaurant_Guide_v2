@@ -115,6 +115,77 @@ class Establishment {
     };
   }
 
+  // Day key constants for working hours lookup
+  static const _dayKeys = [
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+  ];
+
+  /// Parse day hours from two possible formats:
+  /// String: "10:00-22:00" → {'open': '10:00', 'close': '22:00', 'is_open': true}
+  /// Object: {"open": "10:00", "close": "22:00"} → same
+  /// Object closed: {"is_open": false} → {'is_open': false}
+  static Map<String, dynamic>? parseDayHours(dynamic dayHours) {
+    if (dayHours == null) return null;
+
+    if (dayHours is String) {
+      final parts = dayHours.split('-');
+      if (parts.length == 2) {
+        return {'open': parts[0].trim(), 'close': parts[1].trim(), 'is_open': true};
+      }
+      return null;
+    } else if (dayHours is Map) {
+      if (dayHours['is_open'] == false) {
+        return {'is_open': false};
+      }
+      return {
+        'open': dayHours['open'] as String?,
+        'close': dayHours['close'] as String?,
+        'is_open': true,
+      };
+    }
+    return null;
+  }
+
+  /// Get today's parsed working hours
+  Map<String, dynamic>? get todayHours {
+    if (workingHours == null) return null;
+    final dayKey = _dayKeys[DateTime.now().weekday - 1];
+    return parseDayHours(workingHours![dayKey]);
+  }
+
+  /// Check if establishment is currently open based on working hours
+  bool get isCurrentlyOpen {
+    final hours = todayHours;
+    if (hours == null) return status == 'active'; // fallback if no hours data
+    if (hours['is_open'] == false) return false;
+
+    final openStr = hours['open'] as String?;
+    final closeStr = hours['close'] as String?;
+    if (openStr == null || closeStr == null) return status == 'active';
+
+    final now = DateTime.now();
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    final openParts = openStr.split(':');
+    final closeParts = closeStr.split(':');
+    final openMinutes = int.parse(openParts[0]) * 60 + int.parse(openParts[1]);
+    final closeMinutes = int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
+
+    // Handle overnight case (e.g., open=18:00, close=02:00)
+    if (closeMinutes <= openMinutes) {
+      return currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+    }
+    return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+  }
+
+  /// Get today's closing time string
+  String? get todayClosingTime {
+    final hours = todayHours;
+    if (hours == null) return null;
+    if (hours['is_open'] == false) return null;
+    return hours['close'] as String?;
+  }
+
   /// Copy with modifications
   Establishment copyWith({
     String? id,
