@@ -232,8 +232,8 @@ class EstablishmentCard extends StatelessWidget {
 
   /// Build status with closing time (Figma design)
   Widget _buildStatus() {
-    final isOpen = establishment.status == 'active';
-    final closingTime = _getClosingTime();
+    final isOpen = establishment.isCurrentlyOpen;
+    final closingTime = establishment.todayClosingTime;
 
     return RichText(
       text: TextSpan(
@@ -249,7 +249,7 @@ class EstablishmentCard extends StatelessWidget {
               color: isOpen ? _greenColor : Colors.red,
             ),
           ),
-          if (closingTime != null)
+          if (closingTime != null && isOpen)
             TextSpan(
               text: '/до $closingTime',
               style: const TextStyle(
@@ -324,30 +324,6 @@ class EstablishmentCard extends StatelessWidget {
     return categoryLabels[category.toLowerCase()] ?? category;
   }
 
-  /// Get closing time from working hours
-  String? _getClosingTime() {
-    if (establishment.workingHours == null) return '23:00';
-
-    // Get current day of week
-    final now = DateTime.now();
-    final dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    final dayKey = dayNames[now.weekday - 1];
-
-    final dayHours = establishment.workingHours![dayKey];
-    if (dayHours == null) return null;
-
-    // Extract closing time (format: "10:00-23:00" or {"open": "10:00", "close": "23:00"})
-    if (dayHours is String) {
-      final parts = dayHours.split('-');
-      if (parts.length == 2) {
-        return parts[1].trim();
-      }
-    } else if (dayHours is Map) {
-      return dayHours['close'] as String?;
-    }
-
-    return '23:00';
-  }
 }
 
 /// Custom clipper for image with rounded LEFT corners (Figma design - "bathtub" shape)
