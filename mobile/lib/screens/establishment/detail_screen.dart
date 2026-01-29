@@ -572,22 +572,25 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build status line (Open/Closed with time)
   Widget _buildStatusLine() {
-    // Simplified - in production would check actual hours
+    final isOpen = _establishment!.isCurrentlyOpen;
+    final closingTime = _establishment!.todayClosingTime;
+
     return RichText(
-      text: const TextSpan(
-        style: TextStyle(fontSize: 18),
+      text: TextSpan(
+        style: const TextStyle(fontSize: 18),
         children: [
           TextSpan(
-            text: 'Открыто',
+            text: isOpen ? 'Открыто' : 'Закрыто',
             style: TextStyle(
-              color: _greenStatus,
+              color: isOpen ? _greenStatus : Colors.red,
               fontWeight: FontWeight.w500,
             ),
           ),
-          TextSpan(
-            text: '/до 23:00',
-            style: TextStyle(color: _backgroundColor),
-          ),
+          if (closingTime != null && isOpen)
+            TextSpan(
+              text: '/до $closingTime',
+              style: const TextStyle(color: _backgroundColor),
+            ),
         ],
       ),
     );
@@ -679,37 +682,86 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build working hours
+  /// Build working hours from real data with day grouping
   Widget _buildWorkingHours() {
     final workingHours = _establishment!.workingHours;
 
-    // If no working hours data, show default
     if (workingHours == null) {
       return const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _WorkingHoursRow(label: 'Пон - Вос:', time: '10:00 - 23:00'),
+          _WorkingHoursRow(label: 'График не указан', time: ''),
         ],
       );
     }
 
-    return const Column(
+    const dayKeys = [
+      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+    ];
+    const shortDayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    final todayIndex = DateTime.now().weekday - 1;
+
+    // Parse each day's hours
+    final dayEntries = <Map<String, dynamic>>[];
+    for (int i = 0; i < 7; i++) {
+      final parsed = Establishment.parseDayHours(workingHours[dayKeys[i]]);
+      dayEntries.add({
+        'dayName': shortDayNames[i],
+        'hours': parsed,
+        'isToday': i == todayIndex,
+      });
+    }
+
+    // Group consecutive days with identical hours
+    final groups = <Map<String, dynamic>>[];
+    int i = 0;
+    while (i < dayEntries.length) {
+      final currentTime = _formatDayHours(dayEntries[i]['hours']);
+      int j = i + 1;
+      bool groupContainsToday = dayEntries[i]['isToday'] as bool;
+
+      while (j < dayEntries.length) {
+        if (_formatDayHours(dayEntries[j]['hours']) == currentTime) {
+          if (dayEntries[j]['isToday'] as bool) groupContainsToday = true;
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      final startDay = dayEntries[i]['dayName'] as String;
+      final endDay = dayEntries[j - 1]['dayName'] as String;
+      final label = i == j - 1 ? '$startDay:' : '$startDay-$endDay:';
+
+      groups.add({
+        'label': label,
+        'time': currentTime,
+        'isToday': groupContainsToday,
+      });
+
+      i = j;
+    }
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _WorkingHoursRow(
-          label: 'Пон - Вос:',
-          time: '10:00 - 23:00',
-        ),
-        _WorkingHoursRow(
-          label: 'Завтраки {ежедневно}:',
-          time: '10:00 - 16:00',
-        ),
-        _WorkingHoursRow(
-          label: 'Специальное меню:',
-          time: '10:00 - 22:30',
-        ),
-      ],
+      children: groups
+          .map((g) => _WorkingHoursRow(
+                label: g['label'] as String,
+                time: g['time'] as String,
+                isHighlighted: g['isToday'] as bool,
+              ))
+          .toList(),
     );
+  }
+
+  /// Format parsed day hours into display string
+  String _formatDayHours(Map<String, dynamic>? hours) {
+    if (hours == null) return 'Выходной';
+    if (hours['is_open'] == false) return 'Выходной';
+    final open = hours['open'] as String?;
+    final close = hours['close'] as String?;
+    if (open == null || close == null) return 'Выходной';
+    return '$open - $close';
   }
 
   /// Build menu carousel
@@ -1321,10 +1373,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 class _WorkingHoursRow extends StatelessWidget {
   final String label;
   final String time;
+  final bool isHighlighted;
 
   const _WorkingHoursRow({
     required this.label,
     required this.time,
+    this.isHighlighted = false,
   });
 
   @override
@@ -1337,18 +1391,19 @@ class _WorkingHoursRow extends StatelessWidget {
             width: 180,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black,
+                fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w500,
+                color: isHighlighted ? const Color(0xFFFD5F1B) : Colors.black,
               ),
             ),
           ),
           Text(
             time,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
-              color: Colors.black,
+              fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
+              color: isHighlighted ? const Color(0xFFFD5F1B) : Colors.black,
             ),
           ),
         ],
