@@ -1,6 +1,10 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:yandex_mapkit/yandex_mapkit.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -42,6 +46,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   int _currentPhotoIndex = 0;
   final PageController _galleryController = PageController();
 
+  // Mini-map marker icon
+  Uint8List? _markerIcon;
+
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _primaryOrange = Color(0xFFFD5F1B);
@@ -54,6 +61,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _createMarkerIcon();
   }
 
   @override
@@ -971,6 +979,42 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
+  /// Create mini-map marker icon (orange circle with white border)
+  Future<void> _createMarkerIcon() async {
+    const double size = 48;
+    const double radius = 20;
+    const double borderWidth = 3;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // White border
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(size / 2, size / 2), radius, borderPaint);
+
+    // Orange fill
+    final fillPaint = Paint()
+      ..color = _primaryOrange
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      radius - borderWidth,
+      fillPaint,
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData != null && mounted) {
+      setState(() {
+        _markerIcon = byteData.buffer.asUint8List();
+      });
+    }
+  }
+
   /// Build map section
   Widget _buildMapSection() {
     return Column(
@@ -1024,7 +1068,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           ),
         ),
 
-        // Map placeholder
+        // Mini-map with establishment marker
         Container(
           height: 384,
           margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1044,19 +1088,68 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               ),
             ],
           ),
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.map, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'Карта в разработке',
-                  style: TextStyle(color: Colors.grey),
+          child: _establishment!.latitude != null &&
+                  _establishment!.longitude != null
+              ? ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(30),
+                    topRight: Radius.circular(30),
+                    bottomLeft: Radius.circular(30),
+                  ),
+                  child: YandexMap(
+                    onMapCreated: (YandexMapController controller) {
+                      controller.moveCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: Point(
+                              latitude: _establishment!.latitude!,
+                              longitude: _establishment!.longitude!,
+                            ),
+                            zoom: 16.0,
+                          ),
+                        ),
+                      );
+                    },
+                    mapObjects: [
+                      PlacemarkMapObject(
+                        mapId: const MapObjectId('establishment_marker'),
+                        point: Point(
+                          latitude: _establishment!.latitude!,
+                          longitude: _establishment!.longitude!,
+                        ),
+                        icon: _markerIcon != null
+                            ? PlacemarkIcon.single(
+                                PlacemarkIconStyle(
+                                  image: BitmapDescriptor.fromBytes(
+                                      _markerIcon!),
+                                  scale: 1.0,
+                                ),
+                              )
+                            : PlacemarkIcon.single(
+                                PlacemarkIconStyle(
+                                  image: BitmapDescriptor.fromAssetImage(
+                                      'packages/yandex_mapkit/assets/place.png'),
+                                  scale: 2.0,
+                                ),
+                              ),
+                        opacity: 1.0,
+                      ),
+                    ],
+                  ),
+                )
+              : const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.map, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'Координаты недоступны',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
-          ),
         ),
       ],
     );
