@@ -354,13 +354,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// Handle tap on establishment card
   void _onEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
     // Navigate to establishment statistics screen (Phase 5.2b)
-    Navigator.of(context).pushNamed('/partner/statistics/${establishment.id}');
+    Navigator.of(context, rootNavigator: true).pushNamed('/partner/statistics/${establishment.id}');
   }
 
   /// Handle tap on edit establishment
   void _onEditEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
     // Navigate to edit establishment screen (Phase 5.2b)
-    Navigator.of(context).pushNamed('/partner/edit/${establishment.id}');
+    Navigator.of(context, rootNavigator: true).pushNamed('/partner/edit/${establishment.id}');
   }
 
   /// Handle tap on promotion button
