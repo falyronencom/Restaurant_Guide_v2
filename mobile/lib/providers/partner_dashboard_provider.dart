@@ -20,6 +20,7 @@ class PartnerDashboardProvider with ChangeNotifier {
   // Selected establishment for detail view
   PartnerEstablishment? _selectedEstablishment;
   bool _isLoadingDetails = false;
+  String? _detailsError;
 
   // ============================================================================
   // Getters
@@ -48,6 +49,9 @@ class PartnerDashboardProvider with ChangeNotifier {
 
   /// Whether details are loading
   bool get isLoadingDetails => _isLoadingDetails;
+
+  /// Error from loading establishment details (separate from list error)
+  String? get detailsError => _detailsError;
 
   /// Get establishments by status
   List<PartnerEstablishment> getByStatus(EstablishmentStatus status) {
@@ -116,12 +120,17 @@ class PartnerDashboardProvider with ChangeNotifier {
   /// Load details for a specific establishment
   Future<void> loadEstablishmentDetails(String id) async {
     _isLoadingDetails = true;
+    _detailsError = null;
     notifyListeners();
 
     try {
       _selectedEstablishment = await _partnerService.getEstablishmentDetails(id);
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
+      _detailsError = e.toString().replaceFirst('Exception: ', '');
+      // Fallback: use establishment from already-loaded list
+      _selectedEstablishment ??= _establishments
+          .where((est) => est.id == id)
+          .firstOrNull;
     } finally {
       _isLoadingDetails = false;
       notifyListeners();
@@ -185,6 +194,7 @@ class PartnerDashboardProvider with ChangeNotifier {
     _error = null;
     _selectedEstablishment = null;
     _isLoadingDetails = false;
+    _detailsError = null;
     notifyListeners();
   }
 }
