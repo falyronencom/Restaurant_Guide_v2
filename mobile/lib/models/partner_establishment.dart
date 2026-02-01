@@ -243,16 +243,16 @@ class PartnerEstablishment {
     return city ?? '';
   }
 
-  /// Get category display name (first category)
+  /// Get category display name (all categories, comma-separated)
   String get categoryDisplayName {
     if (categories.isEmpty) return '';
-    return _getCategoryName(categories.first);
+    return categories.map((c) => _getCategoryName(c)).join(', ');
   }
 
-  /// Get cuisine display name (first cuisine in braces)
+  /// Get cuisine display name (all cuisines in braces, comma-separated)
   String get cuisineDisplayName {
     if (cuisineTypes.isEmpty) return '';
-    return '{${_getCuisineName(cuisineTypes.first)}}';
+    return '{${cuisineTypes.map((c) => _getCuisineName(c)).join(', ')}}';
   }
 
   /// Helper to get category name from ID

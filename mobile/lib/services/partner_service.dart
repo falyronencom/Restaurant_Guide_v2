@@ -57,7 +57,7 @@ class PartnerService {
     }
 
     try {
-      final response = await _apiClient.get('/api/v1/partners/me/establishments/$id');
+      final response = await _apiClient.get('/api/v1/partner/establishments/$id');
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
@@ -88,7 +88,7 @@ class PartnerService {
 
     try {
       final response = await _apiClient.put(
-        '/api/v1/partners/me/establishments/$id',
+        '/api/v1/partner/establishments/$id',
         data: updateData,
       );
 
