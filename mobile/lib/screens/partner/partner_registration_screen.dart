@@ -355,8 +355,12 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
     final success = await provider.saveChanges();
 
     if (success && mounted) {
-      // Reload dashboard to reflect changes
-      context.read<PartnerDashboardProvider>().loadEstablishments();
+      // Reload dashboard list and selected establishment details
+      final dashboardProvider = context.read<PartnerDashboardProvider>();
+      await dashboardProvider.loadEstablishments();
+      if (provider.establishmentId != null) {
+        await dashboardProvider.loadEstablishmentDetails(provider.establishmentId!);
+      }
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(

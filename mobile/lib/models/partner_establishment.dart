@@ -27,6 +27,40 @@ int? _parseIntNullable(dynamic value) {
   return null;
 }
 
+/// Parse street part from address string (everything before last comma)
+String? _parseStreet(String? address) {
+  if (address == null || address.isEmpty) return null;
+  final lastComma = address.lastIndexOf(',');
+  if (lastComma == -1) return address;
+  return address.substring(0, lastComma).trim();
+}
+
+/// Parse building part from address string (everything after last comma)
+String? _parseBuilding(String? address) {
+  if (address == null || address.isEmpty) return null;
+  final lastComma = address.lastIndexOf(',');
+  if (lastComma == -1) return null;
+  final building = address.substring(lastComma + 1).trim();
+  return building.isNotEmpty ? building : null;
+}
+
+/// Parse attributes from backend — handles both List and Map formats
+/// Backend returns JSONB object {"wifi": true}, frontend uses List<String> of keys
+List<String> _parseAttributes(dynamic value) {
+  if (value == null) return [];
+  if (value is List) {
+    return value.map((e) => e.toString()).toList();
+  }
+  if (value is Map) {
+    // Backend returns {"wifi": true, "delivery": true} — extract keys where value is truthy
+    return value.entries
+        .where((e) => e.value == true)
+        .map((e) => e.key.toString())
+        .toList();
+  }
+  return [];
+}
+
 /// Safely parse double from dynamic value (handles String and num)
 double? _parseDoubleSafe(dynamic value) {
   if (value == null) return null;
@@ -292,14 +326,15 @@ class PartnerEstablishment {
       instagram: json['instagram'] as String?,
       workingHours: json['weekly_working_hours'] != null
           ? WeeklyWorkingHours.fromJson(json['weekly_working_hours'] as Map<String, dynamic>)
-          : null,
-      attributes: (json['attributes'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList() ?? [],
-      // Backend returns 'city' as separate field, 'address' as string
+          : json['working_hours'] != null && json['working_hours'] is Map
+              ? WeeklyWorkingHours.fromJson(json['working_hours'] as Map<String, dynamic>)
+              : null,
+      attributes: _parseAttributes(json['attributes']),
+      // Backend returns 'city' as separate field, 'address' as single string
+      // Split "street, building" into separate fields by last comma
       city: json['city'] as String?,
-      street: json['address'] as String?,  // address is the street/full address string
-      building: null,  // Backend doesn't have separate building field
+      street: _parseStreet(json['address'] as String?),
+      building: _parseBuilding(json['address'] as String?),
       latitude: _parseDoubleSafe(json['latitude']),
       longitude: _parseDoubleSafe(json['longitude']),
       interiorPhotos: (json['interior_photos'] as List<dynamic>?)

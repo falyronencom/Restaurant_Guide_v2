@@ -427,6 +427,12 @@ export const updateEstablishment = async (establishmentId, updates) => {
     paramCount++;
   }
 
+  if (updates.categories !== undefined) {
+    fields.push(`categories = $${paramCount}`);
+    values.push(updates.categories);
+    paramCount++;
+  }
+
   if (updates.cuisines !== undefined) {
     fields.push(`cuisines = $${paramCount}`);
     values.push(updates.cuisines);
