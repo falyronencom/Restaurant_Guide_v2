@@ -296,22 +296,18 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       case 'cuisine':
         stepIndex = 1;
         break;
-      case 'contact':
       case 'about':
         stepIndex = 2;
+        break;
+      case 'contact':
+        stepIndex = 5;
         break;
       case 'media':
         stepIndex = 3;
         break;
       case 'hours':
-        // Navigate to working hours screen directly
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => WorkingHoursScreen(
-              initialHours: establishment.workingHours ?? const WeeklyWorkingHours(),
-            ),
-          ),
-        );
+        // Navigate to working hours screen and save result via PUT
+        _editWorkingHours(context, establishment);
         return;
       case 'address':
         stepIndex = 4;
@@ -332,6 +328,47 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         ),
       ),
     );
+  }
+
+  /// Edit working hours: open screen, capture result, save via PUT
+  Future<void> _editWorkingHours(BuildContext context, PartnerEstablishment establishment) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final dashboardProvider = context.read<PartnerDashboardProvider>();
+
+    final result = await Navigator.of(context).push<WeeklyWorkingHours>(
+      MaterialPageRoute(
+        builder: (context) => WorkingHoursScreen(
+          initialHours: establishment.workingHours ?? const WeeklyWorkingHours(),
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      final success = await dashboardProvider.updateEstablishment(
+        establishment.id,
+        {'working_hours': result.toJson()},
+      );
+
+      if (mounted) {
+        if (success) {
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(
+              content: Text('Время работы сохранено'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Color(0xFF34C759),
+            ),
+          );
+        } else {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(dashboardProvider.error ?? 'Ошибка сохранения'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   /// Show status options dialog
