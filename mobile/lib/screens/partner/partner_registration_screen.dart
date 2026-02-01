@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
@@ -17,11 +18,15 @@ import 'package:restaurant_guide_mobile/screens/partner/steps/summary_step.dart'
 class PartnerRegistrationScreen extends StatefulWidget {
   final int initialStep;
   final bool editMode;
+  final PartnerRegistration? initialData;
+  final String? establishmentId;
 
   const PartnerRegistrationScreen({
     super.key,
     this.initialStep = 0,
     this.editMode = false,
+    this.initialData,
+    this.establishmentId,
   });
 
   @override
@@ -55,6 +60,8 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       create: (_) => PartnerRegistrationProvider(
         initialStep: widget.initialStep,
         editMode: widget.editMode,
+        initialData: widget.initialData,
+        establishmentId: widget.establishmentId,
       ),
       child: Consumer<PartnerRegistrationProvider>(
         builder: (context, provider, child) {
@@ -138,6 +145,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
 
   /// Handle back button press
   void _handleBackPress(BuildContext context, PartnerRegistrationProvider provider) {
+    if (provider.editMode) {
+      Navigator.of(context).pop();
+      return;
+    }
     if (provider.isFirstStep) {
       // Show confirmation dialog if there's data
       if (provider.data.categories.isNotEmpty ||
@@ -236,6 +247,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   Widget _buildBackButton(PartnerRegistrationProvider provider) {
     return GestureDetector(
       onTap: () {
+        if (provider.editMode) {
+          Navigator.of(context).pop();
+          return;
+        }
         provider.previousStep();
         _animateToPage(provider.currentStep);
       },
@@ -274,11 +289,24 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   Widget _buildNextButton(PartnerRegistrationProvider provider) {
     final canProceed = provider.canProceed();
     final isLastStep = provider.isLastStep;
+    final isEditMode = provider.editMode;
+
+    // Determine button text
+    final String buttonText;
+    if (isEditMode) {
+      buttonText = 'Сохранить';
+    } else if (isLastStep) {
+      buttonText = 'Отправить';
+    } else {
+      buttonText = 'Продолжить';
+    }
 
     return GestureDetector(
       onTap: canProceed
           ? () {
-              if (isLastStep) {
+              if (isEditMode) {
+                _handleSave(provider);
+              } else if (isLastStep) {
                 _handleSubmit(provider);
               } else {
                 provider.nextStep();
@@ -297,7 +325,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              isLastStep ? 'Отправить' : 'Продолжить',
+              buttonText,
               style: const TextStyle(
                 fontFamily: 'Avenir Next',
                 fontSize: 15,
@@ -305,16 +333,48 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
                 color: _backgroundColor,
               ),
             ),
-            const SizedBox(width: 4),
-            const Icon(
-              Icons.chevron_right,
-              size: 25,
-              color: _backgroundColor,
-            ),
+            if (!isEditMode) ...[
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.chevron_right,
+                size: 25,
+                color: _backgroundColor,
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Handle save in edit mode — send PUT and return to edit menu
+  Future<void> _handleSave(PartnerRegistrationProvider provider) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    final success = await provider.saveChanges();
+
+    if (success && mounted) {
+      // Reload dashboard to reflect changes
+      context.read<PartnerDashboardProvider>().loadEstablishments();
+
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Изменения сохранены'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFF34C759),
+        ),
+      );
+      navigator.pop();
+    } else if (mounted && provider.error != null) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(provider.error!),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   /// Handle form submission

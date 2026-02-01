@@ -309,6 +309,29 @@ class EstablishmentsService {
   }
 
   // ============================================================================
+  // Partner Update Operations (requires authentication)
+  // ============================================================================
+
+  /// Update an existing establishment
+  ///
+  /// [id] - Establishment ID
+  /// [data] - PartnerRegistration model with updated data
+  Future<void> updateEstablishment(String id, PartnerRegistration data) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/partner/establishments/$id',
+        data: data.toJson(),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update establishment');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
   // Favorites Operations (requires authentication)
   // ============================================================================
 

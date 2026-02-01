@@ -409,6 +409,28 @@ class PartnerRegistration {
     return mapping[id] ?? id;
   }
 
+  /// Convert Russian category name back to ID
+  static String categoryNameToId(String name) {
+    const mapping = {
+      'Ресторан': 'restaurant',
+      'Кофейня': 'coffee',
+      'Кафейня': 'coffee',
+      'Фаст-фуд': 'fastfood',
+      'Бар': 'bar',
+      'Кондитерская': 'confectionery',
+      'Пиццерия': 'pizzeria',
+      'Пекарня': 'bakery',
+      'Паб': 'pub',
+      'Столовая': 'canteen',
+      'Кальян': 'hookah',
+      'Кальянная': 'hookah',
+      'Боулинг': 'bowling',
+      'Караоке': 'karaoke',
+      'Бильярд': 'billiards',
+    };
+    return mapping[name] ?? name;
+  }
+
   /// Convert cuisine ID to Russian name for backend
   static String _cuisineIdToName(String id) {
     const mapping = {
@@ -424,6 +446,23 @@ class PartnerRegistration {
       'continental': 'Континентальная',
     };
     return mapping[id] ?? id;
+  }
+
+  /// Convert Russian cuisine name back to ID
+  static String cuisineNameToId(String name) {
+    const mapping = {
+      'Народная': 'national',
+      'Авторская': 'author',
+      'Азиатская': 'asian',
+      'Американская': 'american',
+      'Итальянская': 'italian',
+      'Японская': 'japanese',
+      'Грузинская': 'georgian',
+      'Вегетарианская': 'vegetarian',
+      'Смешанная': 'mixed',
+      'Континентальная': 'continental',
+    };
+    return mapping[name] ?? name;
   }
 
   /// Create a copy with updated fields
