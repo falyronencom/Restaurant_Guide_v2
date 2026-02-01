@@ -12,6 +12,7 @@
 
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
+import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { upgradeUserToPartner } from './authService.js';
@@ -107,6 +108,10 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     primary_photo,
     interior_photos,
     menu_photos,
+    legal_name,
+    unp,
+    contact_person,
+    contact_email,
   } = establishmentData;
 
   try {
@@ -251,6 +256,32 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         interiorCount: interior_photos?.length || 0,
         menuCount: menu_photos?.length || 0,
       });
+    }
+
+    // Save legal fields to partner_documents if provided
+    if (legal_name || unp || contact_person || contact_email) {
+      try {
+        await PartnerDocumentsModel.createPartnerDocument({
+          partner_id: partnerId,
+          establishment_id: establishment.id,
+          company_name: legal_name,
+          tax_id: unp,
+          contact_person,
+          contact_email,
+        });
+
+        logger.info('Partner documents saved', {
+          establishmentId: establishment.id,
+          partnerId,
+        });
+      } catch (docError) {
+        // Log but don't fail establishment creation
+        logger.error('Failed to save partner documents', {
+          error: docError.message,
+          establishmentId: establishment.id,
+          partnerId,
+        });
+      }
     }
 
     // Auto-upgrade user to partner role if this is their first establishment
@@ -424,6 +455,9 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     // Fetch media for this establishment
     const media = await MediaModel.getEstablishmentMedia(establishmentId);
 
+    // Fetch partner documents (legal info)
+    const partnerDoc = await PartnerDocumentsModel.findByEstablishmentId(establishmentId);
+
     // Map media to frontend-expected format
     const primaryMedia = media.find(m => m.is_primary);
     const interiorPhotos = media.filter(m => m.type === 'interior').map(m => m.url);
@@ -438,6 +472,11 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       primary_photo: primaryMedia ? { url: primaryMedia.url, thumbnail_url: primaryMedia.thumbnail_url } : null,
       interior_photos: interiorPhotos,
       menu_photos: menuPhotos,
+      // Legal fields mapped back to frontend naming
+      legal_name: partnerDoc?.company_name || null,
+      unp: partnerDoc?.tax_id || null,
+      contact_person: partnerDoc?.contact_person || null,
+      contact_email: partnerDoc?.contact_email || null,
     };
   } catch (error) {
     if (error instanceof AppError) {
@@ -662,7 +701,37 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       });
     }
 
-    // Clean legal fields not yet persisted in DB
+    // Sync legal fields to partner_documents
+    const hasLegalUpdates = updates.legal_name !== undefined || updates.unp !== undefined ||
+      updates.contact_person !== undefined || updates.contact_email !== undefined;
+
+    if (hasLegalUpdates) {
+      const legalData = {
+        company_name: updates.legal_name,
+        tax_id: updates.unp,
+        contact_person: updates.contact_person,
+        contact_email: updates.contact_email,
+      };
+
+      // Try update first, create if no record exists
+      const existing = await PartnerDocumentsModel.findByEstablishmentId(establishmentId);
+      if (existing) {
+        await PartnerDocumentsModel.updateByEstablishmentId(establishmentId, legalData);
+      } else {
+        await PartnerDocumentsModel.createPartnerDocument({
+          partner_id: partnerId,
+          establishment_id: establishmentId,
+          ...legalData,
+        });
+      }
+
+      logger.info('Partner documents synced on update', {
+        establishmentId,
+        partnerId,
+      });
+    }
+
+    // Clean legal fields before sending to establishment model (not DB columns on establishments table)
     delete updates.legal_name;
     delete updates.unp;
     delete updates.contact_person;
