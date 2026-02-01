@@ -16,7 +16,11 @@ class PartnerRegistrationProvider with ChangeNotifier {
   // State
   // ============================================================================
 
-  int _currentStep = 0;
+  final bool editMode;
+  int _currentStep;
+
+  PartnerRegistrationProvider({this.editMode = false, int initialStep = 0})
+      : _currentStep = initialStep;
   PartnerRegistration _data = const PartnerRegistration();
   bool _isSubmitting = false;
   String? _error;
@@ -88,6 +92,7 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Get the maximum step user can navigate to based on completed steps
   int _getMaxReachableStep() {
+    if (editMode) return totalSteps - 1;
     // User can go back to any completed step
     // For now, allow navigation to current step only
     // Could be enhanced to track completed steps

@@ -15,7 +15,14 @@ import 'package:restaurant_guide_mobile/screens/partner/steps/summary_step.dart'
 /// 6-step wizard for registering establishment on the platform
 /// Phase 5.1 - Partner Registration Flow
 class PartnerRegistrationScreen extends StatefulWidget {
-  const PartnerRegistrationScreen({super.key});
+  final int initialStep;
+  final bool editMode;
+
+  const PartnerRegistrationScreen({
+    super.key,
+    this.initialStep = 0,
+    this.editMode = false,
+  });
 
   @override
   State<PartnerRegistrationScreen> createState() =>
@@ -33,7 +40,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
+    _pageController = PageController(initialPage: widget.initialStep);
   }
 
   @override
@@ -45,7 +52,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => PartnerRegistrationProvider(),
+      create: (_) => PartnerRegistrationProvider(
+        initialStep: widget.initialStep,
+        editMode: widget.editMode,
+      ),
       child: Consumer<PartnerRegistrationProvider>(
         builder: (context, provider, child) {
           return Scaffold(
