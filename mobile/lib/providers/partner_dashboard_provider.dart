@@ -127,8 +127,8 @@ class PartnerDashboardProvider with ChangeNotifier {
       _selectedEstablishment = await _partnerService.getEstablishmentDetails(id);
     } catch (e) {
       _detailsError = e.toString().replaceFirst('Exception: ', '');
-      // Fallback: use establishment from already-loaded list
-      _selectedEstablishment ??= _establishments
+      // Fallback: use establishment from already-loaded list (always update, not ??=)
+      _selectedEstablishment = _establishments
           .where((est) => est.id == id)
           .firstOrNull;
     } finally {
