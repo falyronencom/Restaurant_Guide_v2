@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/working_hours_screen.dart';
 
@@ -319,11 +320,15 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         stepIndex = 0;
     }
 
+    final initialData = PartnerRegistrationProvider.dataFromEstablishment(establishment);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => PartnerRegistrationScreen(
           initialStep: stepIndex,
           editMode: true,
+          initialData: initialData,
+          establishmentId: establishment.id,
         ),
       ),
     );

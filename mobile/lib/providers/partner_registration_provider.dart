@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 
@@ -17,13 +18,47 @@ class PartnerRegistrationProvider with ChangeNotifier {
   // ============================================================================
 
   final bool editMode;
+  final String? establishmentId;
   int _currentStep;
-
-  PartnerRegistrationProvider({this.editMode = false, int initialStep = 0})
-      : _currentStep = initialStep;
-  PartnerRegistration _data = const PartnerRegistration();
+  PartnerRegistration _data;
   bool _isSubmitting = false;
   String? _error;
+
+  PartnerRegistrationProvider({
+    this.editMode = false,
+    this.establishmentId,
+    int initialStep = 0,
+    PartnerRegistration? initialData,
+  })  : _currentStep = initialStep,
+        _data = initialData ?? const PartnerRegistration();
+
+  /// Create PartnerRegistration from existing PartnerEstablishment data
+  static PartnerRegistration dataFromEstablishment(PartnerEstablishment est) {
+    return PartnerRegistration(
+      categories: est.categories
+          .map((name) => PartnerRegistration.categoryNameToId(name))
+          .toList(),
+      cuisineTypes: est.cuisineTypes
+          .map((name) => PartnerRegistration.cuisineNameToId(name))
+          .toList(),
+      name: est.name,
+      description: est.description,
+      phone: est.phone,
+      email: est.email,
+      instagram: est.instagram,
+      weeklyWorkingHours: est.workingHours,
+      priceRange: est.priceRange,
+      attributes: est.attributes,
+      primaryPhotoUrl: est.primaryImageUrl,
+      interiorPhotos: est.interiorPhotos,
+      menuPhotos: est.menuPhotos,
+      city: est.city,
+      street: est.street,
+      building: est.building,
+      latitude: est.latitude,
+      longitude: est.longitude,
+    );
+  }
 
   // ============================================================================
   // Getters
@@ -467,6 +502,35 @@ class PartnerRegistrationProvider with ChangeNotifier {
       return true;
     } catch (e) {
       _setError('Ошибка при отправке: ${e.toString()}');
+      _isSubmitting = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // Update (edit mode)
+  // ============================================================================
+
+  /// Save changes to an existing establishment via PUT
+  /// Returns true on success, false on failure
+  Future<bool> saveChanges() async {
+    if (establishmentId == null) {
+      _setError('Не указан ID заведения');
+      return false;
+    }
+
+    _isSubmitting = true;
+    _clearError();
+    notifyListeners();
+
+    try {
+      await _establishmentsService.updateEstablishment(establishmentId!, _data);
+      _isSubmitting = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError('Ошибка при сохранении: ${e.toString()}');
       _isSubmitting = false;
       notifyListeners();
       return false;
