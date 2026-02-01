@@ -57,6 +57,10 @@ class PartnerRegistrationProvider with ChangeNotifier {
       building: est.building,
       latitude: est.latitude,
       longitude: est.longitude,
+      legalName: est.legalName,
+      unp: est.unp,
+      contactPerson: est.contactPerson,
+      contactEmail: est.contactEmail,
     );
   }
 

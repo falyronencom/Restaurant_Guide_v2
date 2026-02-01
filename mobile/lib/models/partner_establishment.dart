@@ -196,6 +196,12 @@ class PartnerEstablishment {
   final List<String> menuPhotos;
   final String? priceRange;
 
+  // Legal info (from partner_documents table)
+  final String? legalName;
+  final String? unp;
+  final String? contactPerson;
+  final String? contactEmail;
+
   // Subscription tier (from Figma: Бесплатный, Базовый, Стандарт, Премиум)
   final String subscriptionTier;
 
@@ -224,6 +230,10 @@ class PartnerEstablishment {
     this.interiorPhotos = const [],
     this.menuPhotos = const [],
     this.priceRange,
+    this.legalName,
+    this.unp,
+    this.contactPerson,
+    this.contactEmail,
     this.subscriptionTier = 'Бесплатный',
   });
 
@@ -344,6 +354,10 @@ class PartnerEstablishment {
           ?.map((e) => e.toString())
           .toList() ?? [],
       priceRange: json['price_range'] as String?,
+      legalName: json['legal_name'] as String?,
+      unp: json['unp'] as String?,
+      contactPerson: json['contact_person'] as String?,
+      contactEmail: json['contact_email'] as String?,
       subscriptionTier: json['subscription_tier'] as String? ?? 'Бесплатный',
     );
   }
@@ -403,6 +417,10 @@ class PartnerEstablishment {
     List<String>? interiorPhotos,
     List<String>? menuPhotos,
     String? priceRange,
+    String? legalName,
+    String? unp,
+    String? contactPerson,
+    String? contactEmail,
     String? subscriptionTier,
   }) {
     return PartnerEstablishment(
@@ -430,6 +448,10 @@ class PartnerEstablishment {
       interiorPhotos: interiorPhotos ?? this.interiorPhotos,
       menuPhotos: menuPhotos ?? this.menuPhotos,
       priceRange: priceRange ?? this.priceRange,
+      legalName: legalName ?? this.legalName,
+      unp: unp ?? this.unp,
+      contactPerson: contactPerson ?? this.contactPerson,
+      contactEmail: contactEmail ?? this.contactEmail,
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
     );
   }
