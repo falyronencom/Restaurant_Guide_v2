@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/working_hours_screen.dart';
 
 /// Edit Establishment Screen - menu with edit options
 /// Figma design: Profile/Log In (Редактирование) frame
@@ -281,68 +284,46 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
 
   /// Navigate to edit step screen
   void _navigateToEditStep(BuildContext context, String section, PartnerEstablishment establishment) {
-    // Show info about which screen would open
-    // In full implementation, this would navigate to the actual edit screens
-    // reusing the partner registration step screens
-
-    String screenName;
-    String routeName;
+    // Map section to registration step index
+    // Steps: 0=Category, 1=Cuisine, 2=BasicInfo, 3=Media, 4=Address, 5=Legal, 6=Summary
+    int stepIndex;
 
     switch (section) {
-      case 'contact':
-        screenName = 'Ваши данные';
-        routeName = '/partner/register'; // Step 1
-        break;
       case 'category':
-        screenName = 'Категория заведения';
-        routeName = '/partner/register'; // Step 2
+        stepIndex = 0;
         break;
       case 'cuisine':
-        screenName = 'Категория кухни';
-        routeName = '/partner/register'; // Step 2
+        stepIndex = 1;
         break;
+      case 'contact':
       case 'about':
-        screenName = 'О заведении';
-        routeName = '/partner/register'; // Step 2
+        stepIndex = 2;
         break;
       case 'media':
-        screenName = 'Медиа';
-        routeName = '/partner/register'; // Steps 5-6
+        stepIndex = 3;
         break;
       case 'hours':
-        screenName = 'Время работы';
-        // Navigate to working hours screen
+        // Navigate to working hours screen directly
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => _EditWorkingHoursWrapper(establishment: establishment),
+            builder: (context) => WorkingHoursScreen(
+              initialHours: establishment.workingHours ?? const WeeklyWorkingHours(),
+            ),
           ),
         );
         return;
       case 'address':
-        screenName = 'Адрес';
-        routeName = '/partner/register'; // Step 3
+        stepIndex = 4;
         break;
       default:
-        screenName = section;
-        routeName = '/partner/register';
+        stepIndex = 0;
     }
 
-    // For now, show a snackbar indicating the action
-    // In full implementation, navigate to the specific step with edit mode
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Редактирование: $screenName'),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'Перейти',
-          textColor: _backgroundColor,
-          onPressed: () {
-            // Navigate to registration with edit mode
-            Navigator.of(context).pushNamed(
-              routeName,
-              arguments: {'editMode': true, 'establishment': establishment, 'section': section},
-            );
-          },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PartnerRegistrationScreen(
+          initialStep: stepIndex,
+          editMode: true,
         ),
       ),
     );
@@ -581,114 +562,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Wrapper for editing working hours
-/// Reuses the WorkingHoursScreen from registration
-class _EditWorkingHoursWrapper extends StatelessWidget {
-  final PartnerEstablishment establishment;
-
-  const _EditWorkingHoursWrapper({required this.establishment});
-
-  @override
-  Widget build(BuildContext context) {
-    // Navigate to working hours screen with existing data
-    // In full implementation, this would pass the existing working hours
-    // and handle saving back to the establishment
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F1EC),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Icon(Icons.chevron_left, size: 28, color: Colors.black),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Время работы',
-                    style: TextStyle(
-                      fontFamily: 'Unbounded',
-                      fontSize: 25,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFFDB4F13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content placeholder
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.access_time,
-                        size: 64,
-                        color: Color(0xFFABABAB),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Редактирование времени работы',
-                        style: TextStyle(
-                          fontFamily: 'Avenir Next',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        establishment.workingHours != null
-                            ? 'Текущее расписание установлено'
-                            : 'Расписание не установлено',
-                        style: const TextStyle(
-                          fontFamily: 'Avenir Next',
-                          fontSize: 14,
-                          color: Color(0xFFABABAB),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: () {
-                          // Navigate to the full working hours editor
-                          Navigator.of(context).pushNamed('/partner/register/hours');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFDB4F13),
-                          foregroundColor: const Color(0xFFF4F1EC),
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                        ),
-                        child: const Text(
-                          'Изменить расписание',
-                          style: TextStyle(fontFamily: 'Avenir Next', fontSize: 16),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
