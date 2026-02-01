@@ -92,6 +92,29 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
+          // Back button (only when pushed as standalone route, not as tab)
+          if (Navigator.of(context).canPop())
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 12,
+              left: 16,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+
           // My location button
           Positioned(
             bottom: 24,

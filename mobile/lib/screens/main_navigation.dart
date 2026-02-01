@@ -14,10 +14,13 @@ class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<MainNavigationScreen> createState() => MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class MainNavigationScreenState extends State<MainNavigationScreen> {
+  /// Static instance for access from screens on different navigators
+  static MainNavigationScreenState? instance;
+
   int _currentIndex = 0;
 
   // Track which tabs have been visited (for lazy loading heavy widgets like Map)
@@ -31,6 +34,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     GlobalKey<NavigatorState>(), // Favorites
     GlobalKey<NavigatorState>(), // Profile
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    instance = this;
+  }
+
+  @override
+  void dispose() {
+    if (instance == this) {
+      instance = null;
+    }
+    super.dispose();
+  }
+
+  /// Switch to specified tab (accessible via static instance)
+  void switchToTab(int index) {
+    _onTabSelected(index);
+  }
 
   /// Handle tab selection
   void _onTabSelected(int index) {

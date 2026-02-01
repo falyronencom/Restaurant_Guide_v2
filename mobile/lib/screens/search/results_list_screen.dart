@@ -4,6 +4,7 @@ import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 
 /// Results list screen displaying search results with pagination
 /// Implements Figma design with dark header area and light results list
@@ -533,11 +534,8 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   onBackTap: () => Navigator.of(context).pop(),
                   onSortTap: _showSortOptions,
                   onMapTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Карта будет доступна в следующем обновлении'),
-                        duration: Duration(seconds: 2),
-                      ),
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const MapScreen()),
                     );
                   },
                   searchController: _searchController,
@@ -848,11 +846,8 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
           // Map button
           GestureDetector(
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Карта будет доступна в следующем обновлении'),
-                  duration: Duration(seconds: 2),
-                ),
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MapScreen()),
               );
             },
             child: const Row(
