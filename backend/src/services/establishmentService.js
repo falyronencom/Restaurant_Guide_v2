@@ -421,12 +421,23 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       );
     }
 
+    // Fetch media for this establishment
+    const media = await MediaModel.getEstablishmentMedia(establishmentId);
+
+    // Map media to frontend-expected format
+    const primaryMedia = media.find(m => m.is_primary);
+    const interiorPhotos = media.filter(m => m.type === 'interior').map(m => m.url);
+    const menuPhotos = media.filter(m => m.type === 'menu').map(m => m.url);
+
     // Convert numeric types from PostgreSQL strings to numbers
     return {
       ...establishment,
       latitude: establishment.latitude ? parseFloat(establishment.latitude) : establishment.latitude,
       longitude: establishment.longitude ? parseFloat(establishment.longitude) : establishment.longitude,
       average_rating: establishment.average_rating ? parseFloat(establishment.average_rating) : establishment.average_rating,
+      primary_photo: primaryMedia ? { url: primaryMedia.url, thumbnail_url: primaryMedia.thumbnail_url } : null,
+      interior_photos: interiorPhotos,
+      menu_photos: menuPhotos,
     };
   } catch (error) {
     if (error instanceof AppError) {
@@ -595,6 +606,67 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         delete updates.capacity;
       }
     }
+
+    // Sync media if interior_photos or menu_photos are provided
+    const hasMediaUpdates = updates.interior_photos !== undefined || updates.menu_photos !== undefined;
+    if (hasMediaUpdates) {
+      const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
+      const primaryPhotoUrl = updates.primary_photo || null;
+
+      // Sync each media type
+      for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
+        if (updates[field] === undefined) continue;
+
+        const newUrls = updates[field] || [];
+        const existingOfType = existingMedia.filter(m => m.type === type);
+        const existingUrls = existingOfType.map(m => m.url);
+
+        // Delete removed media
+        const toDelete = existingOfType.filter(m => !newUrls.includes(m.url));
+        for (const media of toDelete) {
+          await MediaModel.deleteMedia(media.id);
+        }
+
+        // Insert new media
+        const toInsert = newUrls.filter(url => !existingUrls.includes(url));
+        for (let i = 0; i < toInsert.length; i++) {
+          await MediaModel.createMedia({
+            establishment_id: establishmentId,
+            type,
+            url: toInsert[i],
+            thumbnail_url: toInsert[i],
+            preview_url: toInsert[i],
+            position: existingOfType.length + i,
+            is_primary: toInsert[i] === primaryPhotoUrl,
+          });
+        }
+
+        // Update primary flag if needed
+        if (primaryPhotoUrl) {
+          const keptOfType = existingOfType.filter(m => newUrls.includes(m.url));
+          for (const media of keptOfType) {
+            if ((media.url === primaryPhotoUrl) !== media.is_primary) {
+              await MediaModel.updateMedia(media.id, { is_primary: media.url === primaryPhotoUrl });
+            }
+          }
+        }
+      }
+
+      // Clean media fields from updates before sending to model (not DB columns)
+      delete updates.interior_photos;
+      delete updates.menu_photos;
+      delete updates.primary_photo;
+
+      logger.info('Media synced for establishment', {
+        establishmentId,
+      });
+    }
+
+    // Clean legal fields not yet persisted in DB
+    delete updates.legal_name;
+    delete updates.unp;
+    delete updates.contact_person;
+    delete updates.contact_email;
 
     // Update establishment
     const updatedEstablishment = await EstablishmentModel.updateEstablishment(
