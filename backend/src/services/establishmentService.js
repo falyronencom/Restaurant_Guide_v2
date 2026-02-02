@@ -13,6 +13,7 @@
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
+import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { upgradeUserToPartner } from './authService.js';
@@ -452,11 +453,12 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       );
     }
 
-    // Fetch media for this establishment
-    const media = await MediaModel.getEstablishmentMedia(establishmentId);
-
-    // Fetch partner documents (legal info)
-    const partnerDoc = await PartnerDocumentsModel.findByEstablishmentId(establishmentId);
+    // Fetch media, partner documents, and rating distribution in parallel
+    const [media, partnerDoc, ratingDistribution] = await Promise.all([
+      MediaModel.getEstablishmentMedia(establishmentId),
+      PartnerDocumentsModel.findByEstablishmentId(establishmentId),
+      ReviewModel.getRatingDistribution(establishmentId),
+    ]);
 
     // Map media to frontend-expected format
     const primaryMedia = media.find(m => m.is_primary);
@@ -472,6 +474,8 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       primary_photo: primaryMedia ? { url: primaryMedia.url, thumbnail_url: primaryMedia.thumbnail_url } : null,
       interior_photos: interiorPhotos,
       menu_photos: menuPhotos,
+      // Rating distribution for statistics screen
+      rating_distribution: ratingDistribution,
       // Legal fields mapped back to frontend naming
       legal_name: partnerDoc?.company_name || null,
       unp: partnerDoc?.tax_id || null,

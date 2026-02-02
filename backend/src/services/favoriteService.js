@@ -59,6 +59,9 @@ export const addToFavorites = async (userId, establishmentId) => {
   // Add favorite (idempotent operation)
   const favorite = await FavoriteModel.addFavorite(userId, establishmentId);
 
+  // Sync cached favorite_count in establishments table
+  await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
+
   logger.info('Favorite added successfully', {
     userId,
     establishmentId,
@@ -95,6 +98,9 @@ export const addToFavorites = async (userId, establishmentId) => {
 export const removeFromFavorites = async (userId, establishmentId) => {
   // Remove favorite (idempotent operation)
   const wasDeleted = await FavoriteModel.removeFavorite(userId, establishmentId);
+
+  // Sync cached favorite_count in establishments table
+  await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
 
   if (wasDeleted) {
     logger.info('Favorite removed successfully', {
