@@ -25,6 +25,7 @@ class ReviewsService {
     String establishmentId, {
     int page = 1,
     int perPage = 10,
+    String? sort,
   }) async {
     try {
       final response = await _apiClient.get(
@@ -32,6 +33,7 @@ class ReviewsService {
         queryParameters: {
           'page': page,
           'per_page': perPage,
+          if (sort != null) 'sort': sort,
         },
       );
 
