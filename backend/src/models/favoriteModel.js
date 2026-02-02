@@ -385,3 +385,50 @@ export const getEstablishmentFavoriteCount = async (establishmentId) => {
   }
 };
 
+/**
+ * Update cached favorite_count in the establishments table
+ *
+ * This follows the same pattern as updateEstablishmentAggregates in reviewModel.js.
+ * The cached count is recalculated from the favorites table to ensure consistency.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<Object>} The updated favorite_count
+ */
+export const updateEstablishmentFavoriteCount = async (establishmentId) => {
+  const query = `
+    UPDATE establishments
+    SET
+      favorite_count = (
+        SELECT COUNT(*)
+        FROM favorites
+        WHERE establishment_id = $1
+      ),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING favorite_count
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+
+    if (result.rows.length === 0) {
+      throw new Error('Establishment not found');
+    }
+
+    const { favorite_count } = result.rows[0];
+
+    logger.info('Establishment favorite_count updated', {
+      establishmentId,
+      favoriteCount: favorite_count,
+    });
+
+    return { favorite_count };
+  } catch (error) {
+    logger.error('Error updating establishment favorite_count', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+

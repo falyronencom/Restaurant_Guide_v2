@@ -8,6 +8,7 @@
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import * as MediaModel from '../models/mediaModel.js';
+import * as EstablishmentModel from '../models/establishmentModel.js';
 
 /**
  * Helper: SQL fragment that extracts close_time from working_hours JSONB.
@@ -695,6 +696,9 @@ export async function getEstablishmentById(id) {
   }
 
   const row = result.rows[0];
+
+  // Track view (non-blocking, fire-and-forget)
+  EstablishmentModel.incrementViewCount(id);
 
   // Load media from establishment_media table
   const media = await MediaModel.getEstablishmentMedia(id);

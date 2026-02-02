@@ -517,8 +517,43 @@ export const updateEstablishmentAggregates = async (establishmentId) => {
 };
 
 /**
+ * Get rating distribution for an establishment (count per star 1-5)
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<Object>} Object like { "1": 0, "2": 3, "3": 5, "4": 12, "5": 8 }
+ */
+export const getRatingDistribution = async (establishmentId) => {
+  const query = `
+    SELECT rating, COUNT(*)::int as count
+    FROM reviews
+    WHERE establishment_id = $1
+      AND is_deleted = false
+    GROUP BY rating
+    ORDER BY rating
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+
+    // Build full distribution with zeros for missing ratings
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const row of result.rows) {
+      distribution[row.rating] = row.count;
+    }
+
+    return distribution;
+  } catch (error) {
+    logger.error('Error fetching rating distribution', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Get review with establishment ownership information
- * 
+ *
  * @param {string} reviewId - UUID of the review
  * @returns {Promise<Object|null>} Review + establishment ownership data
  */

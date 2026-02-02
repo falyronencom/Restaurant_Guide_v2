@@ -136,9 +136,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                         _buildStatSection(
                           title: 'Избранное',
                           value: establishment.stats.favorites,
-                          trend: establishment.stats.favoritesTrend,
-                          trendText:
-                              '+20% сохранений, чем за период 1 Сен – 7 Сен',
                         ),
 
                         // Ratings section with distribution
@@ -442,17 +439,15 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                       ?.toStringAsFixed(1)
                       .replaceAll('.', ',') ??
                   '-',
-              trend: -0.1,
               showStar: true,
             ),
           ),
 
-          // Ratings count
+          // Ratings count (same as reviews — one review = one rating)
           Expanded(
             child: _buildMetricItem(
               title: 'Оценки',
-              value: _formatNumber(5230), // Mock data
-              trend: 22,
+              value: _formatNumber(establishment.stats.reviews),
             ),
           ),
 
@@ -461,7 +456,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             child: _buildMetricItem(
               title: 'Отзывы',
               value: '${establishment.stats.reviews}',
-              trend: 15,
             ),
           ),
         ],
@@ -557,8 +551,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
               ),
               Text(
-                _formatNumber(
-                    establishment.stats.views * 100), // Mock multiplier
+                _formatNumber(establishment.stats.views),
                 style: const TextStyle(
                   fontFamily: 'Avenir Next',
                   fontSize: 18,
@@ -567,18 +560,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
               ),
             ],
-          ),
-
-          const SizedBox(height: 4),
-
-          // Trend text
-          Text(
-            '+ ${_formatNumber(1581)} чем за период 1 Сен – 7 Сен',
-            style: const TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 13,
-              color: _greyText,
-            ),
           ),
 
           const SizedBox(height: 24),
@@ -593,105 +574,25 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
     );
   }
 
-  /// Build simple bar chart
+  /// Build chart placeholder (time-series data not yet available)
   Widget _buildBarChart() {
-    // Mock data for 7 days
-    final data = [44, 30, 69, 74, 129, 150, 87];
-    final maxValue = data.reduce((a, b) => a > b ? a : b).toDouble();
-    final labels = [
-      '8 Сен',
-      '9 Сен',
-      '10 Сен',
-      '11 Сен',
-      '12 Сен',
-      '13 Сен',
-      '14 Сен'
-    ];
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Y-axis labels
-        const SizedBox(
-          width: 30,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('1к',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _greyText,
-                      fontFamily: 'Avenir Next')),
-              Text('500',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _greyText,
-                      fontFamily: 'Avenir Next')),
-              Text('100',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _greyText,
-                      fontFamily: 'Avenir Next')),
-              Text('0',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _greyText,
-                      fontFamily: 'Avenir Next')),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        color: _strokeGrey.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+      child: const Center(
+        child: Text(
+          'Детализация по дням скоро будет доступна',
+          style: TextStyle(
+            fontFamily: 'Avenir Next',
+            fontSize: 14,
+            color: _greyText,
           ),
+          textAlign: TextAlign.center,
         ),
-        const SizedBox(width: 8),
-
-        // Bars
-        Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(data.length, (index) {
-                    final height = (data[index] / maxValue) * 120;
-                    return Container(
-                      width: 17,
-                      height: height,
-                      decoration: BoxDecoration(
-                        color: _secondaryOrange,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // X-axis labels (show only some)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Text(labels[0],
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black,
-                          fontFamily: 'Avenir Next')),
-                  const Spacer(),
-                  Text(labels[3],
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black,
-                          fontFamily: 'Avenir Next')),
-                  const Spacer(),
-                  Text(labels[6],
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black,
-                          fontFamily: 'Avenir Next')),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -716,7 +617,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
               ),
               Text(
-                '641',
+                '0',
                 style: TextStyle(
                   fontFamily: 'Avenir Next',
                   fontSize: 18,
@@ -732,8 +633,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           // Actions sub-section
           _buildSubStatRow(
             title: 'Акции',
-            value: 483,
-            trendText: '+100% нажатий, чем за период 1 Сен – 7 Сен',
+            value: 0,
           ),
         ],
       ),
@@ -744,8 +644,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   Widget _buildStatSection({
     required String title,
     required int value,
-    int? trend,
-    required String trendText,
+    String? trendText,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -774,15 +673,17 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            trendText,
-            style: const TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 13,
-              color: _greyText,
+          if (trendText != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              trendText,
+              style: const TextStyle(
+                fontFamily: 'Avenir Next',
+                fontSize: 13,
+                color: _greyText,
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 8),
           _buildDivider(),
         ],
@@ -794,7 +695,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   Widget _buildSubStatRow({
     required String title,
     required int value,
-    required String trendText,
+    String? trendText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,15 +722,17 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          trendText,
-          style: const TextStyle(
-            fontFamily: 'Avenir Next',
-            fontSize: 13,
-            color: _greyText,
+        if (trendText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            trendText,
+            style: const TextStyle(
+              fontFamily: 'Avenir Next',
+              fontSize: 13,
+              color: _greyText,
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 8),
         Container(height: 0.5, color: _strokeGrey),
       ],
@@ -838,9 +741,11 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
 
   /// Build ratings section with star distribution
   Widget _buildRatingsSection(PartnerEstablishment establishment) {
-    // Mock ratings distribution
-    final ratingsDistribution = {5: 80, 4: 122, 3: 47, 2: 12, 1: 5};
-    final totalRatings = ratingsDistribution.values.reduce((a, b) => a + b);
+    final distribution = establishment.stats.ratingDistribution;
+    final totalRatings = distribution != null
+        ? distribution.values.fold(0, (a, b) => a + b)
+        : 0;
+    final hasRatings = totalRatings > 0;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -861,7 +766,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 ),
               ),
               Text(
-                '${establishment.stats.reviews}',
+                '$totalRatings',
                 style: const TextStyle(
                   fontFamily: 'Avenir Next',
                   fontSize: 15,
@@ -871,133 +776,136 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ],
           ),
 
-          const SizedBox(height: 4),
-
-          const Text(
-            '+20% сохранений, чем за период 1 Сен – 7 Сен',
-            style: TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 13,
-              color: _greyText,
-            ),
-          ),
-
           const SizedBox(height: 16),
 
-          // Rating distribution
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Average rating badge
-              Container(
-                width: 55,
-                height: 55,
-                decoration: BoxDecoration(
-                  color: _greenColor,
-                  borderRadius: BorderRadius.circular(14),
+          if (!hasRatings)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'Пока нет оценок',
+                style: TextStyle(
+                  fontFamily: 'Avenir Next',
+                  fontSize: 14,
+                  color: _greyText,
                 ),
-                child: Center(
-                  child: Text(
-                    establishment.stats.averageRating
-                            ?.toStringAsFixed(1)
-                            .replaceAll('.', ',') ??
-                        '-',
-                    style: const TextStyle(
-                      fontFamily: 'Avenir Next',
-                      fontSize: 28,
-                      color: _backgroundColor,
+              ),
+            )
+          else
+            // Rating distribution
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Average rating badge
+                Container(
+                  width: 55,
+                  height: 55,
+                  decoration: BoxDecoration(
+                    color: _greenColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Center(
+                    child: Text(
+                      establishment.stats.averageRating
+                              ?.toStringAsFixed(1)
+                              .replaceAll('.', ',') ??
+                          '-',
+                      style: const TextStyle(
+                        fontFamily: 'Avenir Next',
+                        fontSize: 28,
+                        color: _backgroundColor,
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(width: 24),
+                const SizedBox(width: 24),
 
-              // Star distribution bars
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Оценки: $totalRatings',
-                      style: const TextStyle(
-                        fontFamily: 'Avenir Next',
-                        fontSize: 14,
-                        color: Colors.black,
+                // Star distribution bars
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Оценки: $totalRatings',
+                        style: const TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 14,
+                          color: Colors.black,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...List.generate(5, (index) {
-                      final star = 5 - index;
-                      final count = ratingsDistribution[star] ?? 0;
-                      final percentage =
-                          totalRatings > 0 ? count / totalRatings : 0.0;
+                      const SizedBox(height: 8),
+                      ...List.generate(5, (index) {
+                        final star = 5 - index;
+                        final count = distribution![star] ?? 0;
+                        final percentage = count / totalRatings;
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 12,
-                              child: Text(
-                                '$star',
-                                style: const TextStyle(
-                                  fontFamily: 'Avenir Next',
-                                  fontSize: 18,
-                                  color: Colors.black,
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 12,
+                                child: Text(
+                                  '$star',
+                                  style: const TextStyle(
+                                    fontFamily: 'Avenir Next',
+                                    fontSize: 18,
+                                    color: Colors.black,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.star,
-                                color: _secondaryOrange, size: 15),
-                            const SizedBox(width: 8),
-                            // Progress bar
-                            Expanded(
-                              child: Stack(
-                                children: [
-                                  Container(
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: _strokeGrey,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                  FractionallySizedBox(
-                                    widthFactor: percentage,
-                                    child: Container(
+                              const SizedBox(width: 8),
+                              const Icon(Icons.star,
+                                  color: _secondaryOrange, size: 15),
+                              const SizedBox(width: 8),
+                              // Progress bar
+                              Expanded(
+                                child: Stack(
+                                  children: [
+                                    Container(
                                       height: 4,
                                       decoration: BoxDecoration(
-                                        color: _secondaryOrange,
-                                        borderRadius: BorderRadius.circular(2),
+                                        color: _strokeGrey,
+                                        borderRadius:
+                                            BorderRadius.circular(2),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 30,
-                              child: Text(
-                                '$count',
-                                style: const TextStyle(
-                                  fontFamily: 'Avenir Next',
-                                  fontSize: 13,
-                                  color: Colors.black,
+                                    FractionallySizedBox(
+                                      widthFactor: percentage,
+                                      child: Container(
+                                        height: 4,
+                                        decoration: BoxDecoration(
+                                          color: _secondaryOrange,
+                                          borderRadius:
+                                              BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                textAlign: TextAlign.end,
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 30,
+                                child: Text(
+                                  '$count',
+                                  style: const TextStyle(
+                                    fontFamily: 'Avenir Next',
+                                    fontSize: 13,
+                                    color: Colors.black,
+                                  ),
+                                  textAlign: TextAlign.end,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
 
           const SizedBox(height: 16),
           _buildDivider(),
