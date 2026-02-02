@@ -18,6 +18,20 @@ int _parseIntSafe(dynamic value) {
   return 0;
 }
 
+/// Parse rating distribution from backend JSON (keys may be strings or ints)
+Map<int, int>? _parseRatingDistribution(dynamic value) {
+  if (value == null) return null;
+  if (value is! Map) return null;
+  final result = <int, int>{};
+  for (final entry in value.entries) {
+    final key = int.tryParse(entry.key.toString());
+    if (key != null) {
+      result[key] = _parseIntSafe(entry.value);
+    }
+  }
+  return result.isEmpty ? null : result;
+}
+
 /// Safely parse nullable int from dynamic value
 int? _parseIntNullable(dynamic value) {
   if (value == null) return null;
@@ -126,6 +140,7 @@ class EstablishmentStats {
   final int? favoritesTrend;
   final int reviews;
   final double? averageRating;
+  final Map<int, int>? ratingDistribution;
 
   const EstablishmentStats({
     this.views = 0,
@@ -136,6 +151,7 @@ class EstablishmentStats {
     this.favoritesTrend,
     this.reviews = 0,
     this.averageRating,
+    this.ratingDistribution,
   });
 
   factory EstablishmentStats.fromJson(Map<String, dynamic> json) {
@@ -148,6 +164,7 @@ class EstablishmentStats {
       favoritesTrend: _parseIntNullable(json['favorites_trend']),
       reviews: _parseIntSafe(json['reviews']),
       averageRating: _parseDoubleSafe(json['average_rating']),
+      ratingDistribution: _parseRatingDistribution(json['rating_distribution']),
     );
   }
 
@@ -160,6 +177,7 @@ class EstablishmentStats {
     if (favoritesTrend != null) 'favorites_trend': favoritesTrend,
     'reviews': reviews,
     if (averageRating != null) 'average_rating': averageRating,
+    if (ratingDistribution != null) 'rating_distribution': ratingDistribution!.map((k, v) => MapEntry(k.toString(), v)),
   };
 
   /// Create empty stats
@@ -300,6 +318,7 @@ class PartnerEstablishment {
         favorites: _parseIntSafe(json['favorite_count']),
         reviews: _parseIntSafe(json['review_count']),
         averageRating: _parseDoubleSafe(json['average_rating']),
+        ratingDistribution: _parseRatingDistribution(json['rating_distribution']),
       );
     }
 

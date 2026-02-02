@@ -625,6 +625,34 @@ export const checkOwnership = async (establishmentId, partnerId) => {
  * @param {string} excludeId - Optional establishment ID to exclude (for updates)
  * @returns {Promise<boolean>} True if name is already used
  */
+/**
+ * Increment the view count for an establishment
+ *
+ * Called when a public user views the establishment detail page.
+ * Uses atomic increment to avoid race conditions.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<void>}
+ */
+export const incrementViewCount = async (establishmentId) => {
+  const query = `
+    UPDATE establishments
+    SET view_count = view_count + 1
+    WHERE id = $1
+  `;
+
+  try {
+    await pool.query(query, [establishmentId]);
+    logger.debug('View count incremented', { establishmentId });
+  } catch (error) {
+    // Non-critical: log but don't throw to avoid breaking the detail endpoint
+    logger.error('Error incrementing view count', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
 export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
   const conditions = ['partner_id = $1', 'LOWER(name) = LOWER($2)'];
   const values = [partnerId, name];
