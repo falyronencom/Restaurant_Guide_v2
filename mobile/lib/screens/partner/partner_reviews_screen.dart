@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/models/review.dart';
+import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 
 /// Partner Reviews Screen - view and filter establishment reviews
 /// Figma design: Profile/Admin (Отзывы) frame
@@ -36,84 +38,132 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     'По рейтингу (низкий)',
   ];
 
-  // Mock reviews data
-  late List<_MockReview> _reviews;
+  // Sort option → backend param mapping
+  static const Map<String, String> _sortMapping = {
+    'По дате (новые)': 'newest',
+    'По дате (старые)': 'newest', // load newest, reverse client-side
+    'По рейтингу (высокий)': 'highest',
+    'По рейтингу (низкий)': 'lowest',
+  };
+
+  // Reviews data
+  final ReviewsService _reviewsService = ReviewsService();
+  List<Review> _reviews = [];
+  List<Review> _filteredReviews = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  String? _error;
+
+  // Pagination
+  int _currentPage = 1;
+  bool _hasMore = true;
+  static const int _perPage = 10;
+
+  // Scroll controller for pagination
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadReviews();
   }
 
-  Future<void> _loadReviews() async {
-    setState(() => _isLoading = true);
-
-    // Simulate network delay
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Mock data
-    _reviews = [
-      _MockReview(
-        id: 1,
-        userName: 'Oleg P.',
-        userAvatarColor: Colors.red,
-        rating: 4.5,
-        text: 'Хорошая кухня, красивый интерьер.\nЗаказ был подан быстро.',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      ),
-      _MockReview(
-        id: 2,
-        userName: 'Eda_POP',
-        userAvatarColor: Colors.blue,
-        rating: 4.0,
-        text: 'Довольно миленько и вкусно\u{1F60A}\nНемного шумно',
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      ),
-      _MockReview(
-        id: 3,
-        userName: 'Elena1010',
-        userAvatarColor: Colors.pink,
-        rating: 4.8,
-        text: 'Очень вкусно\u{1F60D}',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      ),
-      _MockReview(
-        id: 4,
-        userName: 'MaxFood',
-        userAvatarColor: Colors.green,
-        rating: 3.5,
-        text: 'Нормально, но ожидал большего за такую цену. Обслуживание хорошее.',
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-      _MockReview(
-        id: 5,
-        userName: 'Anna_K',
-        userAvatarColor: Colors.purple,
-        rating: 5.0,
-        text: 'Идеальное место для романтического ужина! Рекомендую всем.',
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      ),
-    ];
-
-    setState(() => _isLoading = false);
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  void _sortReviews() {
-    switch (_sortOption) {
-      case 'По дате (новые)':
-        _reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      case 'По дате (старые)':
-        _reviews.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-        break;
-      case 'По рейтингу (высокий)':
-        _reviews.sort((a, b) => b.rating.compareTo(a.rating));
-        break;
-      case 'По рейтингу (низкий)':
-        _reviews.sort((a, b) => a.rating.compareTo(b.rating));
-        break;
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore &&
+        _hasMore) {
+      _loadMoreReviews();
     }
+  }
+
+  /// Map UI sort option to backend sort param
+  String get _backendSort => _sortMapping[_sortOption] ?? 'newest';
+
+  /// Load first page of reviews from API
+  Future<void> _loadReviews() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _currentPage = 1;
+      _hasMore = true;
+    });
+
+    try {
+      final result = await _reviewsService.getReviewsForEstablishment(
+        widget.establishmentId,
+        page: 1,
+        perPage: _perPage,
+        sort: _backendSort,
+      );
+
+      final reviews = result.data;
+
+      // Client-side reverse for "oldest first" (backend only supports 'newest')
+      if (_sortOption == 'По дате (старые)') {
+        reviews.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      }
+
+      setState(() {
+        _reviews = reviews;
+        _hasMore = result.meta.page < result.meta.totalPages;
+        _isLoading = false;
+      });
+
+      _applyDateFilter();
+    } catch (e) {
+      setState(() {
+        _error = 'Не удалось загрузить отзывы';
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Load next page of reviews
+  Future<void> _loadMoreReviews() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final result = await _reviewsService.getReviewsForEstablishment(
+        widget.establishmentId,
+        page: _currentPage + 1,
+        perPage: _perPage,
+        sort: _backendSort,
+      );
+
+      setState(() {
+        _currentPage++;
+        _reviews.addAll(result.data);
+        _hasMore = result.meta.page < result.meta.totalPages;
+        _isLoadingMore = false;
+      });
+
+      _applyDateFilter();
+    } catch (e) {
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  /// Apply client-side date filter to loaded reviews
+  void _applyDateFilter() {
+    final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+    final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+
+    setState(() {
+      _filteredReviews = _reviews.where((r) {
+        return !r.createdAt.isBefore(from) && !r.createdAt.isAfter(to);
+      }).toList();
+    });
   }
 
   @override
@@ -142,9 +192,11 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   ? const Center(
                       child: CircularProgressIndicator(color: _primaryOrange),
                     )
-                  : _reviews.isEmpty
-                      ? _buildEmptyState()
-                      : _buildReviewsList(),
+                  : _error != null
+                      ? _buildErrorState()
+                      : _filteredReviews.isEmpty
+                          ? _buildEmptyState()
+                          : _buildReviewsList(),
             ),
           ],
         ),
@@ -283,6 +335,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           _dateTo = picked;
         }
       });
+      _applyDateFilter();
     }
   }
 
@@ -361,16 +414,54 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   ? const Icon(Icons.check, color: _primaryOrange)
                   : null,
               onTap: () {
-                setState(() {
-                  _sortOption = option;
-                  _sortReviews();
-                });
                 Navigator.pop(context);
+                if (option != _sortOption) {
+                  setState(() => _sortOption = option);
+                  _loadReviews(); // Reload with new sort
+                }
               },
             )),
             const SizedBox(height: 16),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Build error state
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: _greyText.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _error!,
+            style: const TextStyle(
+              fontFamily: 'Avenir Next',
+              fontSize: 16,
+              color: _greyText,
+            ),
+          ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: _loadReviews,
+            child: const Text(
+              'Повторить',
+              style: TextStyle(
+                fontFamily: 'Avenir Next',
+                fontSize: 16,
+                color: _primaryOrange,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -406,12 +497,21 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       onRefresh: _loadReviews,
       color: _primaryOrange,
       child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _reviews.length,
+        itemCount: _filteredReviews.length + (_isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
+          if (index == _filteredReviews.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(color: _primaryOrange),
+              ),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
-            child: _buildReviewCard(_reviews[index]),
+            child: _buildReviewCard(_filteredReviews[index]),
           );
         },
       ),
@@ -419,7 +519,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   }
 
   /// Build review card
-  Widget _buildReviewCard(_MockReview review) {
+  Widget _buildReviewCard(Review review) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -434,19 +534,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Avatar
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: review.userAvatarColor,
-                child: Text(
-                  review.userName[0].toUpperCase(),
-                  style: const TextStyle(
-                    fontFamily: 'Avenir Next',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              _buildAvatar(review),
               const SizedBox(width: 12),
 
               // Name
@@ -505,27 +593,69 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           const SizedBox(height: 8),
 
           // Review text
-          Text(
-            review.text,
-            style: const TextStyle(
-              fontFamily: 'Avenir Next',
-              fontSize: 15,
-              color: Colors.black,
-              height: 1.5,
+          if (review.text != null && review.text!.isNotEmpty)
+            Text(
+              review.text!,
+              style: const TextStyle(
+                fontFamily: 'Avenir Next',
+                fontSize: 15,
+                color: Colors.black,
+                height: 1.5,
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
+  /// Build avatar widget - network image or fallback to initial letter
+  Widget _buildAvatar(Review review) {
+    if (review.userAvatar != null && review.userAvatar!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 30,
+        backgroundImage: NetworkImage(review.userAvatar!),
+        onBackgroundImageError: (_, __) {},
+        child: null,
+      );
+    }
+
+    // Fallback: first letter of name with color derived from name
+    final colorIndex = review.userName.hashCode % _avatarColors.length;
+    return CircleAvatar(
+      radius: 30,
+      backgroundColor: _avatarColors[colorIndex.abs()],
+      child: Text(
+        review.userName.isNotEmpty ? review.userName[0].toUpperCase() : '?',
+        style: const TextStyle(
+          fontFamily: 'Avenir Next',
+          fontSize: 20,
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  // Avatar fallback colors
+  static const List<Color> _avatarColors = [
+    Color(0xFFE57373),
+    Color(0xFF64B5F6),
+    Color(0xFF81C784),
+    Color(0xFFFFB74D),
+    Color(0xFFBA68C8),
+    Color(0xFF4DB6AC),
+    Color(0xFFF06292),
+    Color(0xFF7986CB),
+  ];
+
   /// Format date as relative time
   String _formatRelativeDate(DateTime date) {
+    final local = date.toLocal();
     final now = DateTime.now();
-    final difference = now.difference(date);
+    final difference = now.difference(local);
 
-    final hours = date.hour.toString().padLeft(2, '0');
-    final minutes = date.minute.toString().padLeft(2, '0');
+    final hours = local.hour.toString().padLeft(2, '0');
+    final minutes = local.minute.toString().padLeft(2, '0');
     final time = '$hours:$minutes';
 
     if (difference.inDays < 1) {
@@ -538,23 +668,4 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       return '$time, ${_formatDate(date)}';
     }
   }
-}
-
-/// Mock review model
-class _MockReview {
-  final int id;
-  final String userName;
-  final Color userAvatarColor;
-  final double rating;
-  final String text;
-  final DateTime createdAt;
-
-  const _MockReview({
-    required this.id,
-    required this.userName,
-    required this.userAvatarColor,
-    required this.rating,
-    required this.text,
-    required this.createdAt,
-  });
 }
