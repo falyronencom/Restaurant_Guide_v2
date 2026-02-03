@@ -148,23 +148,47 @@ class EstablishmentsService {
   /// [east] - Eastern longitude bound
   /// [west] - Western longitude bound
   /// [limit] - Maximum number of results (default: 100)
+  /// [categories] - Filter by categories (API values, e.g., 'restaurant', 'cafe')
+  /// [cuisines] - Filter by cuisines (API values, e.g., 'italian', 'japanese')
+  /// [priceRange] - Filter by price range (e.g., '$', '$$', '$$$') - single value
+  /// [minRating] - Minimum average rating (1-5)
   Future<List<Establishment>> searchByMapBounds({
     required double north,
     required double south,
     required double east,
     required double west,
     int limit = 100,
+    List<String>? categories,
+    List<String>? cuisines,
+    String? priceRange,
+    double? minRating,
   }) async {
     try {
+      final queryParams = <String, dynamic>{
+        'neLat': north,  // Northeast latitude (max)
+        'swLat': south,  // Southwest latitude (min)
+        'neLon': east,   // Northeast longitude (max)
+        'swLon': west,   // Southwest longitude (min)
+        'limit': limit,
+      };
+
+      // Add filters if present
+      if (categories != null && categories.isNotEmpty) {
+        queryParams['categories'] = categories;
+      }
+      if (cuisines != null && cuisines.isNotEmpty) {
+        queryParams['cuisines'] = cuisines;
+      }
+      if (priceRange != null) {
+        queryParams['priceRange'] = priceRange;
+      }
+      if (minRating != null) {
+        queryParams['minRating'] = minRating;
+      }
+
       final response = await _apiClient.get(
         '/api/v1/search/map',
-        queryParameters: {
-          'neLat': north,  // Northeast latitude (max)
-          'swLat': south,  // Southwest latitude (min)
-          'neLon': east,   // Northeast longitude (max)
-          'swLon': west,   // Southwest longitude (min)
-          'limit': limit,
-        },
+        queryParameters: queryParams,
       );
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {

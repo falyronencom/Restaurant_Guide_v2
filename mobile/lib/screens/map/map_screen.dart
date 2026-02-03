@@ -2,9 +2,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/models/filter_options.dart';
+import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 
@@ -241,6 +244,19 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _fetchEstablishmentsForCurrentBounds() async {
     if (_mapController == null) return;
 
+    // Get current filters from provider BEFORE async operations
+    final provider = context.read<EstablishmentsProvider>();
+    final List<String>? apiCategories = provider.categoryFilters.isNotEmpty
+        ? FilterConstants.categoriesToApi(provider.categoryFilters.toList())
+        : null;
+    final List<String>? apiCuisines = provider.cuisineFilters.isNotEmpty
+        ? FilterConstants.cuisinesToApi(provider.cuisineFilters.toList())
+        : null;
+    // Backend /search/map expects single priceRange value (not array like categories/cuisines)
+    final String? apiPriceRange = provider.priceFilters.isNotEmpty
+        ? provider.priceFilters.first.apiValue
+        : null;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -255,12 +271,15 @@ class _MapScreenState extends State<MapScreen> {
       final double east = visibleRegion.topRight.longitude;
       final double west = visibleRegion.bottomLeft.longitude;
 
-      // Fetch establishments within bounds
+      // Fetch establishments within bounds with filters
       final establishments = await _establishmentsService.searchByMapBounds(
         north: north,
         south: south,
         east: east,
         west: west,
+        categories: apiCategories,
+        cuisines: apiCuisines,
+        priceRange: apiPriceRange,
       );
 
       final placemarks = _createPlacemarks(establishments);
