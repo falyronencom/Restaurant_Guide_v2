@@ -53,3 +53,6 @@ build/
 # Seed data images (keep locally, exclude from Git)
 backend/scripts/seed-images/
 
+# Claude Code local settings (machine-specific permissions)
+.claude/*.local.json
+
