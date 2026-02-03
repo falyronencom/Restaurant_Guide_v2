@@ -143,6 +143,53 @@ class ReviewsService {
     }
   }
 
+  // ============================================================================
+  // Partner Response Operations
+  // ============================================================================
+
+  /// Add or update partner response to a review (requires partner authentication)
+  ///
+  /// [reviewId] - The review ID (UUID)
+  /// [response] - Response text (10-1000 characters)
+  Future<Review?> addPartnerResponse({
+    required String reviewId,
+    required String response,
+  }) async {
+    try {
+      final apiResponse = await _apiClient.post(
+        '/api/v1/reviews/$reviewId/response',
+        data: {'response': response},
+      );
+
+      if (apiResponse.statusCode == 200 && apiResponse.data is Map<String, dynamic>) {
+        final data = apiResponse.data as Map<String, dynamic>;
+        // Backend returns: { success: true, data: { review: {...} } }
+        final innerData = data['data'] as Map<String, dynamic>?;
+        final reviewData = innerData?['review'] ?? innerData ?? data;
+        return Review.fromJson(reviewData as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Delete partner response from a review (requires partner authentication)
+  ///
+  /// [reviewId] - The review ID (UUID)
+  Future<bool> deletePartnerResponse(String reviewId) async {
+    try {
+      final response = await _apiClient.delete('/api/v1/reviews/$reviewId/response');
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // User Review Operations
+  // ============================================================================
+
   /// Get current user's reviews (requires authentication)
   ///
   /// [page] - Page number (default: 1)

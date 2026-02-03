@@ -1374,15 +1374,55 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           const SizedBox(height: 11),
           // Review text
           Expanded(
-            child: Text(
-              review.text ?? '',
-              style: const TextStyle(
-                fontSize: 12,
-                color: _backgroundColor,
-                height: 1.67,
-              ),
-              maxLines: 6,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    review.text ?? '',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: _backgroundColor,
+                      height: 1.67,
+                    ),
+                    maxLines: review.partnerResponse != null ? 3 : 6,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // Partner response indicator
+                if (review.partnerResponse != null && review.partnerResponse!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _primaryOrange.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.reply,
+                          size: 12,
+                          color: _primaryOrange,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Ответ: ${review.partnerResponse!}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: _backgroundColor.withValues(alpha: 0.8),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

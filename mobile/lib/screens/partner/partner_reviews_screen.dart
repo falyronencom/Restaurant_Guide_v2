@@ -603,6 +603,89 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 height: 1.5,
               ),
             ),
+
+          const SizedBox(height: 12),
+
+          // Partner response section
+          if (review.partnerResponse != null && review.partnerResponse!.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _primaryOrange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _primaryOrange.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.reply,
+                        size: 16,
+                        color: _primaryOrange,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Ответ заведения',
+                        style: TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _primaryOrange,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (review.partnerResponseAt != null)
+                        Text(
+                          _formatRelativeDate(review.partnerResponseAt!),
+                          style: TextStyle(
+                            fontFamily: 'Avenir Next',
+                            fontSize: 11,
+                            color: _greyText,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    review.partnerResponse!,
+                    style: const TextStyle(
+                      fontFamily: 'Avenir Next',
+                      fontSize: 14,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Reply button
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              onTap: () => _showResponseDialog(review),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: _primaryOrange),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  review.partnerResponse != null ? 'Редактировать' : 'Ответить',
+                  style: const TextStyle(
+                    fontFamily: 'Avenir Next',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: _primaryOrange,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -647,6 +730,208 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     Color(0xFFF06292),
     Color(0xFF7986CB),
   ];
+
+  /// Show dialog for partner to respond to a review
+  void _showResponseDialog(Review review) {
+    final controller = TextEditingController(text: review.partnerResponse ?? '');
+    final formKey = GlobalKey<FormState>();
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: _backgroundColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            review.partnerResponse != null ? 'Редактировать ответ' : 'Ответить на отзыв',
+            style: const TextStyle(
+              fontFamily: 'Avenir Next',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Отзыв от ${review.userName}:',
+                  style: const TextStyle(
+                    fontFamily: 'Avenir Next',
+                    fontSize: 13,
+                    color: _greyText,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (review.text != null && review.text!.isNotEmpty)
+                  Text(
+                    review.text!.length > 100
+                        ? '${review.text!.substring(0, 100)}...'
+                        : review.text!,
+                    style: const TextStyle(
+                      fontFamily: 'Avenir Next',
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: controller,
+                  maxLines: 4,
+                  maxLength: 1000,
+                  decoration: InputDecoration(
+                    hintText: 'Введите ваш ответ...',
+                    hintStyle: TextStyle(
+                      fontFamily: 'Avenir Next',
+                      color: _greyText,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: _greyStroke),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: _primaryOrange),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                  style: const TextStyle(
+                    fontFamily: 'Avenir Next',
+                    fontSize: 14,
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Введите текст ответа';
+                    }
+                    if (value.trim().length < 10) {
+                      return 'Минимум 10 символов';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            // Delete button (only if response exists)
+            if (review.partnerResponse != null)
+              TextButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        setDialogState(() => isSubmitting = true);
+                        final success = await _reviewsService.deletePartnerResponse(review.id);
+                        if (success && mounted) {
+                          Navigator.pop(context);
+                          _loadReviews();
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Ответ удалён'),
+                              backgroundColor: _greenRating,
+                            ),
+                          );
+                        } else {
+                          setDialogState(() => isSubmitting = false);
+                          if (mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Не удалось удалить ответ'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: Text(
+                  'Удалить',
+                  style: TextStyle(
+                    fontFamily: 'Avenir Next',
+                    color: isSubmitting ? _greyText : Colors.red,
+                  ),
+                ),
+              ),
+            // Cancel button
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(context),
+              child: Text(
+                'Отмена',
+                style: TextStyle(
+                  fontFamily: 'Avenir Next',
+                  color: isSubmitting ? _greyText : Colors.black54,
+                ),
+              ),
+            ),
+            // Submit button
+            TextButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+
+                      setDialogState(() => isSubmitting = true);
+
+                      try {
+                        final result = await _reviewsService.addPartnerResponse(
+                          reviewId: review.id,
+                          response: controller.text.trim(),
+                        );
+
+                        if (result != null && mounted) {
+                          Navigator.pop(context);
+                          _loadReviews();
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                review.partnerResponse != null
+                                    ? 'Ответ обновлён'
+                                    : 'Ответ отправлен',
+                              ),
+                              backgroundColor: _greenRating,
+                            ),
+                          );
+                        } else {
+                          setDialogState(() => isSubmitting = false);
+                        }
+                      } catch (e) {
+                        setDialogState(() => isSubmitting = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Не удалось отправить ответ'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _primaryOrange,
+                      ),
+                    )
+                  : const Text(
+                      'Отправить',
+                      style: TextStyle(
+                        fontFamily: 'Avenir Next',
+                        fontWeight: FontWeight.w600,
+                        color: _primaryOrange,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// Format date as relative time
   String _formatRelativeDate(DateTime date) {
