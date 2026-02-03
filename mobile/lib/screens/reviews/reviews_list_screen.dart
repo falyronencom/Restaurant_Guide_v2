@@ -438,6 +438,63 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
             ),
           ),
 
+          // Partner response section
+          if (review.partnerResponse != null && review.partnerResponse!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _primaryOrange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _primaryOrange.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.reply,
+                        size: 14,
+                        color: _secondaryOrange,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Ответ заведения',
+                        style: TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: _secondaryOrange,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (review.partnerResponseAt != null)
+                        Text(
+                          _formatDate(review.partnerResponseAt!),
+                          style: const TextStyle(
+                            fontFamily: 'Avenir Next',
+                            fontSize: 10,
+                            color: _greyText,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    review.partnerResponse!,
+                    style: const TextStyle(
+                      fontFamily: 'Avenir Next',
+                      fontSize: 11,
+                      color: _creamColor,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 12),
 
           // Reactions row (likes/dislikes)

@@ -10,6 +10,10 @@ class Review {
   final String? text;
   final DateTime createdAt;
   final DateTime updatedAt;
+  // Partner response fields
+  final String? partnerResponse;
+  final DateTime? partnerResponseAt;
+  final String? partnerResponderId;
 
   Review({
     required this.id,
@@ -21,6 +25,9 @@ class Review {
     this.text,
     required this.createdAt,
     required this.updatedAt,
+    this.partnerResponse,
+    this.partnerResponseAt,
+    this.partnerResponderId,
   });
 
   /// Create from JSON
@@ -53,6 +60,12 @@ class Review {
       text: json['content'] as String? ?? json['text'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      // Partner response fields
+      partnerResponse: json['partner_response'] as String?,
+      partnerResponseAt: json['partner_response_at'] != null
+          ? DateTime.parse(json['partner_response_at'] as String)
+          : null,
+      partnerResponderId: json['partner_responder_id']?.toString(),
     );
   }
 
@@ -68,6 +81,9 @@ class Review {
       'content': text,  // Backend expects 'content'
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      if (partnerResponse != null) 'partner_response': partnerResponse,
+      if (partnerResponseAt != null) 'partner_response_at': partnerResponseAt!.toIso8601String(),
+      if (partnerResponderId != null) 'partner_responder_id': partnerResponderId,
     };
   }
 }
