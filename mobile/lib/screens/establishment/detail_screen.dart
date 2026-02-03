@@ -14,6 +14,7 @@ import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
+import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -1068,88 +1069,130 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           ),
         ),
 
-        // Mini-map with establishment marker
-        Container(
-          height: 384,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(30),
-              topRight: Radius.circular(30),
-              bottomLeft: Radius.circular(30),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFD35620).withValues(alpha: 0.04),
-                blurRadius: 15,
-                spreadRadius: 2,
-                offset: const Offset(4, 4),
+        // Mini-map with establishment marker (tap to explore)
+        GestureDetector(
+          onTap: _establishment!.latitude != null && _establishment!.longitude != null
+              ? () => _openMapExplorer()
+              : null,
+          child: Container(
+            height: 384,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(30),
+                topRight: Radius.circular(30),
+                bottomLeft: Radius.circular(30),
               ),
-            ],
-          ),
-          child: _establishment!.latitude != null &&
-                  _establishment!.longitude != null
-              ? ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(30),
-                    topRight: Radius.circular(30),
-                    bottomLeft: Radius.circular(30),
-                  ),
-                  child: YandexMap(
-                    onMapCreated: (YandexMapController controller) {
-                      controller.moveCamera(
-                        CameraUpdate.newCameraPosition(
-                          CameraPosition(
-                            target: Point(
-                              latitude: _establishment!.latitude!,
-                              longitude: _establishment!.longitude!,
-                            ),
-                            zoom: 16.0,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                  offset: const Offset(4, 4),
+                ),
+              ],
+            ),
+            child: _establishment!.latitude != null &&
+                    _establishment!.longitude != null
+                ? Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(30),
+                          topRight: Radius.circular(30),
+                          bottomLeft: Radius.circular(30),
+                        ),
+                        child: AbsorbPointer(
+                          // Prevent map gestures, only allow tap on container
+                          child: YandexMap(
+                            onMapCreated: (YandexMapController controller) {
+                              controller.moveCamera(
+                                CameraUpdate.newCameraPosition(
+                                  CameraPosition(
+                                    target: Point(
+                                      latitude: _establishment!.latitude!,
+                                      longitude: _establishment!.longitude!,
+                                    ),
+                                    zoom: 16.0,
+                                  ),
+                                ),
+                              );
+                            },
+                            mapObjects: [
+                              PlacemarkMapObject(
+                                mapId: const MapObjectId('establishment_marker'),
+                                point: Point(
+                                  latitude: _establishment!.latitude!,
+                                  longitude: _establishment!.longitude!,
+                                ),
+                                icon: _markerIcon != null
+                                    ? PlacemarkIcon.single(
+                                        PlacemarkIconStyle(
+                                          image: BitmapDescriptor.fromBytes(
+                                              _markerIcon!),
+                                          scale: 1.0,
+                                        ),
+                                      )
+                                    : PlacemarkIcon.single(
+                                        PlacemarkIconStyle(
+                                          image: BitmapDescriptor.fromAssetImage(
+                                              'packages/yandex_mapkit/assets/place.png'),
+                                          scale: 2.0,
+                                        ),
+                                      ),
+                                opacity: 1.0,
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                    mapObjects: [
-                      PlacemarkMapObject(
-                        mapId: const MapObjectId('establishment_marker'),
-                        point: Point(
-                          latitude: _establishment!.latitude!,
-                          longitude: _establishment!.longitude!,
+                      ),
+                      // Tap hint overlay
+                      Positioned(
+                        bottom: 16,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.touch_app, color: Colors.white, size: 16),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Нажмите для исследования',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        icon: _markerIcon != null
-                            ? PlacemarkIcon.single(
-                                PlacemarkIconStyle(
-                                  image: BitmapDescriptor.fromBytes(
-                                      _markerIcon!),
-                                  scale: 1.0,
-                                ),
-                              )
-                            : PlacemarkIcon.single(
-                                PlacemarkIconStyle(
-                                  image: BitmapDescriptor.fromAssetImage(
-                                      'packages/yandex_mapkit/assets/place.png'),
-                                  scale: 2.0,
-                                ),
-                              ),
-                        opacity: 1.0,
                       ),
                     ],
+                  )
+                : const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.map, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'Координаты недоступны',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
-                )
-              : const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.map, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text(
-                        'Координаты недоступны',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
+          ),
         ),
       ],
     );
@@ -1496,6 +1539,17 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         builder: (context) => _FullscreenGallery(
           photos: menuPhotos,
           initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
+  /// Open map explorer centered on this establishment (Booking-style exploration)
+  void _openMapExplorer() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => MapScreen(
+          focusedEstablishment: _establishment,
         ),
       ),
     );
