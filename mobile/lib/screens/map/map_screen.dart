@@ -11,7 +11,15 @@ import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart
 /// Map screen displaying establishments on Yandex Map
 /// Users can explore restaurants geographically and tap markers for previews
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  /// Optional establishment to focus on when opening the map.
+  /// When provided, the map will center on this establishment
+  /// and automatically show its preview.
+  final Establishment? focusedEstablishment;
+
+  const MapScreen({
+    super.key,
+    this.focusedEstablishment,
+  });
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -179,18 +187,44 @@ class _MapScreenState extends State<MapScreen> {
   void _onMapCreated(YandexMapController controller) async {
     _mapController = controller;
 
-    // Move to default position (Minsk)
+    // Determine initial position: focused establishment or default (Minsk)
+    final focused = widget.focusedEstablishment;
+    final Point initialTarget;
+    final double initialZoom;
+
+    if (focused != null && focused.latitude != null && focused.longitude != null) {
+      // Center on focused establishment with closer zoom
+      initialTarget = Point(
+        latitude: focused.latitude!,
+        longitude: focused.longitude!,
+      );
+      initialZoom = 15.0; // Closer zoom for focused view
+    } else {
+      initialTarget = _defaultCenter;
+      initialZoom = _defaultZoom;
+    }
+
     await controller.moveCamera(
       CameraUpdate.newCameraPosition(
-        const CameraPosition(
-          target: _defaultCenter,
-          zoom: _defaultZoom,
+        CameraPosition(
+          target: initialTarget,
+          zoom: initialZoom,
         ),
       ),
     );
 
     // Fetch establishments for initial view
     _fetchEstablishmentsForCurrentBounds();
+
+    // Show preview for focused establishment after markers are loaded
+    if (focused != null) {
+      // Small delay to ensure markers are rendered
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _showEstablishmentPreview(focused);
+        }
+      });
+    }
   }
 
   void _onCameraPositionChanged(
