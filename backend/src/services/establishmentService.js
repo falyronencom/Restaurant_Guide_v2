@@ -70,17 +70,19 @@ const BELARUS_BOUNDS = {
 };
 
 /**
- * Geographic bounds for each city (approximate city limits)
+ * Geographic bounds for each city (expanded to include suburbs ~15-20km from center)
  * Used to validate that coordinates match the selected city
+ * Prevents obvious errors (e.g., Гродно address with Минск coordinates)
+ * while allowing suburban areas like Копище, Боровляны, etc.
  */
 const CITY_BOUNDS = {
-  'Минск': { latMin: 53.80, latMax: 54.02, lonMin: 27.40, lonMax: 27.70 },
-  'Гродно': { latMin: 53.62, latMax: 53.72, lonMin: 23.78, lonMax: 23.90 },
-  'Брест': { latMin: 52.05, latMax: 52.15, lonMin: 23.65, lonMax: 23.75 },
-  'Гомель': { latMin: 52.38, latMax: 52.48, lonMin: 30.95, lonMax: 31.05 },
-  'Витебск': { latMin: 55.16, latMax: 55.22, lonMin: 30.15, lonMax: 30.25 },
-  'Могилев': { latMin: 53.88, latMax: 53.95, lonMin: 30.30, lonMax: 30.40 },
-  'Бобруйск': { latMin: 53.12, latMax: 53.18, lonMin: 29.20, lonMax: 29.30 },
+  'Минск': { latMin: 53.75, latMax: 54.10, lonMin: 27.30, lonMax: 27.85 },
+  'Гродно': { latMin: 53.55, latMax: 53.78, lonMin: 23.70, lonMax: 24.00 },
+  'Брест': { latMin: 51.98, latMax: 52.20, lonMin: 23.55, lonMax: 23.85 },
+  'Гомель': { latMin: 52.32, latMax: 52.52, lonMin: 30.85, lonMax: 31.15 },
+  'Витебск': { latMin: 55.10, latMax: 55.28, lonMin: 30.05, lonMax: 30.35 },
+  'Могилев': { latMin: 53.82, latMax: 54.00, lonMin: 30.20, lonMax: 30.50 },
+  'Бобруйск': { latMin: 53.08, latMax: 53.22, lonMin: 29.10, lonMax: 29.40 },
 };
 
 /**
