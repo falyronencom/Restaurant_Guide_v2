@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
+import 'package:restaurant_guide_mobile/services/location_service.dart';
 
 /// Results list screen displaying search results with pagination
 /// Implements Figma design with dark header area and light results list
@@ -568,11 +569,26 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                     final establishment = provider.establishments[index];
                     final isFavorite = provider.isFavorite(establishment.id);
 
+                    // Calculate distance if user location available
+                    double? distanceKm = establishment.distance;
+                    if (distanceKm == null &&
+                        provider.hasRealLocation &&
+                        establishment.latitude != null &&
+                        establishment.longitude != null) {
+                      distanceKm = LocationService().calculateDistance(
+                        provider.userLatitude!,
+                        provider.userLongitude!,
+                        establishment.latitude!,
+                        establishment.longitude!,
+                      );
+                    }
+
                     return EstablishmentCard(
                       establishment: establishment,
                       isFavorite: isFavorite,
                       onTap: () => _navigateToDetail(establishment.id),
                       onFavoriteToggle: () => _toggleFavorite(establishment.id),
+                      distanceKm: distanceKm,
                     );
                   },
                   childCount: provider.establishments.length +
