@@ -97,6 +97,7 @@ export async function searchByRadius({
   latitude,
   longitude,
   radius = 10,
+  maxDistance = null,
   city = null,
   categories = null,
   cuisines = null,
@@ -247,9 +248,14 @@ export async function searchByRadius({
 
   const whereClause = conditions.join(' AND ');
 
-  // If city is specified, don't filter by radius - just calculate distance for sorting
-  // If no city, filter by radius from coordinates
-  const useRadiusFilter = !city;
+  // Determine if we should filter by distance:
+  // - If maxDistance is explicitly provided (from max_distance param), always filter
+  // - If no city specified, use default radius filtering
+  // - If city specified without maxDistance, skip filtering (just sort by distance)
+  const useRadiusFilter = maxDistance != null || !city;
+
+  // Use maxDistance if provided, otherwise fall back to radius
+  const effectiveRadius = maxDistance ?? radius;
 
   // Main query with PostGIS distance calculation
   let query;
@@ -275,11 +281,11 @@ export async function searchByRadius({
       FROM nearby_establishments ne
       LEFT JOIN users u ON ne.partner_id = u.id
       WHERE ne.distance_km <= $${paramIndex + 2}
-      ORDER BY ${buildOrderByClause(sortBy, true).replace('e.', 'ne.')}
+      ORDER BY ${buildOrderByClause(sortBy, true).replaceAll('e.', 'ne.')}
       LIMIT $${paramIndex + 3}
       OFFSET $${paramIndex + 4}
     `;
-    params.push(longitude, latitude, radius, limit, offset);
+    params.push(longitude, latitude, effectiveRadius, limit, offset);
 
     countQuery = `
       SELECT COUNT(*) as total
@@ -290,6 +296,7 @@ export async function searchByRadius({
           ST_MakePoint(e.longitude, e.latitude)::geography
         ) / 1000.0 <= $${paramIndex + 2}
     `;
+    // Note: countParams will use effectiveRadius from params array
   } else {
     // City specified: don't filter by radius, just sort by distance
     query = `

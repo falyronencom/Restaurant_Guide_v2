@@ -28,6 +28,7 @@ export async function searchEstablishments(req, res, next) {
       latitude,
       longitude,
       radius,
+      max_distance,
       city,
       categories,
       cuisines,
@@ -55,6 +56,17 @@ export async function searchEstablishments(req, res, next) {
     const radiusKm = radius ? parseFloat(radius) : 10;
     if (radius && isNaN(radiusKm)) {
       throw new AppError('Invalid radius', 422, 'VALIDATION_ERROR');
+    }
+
+    // Parse max_distance (optional, in meters from frontend, convert to km)
+    // When provided with coordinates, filters results to within this distance
+    let maxDistanceKm = null;
+    if (max_distance) {
+      const maxDistanceMeters = parseFloat(max_distance);
+      if (!isNaN(maxDistanceMeters) && maxDistanceMeters > 0) {
+        maxDistanceKm = maxDistanceMeters / 1000;
+      }
+      // If invalid or <= 0, skip distance filtering (graceful handling)
     }
 
     // Parse categories (optional, comma-separated or array)
@@ -124,6 +136,7 @@ export async function searchEstablishments(req, res, next) {
         latitude: lat,
         longitude: lon,
         radius: radiusKm,
+        maxDistance: maxDistanceKm,
         city,
         categories: categoryList,
         cuisines: cuisineList,
