@@ -70,6 +70,50 @@ const BELARUS_BOUNDS = {
 };
 
 /**
+ * Geographic bounds for each city (approximate city limits)
+ * Used to validate that coordinates match the selected city
+ */
+const CITY_BOUNDS = {
+  'Минск': { latMin: 53.80, latMax: 54.02, lonMin: 27.40, lonMax: 27.70 },
+  'Гродно': { latMin: 53.62, latMax: 53.72, lonMin: 23.78, lonMax: 23.90 },
+  'Брест': { latMin: 52.05, latMax: 52.15, lonMin: 23.65, lonMax: 23.75 },
+  'Гомель': { latMin: 52.38, latMax: 52.48, lonMin: 30.95, lonMax: 31.05 },
+  'Витебск': { latMin: 55.16, latMax: 55.22, lonMin: 30.15, lonMax: 30.25 },
+  'Могилев': { latMin: 53.88, latMax: 53.95, lonMin: 30.30, lonMax: 30.40 },
+  'Бобруйск': { latMin: 53.12, latMax: 53.18, lonMin: 29.20, lonMax: 29.30 },
+};
+
+/**
+ * Validate that coordinates are within the selected city bounds
+ * @param {string} city - City name
+ * @param {number} latitude - Latitude coordinate
+ * @param {number} longitude - Longitude coordinate
+ * @returns {{ valid: boolean, message?: string }}
+ */
+function validateCityCoordinates(city, latitude, longitude) {
+  const bounds = CITY_BOUNDS[city];
+  if (!bounds) {
+    // City not in bounds list, skip city-specific validation
+    return { valid: true };
+  }
+
+  const isWithinCity =
+    latitude >= bounds.latMin && latitude <= bounds.latMax &&
+    longitude >= bounds.lonMin && longitude <= bounds.lonMax;
+
+  if (!isWithinCity) {
+    return {
+      valid: false,
+      message: `Coordinates (${latitude}, ${longitude}) are outside ${city} city bounds. ` +
+        `Expected: lat ${bounds.latMin}-${bounds.latMax}, lon ${bounds.lonMin}-${bounds.lonMax}. ` +
+        `Please verify the address and coordinates match the selected city.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Create a new establishment
  * 
  * This is the core business operation that implements the complete establishment
@@ -175,6 +219,16 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
         422,
         'INVALID_LONGITUDE',
+      );
+    }
+
+    // Validate coordinates match the selected city
+    const cityValidation = validateCityCoordinates(city, latitude, longitude);
+    if (!cityValidation.valid) {
+      throw new AppError(
+        cityValidation.message,
+        422,
+        'COORDINATES_CITY_MISMATCH',
       );
     }
 
@@ -586,6 +640,61 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           `Invalid cuisines: ${invalidCuisines.join(', ')}`,
           422,
           'INVALID_CUISINE_VALUE',
+        );
+      }
+    }
+
+    // Validate city if being updated
+    if (updates.city !== undefined && !VALID_CITIES.includes(updates.city)) {
+      throw new AppError(
+        `Invalid city. Must be one of: ${VALID_CITIES.join(', ')}`,
+        422,
+        'INVALID_CITY',
+      );
+    }
+
+    // Validate coordinates match city when either coordinates or city are updated
+    const hasCoordinateUpdate = updates.latitude !== undefined || updates.longitude !== undefined;
+    const hasCityUpdate = updates.city !== undefined;
+
+    if (hasCoordinateUpdate || hasCityUpdate) {
+      // Use updated values or fall back to current values
+      const effectiveCity = updates.city ?? currentEstablishment.city;
+      const effectiveLat = updates.latitude !== undefined
+        ? parseFloat(updates.latitude)
+        : parseFloat(currentEstablishment.latitude);
+      const effectiveLon = updates.longitude !== undefined
+        ? parseFloat(updates.longitude)
+        : parseFloat(currentEstablishment.longitude);
+
+      // Validate Belarus bounds for coordinates
+      if (updates.latitude !== undefined) {
+        if (effectiveLat < BELARUS_BOUNDS.LAT_MIN || effectiveLat > BELARUS_BOUNDS.LAT_MAX) {
+          throw new AppError(
+            `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
+            422,
+            'INVALID_LATITUDE',
+          );
+        }
+      }
+
+      if (updates.longitude !== undefined) {
+        if (effectiveLon < BELARUS_BOUNDS.LON_MIN || effectiveLon > BELARUS_BOUNDS.LON_MAX) {
+          throw new AppError(
+            `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
+            422,
+            'INVALID_LONGITUDE',
+          );
+        }
+      }
+
+      // Validate coordinates match city
+      const cityValidation = validateCityCoordinates(effectiveCity, effectiveLat, effectiveLon);
+      if (!cityValidation.valid) {
+        throw new AppError(
+          cityValidation.message,
+          422,
+          'COORDINATES_CITY_MISMATCH',
         );
       }
     }
