@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
+import 'package:restaurant_guide_mobile/services/location_service.dart';
 
 /// Sort options for establishment list
 enum SortOption {
@@ -43,6 +44,7 @@ enum SortOption {
 /// Manages search results, filters, and establishment details
 class EstablishmentsProvider with ChangeNotifier {
   final EstablishmentsService _service;
+  final LocationService _locationService = LocationService();
 
   // Default coordinates for Minsk city center
   static const double _defaultLatitude = 53.9006;
@@ -135,6 +137,11 @@ class EstablishmentsProvider with ChangeNotifier {
   Set<String> get categoryFilters => Set.unmodifiable(_categoryFilters);
   Set<String> get cuisineFilters => Set.unmodifiable(_cuisineFilters);
   Set<String> get amenityFilters => Set.unmodifiable(_amenityFilters);
+
+  // Location getters
+  double? get userLatitude => _userLatitude;
+  double? get userLongitude => _userLongitude;
+  bool get hasRealLocation => _userLatitude != null && _userLongitude != null;
 
   /// Whether any filters are active
   bool get hasActiveFilters {
@@ -291,6 +298,19 @@ class EstablishmentsProvider with ChangeNotifier {
     _userLatitude = latitude;
     _userLongitude = longitude;
     notifyListeners();
+  }
+
+  /// Fetch user's GPS location and update state
+  Future<bool> fetchUserLocation() async {
+    print('DEBUG: fetchUserLocation() called');
+    final position = await _locationService.getCurrentPosition();
+    if (position != null) {
+      print('DEBUG: GPS position received: ${position.latitude}, ${position.longitude}');
+      setUserLocation(position.latitude, position.longitude);
+      return true;
+    }
+    print('DEBUG: GPS position is NULL - permission denied or unavailable');
+    return false;
   }
 
   /// Set city filter

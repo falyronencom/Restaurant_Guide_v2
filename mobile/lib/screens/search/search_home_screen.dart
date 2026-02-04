@@ -44,11 +44,14 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     _searchController.text = provider.searchQuery ?? '';
 
     // Set default city if not set (deferred to avoid calling during build)
-    if (provider.selectedCity == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Also request user location for distance-based features
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (provider.selectedCity == null) {
         provider.setCity('Минск');
-      });
-    }
+      }
+      // Request GPS location (shows permission dialog on first launch)
+      provider.fetchUserLocation();
+    });
   }
 
   @override
