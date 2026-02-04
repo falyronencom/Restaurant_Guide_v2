@@ -11,6 +11,7 @@ import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
@@ -63,6 +64,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     super.initState();
     _loadData();
     _createMarkerIcon();
+    // Request user location for distance calculation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        context.read<EstablishmentsProvider>().fetchUserLocation();
+      } catch (e) {
+        // Silently handle - location is optional feature
+      }
+    });
   }
 
   @override
@@ -658,6 +667,43 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
   }
 
+  /// Get distance text for display
+  String? _getDistanceText() {
+    if (_establishment == null) {
+      return null;
+    }
+
+    // Try backend-provided distance first
+    if (_establishment!.distance != null) {
+      return _formatDistance(_establishment!.distance!);
+    }
+
+    // Fallback: calculate client-side if we have user location
+    final provider = context.read<EstablishmentsProvider>();
+
+    if (provider.hasRealLocation &&
+        _establishment!.latitude != null &&
+        _establishment!.longitude != null) {
+      final distance = LocationService().calculateDistance(
+        provider.userLatitude!,
+        provider.userLongitude!,
+        _establishment!.latitude!,
+        _establishment!.longitude!,
+      );
+      return _formatDistance(distance);
+    }
+
+    return null; // Hide if no location available
+  }
+
+  /// Format distance for display
+  String _formatDistance(double km) {
+    if (km < 1) {
+      return '${(km * 1000).round()} м от вас';
+    }
+    return '${km.toStringAsFixed(1)} км от вас';
+  }
+
   /// Build menu section
   Widget _buildMenuSection() {
     return Padding(
@@ -705,7 +751,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
 
     const dayKeys = [
-      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday'
     ];
     const shortDayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     final todayIndex = DateTime.now().weekday - 1;
@@ -776,9 +828,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// Build menu carousel
   Widget _buildMenuCarousel() {
     // Filter only menu photos
-    final menuPhotos = _establishment!.media!
-        .where((m) => m.type == 'menu')
-        .toList();
+    final menuPhotos =
+        _establishment!.media!.where((m) => m.type == 'menu').toList();
 
     if (menuPhotos.isEmpty) {
       return const SizedBox.shrink();
@@ -801,10 +852,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               margin: EdgeInsets.only(right: index < maxIndex ? 10 : 0),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.only(
-                  topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
+                  topLeft: index == 0
+                      ? const Radius.circular(30)
+                      : const Radius.circular(10),
                   topRight: const Radius.circular(10),
                   bottomLeft: const Radius.circular(10),
-                  bottomRight: index == maxIndex ? const Radius.circular(30) : const Radius.circular(10),
+                  bottomRight: index == maxIndex
+                      ? const Radius.circular(30)
+                      : const Radius.circular(10),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -823,10 +878,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.only(
-                  topLeft: index == 0 ? const Radius.circular(30) : const Radius.circular(10),
+                  topLeft: index == 0
+                      ? const Radius.circular(30)
+                      : const Radius.circular(10),
                   topRight: const Radius.circular(10),
                   bottomLeft: const Radius.circular(10),
-                  bottomRight: index == maxIndex ? const Radius.circular(30) : const Radius.circular(10),
+                  bottomRight: index == maxIndex
+                      ? const Radius.circular(30)
+                      : const Radius.circular(10),
                 ),
                 child: imageUrl != null
                     ? CachedNetworkImage(
@@ -1046,16 +1105,24 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Distance
-              const Text(
-                '0,3 км от вас',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: _secondaryOrange,
-                ),
+              // Distance (dynamic) - uses Consumer to rebuild when location updates
+              Consumer<EstablishmentsProvider>(
+                builder: (context, provider, _) {
+                  final distanceText = _getDistanceText();
+                  if (distanceText == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Text(
+                      distanceText,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: _secondaryOrange,
+                      ),
+                    ),
+                  );
+                },
               ),
-              const SizedBox(height: 14),
 
               // Address
               Text(
@@ -1071,7 +1138,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         // Mini-map with establishment marker (tap to explore)
         GestureDetector(
-          onTap: _establishment!.latitude != null && _establishment!.longitude != null
+          onTap: _establishment!.latitude != null &&
+                  _establishment!.longitude != null
               ? () => _openMapExplorer()
               : null,
           child: Container(
@@ -1121,7 +1189,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                             },
                             mapObjects: [
                               PlacemarkMapObject(
-                                mapId: const MapObjectId('establishment_marker'),
+                                mapId:
+                                    const MapObjectId('establishment_marker'),
                                 point: Point(
                                   latitude: _establishment!.latitude!,
                                   longitude: _establishment!.longitude!,
@@ -1154,7 +1223,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                         right: 0,
                         child: Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.6),
                               borderRadius: BorderRadius.circular(20),
@@ -1162,7 +1232,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.touch_app, color: Colors.white, size: 16),
+                                Icon(Icons.touch_app,
+                                    color: Colors.white, size: 16),
                                 SizedBox(width: 6),
                                 Text(
                                   'Нажмите для исследования',
@@ -1279,13 +1350,15 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                     return;
                   }
                   // Navigate to write review screen
-                  Navigator.of(context).push(
+                  Navigator.of(context)
+                      .push(
                     MaterialPageRoute(
                       builder: (context) => WriteReviewScreen(
                         establishment: _establishment!,
                       ),
                     ),
-                  ).then((result) {
+                  )
+                      .then((result) {
                     // Refresh reviews if a new review was submitted
                     if (result == true) {
                       _loadData();
@@ -1337,7 +1410,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             },
             child: Container(
               width: 348,
-              margin: EdgeInsets.only(right: index < _reviews.length - 1 ? 10 : 0),
+              margin:
+                  EdgeInsets.only(right: index < _reviews.length - 1 ? 10 : 0),
               child: _buildReviewCard(_reviews[index]),
             ),
           );
@@ -1378,7 +1452,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                 ),
                 child: Center(
                   child: Text(
-                    review.userName.isNotEmpty ? review.userName[0].toUpperCase() : 'A',
+                    review.userName.isNotEmpty
+                        ? review.userName[0].toUpperCase()
+                        : 'A',
                     style: const TextStyle(
                       fontFamily: 'Unbounded',
                       fontSize: 25,
@@ -1433,10 +1509,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   ),
                 ),
                 // Partner response indicator
-                if (review.partnerResponse != null && review.partnerResponse!.isNotEmpty) ...[
+                if (review.partnerResponse != null &&
+                    review.partnerResponse!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: _primaryOrange.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
@@ -1444,7 +1522,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.reply,
                           size: 12,
                           color: _primaryOrange,
@@ -1504,8 +1582,18 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// Format date for display
   String _formatDate(DateTime date) {
     final months = [
-      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря'
     ];
     return '${date.day} ${months[date.month - 1]}';
   }
@@ -1529,9 +1617,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Open fullscreen gallery for menu photos
   void _openMenuGallery(int initialIndex) {
-    final menuPhotos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'menu')
-        .toList();
+    final menuPhotos =
+        (_establishment!.media ?? []).where((m) => m.type == 'menu').toList();
     if (menuPhotos.isEmpty) return;
 
     Navigator.of(context).push(
@@ -1646,7 +1733,8 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
             },
             itemBuilder: (context, index) {
               final photo = widget.photos[index];
-              final imageUrl = photo.url ?? photo.previewUrl ?? photo.thumbnailUrl;
+              final imageUrl =
+                  photo.url ?? photo.previewUrl ?? photo.thumbnailUrl;
 
               if (imageUrl == null) {
                 return const Center(
@@ -1688,7 +1776,8 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(16),
