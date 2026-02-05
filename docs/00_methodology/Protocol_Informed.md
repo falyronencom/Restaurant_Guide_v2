@@ -1,4 +1,4 @@
-# Protocol Informed v1.0
+# Protocol Informed v1.1
 ## Leaf Execution Protocol for Trunk Directives
 
 **Context:** This protocol applies when Leaf receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
@@ -15,24 +15,37 @@
 
 ## 1. Session Start: Quick Sanity Check
 
-**Purpose:** Verify nothing changed since Librarian session (typically minimal).
+**Purpose:** Verify nothing changed since Librarian session AND confirm key gap claims before implementing.
 
-**Duration:** 30-60 seconds, not full Pre-scan.
+**Duration:** 1-3 minutes (not full Pre-scan, but more than trivial check).
 
-**Checklist:**
+**Part A — Freshness Check:**
 - [ ] Files mentioned in directive still exist
 - [ ] No obvious breaking changes since Discovery Report
 - [ ] Integration points still accessible
 
-**If Mismatch Found:** Signal coordinator immediately. Do not proceed with stale directive.
+**Part B — Gap Verification (critical addition from v8.6):**
+- [ ] For each item marked as "missing" or "gap" in Discovery Report that drives implementation scope, perform a targeted read of the relevant code section (e.g., build() method for UI gaps)
+- [ ] Confirm the gap actually exists before implementing
+
+**Guideline — Proportional Verification:** Verify the 2-3 highest-impact gaps that determine the largest portion of implementation work. Full re-verification of all findings is not required.
+
+**If Mismatch Found:** Signal coordinator immediately. Do not proceed with stale directive or false gaps.
 
 ```markdown
 ## SANITY CHECK FAILED
 
+**Type:** [Freshness Issue / False Gap Detected]
+
 **Expected:** [What directive assumes]
 **Found:** [What actually exists]
-**Recommendation:** [Update directive / Proceed with adjustment / Re-run Librarian]
+
+**Impact:** [How this affects implementation scope]
+
+**Recommendation:** [Update directive / Proceed with reduced scope / Re-run Librarian]
 ```
+
+**Rule:** If Sanity Check reveals that a key gap does not exist (code already implements the expected behavior), signal to Coordinator before proceeding with directive as written.
 
 **If Check Passes:** Proceed to Phase 2 (Planning).
 
@@ -42,7 +55,7 @@
 
 ```
 Quick Sanity Check → Planning → Implementation → Report
-     (30 sec)         (Phase 2)    (Phase 3)      (Phase 4)
+    (1-3 min)         (Phase 2)    (Phase 3)      (Phase 4)
 ```
 
 **Phase 0 (Pre-scan) and Phase 1 (Discovery): SKIPPED** — Librarian already completed these.
@@ -273,7 +286,8 @@ Request: [What you need from coordinator]
 
 | Situation | Action |
 |-----------|--------|
-| Session start | Quick Sanity Check (30 sec) |
+| Session start | Quick Sanity Check (1-3 min): freshness + gap verification |
+| Key gap doesn't exist | Signal coordinator — False Gap Detected |
 | Sanity check fails | Signal coordinator, do not proceed |
 | Before fixing errors | Ask about infrastructure status |
 | Need logs | Coordinator typically provides proactively |
@@ -285,6 +299,13 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.1 (February 2026)
+- **Quick Sanity Check expanded** to include Gap Verification (Part B)
+- Added "False Gap Detected" type to Sanity Check Failed signal
+- Duration increased from 30 sec to 1-3 min to accommodate gap verification
+- Aligned with Methodology v8.6 amendments (Gap Verification Rule, Absence Verification Confidence)
+- Added Proportional Verification guideline (verify 2-3 highest-impact gaps)
 
 ### v1.0 (February 2026)
 - Initial version extracted from Compact Protocol v1.4
