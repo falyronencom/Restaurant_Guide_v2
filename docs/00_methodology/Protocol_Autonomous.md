@@ -233,12 +233,12 @@ B) [Interpretation B]
 
 ---
 
-## 11. Scope Mismatch Signal
+## 11. Scope Correction Signal
 
-**When:** Task turns out larger or different than initially understood.
+**When:** Task turns out larger or different than initially understood, or directive assumptions do not match operational reality.
 
 ```markdown
-## SCOPE MISMATCH
+## SCOPE CORRECTION SIGNAL
 
 **Original understanding:** [What I thought the task was]
 
@@ -377,7 +377,7 @@ Request: [What you need from coordinator]
 | Pre-scan complete | Present results, wait for confirmation |
 | Task unclear | Use Clarification format |
 | Before fixing errors | Ask about infrastructure |
-| Task larger than expected | Issue Scope Mismatch signal |
+| Task larger than expected | Issue Scope Correction Signal |
 | Need logs | Coordinator typically provides proactively |
 | Task complete | Completion Report + commit |
 | Session ending, task incomplete | Semantic Handoff + commit |
@@ -392,7 +392,7 @@ Request: [What you need from coordinator]
 - Designed for ad-hoc task workflow (no Trunk Directive)
 - Full execution cycle: Pre-scan → Discovery → Planning → Implementation → Report
 - Added Task Clarification protocol (Section 10)
-- Added Scope Mismatch signal (Section 11)
+- Added Scope Correction Signal (Section 11)
 - Retained: Infrastructure Diagnosis, Semantic Handoff, Flutter Paradigm, Code Quality, Git Workflow, Escalation, Subagent Utilization
 - Companion protocol: Protocol_Informed.md (for Trunk directives)
 

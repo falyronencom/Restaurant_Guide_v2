@@ -5,6 +5,10 @@
 
 **Key Assumption:** Discovery phase is already complete. Trunk has seen reality through Librarian's report. Directive reflects actual codebase state.
 
+**Input Package:**
+- Informed Directive from Trunk (based on Discovery Report)
+- Discovery Report from Librarian (use Navigation section for coordinates)
+
 **Design Principle:** Skip redundant discovery. Focus context on implementation.
 
 ---
@@ -55,10 +59,10 @@ Propose implementation approach to coordinator:
 ### Phase 3: Implementation
 
 Execute approved plan:
-- Create/edit files
+- Use Navigation section from Discovery Report as primary map
+- Create/edit files according to plan
 - Run tests/builds to verify
 - Self-correct on failures
-- Use Discovery Report as navigation map
 
 ### Phase 4: Report
 
