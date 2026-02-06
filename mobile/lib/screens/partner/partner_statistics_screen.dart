@@ -70,6 +70,11 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               );
             }
 
+            // Error state
+            if (provider.detailsError != null && establishment == null) {
+              return _buildErrorState(context, provider);
+            }
+
             if (establishment == null) {
               return Center(
                 child: Column(
@@ -182,6 +187,65 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Build error state widget
+  Widget _buildErrorState(BuildContext context, PartnerDashboardProvider provider) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: _greyText.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Ошибка загрузки',
+              style: TextStyle(
+                fontFamily: 'Avenir Next',
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              provider.detailsError!,
+              style: const TextStyle(
+                fontFamily: 'Avenir Next',
+                fontSize: 14,
+                color: _greyText,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: () => provider.loadEstablishmentDetails(widget.establishmentId),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _primaryOrange,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Повторить',
+                  style: TextStyle(
+                    fontFamily: 'Avenir Next',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: _backgroundColor,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
