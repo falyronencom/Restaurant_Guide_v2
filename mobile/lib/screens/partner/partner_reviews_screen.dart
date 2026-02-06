@@ -402,25 +402,26 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             ),
             const SizedBox(height: 16),
             ..._sortOptions.map((option) => ListTile(
-              title: Text(
-                option,
-                style: TextStyle(
-                  fontFamily: 'Avenir Next',
-                  fontSize: 16,
-                  color: option == _sortOption ? _primaryOrange : Colors.black,
-                ),
-              ),
-              trailing: option == _sortOption
-                  ? const Icon(Icons.check, color: _primaryOrange)
-                  : null,
-              onTap: () {
-                Navigator.pop(context);
-                if (option != _sortOption) {
-                  setState(() => _sortOption = option);
-                  _loadReviews(); // Reload with new sort
-                }
-              },
-            )),
+                  title: Text(
+                    option,
+                    style: TextStyle(
+                      fontFamily: 'Avenir Next',
+                      fontSize: 16,
+                      color:
+                          option == _sortOption ? _primaryOrange : Colors.black,
+                    ),
+                  ),
+                  trailing: option == _sortOption
+                      ? const Icon(Icons.check, color: _primaryOrange)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (option != _sortOption) {
+                      setState(() => _sortOption = option);
+                      _loadReviews(); // Reload with new sort
+                    }
+                  },
+                )),
             const SizedBox(height: 16),
           ],
         ),
@@ -607,13 +608,15 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           const SizedBox(height: 12),
 
           // Partner response section
-          if (review.partnerResponse != null && review.partnerResponse!.isNotEmpty) ...[
+          if (review.partnerResponse != null &&
+              review.partnerResponse!.isNotEmpty) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _primaryOrange.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _primaryOrange.withValues(alpha: 0.2)),
+                border:
+                    Border.all(color: _primaryOrange.withValues(alpha: 0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -639,7 +642,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                       if (review.partnerResponseAt != null)
                         Text(
                           _formatRelativeDate(review.partnerResponseAt!),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontFamily: 'Avenir Next',
                             fontSize: 11,
                             color: _greyText,
@@ -669,7 +672,8 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             child: GestureDetector(
               onTap: () => _showResponseDialog(review),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   border: Border.all(color: _primaryOrange),
                   borderRadius: BorderRadius.circular(6),
@@ -733,7 +737,8 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
 
   /// Show dialog for partner to respond to a review
   void _showResponseDialog(Review review) {
-    final controller = TextEditingController(text: review.partnerResponse ?? '');
+    final controller =
+        TextEditingController(text: review.partnerResponse ?? '');
     final formKey = GlobalKey<FormState>();
     bool isSubmitting = false;
 
@@ -746,7 +751,9 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             borderRadius: BorderRadius.circular(16),
           ),
           title: Text(
-            review.partnerResponse != null ? 'Редактировать ответ' : 'Ответить на отзыв',
+            review.partnerResponse != null
+                ? 'Редактировать ответ'
+                : 'Ответить на отзыв',
             style: const TextStyle(
               fontFamily: 'Avenir Next',
               fontSize: 18,
@@ -786,13 +793,13 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   maxLength: 1000,
                   decoration: InputDecoration(
                     hintText: 'Введите ваш ответ...',
-                    hintStyle: TextStyle(
+                    hintStyle: const TextStyle(
                       fontFamily: 'Avenir Next',
                       color: _greyText,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: _greyStroke),
+                      borderSide: const BorderSide(color: _greyStroke),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -825,7 +832,8 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                     ? null
                     : () async {
                         setDialogState(() => isSubmitting = true);
-                        final success = await _reviewsService.deletePartnerResponse(review.id);
+                        final success = await _reviewsService
+                            .deletePartnerResponse(review.id);
                         if (success && mounted) {
                           Navigator.pop(context);
                           _loadReviews();
