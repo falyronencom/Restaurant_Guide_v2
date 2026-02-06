@@ -314,9 +314,37 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
 
     if (_reviews.isEmpty) {
       return const Center(
-        child: Text(
-          'Пока нет отзывов',
-          style: TextStyle(color: _creamColor, fontSize: 16),
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.rate_review_outlined,
+                size: 64,
+                color: _greyText,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Пока нет отзывов',
+                style: TextStyle(
+                  color: _creamColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Станьте первым, кто поделится\nвпечатлениями об этом заведении',
+                style: TextStyle(
+                  color: _greyText,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       );
     }
