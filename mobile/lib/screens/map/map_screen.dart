@@ -9,6 +9,7 @@ import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
+import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 
 /// Map screen displaying establishments on Yandex Map
@@ -133,7 +134,7 @@ class _MapScreenState extends State<MapScreen> {
             child: FloatingActionButton(
               mini: true,
               backgroundColor: Colors.white,
-              onPressed: _goToDefaultLocation,
+              onPressed: _goToMyLocation,
               child: const Icon(
                 Icons.my_location,
                 color: _primaryOrange,
@@ -539,5 +540,30 @@ class _MapScreenState extends State<MapScreen> {
         duration: 1.0,
       ),
     );
+  }
+
+  /// Go to user's real GPS location, fallback to default if unavailable
+  Future<void> _goToMyLocation() async {
+    final position = await LocationService().getCurrentPosition();
+
+    if (position != null) {
+      _mapController?.moveCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: Point(
+              latitude: position.latitude,
+              longitude: position.longitude,
+            ),
+            zoom: 15,
+          ),
+        ),
+        animation: const MapAnimation(
+          type: MapAnimationType.smooth,
+          duration: 1.0,
+        ),
+      );
+    } else {
+      _goToDefaultLocation(); // Fallback to Minsk center
+    }
   }
 }
