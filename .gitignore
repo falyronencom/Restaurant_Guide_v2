@@ -56,3 +56,12 @@ backend/scripts/seed-images/
 # Claude Code local settings (machine-specific permissions)
 .claude/*.local.json
 
+# Flutter DevTools
+devtools_options.yaml
+
+# Windows artifacts
+nul
+
+# Claude scratchpad files (temp data)
+*scratchpad*.json
+
