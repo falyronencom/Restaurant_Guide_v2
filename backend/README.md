@@ -114,9 +114,10 @@ flutter run -d chrome
 
 Документация по конкретным функциям backend:
 
-- **[Reviews System Testing Guide](REVIEWS_TESTING_GUIDE.md)** — руководство по тестированию системы отзывов для QA и Product Team
-- **[Reviews System Implementation Notes](REVIEWS_IMPLEMENTATION_NOTES.md)** — архитектурные решения и обоснование для разработчиков
-- **[Search Implementation Notes](SEARCH_IMPLEMENTATION_NOTES.md)** — документация по системе поиска заведений
+- **[Architecture](ARCHITECTURE.md)** — архитектура backend, включая Search System с PostGIS
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** — сводка реализации всех модулей
+- **[Testing Guide](TESTING_GUIDE.md)** — руководство по тестированию backend
+- **[Test Documentation](src/tests/)** — E2E, unit tests, testing plan
 
 ## Текущий статус проекта
 
