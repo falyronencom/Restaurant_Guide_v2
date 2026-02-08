@@ -1,4 +1,4 @@
-# Protocol Autonomous v1.0
+# Protocol Autonomous v1.1
 ## Leaf Execution Protocol for Ad-hoc Tasks
 
 **Context:** This protocol applies when coordinator requests help **without a Trunk Directive** — direct requests like "fix this bug", "add this feature", "investigate this error".
@@ -117,6 +117,21 @@ All phases apply. Scale depth to task complexity.
 **If task incomplete:** Generate Semantic Handoff (Section 9).
 
 **Always:** Commit with descriptive message.
+
+**Documentation Updates (mandatory on task completion):**
+
+| What | When | Where |
+|------|------|-------|
+| Changelog entry | After each significant task/phase | `CHANGELOG.md` (root) — add new entry at top |
+| Session report | After each implementation session | `mobile/session_reports/` or `admin-web/session_reports/` |
+| Roadmap status | When entire phase completes | `docs/ROADMAP.md` — update phase status |
+| README latest update | Optional, periodic | `README.md` section "Последнее обновление" |
+
+**Rules:**
+- CHANGELOG.md: 5-10 lines per entry, reverse chronological, date + task name + key results
+- Session reports: detailed technical report following `phase_N_name_report.md` naming
+- README.md: do NOT expand beyond current structure. Only refresh "Последнее обновление" section
+- Roadmap: change status markers (planned -> in progress -> completed) when a full phase finishes
 
 ---
 
@@ -386,6 +401,9 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.1 (February 2026)
+- **Added Documentation Updates table** to Phase 4 (Report) — specifies which files to update after task completion (CHANGELOG.md, session reports, ROADMAP.md, README.md)
 
 ### v1.0 (February 2026)
 - Initial version extracted from Compact Protocol v1.4

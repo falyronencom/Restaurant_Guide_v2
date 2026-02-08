@@ -1,4 +1,4 @@
-# Protocol Informed v1.1
+# Protocol Informed v1.2
 ## Leaf Execution Protocol for Trunk Directives
 
 **Context:** This protocol applies when Leaf receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
@@ -84,6 +84,21 @@ Execute approved plan:
 **If task incomplete (session ending):** Generate Semantic Handoff (Section 5).
 
 **Always:** Commit with descriptive message referencing directive.
+
+**Documentation Updates (mandatory on task completion):**
+
+| What | When | Where |
+|------|------|-------|
+| Changelog entry | After each significant task/phase | `CHANGELOG.md` (root) — add new entry at top |
+| Session report | After each implementation session | `mobile/session_reports/` or `admin-web/session_reports/` |
+| Roadmap status | When entire phase completes | `docs/ROADMAP.md` — update phase status |
+| README latest update | Optional, periodic | `README.md` section "Последнее обновление" |
+
+**Rules:**
+- CHANGELOG.md: 5-10 lines per entry, reverse chronological, date + task name + key results
+- Session reports: detailed technical report following `phase_N_name_report.md` naming
+- README.md: do NOT expand beyond current structure. Only refresh "Последнее обновление" section
+- Roadmap: change status markers (planned -> in progress -> completed) when a full phase finishes
 
 ---
 
@@ -299,6 +314,9 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.2 (February 2026)
+- **Added Documentation Updates table** to Phase 4 (Report) — specifies which files to update after task completion (CHANGELOG.md, session reports, ROADMAP.md, README.md)
 
 ### v1.1 (February 2026)
 - **Quick Sanity Check expanded** to include Gap Verification (Part B)
