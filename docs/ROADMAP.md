@@ -116,15 +116,23 @@
 - Files Created: 15 new files (~1,800 lines)
 - Discovery Report: [docs/handoffs/admin-panel-figma-audit.md](handoffs/admin-panel-figma-audit.md)
 
-### Segment B: Moderation Workflow (Запланировано)
-- Content moderation dashboard (Ожидают просмотра, Одобренные, Отказанные)
-- Per-field approve/reject/comment actions
-- 4 tabs: Данные, О заведении, Медиа, Адрес
+### Segment B: Moderation Core (Завершён - Февраль 8, 2026)
+- Backend: 3 admin moderation endpoints (list pending, get details, moderate action)
+- `adminService.js` — business logic: pending list, detail assembly, approve/reject with audit
+- `adminModerationController.js` — 3 HTTP handlers with authenticate + authorize(['admin'])
+- `auditLogModel.js` — audit_log INSERT (non-blocking, graceful failure)
+- `establishmentModel.js` — 3 new functions: getPending, countPending, moderateEstablishment
+- Frontend: 8 new files (models, service, provider, 3 widgets, screen)
+- ModerationListPanel: card list with thumbnail, name, category, cuisine, address, date
+- ModerationDetailPanel: 4 tabs (Данные, О заведении, Медиа, Адрес) + action bar
+- ModerationFieldReview: reusable widget (used 14x) with approve/reject/comment per field
+- PendingModerationScreen: 3-panel layout replacing PlaceholderScreen
+- Moderation workflow: pending → active (approve) or pending → draft (reject) with audit log
 
-### Segment C: Analytics & Statistics (Запланировано)
-- Statistics screens (Заведения, Пользователи, Отзывы/оценки)
-- Charts: line, bar, donut
-- Dashboard with key metrics
+### Segment C: Approved & Rejected Screens (Запланировано)
+- Одобренные establishments screen (read-only view)
+- Отказанные establishments screen (read-only view)
+- Reuse of existing list/detail components
 
 ### Segment D: Content Management (Запланировано)
 - Reviews management

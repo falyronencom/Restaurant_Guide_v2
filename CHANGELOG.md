@@ -6,6 +6,36 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 8, 2026 - Фаза 8 Segment B: Admin Panel — Moderation Core
+- Segment B Moderation Core полностью реализован (Protocol Informed v1.2)
+- Backend (4 new files, 2 modified):
+  * `adminService.js` — business logic: list pending, get details for moderation, execute approve/reject with audit logging
+  * `adminModerationController.js` — 3 HTTP handlers (list pending, get details, moderate)
+  * `auditLogModel.js` — audit_log INSERT (non-blocking, graceful failure)
+  * `establishmentModel.js` — added `getPendingEstablishments()`, `countPendingEstablishments()`, `moderateEstablishment()`
+  * `adminRoutes.js` — 3 new routes with authenticate + authorize(['admin']) middleware
+- Backend Endpoints:
+  * `GET /api/v1/admin/establishments/pending` — paginated list, FIFO sort (oldest first)
+  * `GET /api/v1/admin/establishments/:id` — full details with media + partner docs for 4-tab review
+  * `POST /api/v1/admin/establishments/:id/moderate` — approve (→ active) or reject (→ draft) with per-field notes + audit log
+- Admin-Web Frontend (8 new files, 2 modified):
+  * **Models**: EstablishmentListItem, EstablishmentDetail, MediaItem with JSON parsing
+  * **Services**: ModerationService (3 API endpoints via ApiClient)
+  * **State**: ModerationProvider (pending list, selected detail, per-field review state Map, moderation actions)
+  * **Widgets**: ModerationFieldReview (reusable, used 14x), ModerationListPanel (card list), ModerationDetailPanel (4 tabs + action bar)
+  * **Screen**: PendingModerationScreen (3-panel layout: sidebar + list + detail)
+  * **Router**: Replaced PlaceholderScreen for /moderation/pending
+  * **main.dart**: Added ModerationProvider to MultiProvider
+- Moderation Workflow:
+  * Card list: name, category, cuisine tag, address, date, thumbnail, selection highlight
+  * 4 tabs: Данные (5 fields), О заведении (6 moderable + 2 info), Медиа (photos + menu), Адрес (address + map placeholder)
+  * Per-field: approve (green), reject (red + comment dialog), comment (orange) — visual state management
+  * Actions: "Одобрить заведение" / "Отклонить" with confirmation dialogs
+  * approve → status 'active', published_at set, audit_log entry, card removed from list
+  * reject → status 'draft', per-field notes stored, audit_log entry, card removed from list
+- **Status**: Pending moderation screen fully functional, end-to-end workflow complete
+- **Next**: Segment C — Одобренные + Отказанные screens (read-only views)
+
 ### Февраль 8, 2026 - Фаза 8 Segment A: Admin Panel Foundation + Login Complete
 - Admin Panel Segment A полностью реализован (VSCode Session, Protocol Informed v1.1)
   * Backend: admin login endpoint с role verification

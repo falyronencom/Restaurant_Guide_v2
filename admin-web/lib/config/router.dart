@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/auth/login_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/moderation/pending_moderation_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/placeholder_screen.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 
@@ -40,7 +41,7 @@ GoRouter createRouter(AuthProvider authProvider) {
           GoRoute(
             path: '/moderation/pending',
             builder: (context, state) =>
-                const PlaceholderScreen(title: 'Ожидают просмотра'),
+                const PendingModerationScreen(),
           ),
           GoRoute(
             path: '/moderation/approved',
