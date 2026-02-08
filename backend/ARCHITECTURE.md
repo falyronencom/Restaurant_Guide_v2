@@ -211,6 +211,27 @@ The API uses URL-based versioning through the /api/v1 prefix. This provides a cl
 
 New versions are only created when breaking changes are necessary. Adding new optional fields or new endpoints doesn't require a version bump. This keeps the API stable for clients while allowing organic growth.
 
+## Search System Architecture
+
+The Search and Discovery system integrates PostGIS for geospatial queries, supporting two search modes:
+
+- **List View** (`GET /api/v1/search/establishments`): Radius-based search near user location using `ST_DWithin` for indexed spatial filtering. Response time target: < 300ms.
+- **Map View** (`GET /api/v1/search/map`): Bounding box search using `ST_MakeEnvelope` and `ST_Intersects` for viewport-based exploration. Response time target: < 200ms.
+
+**PostGIS Integration:** The `establishments` table uses `GEOGRAPHY(Point, 4326)` type for accurate spherical distance calculations in meters. SRID 4326 (WGS84) matches the standard GPS coordinate system. Key indexes:
+
+- `idx_establishments_location` (GIST) — spatial queries
+- `idx_establishments_category_cuisine` (B-tree) — categorical filtering
+- `idx_establishments_features` (GIN) — array-based amenity filtering
+
+**Ranking Algorithm:** Results are ordered by a composite score computed in SQL for single-query efficiency:
+
+```
+Final Score = (Distance × 0.35) + (Quality × 0.40) + (Subscription × 0.25)
+```
+
+Cursor-based pagination prevents offset performance degradation. Map view responses are optimized to ~100-200 bytes per item for smooth panning.
+
 ## Future Architectural Considerations
 
 As the application scales, several architectural enhancements should be considered:
