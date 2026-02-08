@@ -36,10 +36,11 @@ Restaurant Guide Belarus — это кроссплатформенное моб�
 - Dio для HTTP запросов
 - Cached Network Image для оптимизации изображений
 
-**Web Admin Panel**:
-- Flutter Web (shared codebase с mobile)
-- Responsive design для desktop/tablet
-- PWA для возможности установки
+**Web Admin Panel** (`admin-web/`):
+- Flutter Web (отдельный проект, общие паттерны с mobile)
+- GoRouter для URL-based навигации с auth guard
+- Desktop-first design (sidebar navigation, 1920px target)
+- Provider + ChangeNotifier для state management
 
 **Backend**:
 - Node.js 18+ с Express framework
@@ -90,8 +91,15 @@ restaurant-guide-belarus/
 │   │   ├── services/    # API клиент, Auth service, Establishments service
 │   │   └── widgets/     # Переиспользуемые компоненты (EstablishmentCard)
 │   └── test/            # Widget tests и integration tests
-└── admin-web/           # Flutter Web админ-панель
-    └── lib/             # Переиспользует код из mobile
+└── admin-web/           # Flutter Web админ-панель (отдельный проект)
+    ├── lib/
+    │   ├── config/      # Environment, GoRouter configuration
+    │   ├── models/      # User, AuthResponse models
+    │   ├── providers/   # AuthProvider (ChangeNotifier)
+    │   ├── screens/     # Login, placeholder screens
+    │   ├── services/    # ApiClient (Dio), AuthService
+    │   └── widgets/     # AdminShell, AdminSidebar
+    └── web/             # Flutter Web entry point
 ```
 
 ## Начало работы
@@ -151,8 +159,9 @@ flutter build apk --release  # Release build
 ```bash
 cd admin-web
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --web-port=8080
 ```
+> Порт 8080 необходим для CORS совместимости с backend.
 
 ## Flutter Mobile Application
 
@@ -416,11 +425,12 @@ Comprehensive documentation всего Phase One Foundation с:
 
 ## Текущий статус проекта
 
-**Фаза**: Mobile Development Phase (Фаза 5) - Sub-Phase 1-4 ✅ Завершены, Phase 5.1 Partner Registration ✅ Complete
-**Последнее обновление**: Январь 19, 2026
-**Backend Status**: Production-ready с comprehensive test coverage (64%, 400+ tests)
+**Фаза**: Admin Panel Development (Фаза 8) - Segment A Foundation + Login ✅ Complete
+**Последнее обновление**: Февраль 8, 2026
+**Backend Status**: Production-ready с comprehensive test coverage (64%, 400+ tests) + admin auth endpoint
 **Mobile Foundation**: Production-ready architecture с полной backend интеграцией
 **Mobile Authentication**: Complete authentication flows (email, phone, login) ready для backend API integration
+**Admin Panel**: Foundation complete — login, sidebar navigation, auth guard, placeholder screens
 
 ### Реализованные компоненты ✅
 
@@ -604,12 +614,14 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 - Promotion system
 - Advanced review response management
 
-**Admin Panel**:
-- Web admin interface с Flutter Web
-- Content moderation workflow
-- User management tools
-- Analytics and reporting
-- System monitoring dashboard
+**Admin Panel** (Segment A complete, Segments B-E planned):
+- ✅ Web admin interface foundation с Flutter Web (Segment A)
+- ✅ Admin login с role-based access control
+- ✅ Sidebar navigation shell (7 sections)
+- ⏳ Content moderation workflow (Segment B)
+- 📋 Analytics and reporting (Segment C)
+- 📋 Content management (Segment D)
+- 📋 2FA + remaining features (Segment E)
 
 **Advanced Features**:
 - Push notifications
@@ -720,12 +732,38 @@ Core backend modules (authentication, search, reviews with partner responses, fa
 - Analytics viewing
 - Notifications
 
-### 📋 Фаза 8: Admin Web Panel
-- Flutter Web admin interface
-- Content moderation dashboard
-- User management
-- Analytics and reporting
-- System monitoring
+### ⏳ Фаза 8: Admin Web Panel (Текущая фаза)
+
+**Segment A: Foundation + Login** ✅ (Завершён - Февраль 8, 2026)
+- ✅ Backend: admin login endpoint (`POST /api/v1/admin/auth/login`) с role gate
+- ✅ Admin-web: Flutter Web project setup с GoRouter, Provider, Dio
+- ✅ Login screen с error handling
+- ✅ AdminShell layout: 363px sidebar + content area
+- ✅ Sidebar navigation: Модерация (3 items) + Настройки (4 items)
+- ✅ Auth guard: protected routes + session persistence
+- ✅ Placeholder screens для всех разделов
+- **Files Created**: 15 new files (~1,800 lines)
+- 📄 **Discovery Report**: [docs/handoffs/admin-panel-figma-audit.md](docs/handoffs/admin-panel-figma-audit.md)
+
+**Segment B: Moderation Workflow** 📋
+- Content moderation dashboard (Ожидают просмотра, Одобренные, Отказанные)
+- Per-field approve/reject/comment actions
+- 4 tabs: Данные, О заведении, Медиа, Адрес
+
+**Segment C: Analytics & Statistics** 📋
+- Statistics screens (Заведения, Пользователи, Отзывы/оценки)
+- Charts: line, bar, donut
+- Dashboard with key metrics
+
+**Segment D: Content Management** 📋
+- Reviews management
+- Payment history
+- Notifications
+
+**Segment E: Security & Polish** 📋
+- 2FA implementation
+- Audit log
+- Final polish
 
 ### 📋 Фаза 9: Testing & Polish
 - Comprehensive E2E testing
@@ -869,6 +907,33 @@ Proprietary - все права защищены.
 ---
 
 ## Recent Updates
+
+### Февраль 8, 2026 - Фаза 8 Segment A: Admin Panel Foundation + Login Complete
+- ✅ **Admin Panel Segment A** полностью реализован (VSCode Session, Protocol Informed v1.1)
+  * Backend: admin login endpoint с role verification
+  * Frontend: Flutter Web admin panel foundation
+- ✅ **Backend Changes** (3 files):
+  * `adminController.js` — admin login handler reusing existing authService, role gate (user.role !== 'admin' → 403)
+  * `adminRoutes.js` — `POST /api/v1/admin/auth/login` с strict rate limiting (5/min)
+  * `index.js` — mounted admin routes
+  * `.env` — CORS updated for Flutter Web port 8080
+- ✅ **Admin-Web Frontend** (12 new files):
+  * **Config**: Environment (localhost:3000 for dev), GoRouter с auth redirect guard
+  * **Models**: User (dual JSON field support), AuthResponse
+  * **Services**: ApiClient (Dio singleton, 3 interceptors: token inject, token extract, 401 refresh+retry), AuthService (login/logout/getCurrentUser)
+  * **State**: AuthProvider (ChangeNotifier, 3 states: unauthenticated/authenticating/authenticated)
+  * **UI**: LoginScreen (centered card, email+password), AdminShell (sidebar+content), AdminSidebar (363px, 7 nav items, logo, logout), PlaceholderScreen
+  * **main.dart**: StatefulWidget с Provider + MaterialApp.router
+- ✅ **Sidebar Navigation** (from Figma Discovery Report):
+  * Модерация: Ожидают просмотра, Одобренные, Отказанные
+  * Настройки: Статистика и аналитика, Отзывы, История платежей, Уведомления
+  * Active item highlighting + chevron icon
+  * Logout button at bottom
+- ✅ **Build**: `flutter build web` successful, `flutter analyze` 0 errors / 0 warnings (6 info only)
+- ✅ **Architecture**: Follows mobile patterns exactly (singleton services, ChangeNotifier providers, layered architecture)
+- 📄 **Discovery Report**: [docs/handoffs/admin-panel-figma-audit.md](docs/handoffs/admin-panel-figma-audit.md) — Figma Design Audit (8 frames, coverage matrix, implementation order)
+- 🎯 **Status**: Admin panel foundation ready, all 7 sidebar routes lead to placeholder screens
+- 🎯 **Next**: Segment B — Moderation Workflow (requires Figma MCP for pixel-accurate UI)
 
 ### Январь 19, 2026 - Phase 5.1: Partner Registration Complete
 - ✅ **Phase 5.1 Partner Registration** полностью реализована (3 Multi-Session Implementation)
@@ -1301,6 +1366,6 @@ Proprietary - все права защищены.
 
 ---
 
-*Последнее обновление: Январь 19, 2026 (Phase 5.2 Partner Dashboard Complete)*
+*Последнее обновление: Февраль 8, 2026 (Фаза 8 Segment A: Admin Panel Foundation Complete)*
 *Статус документа: Production-Ready*
-*Next Review: После завершения Phase 4.5 (News Screen) или Phase 5.3 (Partner Promotions)*
+*Next Review: После завершения Segment B (Moderation Workflow)*
