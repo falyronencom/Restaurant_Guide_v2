@@ -33,6 +33,7 @@ import { getEstablishmentReviews, getUserReviews } from './reviewRoutes.js';
 import favoriteRoutes from './favoriteRoutes.js';
 import establishmentRoutes from './establishmentRoutes.js';
 import tempMediaRoutes from './tempMediaRoutes.js';
+import adminRoutes from './adminRoutes.js';
 
 const router = express.Router();
 
@@ -204,6 +205,18 @@ router.use('/partner/establishments', establishmentRoutes);
  * Protected: Yes (user or partner role required)
  */
 router.use('/partner/media', tempMediaRoutes);
+
+/**
+ * /api/v1/admin/*
+ *
+ * Admin panel endpoints: authentication, moderation, analytics.
+ *
+ * Currently implements:
+ * - POST /admin/auth/login - Admin login with role verification
+ *
+ * Rate limiting: Stricter than standard auth (5 req/min for login).
+ */
+router.use('/admin', adminRoutes);
 
 /**
  * Placeholder for future route modules
