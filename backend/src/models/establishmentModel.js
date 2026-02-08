@@ -653,6 +653,159 @@ export const incrementViewCount = async (establishmentId) => {
   }
 };
 
+// ============================================================================
+// Admin Moderation Queries
+// ============================================================================
+
+/**
+ * Get paginated list of establishments with status 'pending'
+ * Sorted by updated_at ASC (FIFO — oldest first)
+ *
+ * @param {number} limit - Max items per page
+ * @param {number} offset - Pagination offset
+ * @returns {Promise<Array>} Array of pending establishment objects with thumbnail
+ */
+export const getPendingEstablishments = async (limit = 20, offset = 0) => {
+  const query = `
+    SELECT
+      e.id,
+      e.name,
+      e.city,
+      e.categories,
+      e.cuisines,
+      e.phone,
+      e.email,
+      e.updated_at,
+      e.created_at,
+      (
+        SELECT json_build_object(
+          'url', em.url,
+          'thumbnail_url', em.thumbnail_url
+        )
+        FROM establishment_media em
+        WHERE em.establishment_id = e.id
+          AND em.is_primary = true
+        LIMIT 1
+      ) as primary_photo
+    FROM establishments e
+    WHERE e.status = 'pending'
+    ORDER BY e.updated_at ASC
+    LIMIT $1 OFFSET $2
+  `;
+
+  try {
+    const result = await pool.query(query, [limit, offset]);
+
+    logger.debug('Fetched pending establishments', {
+      count: result.rows.length,
+      limit,
+      offset,
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching pending establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count total establishments with status 'pending'
+ *
+ * @returns {Promise<number>} Total count
+ */
+export const countPendingEstablishments = async () => {
+  const query = `
+    SELECT COUNT(*) as total
+    FROM establishments
+    WHERE status = 'pending'
+  `;
+
+  try {
+    const result = await pool.query(query);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting pending establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Execute moderation action on an establishment (approve or reject)
+ * Updates status, moderation fields, and published_at (on approve)
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @param {Object} moderationData
+ * @param {string} moderationData.status - New status ('active' or 'draft')
+ * @param {string} moderationData.moderated_by - Admin user UUID
+ * @param {Object} moderationData.moderation_notes - Per-field notes JSON
+ * @param {boolean} moderationData.setPublishedAt - Whether to set published_at
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const moderateEstablishment = async (establishmentId, moderationData) => {
+  const { status, moderated_by, moderation_notes, setPublishedAt } = moderationData;
+
+  const publishedClause = setPublishedAt
+    ? ', published_at = CURRENT_TIMESTAMP'
+    : '';
+
+  const query = `
+    UPDATE establishments
+    SET
+      status = $1,
+      moderated_by = $2,
+      moderated_at = CURRENT_TIMESTAMP,
+      moderation_notes = $3,
+      updated_at = CURRENT_TIMESTAMP
+      ${publishedClause}
+    WHERE id = $4
+      AND status = 'pending'
+    RETURNING
+      id,
+      partner_id,
+      name,
+      status,
+      moderated_by,
+      moderated_at,
+      moderation_notes,
+      published_at,
+      updated_at
+  `;
+
+  const values = [
+    status,
+    moderated_by,
+    JSON.stringify(moderation_notes || {}),
+    establishmentId,
+  ];
+
+  try {
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    logger.info('Establishment moderated', {
+      establishmentId,
+      newStatus: status,
+      moderatedBy: moderated_by,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error moderating establishment', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
 export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
   const conditions = ['partner_id = $1', 'LOWER(name) = LOWER($2)'];
   const values = [partnerId, name];
