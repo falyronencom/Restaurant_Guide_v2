@@ -4,10 +4,17 @@
  * HTTP handlers for admin moderation endpoints.
  * Thin layer: extracts request data, delegates to adminService, formats response.
  *
- * Endpoints:
- *   GET  /api/v1/admin/establishments/pending     — list pending queue
- *   GET  /api/v1/admin/establishments/:id          — full details for review
- *   POST /api/v1/admin/establishments/:id/moderate — approve or reject
+ * Endpoints (Segment B):
+ *   GET  /api/v1/admin/establishments/pending      — list pending queue
+ *   GET  /api/v1/admin/establishments/:id           — full details for review
+ *   POST /api/v1/admin/establishments/:id/moderate  — approve or reject
+ *
+ * Endpoints (Segment C):
+ *   GET  /api/v1/admin/establishments/active        — list active establishments
+ *   GET  /api/v1/admin/establishments/rejected      — rejection history
+ *   POST /api/v1/admin/establishments/:id/suspend   — suspend active establishment
+ *   POST /api/v1/admin/establishments/:id/unsuspend — reactivate suspended
+ *   GET  /api/v1/admin/establishments/search        — search across all statuses
  */
 
 import * as adminService from '../services/adminService.js';
@@ -103,5 +110,165 @@ export const moderateEstablishment = asyncHandler(async (req, res) => {
     success: true,
     data: result,
     message,
+  });
+});
+
+// ============================================================================
+// Segment C: Active, Rejected, Suspend, Unsuspend, Search
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/establishments/active
+ *
+ * Returns paginated list of active (approved) establishments.
+ * Query params: page, per_page, sort (newest|oldest|rating|views), city, search
+ */
+export const listActiveEstablishments = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const perPage = parseInt(req.query.per_page, 10) || 20;
+  const { sort, city, search } = req.query;
+
+  const result = await adminService.getActiveEstablishments({
+    page,
+    perPage,
+    sort,
+    city,
+    search,
+  });
+
+  logger.info('Admin fetched active establishments', {
+    adminId: req.user.userId,
+    count: result.establishments.length,
+    total: result.meta.total,
+    endpoint: 'GET /api/v1/admin/establishments/active',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result.establishments,
+    meta: result.meta,
+  });
+});
+
+/**
+ * GET /api/v1/admin/establishments/rejected
+ *
+ * Returns paginated rejection history from audit log.
+ * Query params: page, per_page
+ */
+export const listRejectedEstablishments = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const perPage = parseInt(req.query.per_page, 10) || 20;
+
+  const result = await adminService.getRejectedEstablishments({ page, perPage });
+
+  logger.info('Admin fetched rejection history', {
+    adminId: req.user.userId,
+    count: result.rejections.length,
+    total: result.meta.total,
+    endpoint: 'GET /api/v1/admin/establishments/rejected',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result.rejections,
+    meta: result.meta,
+  });
+});
+
+/**
+ * POST /api/v1/admin/establishments/:id/suspend
+ *
+ * Suspend an active establishment.
+ * Body: { reason: "string" }
+ */
+export const suspendEstablishment = asyncHandler(async (req, res) => {
+  const establishmentId = req.params.id;
+  const { reason } = req.body;
+
+  const result = await adminService.suspendEstablishment(
+    establishmentId,
+    {
+      reason,
+      adminUserId: req.user.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  );
+
+  logger.info('Admin suspended establishment', {
+    adminId: req.user.userId,
+    establishmentId,
+    endpoint: 'POST /api/v1/admin/establishments/:id/suspend',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: 'Establishment suspended',
+  });
+});
+
+/**
+ * POST /api/v1/admin/establishments/:id/unsuspend
+ *
+ * Reactivate a suspended establishment.
+ */
+export const unsuspendEstablishment = asyncHandler(async (req, res) => {
+  const establishmentId = req.params.id;
+
+  const result = await adminService.unsuspendEstablishment(
+    establishmentId,
+    {
+      adminUserId: req.user.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  );
+
+  logger.info('Admin unsuspended establishment', {
+    adminId: req.user.userId,
+    establishmentId,
+    endpoint: 'POST /api/v1/admin/establishments/:id/unsuspend',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: 'Establishment reactivated',
+  });
+});
+
+/**
+ * GET /api/v1/admin/establishments/search
+ *
+ * Search establishments across all statuses.
+ * Query params: search (required), status, city, page, per_page
+ */
+export const searchEstablishments = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const perPage = parseInt(req.query.per_page, 10) || 20;
+  const { search, status, city } = req.query;
+
+  const result = await adminService.searchAllEstablishments({
+    search,
+    status,
+    city,
+    page,
+    perPage,
+  });
+
+  logger.info('Admin searched establishments', {
+    adminId: req.user.userId,
+    search,
+    count: result.establishments.length,
+    total: result.meta.total,
+    endpoint: 'GET /api/v1/admin/establishments/search',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result.establishments,
+    meta: result.meta,
   });
 });

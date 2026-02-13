@@ -282,3 +282,341 @@ export const moderateEstablishment = async (establishmentId, params) => {
     );
   }
 };
+
+// ============================================================================
+// Segment C: Active, Rejected, Suspend, Unsuspend, Search
+// ============================================================================
+
+/**
+ * Get paginated list of active (approved) establishments
+ *
+ * @param {Object} params
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.perPage - Items per page (max 50)
+ * @param {string} params.sort - Sort: 'newest', 'oldest', 'rating', 'views'
+ * @param {string} params.city - City filter
+ * @param {string} params.search - Name search (ILIKE)
+ * @returns {Promise<Object>} { establishments, meta }
+ */
+export const getActiveEstablishments = async ({ page = 1, perPage = 20, sort, city, search } = {}) => {
+  try {
+    const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
+    const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+    const filters = { sort, city, search };
+
+    const [establishments, total] = await Promise.all([
+      EstablishmentModel.getActiveEstablishments(effectivePerPage, offset, filters),
+      EstablishmentModel.countActiveEstablishments(filters),
+    ]);
+
+    return {
+      establishments,
+      meta: {
+        total,
+        page: Math.max(page, 1),
+        per_page: effectivePerPage,
+        pages: Math.ceil(total / effectivePerPage) || 1,
+      },
+    };
+  } catch (error) {
+    logger.error('Error in getActiveEstablishments service', {
+      error: error.message,
+    });
+    throw new AppError(
+      'Failed to fetch active establishments',
+      500,
+      'ACTIVE_FETCH_FAILED',
+    );
+  }
+};
+
+/**
+ * Get rejection history from audit log
+ *
+ * @param {Object} params
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.perPage - Items per page (max 50)
+ * @returns {Promise<Object>} { rejections, meta }
+ */
+export const getRejectedEstablishments = async ({ page = 1, perPage = 20 } = {}) => {
+  try {
+    const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
+    const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+
+    const [rejections, total] = await Promise.all([
+      AuditLogModel.getRejectionHistory(effectivePerPage, offset),
+      AuditLogModel.countRejections(),
+    ]);
+
+    return {
+      rejections,
+      meta: {
+        total,
+        page: Math.max(page, 1),
+        per_page: effectivePerPage,
+        pages: Math.ceil(total / effectivePerPage) || 1,
+      },
+    };
+  } catch (error) {
+    logger.error('Error in getRejectedEstablishments service', {
+      error: error.message,
+    });
+    throw new AppError(
+      'Failed to fetch rejected establishments',
+      500,
+      'REJECTED_FETCH_FAILED',
+    );
+  }
+};
+
+/**
+ * Suspend an active establishment
+ *
+ * Changes status: active → suspended
+ * Records reason in moderation_notes and audit log
+ *
+ * @param {string} establishmentId - UUID
+ * @param {Object} params
+ * @param {string} params.reason - Suspension reason
+ * @param {string} params.adminUserId - Admin UUID
+ * @param {string} params.ipAddress - Request IP
+ * @param {string} params.userAgent - Request User-Agent
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const suspendEstablishment = async (establishmentId, params) => {
+  const { reason, adminUserId, ipAddress, userAgent } = params;
+
+  if (!reason || !reason.trim()) {
+    throw new AppError(
+      'Suspension reason is required',
+      400,
+      'REASON_REQUIRED',
+    );
+  }
+
+  try {
+    const existing = await EstablishmentModel.findEstablishmentById(
+      establishmentId,
+      true,
+    );
+
+    if (!existing) {
+      throw new AppError(
+        'Establishment not found',
+        404,
+        'ESTABLISHMENT_NOT_FOUND',
+      );
+    }
+
+    if (existing.status !== 'active') {
+      throw new AppError(
+        `Cannot suspend establishment with status '${existing.status}'. Only active establishments can be suspended.`,
+        400,
+        'INVALID_STATUS_FOR_SUSPEND',
+      );
+    }
+
+    // Merge suspend reason into existing moderation_notes
+    const currentNotes = typeof existing.moderation_notes === 'string'
+      ? JSON.parse(existing.moderation_notes || '{}')
+      : (existing.moderation_notes || {});
+    const updatedNotes = {
+      ...currentNotes,
+      suspend_reason: reason,
+      suspended_at: new Date().toISOString(),
+    };
+
+    const updated = await EstablishmentModel.changeEstablishmentStatus(
+      establishmentId,
+      {
+        fromStatus: 'active',
+        toStatus: 'suspended',
+        moderationNotes: updatedNotes,
+      },
+    );
+
+    if (!updated) {
+      throw new AppError(
+        'Suspension failed — establishment may have been modified concurrently',
+        409,
+        'SUSPEND_CONFLICT',
+      );
+    }
+
+    // Audit log (non-blocking)
+    AuditLogModel.createAuditLog({
+      user_id: adminUserId,
+      action: 'suspend_establishment',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { status: 'active' },
+      new_data: { status: 'suspended', reason },
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
+    logger.info('Establishment suspended', {
+      establishmentId,
+      adminUserId,
+      reason,
+    });
+
+    return updated;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    logger.error('Unexpected error during suspension', {
+      error: error.message,
+      establishmentId,
+    });
+
+    throw new AppError(
+      'Failed to suspend establishment',
+      500,
+      'SUSPEND_FAILED',
+    );
+  }
+};
+
+/**
+ * Unsuspend (reactivate) a suspended establishment
+ *
+ * Changes status: suspended → active
+ * Records event in audit log
+ *
+ * @param {string} establishmentId - UUID
+ * @param {Object} params
+ * @param {string} params.adminUserId - Admin UUID
+ * @param {string} params.ipAddress - Request IP
+ * @param {string} params.userAgent - Request User-Agent
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const unsuspendEstablishment = async (establishmentId, params) => {
+  const { adminUserId, ipAddress, userAgent } = params;
+
+  try {
+    const existing = await EstablishmentModel.findEstablishmentById(
+      establishmentId,
+      true,
+    );
+
+    if (!existing) {
+      throw new AppError(
+        'Establishment not found',
+        404,
+        'ESTABLISHMENT_NOT_FOUND',
+      );
+    }
+
+    if (existing.status !== 'suspended') {
+      throw new AppError(
+        `Cannot unsuspend establishment with status '${existing.status}'. Only suspended establishments can be reactivated.`,
+        400,
+        'INVALID_STATUS_FOR_UNSUSPEND',
+      );
+    }
+
+    const updated = await EstablishmentModel.changeEstablishmentStatus(
+      establishmentId,
+      {
+        fromStatus: 'suspended',
+        toStatus: 'active',
+      },
+    );
+
+    if (!updated) {
+      throw new AppError(
+        'Unsuspension failed — establishment may have been modified concurrently',
+        409,
+        'UNSUSPEND_CONFLICT',
+      );
+    }
+
+    // Audit log (non-blocking)
+    AuditLogModel.createAuditLog({
+      user_id: adminUserId,
+      action: 'unsuspend_establishment',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { status: 'suspended' },
+      new_data: { status: 'active' },
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
+    logger.info('Establishment unsuspended', {
+      establishmentId,
+      adminUserId,
+    });
+
+    return updated;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    logger.error('Unexpected error during unsuspension', {
+      error: error.message,
+      establishmentId,
+    });
+
+    throw new AppError(
+      'Failed to unsuspend establishment',
+      500,
+      'UNSUSPEND_FAILED',
+    );
+  }
+};
+
+/**
+ * Search establishments across all statuses
+ *
+ * @param {Object} params
+ * @param {string} params.search - Name search (required)
+ * @param {string} params.status - Optional status filter
+ * @param {string} params.city - Optional city filter
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.perPage - Items per page (max 50)
+ * @returns {Promise<Object>} { establishments, meta }
+ */
+export const searchAllEstablishments = async ({ search, status, city, page = 1, perPage = 20 } = {}) => {
+  if (!search || !search.trim()) {
+    throw new AppError(
+      'Search query is required',
+      400,
+      'SEARCH_REQUIRED',
+    );
+  }
+
+  try {
+    const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
+    const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+    const filters = { status, city, limit: effectivePerPage, offset };
+
+    const [establishments, total] = await Promise.all([
+      EstablishmentModel.searchAllEstablishments(search.trim(), filters),
+      EstablishmentModel.countSearchResults(search.trim(), { status, city }),
+    ]);
+
+    return {
+      establishments,
+      meta: {
+        total,
+        page: Math.max(page, 1),
+        per_page: effectivePerPage,
+        pages: Math.ceil(total / effectivePerPage) || 1,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    logger.error('Error in searchAllEstablishments service', {
+      error: error.message,
+      search,
+    });
+
+    throw new AppError(
+      'Failed to search establishments',
+      500,
+      'SEARCH_FAILED',
+    );
+  }
+};

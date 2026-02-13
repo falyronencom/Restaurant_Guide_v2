@@ -4,12 +4,56 @@ import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
 
+/// Display mode for the detail panel
+enum DetailPanelMode {
+  /// Full moderation review with per-field approve/reject/comment (Segment B)
+  moderation,
+
+  /// Read-only view — no action buttons on fields or at bottom
+  readonly,
+
+  /// Read-only + unsuspend action available
+  suspended,
+}
+
 /// Right panel: tabbed detail view for reviewing a single establishment.
 ///
 /// Four tabs: Данные, О заведении, Медиа, Адрес.
-/// Approve/Reject buttons at the bottom.
+///
+/// Supports three modes:
+/// - [DetailPanelMode.moderation]: Approve/reject buttons (original Segment B)
+/// - [DetailPanelMode.readonly]: Display only (approved / rejected screens)
+/// - [DetailPanelMode.suspended]: Display + unsuspend action
+///
+/// When [detail], [selectedId], etc. are provided, uses them directly.
+/// When null, falls back to reading [ModerationProvider] (backward compatible).
 class ModerationDetailPanel extends StatefulWidget {
-  const ModerationDetailPanel({super.key});
+  final DetailPanelMode mode;
+
+  // Optional external data (when null, reads from ModerationProvider)
+  final EstablishmentDetail? detail;
+  final bool? isLoadingDetail;
+  final String? detailError;
+  final String? selectedId;
+
+  // Optional actions
+  final VoidCallback? onSuspend;
+  final VoidCallback? onUnsuspend;
+
+  // Rejection notes for per-field display (from audit log)
+  final Map<String, dynamic>? rejectionNotes;
+
+  const ModerationDetailPanel({
+    super.key,
+    this.mode = DetailPanelMode.moderation,
+    this.detail,
+    this.isLoadingDetail,
+    this.detailError,
+    this.selectedId,
+    this.onSuspend,
+    this.onUnsuspend,
+    this.rejectionNotes,
+  });
 
   @override
   State<ModerationDetailPanel> createState() => _ModerationDetailPanelState();
@@ -33,9 +77,31 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ModerationProvider>();
+    // Resolve data: external params or ModerationProvider
+    final String? selectedId;
+    final bool isLoadingDetail;
+    final String? detailError;
+    final EstablishmentDetail? detail;
+    final bool isReadOnly = widget.mode != DetailPanelMode.moderation;
 
-    if (provider.selectedId == null) {
+    if (widget.detail != null ||
+        widget.selectedId != null ||
+        widget.isLoadingDetail != null) {
+      // External data mode
+      selectedId = widget.selectedId;
+      isLoadingDetail = widget.isLoadingDetail ?? false;
+      detailError = widget.detailError;
+      detail = widget.detail;
+    } else {
+      // Provider mode (backward compatible with Segment B)
+      final provider = context.watch<ModerationProvider>();
+      selectedId = provider.selectedId;
+      isLoadingDetail = provider.isLoadingDetail;
+      detailError = provider.detailError;
+      detail = provider.selectedDetail;
+    }
+
+    if (selectedId == null) {
       return const Center(
         child: Text(
           'Выберите заведение для просмотра',
@@ -44,24 +110,36 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       );
     }
 
-    if (provider.isLoadingDetail) {
+    if (isLoadingDetail) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (provider.detailError != null) {
+    if (detailError != null) {
       return Center(
         child: Text(
-          provider.detailError!,
+          detailError,
           style: const TextStyle(color: Colors.red),
         ),
       );
     }
 
-    final detail = provider.selectedDetail;
     if (detail == null) return const SizedBox.shrink();
 
     return Column(
       children: [
+        // Header actions (suspend / unsuspend)
+        if (widget.onSuspend != null || widget.onUnsuspend != null)
+          _HeaderActionBar(
+            onSuspend: widget.onSuspend,
+            onUnsuspend: widget.onUnsuspend,
+            establishmentName: detail.name,
+          ),
+
+        // Rejection notes summary (for rejected screen)
+        if (widget.rejectionNotes != null &&
+            widget.rejectionNotes!.isNotEmpty)
+          _RejectionNotesHeader(notes: widget.rejectionNotes!),
+
         // Tab bar
         TabBar(
           controller: _tabController,
@@ -90,18 +168,263 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _DataTab(detail: detail),
-              _AboutTab(detail: detail),
-              _MediaTab(detail: detail),
-              _AddressTab(detail: detail),
+              _DataTab(
+                detail: detail,
+                isReadOnly: isReadOnly,
+                rejectionNotes: widget.rejectionNotes,
+              ),
+              _AboutTab(
+                detail: detail,
+                isReadOnly: isReadOnly,
+                rejectionNotes: widget.rejectionNotes,
+              ),
+              _MediaTab(
+                detail: detail,
+                isReadOnly: isReadOnly,
+                rejectionNotes: widget.rejectionNotes,
+              ),
+              _AddressTab(
+                detail: detail,
+                isReadOnly: isReadOnly,
+                rejectionNotes: widget.rejectionNotes,
+              ),
             ],
           ),
         ),
 
-        // Action buttons
-        _ActionBar(provider: provider),
+        // Action buttons (only in moderation mode)
+        if (widget.mode == DetailPanelMode.moderation)
+          _ActionBar(provider: context.watch<ModerationProvider>()),
       ],
     );
+  }
+}
+
+// =============================================================================
+// Header Action Bar (Suspend / Unsuspend)
+// =============================================================================
+
+class _HeaderActionBar extends StatelessWidget {
+  final VoidCallback? onSuspend;
+  final VoidCallback? onUnsuspend;
+  final String establishmentName;
+
+  const _HeaderActionBar({
+    this.onSuspend,
+    this.onUnsuspend,
+    required this.establishmentName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFD2D2D2))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              establishmentName,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (onSuspend != null)
+            OutlinedButton.icon(
+              onPressed: () => _confirmSuspend(context),
+              icon: const Icon(Icons.pause_circle_outline, size: 18),
+              label: const Text('Приостановить'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFF9500),
+                side: const BorderSide(color: Color(0xFFFF9500)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+              ),
+            ),
+          if (onUnsuspend != null)
+            FilledButton.icon(
+              onPressed: () => _confirmUnsuspend(context),
+              icon: const Icon(Icons.play_circle_outline, size: 18),
+              label: const Text('Возобновить'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF3FD00D),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSuspend(BuildContext context) {
+    final reasonController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Приостановить заведение?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Заведение будет скрыто из поиска и каталога.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Причина приостановки...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (reasonController.text.trim().isEmpty) return;
+              Navigator.pop(ctx);
+              onSuspend?.call();
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF9500),
+            ),
+            child: const Text('Приостановить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmUnsuspend(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Возобновить заведение?'),
+        content: const Text(
+          'Заведение снова появится в поиске и каталоге.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onUnsuspend?.call();
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3FD00D),
+            ),
+            child: const Text('Возобновить'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Rejection Notes Header
+// =============================================================================
+
+class _RejectionNotesHeader extends StatelessWidget {
+  final Map<String, dynamic> notes;
+  const _RejectionNotesHeader({required this.notes});
+
+  @override
+  Widget build(BuildContext context) {
+    final nonEmptyNotes = notes.entries
+        .where((e) => e.value != null && e.value.toString().isNotEmpty)
+        .toList();
+
+    if (nonEmptyNotes.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Color(0x0DFF3B30), // subtle red background
+        border: Border(bottom: BorderSide(color: Color(0x33FF3B30))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded,
+                  size: 20, color: Color(0xFFFF3B30)),
+              SizedBox(width: 8),
+              Text(
+                'Причины отказа',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFFF3B30),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...nonEmptyNotes.map((entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ',
+                        style: TextStyle(
+                            color: Color(0xFFFF3B30), fontSize: 14)),
+                    Expanded(
+                      child: Text(
+                        '${_fieldLabel(entry.key)}: ${entry.value}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  /// Map field keys to Russian labels
+  String _fieldLabel(String key) {
+    const labels = {
+      'legal_name': 'Полное название',
+      'unp': 'УНП',
+      'registration_doc': 'Регистрация',
+      'contact_person': 'Контактное лицо',
+      'contact_email': 'E-mail',
+      'description': 'Описание',
+      'name': 'Название',
+      'customer_phone': 'Номер для связи',
+      'website': 'Сайт',
+      'working_hours': 'Время работы',
+      'price_range': 'Средний чек',
+      'photos': 'Фото',
+      'menu': 'Меню',
+      'address': 'Адрес',
+    };
+    return labels[key] ?? key;
   }
 }
 
@@ -111,7 +434,14 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 
 class _DataTab extends StatelessWidget {
   final EstablishmentDetail detail;
-  const _DataTab({required this.detail});
+  final bool isReadOnly;
+  final Map<String, dynamic>? rejectionNotes;
+
+  const _DataTab({
+    required this.detail,
+    this.isReadOnly = false,
+    this.rejectionNotes,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -122,18 +452,24 @@ class _DataTab extends StatelessWidget {
           fieldName: 'legal_name',
           label: 'Полное название заведения',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('legal_name'),
           child: _FieldValue(detail.legalName ?? detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'unp',
           label: 'УНП',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('unp'),
           child: _FieldValue(detail.unp),
         ),
         ModerationFieldReview(
           fieldName: 'registration_doc',
           label: 'Регистрация',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('registration_doc'),
           child: detail.registrationDocUrl != null &&
                   detail.registrationDocUrl!.isNotEmpty
               ? _FileLink(detail.registrationDocUrl!)
@@ -143,17 +479,23 @@ class _DataTab extends StatelessWidget {
           fieldName: 'contact_person',
           label: 'Номер контактного лица',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('contact_person'),
           child: _FieldValue(detail.contactPerson ?? detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'contact_email',
           label: 'E-mail',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('contact_email'),
           child: _FieldValue(detail.contactEmail ?? detail.email),
         ),
       ],
     );
   }
+
+  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -162,7 +504,14 @@ class _DataTab extends StatelessWidget {
 
 class _AboutTab extends StatelessWidget {
   final EstablishmentDetail detail;
-  const _AboutTab({required this.detail});
+  final bool isReadOnly;
+  final Map<String, dynamic>? rejectionNotes;
+
+  const _AboutTab({
+    required this.detail,
+    this.isReadOnly = false,
+    this.rejectionNotes,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +523,8 @@ class _AboutTab extends StatelessWidget {
           fieldName: 'description',
           label: 'Описание',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('description'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -196,29 +547,39 @@ class _AboutTab extends StatelessWidget {
           fieldName: 'name',
           label: 'Название',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('name'),
           child: _FieldValue(detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'customer_phone',
           label: 'Номер для связи с клиентом',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('customer_phone'),
           child: _FieldValue(detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'website',
           label: 'Ссылка на соц. сеть/сайт',
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('website'),
           child: _FieldValue(detail.website),
         ),
         ModerationFieldReview(
           fieldName: 'working_hours',
           label: 'Время работы',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('working_hours'),
           child: _WorkingHoursDisplay(detail.workingHours),
         ),
         ModerationFieldReview(
           fieldName: 'price_range',
           label: 'Средний чек',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('price_range'),
           child: _FieldValue(detail.priceRange),
         ),
 
@@ -247,6 +608,8 @@ class _AboutTab extends StatelessWidget {
       ],
     );
   }
+
+  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -255,7 +618,14 @@ class _AboutTab extends StatelessWidget {
 
 class _MediaTab extends StatelessWidget {
   final EstablishmentDetail detail;
-  const _MediaTab({required this.detail});
+  final bool isReadOnly;
+  final Map<String, dynamic>? rejectionNotes;
+
+  const _MediaTab({
+    required this.detail,
+    this.isReadOnly = false,
+    this.rejectionNotes,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +636,8 @@ class _MediaTab extends StatelessWidget {
           fieldName: 'photos',
           label: 'Фото',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('photos'),
           child: detail.interiorPhotos.isNotEmpty
               ? _PhotoGrid(photos: detail.interiorPhotos)
               : const Text(
@@ -277,6 +649,8 @@ class _MediaTab extends StatelessWidget {
           fieldName: 'menu',
           label: 'Меню',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('menu'),
           child: detail.menuMedia.isNotEmpty
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,6 +666,8 @@ class _MediaTab extends StatelessWidget {
       ],
     );
   }
+
+  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -300,7 +676,14 @@ class _MediaTab extends StatelessWidget {
 
 class _AddressTab extends StatelessWidget {
   final EstablishmentDetail detail;
-  const _AddressTab({required this.detail});
+  final bool isReadOnly;
+  final Map<String, dynamic>? rejectionNotes;
+
+  const _AddressTab({
+    required this.detail,
+    this.isReadOnly = false,
+    this.rejectionNotes,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -316,6 +699,8 @@ class _AddressTab extends StatelessWidget {
           fieldName: 'address',
           label: 'Адрес',
           isRequired: true,
+          isReadOnly: isReadOnly,
+          readOnlyComment: _note('address'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -362,10 +747,12 @@ class _AddressTab extends StatelessWidget {
       ],
     );
   }
+
+  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
-// Action Bar (Approve / Reject buttons)
+// Action Bar (Approve / Reject buttons) — moderation mode only
 // =============================================================================
 
 class _ActionBar extends StatelessWidget {

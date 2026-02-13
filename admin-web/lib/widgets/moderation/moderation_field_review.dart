@@ -7,11 +7,16 @@ import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 /// Displays field label, value content, and three action buttons
 /// (approve, reject, comment). Maintains visual state via ModerationProvider.
 /// Used 14 times across 4 moderation tabs.
+///
+/// When [isReadOnly] is true, action buttons are hidden and the widget
+/// shows [readOnlyComment] if provided (used for rejected field display).
 class ModerationFieldReview extends StatelessWidget {
   final String fieldName;
   final String label;
   final bool isRequired;
   final Widget child;
+  final bool isReadOnly;
+  final String? readOnlyComment;
 
   const ModerationFieldReview({
     super.key,
@@ -19,17 +24,27 @@ class ModerationFieldReview extends StatelessWidget {
     required this.label,
     this.isRequired = false,
     required this.child,
+    this.isReadOnly = false,
+    this.readOnlyComment,
   });
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ModerationProvider>();
-    final state = provider.getFieldState(fieldName);
-
+    // In read-only mode, skip provider dependency
     Color? bgColor;
-    if (state.status == FieldReviewStatus.approved) {
-      bgColor = const Color(0x1A3FD00D); // green 10%
-    } else if (state.status == FieldReviewStatus.rejected) {
+    FieldReviewState? state;
+
+    if (!isReadOnly) {
+      final provider = context.watch<ModerationProvider>();
+      state = provider.getFieldState(fieldName);
+
+      if (state.status == FieldReviewStatus.approved) {
+        bgColor = const Color(0x1A3FD00D); // green 10%
+      } else if (state.status == FieldReviewStatus.rejected) {
+        bgColor = const Color(0x1AFF3B30); // red 10%
+      }
+    } else if (readOnlyComment != null && readOnlyComment!.isNotEmpty) {
+      // In read-only mode with rejection comment, show red tint
       bgColor = const Color(0x1AFF3B30); // red 10%
     }
 
@@ -79,70 +94,110 @@ class ModerationFieldReview extends StatelessWidget {
           child,
           const SizedBox(height: 12),
 
-          // Action buttons row
-          Row(
-            children: [
-              _ActionButton(
-                icon: Icons.check,
-                isActive: state.status == FieldReviewStatus.approved,
-                activeColor: const Color(0xFF3FD00D),
-                tooltip: 'Одобрить',
-                onTap: () {
-                  if (state.status == FieldReviewStatus.approved) {
-                    provider.resetField(fieldName);
-                  } else {
-                    provider.approveField(fieldName);
-                  }
-                },
-              ),
-              const SizedBox(width: 12),
-              _ActionButton(
-                icon: Icons.close,
-                isActive: state.status == FieldReviewStatus.rejected,
-                activeColor: const Color(0xFFFF3B30),
-                tooltip: 'Отклонить',
-                onTap: () {
-                  if (state.status == FieldReviewStatus.rejected) {
-                    provider.resetField(fieldName);
-                  } else {
-                    _showRejectDialog(context, provider);
-                  }
-                },
-              ),
-              const SizedBox(width: 12),
-              _ActionButton(
-                icon: Icons.chat_bubble_outline,
-                isActive: state.comment != null && state.comment!.isNotEmpty,
-                activeColor: const Color(0xFFF06B32),
-                tooltip: 'Комментарий',
-                onTap: () => _showCommentDialog(context, provider),
-              ),
-            ],
-          ),
+          // Action buttons row (hidden in read-only mode)
+          if (!isReadOnly) ...[
+            _buildActionButtons(context, state!),
+          ],
 
-          // Show comment text if present
-          if (state.comment != null && state.comment!.isNotEmpty) ...[
+          // Show comment: interactive state or read-only
+          if (!isReadOnly &&
+              state!.comment != null &&
+              state.comment!.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                state.comment!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade700,
-                ),
-              ),
-            ),
+            _buildCommentBox(state.comment!),
+          ],
+
+          // Read-only rejection comment
+          if (isReadOnly &&
+              readOnlyComment != null &&
+              readOnlyComment!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildCommentBox(readOnlyComment!, isRejection: true),
           ],
 
           const SizedBox(height: 8),
           const Divider(color: Color(0xFFD2D2D2), height: 1),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context, FieldReviewState state) {
+    final provider = context.read<ModerationProvider>();
+
+    return Row(
+      children: [
+        _ActionButton(
+          icon: Icons.check,
+          isActive: state.status == FieldReviewStatus.approved,
+          activeColor: const Color(0xFF3FD00D),
+          tooltip: 'Одобрить',
+          onTap: () {
+            if (state.status == FieldReviewStatus.approved) {
+              provider.resetField(fieldName);
+            } else {
+              provider.approveField(fieldName);
+            }
+          },
+        ),
+        const SizedBox(width: 12),
+        _ActionButton(
+          icon: Icons.close,
+          isActive: state.status == FieldReviewStatus.rejected,
+          activeColor: const Color(0xFFFF3B30),
+          tooltip: 'Отклонить',
+          onTap: () {
+            if (state.status == FieldReviewStatus.rejected) {
+              provider.resetField(fieldName);
+            } else {
+              _showRejectDialog(context, provider);
+            }
+          },
+        ),
+        const SizedBox(width: 12),
+        _ActionButton(
+          icon: Icons.chat_bubble_outline,
+          isActive: state.comment != null && state.comment!.isNotEmpty,
+          activeColor: const Color(0xFFF06B32),
+          tooltip: 'Комментарий',
+          onTap: () => _showCommentDialog(context, provider),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCommentBox(String comment, {bool isRejection = false}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isRejection
+            ? const Color(0x0DFF3B30) // subtle red for rejection reason
+            : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(6),
+        border: isRejection
+            ? Border.all(color: const Color(0x33FF3B30))
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isRejection) ...[
+            const Icon(Icons.info_outline, size: 16, color: Color(0xFFFF3B30)),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              comment,
+              style: TextStyle(
+                fontSize: 13,
+                color: isRejection
+                    ? const Color(0xFFFF3B30)
+                    : Colors.grey.shade700,
+              ),
+            ),
+          ),
         ],
       ),
     );

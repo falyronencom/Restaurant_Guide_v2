@@ -61,6 +61,53 @@ router.get(
   adminModerationController.listPendingEstablishments,
 );
 
+// ============================================================================
+// Segment C: Active, Rejected, Search (must be BEFORE :id param route)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/establishments/active
+ *
+ * List active (approved) establishments.
+ * Query: ?page=1&per_page=20&sort=newest&city=Минск&search=name
+ */
+router.get(
+  '/establishments/active',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.listActiveEstablishments,
+);
+
+/**
+ * GET /api/v1/admin/establishments/rejected
+ *
+ * List rejection history from audit log.
+ * Query: ?page=1&per_page=20
+ */
+router.get(
+  '/establishments/rejected',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.listRejectedEstablishments,
+);
+
+/**
+ * GET /api/v1/admin/establishments/search
+ *
+ * Search establishments across all statuses.
+ * Query: ?search=name (required) &status=active&city=Минск&page=1&per_page=20
+ */
+router.get(
+  '/establishments/search',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.searchEstablishments,
+);
+
+// ============================================================================
+// Establishment detail and actions (parameterized :id routes)
+// ============================================================================
+
 /**
  * GET /api/v1/admin/establishments/:id
  *
@@ -85,6 +132,31 @@ router.post(
   authenticate,
   authorize(['admin']),
   adminModerationController.moderateEstablishment,
+);
+
+/**
+ * POST /api/v1/admin/establishments/:id/suspend
+ *
+ * Suspend an active establishment.
+ * Body: { reason: "string" }
+ */
+router.post(
+  '/establishments/:id/suspend',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.suspendEstablishment,
+);
+
+/**
+ * POST /api/v1/admin/establishments/:id/unsuspend
+ *
+ * Reactivate a suspended establishment.
+ */
+router.post(
+  '/establishments/:id/unsuspend',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.unsuspendEstablishment,
 );
 
 export default router;
