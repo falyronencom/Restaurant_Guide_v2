@@ -129,20 +129,22 @@
 - PendingModerationScreen: 3-panel layout replacing PlaceholderScreen
 - Moderation workflow: pending → active (approve) or pending → draft (reject) with audit log
 
-### Segment C: Approved & Rejected Screens (Запланировано)
-- Одобренные establishments screen (read-only view)
-- Отказанные establishments screen (read-only view)
-- Reuse of existing list/detail components
+### Segment C: Moderation Extended + Content Management (Завершён - Февраль 13, 2026)
+- Backend: +5 endpoints (active list, rejected history, suspend, unsuspend, search)
+- Frontend: ApprovedScreen (search + sort + filter + suspend/unsuspend), RejectedScreen (rejection history)
+- Full moderation lifecycle: pending → approve/reject → active list → suspend/unsuspend → rejection history
+- Session Report: [admin-web/session_reports/phase_8_segment_c_moderation_extended_report.md](../admin-web/session_reports/phase_8_segment_c_moderation_extended_report.md)
 
-### Segment D: Content Management (Запланировано)
-- Reviews management
-- Payment history
-- Notifications
+### Segment D: Analytics & Dashboard (Завершён - Февраль 13, 2026)
+- Backend: 4 analytics endpoints (overview, users, establishments, reviews) с period filtering и auto-aggregation
+- Frontend: Dashboard (4 metric cards + registration timeline), 3 analytics tabs (fl_chart: Line/Pie/Bar)
+- Shared components: PeriodSelector, MetricCard, TimelineChart, DistributionChart, HorizontalBarChartWidget
+- Features: auto-aggregation (day/week/month), date gap filling, change% vs previous period, empty states
+- Files: 3 backend + 19 frontend new, 5 edited
+- Session Report: [admin-web/session_reports/phase_8_segment_d_analytics_dashboard_report.md](../admin-web/session_reports/phase_8_segment_d_analytics_dashboard_report.md)
 
-### Segment E: Security & Polish (Запланировано)
-- 2FA implementation
-- Audit log
-- Final polish
+### Segment E: TBD (Запланировано)
+- To be determined based on project priorities
 
 ## Фаза 9: Testing & Polish (Запланировано)
 - Comprehensive E2E testing
