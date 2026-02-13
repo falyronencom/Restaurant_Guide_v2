@@ -90,6 +90,16 @@ class AdminSidebar extends StatelessWidget {
                     path: '/settings/notifications',
                     currentPath: location,
                   ),
+
+                  const SizedBox(height: 16),
+
+                  // Section: Аудит
+                  const _SectionHeader(title: 'Аудит'),
+                  _NavItem(
+                    title: 'Журнал действий',
+                    path: '/audit-log',
+                    currentPath: location,
+                  ),
                 ],
               ),
             ),

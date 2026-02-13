@@ -173,3 +173,146 @@ export const countRejections = async () => {
     throw error;
   }
 };
+
+/**
+ * Build dynamic WHERE clause and values array for audit log queries
+ *
+ * @param {Object} filters
+ * @returns {{ whereClause: string, values: Array }}
+ */
+const buildAuditLogWhere = (filters) => {
+  const conditions = [];
+  const values = [];
+  let paramIndex = 1;
+
+  if (filters.action) {
+    conditions.push(`al.action = $${paramIndex++}`);
+    values.push(filters.action);
+  }
+
+  if (filters.entity_type) {
+    conditions.push(`al.entity_type = $${paramIndex++}`);
+    values.push(filters.entity_type);
+  }
+
+  if (filters.user_id) {
+    conditions.push(`al.user_id = $${paramIndex++}`);
+    values.push(filters.user_id);
+  }
+
+  if (filters.from) {
+    conditions.push(`al.created_at >= $${paramIndex++}`);
+    values.push(filters.from);
+  }
+
+  if (filters.to) {
+    conditions.push(`al.created_at <= $${paramIndex++}`);
+    values.push(filters.to);
+  }
+
+  const whereClause = conditions.length > 0
+    ? 'WHERE ' + conditions.join(' AND ')
+    : '';
+
+  return { whereClause, values, paramIndex };
+};
+
+/**
+ * Get paginated audit log entries with admin info and human-readable summary
+ *
+ * @param {Object} filters
+ * @param {string} [filters.action] - Filter by action type
+ * @param {string} [filters.entity_type] - Filter by entity type
+ * @param {string} [filters.user_id] - Filter by admin who performed action
+ * @param {string} [filters.from] - Date range start (ISO string)
+ * @param {string} [filters.to] - Date range end (ISO string)
+ * @param {string} [filters.sort] - 'newest' (default) or 'oldest'
+ * @param {boolean} [filters.include_metadata] - Include ip_address and user_agent
+ * @param {number} limit - Max items per page
+ * @param {number} offset - Pagination offset
+ * @returns {Promise<Array>} Array of audit log entry objects
+ */
+export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) => {
+  const { whereClause, values, paramIndex } = buildAuditLogWhere(filters);
+
+  const sortOrder = filters.sort === 'oldest' ? 'ASC' : 'DESC';
+
+  const metadataColumns = filters.include_metadata
+    ? ', al.ip_address, al.user_agent'
+    : '';
+
+  const query = `
+    SELECT
+      al.id,
+      al.action,
+      al.entity_type,
+      al.entity_id,
+      al.old_data,
+      al.new_data,
+      al.created_at,
+      u.name as admin_name,
+      u.email as admin_email,
+      CASE
+        WHEN al.action = 'moderate_approve' AND al.entity_type = 'establishment' THEN 'Одобрено заведение'
+        WHEN al.action = 'moderate_reject' AND al.entity_type = 'establishment' THEN 'Отклонено заведение'
+        WHEN al.action = 'suspend' AND al.entity_type = 'establishment' THEN 'Приостановлено заведение'
+        WHEN al.action = 'unsuspend' AND al.entity_type = 'establishment' THEN 'Возобновлено заведение'
+        WHEN al.action = 'review_hide' AND al.entity_type = 'review' THEN 'Скрыт отзыв'
+        WHEN al.action = 'review_show' AND al.entity_type = 'review' THEN 'Показан отзыв'
+        WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
+        ELSE al.action || ' (' || al.entity_type || ')'
+      END as summary
+      ${metadataColumns}
+    FROM audit_log al
+    LEFT JOIN users u ON al.user_id = u.id
+    ${whereClause}
+    ORDER BY al.created_at ${sortOrder}
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+
+  try {
+    const result = await pool.query(query, [...values, limit, offset]);
+
+    logger.debug('Fetched audit log entries', {
+      count: result.rows.length,
+      filters: { action: filters.action, entity_type: filters.entity_type },
+      limit,
+      offset,
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching audit log entries', {
+      error: error.message,
+      filters,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count audit log entries matching filters (for pagination)
+ *
+ * @param {Object} filters - Same filters as getAuditLogEntries
+ * @returns {Promise<number>} Total count
+ */
+export const countAuditLogEntries = async (filters = {}) => {
+  const { whereClause, values } = buildAuditLogWhere(filters);
+
+  const query = `
+    SELECT COUNT(*) as total
+    FROM audit_log al
+    ${whereClause}
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting audit log entries', {
+      error: error.message,
+      filters,
+    });
+    throw error;
+  }
+};

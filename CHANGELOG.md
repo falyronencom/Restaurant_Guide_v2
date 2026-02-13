@@ -6,6 +6,37 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 13, 2026 - Фаза 8 Segment E: Admin Panel — Utility Screens
+- Segment E Utility Screens полностью реализован (Protocol Informed v1.2)
+- Backend (5 new files, 2 modified):
+  * `auditLogModel.js` — extended with `getAuditLogEntries(filters)` and `countAuditLogEntries(filters)`: dynamic WHERE builder, JOIN with users for admin name/email, server-side human-readable summary via CASE expression, conditional ip_address/user_agent inclusion
+  * `adminReviewModel.js` — new model: `getAdminReviews(filters)` with JOINs (users + establishments), status mapping (visible/hidden/deleted), ILIKE search, multi-sort; `countAdminReviews(filters)`, `toggleReviewVisibility(id)`, `getReviewForAdmin(id)`
+  * `auditLogService.js` — pagination clamping, parallel model calls
+  * `adminReviewService.js` — review listing, visibility toggle with audit_log write, delete with aggregate recalculation and audit_log write
+  * `auditLogController.js`, `adminReviewController.js` — thin HTTP handlers with asyncHandler
+  * `adminRoutes.js` — +4 routes: `/audit-log`, `/reviews`, `/reviews/:id/toggle-visibility`, `/reviews/:id/delete`
+- Backend Endpoints:
+  * `GET /api/v1/admin/audit-log` — paginated audit entries with action/entity_type/user_id/date range filters, human-readable summary, optional metadata
+  * `GET /api/v1/admin/reviews` — all reviews (including deleted/hidden) with author + establishment info, status/rating/search/sort/date filters
+  * `POST /api/v1/admin/reviews/:id/toggle-visibility` — toggle is_visible, write audit_log
+  * `POST /api/v1/admin/reviews/:id/delete` — soft-delete + recalculate establishment aggregates, write audit_log with reason
+- Admin-Web Frontend (10 new files, 3 modified):
+  * **Models**: AuditLogEntry, AdminReviewItem (with copyWith for optimistic updates, statusLabel getter)
+  * **Services**: AuditLogService, AdminReviewService (singleton pattern, Dio-based)
+  * **Providers**: AuditLogProvider (filters, pagination, expandable rows), AdminReviewsProvider (list+detail, search, toggle/delete with optimistic updates)
+  * **Screens**: AuditLogScreen (table + filter bar + PeriodSelector reuse + expandable JSON details + pagination), ReviewsManagementScreen (list+detail panel, status badges, action buttons with confirmation dialog), NotificationsScreen ("coming soon"), PaymentsScreen ("coming soon")
+  * **Router**: `/audit-log` → AuditLogScreen, replaced all 3 PlaceholderScreens
+  * **Sidebar**: Added "Аудит" section with "Журнал действий" nav item
+  * **main.dart**: Registered AuditLogProvider + AdminReviewsProvider
+- Key Features:
+  * Zero PlaceholderScreens remaining — all sidebar items route to functional screens
+  * Audit log: expandable rows show old_data/new_data JSON, graceful null handling ("Нет данных")
+  * Reviews: status badges (Активен green / Скрыт yellow / Удалён red), delete confirmation with optional reason
+  * New audit actions (review_hide, review_show, review_delete) populate old_data/new_data correctly
+  * Professional "coming soon" screens for Notifications and Payments with feature descriptions
+- **Status**: All screens functional, `flutter analyze` 0 errors, admin panel MVP complete
+- **Next**: Closed testing phase
+
 ### Февраль 13, 2026 - Фаза 8 Segment D: Admin Panel — Analytics & Dashboard
 - Segment D Analytics & Dashboard полностью реализован (Protocol Informed v1.2)
 - Backend (3 new files, 1 modified):
