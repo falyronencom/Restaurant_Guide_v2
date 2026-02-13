@@ -6,6 +6,35 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 13, 2026 - Фаза 8 Segment C: Admin Panel — Moderation Extended + Content Management
+- Segment C Moderation Extended полностью реализован (Protocol Informed v1.2)
+- Backend (4 modified files):
+  * `establishmentModel.js` — +5 methods: getActiveEstablishments, countActiveEstablishments, searchAllEstablishments, countSearchResults, changeEstablishmentStatus
+  * `auditLogModel.js` — +2 methods: getRejectionHistory (JOIN audit_log + establishments), countRejections
+  * `adminService.js` — +5 methods: getActiveEstablishments, getRejectedEstablishments, suspendEstablishment, unsuspendEstablishment, searchAllEstablishments
+  * `adminModerationController.js` — +5 HTTP handlers (list active, list rejected, suspend, unsuspend, search)
+  * `adminRoutes.js` — +5 routes with authenticate + authorize(['admin']) middleware
+- Backend Endpoints:
+  * `GET /api/v1/admin/establishments/active` — paginated list with sort (newest/oldest/rating/views), city filter, search
+  * `GET /api/v1/admin/establishments/rejected` — rejection history from audit_log with per-field notes
+  * `POST /api/v1/admin/establishments/:id/suspend` — suspend active establishment with reason
+  * `POST /api/v1/admin/establishments/:id/unsuspend` — reactivate suspended establishment
+  * `GET /api/v1/admin/establishments/search` — cross-status search with optional status/city filters
+- Admin-Web Frontend (4 new files, 5 modified):
+  * **Models**: ActiveEstablishmentItem (extends EstablishmentListItem + metrics), RejectedEstablishmentItem (audit_log based), SearchResultItem (with status badge)
+  * **Services**: ModerationService +5 API methods, +3 response wrapper classes
+  * **Widgets**: ModerationFieldReview +isReadOnly/readOnlyComment params; ModerationDetailPanel +DetailPanelMode enum (moderation/readonly/suspended), +onSuspend/onUnsuspend callbacks, +rejectionNotes display, +external data params for reuse
+  * **Providers**: ApprovedProvider (active list, search mode, sort/filter, suspend/unsuspend), RejectedProvider (rejection history, detail)
+  * **Screens**: ApprovedScreen (search + filter + card list + detail + suspend dialog), RejectedScreen (rejection cards + readonly detail + rejection notes)
+  * **Router**: Replaced PlaceholderScreens for /moderation/approved and /moderation/rejected
+  * **main.dart**: Added ApprovedProvider and RejectedProvider to MultiProvider
+- Key Features:
+  * Одобренные screen: search across all statuses with status badges, sort by date/rating/views, city filter, suspend with reason dialog, unsuspend for suspended items
+  * Отказанные screen: rejection history from audit_log (not a status filter), per-field rejection reasons display, current status badge, read-only detail view
+  * Widget backward compatibility: all new params optional with defaults, existing Segment B code unaffected
+- **Status**: Full moderation lifecycle complete (pending → approve/reject → active list → suspend/unsuspend → rejected history)
+- **Next**: Segment D — TBD
+
 ### Февраль 8, 2026 - Фаза 8 Segment B: Admin Panel — Moderation Core
 - Segment B Moderation Core полностью реализован (Protocol Informed v1.2)
 - Backend (4 new files, 2 modified):

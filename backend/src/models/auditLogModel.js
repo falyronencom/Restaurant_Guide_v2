@@ -92,3 +92,84 @@ export const createAuditLog = async (data) => {
     return null;
   }
 };
+
+/**
+ * Get rejection history from audit log
+ * Joins with establishments to show current state
+ *
+ * @param {number} limit - Max items per page
+ * @param {number} offset - Pagination offset
+ * @returns {Promise<Array>} Array of rejection event objects
+ */
+export const getRejectionHistory = async (limit = 20, offset = 0) => {
+  const query = `
+    SELECT
+      al.id as audit_id,
+      al.created_at as rejection_date,
+      al.new_data,
+      e.id as establishment_id,
+      e.name,
+      e.city,
+      e.categories,
+      e.cuisines,
+      e.status as current_status,
+      e.moderation_notes,
+      (
+        SELECT json_build_object(
+          'url', em.url,
+          'thumbnail_url', em.thumbnail_url
+        )
+        FROM establishment_media em
+        WHERE em.establishment_id = e.id
+          AND em.is_primary = true
+        LIMIT 1
+      ) as primary_photo
+    FROM audit_log al
+    JOIN establishments e ON al.entity_id::text = e.id::text
+    WHERE al.action = 'moderate_reject'
+      AND al.entity_type = 'establishment'
+    ORDER BY al.created_at DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+  try {
+    const result = await pool.query(query, [limit, offset]);
+
+    logger.debug('Fetched rejection history', {
+      count: result.rows.length,
+      limit,
+      offset,
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching rejection history', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count total rejection events (for pagination)
+ *
+ * @returns {Promise<number>} Total count
+ */
+export const countRejections = async () => {
+  const query = `
+    SELECT COUNT(*) as total
+    FROM audit_log
+    WHERE action = 'moderate_reject'
+      AND entity_type = 'establishment'
+  `;
+
+  try {
+    const result = await pool.query(query);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting rejections', {
+      error: error.message,
+    });
+    throw error;
+  }
+};

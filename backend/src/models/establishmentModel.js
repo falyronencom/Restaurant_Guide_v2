@@ -806,6 +806,344 @@ export const moderateEstablishment = async (establishmentId, moderationData) => 
   }
 };
 
+// ============================================================================
+// Admin Content Management Queries (Segment C)
+// ============================================================================
+
+/**
+ * Get paginated list of active (approved) establishments
+ * Supports sorting, city filter, and name search
+ *
+ * @param {number} limit - Max items per page
+ * @param {number} offset - Pagination offset
+ * @param {Object} filters
+ * @param {string} filters.sort - Sort order: 'newest', 'oldest', 'rating', 'views'
+ * @param {string} filters.city - City filter
+ * @param {string} filters.search - Name search (ILIKE)
+ * @returns {Promise<Array>} Array of active establishment objects
+ */
+export const getActiveEstablishments = async (limit = 20, offset = 0, filters = {}) => {
+  const { sort = 'newest', city, search } = filters;
+  const conditions = ["e.status = 'active'"];
+  const values = [];
+  let paramCount = 1;
+
+  if (city) {
+    conditions.push(`e.city = $${paramCount}`);
+    values.push(city);
+    paramCount++;
+  }
+
+  if (search) {
+    conditions.push(`e.name ILIKE $${paramCount}`);
+    values.push(`%${search}%`);
+    paramCount++;
+  }
+
+  // Determine ORDER BY clause
+  const sortMap = {
+    newest: 'e.published_at DESC NULLS LAST',
+    oldest: 'e.published_at ASC NULLS LAST',
+    rating: 'e.average_rating DESC, e.review_count DESC',
+    views: 'e.view_count DESC',
+  };
+  const orderBy = sortMap[sort] || sortMap.newest;
+
+  values.push(limit, offset);
+
+  const query = `
+    SELECT
+      e.id,
+      e.name,
+      e.city,
+      e.categories,
+      e.cuisines,
+      e.published_at,
+      e.view_count,
+      e.favorite_count,
+      e.review_count,
+      e.average_rating,
+      e.subscription_tier,
+      (
+        SELECT json_build_object(
+          'url', em.url,
+          'thumbnail_url', em.thumbnail_url
+        )
+        FROM establishment_media em
+        WHERE em.establishment_id = e.id
+          AND em.is_primary = true
+        LIMIT 1
+      ) as primary_photo
+    FROM establishments e
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY ${orderBy}
+    LIMIT $${paramCount} OFFSET $${paramCount + 1}
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+
+    logger.debug('Fetched active establishments', {
+      count: result.rows.length,
+      sort,
+      city: city || 'all',
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching active establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count active establishments (for pagination)
+ *
+ * @param {Object} filters
+ * @param {string} filters.city - City filter
+ * @param {string} filters.search - Name search (ILIKE)
+ * @returns {Promise<number>} Total count
+ */
+export const countActiveEstablishments = async (filters = {}) => {
+  const { city, search } = filters;
+  const conditions = ["status = 'active'"];
+  const values = [];
+  let paramCount = 1;
+
+  if (city) {
+    conditions.push(`city = $${paramCount}`);
+    values.push(city);
+    paramCount++;
+  }
+
+  if (search) {
+    conditions.push(`name ILIKE $${paramCount}`);
+    values.push(`%${search}%`);
+    paramCount++;
+  }
+
+  const query = `
+    SELECT COUNT(*) as total
+    FROM establishments
+    WHERE ${conditions.join(' AND ')}
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting active establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Search establishments across ALL statuses
+ *
+ * @param {string} search - Name search (ILIKE, required)
+ * @param {Object} filters
+ * @param {string} filters.status - Optional status filter
+ * @param {string} filters.city - Optional city filter
+ * @param {number} filters.limit - Max items per page
+ * @param {number} filters.offset - Pagination offset
+ * @returns {Promise<Array>} Array of establishment objects with status
+ */
+export const searchAllEstablishments = async (search, filters = {}) => {
+  const { status, city, limit = 20, offset = 0 } = filters;
+  const conditions = [];
+  const values = [];
+  let paramCount = 1;
+
+  // Required search parameter
+  conditions.push(`e.name ILIKE $${paramCount}`);
+  values.push(`%${search}%`);
+  paramCount++;
+
+  if (status) {
+    conditions.push(`e.status = $${paramCount}`);
+    values.push(status);
+    paramCount++;
+  }
+
+  if (city) {
+    conditions.push(`e.city = $${paramCount}`);
+    values.push(city);
+    paramCount++;
+  }
+
+  values.push(limit, offset);
+
+  const query = `
+    SELECT
+      e.id,
+      e.name,
+      e.city,
+      e.status,
+      e.categories,
+      e.cuisines,
+      e.phone,
+      e.email,
+      e.published_at,
+      e.created_at,
+      e.view_count,
+      e.favorite_count,
+      e.review_count,
+      e.average_rating,
+      (
+        SELECT json_build_object(
+          'url', em.url,
+          'thumbnail_url', em.thumbnail_url
+        )
+        FROM establishment_media em
+        WHERE em.establishment_id = e.id
+          AND em.is_primary = true
+        LIMIT 1
+      ) as primary_photo
+    FROM establishments e
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY e.updated_at DESC
+    LIMIT $${paramCount} OFFSET $${paramCount + 1}
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+
+    logger.debug('Search establishments', {
+      search,
+      count: result.rows.length,
+      status: status || 'all',
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error searching establishments', {
+      error: error.message,
+      search,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count search results across all statuses (for pagination)
+ *
+ * @param {string} search - Name search (ILIKE, required)
+ * @param {Object} filters
+ * @param {string} filters.status - Optional status filter
+ * @param {string} filters.city - Optional city filter
+ * @returns {Promise<number>} Total count
+ */
+export const countSearchResults = async (search, filters = {}) => {
+  const { status, city } = filters;
+  const conditions = [];
+  const values = [];
+  let paramCount = 1;
+
+  conditions.push(`name ILIKE $${paramCount}`);
+  values.push(`%${search}%`);
+  paramCount++;
+
+  if (status) {
+    conditions.push(`status = $${paramCount}`);
+    values.push(status);
+    paramCount++;
+  }
+
+  if (city) {
+    conditions.push(`city = $${paramCount}`);
+    values.push(city);
+    paramCount++;
+  }
+
+  const query = `
+    SELECT COUNT(*) as total
+    FROM establishments
+    WHERE ${conditions.join(' AND ')}
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting search results', {
+      error: error.message,
+      search,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Change establishment status with validation of current state
+ * Used for suspend (active → suspended) and unsuspend (suspended → active)
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @param {Object} params
+ * @param {string} params.fromStatus - Required current status
+ * @param {string} params.toStatus - Target status
+ * @param {Object} params.moderationNotes - Optional moderation notes update
+ * @returns {Promise<Object|null>} Updated establishment or null if status mismatch
+ */
+export const changeEstablishmentStatus = async (establishmentId, { fromStatus, toStatus, moderationNotes }) => {
+  const values = [toStatus];
+  let paramCount = 2;
+  let notesClause = '';
+
+  if (moderationNotes !== undefined) {
+    notesClause = `, moderation_notes = $${paramCount}`;
+    values.push(JSON.stringify(moderationNotes));
+    paramCount++;
+  }
+
+  values.push(establishmentId, fromStatus);
+
+  const query = `
+    UPDATE establishments
+    SET
+      status = $1,
+      updated_at = CURRENT_TIMESTAMP
+      ${notesClause}
+    WHERE id = $${paramCount - 1}
+      AND status = $${paramCount}
+    RETURNING
+      id,
+      partner_id,
+      name,
+      status,
+      moderation_notes,
+      published_at,
+      updated_at
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    logger.info('Establishment status changed', {
+      establishmentId,
+      from: fromStatus,
+      to: toStatus,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error changing establishment status', {
+      error: error.message,
+      establishmentId,
+      fromStatus,
+      toStatus,
+    });
+    throw error;
+  }
+};
+
 export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
   const conditions = ['partner_id = $1', 'LOWER(name) = LOWER($2)'];
   const values = [partnerId, name];
