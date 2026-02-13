@@ -3,7 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +43,8 @@ class _AdminAppState extends State<AdminApp> {
       providers: [
         ChangeNotifierProvider.value(value: _authProvider),
         ChangeNotifierProvider(create: (_) => ModerationProvider()),
+        ChangeNotifierProvider(create: (_) => ApprovedProvider()),
+        ChangeNotifierProvider(create: (_) => RejectedProvider()),
       ],
       child: MaterialApp.router(
         title: '{N}YAMA Admin',

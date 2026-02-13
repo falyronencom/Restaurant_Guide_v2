@@ -182,6 +182,201 @@ class MediaItem {
   }
 }
 
+// ============================================================================
+// Segment C: Active, Rejected, Search models
+// ============================================================================
+
+/// Model for an active (approved) establishment in the list card
+class ActiveEstablishmentItem extends EstablishmentListItem {
+  final DateTime? publishedAt;
+  final double averageRating;
+  final int viewCount;
+  final int favoriteCount;
+  final int reviewCount;
+  final String? subscriptionTier;
+
+  const ActiveEstablishmentItem({
+    required super.id,
+    required super.name,
+    super.city,
+    super.categories,
+    super.cuisines,
+    super.thumbnailUrl,
+    super.updatedAt,
+    super.createdAt,
+    this.publishedAt,
+    this.averageRating = 0.0,
+    this.viewCount = 0,
+    this.favoriteCount = 0,
+    this.reviewCount = 0,
+    this.subscriptionTier,
+  });
+
+  factory ActiveEstablishmentItem.fromJson(Map<String, dynamic> json) {
+    final photo = json['primary_photo'];
+    String? thumbnail;
+    if (photo is Map<String, dynamic>) {
+      thumbnail =
+          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+    }
+
+    return ActiveEstablishmentItem(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+      city: json['city'] as String?,
+      categories: _parseStringList(json['categories']),
+      cuisines: _parseStringList(json['cuisines']),
+      thumbnailUrl: thumbnail,
+      updatedAt: _parseDate(json['updated_at']),
+      createdAt: _parseDate(json['created_at']),
+      publishedAt: _parseDate(json['published_at']),
+      averageRating: _parseDouble(json['average_rating']) ?? 0.0,
+      viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
+      favoriteCount: (json['favorite_count'] as num?)?.toInt() ?? 0,
+      reviewCount: (json['review_count'] as num?)?.toInt() ?? 0,
+      subscriptionTier: json['subscription_tier'] as String?,
+    );
+  }
+}
+
+/// Model for a rejected establishment item (from audit log)
+class RejectedEstablishmentItem {
+  final String auditId;
+  final String establishmentId;
+  final String name;
+  final String? city;
+  final List<String> categories;
+  final List<String> cuisines;
+  final String? thumbnailUrl;
+  final DateTime? rejectionDate;
+  final Map<String, dynamic>? rejectionNotes;
+  final String currentStatus;
+
+  const RejectedEstablishmentItem({
+    required this.auditId,
+    required this.establishmentId,
+    required this.name,
+    this.city,
+    this.categories = const [],
+    this.cuisines = const [],
+    this.thumbnailUrl,
+    this.rejectionDate,
+    this.rejectionNotes,
+    this.currentStatus = 'draft',
+  });
+
+  factory RejectedEstablishmentItem.fromJson(Map<String, dynamic> json) {
+    final photo = json['primary_photo'];
+    String? thumbnail;
+    if (photo is Map<String, dynamic>) {
+      thumbnail =
+          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+    }
+
+    // Parse rejection notes from audit log new_data or establishment moderation_notes
+    Map<String, dynamic>? notes;
+    final newData = json['new_data'];
+    if (newData is Map<String, dynamic>) {
+      final innerNotes = newData['moderation_notes'];
+      if (innerNotes is Map<String, dynamic>) {
+        notes = innerNotes;
+      }
+    }
+    // Fallback to establishment's moderation_notes
+    notes ??= json['moderation_notes'] as Map<String, dynamic>?;
+
+    return RejectedEstablishmentItem(
+      auditId: json['audit_id'] as String? ?? '',
+      establishmentId: json['establishment_id'] as String? ?? json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      city: json['city'] as String?,
+      categories: _parseStringList(json['categories']),
+      cuisines: _parseStringList(json['cuisines']),
+      thumbnailUrl: thumbnail,
+      rejectionDate: _parseDate(json['rejection_date']),
+      rejectionNotes: notes,
+      currentStatus: json['current_status'] as String? ?? 'draft',
+    );
+  }
+
+  /// Localized status label for display
+  String get statusLabel {
+    switch (currentStatus) {
+      case 'draft':
+        return 'Черновик';
+      case 'pending':
+        return 'На модерации';
+      case 'active':
+        return 'Активно';
+      default:
+        return currentStatus;
+    }
+  }
+}
+
+/// Model for search results (establishment with status badge)
+class SearchResultItem extends EstablishmentListItem {
+  final String status;
+  final DateTime? publishedAt;
+
+  const SearchResultItem({
+    required super.id,
+    required super.name,
+    super.city,
+    super.categories,
+    super.cuisines,
+    super.phone,
+    super.email,
+    super.thumbnailUrl,
+    super.updatedAt,
+    super.createdAt,
+    required this.status,
+    this.publishedAt,
+  });
+
+  factory SearchResultItem.fromJson(Map<String, dynamic> json) {
+    final photo = json['primary_photo'];
+    String? thumbnail;
+    if (photo is Map<String, dynamic>) {
+      thumbnail =
+          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+    }
+
+    return SearchResultItem(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+      city: json['city'] as String?,
+      categories: _parseStringList(json['categories']),
+      cuisines: _parseStringList(json['cuisines']),
+      phone: json['phone'] as String?,
+      email: json['email'] as String?,
+      thumbnailUrl: thumbnail,
+      updatedAt: _parseDate(json['updated_at']),
+      createdAt: _parseDate(json['created_at']),
+      status: json['status'] as String? ?? 'draft',
+      publishedAt: _parseDate(json['published_at']),
+    );
+  }
+
+  /// Localized status label for display
+  String get statusLabel {
+    switch (status) {
+      case 'active':
+        return 'Активно';
+      case 'suspended':
+        return 'Приостановлено';
+      case 'pending':
+        return 'На модерации';
+      case 'draft':
+        return 'Черновик';
+      case 'archived':
+        return 'Архив';
+      default:
+        return status;
+    }
+  }
+}
+
 // Shared helpers
 
 List<String> _parseStringList(dynamic value) {
