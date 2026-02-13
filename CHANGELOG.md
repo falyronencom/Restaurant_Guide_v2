@@ -6,6 +6,38 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 13, 2026 - Фаза 8 Segment D: Admin Panel — Analytics & Dashboard
+- Segment D Analytics & Dashboard полностью реализован (Protocol Informed v1.2)
+- Backend (3 new files, 1 modified):
+  * `analyticsModel.js` — 14 SQL aggregation functions: counts, timelines (day/week/month GROUP BY), distributions (role/status/city/category/rating), partner response stats, moderation stats
+  * `analyticsService.js` — period parsing (7d/30d/90d/custom with comparison), auto-aggregation (day ≤30d, week 31-90d, month >90d), date gap filling, change_percent with null-safe division
+  * `analyticsController.js` — 4 endpoint handlers with asyncHandler pattern
+  * `adminRoutes.js` — +4 routes: `/analytics/overview`, `/analytics/users`, `/analytics/establishments`, `/analytics/reviews`
+- Backend Endpoints:
+  * `GET /api/v1/admin/analytics/overview` — dashboard metric cards (users, establishments, reviews, moderation)
+  * `GET /api/v1/admin/analytics/users` — registration timeline + role distribution
+  * `GET /api/v1/admin/analytics/establishments` — creation timeline + status/city/category distributions
+  * `GET /api/v1/admin/analytics/reviews` — review timeline (dual-axis: count + avg rating) + rating distribution + response stats
+- Admin-Web Frontend (19 new files, 5 modified):
+  * **Dependencies**: fl_chart ^0.69.2 (pure-Dart charts: Line, Pie, Bar)
+  * **Models**: 12 data classes (OverviewData, UsersAnalyticsData, EstablishmentsAnalyticsData, ReviewsAnalyticsData + sub-models)
+  * **Services**: AnalyticsService (singleton, 4 API methods with period params)
+  * **Widgets** (5): PeriodSelector (chips + date range picker), MetricCard (value + change%), TimelineChart (LineChart + optional dual-axis), DistributionChart (donut PieChart + RatingDistributionChart), HorizontalBarChartWidget (horizontal BarChart)
+  * **Providers** (4): DashboardProvider, EstablishmentsAnalyticsProvider, UsersAnalyticsProvider, ReviewsAnalyticsProvider
+  * **Screens**: DashboardScreen (4 metric cards + timeline), AnalyticsContainerScreen (TabBar), 3 tab screens (Заведения, Пользователи, Отзывы и оценки)
+  * **Router**: `/` → Dashboard, `/settings/analytics` → AnalyticsContainerScreen (replaced PlaceholderScreen)
+  * **Sidebar**: Added "Панель управления" nav item at top
+- Key Features:
+  * Period selector shared across all screens (7/30/90 дней + произвольный период)
+  * Auto-aggregation: by days (≤30d), weeks (31-90d), months (>90d) with aggregation field in response
+  * Date gap filling: continuous zero-filled series for charts (no gaps)
+  * change_percent: null when previous=0 (frontend shows "Новый показатель")
+  * Rating distribution percentages guaranteed to sum to 100%
+  * Empty states with friendly messages instead of empty charts
+  * All SQL parameterized ($1, $2) — zero string interpolation
+- **Status**: Dashboard + Analytics fully functional, `flutter analyze` 0 errors
+- **Next**: Segment E — TBD
+
 ### Февраль 13, 2026 - Фаза 8 Segment C: Admin Panel — Moderation Extended + Content Management
 - Segment C Moderation Extended полностью реализован (Protocol Informed v1.2)
 - Backend (4 modified files):
