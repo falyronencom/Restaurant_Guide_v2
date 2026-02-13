@@ -5,6 +5,8 @@ import 'package:restaurant_guide_admin_web/screens/auth/login_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/approved_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/pending_moderation_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/rejected_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/analytics/analytics_container_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/placeholder_screen.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 
@@ -14,7 +16,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 /// when auth state changes via [AuthProvider.notifyListeners]
 GoRouter createRouter(AuthProvider authProvider) {
   return GoRouter(
-    initialLocation: '/moderation/pending',
+    initialLocation: '/',
     refreshListenable: authProvider,
     redirect: (BuildContext context, GoRouterState state) {
       final isAuthenticated = authProvider.isAuthenticated;
@@ -28,7 +30,7 @@ GoRouter createRouter(AuthProvider authProvider) {
       if (!isAuthenticated && !isOnLogin) return '/login';
 
       // Authenticated and on login → go to default screen
-      if (isAuthenticated && isOnLogin) return '/moderation/pending';
+      if (isAuthenticated && isOnLogin) return '/';
 
       return null;
     },
@@ -40,6 +42,10 @@ GoRouter createRouter(AuthProvider authProvider) {
       ShellRoute(
         builder: (context, state, child) => AdminShell(child: child),
         routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => const DashboardScreen(),
+          ),
           GoRoute(
             path: '/moderation/pending',
             builder: (context, state) =>
@@ -58,7 +64,7 @@ GoRouter createRouter(AuthProvider authProvider) {
           GoRoute(
             path: '/settings/analytics',
             builder: (context, state) =>
-                const PlaceholderScreen(title: 'Статистика и аналитика'),
+                const AnalyticsContainerScreen(),
           ),
           GoRoute(
             path: '/settings/reviews',
