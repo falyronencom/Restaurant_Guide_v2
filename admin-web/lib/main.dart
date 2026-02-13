@@ -10,6 +10,8 @@ import 'package:restaurant_guide_admin_web/providers/establishments_analytics_pr
 import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/reviews_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/users_analytics_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +55,8 @@ class _AdminAppState extends State<AdminApp> {
         ChangeNotifierProvider(create: (_) => EstablishmentsAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => UsersAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => ReviewsAnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => AuditLogProvider()),
+        ChangeNotifierProvider(create: (_) => AdminReviewsProvider()),
       ],
       child: MaterialApp.router(
         title: '{N}YAMA Admin',
