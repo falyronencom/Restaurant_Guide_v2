@@ -39,8 +39,17 @@ class AdminSidebar extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [
+                  // Dashboard
+                  _NavItem(
+                    title: 'Панель управления',
+                    path: '/',
+                    currentPath: location,
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // Section: Модерация
-                  _SectionHeader(title: 'Модерация'),
+                  const _SectionHeader(title: 'Модерация'),
                   _NavItem(
                     title: 'Ожидают просмотра',
                     path: '/moderation/pending',
@@ -60,7 +69,7 @@ class AdminSidebar extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // Section: Настройки
-                  _SectionHeader(title: 'Настройки'),
+                  const _SectionHeader(title: 'Настройки'),
                   _NavItem(
                     title: 'Статистика и аналитика',
                     path: '/settings/analytics',
@@ -149,7 +158,9 @@ class _NavItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
       child: Material(
-        color: isActive ? const Color(0xFFDB4F13).withValues(alpha: 0.08) : Colors.transparent,
+        color: isActive
+            ? const Color(0xFFDB4F13).withValues(alpha: 0.08)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -163,7 +174,8 @@ class _NavItem extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.normal,
                       color: isActive
                           ? const Color(0xFFDB4F13)
                           : Colors.grey.shade800,
@@ -171,10 +183,10 @@ class _NavItem extends StatelessWidget {
                   ),
                 ),
                 if (isActive)
-                  Icon(
+                  const Icon(
                     Icons.chevron_right,
                     size: 18,
-                    color: const Color(0xFFDB4F13),
+                    color: Color(0xFFDB4F13),
                   ),
               ],
             ),

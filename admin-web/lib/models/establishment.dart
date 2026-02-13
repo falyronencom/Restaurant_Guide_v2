@@ -1,4 +1,5 @@
 /// Data models for establishment moderation workflow
+library;
 
 /// Lightweight model for the pending list card
 class EstablishmentListItem {
@@ -30,8 +31,7 @@ class EstablishmentListItem {
     final photo = json['primary_photo'];
     String? thumbnail;
     if (photo is Map<String, dynamic>) {
-      thumbnail =
-          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+      thumbnail = photo['thumbnail_url'] as String? ?? photo['url'] as String?;
     }
 
     return EstablishmentListItem(
@@ -216,8 +216,7 @@ class ActiveEstablishmentItem extends EstablishmentListItem {
     final photo = json['primary_photo'];
     String? thumbnail;
     if (photo is Map<String, dynamic>) {
-      thumbnail =
-          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+      thumbnail = photo['thumbnail_url'] as String? ?? photo['url'] as String?;
     }
 
     return ActiveEstablishmentItem(
@@ -269,8 +268,7 @@ class RejectedEstablishmentItem {
     final photo = json['primary_photo'];
     String? thumbnail;
     if (photo is Map<String, dynamic>) {
-      thumbnail =
-          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+      thumbnail = photo['thumbnail_url'] as String? ?? photo['url'] as String?;
     }
 
     // Parse rejection notes from audit log new_data or establishment moderation_notes
@@ -287,7 +285,8 @@ class RejectedEstablishmentItem {
 
     return RejectedEstablishmentItem(
       auditId: json['audit_id'] as String? ?? '',
-      establishmentId: json['establishment_id'] as String? ?? json['id'] as String? ?? '',
+      establishmentId:
+          json['establishment_id'] as String? ?? json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       city: json['city'] as String?,
       categories: _parseStringList(json['categories']),
@@ -338,8 +337,7 @@ class SearchResultItem extends EstablishmentListItem {
     final photo = json['primary_photo'];
     String? thumbnail;
     if (photo is Map<String, dynamic>) {
-      thumbnail =
-          photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+      thumbnail = photo['thumbnail_url'] as String? ?? photo['url'] as String?;
     }
 
     return SearchResultItem(
@@ -389,8 +387,7 @@ List<String> _parseStringList(dynamic value) {
 List<MediaItem> _parseMediaList(dynamic value) {
   if (value is List) {
     return value
-        .map((e) =>
-            e is Map<String, dynamic> ? MediaItem.fromJson(e) : null)
+        .map((e) => e is Map<String, dynamic> ? MediaItem.fromJson(e) : null)
         .whereType<MediaItem>()
         .toList();
   }

@@ -11,6 +11,7 @@
 import express from 'express';
 import * as adminController from '../../controllers/adminController.js';
 import * as adminModerationController from '../../controllers/adminModerationController.js';
+import * as analyticsController from '../../controllers/analyticsController.js';
 import { validateLogin } from '../../validators/authValidation.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
@@ -157,6 +158,62 @@ router.post(
   authenticate,
   authorize(['admin']),
   adminModerationController.unsuspendEstablishment,
+);
+
+// ============================================================================
+// Segment D: Analytics & Dashboard
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/analytics/overview
+ *
+ * Dashboard overview metrics (users, establishments, reviews, moderation).
+ * Query: ?period=7d|30d|90d  or  ?from=2026-01-01&to=2026-01-31
+ */
+router.get(
+  '/analytics/overview',
+  authenticate,
+  authorize(['admin']),
+  analyticsController.getOverview,
+);
+
+/**
+ * GET /api/v1/admin/analytics/users
+ *
+ * User analytics: registration timeline, role distribution.
+ * Query: ?period=30d
+ */
+router.get(
+  '/analytics/users',
+  authenticate,
+  authorize(['admin']),
+  analyticsController.getUsersAnalytics,
+);
+
+/**
+ * GET /api/v1/admin/analytics/establishments
+ *
+ * Establishment analytics: creation timeline, status/city/category distributions.
+ * Query: ?period=30d
+ */
+router.get(
+  '/analytics/establishments',
+  authenticate,
+  authorize(['admin']),
+  analyticsController.getEstablishmentsAnalytics,
+);
+
+/**
+ * GET /api/v1/admin/analytics/reviews
+ *
+ * Review analytics: review timeline, rating distribution, response stats.
+ * Query: ?period=30d
+ */
+router.get(
+  '/analytics/reviews',
+  authenticate,
+  authorize(['admin']),
+  analyticsController.getReviewsAnalytics,
 );
 
 export default router;
