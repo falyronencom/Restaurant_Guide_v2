@@ -12,6 +12,8 @@ import express from 'express';
 import * as adminController from '../../controllers/adminController.js';
 import * as adminModerationController from '../../controllers/adminModerationController.js';
 import * as analyticsController from '../../controllers/analyticsController.js';
+import * as auditLogController from '../../controllers/auditLogController.js';
+import * as adminReviewController from '../../controllers/adminReviewController.js';
 import { validateLogin } from '../../validators/authValidation.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
@@ -214,6 +216,70 @@ router.get(
   authenticate,
   authorize(['admin']),
   analyticsController.getReviewsAnalytics,
+);
+
+// ============================================================================
+// Segment E: Reviews Management
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/reviews
+ *
+ * List all reviews (admin view — includes deleted/hidden).
+ * Query: ?page=1&per_page=20&status=visible|hidden|deleted&rating=1-5
+ *        &search=text&sort=newest|oldest|rating_high|rating_low
+ *        &establishment_id=uuid&user_id=uuid&from=date&to=date
+ */
+router.get(
+  '/reviews',
+  authenticate,
+  authorize(['admin']),
+  adminReviewController.listReviews,
+);
+
+/**
+ * POST /api/v1/admin/reviews/:id/toggle-visibility
+ *
+ * Toggle review visibility (is_visible = NOT is_visible).
+ * Writes audit_log entry.
+ */
+router.post(
+  '/reviews/:id/toggle-visibility',
+  authenticate,
+  authorize(['admin']),
+  adminReviewController.toggleVisibility,
+);
+
+/**
+ * POST /api/v1/admin/reviews/:id/delete
+ *
+ * Soft-delete a review and recalculate establishment aggregates.
+ * Body: { reason: "string" } (optional)
+ * Writes audit_log entry.
+ */
+router.post(
+  '/reviews/:id/delete',
+  authenticate,
+  authorize(['admin']),
+  adminReviewController.deleteReview,
+);
+
+// ============================================================================
+// Segment E: Audit Log
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/audit-log
+ *
+ * Paginated audit log entries with admin info and action summary.
+ * Query: ?page=1&per_page=20&action=moderate_approve&entity_type=establishment
+ *        &user_id=uuid&from=2026-01-01&to=2026-01-31&sort=newest&include_metadata=true
+ */
+router.get(
+  '/audit-log',
+  authenticate,
+  authorize(['admin']),
+  auditLogController.listAuditLog,
 );
 
 export default router;

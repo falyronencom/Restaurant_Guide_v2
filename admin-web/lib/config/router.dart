@@ -7,7 +7,10 @@ import 'package:restaurant_guide_admin_web/screens/moderation/pending_moderation
 import 'package:restaurant_guide_admin_web/screens/moderation/rejected_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_container_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
-import 'package:restaurant_guide_admin_web/screens/placeholder_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/audit_log/audit_log_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/reviews/reviews_management_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/notifications/notifications_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/payments/payments_screen.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 
 /// Create GoRouter with auth redirect guard
@@ -69,17 +72,22 @@ GoRouter createRouter(AuthProvider authProvider) {
           GoRoute(
             path: '/settings/reviews',
             builder: (context, state) =>
-                const PlaceholderScreen(title: 'Отзывы'),
+                const ReviewsManagementScreen(),
           ),
           GoRoute(
             path: '/settings/payments',
             builder: (context, state) =>
-                const PlaceholderScreen(title: 'История платежей'),
+                const PaymentsScreen(),
           ),
           GoRoute(
             path: '/settings/notifications',
             builder: (context, state) =>
-                const PlaceholderScreen(title: 'Уведомления'),
+                const NotificationsScreen(),
+          ),
+          GoRoute(
+            path: '/audit-log',
+            builder: (context, state) =>
+                const AuditLogScreen(),
           ),
         ],
       ),
