@@ -58,13 +58,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Logo
-                      Text(
+                      const Text(
                         '{N}YAMA',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFFDB4F13),
+                          color: Color(0xFFDB4F13),
                           letterSpacing: 1.5,
                         ),
                       ),
