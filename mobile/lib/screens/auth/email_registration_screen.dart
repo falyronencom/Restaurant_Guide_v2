@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/custom_text_field.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/password_strength_indicator.dart';
@@ -85,7 +86,7 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = getHumanErrorMessage(e);
       });
     } finally {
       if (mounted) {

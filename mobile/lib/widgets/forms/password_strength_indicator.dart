@@ -29,15 +29,15 @@ class PasswordStrengthIndicator extends StatelessWidget {
     switch (strength) {
       case PasswordStrength.weak:
         strengthColor = theme.colorScheme.error;
-        strengthText = 'Weak';
+        strengthText = 'Слабый';
         break;
       case PasswordStrength.medium:
         strengthColor = Colors.orange;
-        strengthText = 'Medium';
+        strengthText = 'Средний';
         break;
       case PasswordStrength.strong:
         strengthColor = Colors.green;
-        strengthText = 'Strong';
+        strengthText = 'Надёжный';
         break;
     }
 
@@ -84,22 +84,22 @@ class PasswordStrengthIndicator extends StatelessWidget {
     final missing = <String>[];
 
     if (password.length < 8) {
-      missing.add('8 characters');
+      missing.add('8 символов');
     }
     if (!RegExp(r'[A-Z]').hasMatch(password)) {
-      missing.add('uppercase');
+      missing.add('заглавная буква');
     }
     if (!RegExp(r'[a-z]').hasMatch(password)) {
-      missing.add('lowercase');
+      missing.add('строчная буква');
     }
     if (!RegExp(r'[0-9]').hasMatch(password)) {
-      missing.add('number');
+      missing.add('цифра');
     }
 
     if (missing.isEmpty) {
-      return 'Password meets all requirements';
+      return 'Пароль соответствует всем требованиям';
     }
 
-    return 'Needs: ${missing.join(', ')}';
+    return 'Необходимо: ${missing.join(', ')}';
   }
 }

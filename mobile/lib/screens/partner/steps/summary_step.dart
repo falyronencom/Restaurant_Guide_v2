@@ -233,7 +233,6 @@ class SummaryStep extends StatelessWidget {
   bool _isBasicInfoCompleted(PartnerRegistrationProvider provider) {
     final data = provider.data;
     return (data.name?.isNotEmpty ?? false) &&
-        (data.description?.isNotEmpty ?? false) &&
         (data.phone?.isNotEmpty ?? false);
   }
 

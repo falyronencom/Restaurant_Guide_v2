@@ -215,9 +215,9 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              provider.detailsError!,
-              style: const TextStyle(
+            const Text(
+              'Не удалось загрузить данные. Проверьте интернет-соединение.',
+              style: TextStyle(
                 fontFamily: 'Avenir Next',
                 fontSize: 14,
                 color: _greyText,

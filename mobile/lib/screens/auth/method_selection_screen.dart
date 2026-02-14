@@ -119,7 +119,7 @@ class MethodSelectionScreen extends StatelessWidget {
                   // TODO: Implement Google OAuth
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Google OAuth coming soon'),
+                      content: Text('Вход через Google скоро будет доступен'),
                     ),
                   );
                 },
@@ -155,7 +155,7 @@ class MethodSelectionScreen extends StatelessWidget {
                   // TODO: Implement Apple OAuth
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Apple OAuth coming soon'),
+                      content: Text('Вход через Apple скоро будет доступен'),
                     ),
                   );
                 },

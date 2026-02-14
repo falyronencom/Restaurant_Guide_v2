@@ -171,6 +171,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             // Hero section with photo and overlay info
             _buildHeroSection(),
 
+            // Description section (shown when present)
+            _buildDescriptionSection(),
+
             // Menu section
             _buildMenuSection(),
 
@@ -909,6 +912,28 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   }
 
   /// Build divider
+  /// Build description section — shown only when description is present
+  Widget _buildDescriptionSection() {
+    final description = _establishment?.description;
+    if (description == null || description.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Text(
+        description,
+        style: const TextStyle(
+          fontFamily: 'Avenir Next',
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          color: Colors.black87,
+          height: 1.5,
+        ),
+      ),
+    );
+  }
+
   Widget _buildDivider() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
