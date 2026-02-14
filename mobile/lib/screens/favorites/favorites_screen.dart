@@ -233,7 +233,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             ),
             const SizedBox(height: AppDimensions.spacingS),
             Text(
-              provider.favoritesError!,
+              'Не удалось загрузить данные. Проверьте интернет-соединение.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.secondary,
               ),

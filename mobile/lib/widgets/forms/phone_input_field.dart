@@ -20,7 +20,7 @@ class PhoneInputField extends StatefulWidget {
   const PhoneInputField({
     super.key,
     required this.controller,
-    this.label = 'Phone Number',
+    this.label = 'Номер телефона',
     this.hint,
     this.validator,
     this.enabled = true,

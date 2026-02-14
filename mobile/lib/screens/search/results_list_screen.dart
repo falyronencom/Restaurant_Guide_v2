@@ -923,7 +923,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             ),
             const SizedBox(height: AppDimensions.spacingS),
             Text(
-              provider.error!,
+              'Не удалось загрузить данные. Проверьте интернет-соединение.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.secondary,
               ),
