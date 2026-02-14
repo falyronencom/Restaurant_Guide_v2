@@ -57,6 +57,64 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               );
             }
 
+            if (provider.detailsError != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: _greyText.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Не удалось загрузить данные',
+                        style: TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Проверьте интернет-соединение и попробуйте снова.',
+                        style: TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 14,
+                          color: _greyText,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      GestureDetector(
+                        onTap: () => provider.loadEstablishmentDetails(widget.establishmentId),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _primaryOrange,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Повторить',
+                            style: TextStyle(
+                              fontFamily: 'Avenir Next',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
             if (establishment == null) {
               return Center(
                 child: Column(

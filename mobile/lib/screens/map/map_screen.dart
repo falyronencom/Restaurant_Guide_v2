@@ -44,6 +44,7 @@ class _MapScreenState extends State<MapScreen> {
 
   List<PlacemarkMapObject> _placemarks = [];
   bool _isLoading = false;
+  bool _isEmpty = false;
   String? _errorMessage;
   Uint8List? _markerIcon;
 
@@ -100,6 +101,117 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ],
                   ),
+                ),
+              ),
+            ),
+
+          // Empty state overlay
+          if (_isEmpty && !_isLoading && _errorMessage == null)
+            Positioned(
+              bottom: 80,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.location_off_outlined,
+                      size: 36,
+                      color: Color(0xFFABABAB),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'В этой области нет заведений',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Попробуйте изменить масштаб карты или переместиться в другую область',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFFABABAB),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Error state overlay
+          if (_errorMessage != null && !_isLoading)
+            Positioned(
+              bottom: 80,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.wifi_off_rounded,
+                      size: 28,
+                      color: Color(0xFFABABAB),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _fetchEstablishmentsForCurrentBounds,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _primaryOrange,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Повторить',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -261,6 +373,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isEmpty = false;
     });
 
     try {
@@ -288,38 +401,13 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _placemarks = placemarks;
         _isLoading = false;
+        _isEmpty = establishments.isEmpty;
       });
-
-      // Show snackbar if no establishments in area
-      if (establishments.isEmpty && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('В этой области нет заведений'),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Ошибка загрузки заведений';
+        _errorMessage = 'Не удалось загрузить заведения';
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_errorMessage!),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'Повторить',
-              textColor: Colors.white,
-              onPressed: _fetchEstablishmentsForCurrentBounds,
-            ),
-          ),
-        );
-      }
     }
   }
 
