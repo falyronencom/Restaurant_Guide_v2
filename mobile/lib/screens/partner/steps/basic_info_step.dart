@@ -86,7 +86,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 title: 'Описание',
                 description:
                     'Добавьте описание вашего заведения, расскажите о его истории, кухне или о чем пожелаете нужным',
-                isRequired: true,
+                isRequired: false,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [

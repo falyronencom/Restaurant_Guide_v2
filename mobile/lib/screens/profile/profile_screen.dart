@@ -242,9 +242,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    Text(
-                      partnerProvider.error!,
-                      style: const TextStyle(color: _greyText),
+                    const Text(
+                      'Не удалось загрузить данные. Проверьте интернет-соединение.',
+                      style: TextStyle(color: _greyText),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),

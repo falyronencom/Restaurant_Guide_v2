@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
 
 /// Phone Verification Screen
@@ -124,7 +125,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = getHumanErrorMessage(e);
       });
     } finally {
       if (mounted) {
@@ -165,7 +166,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = getHumanErrorMessage(e);
       });
     } finally {
       if (mounted) {
