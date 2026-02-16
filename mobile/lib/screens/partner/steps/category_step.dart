@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -113,7 +114,6 @@ class _CategoryCard extends StatelessWidget {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _selectedBorder = Color(0xFFEC723D);
-  static const Color _iconOrange = Color(0xFFEC723D);
 
   @override
   Widget build(BuildContext context) {
@@ -171,60 +171,33 @@ class _CategoryCard extends StatelessWidget {
     );
   }
 
-  /// Build category icon based on icon name
+  /// Build category icon from SVG asset
   Widget _buildCategoryIcon(String iconName) {
-    // Map icon names to Flutter icons
-    // In production, these would be custom SVG icons from assets
-    IconData iconData;
-
-    switch (iconName) {
-      case 'restaurant':
-        iconData = Icons.restaurant;
-        break;
-      case 'coffee':
-        iconData = Icons.coffee;
-        break;
-      case 'fastfood':
-        iconData = Icons.fastfood;
-        break;
-      case 'bar':
-        iconData = Icons.local_bar;
-        break;
-      case 'cake':
-        iconData = Icons.cake;
-        break;
-      case 'pizza':
-        iconData = Icons.local_pizza;
-        break;
-      case 'bakery':
-        iconData = Icons.bakery_dining;
-        break;
-      case 'pub':
-        iconData = Icons.sports_bar;
-        break;
-      case 'canteen':
-        iconData = Icons.lunch_dining;
-        break;
-      case 'hookah':
-        iconData = Icons.smoking_rooms;
-        break;
-      case 'bowling':
-        iconData = Icons.sports_cricket;
-        break;
-      case 'karaoke':
-        iconData = Icons.mic;
-        break;
-      case 'billiards':
-        iconData = Icons.sports_esports;
-        break;
-      default:
-        iconData = Icons.store;
-    }
-
-    return Icon(
-      iconData,
-      size: 64,
-      color: _iconOrange,
+    const iconToFile = {
+      'restaurant': 'Ресторан',
+      'cafe': 'Кафе',
+      'coffee': 'Кофейня',
+      'fastfood': 'ФастФуд',
+      'bar': 'Бар',
+      'cake': 'Кондитерская',
+      'pizza': 'Пиццерия',
+      'bakery': 'Пекарня',
+      'pub': 'Паб',
+      'canteen': 'Столовая',
+      'hookah': 'Кальянная',
+      'bowling': 'Боулинг',
+      'karaoke': 'Караоке',
+      'billiards': 'Бильярд',
+    };
+    final fileName = iconToFile[iconName] ?? 'Ресторан';
+    return SvgPicture.asset(
+      'assets/icons/$fileName.svg',
+      width: 64,
+      height: 64,
+      colorFilter: const ColorFilter.mode(
+        Color(0xFFEC723D),
+        BlendMode.srcIn,
+      ),
     );
   }
 }
