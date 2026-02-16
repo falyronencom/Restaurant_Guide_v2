@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
@@ -47,6 +48,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   // Gallery state
   int _currentPhotoIndex = 0;
   final PageController _galleryController = PageController();
+
+  // Description collapsed by default
+  bool _isDescriptionExpanded = false;
 
   // Mini-map marker icon
   Uint8List? _markerIcon;
@@ -322,7 +326,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           // Info overlay
           Positioned(
-            bottom: 190,
+            bottom: 60,
             left: 17,
             right: 17,
             child: _buildInfoOverlay(),
@@ -330,14 +334,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           // Rating badge
           Positioned(
-            top: 370,
+            top: 500,
             right: 24,
             child: _buildRatingBadge(),
           ),
 
           // Favorite button (below rating badge)
           Positioned(
-            top: 470,
+            top: 585,
             right: 34,
             child: _buildFavoriteButton(),
           ),
@@ -911,8 +915,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build divider
-  /// Build description section — shown only when description is present
+  /// Build collapsible description section
   Widget _buildDescriptionSection() {
     final description = _establishment?.description;
     if (description == null || description.isEmpty) {
@@ -920,16 +923,66 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Text(
-        description,
-        style: const TextStyle(
-          fontFamily: 'Avenir Next',
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
-          color: Colors.black87,
-          height: 1.5,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tappable header
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isDescriptionExpanded = !_isDescriptionExpanded;
+              });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  const Text(
+                    'Описание',
+                    style: TextStyle(
+                      fontFamily: 'Unbounded',
+                      fontSize: 30,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _isDescriptionExpanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 28,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Collapsible body
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _isDescriptionExpanded
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black87,
+                        height: 1.5,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -953,31 +1006,40 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
     if (attributes != null) {
       if (attributes['delivery'] == true) {
-        amenities.add({'name': 'Доставка еды', 'icon': Icons.delivery_dining});
+        amenities.add({'name': 'Доставка еды', 'svg': 'Доставка еды'});
       }
       if (attributes['wifi'] == true) {
-        amenities.add({'name': 'Wi-Fi', 'icon': Icons.wifi});
+        amenities.add({'name': 'Wi-Fi', 'svg': 'Wifi'});
       }
       if (attributes['terrace'] == true) {
-        amenities.add({'name': 'Терасса', 'icon': Icons.deck});
+        amenities.add({'name': 'Терасса', 'svg': 'Терасса'});
       }
       if (attributes['parking'] == true) {
-        amenities.add({'name': 'Парковка', 'icon': Icons.local_parking});
+        amenities.add({'name': 'Парковка', 'svg': 'Парковка'});
       }
       if (attributes['live_music'] == true) {
-        amenities.add({'name': 'Живая музыка', 'icon': Icons.music_note});
+        amenities.add({'name': 'Живая музыка', 'svg': 'Живая музыка'});
       }
       if (attributes['kids_zone'] == true) {
-        amenities.add({'name': 'Детская зона', 'icon': Icons.child_friendly});
+        amenities.add({'name': 'Детская зона', 'svg': 'Детская зона'});
+      }
+      if (attributes['banquet'] == true) {
+        amenities.add({'name': 'Банкет', 'svg': 'Банкет'});
+      }
+      if (attributes['pets_allowed'] == true) {
+        amenities.add({'name': 'Животные', 'svg': 'Животные'});
+      }
+      if (attributes['smoking'] == true) {
+        amenities.add({'name': 'Курение', 'svg': 'Курение'});
       }
     }
 
     // If no amenities, show default set
     if (amenities.isEmpty) {
       amenities.addAll([
-        {'name': 'Доставка еды', 'icon': Icons.delivery_dining},
-        {'name': 'Wi-Fi', 'icon': Icons.wifi},
-        {'name': 'Терасса', 'icon': Icons.deck},
+        {'name': 'Доставка еды', 'svg': 'Доставка еды'},
+        {'name': 'Wi-Fi', 'svg': 'Wifi'},
+        {'name': 'Терасса', 'svg': 'Терасса'},
       ]);
     }
 
@@ -1016,7 +1078,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   ),
                   child: _buildAmenityItem(
                     amenity['name'] as String,
-                    amenity['icon'] as IconData,
+                    amenity['svg'] as String,
                   ),
                 );
               },
@@ -1027,28 +1089,15 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build amenity item (icon in circle with label)
-  Widget _buildAmenityItem(String label, IconData icon) {
+  /// Build amenity item (SVG already contains circle background + white icon)
+  Widget _buildAmenityItem(String label, String svgFileName) {
     return Column(
       children: [
-        // Circle with icon
-        Container(
+        // SVG is a full circle badge with icon inside
+        SvgPicture.asset(
+          'assets/icons/$svgFileName.svg',
           width: 80,
           height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: _secondaryOrange.withValues(alpha: 0.3),
-              width: 2,
-            ),
-          ),
-          child: Center(
-            child: Icon(
-              icon,
-              size: 36,
-              color: _secondaryOrange,
-            ),
-          ),
         ),
         const SizedBox(height: 8),
         // Label

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
@@ -632,13 +633,17 @@ class _CategoryCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Placeholder icon - can be replaced with actual icons
-            Icon(
-              _getCategoryIcon(label),
-              size: 40,
-              color: isSelected
-                  ? FilterScreen._selectedOrange
-                  : const Color(0xFFD24F16),
+            // Custom SVG icon — force uniform color
+            SvgPicture.asset(
+              _getSvgPath(label),
+              width: 40,
+              height: 40,
+              colorFilter: ColorFilter.mode(
+                isSelected
+                    ? FilterScreen._selectedOrange
+                    : Colors.black,
+                BlendMode.srcIn,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -657,60 +662,39 @@ class _CategoryCard extends StatelessWidget {
     );
   }
 
-  /// Get icon for category/cuisine
-  IconData _getCategoryIcon(String label) {
-    switch (label) {
+  /// Map display label to SVG asset path
+  static String _getSvgPath(String label) {
+    const labelToFile = {
       // Categories
-      case 'Ресторан':
-        return Icons.restaurant;
-      case 'Кофейня':
-        return Icons.coffee;
-      case 'Фаст-фуд':
-        return Icons.fastfood;
-      case 'Пиццерия':
-        return Icons.local_pizza;
-      case 'Бар':
-        return Icons.local_bar;
-      case 'Паб':
-        return Icons.sports_bar;
-      case 'Кондитерская':
-        return Icons.cake;
-      case 'Пекарня':
-        return Icons.bakery_dining;
-      case 'Караоке':
-        return Icons.mic;
-      case 'Столовая':
-        return Icons.lunch_dining;
-      case 'Кальянная':
-        return Icons.smoking_rooms;
-      case 'Боулинг':
-        return Icons.sports_baseball;
-      case 'Бильярд':
-        return Icons.sports;
+      'Ресторан': 'Ресторан',
+      'Кафе': 'Кафе',
+      'Кофейня': 'Кофейня',
+      'Фаст-фуд': 'ФастФуд',
+      'Пиццерия': 'Пиццерия',
+      'Бар': 'Бар',
+      'Паб': 'Паб',
+      'Кондитерская': 'Кондитерская',
+      'Пекарня': 'Пекарня',
+      'Караоке': 'Караоке',
+      'Столовая': 'Столовая',
+      'Кальянная': 'Кальянная',
+      'Боулинг': 'Боулинг',
+      'Бильярд': 'Бильярд',
       // Cuisines
-      case 'Народная':
-        return Icons.home;
-      case 'Американская':
-        return Icons.flag;
-      case 'Азиатская':
-        return Icons.ramen_dining;
-      case 'Вегетарианская':
-        return Icons.eco;
-      case 'Итальянская':
-        return Icons.local_pizza;
-      case 'Смешанная':
-        return Icons.restaurant_menu;
-      case 'Грузинская':
-        return Icons.kebab_dining;
-      case 'Европейская':
-        return Icons.dinner_dining;
-      case 'Японская':
-        return Icons.set_meal;
-      case 'Авторская':
-        return Icons.auto_awesome;
-      default:
-        return Icons.restaurant;
-    }
+      'Народная': 'Народная',
+      'Американская': 'Американская',
+      'Азиатская': 'Азиатская',
+      'Вегетарианская': 'Вегетарианская',
+      'Итальянская': 'Итальянская',
+      'Смешанная': 'Смешанная',
+      'Грузинская': 'Грузинская',
+      'Континентальная': 'Континентальная',
+      'Европейская': 'Европейская',
+      'Японская': 'Японская',
+      'Авторская': 'Авторская',
+    };
+    final fileName = labelToFile[label] ?? label;
+    return 'assets/icons/$fileName.svg';
   }
 }
 

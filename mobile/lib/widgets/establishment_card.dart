@@ -131,7 +131,7 @@ class EstablishmentCard extends StatelessWidget {
           ),
           // Rating badge (top right)
           Positioned(
-            top: -4,
+            top: 0,
             right: 0,
             child: _buildRatingAndPrice(),
           ),
