@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -114,7 +115,6 @@ class _CuisineCard extends StatelessWidget {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _selectedBorder = Color(0xFFEC723D);
-  static const Color _iconOrange = Color(0xFFEC723D);
 
   @override
   Widget build(BuildContext context) {
@@ -172,51 +172,29 @@ class _CuisineCard extends StatelessWidget {
     );
   }
 
-  /// Build cuisine icon based on icon name
+  /// Build cuisine icon from SVG asset
   Widget _buildCuisineIcon(String iconName) {
-    // Map icon names to Flutter icons
-    // In production, these would be custom SVG icons from assets
-    IconData iconData;
-
-    switch (iconName) {
-      case 'national':
-        iconData = Icons.restaurant_menu;
-        break;
-      case 'author':
-        iconData = Icons.auto_awesome;
-        break;
-      case 'asian':
-        iconData = Icons.ramen_dining;
-        break;
-      case 'american':
-        iconData = Icons.lunch_dining;
-        break;
-      case 'italian':
-        iconData = Icons.local_pizza;
-        break;
-      case 'japanese':
-        iconData = Icons.set_meal;
-        break;
-      case 'georgian':
-        iconData = Icons.kebab_dining;
-        break;
-      case 'vegetarian':
-        iconData = Icons.eco;
-        break;
-      case 'mixed':
-        iconData = Icons.dining;
-        break;
-      case 'continental':
-        iconData = Icons.brunch_dining;
-        break;
-      default:
-        iconData = Icons.restaurant;
-    }
-
-    return Icon(
-      iconData,
-      size: 64,
-      color: _iconOrange,
+    const iconToFile = {
+      'national': 'Народная',
+      'author': 'Авторская',
+      'asian': 'Азиатская',
+      'american': 'Американская',
+      'italian': 'Итальянская',
+      'japanese': 'Японская',
+      'georgian': 'Грузинская',
+      'vegetarian': 'Вегетарианская',
+      'mixed': 'Смешанная',
+      'continental': 'Континентальная',
+    };
+    final fileName = iconToFile[iconName] ?? 'Народная';
+    return SvgPicture.asset(
+      'assets/icons/$fileName.svg',
+      width: 64,
+      height: 64,
+      colorFilter: const ColorFilter.mode(
+        Color(0xFFEC723D),
+        BlendMode.srcIn,
+      ),
     );
   }
 }
