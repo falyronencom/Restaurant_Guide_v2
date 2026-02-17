@@ -192,6 +192,7 @@ export const getUserFavorites = async (userId, options = {}) => {
       parseFloat(favorite.establishment_average_rating) : null,
     establishment_review_count: favorite.establishment_review_count || 0,
     establishment_status: favorite.establishment_status,
+    establishment_working_hours: favorite.establishment_working_hours,
     establishment_primary_image: favorite.establishment_primary_image,
   }));
 

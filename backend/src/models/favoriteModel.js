@@ -219,11 +219,12 @@ export const getUserFavorites = async (userId, options = {}) => {
       e.average_rating as establishment_average_rating,
       e.review_count as establishment_review_count,
       e.status as establishment_status,
+      e.working_hours as establishment_working_hours,
       (
-        SELECT url 
-        FROM establishment_media 
-        WHERE establishment_id = e.id 
-          AND is_primary = true 
+        SELECT url
+        FROM establishment_media
+        WHERE establishment_id = e.id
+          AND is_primary = true
         LIMIT 1
       ) as establishment_primary_image
     FROM favorites f

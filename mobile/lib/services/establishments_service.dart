@@ -387,6 +387,7 @@ class EstablishmentsService {
             'price_range': f['establishment_price_range'],
             'average_rating': f['establishment_average_rating'],
             'status': f['establishment_status'] ?? 'active',
+            'working_hours': f['establishment_working_hours'],
             'thumbnail_url': f['establishment_primary_image'],
             'created_at': f['created_at'] ?? DateTime.now().toIso8601String(),
             'updated_at': f['created_at'] ?? DateTime.now().toIso8601String(),
