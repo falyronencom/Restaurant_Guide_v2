@@ -398,8 +398,159 @@ export async function logout(req, res, next) {
 }
 
 /**
+ * Update current user's profile
+ *
+ * PUT /api/v1/auth/profile
+ *
+ * Updates the authenticated user's profile fields (name, avatar_url).
+ * At least one field must be provided.
+ *
+ * Request body:
+ * - name (optional): New display name (max 100 chars)
+ * - avatar_url (optional): New avatar URL (max 500 chars)
+ *
+ * Response:
+ * - 200 OK: Updated user information
+ * - 400 Bad Request: No fields provided or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 404 Not Found: User not found
+ */
+export async function updateProfile(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const { name, avatar_url } = req.body;
+
+    // Ensure at least one field is provided
+    if (name === undefined && avatar_url === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'At least one field (name or avatar_url) must be provided',
+        },
+      });
+    }
+
+    const user = await authService.updateUserProfile(userId, {
+      name,
+      avatarUrl: avatar_url,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          name: user.name,
+          role: user.role,
+          authMethod: user.auth_method,
+          avatarUrl: user.avatar_url,
+          emailVerified: user.email_verified,
+          phoneVerified: user.phone_verified,
+          createdAt: user.created_at,
+        },
+      },
+    });
+
+  } catch (error) {
+    if (error.message === 'NAME_EMPTY') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Name cannot be empty' },
+      });
+    }
+    if (error.message === 'NAME_TOO_LONG') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Name must be 100 characters or fewer' },
+      });
+    }
+    if (error.message === 'AVATAR_URL_TOO_LONG') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Avatar URL must be 500 characters or fewer' },
+      });
+    }
+    if (error.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Upload user avatar
+ *
+ * POST /api/v1/auth/avatar
+ *
+ * Accepts a multipart/form-data file upload (field: "avatar").
+ * Saves the file and updates the user's avatar_url in database.
+ *
+ * Response:
+ * - 200 OK: Avatar uploaded, returns new avatar URL
+ * - 400 Bad Request: No file or invalid file type
+ * - 401 Unauthorized: Not authenticated
+ */
+export async function uploadAvatar(req, res, next) {
+  try {
+    const userId = req.user.userId;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'NO_FILE',
+          message: 'No avatar file provided',
+        },
+      });
+    }
+
+    // Build public URL for the uploaded file
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+    // Update avatar_url in database
+    const user = await authService.updateUserProfile(userId, { avatarUrl });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          name: user.name,
+          role: user.role,
+          authMethod: user.auth_method,
+          avatarUrl: user.avatar_url,
+          emailVerified: user.email_verified,
+          phoneVerified: user.phone_verified,
+          createdAt: user.created_at,
+        },
+      },
+    });
+
+  } catch (error) {
+    if (error.message === 'INVALID_FILE_TYPE') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_FILE_TYPE',
+          message: 'Only JPEG, PNG and WebP images are allowed',
+        },
+      });
+    }
+    next(error);
+  }
+}
+
+/**
  * Get current authenticated user
- * 
+ *
  * GET /api/v1/auth/me
  * 
  * Returns information about the currently authenticated user based on the

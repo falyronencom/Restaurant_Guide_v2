@@ -423,6 +423,25 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  /// Upload avatar image
+  Future<bool> uploadAvatar(String filePath) async {
+    if (!isAuthenticated) return false;
+
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final user = await _authService.uploadAvatar(filePath);
+      _currentUser = user;
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Change password
   Future<bool> changePassword({
     required String currentPassword,

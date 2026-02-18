@@ -458,6 +458,69 @@ export async function findUserById(userId) {
 }
 
 /**
+ * Updates user profile fields (name, avatar_url)
+ *
+ * @param {string} userId - The ID of the user to update
+ * @param {Object} profileData - Fields to update
+ * @param {string} [profileData.name] - New display name (max 100 chars)
+ * @param {string} [profileData.avatarUrl] - New avatar URL (max 500 chars)
+ * @returns {Promise<Object>} Updated user object
+ * @throws {Error} If user not found or validation fails
+ */
+export async function updateUserProfile(userId, profileData) {
+  const { name, avatarUrl } = profileData;
+
+  // Build dynamic SET clause for only provided fields
+  const setClauses = [];
+  const values = [];
+  let paramIndex = 1;
+
+  if (name !== undefined) {
+    if (!name || name.trim().length === 0) {
+      throw new Error('NAME_EMPTY');
+    }
+    if (name.trim().length > 100) {
+      throw new Error('NAME_TOO_LONG');
+    }
+    setClauses.push(`name = $${paramIndex++}`);
+    values.push(name.trim());
+  }
+
+  if (avatarUrl !== undefined) {
+    if (avatarUrl && avatarUrl.length > 500) {
+      throw new Error('AVATAR_URL_TOO_LONG');
+    }
+    setClauses.push(`avatar_url = $${paramIndex++}`);
+    values.push(avatarUrl || null);
+  }
+
+  // Always update updated_at
+  setClauses.push(`updated_at = $${paramIndex++}`);
+  values.push(new Date());
+
+  // Add userId as last parameter
+  values.push(userId);
+
+  const query = `
+    UPDATE users
+    SET ${setClauses.join(', ')}
+    WHERE id = $${paramIndex} AND is_active = true
+    RETURNING id, email, phone, name, role, auth_method, avatar_url,
+              email_verified, phone_verified, created_at
+  `;
+
+  const result = await pool.query(query, values);
+
+  if (result.rows.length === 0) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  logger.info('User profile updated', { userId, fields: Object.keys(profileData) });
+
+  return result.rows[0];
+}
+
+/**
  * Upgrades a user's role from 'user' to 'partner'
  *
  * This function is called when a regular user creates their first establishment.

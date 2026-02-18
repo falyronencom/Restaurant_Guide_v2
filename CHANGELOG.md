@@ -6,6 +6,16 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 18, 2026 — Testing Session 2: Profile Edit & Avatar Upload
+- Backend: `PUT /api/v1/auth/profile` — update name/avatar_url (authService + authController + authRoutes)
+- Backend: `POST /api/v1/auth/avatar` — multipart image upload via multer (upload.js middleware, 5MB limit, JPEG/PNG/WebP)
+- Backend: Static file serving for `/uploads/` directory (server.js)
+- Mobile: Fixed `rootNavigator: true` for edit profile navigation
+- Mobile: Fixed response parsing in `auth_service.dart` — navigate `data.user` wrapper correctly
+- Mobile: `User.fullAvatarUrl` getter resolves relative backend paths to full URLs
+- Mobile: `EditProfileScreen` — avatar upload on image pick, `FileImage` for local preview, wider name input field
+- Mobile: Removed "{Гость}" label from profile detail screen
+
 ### Февраль 13, 2026 - Фаза 8 Segment E: Admin Panel — Utility Screens
 - Segment E Utility Screens полностью реализован (Protocol Informed v1.2)
 - Backend (5 new files, 2 modified):

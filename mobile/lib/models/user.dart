@@ -1,3 +1,5 @@
+import 'package:restaurant_guide_mobile/config/environment.dart';
+
 /// User data model
 /// Represents authenticated user with profile information
 class User {
@@ -91,6 +93,13 @@ class User {
 
   /// Get user's display name (name or identifier)
   String get displayName => name ?? displayIdentifier;
+
+  /// Get full avatar URL (resolves relative paths from backend)
+  String? get fullAvatarUrl {
+    if (avatarUrl == null || avatarUrl!.isEmpty) return null;
+    if (avatarUrl!.startsWith('http')) return avatarUrl;
+    return '${Environment.apiBaseUrl}$avatarUrl';
+  }
 
   @override
   String toString() {

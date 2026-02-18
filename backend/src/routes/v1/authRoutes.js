@@ -23,6 +23,7 @@ import {
 } from '../../validators/authValidation.js';
 import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
+import { uploadAvatar } from '../../middleware/upload.js';
 
 const router = express.Router();
 
@@ -139,6 +140,58 @@ router.get(
   '/me',
   authenticate,
   authController.getCurrentUser,
+);
+
+/**
+ * PUT /api/v1/auth/profile
+ *
+ * Protected endpoint to update current user's profile (name, avatar_url).
+ *
+ * Middleware chain:
+ * 1. Authentication: Verify access token in Authorization header
+ * 2. Controller: Validate and update profile fields
+ */
+router.put(
+  '/profile',
+  authenticate,
+  authController.updateProfile,
+);
+
+/**
+ * POST /api/v1/auth/avatar
+ *
+ * Protected endpoint to upload user avatar image.
+ * Accepts multipart/form-data with field "avatar" (max 5MB, JPEG/PNG/WebP).
+ *
+ * Middleware chain:
+ * 1. Authentication: Verify access token
+ * 2. Upload: multer processes the file
+ * 3. Controller: Save file reference and update user
+ */
+router.post(
+  '/avatar',
+  authenticate,
+  (req, res, next) => {
+    uploadAvatar(req, res, (err) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'FILE_TOO_LARGE', message: 'File size must be under 5MB' },
+          });
+        }
+        if (err.message === 'INVALID_FILE_TYPE') {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'INVALID_FILE_TYPE', message: 'Only JPEG, PNG and WebP images are allowed' },
+          });
+        }
+        return next(err);
+      }
+      next();
+    });
+  },
+  authController.uploadAvatar,
 );
 
 export default router;
