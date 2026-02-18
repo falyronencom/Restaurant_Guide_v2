@@ -563,6 +563,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
 
   // State
   List<UserReview> _reviews = [];
+  int _totalReviews = 0;
   bool _isLoading = true;
   String? _error;
 
@@ -581,15 +582,19 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
 
   /// Load user's reviews
   Future<void> _loadUserReviews() async {
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null) return;
+
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final response = await _reviewsService.getUserReviews();
+      final response = await _reviewsService.getUserReviews(userId: userId);
       setState(() {
         _reviews = response.reviews;
+        _totalReviews = response.total;
         _isLoading = false;
       });
     } catch (e) {
@@ -767,7 +772,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      '${_reviews.length}',
+                      '$_totalReviews',
                       style: const TextStyle(
                         fontFamily: 'Avenir Next',
                         fontSize: 14,
@@ -800,7 +805,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       ),
                     ),
                     const Text(
-                      'Оценок',
+                      'В избранном',
                       style: TextStyle(
                         fontFamily: 'Avenir Next',
                         fontSize: 14,
@@ -938,7 +943,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
   Widget _buildReviewCard(UserReview review) {
     return GestureDetector(
       onTap: () {
-        Navigator.of(context)
+        Navigator.of(context, rootNavigator: true)
             .pushNamed('/establishment/${review.establishmentId}');
       },
       child: Container(

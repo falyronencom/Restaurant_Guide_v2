@@ -182,15 +182,20 @@ class UserReview {
   });
 
   factory UserReview.fromJson(Map<String, dynamic> json) {
+    // Backend returns nested: { establishment: { id, name, city, category } }
+    final est = json['establishment'] as Map<String, dynamic>?;
+
     return UserReview(
       id: json['id'].toString(),
       establishmentId: json['establishment_id'].toString(),
-      establishmentName: json['establishment_name'] as String? ?? 'Заведение',
+      establishmentName: est?['name'] as String? ??
+          json['establishment_name'] as String? ??
+          'Заведение',
       establishmentImage: json['establishment_image'] as String?,
-      establishmentType: json['establishment_type'] as String?,
+      establishmentType: est?['category'] as String? ??
+          json['establishment_type'] as String?,
       establishmentCuisine: json['establishment_cuisine'] as String?,
       rating: json['rating'] as int,
-      // Backend returns 'content', support 'text' for backwards compatibility
       text: json['content'] as String? ?? json['text'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -212,14 +217,18 @@ class UserReviewsResponse {
   });
 
   factory UserReviewsResponse.fromJson(Map<String, dynamic> json) {
-    final reviewsData = json['data'] ?? json['reviews'] ?? [];
+    // Backend wraps in { success, data: { reviews: [...], pagination: { ... } } }
+    final dataWrapper = json['data'] as Map<String, dynamic>? ?? json;
+    final reviewsList = dataWrapper['reviews'] as List? ?? [];
+    final pagination = dataWrapper['pagination'] as Map<String, dynamic>? ?? {};
+
     return UserReviewsResponse(
-      reviews: (reviewsData as List)
+      reviews: reviewsList
           .map((e) => UserReview.fromJson(e as Map<String, dynamic>))
           .toList(),
-      total: json['total'] as int? ?? 0,
-      page: json['page'] as int? ?? 1,
-      totalPages: json['total_pages'] as int? ?? 0,
+      total: pagination['total'] as int? ?? reviewsList.length,
+      page: pagination['page'] as int? ?? 1,
+      totalPages: pagination['pages'] as int? ?? 0,
     );
   }
 }
