@@ -333,6 +333,26 @@ class EstablishmentsService {
   }
 
   // ============================================================================
+  // Submit for Moderation (draft → pending)
+  // ============================================================================
+
+  /// Submit an establishment for moderation
+  /// Changes status from 'draft' to 'pending'
+  Future<void> submitForModeration(String id) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/partner/establishments/$id/submit',
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Не удалось отправить на модерацию');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
   // Partner Update Operations (requires authentication)
   // ============================================================================
 
