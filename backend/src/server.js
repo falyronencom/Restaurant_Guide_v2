@@ -9,6 +9,7 @@ import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { UPLOADS_ROOT } from './middleware/upload.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -74,6 +75,11 @@ app.use((req, res, next) => {
  * ...existing code...
  */
 app.use(rateLimiter);
+
+/**
+ * Serve uploaded files (avatars, images) as static assets.
+ */
+app.use('/uploads', express.static(UPLOADS_ROOT));
 
 /**
  * Mount API routes under /api prefix.

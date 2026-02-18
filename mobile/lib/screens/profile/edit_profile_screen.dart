@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -110,15 +111,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _selectedImagePath = pickedFile.path;
           });
 
-          // Show info that avatar upload will be available later
+          // Upload avatar to server
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text('Загрузка аватара будет доступна в следующей версии'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            final success = await context
+                .read<AuthProvider>()
+                .uploadAvatar(pickedFile.path);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? 'Аватар успешно обновлён'
+                        : 'Не удалось загрузить аватар',
+                  ),
+                  backgroundColor: success ? null : Colors.red,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
           }
         }
       } catch (e) {
@@ -274,7 +285,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Column(
       children: [
         // Large avatar
-        _buildAvatar(user?.avatarUrl, user?.name ?? 'U', 68),
+        _buildAvatar(user?.fullAvatarUrl, user?.name ?? 'U', 68),
 
         const SizedBox(height: 16),
 
@@ -321,19 +332,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (_selectedImagePath != null) {
       return CircleAvatar(
         radius: radius,
-        backgroundImage: AssetImage(_selectedImagePath!),
+        backgroundImage: FileImage(File(_selectedImagePath!)),
         onBackgroundImageError: (_, __) {},
-        child: ClipOval(
-          child: Image.asset(
-            _selectedImagePath!,
-            width: radius * 2,
-            height: radius * 2,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildDefaultAvatar(name, radius);
-            },
-          ),
-        ),
       );
     }
 
@@ -458,8 +458,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       color: Colors.black,
                     ),
                     decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
+                      isDense: false,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       border: InputBorder.none,
                       hintText: hint,
                       hintStyle: const TextStyle(
