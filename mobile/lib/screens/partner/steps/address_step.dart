@@ -221,7 +221,19 @@ class _AddressStepState extends State<AddressStep> {
             setState(() {
               _selectedCity = value;
             });
-            _updateProvider();
+            if (value != null) {
+              final coords = CityOptions.coordinatesFor(value);
+              final provider = context.read<PartnerRegistrationProvider>();
+              provider.updateAddress(
+                city: value,
+                street: _streetController.text.trim(),
+                building: _buildingController.text.trim(),
+                latitude: coords.$1,
+                longitude: coords.$2,
+              );
+            } else {
+              _updateProvider();
+            }
           },
         ),
       ),

@@ -366,8 +366,8 @@ class PartnerRegistration {
       // Address as string
       'address': addressString.isNotEmpty ? addressString : 'Не указан',
       // Coordinates
-      'latitude': latitude ?? 53.9,
-      'longitude': longitude ?? 27.5667,
+      'latitude': latitude ?? CityOptions.coordinatesFor(city ?? 'Минск').$1,
+      'longitude': longitude ?? CityOptions.coordinatesFor(city ?? 'Минск').$2,
       // Working hours (required)
       'working_hours': workingHoursJson,
       // Optional fields
@@ -628,4 +628,22 @@ class CityOptions {
     'Брест',
     'Бобруйск',
   ];
+
+  /// City center coordinates derived from backend CITY_BOUNDS
+  /// Used as default coordinates when partner selects a city
+  static const Map<String, (double lat, double lon)> _cityCoordinates = {
+    'Минск': (53.9250, 27.5750),
+    'Гродно': (53.6650, 23.8500),
+    'Брест': (52.0900, 23.7000),
+    'Гомель': (52.4200, 31.0000),
+    'Витебск': (55.1900, 30.2000),
+    'Могилев': (53.9100, 30.3500),
+    'Бобруйск': (53.1500, 29.2500),
+  };
+
+  /// Get center coordinates for a city
+  /// Returns (latitude, longitude) tuple
+  static (double, double) coordinatesFor(String city) {
+    return _cityCoordinates[city] ?? (53.9250, 27.5750); // Минск as ultimate fallback
+  }
 }
