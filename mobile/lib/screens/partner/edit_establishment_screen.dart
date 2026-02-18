@@ -567,6 +567,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
 
   /// Show suspend confirmation dialog
   void _showSuspendConfirmation(BuildContext context, PartnerEstablishment establishment) {
+    final provider = context.read<PartnerDashboardProvider>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -589,15 +593,25 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogContext);
-              // TODO: Call API to suspend establishment
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Заведение приостановлено'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              final success = await provider.suspendEstablishment(establishment.id);
+              if (success) {
+                navigator.pop(); // Go back to profile
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Заведение приостановлено'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(provider.error ?? 'Ошибка приостановки'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
             },
             child: const Text(
               'Приостановить',
@@ -610,18 +624,36 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Resume establishment
-  void _resumeEstablishment(BuildContext context, PartnerEstablishment establishment) {
-    // TODO: Call API to resume establishment
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Заявка на возобновление отправлена'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  void _resumeEstablishment(BuildContext context, PartnerEstablishment establishment) async {
+    final provider = context.read<PartnerDashboardProvider>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final success = await provider.resumeEstablishment(establishment.id);
+    if (success) {
+      navigator.pop(); // Go back to profile
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Заявка на возобновление отправлена'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(provider.error ?? 'Ошибка возобновления'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   /// Show delete confirmation dialog
   void _showDeleteConfirmation(BuildContext context, PartnerEstablishment establishment) {
+    final provider = context.read<PartnerDashboardProvider>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -644,16 +676,25 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogContext);
-              // TODO: Call API to delete establishment
-              Navigator.of(context).pop(); // Go back to profile
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Заведение удалено'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              final success = await provider.deleteEstablishment(establishment.id);
+              if (success) {
+                navigator.pop(); // Go back to profile
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Заведение удалено'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(provider.error ?? 'Ошибка удаления'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text(

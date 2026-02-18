@@ -106,6 +106,52 @@ class PartnerService {
   }
 
   // ============================================================================
+  // Suspend / Resume / Delete
+  // ============================================================================
+
+  /// Suspend an establishment (active → suspended)
+  Future<void> suspendEstablishment(String id) async {
+    try {
+      final response = await _apiClient.dio.post(
+        '/api/v1/partner/establishments/$id/suspend',
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Не удалось приостановить заведение');
+      }
+    } catch (e) {
+      throw Exception('Ошибка приостановки: $e');
+    }
+  }
+
+  /// Resume a suspended establishment (suspended → pending)
+  Future<void> resumeEstablishment(String id) async {
+    try {
+      final response = await _apiClient.dio.post(
+        '/api/v1/partner/establishments/$id/resume',
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Не удалось возобновить заведение');
+      }
+    } catch (e) {
+      throw Exception('Ошибка возобновления: $e');
+    }
+  }
+
+  /// Delete an establishment permanently
+  Future<void> deleteEstablishment(String id) async {
+    try {
+      final response = await _apiClient.dio.delete(
+        '/api/v1/partner/establishments/$id',
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Не удалось удалить заведение');
+      }
+    } catch (e) {
+      throw Exception('Ошибка удаления: $e');
+    }
+  }
+
+  // ============================================================================
   // Check Partner Status
   // ============================================================================
 

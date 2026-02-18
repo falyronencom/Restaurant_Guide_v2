@@ -1174,3 +1174,41 @@ export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
   }
 };
 
+/**
+ * Delete an establishment and its associated media records
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @param {string} partnerId - UUID of the partner (for ownership check)
+ * @returns {Promise<Object|null>} Deleted establishment basic info, or null if not found/not owned
+ */
+export const deleteEstablishment = async (establishmentId, partnerId) => {
+  const query = `
+    DELETE FROM establishments
+    WHERE id = $1 AND partner_id = $2
+    RETURNING id, name
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId, partnerId]);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    logger.info('Establishment deleted', {
+      establishmentId,
+      partnerId,
+      name: result.rows[0].name,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error deleting establishment', {
+      error: error.message,
+      establishmentId,
+      partnerId,
+    });
+    throw error;
+  }
+};
+

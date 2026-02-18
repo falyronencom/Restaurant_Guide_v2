@@ -173,6 +173,41 @@ router.post(
 );
 
 /**
+ * Suspend an establishment (partner action)
+ *
+ * POST /api/v1/partner/establishments/:id/suspend
+ *
+ * Changes status from 'active' to 'suspended'. Partner can resume later.
+ */
+router.post(
+  '/:id/suspend',
+  authorize('partner'),
+  EstablishmentController.suspendEstablishment,
+);
+
+/**
+ * Resume a suspended establishment (goes to 'pending' for re-moderation)
+ *
+ * POST /api/v1/partner/establishments/:id/resume
+ */
+router.post(
+  '/:id/resume',
+  authorize('partner'),
+  EstablishmentController.resumeEstablishment,
+);
+
+/**
+ * Delete an establishment permanently
+ *
+ * DELETE /api/v1/partner/establishments/:id
+ */
+router.delete(
+  '/:id',
+  authorize('partner'),
+  EstablishmentController.deleteEstablishment,
+);
+
+/**
  * Mount media routes (Phase Two integration)
  * 
  * This nests all media management endpoints under the establishment routes,
