@@ -254,3 +254,60 @@ export const submitForModeration = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Suspend an establishment (partner action)
+ * POST /api/v1/partner/establishments/:id/suspend
+ */
+export const suspendEstablishment = asyncHandler(async (req, res) => {
+  const partnerId = req.user.userId;
+  const establishmentId = req.params.id;
+
+  const result = await EstablishmentService.suspendEstablishment(establishmentId, partnerId);
+
+  logger.info('Establishment suspended via API', { establishmentId, partnerId });
+
+  res.status(200).json({
+    success: true,
+    data: { establishment: result },
+    message: 'Establishment suspended',
+  });
+});
+
+/**
+ * Resume an establishment (partner action, goes to pending for re-moderation)
+ * POST /api/v1/partner/establishments/:id/resume
+ */
+export const resumeEstablishment = asyncHandler(async (req, res) => {
+  const partnerId = req.user.userId;
+  const establishmentId = req.params.id;
+
+  const result = await EstablishmentService.resumeEstablishment(establishmentId, partnerId);
+
+  logger.info('Establishment resume requested via API', { establishmentId, partnerId });
+
+  res.status(200).json({
+    success: true,
+    data: { establishment: result },
+    message: 'Establishment submitted for re-moderation',
+  });
+});
+
+/**
+ * Delete an establishment permanently (partner action)
+ * DELETE /api/v1/partner/establishments/:id
+ */
+export const deleteEstablishment = asyncHandler(async (req, res) => {
+  const partnerId = req.user.userId;
+  const establishmentId = req.params.id;
+
+  const result = await EstablishmentService.deleteEstablishment(establishmentId, partnerId);
+
+  logger.info('Establishment deleted via API', { establishmentId, partnerId, name: result.name });
+
+  res.status(200).json({
+    success: true,
+    data: { id: result.id, name: result.name },
+    message: 'Establishment deleted permanently',
+  });
+});
+

@@ -173,6 +173,53 @@ class PartnerDashboardProvider with ChangeNotifier {
   }
 
   // ============================================================================
+  // Suspend / Resume / Delete
+  // ============================================================================
+
+  /// Suspend an establishment
+  Future<bool> suspendEstablishment(String id) async {
+    try {
+      await _partnerService.suspendEstablishment(id);
+      await loadEstablishments(); // Refresh list
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Resume a suspended establishment
+  Future<bool> resumeEstablishment(String id) async {
+    try {
+      await _partnerService.resumeEstablishment(id);
+      await loadEstablishments(); // Refresh list
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Delete an establishment permanently
+  Future<bool> deleteEstablishment(String id) async {
+    try {
+      await _partnerService.deleteEstablishment(id);
+      _establishments.removeWhere((e) => e.id == id);
+      if (_selectedEstablishment?.id == id) {
+        _selectedEstablishment = null;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ============================================================================
   // Error Handling
   // ============================================================================
 

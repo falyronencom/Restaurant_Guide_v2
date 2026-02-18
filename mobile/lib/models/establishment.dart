@@ -1,3 +1,47 @@
+/// English→Russian mapping for cuisine values (legacy/test data compatibility)
+const _cuisineToRussian = {
+  'belarusian': 'Народная',
+  'national': 'Народная',
+  'author': 'Авторская',
+  'fusion': 'Авторская',
+  'asian': 'Азиатская',
+  'american': 'Американская',
+  'vegetarian': 'Вегетарианская',
+  'japanese': 'Японская',
+  'georgian': 'Грузинская',
+  'italian': 'Итальянская',
+  'mixed': 'Смешанная',
+  'international': 'Смешанная',
+  'continental': 'Континентальная',
+  'european': 'Европейская',
+  'indian': 'Индийская',
+  'mediterranean': 'Средиземноморская',
+};
+
+/// English→Russian mapping for category values (legacy/test data compatibility)
+const _categoryToRussian = {
+  'restaurant': 'Ресторан',
+  'cafe': 'Кофейня',
+  'fast_food': 'Фаст-фуд',
+  'pizzeria': 'Пиццерия',
+  'bar': 'Бар',
+  'pub': 'Паб',
+  'bakery': 'Пекарня',
+  'confectionery': 'Кондитерская',
+  'karaoke': 'Караоке',
+  'canteen': 'Столовая',
+  'hookah_bar': 'Кальянная',
+  'hookah_lounge': 'Кальянная',
+  'bowling': 'Боулинг',
+  'billiards': 'Бильярд',
+  'nightclub': 'Клуб',
+};
+
+/// Normalize a value to Russian — if already Russian, returns as-is
+String _toRussian(String value, Map<String, String> mapping) {
+  return mapping[value.toLowerCase()] ?? value;
+}
+
 /// Establishment model representing a restaurant/cafe
 /// Matches backend API response format
 class Establishment {
@@ -49,21 +93,25 @@ class Establishment {
 
   /// Create from JSON
   factory Establishment.fromJson(Map<String, dynamic> json) {
-    // Parse categories array
+    // Parse categories array and normalize to Russian
     final categoriesList = json['categories'] != null
-        ? (json['categories'] as List).map((e) => e.toString()).toList()
+        ? (json['categories'] as List)
+            .map((e) => _toRussian(e.toString(), _categoryToRussian))
+            .toList()
         : <String>[];
 
-    // Parse cuisines array
+    // Parse cuisines array and normalize to Russian
     final cuisinesList = json['cuisines'] != null
-        ? (json['cuisines'] as List).map((e) => e.toString()).toList()
+        ? (json['cuisines'] as List)
+            .map((e) => _toRussian(e.toString(), _cuisineToRussian))
+            .toList()
         : <String>[];
 
     return Establishment(
       id: json['id'].toString(),  // UUID as String
       name: json['name'] as String,
       description: json['description'] as String?,
-      category: categoriesList.isNotEmpty ? categoriesList.first : 'restaurant',
+      category: categoriesList.isNotEmpty ? categoriesList.first : 'Ресторан',
       categories: categoriesList,
       cuisine: cuisinesList.isNotEmpty ? cuisinesList.first : null,
       cuisines: cuisinesList,
