@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/auth_response.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
@@ -328,7 +329,8 @@ class AuthService {
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final responseData = response.data as Map<String, dynamic>;
-        final userData = responseData['data'] as Map<String, dynamic>? ??
+        final userData = responseData['data']?['user'] as Map<String, dynamic>? ??
+                        responseData['data'] as Map<String, dynamic>? ??
                         responseData['user'] as Map<String, dynamic>? ??
                         responseData;
 
@@ -340,6 +342,41 @@ class AuthService {
         return user;
       } else {
         throw Exception('Failed to update profile');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Upload avatar image file
+  ///
+  /// Returns updated User object with new avatar URL
+  Future<User> uploadAvatar(String filePath) async {
+    try {
+      final formData = FormData.fromMap({
+        'avatar': await MultipartFile.fromFile(
+          filePath,
+          filename: filePath.split('/').last,
+        ),
+      });
+
+      final response = await _apiClient.post(
+        '/api/v1/auth/avatar',
+        data: formData,
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final responseData = response.data as Map<String, dynamic>;
+        final userData = responseData['data']?['user'] as Map<String, dynamic>? ??
+                        responseData['data'] as Map<String, dynamic>? ??
+                        responseData;
+
+        final user = User.fromJson(userData);
+        await _storage.write(key: 'user_data', value: user.toJson().toString());
+
+        return user;
+      } else {
+        throw Exception('Failed to upload avatar');
       }
     } catch (e) {
       rethrow;

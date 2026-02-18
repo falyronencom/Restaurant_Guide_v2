@@ -124,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Row(
             children: [
               // Avatar
-              _buildAvatar(user?.avatarUrl, user?.name ?? 'U', 30),
+              _buildAvatar(user?.fullAvatarUrl, user?.name ?? 'U', 30),
               const SizedBox(width: 16),
               // Name and subtitle
               Expanded(
@@ -720,7 +720,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Avatar
-                _buildAvatar(user?.avatarUrl, user?.name ?? 'U', 50),
+                _buildAvatar(user?.fullAvatarUrl, user?.name ?? 'U', 50),
 
                 const SizedBox(width: 16),
 
@@ -729,30 +729,15 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              user?.name ?? 'Пользователь',
-                              style: const TextStyle(
-                                fontFamily: 'Avenir Next',
-                                fontSize: 20,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.black,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            '{Гость}',
-                            style: TextStyle(
-                              fontFamily: 'Avenir Next',
-                              fontSize: 18,
-                              color: _greyText,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        user?.name ?? 'Пользователь',
+                        style: const TextStyle(
+                          fontFamily: 'Avenir Next',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -824,7 +809,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               alignment: Alignment.centerRight,
               child: GestureDetector(
                 onTap: () {
-                  Navigator.of(context).pushNamed('/profile/edit');
+                  Navigator.of(context, rootNavigator: true).pushNamed('/profile/edit');
                 },
                 child: const Text(
                   'Редактировать',
