@@ -498,8 +498,11 @@ class PartnerRegistrationProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Call API to create establishment
-      await _establishmentsService.createEstablishment(_data);
+      // Call API to create establishment (status: draft)
+      final result = await _establishmentsService.createEstablishment(_data);
+
+      // Auto-submit for moderation (draft → pending)
+      await _establishmentsService.submitForModeration(result.id);
 
       _isSubmitting = false;
       notifyListeners();
