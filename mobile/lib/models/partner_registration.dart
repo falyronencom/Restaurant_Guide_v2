@@ -443,6 +443,7 @@ class PartnerRegistration {
       'georgian': 'Грузинская',
       'vegetarian': 'Вегетарианская',
       'mixed': 'Смешанная',
+      'european': 'Европейская',
       'continental': 'Континентальная',
     };
     return mapping[id] ?? id;
@@ -460,6 +461,7 @@ class PartnerRegistration {
       'Грузинская': 'georgian',
       'Вегетарианская': 'vegetarian',
       'Смешанная': 'mixed',
+      'Европейская': 'european',
       'Континентальная': 'continental',
     };
     return mapping[name] ?? name;
@@ -570,7 +572,7 @@ class CuisineOptions {
     CuisineItem(id: 'georgian', name: 'Грузинская', icon: 'georgian'),
     CuisineItem(id: 'vegetarian', name: 'Вегетарианская', icon: 'vegetarian'),
     CuisineItem(id: 'mixed', name: 'Смешанная', icon: 'mixed'),
-    CuisineItem(id: 'continental', name: 'Континентальная', icon: 'continental'),
+    CuisineItem(id: 'european', name: 'Европейская', icon: 'continental'),
   ];
 
   static const int maxSelection = 3;

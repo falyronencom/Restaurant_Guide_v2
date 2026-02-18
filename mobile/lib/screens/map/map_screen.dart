@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
-import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
@@ -360,10 +359,10 @@ class _MapScreenState extends State<MapScreen> {
     // Get current filters from provider BEFORE async operations
     final provider = context.read<EstablishmentsProvider>();
     final List<String>? apiCategories = provider.categoryFilters.isNotEmpty
-        ? FilterConstants.categoriesToApi(provider.categoryFilters.toList())
+        ? provider.categoryFilters.toList()
         : null;
     final List<String>? apiCuisines = provider.cuisineFilters.isNotEmpty
-        ? FilterConstants.cuisinesToApi(provider.cuisineFilters.toList())
+        ? provider.cuisineFilters.toList()
         : null;
     // Backend /search/map expects single priceRange value (not array like categories/cuisines)
     final String? apiPriceRange = provider.priceFilters.isNotEmpty

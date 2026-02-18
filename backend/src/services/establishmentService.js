@@ -1009,3 +1009,66 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
   }
 };
 
+/**
+ * Suspend a partner's establishment (active → suspended)
+ */
+export const suspendEstablishment = async (establishmentId, partnerId) => {
+  const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
+  if (!isOwner) {
+    throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
+  }
+
+  const result = await EstablishmentModel.changeEstablishmentStatus(establishmentId, {
+    fromStatus: 'active',
+    toStatus: 'suspended',
+  });
+
+  if (!result) {
+    throw new AppError('Cannot suspend. Establishment must be in active status.', 400, 'INVALID_STATUS_TRANSITION');
+  }
+
+  logger.info('Establishment suspended by partner', { establishmentId, partnerId });
+  return result;
+};
+
+/**
+ * Resume a partner's establishment (suspended → pending for re-moderation)
+ */
+export const resumeEstablishment = async (establishmentId, partnerId) => {
+  const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
+  if (!isOwner) {
+    throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
+  }
+
+  const result = await EstablishmentModel.changeEstablishmentStatus(establishmentId, {
+    fromStatus: 'suspended',
+    toStatus: 'pending',
+  });
+
+  if (!result) {
+    throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
+  }
+
+  logger.info('Establishment resume requested by partner', { establishmentId, partnerId });
+  return result;
+};
+
+/**
+ * Delete a partner's establishment permanently
+ */
+export const deleteEstablishment = async (establishmentId, partnerId) => {
+  const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
+  if (!isOwner) {
+    throw new AppError('Access denied. You can only delete your own establishments.', 403, 'FORBIDDEN');
+  }
+
+  const result = await EstablishmentModel.deleteEstablishment(establishmentId, partnerId);
+
+  if (!result) {
+    throw new AppError('Establishment not found.', 404, 'ESTABLISHMENT_NOT_FOUND');
+  }
+
+  logger.info('Establishment deleted by partner', { establishmentId, partnerId, name: result.name });
+  return result;
+};
+
