@@ -190,20 +190,22 @@ class ReviewsService {
   // User Review Operations
   // ============================================================================
 
-  /// Get current user's reviews (requires authentication)
+  /// Get user's reviews by user ID
   ///
+  /// [userId] - UUID of the user
   /// [page] - Page number (default: 1)
-  /// [perPage] - Items per page (default: 20)
+  /// [limit] - Items per page (default: 20)
   Future<UserReviewsResponse> getUserReviews({
+    required String userId,
     int page = 1,
-    int perPage = 20,
+    int limit = 20,
   }) async {
     try {
       final response = await _apiClient.get(
-        '/api/v1/users/me/reviews',
+        '/api/v1/users/$userId/reviews',
         queryParameters: {
           'page': page,
-          'per_page': perPage,
+          'limit': limit,
         },
       );
 
