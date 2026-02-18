@@ -46,6 +46,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SafeArea(
         child: Consumer2<AuthProvider, PartnerDashboardProvider>(
           builder: (context, authProvider, partnerProvider, child) {
+            // Trigger partner data load when user becomes authenticated
+            if (authProvider.isAuthenticated && !partnerProvider.isInitialized && !partnerProvider.isLoading) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                partnerProvider.initializeIfNeeded();
+              });
+            }
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
