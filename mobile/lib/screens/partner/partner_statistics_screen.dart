@@ -84,7 +84,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     const Text(
                       'Заведение не найдено',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 16,
                         color: _greyText,
                       ),
@@ -178,10 +177,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             'Статистика',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -209,7 +208,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             const Text(
               'Ошибка загрузки',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
                 color: Colors.black,
@@ -219,7 +217,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             const Text(
               'Не удалось загрузить данные. Проверьте интернет-соединение.',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 14,
                 color: _greyText,
               ),
@@ -237,7 +234,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 child: const Text(
                   'Повторить',
                   style: TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                     color: _backgroundColor,
@@ -315,7 +311,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(
                     establishment.name,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 22,
                       fontWeight: FontWeight.w500,
                       color: Colors.black,
@@ -325,7 +320,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(
                     establishment.categoryDisplayName,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       color: Colors.black,
                     ),
@@ -333,7 +327,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(
                     establishment.cuisineDisplayName,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 13,
                       color: Color(0xFFD2D2D2),
                     ),
@@ -342,7 +335,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(
                     establishment.shortAddress,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 14,
                       color: Colors.black,
                     ),
@@ -378,7 +370,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(
                     _selectedPeriod,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       color: _secondaryOrange,
                     ),
@@ -398,7 +389,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           Text(
             _getDateRangeText(),
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 15,
               fontWeight: FontWeight.w500,
               color: Colors.black,
@@ -425,7 +415,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             const Text(
               'Выберите период',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
               ),
@@ -435,7 +424,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   title: Text(
                     period,
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 16,
                       color: period == _selectedPeriod
                           ? _primaryOrange
@@ -545,7 +533,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w500,
             color: Colors.black,
@@ -561,7 +548,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             Text(
               value,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 13,
                 color: Colors.black,
               ),
@@ -575,7 +561,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 '${isPositive ? '+' : ''}${trend.toStringAsFixed(trend.truncateToDouble() == trend ? 0 : 1)}',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 13,
                   color: trendColor,
                 ),
@@ -609,7 +594,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               const Text(
                 'Просмотры',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -618,7 +602,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 _formatNumber(establishment.stats.views),
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -651,7 +634,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
         child: Text(
           'Детализация по дням скоро будет доступна',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 14,
             color: _greyText,
           ),
@@ -675,7 +657,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 'Взаимодействия',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -684,7 +665,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 '0',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -722,7 +702,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -731,7 +710,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 '$value',
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   color: Colors.black,
                 ),
@@ -743,7 +721,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             Text(
               trendText,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 13,
                 color: _greyText,
               ),
@@ -771,7 +748,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             Text(
               title,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
                 color: Colors.black,
@@ -780,7 +756,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             Text(
               '$value',
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 color: Colors.black,
               ),
@@ -792,7 +767,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           Text(
             trendText,
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: _greyText,
             ),
@@ -824,7 +798,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               const Text(
                 'Оценки',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -833,7 +806,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Text(
                 '$totalRatings',
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   color: Colors.black,
                 ),
@@ -849,7 +821,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               child: Text(
                 'Пока нет оценок',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 14,
                   color: _greyText,
                 ),
@@ -875,7 +846,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                               .replaceAll('.', ',') ??
                           '-',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 28,
                         color: _backgroundColor,
                       ),
@@ -893,7 +863,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                       Text(
                         'Оценки: $totalRatings',
                         style: const TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 14,
                           color: Colors.black,
                         ),
@@ -913,7 +882,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                                 child: Text(
                                   '$star',
                                   style: const TextStyle(
-                                    fontFamily: 'Avenir Next',
                                     fontSize: 18,
                                     color: Colors.black,
                                   ),
@@ -955,7 +923,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                                 child: Text(
                                   '$count',
                                   style: const TextStyle(
-                                    fontFamily: 'Avenir Next',
                                     fontSize: 13,
                                     color: Colors.black,
                                   ),
@@ -1005,7 +972,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           child: const Text(
             'Просмотр отзывов',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),

@@ -26,7 +26,6 @@ class CategoryStep extends StatelessWidget {
               const Text(
                 'Категория заведения',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -39,7 +38,6 @@ class CategoryStep extends StatelessWidget {
               const Text(
                 'Допускается выбрать две категории',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
                   color: Colors.black,
@@ -53,7 +51,6 @@ class CategoryStep extends StatelessWidget {
                 child: Text(
                   '${provider.selectedCategoriesCount}/${CategoryOptions.maxSelection}',
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
                     color: Colors.black,
@@ -159,7 +156,6 @@ class _CategoryCard extends StatelessWidget {
             Text(
               category.name,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 17,
                 fontWeight: FontWeight.w400,
                 color: Colors.black,

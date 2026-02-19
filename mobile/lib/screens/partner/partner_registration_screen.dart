@@ -130,10 +130,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          const Text(
+          Text(
             'Ваше заведение',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -176,13 +176,12 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         title: const Text(
           'Выйти из регистрации?',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontWeight: FontWeight.w600,
           ),
         ),
         content: const Text(
           'Введённые данные будут потеряны.',
-          style: TextStyle(fontFamily: 'Avenir Next'),
+          style: TextStyle(),
         ),
         actions: [
           TextButton(
@@ -190,7 +189,6 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             child: const Text(
               'Отмена',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 color: Colors.black54,
               ),
             ),
@@ -203,7 +201,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text(
               'Выйти',
-              style: TextStyle(fontFamily: 'Avenir Next'),
+              style: TextStyle(),
             ),
           ),
         ],
@@ -274,7 +272,6 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             Text(
               'Назад',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: _greyStroke,
@@ -328,7 +325,6 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             Text(
               buttonText,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
                 color: _backgroundColor,

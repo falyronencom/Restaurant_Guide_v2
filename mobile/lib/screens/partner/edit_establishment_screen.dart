@@ -74,7 +74,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                       const Text(
                         'Не удалось загрузить данные',
                         style: TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 18,
                           fontWeight: FontWeight.w500,
                           color: Colors.black,
@@ -84,7 +83,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                       const Text(
                         'Проверьте интернет-соединение и попробуйте снова.',
                         style: TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 14,
                           color: _greyText,
                         ),
@@ -102,7 +100,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                           child: const Text(
                             'Повторить',
                             style: TextStyle(
-                              fontFamily: 'Avenir Next',
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                               color: Colors.white,
@@ -124,7 +121,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                     const Text(
                       'Заведение не найдено',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 16,
                         color: _greyText,
                       ),
@@ -196,10 +192,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             'Редактирование',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -217,7 +213,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       child: Text(
         title,
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 22,
           fontWeight: FontWeight.w500,
           color: Colors.black,
@@ -325,7 +320,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               child: Text(
                 title,
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   color: isEnabled ? Colors.black : _greyText,
                 ),
@@ -448,7 +442,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               const Text(
                 'Статус заведения',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
                   color: Colors.black,
@@ -458,7 +451,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               Text(
                 'Текущий статус: ${establishment.status.label}',
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 14,
                   color: _greyText,
                 ),
@@ -542,7 +534,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: isDestructive ? Colors.red : Colors.black,
@@ -552,7 +543,6 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                   Text(
                     description,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 13,
                       color: _greyText,
                     ),
@@ -579,18 +569,18 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Приостановить заведение?',
-          style: TextStyle(fontFamily: 'Avenir Next', fontWeight: FontWeight.w600),
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
         content: const Text(
           'Заведение будет скрыто от пользователей. Вы сможете возобновить его в любой момент.',
-          style: TextStyle(fontFamily: 'Avenir Next'),
+          style: TextStyle(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'Отмена',
-              style: TextStyle(fontFamily: 'Avenir Next', color: Colors.black54),
+              style: TextStyle(color: Colors.black54),
             ),
           ),
           TextButton(
@@ -616,7 +606,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             },
             child: const Text(
               'Приостановить',
-              style: TextStyle(fontFamily: 'Avenir Next', color: _primaryOrange),
+              style: TextStyle(color: _primaryOrange),
             ),
           ),
         ],
@@ -662,18 +652,18 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Удалить заведение?',
-          style: TextStyle(fontFamily: 'Avenir Next', fontWeight: FontWeight.w600),
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
         content: Text(
           'Вы уверены, что хотите удалить "${establishment.name}"? Это действие нельзя отменить.',
-          style: const TextStyle(fontFamily: 'Avenir Next'),
+          style: const TextStyle(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'Отмена',
-              style: TextStyle(fontFamily: 'Avenir Next', color: Colors.black54),
+              style: TextStyle(color: Colors.black54),
             ),
           ),
           TextButton(
@@ -700,7 +690,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text(
               'Удалить',
-              style: TextStyle(fontFamily: 'Avenir Next'),
+              style: TextStyle(),
             ),
           ),
         ],

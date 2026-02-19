@@ -509,8 +509,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         // Name
         Text(
           _establishment!.name,
-          style: const TextStyle(
-            fontFamily: 'Unbounded',
+          style: TextStyle(
+fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 50,
             fontWeight: FontWeight.w400,
             color: _backgroundColor,
@@ -720,10 +720,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          const Text(
+          Text(
             'Меню',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 30,
               fontWeight: FontWeight.w400,
               color: Colors.black,
@@ -940,10 +940,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     'Описание',
                     style: TextStyle(
-                      fontFamily: 'Unbounded',
+                      fontFamily: AppTheme.fontDisplayFamily,
                       fontSize: 30,
                       fontWeight: FontWeight.w400,
                       color: Colors.black,
@@ -1050,12 +1050,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
-                fontFamily: 'Unbounded',
+                fontFamily: AppTheme.fontDisplayFamily,
                 fontSize: 30,
                 fontWeight: FontWeight.w400,
                 color: Colors.black,
@@ -1169,10 +1169,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Title
-              const Text(
+              Text(
                 'Карта',
                 style: TextStyle(
-                  fontFamily: 'Unbounded',
+                  fontFamily: AppTheme.fontDisplayFamily,
                   fontSize: 30,
                   fontWeight: FontWeight.w400,
                   color: Colors.black,
@@ -1357,10 +1357,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'Отзывы',
                   style: TextStyle(
-                    fontFamily: 'Unbounded',
+                    fontFamily: AppTheme.fontDisplayFamily,
                     fontSize: 30,
                     fontWeight: FontWeight.w400,
                     color: _backgroundColor,
@@ -1530,8 +1530,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                     review.userName.isNotEmpty
                         ? review.userName[0].toUpperCase()
                         : 'A',
-                    style: const TextStyle(
-                      fontFamily: 'Unbounded',
+                    style: TextStyle(
+fontFamily: AppTheme.fontDisplayFamily,
                       fontSize: 25,
                       color: _backgroundColor,
                     ),

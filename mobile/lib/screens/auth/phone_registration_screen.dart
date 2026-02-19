@@ -108,13 +108,13 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
         backgroundColor: const Color(0xFFF4F1EC),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Регистрация',
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 25,
             fontWeight: FontWeight.w400,
             color: AppTheme.primaryOrangeDark,
@@ -135,7 +135,6 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                 Text(
                   'О вас',
                   style: theme.textTheme.headlineMedium?.copyWith(
-                    fontFamily: 'Avenir Next',
                     fontSize: 22,
                     fontWeight: FontWeight.w500,
                     height: 1.18, // 26/22
@@ -148,7 +147,6 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                 Text(
                   'Введите свои данные, имя будет видно для остальных пользователей',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'Avenir Next',
                     fontSize: 15,
                     height: 1.53, // 23/15
                   ),
@@ -222,7 +220,6 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                 Text(
                   'Пароль должен быть не менее 8 знаков',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'Avenir Next',
                     fontSize: 13,
                     height: 1.15, // 15/13
                     color: const Color(0xFFD2D2D2),
@@ -272,7 +269,6 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                       : Text(
                           'Продолжить',
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontFamily: 'Avenir Next',
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: const Color(0xFFF4F1EC),

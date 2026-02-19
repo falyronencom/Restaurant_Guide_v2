@@ -73,7 +73,6 @@ class _MediaStepState extends State<MediaStep> {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 22,
             fontWeight: FontWeight.w500,
             color: Colors.black,
@@ -83,7 +82,6 @@ class _MediaStepState extends State<MediaStep> {
         Text(
           subtitle,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -113,7 +111,6 @@ class _MediaStepState extends State<MediaStep> {
               child: Text(
                 'Фото',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -123,7 +120,6 @@ class _MediaStepState extends State<MediaStep> {
             Text(
               '*',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
                 color: _lightOrange,
@@ -137,7 +133,6 @@ class _MediaStepState extends State<MediaStep> {
         const Text(
           'Добавьте фото вашего заведения, первая фотография будет обложкой карточки',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -151,7 +146,6 @@ class _MediaStepState extends State<MediaStep> {
           child: Text(
             'До 50 фото формата PNG/JPG, до 150 мб',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: _greyText,
             ),
@@ -201,7 +195,6 @@ class _MediaStepState extends State<MediaStep> {
               child: Text(
                 'Меню',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -211,7 +204,6 @@ class _MediaStepState extends State<MediaStep> {
             Text(
               '*',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
                 color: _lightOrange,
@@ -225,7 +217,6 @@ class _MediaStepState extends State<MediaStep> {
         const Text(
           'Добавьте меню вашего заведения, предпочтительнее единый файл PDF',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -239,7 +230,6 @@ class _MediaStepState extends State<MediaStep> {
           child: Text(
             'Формат PDF, до 60 мб',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: _greyText,
             ),
@@ -262,7 +252,6 @@ class _MediaStepState extends State<MediaStep> {
           child: Text(
             'До 20 фото формата PNG/JPG, до 90 мб',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: _greyText,
             ),
@@ -383,7 +372,6 @@ class _MediaStepState extends State<MediaStep> {
             : Text(
                 label,
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: onTap != null ? Colors.black : _greyText,
@@ -587,7 +575,6 @@ class _PhotoTile extends StatelessWidget {
                   child: const Text(
                     'Обложка',
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 10,
                       fontWeight: FontWeight.w500,
                       color: Colors.white,

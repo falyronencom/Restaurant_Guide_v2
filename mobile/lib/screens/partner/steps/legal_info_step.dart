@@ -156,10 +156,10 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Title
-        const Text(
+        Text(
           'Ваши данные',
           style: TextStyle(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -170,7 +170,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
         const Text(
           'Введите необходимые данные для вашей верификации',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: _greyText,
@@ -205,7 +204,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
               child: Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: Colors.black,
@@ -228,7 +226,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
         Text(
           description,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 14,
             fontWeight: FontWeight.w400,
             color: _greyText,
@@ -268,7 +265,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
         maxLength: maxLength,
         inputFormatters: inputFormatters,
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 16,
           color: Colors.black,
         ),
@@ -279,7 +275,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
           focusedBorder: InputBorder.none,
           hintText: hint,
           hintStyle: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 16,
             color: _greyText,
           ),
@@ -300,7 +295,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
           child: Text(
             'Формат PDF/PNG/JPG, до 60 мб',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: _greyText,
             ),
@@ -321,7 +315,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
               child: Text(
                 _documentFileName ?? '+ Загрузить',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                   color: _documentFileName != null ? Colors.black : _greyText,
@@ -346,13 +339,12 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
         title: const Text(
           'Загрузка документов',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontWeight: FontWeight.w600,
           ),
         ),
         content: const Text(
           'Загрузка документов будет доступна в следующей версии приложения.\n\nПока вы можете отправить документ на email после регистрации.',
-          style: TextStyle(fontFamily: 'Avenir Next'),
+          style: TextStyle(),
         ),
         actions: [
           TextButton(
@@ -371,7 +363,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             child: const Text(
               'Выбрать позже',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 color: _greyText,
               ),
             ),
@@ -381,7 +372,6 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             child: const Text(
               'Понятно',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 color: _requiredRed,
               ),
             ),

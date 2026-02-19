@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Application theme configuration
 /// Implements design specifications from Figma mockups
@@ -50,6 +51,31 @@ class AppTheme {
   static const Color textSecondary = gray600;
   static const Color textTertiary = gray500;
   static const Color textOnPrimary = Colors.white;
+
+  // ============================================================================
+  // Font Families
+  // ============================================================================
+
+  /// Display/accent font for headings and titles (Figma: Unbounded)
+  static final String fontDisplayFamily = GoogleFonts.unbounded().fontFamily!;
+
+  /// Helper to create Unbounded (display) TextStyle via GoogleFonts
+  static TextStyle unbounded({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? letterSpacing,
+    double? height,
+    TextDecoration? decoration,
+  }) =>
+      GoogleFonts.unbounded(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        letterSpacing: letterSpacing,
+        height: height,
+        decoration: decoration,
+      );
 
   // ============================================================================
   // Typography
@@ -348,8 +374,8 @@ class AppTheme {
         elevation: 8,
       ),
 
-      // Typography theme
-      textTheme: const TextTheme(
+      // Typography theme — Nunito Sans as default body font (replaces Avenir Next)
+      textTheme: GoogleFonts.nunitoSansTextTheme(const TextTheme(
         displayLarge: displayLarge,
         displayMedium: displayMedium,
         displaySmall: displaySmall,
@@ -362,7 +388,7 @@ class AppTheme {
         labelLarge: labelLarge,
         labelMedium: labelMedium,
         labelSmall: labelSmall,
-      ),
+      )),
     );
   }
 }

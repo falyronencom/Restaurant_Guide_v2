@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 
@@ -151,7 +150,7 @@ class EstablishmentCard extends StatelessWidget {
   Widget _buildName() {
     return Text(
       establishment.name,
-      style: GoogleFonts.unbounded(
+      style: AppTheme.unbounded(
         fontSize: 18,
         fontWeight: FontWeight.w400,
         color: Colors.black,
