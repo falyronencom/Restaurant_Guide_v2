@@ -220,10 +220,10 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             'Отзывы',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -244,7 +244,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           const Text(
             'от',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 15,
               color: Colors.black,
             ),
@@ -258,7 +257,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           const Text(
             'до',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 15,
               color: Colors.black,
             ),
@@ -286,7 +284,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             Text(
               _formatDate(date),
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 color: Colors.black,
               ),
@@ -368,7 +365,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
               const Text(
                 'Сортировка',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 14,
                   color: Colors.black,
                 ),
@@ -396,7 +392,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             const Text(
               'Сортировка',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
               ),
@@ -406,7 +401,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   title: Text(
                     option,
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 16,
                       color:
                           option == _sortOption ? _primaryOrange : Colors.black,
@@ -445,7 +439,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           Text(
             _error!,
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 16,
               color: _greyText,
             ),
@@ -456,7 +449,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             child: const Text(
               'Повторить',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 16,
                 color: _primaryOrange,
                 fontWeight: FontWeight.w500,
@@ -483,7 +475,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           const Text(
             'Нет отзывов за выбранный период',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 16,
               color: _greyText,
             ),
@@ -548,7 +539,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                     Text(
                       review.userName,
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
                         color: Colors.black,
@@ -570,7 +560,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   child: Text(
                     review.rating.toStringAsFixed(1).replaceAll('.', ','),
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 16,
                       color: _backgroundColor,
                     ),
@@ -586,7 +575,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
           Text(
             '– ${_formatRelativeDate(review.createdAt)}',
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 13,
               color: Colors.black,
             ),
@@ -599,7 +587,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             Text(
               review.text!,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 color: Colors.black,
                 height: 1.5,
@@ -633,7 +620,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                       const Text(
                         'Ответ заведения',
                         style: TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: _primaryOrange,
@@ -644,7 +630,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                         Text(
                           _formatRelativeDate(review.partnerResponseAt!),
                           style: const TextStyle(
-                            fontFamily: 'Avenir Next',
                             fontSize: 11,
                             color: _greyText,
                           ),
@@ -655,7 +640,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   Text(
                     review.partnerResponse!,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 14,
                       color: Colors.black87,
                       height: 1.4,
@@ -682,7 +666,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 child: Text(
                   review.partnerResponse != null ? 'Редактировать' : 'Ответить',
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: _primaryOrange,
@@ -715,7 +698,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       child: Text(
         review.userName.isNotEmpty ? review.userName[0].toUpperCase() : '?',
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 20,
           fontWeight: FontWeight.w500,
           color: Colors.white,
@@ -756,7 +738,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 ? 'Редактировать ответ'
                 : 'Ответить на отзыв',
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
@@ -770,7 +751,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 Text(
                   'Отзыв от ${review.userName}:',
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 13,
                     color: _greyText,
                   ),
@@ -782,7 +762,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                         ? '${review.text!.substring(0, 100)}...'
                         : review.text!,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 14,
                       fontStyle: FontStyle.italic,
                     ),
@@ -795,7 +774,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   decoration: InputDecoration(
                     hintText: 'Введите ваш ответ...',
                     hintStyle: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       color: _greyText,
                     ),
                     border: OutlineInputBorder(
@@ -809,7 +787,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                     contentPadding: const EdgeInsets.all(12),
                   ),
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 14,
                   ),
                   validator: (value) {
@@ -859,7 +836,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 child: Text(
                   'Удалить',
                   style: TextStyle(
-                    fontFamily: 'Avenir Next',
                     color: isSubmitting ? _greyText : Colors.red,
                   ),
                 ),
@@ -870,7 +846,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
               child: Text(
                 'Отмена',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   color: isSubmitting ? _greyText : Colors.black54,
                 ),
               ),
@@ -930,7 +905,6 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   : const Text(
                       'Отправить',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontWeight: FontWeight.w600,
                         color: _primaryOrange,
                       ),

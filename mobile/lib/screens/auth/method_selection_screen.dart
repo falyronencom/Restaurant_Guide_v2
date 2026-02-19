@@ -16,13 +16,13 @@ class MethodSelectionScreen extends StatelessWidget {
         backgroundColor: const Color(0xFFF4F1EC),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Регистрация',
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 25,
             fontWeight: FontWeight.w400,
             color: AppTheme.primaryOrangeDark,

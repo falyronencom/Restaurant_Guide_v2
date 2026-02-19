@@ -100,13 +100,13 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: const Color(0xFFF4F1EC),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Вход в профиль',
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 25,
             fontWeight: FontWeight.w400,
             color: AppTheme.primaryOrangeDark,
@@ -127,7 +127,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   'С возвращением!',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     height: 1.25, // 20/16
                   ),
@@ -135,7 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   'Введите свои данные, чтобы продолжить',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     height: 1.25, // 20/16
                   ),
@@ -210,7 +208,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Text(
                       'Забыли пароль?',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'Avenir Next',
                         fontSize: 15,
                         height: 1.33, // 20/15
                         color: const Color(0xFFD2D2D2),
@@ -248,7 +245,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       : Text(
                           'Войти',
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontFamily: 'Avenir Next',
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: const Color(0xFFF4F1EC),
@@ -263,7 +259,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Text(
                     'Или используйте:',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       height: 1.53, // 23/15
                       color: Colors.black.withValues(alpha: 0.7),
@@ -312,7 +307,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'Продолжить с Google',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          fontFamily: 'Avenir Next',
                           fontSize: 15,
                           height: 1.33, // 20/15
                           color: Colors.black,
@@ -349,7 +343,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'Продолжить с Apple',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          fontFamily: 'Avenir Next',
                           fontSize: 15,
                           height: 1.33, // 20/15
                           color: Colors.white,
@@ -373,7 +366,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: RichText(
                       text: TextSpan(
                         style: theme.textTheme.bodySmall?.copyWith(
-                          fontFamily: 'Avenir Next',
                           fontSize: 13,
                           height: 1.15, // 15/13
                           color: const Color(0xFF5F5F5F).withValues(alpha: 0.7),

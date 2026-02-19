@@ -295,7 +295,6 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
       child: const Text(
         'ПРЕВЬЮ',
         style: TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: Colors.white,
@@ -329,8 +328,8 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         // Name
         Text(
           data.name ?? 'Название заведения',
-          style: const TextStyle(
-            fontFamily: 'Unbounded',
+          style: TextStyle(
+fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 40,
             fontWeight: FontWeight.w400,
             color: _backgroundColor,
@@ -472,10 +471,10 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          const Text(
+          Text(
             'Меню',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 30,
               fontWeight: FontWeight.w400,
               color: Colors.black,
@@ -646,12 +645,12 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
-                fontFamily: 'Unbounded',
+                fontFamily: AppTheme.fontDisplayFamily,
                 fontSize: 30,
                 fontWeight: FontWeight.w400,
                 color: Colors.black,
@@ -771,10 +770,10 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Title
-              const Text(
+              Text(
                 'Карта',
                 style: TextStyle(
-                  fontFamily: 'Unbounded',
+                  fontFamily: AppTheme.fontDisplayFamily,
                   fontSize: 30,
                   fontWeight: FontWeight.w400,
                   color: Colors.black,
@@ -845,7 +844,6 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
           Text(
             'Это превью вашей карточки',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 18,
               fontWeight: FontWeight.w600,
               color: Colors.black,
@@ -858,7 +856,6 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
             'ваше заведение появится в каталоге и пользователи смогут '
             'оставлять отзывы.',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 14,
               color: Colors.black87,
               height: 1.5,

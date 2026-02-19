@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
@@ -93,10 +94,10 @@ class _AddressStepState extends State<AddressStep> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Title
-        const Text(
+        Text(
           'Заполните адрес',
           style: TextStyle(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -107,7 +108,6 @@ class _AddressStepState extends State<AddressStep> {
         const Text(
           'Выберите или введите данные местонахождения вашего заведения',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: _greyText,
@@ -198,13 +198,11 @@ class _AddressStepState extends State<AddressStep> {
           hint: const Text(
             'Населенный пункт',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 16,
               color: _greyText,
             ),
           ),
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 16,
             color: Colors.black,
           ),
@@ -249,7 +247,6 @@ class _AddressStepState extends State<AddressStep> {
     return TextField(
       controller: controller,
       style: const TextStyle(
-        fontFamily: 'Avenir Next',
         fontSize: 16,
         color: Colors.black,
       ),
@@ -260,7 +257,6 @@ class _AddressStepState extends State<AddressStep> {
         focusedBorder: InputBorder.none,
         hintText: label,
         hintStyle: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 16,
           color: _greyText,
         ),
