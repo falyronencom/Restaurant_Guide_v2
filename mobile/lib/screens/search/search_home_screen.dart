@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -415,25 +416,29 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
   /// Build logo text
   Widget _buildLogo() {
-    return const Text(
+    return Text(
       'NIRIVIO',
-      style: TextStyle(
+      style: GoogleFonts.josefinSans(
         fontSize: 48,
-        fontWeight: FontWeight.w400,
+        fontWeight: FontWeight.w600,
         color: Colors.white,
-        letterSpacing: 2,
+        letterSpacing: 48 * 0.3,
       ),
     );
   }
 
   /// Build tagline text
   Widget _buildTagline() {
-    return const Text(
-      'Мы скажем, куда сходить',
-      style: TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.w400,
-        color: Colors.white,
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Text(
+        'Вкусное рядом',
+        style: GoogleFonts.josefinSans(
+          fontSize: 16,
+          fontWeight: FontWeight.w200,
+          color: Colors.white.withValues(alpha: 0.85),
+          letterSpacing: 16 * 0.3,
+        ),
       ),
     );
   }
