@@ -4,6 +4,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
+import 'package:restaurant_guide_mobile/screens/splash/splash_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/method_selection_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/email_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/email_verification_screen.dart';
@@ -61,7 +62,7 @@ class RestaurantGuideApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
 
         // Main navigation with bottom tabs from Phase E
-        home: const MainNavigationScreen(),
+        home: const SplashScreen(),
 
         // Named routes for navigation
         routes: {
