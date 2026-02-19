@@ -125,7 +125,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -316,7 +316,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         height: 42,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: canProceed ? Colors.black : Colors.black.withValues(alpha: 0.3),
+          color: canProceed ? AppTheme.textPrimary : Colors.black.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: Row(

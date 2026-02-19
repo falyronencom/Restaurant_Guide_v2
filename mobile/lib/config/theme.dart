@@ -65,7 +65,7 @@ class AppTheme {
   static const Color backgroundTertiary = gray100;
 
   /// Text colors
-  static const Color textPrimary = gray900;
+  static const Color textPrimary = Color(0xFF000000); // Pure black (matches Figma)
   static const Color textSecondary = gray600;
   static const Color textTertiary = gray500;
   static const Color textOnPrimary = Colors.white;

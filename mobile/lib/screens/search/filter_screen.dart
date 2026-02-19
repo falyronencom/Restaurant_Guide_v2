@@ -98,7 +98,7 @@ class FilterScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const Spacer(),
@@ -117,7 +117,7 @@ class FilterScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w400,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
@@ -349,7 +349,7 @@ class _FilterSection extends StatelessWidget {
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: AppDimensions.spacingM),
@@ -385,24 +385,24 @@ class _DistanceOptionTile extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.black : FilterScreen._backgroundColor,
+                color: isSelected ? AppTheme.textPrimary : FilterScreen._backgroundColor,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
-                  color: isSelected ? Colors.black : FilterScreen._greyStroke,
+                  color: isSelected ? AppTheme.textPrimary : FilterScreen._greyStroke,
                 ),
               ),
               child: isSelected
                   ? const Icon(
                       Icons.check,
                       size: 16,
-                      color: Colors.white,
+                      color: AppTheme.textOnPrimary,
                     )
                   : null,
             ),
@@ -471,7 +471,7 @@ class _PriceCard extends StatelessWidget {
               description,
               style: const TextStyle(
                 fontSize: 9,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ],
@@ -550,7 +550,7 @@ class _AllToggleRow extends StatelessWidget {
             'Все',
             style: TextStyle(
               fontSize: 15,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           Switch(
@@ -642,7 +642,7 @@ class _CategoryCard extends StatelessWidget {
               colorFilter: ColorFilter.mode(
                 isSelected
                     ? FilterScreen._selectedOrange
-                    : Colors.black,
+                    : AppTheme.textPrimary,
                 BlendMode.srcIn,
               ),
             ),
@@ -651,7 +651,7 @@ class _CategoryCard extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 11,
-                color: isSelected ? FilterScreen._selectedOrange : Colors.black,
+                color: isSelected ? FilterScreen._selectedOrange : AppTheme.textPrimary,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
@@ -724,24 +724,24 @@ class _AmenityTile extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.black : FilterScreen._backgroundColor,
+                color: isSelected ? AppTheme.textPrimary : FilterScreen._backgroundColor,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
-                  color: isSelected ? Colors.black : FilterScreen._greyStroke,
+                  color: isSelected ? AppTheme.textPrimary : FilterScreen._greyStroke,
                 ),
               ),
               child: isSelected
                   ? const Icon(
                       Icons.check,
                       size: 16,
-                      color: Colors.white,
+                      color: AppTheme.textOnPrimary,
                     )
                   : null,
             ),

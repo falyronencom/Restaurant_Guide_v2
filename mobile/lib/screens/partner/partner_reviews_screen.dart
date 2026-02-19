@@ -216,7 +216,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -245,7 +245,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             'от',
             style: TextStyle(
               fontSize: 15,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -258,7 +258,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             'до',
             style: TextStyle(
               fontSize: 15,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -285,7 +285,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
               _formatDate(date),
               style: const TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(width: 8),
@@ -358,7 +358,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 child: const Icon(
                   Icons.swap_horiz,
                   size: 22,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(width: 4),
@@ -366,7 +366,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 'Сортировка',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -403,7 +403,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                     style: TextStyle(
                       fontSize: 16,
                       color:
-                          option == _sortOption ? _primaryOrange : Colors.black,
+                          option == _sortOption ? _primaryOrange : AppTheme.textPrimary,
                     ),
                   ),
                   trailing: option == _sortOption
@@ -541,7 +541,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ],
@@ -576,7 +576,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             '– ${_formatRelativeDate(review.createdAt)}',
             style: const TextStyle(
               fontSize: 13,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
 
@@ -588,7 +588,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
               review.text!,
               style: const TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
                 height: 1.5,
               ),
             ),
@@ -700,7 +700,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
         style: const TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w500,
-          color: Colors.white,
+          color: AppTheme.textOnPrimary,
         ),
       ),
     );

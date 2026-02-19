@@ -75,7 +75,7 @@ class _MediaStepState extends State<MediaStep> {
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w500,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
@@ -84,7 +84,7 @@ class _MediaStepState extends State<MediaStep> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
@@ -113,7 +113,7 @@ class _MediaStepState extends State<MediaStep> {
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -135,7 +135,7 @@ class _MediaStepState extends State<MediaStep> {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
 
@@ -197,7 +197,7 @@ class _MediaStepState extends State<MediaStep> {
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -219,7 +219,7 @@ class _MediaStepState extends State<MediaStep> {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
 
@@ -355,7 +355,7 @@ class _MediaStepState extends State<MediaStep> {
         width: double.infinity,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.backgroundPrimary,
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(color: _greyStroke),
         ),
@@ -374,7 +374,7 @@ class _MediaStepState extends State<MediaStep> {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: onTap != null ? Colors.black : _greyText,
+                  color: onTap != null ? AppTheme.textPrimary : _greyText,
                 ),
               ),
       ),
@@ -538,7 +538,7 @@ class _PhotoTile extends StatelessWidget {
                           color: _greyStroke,
                           child: const Icon(
                             Icons.broken_image,
-                            color: Colors.white,
+                            color: AppTheme.backgroundPrimary,
                           ),
                         );
                       },
@@ -551,7 +551,7 @@ class _PhotoTile extends StatelessWidget {
                           color: _greyStroke,
                           child: const Icon(
                             Icons.broken_image,
-                            color: Colors.white,
+                            color: AppTheme.backgroundPrimary,
                           ),
                         );
                       },
@@ -577,7 +577,7 @@ class _PhotoTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w500,
-                      color: Colors.white,
+                      color: AppTheme.textOnPrimary,
                     ),
                   ),
                 ),
@@ -599,7 +599,7 @@ class _PhotoTile extends StatelessWidget {
                   child: const Icon(
                     Icons.close,
                     size: 16,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
               ),

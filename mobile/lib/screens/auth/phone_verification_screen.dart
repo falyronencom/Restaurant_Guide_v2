@@ -188,7 +188,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
         backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -314,8 +314,8 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              AppTheme.textOnPrimary),
                         ),
                       )
                     : Text(

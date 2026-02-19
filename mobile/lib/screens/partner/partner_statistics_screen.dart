@@ -173,7 +173,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -210,7 +210,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -313,7 +313,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -321,7 +321,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     establishment.categoryDisplayName,
                     style: const TextStyle(
                       fontSize: 15,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                   Text(
@@ -336,7 +336,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     establishment.shortAddress,
                     style: const TextStyle(
                       fontSize: 14,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                 ],
@@ -391,7 +391,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
         ],
@@ -427,7 +427,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                       fontSize: 16,
                       color: period == _selectedPeriod
                           ? _primaryOrange
-                          : Colors.black,
+                          : AppTheme.textPrimary,
                     ),
                   ),
                   trailing: period == _selectedPeriod
@@ -535,7 +535,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         Container(
@@ -549,7 +549,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               value,
               style: const TextStyle(
                 fontSize: 13,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             if (showStar) ...[
@@ -596,7 +596,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               Text(
@@ -604,7 +604,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -659,7 +659,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               Text(
@@ -667,7 +667,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -704,14 +704,14 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               Text(
                 '$value',
                 style: const TextStyle(
                   fontSize: 15,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -750,14 +750,14 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
             Text(
               '$value',
               style: const TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ],
@@ -800,14 +800,14 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               Text(
                 '$totalRatings',
                 style: const TextStyle(
                   fontSize: 15,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -864,7 +864,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                         'Оценки: $totalRatings',
                         style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -883,7 +883,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                                   '$star',
                                   style: const TextStyle(
                                     fontSize: 18,
-                                    color: Colors.black,
+                                    color: AppTheme.textPrimary,
                                   ),
                                 ),
                               ),
@@ -924,7 +924,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                                   '$count',
                                   style: const TextStyle(
                                     fontSize: 13,
-                                    color: Colors.black,
+                                    color: AppTheme.textPrimary,
                                   ),
                                   textAlign: TextAlign.end,
                                 ),

@@ -256,7 +256,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: const Icon(
               Icons.close,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 16),
@@ -267,7 +267,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -315,7 +315,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               'Поменять фото',
               style: TextStyle(
                 fontSize: 15,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
@@ -440,7 +440,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -451,7 +451,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     validator: validator,
                     style: const TextStyle(
                       fontSize: 15,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                     decoration: InputDecoration(
                       isDense: false,
@@ -470,7 +470,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     style: TextStyle(
                       fontSize: 15,
                       color:
-                          value?.isNotEmpty == true ? Colors.black : _greyText,
+                          value?.isNotEmpty == true ? AppTheme.textPrimary : _greyText,
                     ),
                   ),
               ],

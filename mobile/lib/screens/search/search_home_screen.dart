@@ -68,7 +68,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.backgroundPrimary,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -86,7 +86,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: const BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.backgroundPrimary,
                     border: Border(
                       bottom: BorderSide(color: _greyStroke, width: 0.5),
                     ),
@@ -102,7 +102,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                           child: const Icon(
                             Icons.chevron_left,
                             size: 25,
-                            color: Colors.black,
+                            color: AppTheme.textPrimary,
                           ),
                         ),
                       ),
@@ -111,8 +111,8 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         'Местоположение',
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                       // Reset button (right)
@@ -128,7 +128,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                             'Сброс',
                             style: TextStyle(
                               fontSize: 15,
-                              color: Colors.black,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                         ),
@@ -147,7 +147,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ),
@@ -208,7 +208,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _darkOrange,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppTheme.textOnPrimary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                         ),
@@ -257,7 +257,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                     city,
                     style: const TextStyle(
                       fontSize: 15,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -276,7 +276,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? _secondaryOrange : Colors.white,
+                color: isSelected ? _secondaryOrange : AppTheme.backgroundPrimary,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? _secondaryOrange : _greyStroke,
@@ -287,7 +287,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                   ? const Icon(
                       Icons.check,
                       size: 16,
-                      color: Colors.white,
+                      color: AppTheme.textOnPrimary,
                     )
                   : null,
             ),
@@ -421,7 +421,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
       style: GoogleFonts.josefinSans(
         fontSize: 48,
         fontWeight: FontWeight.w600,
-        color: Colors.white,
+        color: AppTheme.textOnPrimary,
         letterSpacing: 48 * 0.3,
       ),
     );
@@ -506,7 +506,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                     child: Text(
                       '${provider.activeFilterCount}',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -537,7 +537,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
               controller: _searchController,
               style: const TextStyle(
                 fontSize: 18,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
               decoration: const InputDecoration(
                 hintText: 'С чего начнем?',
@@ -571,7 +571,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
             child: const Center(
               child: Icon(
                 Icons.chevron_right,
-                color: Colors.white,
+                color: AppTheme.textOnPrimary,
                 size: 30,
               ),
             ),

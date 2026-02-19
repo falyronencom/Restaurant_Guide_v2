@@ -98,7 +98,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.backgroundPrimary,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         bottom: PreferredSize(
@@ -150,7 +150,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         'Результаты: ${provider.favoriteEstablishments.length}',
                         style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                     ),
@@ -294,7 +294,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// Build sort row (like search results, adapted for light bg)
   Widget _buildSortRow() {
     return Container(
-      color: Colors.white,
+      color: AppTheme.backgroundPrimary,
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       child: Row(
         children: [
@@ -308,7 +308,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   child: const Icon(
                     Icons.compare_arrows,
                     size: 22,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -316,7 +316,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   'Сортировка',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
               ],
@@ -408,15 +408,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.black : Colors.transparent,
+                color: isSelected ? AppTheme.textPrimary : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
-                  color: isSelected ? Colors.black : Colors.grey.shade400,
+                  color: isSelected ? AppTheme.textPrimary : Colors.grey.shade400,
                   width: 1.5,
                 ),
               ),
               child: isSelected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  ? const Icon(Icons.check, size: 16, color: AppTheme.textOnPrimary)
                   : null,
             ),
           ],

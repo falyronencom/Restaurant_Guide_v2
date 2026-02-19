@@ -28,7 +28,7 @@ class CuisineStep extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
 
@@ -40,7 +40,7 @@ class CuisineStep extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                   height: 1.5,
                 ),
               ),
@@ -54,7 +54,7 @@ class CuisineStep extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
               ),
@@ -123,9 +123,8 @@ class _CuisineCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: _backgroundColor,
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          border: isSelected
-              ? Border.all(color: _selectedBorder, width: 2)
-              : null,
+          border:
+              isSelected ? Border.all(color: _selectedBorder, width: 2) : null,
           boxShadow: [
             BoxShadow(
               color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
@@ -159,7 +158,7 @@ class _CuisineCard extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w400,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -188,7 +187,7 @@ class _CuisineCard extends StatelessWidget {
       'assets/icons/$fileName.svg',
       width: 64,
       height: 64,
-      colorFilter: ColorFilter.mode(
+      colorFilter: const ColorFilter.mode(
         AppTheme.primaryOrangeLight,
         BlendMode.srcIn,
       ),

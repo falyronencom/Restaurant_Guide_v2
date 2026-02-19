@@ -187,7 +187,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w500,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
@@ -196,7 +196,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
@@ -225,7 +225,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -246,7 +246,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 16),
@@ -268,7 +268,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.backgroundPrimary,
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(color: _greyStroke),
       ),
@@ -279,7 +279,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         keyboardType: keyboardType,
         style: const TextStyle(
           fontSize: 15,
-          color: Colors.black,
+          color: AppTheme.textPrimary,
         ),
         decoration: InputDecoration(
           hintText: hint,
@@ -310,7 +310,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         width: double.infinity,
         height: 48,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.backgroundPrimary,
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(color: _greyStroke),
         ),
@@ -320,7 +320,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
       ),
@@ -377,7 +377,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           duration: const Duration(milliseconds: 200),
           height: 48,
           decoration: BoxDecoration(
-            color: isSelected ? _primaryOrange : Colors.white,
+            color: isSelected ? _primaryOrange : AppTheme.backgroundPrimary,
             borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             border: Border.all(
               color: isSelected ? _primaryOrange : _greyStroke,
@@ -389,7 +389,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w500,
-              color: isSelected ? Colors.white : Colors.black,
+              color: isSelected ? AppTheme.textOnPrimary : AppTheme.textPrimary,
             ),
           ),
         ),
@@ -421,7 +421,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.backgroundPrimary,
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(color: _greyStroke),
       ),
@@ -433,7 +433,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w400,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           Switch(

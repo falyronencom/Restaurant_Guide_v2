@@ -433,7 +433,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(3),
             color: index == _currentPhotoIndex % displayCount
-                ? Colors.white
+                ? AppTheme.backgroundPrimary
                 : Colors.white.withValues(alpha: 0.5),
           ),
         );
@@ -449,7 +449,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         width: 55,
         height: 42,
         decoration: const BoxDecoration(
-          color: Colors.black,
+          color: AppTheme.textPrimary,
           borderRadius: BorderRadius.only(
             topRight: Radius.circular(8),
             bottomRight: Radius.circular(8),
@@ -458,7 +458,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         child: const Center(
           child: Icon(
             Icons.chevron_left,
-            color: Colors.white,
+            color: AppTheme.textOnPrimary,
             size: 28,
           ),
         ),
@@ -510,7 +510,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         Text(
           _establishment!.name,
           style: TextStyle(
-fontFamily: AppTheme.fontDisplayFamily,
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 50,
             fontWeight: FontWeight.w400,
             color: _backgroundColor,
@@ -726,7 +726,7 @@ fontFamily: AppTheme.fontDisplayFamily,
               fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 30,
               fontWeight: FontWeight.w400,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 19),
@@ -946,7 +946,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                       fontFamily: AppTheme.fontDisplayFamily,
                       fontSize: 30,
                       fontWeight: FontWeight.w400,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -956,7 +956,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                     child: const Icon(
                       Icons.keyboard_arrow_down,
                       size: 28,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                 ],
@@ -1051,14 +1051,14 @@ fontFamily: AppTheme.fontDisplayFamily,
         children: [
           // Title
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
                 fontFamily: AppTheme.fontDisplayFamily,
                 fontSize: 30,
                 fontWeight: FontWeight.w400,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
@@ -1106,7 +1106,7 @@ fontFamily: AppTheme.fontDisplayFamily,
           label,
           style: const TextStyle(
             fontSize: 15,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
           textAlign: TextAlign.center,
         ),
@@ -1175,7 +1175,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                   fontFamily: AppTheme.fontDisplayFamily,
                   fontSize: 30,
                   fontWeight: FontWeight.w400,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 14),
@@ -1204,7 +1204,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                 '${_establishment!.address},\n${_establishment!.city}',
                 style: const TextStyle(
                   fontSize: 16,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -1308,12 +1308,12 @@ fontFamily: AppTheme.fontDisplayFamily,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(Icons.touch_app,
-                                    color: Colors.white, size: 16),
+                                    color: AppTheme.textOnPrimary, size: 16),
                                 SizedBox(width: 6),
                                 Text(
                                   'Нажмите для исследования',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: AppTheme.textOnPrimary,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1347,7 +1347,7 @@ fontFamily: AppTheme.fontDisplayFamily,
   /// Build reviews section (dark background)
   Widget _buildReviewsSection() {
     return Container(
-      color: Colors.black,
+      color: AppTheme.textPrimary,
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1531,7 +1531,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                         ? review.userName[0].toUpperCase()
                         : 'A',
                     style: TextStyle(
-fontFamily: AppTheme.fontDisplayFamily,
+                      fontFamily: AppTheme.fontDisplayFamily,
                       fontSize: 25,
                       color: _backgroundColor,
                     ),
@@ -1743,7 +1743,9 @@ class _WorkingHoursRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w500,
-                color: isHighlighted ? AppTheme.primaryOrange : Colors.black,
+                color: isHighlighted
+                    ? AppTheme.primaryOrange
+                    : AppTheme.textPrimary,
               ),
             ),
           ),
@@ -1752,7 +1754,8 @@ class _WorkingHoursRow extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
-              color: isHighlighted ? AppTheme.primaryOrange : Colors.black,
+              color:
+                  isHighlighted ? AppTheme.primaryOrange : AppTheme.textPrimary,
             ),
           ),
         ],
@@ -1813,7 +1816,8 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
 
               if (imageUrl == null) {
                 return const Center(
-                  child: Icon(Icons.error, color: Colors.white, size: 48),
+                  child: Icon(Icons.error,
+                      color: AppTheme.textOnPrimary, size: 48),
                 );
               }
 
@@ -1824,10 +1828,12 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
                   imageUrl: imageUrl,
                   fit: BoxFit.contain,
                   placeholder: (context, url) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
+                    child: CircularProgressIndicator(
+                        color: AppTheme.textOnPrimary),
                   ),
                   errorWidget: (context, url, error) => const Center(
-                    child: Icon(Icons.error, color: Colors.white, size: 48),
+                    child: Icon(Icons.error,
+                        color: AppTheme.textOnPrimary, size: 48),
                   ),
                 ),
               );
@@ -1839,7 +1845,8 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
             top: MediaQuery.of(context).padding.top + 8,
             right: 16,
             child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              icon: const Icon(Icons.close,
+                  color: AppTheme.textOnPrimary, size: 28),
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -1860,7 +1867,7 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
                 child: Text(
                   '${_currentIndex + 1} / ${widget.photos.length}',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                     fontSize: 14,
                   ),
                 ),
