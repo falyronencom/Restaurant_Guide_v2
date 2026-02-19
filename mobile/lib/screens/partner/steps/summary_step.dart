@@ -17,9 +17,9 @@ class SummaryStep extends StatelessWidget {
   });
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _greenCheck = Color(0xFF34C759);
+  static const Color _greenCheck = AppTheme.statusGreen;
   static const Color _greyText = Color(0xFF949494);
 
   @override
@@ -156,7 +156,7 @@ class SummaryStep extends StatelessWidget {
             height: 47,
             decoration: BoxDecoration(
               color: Colors.black,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: const Center(
               child: Text(
@@ -183,7 +183,7 @@ class SummaryStep extends StatelessWidget {
               color: allCompleted
                   ? _primaryOrange
                   : _primaryOrange.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: const Center(
               child: Text(

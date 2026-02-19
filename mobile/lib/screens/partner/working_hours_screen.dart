@@ -21,10 +21,10 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
   late WeeklyWorkingHours _hours;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _lightOrange = AppTheme.primaryOrangeLight;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF9D9D9D);
 
   @override
@@ -241,7 +241,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: _greyStroke),
             ),
             child: Row(
@@ -292,7 +292,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 border: Border.all(color: _greyStroke),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
@@ -320,7 +320,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: Colors.black,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,

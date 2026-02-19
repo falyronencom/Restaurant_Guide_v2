@@ -32,13 +32,13 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
   String? _errorMessage;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greyBorder = Color(0xFFD2D2D2);
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greyBorder = AppTheme.strokeGrey;
   static const Color _starActiveColor = Color(0xFFFFB800); // Yellow for active stars
-  static const Color _starInactiveColor = Color(0xFFD2D2D2); // Grey for inactive
+  static const Color _starInactiveColor = AppTheme.strokeGrey; // Grey for inactive
 
   // Validation constants (must match backend: min 20, max 1000)
   static const int _minTextLength = 20;
@@ -107,7 +107,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Отзыв успешно опубликован!'),
-            backgroundColor: Color(0xFF34C759),
+            backgroundColor: AppTheme.statusGreen,
           ),
         );
       } else {
@@ -246,7 +246,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Color(0xFF3E3E3E),
+              color: AppTheme.textDark,
             ),
           ),
           const SizedBox(width: 8),
@@ -313,7 +313,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
       height: 240,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(
           color: isTextTooShort ? Colors.red : _greyBorder,
           width: 1.13,
@@ -351,7 +351,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.red.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Row(
         children: [
@@ -388,7 +388,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
             disabledBackgroundColor: _greyBorder,
             disabledForegroundColor: _greyText,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             elevation: 0,
           ),

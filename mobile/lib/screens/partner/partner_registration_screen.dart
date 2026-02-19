@@ -39,9 +39,9 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   late PageController _pageController;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyStroke = AppTheme.strokeGrey;
 
   @override
   void initState() {
@@ -171,7 +171,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         ),
         title: const Text(
           'Выйти из регистрации?',
@@ -258,7 +258,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           border: Border.all(color: _greyStroke),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
@@ -317,7 +317,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: canProceed ? Colors.black : Colors.black.withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -363,7 +363,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         const SnackBar(
           content: Text('Изменения сохранены'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: Color(0xFF34C759),
+          backgroundColor: AppTheme.statusGreen,
         ),
       );
       navigator.pop();
@@ -406,7 +406,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         const SnackBar(
           content: Text('Заведение успешно создано!'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: Color(0xFF34C759),
+          backgroundColor: AppTheme.statusGreen,
         ),
       );
 

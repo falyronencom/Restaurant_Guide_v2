@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Dismissible error message banner
 /// Shows error with close button and animated appearance
@@ -82,7 +83,7 @@ class _ErrorBannerState extends State<ErrorBanner>
           ),
           decoration: BoxDecoration(
             color: theme.colorScheme.errorContainer,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             border: Border.all(
               color: theme.colorScheme.error,
               width: 1,
@@ -203,7 +204,7 @@ class _SuccessBannerState extends State<SuccessBanner>
           ),
           decoration: BoxDecoration(
             color: Colors.green.shade50,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             border: Border.all(
               color: Colors.green,
               width: 1,
@@ -266,7 +267,7 @@ class InfoBanner extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(
           color: theme.colorScheme.primary,
           width: 1,

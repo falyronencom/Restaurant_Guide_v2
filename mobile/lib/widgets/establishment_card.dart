@@ -22,8 +22,8 @@ class EstablishmentCard extends StatelessWidget {
   });
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _greenColor = Color(0xFF34C759);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
+  static const Color _greenColor = AppTheme.statusGreen;
   static const Color _orangeHeart = AppTheme.primaryOrange;
   static const Color _greyText = Color(0xFFAAAAAA);
 
@@ -201,7 +201,7 @@ class EstablishmentCard extends StatelessWidget {
             height: _ratingSize,
             decoration: BoxDecoration(
               color: _greenColor,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             alignment: Alignment.center,
             child: Text(

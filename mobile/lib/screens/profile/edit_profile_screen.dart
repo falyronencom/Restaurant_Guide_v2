@@ -25,11 +25,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _selectedImagePath;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _navyBlue = Color(0xFF3631C0);
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greyDivider = Color(0xFFD2D2D2);
+  static const Color _navyBlue = AppTheme.accentNavy;
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greyDivider = AppTheme.strokeGrey;
 
   @override
   void initState() {
@@ -295,16 +295,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             decoration: BoxDecoration(
               color: _backgroundColor,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.08),
+                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
                   blurRadius: 15,
                   spreadRadius: 2,
                   offset: const Offset(4, 4),
                 ),
                 BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.08),
+                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
                   blurRadius: 15,
                   spreadRadius: 2,
                   offset: const Offset(-4, -4),
@@ -498,7 +498,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           backgroundColor: _primaryOrange,
           foregroundColor: _backgroundColor,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           ),
           disabledBackgroundColor: _primaryOrange.withValues(alpha: 0.5),
         ),
@@ -507,7 +507,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
-                  color: Color(0xFFF4F1EC),
+                  color: AppTheme.backgroundWarm,
                   strokeWidth: 2,
                 ),
               )

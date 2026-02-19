@@ -11,6 +11,15 @@ class AppTheme {
   AppTheme._();
 
   // ============================================================================
+  // Border Radius
+  // ============================================================================
+
+  static const double radiusXSmall = 4;
+  static const double radiusSmall = 8;
+  static const double radiusMedium = 12;
+  static const double radiusLarge = 16;
+
+  // ============================================================================
   // Color Palette
   // ============================================================================
 
@@ -40,6 +49,15 @@ class AppTheme {
   static const Color gray200 = Color(0xFFEEEEEE);
   static const Color gray100 = Color(0xFFF5F5F5);
   static const Color gray50 = Color(0xFFFAFAFA);
+
+  /// Figma-specific colors (design tokens from mockups)
+  static const Color backgroundWarm = Color(0xFFF4F1EC);    // Beige background
+  static const Color strokeGrey = Color(0xFFD2D2D2);        // Dividers/borders
+  static const Color primaryOrangeShadow = Color(0xFFD35620); // Button shadows (dark rust)
+  static const Color textGrey = Color(0xFFABABAB);           // Secondary grey text
+  static const Color statusGreen = Color(0xFF34C759);        // "Open" / success status
+  static const Color textDark = Color(0xFF3E3E3E);           // Dark text (near-black)
+  static const Color accentNavy = Color(0xFF3631C0);         // Navy blue accent
 
   /// Background colors
   static const Color backgroundPrimary = Colors.white;

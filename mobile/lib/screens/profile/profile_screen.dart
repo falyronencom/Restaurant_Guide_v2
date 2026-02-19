@@ -22,11 +22,11 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _navyBlue = Color(0xFF3631C0);
-  static const Color _greyText = Color(0xFFABABAB);
+  static const Color _navyBlue = AppTheme.accentNavy;
+  static const Color _greyText = AppTheme.textGrey;
 
   @override
   void initState() {
@@ -117,7 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Navigator.of(context, rootNavigator: true).pushNamed('/auth/login');
           }
         },
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -293,7 +293,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () {
           Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
         },
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(24),
@@ -303,7 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             boxShadow: [
               BoxShadow(
                 color: _primaryOrange.withValues(alpha: 0.2),
@@ -318,7 +318,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w400,
-              color: Color(0xFFF4F1EC),
+              color: AppTheme.backgroundWarm,
               height: 1.1,
             ),
           ),
@@ -334,12 +334,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () {
           Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
         },
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
           decoration: BoxDecoration(
             border: Border.all(color: _secondaryOrange, width: 1),
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           ),
           child: const Text(
             '+ Добавить заведение',
@@ -502,7 +502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         ),
         title: const Text(
           'Выйти из аккаунта?',
@@ -566,11 +566,11 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
   String? _error;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _navyBlue = Color(0xFF3631C0);
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greenRating = Color(0xFF34C759);
+  static const Color _navyBlue = AppTheme.accentNavy;
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greenRating = AppTheme.statusGreen;
 
   @override
   void initState() {
@@ -696,16 +696,16 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: _backgroundColor,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.08),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(4, 4),
             ),
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.08),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(-4, -4),
@@ -923,8 +923,8 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFD2D2D2)),
-          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: AppTheme.strokeGrey),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1006,14 +1006,14 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       height: 31,
                       decoration: BoxDecoration(
                         color: _greenRating,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                       ),
                       child: Center(
                         child: Text(
                           review.rating.toStringAsFixed(1).replaceAll('.', ','),
                           style: const TextStyle(
                             fontSize: 16,
-                            color: Color(0xFFF4F1EC),
+                            color: AppTheme.backgroundWarm,
                           ),
                         ),
                       ),

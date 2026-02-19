@@ -183,12 +183,12 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F1EC),
+      backgroundColor: AppTheme.backgroundWarm,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F1EC),
+        backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -305,7 +305,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                 ),
                 child: _isLoading
@@ -323,7 +323,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFFF4F1EC),
+                          color: AppTheme.backgroundWarm,
                         ),
                       ),
               ),
@@ -378,44 +378,44 @@ class _CodeInputBox extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           filled: false,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: const BorderSide(
-              color: Color(0xFFD2D2D2),
+              color: AppTheme.strokeGrey,
               width: 1.13,
             ),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: const BorderSide(
-              color: Color(0xFFD2D2D2),
+              color: AppTheme.strokeGrey,
               width: 1.13,
             ),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: const BorderSide(
               color: AppTheme.primaryOrange,
               width: 1.13,
             ),
           ),
           errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: BorderSide(
               color: Theme.of(context).colorScheme.error,
               width: 1.13,
             ),
           ),
           focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: BorderSide(
               color: Theme.of(context).colorScheme.error,
               width: 2,
             ),
           ),
           disabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             borderSide: const BorderSide(
-              color: Color(0xFFD2D2D2),
+              color: AppTheme.strokeGrey,
               width: 1.13,
             ),
           ),

@@ -22,9 +22,9 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
   static const Color _darkOrange = AppTheme.primaryOrangeDark;
 
@@ -301,7 +301,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                         backgroundColor: _darkOrange,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                         elevation: 0,
                       ),
@@ -357,7 +357,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? _secondaryOrange : Colors.white,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? _secondaryOrange : _greyStroke,
                   width: 1,
@@ -458,7 +458,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.black : Colors.transparent,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? Colors.black : Colors.grey.shade400,
                   width: 1.5,
@@ -709,7 +709,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: _backgroundColor, width: 1),
             ),
             child: Text(
@@ -734,7 +734,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 height: 43,
                 decoration: BoxDecoration(
                   color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   border: Border.all(color: _backgroundColor, width: 1),
                 ),
                 child: const Icon(
@@ -1004,8 +1004,8 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
   });
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _greyText = Color(0xFFABABAB);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
+  static const Color _greyText = AppTheme.textGrey;
 
   @override
   double get minExtent => collapsedHeight;
@@ -1126,7 +1126,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: _backgroundColor, width: 1),
             ),
             child: Text(
@@ -1151,7 +1151,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                 height: 43,
                 decoration: BoxDecoration(
                   color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   border: Border.all(color: _backgroundColor, width: 1),
                 ),
                 child: const Icon(

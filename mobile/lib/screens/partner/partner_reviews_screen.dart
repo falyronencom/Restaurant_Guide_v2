@@ -20,11 +20,11 @@ class PartnerReviewsScreen extends StatefulWidget {
 
 class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greyStroke = Color(0xFFD2D2D2);
-  static const Color _greenRating = Color(0xFF34C759);
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greyStroke = AppTheme.strokeGrey;
+  static const Color _greenRating = AppTheme.statusGreen;
 
   // Date filter
   DateTime _dateFrom = DateTime.now().subtract(const Duration(days: 30));
@@ -276,7 +276,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           border: Border.all(color: _greyStroke),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -517,7 +517,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: _greyStroke, width: 1.13),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,7 +554,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 height: 31,
                 decoration: BoxDecoration(
                   color: _greenRating,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 ),
                 child: Center(
                   child: Text(
@@ -602,7 +602,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _primaryOrange.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 border:
                     Border.all(color: _primaryOrange.withValues(alpha: 0.2)),
               ),
@@ -731,7 +731,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: _backgroundColor,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           ),
           title: Text(
             review.partnerResponse != null
@@ -777,11 +777,11 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                       color: _greyText,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                       borderSide: const BorderSide(color: _greyStroke),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                       borderSide: const BorderSide(color: _primaryOrange),
                     ),
                     contentPadding: const EdgeInsets.all(12),
