@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Application theme configuration
 /// Implements design specifications from Figma mockups
-/// Primary color: Orange (#FF6B35) for CTAs and branding
+/// Primary color: Orange (#F06B32) for CTAs and branding
 /// Success color: Green for positive indicators
 /// Secondary: Gray palette for supporting content
 class AppTheme {
@@ -13,10 +13,10 @@ class AppTheme {
   // Color Palette
   // ============================================================================
 
-  /// Primary orange color for branding and CTAs
-  static const Color primaryOrange = Color(0xFFFF6B35);
-  static const Color primaryOrangeDark = Color(0xFFE55A2B);
-  static const Color primaryOrangeLight = Color(0xFFFF8A5C);
+  /// Primary orange color for branding and CTAs (Figma design tokens)
+  static const Color primaryOrange = Color(0xFFF06B32);
+  static const Color primaryOrangeDark = Color(0xFFDB4F13);
+  static const Color primaryOrangeLight = Color(0xFFEC723D);
 
   /// Success green for positive indicators (open status, high ratings)
   static const Color successGreen = Color(0xFF4CAF50);

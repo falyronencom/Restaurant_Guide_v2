@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
 /// Working Hours Selection Screen
@@ -21,8 +22,8 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
-  static const Color _lightOrange = Color(0xFFEC723D);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
+  static const Color _lightOrange = AppTheme.primaryOrangeLight;
   static const Color _greyStroke = Color(0xFFD2D2D2);
   static const Color _greyText = Color(0xFF9D9D9D);
 
@@ -283,7 +284,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
           end: Alignment.bottomCenter,
           colors: [
             Colors.white.withValues(alpha: 0),
-            const Color(0xFFC8714B).withValues(alpha: 0.15),
+            AppTheme.primaryOrange.withValues(alpha: 0.15),
           ],
         ),
       ),

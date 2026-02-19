@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
@@ -28,7 +29,7 @@ class EditEstablishmentScreen extends StatefulWidget {
 class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _greyText = Color(0xFFABABAB);
   static const Color _strokeGrey = Color(0xFFD2D2D2);
 

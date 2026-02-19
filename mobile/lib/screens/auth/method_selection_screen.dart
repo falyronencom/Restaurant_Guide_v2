@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Method Selection Screen
 /// User chooses registration method: Email, Phone, or OAuth
@@ -24,7 +25,7 @@ class MethodSelectionScreen extends StatelessWidget {
             fontFamily: 'Unbounded',
             fontSize: 25,
             fontWeight: FontWeight.w400,
-            color: const Color(0xFFDB4F13),
+            color: AppTheme.primaryOrangeDark,
           ),
         ),
       ),
@@ -55,7 +56,7 @@ class MethodSelectionScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(
-                    color: Color(0xFFDB4F13),
+                    color: AppTheme.primaryOrangeDark,
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
@@ -67,7 +68,7 @@ class MethodSelectionScreen extends StatelessWidget {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFFDB4F13),
+                    color: AppTheme.primaryOrangeDark,
                   ),
                 ),
               ),
@@ -82,7 +83,7 @@ class MethodSelectionScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(
-                    color: Color(0xFFDB4F13),
+                    color: AppTheme.primaryOrangeDark,
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
@@ -94,7 +95,7 @@ class MethodSelectionScreen extends StatelessWidget {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFFDB4F13),
+                    color: AppTheme.primaryOrangeDark,
                   ),
                 ),
               ),

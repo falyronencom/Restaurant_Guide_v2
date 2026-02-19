@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 
@@ -24,7 +25,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _greyBorder = Color(0xFFD2D2D2);
   static const Color _greyText = Color(0xFF949494);
-  static const Color _requiredRed = Color(0xFFDB4F13);
+  static const Color _requiredRed = AppTheme.primaryOrangeDark;
 
   @override
   void initState() {

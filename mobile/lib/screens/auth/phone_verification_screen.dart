@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
@@ -196,7 +197,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
             fontFamily: 'Unbounded',
             fontSize: 25,
             fontWeight: FontWeight.w400,
-            color: const Color(0xFFDB4F13),
+            color: AppTheme.primaryOrangeDark,
           ),
         ),
       ),
@@ -290,7 +291,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                       height: 1.15, // 15/13
                       color: _resendTimer > 0
                           ? const Color(0xFF5F5F5F).withValues(alpha: 0.7)
-                          : const Color(0xFFDB4F13),
+                          : AppTheme.primaryOrangeDark,
                     ),
                   ),
                 ),
@@ -302,7 +303,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
               ElevatedButton(
                 onPressed: _isLoading ? null : _handleVerification,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF06B32),
+                  backgroundColor: AppTheme.primaryOrange,
                   minimumSize: const Size(double.infinity, 48),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -397,7 +398,7 @@ class _CodeInputBox extends StatelessWidget {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(11),
             borderSide: const BorderSide(
-              color: Color(0xFFF06B32),
+              color: AppTheme.primaryOrange,
               width: 1.13,
             ),
           ),
