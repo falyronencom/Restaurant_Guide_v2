@@ -21,8 +21,8 @@ class _AddressStepState extends State<AddressStep> {
   String? _selectedCity;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _greyBorder = Color(0xFFD2D2D2);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
+  static const Color _greyBorder = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF949494);
 
   @override
@@ -132,7 +132,7 @@ class _AddressStepState extends State<AddressStep> {
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: _greyBorder),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           ),
           child: Column(
             children: [
@@ -156,7 +156,7 @@ class _AddressStepState extends State<AddressStep> {
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: _greyBorder),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           ),
           child: IntrinsicHeight(
             child: Row(
@@ -208,7 +208,7 @@ class _AddressStepState extends State<AddressStep> {
           ),
           icon: const Icon(Icons.keyboard_arrow_down, color: _greyText),
           dropdownColor: _backgroundColor,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           items: CityOptions.cities.map((city) {
             return DropdownMenuItem<String>(
               value: city,

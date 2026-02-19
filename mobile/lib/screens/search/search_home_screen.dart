@@ -18,10 +18,10 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greyStroke = AppTheme.strokeGrey;
 
   // Figma colors for City Selector
   static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
@@ -210,7 +210,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         backgroundColor: _darkOrange,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                         elevation: 0,
                       ),
@@ -277,7 +277,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? _secondaryOrange : Colors.white,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? _secondaryOrange : _greyStroke,
                   width: 1,
@@ -454,7 +454,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: _backgroundColor, width: 1),
             ),
             child: Text(
@@ -479,7 +479,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                 height: 43,
                 decoration: BoxDecoration(
                   color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   border: Border.all(color: _backgroundColor, width: 1),
                 ),
                 child: const Icon(

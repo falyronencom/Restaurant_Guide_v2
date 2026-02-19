@@ -111,7 +111,7 @@ class _CuisineCard extends StatelessWidget {
   });
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _selectedBorder = AppTheme.primaryOrangeLight;
 
   @override
@@ -122,19 +122,19 @@ class _CuisineCard extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
           color: _backgroundColor,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: isSelected
               ? Border.all(color: _selectedBorder, width: 2)
               : null,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.08),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(4, 4),
             ),
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.01),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.01),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(-4, -4),

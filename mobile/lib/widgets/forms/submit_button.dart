@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Primary submit button with loading state
 /// Shows loading indicator when isLoading is true
@@ -57,7 +58,7 @@ class SubmitButton extends StatelessWidget {
         minimumSize: Size(isFullWidth ? double.infinity : 0, minHeight),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
       ),
       child: buttonChild,
@@ -122,7 +123,7 @@ class SecondaryButton extends StatelessWidget {
         minimumSize: Size(isFullWidth ? double.infinity : 0, minHeight),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         side: BorderSide(
           color: theme.colorScheme.outline,

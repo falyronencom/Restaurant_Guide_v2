@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Visual password strength indicator
@@ -49,7 +50,7 @@ class PasswordStrengthIndicator extends StatelessWidget {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 child: LinearProgressIndicator(
                   value: progress,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest,

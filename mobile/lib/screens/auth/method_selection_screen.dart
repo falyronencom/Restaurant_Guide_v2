@@ -11,12 +11,12 @@ class MethodSelectionScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F1EC),
+      backgroundColor: AppTheme.backgroundWarm,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F1EC),
+        backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -60,7 +60,7 @@ class MethodSelectionScreen extends StatelessWidget {
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                 ),
                 child: Text(
@@ -87,7 +87,7 @@ class MethodSelectionScreen extends StatelessWidget {
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                 ),
                 child: Text(
@@ -131,7 +131,7 @@ class MethodSelectionScreen extends StatelessWidget {
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   ),
                 ),
                 child: Row(
@@ -164,7 +164,7 @@ class MethodSelectionScreen extends StatelessWidget {
                   backgroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   ),
                 ),
                 child: Row(
