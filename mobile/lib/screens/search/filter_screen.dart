@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
@@ -12,8 +13,8 @@ class FilterScreen extends StatelessWidget {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFFD5F1B);
-  static const Color _selectedOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
+  static const Color _selectedOrange = AppTheme.primaryOrangeDark;
   static const Color _greyStroke = Color(0xFFD2D2D2);
   static const Color _greyText = Color(0xFFABABAB);
 
@@ -462,7 +463,7 @@ class _PriceCard extends StatelessWidget {
                 fontWeight: FontWeight.w400,
                 color: isSelected
                     ? FilterScreen._selectedOrange
-                    : const Color(0xFFD24F16),
+                    : AppTheme.primaryOrangeDark,
               ),
             ),
             const SizedBox(height: 4),

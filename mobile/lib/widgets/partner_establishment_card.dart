@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Partner Establishment Card widget
 /// Displays establishment info with stats and status for partner dashboard
@@ -26,7 +27,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
 
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _cardDarkBg = Color(0xFF000000);
-  static const Color _primaryOrange = Color(0xFFF06B32);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _greyText = Color(0xFFC7C3BC);
   static const Color _darkGreyText = Color(0xFF717171);
 

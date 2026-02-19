@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
@@ -23,8 +24,8 @@ class _MediaStepState extends State<MediaStep> {
   bool _isUploadingMenu = false;
 
   // Figma colors
-  static const Color _primaryOrange = Color(0xFFDB4F13);
-  static const Color _lightOrange = Color(0xFFEC723D);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
+  static const Color _lightOrange = AppTheme.primaryOrangeLight;
   static const Color _greyStroke = Color(0xFFD2D2D2);
   static const Color _greyText = Color(0xFF9D9D9D);
 
@@ -517,7 +518,7 @@ class _PhotoTile extends StatelessWidget {
     this.onSetPrimary,
   });
 
-  static const Color _lightOrange = Color(0xFFEC723D);
+  static const Color _lightOrange = AppTheme.primaryOrangeLight;
   static const Color _greyStroke = Color(0xFFD2D2D2);
 
   @override

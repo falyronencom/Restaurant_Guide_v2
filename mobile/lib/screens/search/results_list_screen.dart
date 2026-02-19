@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
@@ -24,8 +25,8 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _greyText = Color(0xFFABABAB);
   static const Color _greyStroke = Color(0xFFD2D2D2);
-  static const Color _secondaryOrange = Color(0xFFEC723D);
-  static const Color _darkOrange = Color(0xFFDB4F13);
+  static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
+  static const Color _darkOrange = AppTheme.primaryOrangeDark;
 
   // Belarus cities with regions (Figma design)
   static const List<Map<String, String>> _citiesWithRegions = [
@@ -749,7 +750,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(
-                      color: Color(0xFFFD5F1B),
+                      color: AppTheme.primaryOrange,
                       shape: BoxShape.circle,
                     ),
                     constraints: const BoxConstraints(
@@ -1166,7 +1167,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(
-                      color: Color(0xFFFD5F1B),
+                      color: AppTheme.primaryOrange,
                       shape: BoxShape.circle,
                     ),
                     constraints: const BoxConstraints(

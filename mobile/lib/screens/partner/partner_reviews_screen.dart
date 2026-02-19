@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 
@@ -20,7 +21,7 @@ class PartnerReviewsScreen extends StatefulWidget {
 class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _greyText = Color(0xFFABABAB);
   static const Color _greyStroke = Color(0xFFD2D2D2);
   static const Color _greenRating = Color(0xFF34C759);
