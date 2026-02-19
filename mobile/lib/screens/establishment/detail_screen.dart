@@ -57,12 +57,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   Uint8List? _markerIcon;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _greenStatus = Color(0xFF34C759);
-  static const Color _navyBlue = Color(0xFF3631C0);
-  static const Color _greyText = Color(0xFFABABAB);
+  static const Color _greenStatus = AppTheme.statusGreen;
+  static const Color _navyBlue = AppTheme.accentNavy;
+  static const Color _greyText = AppTheme.textGrey;
 
   @override
   void initState() {
@@ -632,7 +632,7 @@ fontFamily: AppTheme.fontDisplayFamily,
           height: 50,
           decoration: BoxDecoration(
             color: _greenStatus,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           ),
           child: Center(
             child: Text(
@@ -871,13 +871,13 @@ fontFamily: AppTheme.fontDisplayFamily,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                    color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
                     blurRadius: 15,
                     spreadRadius: 2,
                     offset: const Offset(4, 4),
                   ),
                   BoxShadow(
-                    color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                    color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
                     blurRadius: 15,
                     spreadRadius: 2,
                     offset: const Offset(-4, -4),
@@ -992,7 +992,7 @@ fontFamily: AppTheme.fontDisplayFamily,
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       child: const Divider(
-        color: Color(0xFFD2D2D2),
+        color: AppTheme.strokeGrey,
         height: 1,
       ),
     );
@@ -1229,7 +1229,7 @@ fontFamily: AppTheme.fontDisplayFamily,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
                   blurRadius: 15,
                   spreadRadius: 2,
                   offset: const Offset(4, 4),
@@ -1444,7 +1444,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                   backgroundColor: _secondaryOrange,
                   foregroundColor: _backgroundColor,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                   elevation: 0,
                 ),
@@ -1504,7 +1504,7 @@ fontFamily: AppTheme.fontDisplayFamily,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFD35620).withValues(alpha: 0.04),
+            color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
             blurRadius: 15,
             spreadRadius: 2,
             offset: const Offset(4, 4),
@@ -1855,7 +1855,7 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                 ),
                 child: Text(
                   '${_currentIndex + 1} / ${widget.photos.length}',

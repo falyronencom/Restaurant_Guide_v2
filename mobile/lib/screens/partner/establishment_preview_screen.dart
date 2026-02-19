@@ -28,11 +28,11 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
   final PageController _galleryController = PageController();
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _greenStatus = Color(0xFF34C759);
-  static const Color _greyBorder = Color(0xFFD2D2D2);
+  static const Color _greenStatus = AppTheme.statusGreen;
+  static const Color _greyBorder = AppTheme.strokeGrey;
 
   @override
   void dispose() {
@@ -290,7 +290,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: _primaryOrange,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
       ),
       child: const Text(
         'ПРЕВЬЮ',
@@ -437,7 +437,7 @@ fontFamily: AppTheme.fontDisplayFamily,
           height: 56,
           decoration: BoxDecoration(
             color: _greenStatus,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           ),
           child: const Center(
             child: Text(
@@ -577,7 +577,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFD35620).withValues(alpha: 0.04),
+                    color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
                     blurRadius: 15,
                     spreadRadius: 2,
                     offset: const Offset(4, 4),
@@ -830,7 +830,7 @@ fontFamily: AppTheme.fontDisplayFamily,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _primaryOrange.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: _primaryOrange.withValues(alpha: 0.3)),
       ),
       child: const Column(
@@ -960,7 +960,7 @@ class _PreviewFullscreenGalleryState extends State<_PreviewFullscreenGallery> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                 ),
                 child: Text(
                   '${_currentIndex + 1} / ${widget.photos.length}',

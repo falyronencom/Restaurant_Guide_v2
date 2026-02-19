@@ -25,7 +25,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
   // Colors from Figma
   // ============================================================================
 
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _cardDarkBg = Color(0xFF000000);
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _greyText = Color(0xFFC7C3BC);
@@ -33,7 +33,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
 
   // Status colors
   static const Color _statusPending = Color(0xFFFFA500);
-  static const Color _statusApproved = Color(0xFF34C759);
+  static const Color _statusApproved = AppTheme.statusGreen;
   static const Color _statusRejected = Color(0xFFFF3B30);
   static const Color _statusSuspended = Color(0xFF8E8E93);
 
@@ -52,16 +52,16 @@ class PartnerEstablishmentCard extends StatelessWidget {
             height: 277,
             decoration: BoxDecoration(
               color: isPremium ? _cardDarkBg : _backgroundColor,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.08),
+                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
                   blurRadius: 15,
                   spreadRadius: 2,
                   offset: const Offset(4, 4),
                 ),
                 BoxShadow(
-                  color: const Color(0xFFD35620).withValues(alpha: 0.08),
+                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
                   blurRadius: 15,
                   spreadRadius: 2,
                   offset: const Offset(-4, -4),
@@ -277,7 +277,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isPremium ? _primaryOrange : _cardDarkBg,
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         child: const Text(
           'Продвижение',

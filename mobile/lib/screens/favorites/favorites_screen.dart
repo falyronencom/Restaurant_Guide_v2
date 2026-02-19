@@ -20,7 +20,7 @@ class FavoritesScreen extends StatefulWidget {
 class _FavoritesScreenState extends State<FavoritesScreen> {
   // Figma colors
   static const Color _orangeMain = AppTheme.primaryOrange;
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
 
   // Local sort state for favorites
   SortOption _currentSort = SortOption.rating;
@@ -409,7 +409,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.black : Colors.transparent,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? Colors.black : Colors.grey.shade400,
                   width: 1.5,

@@ -103,12 +103,12 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F1EC),
+      backgroundColor: AppTheme.backgroundWarm,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F1EC),
+        backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -224,7 +224,7 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 13,
                     height: 1.15, // 15/13
-                    color: const Color(0xFFD2D2D2),
+                    color: AppTheme.strokeGrey,
                   ),
                 ),
 

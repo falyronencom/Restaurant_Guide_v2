@@ -45,8 +45,8 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   static const Color _backgroundColor = Color(0xFF000000);
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _creamColor = Color(0xFFF4F1EC);
-  static const Color _navyBlue = Color(0xFF3631C0);
+  static const Color _creamColor = AppTheme.backgroundWarm;
+  static const Color _navyBlue = AppTheme.accentNavy;
   static const Color _greyText = Color(0xFFAAAAAA);
 
   @override
@@ -383,13 +383,13 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFD35620).withValues(alpha: 0.04),
+            color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
             blurRadius: 15,
             spreadRadius: 2,
             offset: const Offset(4, 4),
           ),
           BoxShadow(
-            color: const Color(0xFFD35620).withValues(alpha: 0.04),
+            color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
             blurRadius: 15,
             spreadRadius: 2,
             offset: const Offset(-4, -4),
@@ -470,7 +470,7 @@ fontFamily: AppTheme.fontDisplayFamily,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: _primaryOrange.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 border: Border.all(color: _primaryOrange.withValues(alpha: 0.3)),
               ),
               child: Column(

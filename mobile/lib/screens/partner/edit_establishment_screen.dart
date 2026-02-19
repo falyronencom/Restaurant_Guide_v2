@@ -28,10 +28,10 @@ class EditEstablishmentScreen extends StatefulWidget {
 
 class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _strokeGrey = Color(0xFFD2D2D2);
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _strokeGrey = AppTheme.strokeGrey;
 
   @override
   void initState() {
@@ -95,7 +95,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                           decoration: BoxDecoration(
                             color: _primaryOrange,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                           ),
                           child: const Text(
                             'Повторить',
@@ -408,7 +408,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             const SnackBar(
               content: Text('Время работы сохранено'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: Color(0xFF34C759),
+              backgroundColor: AppTheme.statusGreen,
             ),
           );
         } else {
@@ -566,7 +566,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
         title: const Text(
           'Приостановить заведение?',
           style: TextStyle(fontWeight: FontWeight.w600),
@@ -649,7 +649,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
         title: const Text(
           'Удалить заведение?',
           style: TextStyle(fontWeight: FontWeight.w600),

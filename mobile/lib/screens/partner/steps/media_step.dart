@@ -26,7 +26,7 @@ class _MediaStepState extends State<MediaStep> {
   // Figma colors
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _lightOrange = AppTheme.primaryOrangeLight;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF9D9D9D);
 
   static const int _maxPhotos = 50;
@@ -356,7 +356,7 @@ class _MediaStepState extends State<MediaStep> {
         height: 48,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(color: _greyStroke),
         ),
         alignment: Alignment.center,
@@ -507,7 +507,7 @@ class _PhotoTile extends StatelessWidget {
   });
 
   static const Color _lightOrange = AppTheme.primaryOrangeLight;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyStroke = AppTheme.strokeGrey;
 
   @override
   Widget build(BuildContext context) {
@@ -517,7 +517,7 @@ class _PhotoTile extends StatelessWidget {
       onTap: onSetPrimary,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           border: Border.all(
             color: isPrimary ? _lightOrange : _greyStroke,
             width: isPrimary ? 2 : 1,
@@ -570,7 +570,7 @@ class _PhotoTile extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: _lightOrange,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                   ),
                   child: const Text(
                     'Обложка',

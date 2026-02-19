@@ -24,7 +24,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
   // Figma colors
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _lightOrange = AppTheme.primaryOrangeLight;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
+  static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF9D9D9D);
 
   static const int _maxDescriptionLength = 450;
@@ -269,7 +269,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(color: _greyStroke),
       ),
       child: TextField(
@@ -311,7 +311,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         height: 48,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: Border.all(color: _greyStroke),
         ),
         alignment: Alignment.center,
@@ -378,7 +378,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           height: 48,
           decoration: BoxDecoration(
             color: isSelected ? _primaryOrange : Colors.white,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             border: Border.all(
               color: isSelected ? _primaryOrange : _greyStroke,
             ),
@@ -422,7 +422,7 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(color: _greyStroke),
       ),
       child: Row(

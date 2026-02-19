@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Specialized phone input field for Belarus phone numbers
@@ -136,42 +137,42 @@ class _PhoneInputFieldState extends State<PhoneInputField> {
             ? theme.colorScheme.surface
             : theme.colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.outline,
             width: 1,
           ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.outline,
             width: 1,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.primary,
             width: 2,
           ),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.error,
             width: 1,
           ),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.error,
             width: 2,
           ),
         ),
         disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           borderSide: BorderSide(
             color: theme.colorScheme.outline,
             width: 1,

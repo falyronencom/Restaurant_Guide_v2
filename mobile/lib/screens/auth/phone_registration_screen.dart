@@ -103,12 +103,12 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F1EC),
+      backgroundColor: AppTheme.backgroundWarm,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F1EC),
+        backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -222,7 +222,7 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 13,
                     height: 1.15, // 15/13
-                    color: const Color(0xFFD2D2D2),
+                    color: AppTheme.strokeGrey,
                   ),
                 ),
 
@@ -253,7 +253,7 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                   ),
                   child: _isLoading
@@ -271,7 +271,7 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: const Color(0xFFF4F1EC),
+                            color: AppTheme.backgroundWarm,
                           ),
                         ),
                 ),

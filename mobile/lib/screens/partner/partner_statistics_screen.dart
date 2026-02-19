@@ -23,13 +23,13 @@ class PartnerStatisticsScreen extends StatefulWidget {
 
 class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _secondaryOrange = AppTheme.primaryOrange;
-  static const Color _greyText = Color(0xFFABABAB);
-  static const Color _greenColor = Color(0xFF34C759);
+  static const Color _greyText = AppTheme.textGrey;
+  static const Color _greenColor = AppTheme.statusGreen;
   static const Color _redColor = Color(0xFFE83A3A);
-  static const Color _navyBlue = Color(0xFF3631C0);
+  static const Color _navyBlue = AppTheme.accentNavy;
   static const Color _strokeGrey = Color(0xFFD6D6D6);
 
   // Selected period
@@ -229,7 +229,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
                   color: _primaryOrange,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 ),
                 child: const Text(
                   'Повторить',
@@ -255,16 +255,16 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: _backgroundColor,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.05),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.05),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(4, 4),
             ),
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.05),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.05),
               blurRadius: 15,
               spreadRadius: 2,
               offset: const Offset(-4, -4),
@@ -275,7 +275,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           children: [
             // Image
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               child: establishment.primaryImageUrl != null
                   ? CachedNetworkImage(
                       imageUrl: establishment.primaryImageUrl!,
@@ -328,7 +328,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                     establishment.cuisineDisplayName,
                     style: const TextStyle(
                       fontSize: 13,
-                      color: Color(0xFFD2D2D2),
+                      color: AppTheme.strokeGrey,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -362,7 +362,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 border: Border.all(color: _secondaryOrange),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -627,7 +627,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
     return Container(
       decoration: BoxDecoration(
         color: _strokeGrey.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       ),
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
       child: const Center(
@@ -965,7 +965,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             foregroundColor: _backgroundColor,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             ),
             elevation: 0,
           ),

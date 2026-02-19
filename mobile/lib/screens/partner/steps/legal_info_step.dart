@@ -22,8 +22,8 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
   String? _documentFileName;
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _greyBorder = Color(0xFFD2D2D2);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
+  static const Color _greyBorder = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF949494);
   static const Color _requiredRed = AppTheme.primaryOrangeDark;
 
@@ -257,7 +257,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: _greyBorder),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: TextField(
         controller: controller,
@@ -309,7 +309,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             height: 45,
             decoration: BoxDecoration(
               border: Border.all(color: _greyBorder),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: Center(
               child: Text(
@@ -334,7 +334,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
       builder: (context) => AlertDialog(
         backgroundColor: _backgroundColor,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         ),
         title: const Text(
           'Загрузка документов',

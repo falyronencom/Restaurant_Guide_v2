@@ -12,11 +12,11 @@ class FilterScreen extends StatelessWidget {
   const FilterScreen({super.key});
 
   // Figma colors
-  static const Color _backgroundColor = Color(0xFFF4F1EC);
+  static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _selectedOrange = AppTheme.primaryOrangeDark;
-  static const Color _greyStroke = Color(0xFFD2D2D2);
-  static const Color _greyText = Color(0xFFABABAB);
+  static const Color _greyStroke = AppTheme.strokeGrey;
+  static const Color _greyText = AppTheme.textGrey;
 
   @override
   Widget build(BuildContext context) {
@@ -289,7 +289,7 @@ class FilterScreen extends StatelessWidget {
               backgroundColor: _primaryOrange,
               foregroundColor: _backgroundColor,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               ),
               elevation: 0,
             ),
@@ -393,7 +393,7 @@ class _DistanceOptionTile extends StatelessWidget {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.black : FilterScreen._backgroundColor,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? Colors.black : FilterScreen._greyStroke,
                 ),
@@ -442,12 +442,12 @@ class _PriceCard extends StatelessWidget {
               : null,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.08),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
               blurRadius: 9,
               offset: const Offset(2, 2),
             ),
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.01),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.01),
               blurRadius: 9,
               offset: const Offset(-2, -2),
             ),
@@ -501,7 +501,7 @@ class _HoursButton extends StatelessWidget {
         height: 45,
         decoration: BoxDecoration(
           color: isSelected ? FilterScreen._selectedOrange : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: isSelected
               ? null
               : Border.all(color: FilterScreen._greyStroke, width: 1.3),
@@ -540,7 +540,7 @@ class _AllToggleRow extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: FilterScreen._backgroundColor,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         border: Border.all(color: FilterScreen._greyStroke),
       ),
       child: Row(
@@ -625,7 +625,7 @@ class _CategoryCard extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFD35620).withValues(alpha: 0.08),
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
               blurRadius: 9,
               offset: const Offset(2, 2),
             ),
@@ -732,7 +732,7 @@ class _AmenityTile extends StatelessWidget {
               height: 24,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.black : FilterScreen._backgroundColor,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? Colors.black : FilterScreen._greyStroke,
                 ),

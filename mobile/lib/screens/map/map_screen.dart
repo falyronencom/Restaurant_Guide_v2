@@ -36,7 +36,7 @@ class _MapScreenState extends State<MapScreen> {
 
   // Colors
   static const Color _primaryOrange = AppTheme.primaryOrange;
-  static const Color _creamBackground = Color(0xFFF4F1EC);
+  static const Color _creamBackground = AppTheme.backgroundWarm;
   static const Color _starYellow = Color(0xFFFFB800);
 
   YandexMapController? _mapController;
@@ -115,7 +115,7 @@ class _MapScreenState extends State<MapScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.12),
@@ -130,7 +130,7 @@ class _MapScreenState extends State<MapScreen> {
                     Icon(
                       Icons.location_off_outlined,
                       size: 36,
-                      color: Color(0xFFABABAB),
+                      color: AppTheme.textGrey,
                     ),
                     SizedBox(height: 8),
                     Text(
@@ -147,7 +147,7 @@ class _MapScreenState extends State<MapScreen> {
                       'Попробуйте изменить масштаб карты или переместиться в другую область',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFFABABAB),
+                        color: AppTheme.textGrey,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -166,7 +166,7 @@ class _MapScreenState extends State<MapScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.12),
@@ -180,7 +180,7 @@ class _MapScreenState extends State<MapScreen> {
                     const Icon(
                       Icons.wifi_off_rounded,
                       size: 28,
-                      color: Color(0xFFABABAB),
+                      color: AppTheme.textGrey,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -199,7 +199,7 @@ class _MapScreenState extends State<MapScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
                           color: _primaryOrange,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                         child: const Text(
                           'Повторить',
@@ -228,7 +228,7 @@ class _MapScreenState extends State<MapScreen> {
                   height: 40,
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   ),
                   child: const Icon(
                     Icons.arrow_back_ios_new,
@@ -479,7 +479,7 @@ class _MapScreenState extends State<MapScreen> {
             children: [
               // Thumbnail
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                 child: SizedBox(
                   width: 100,
                   height: 100,
@@ -585,7 +585,7 @@ class _MapScreenState extends State<MapScreen> {
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                 ),
               ),
               child: const Text(
