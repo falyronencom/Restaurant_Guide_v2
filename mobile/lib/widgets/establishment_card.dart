@@ -153,7 +153,7 @@ class EstablishmentCard extends StatelessWidget {
       style: AppTheme.unbounded(
         fontSize: 18,
         fontWeight: FontWeight.w400,
-        color: Colors.black,
+        color: AppTheme.textPrimary,
         height: 25 / 18,
       ),
       maxLines: 1,
@@ -168,7 +168,7 @@ class EstablishmentCard extends StatelessWidget {
       style: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w400,
-        color: Colors.black,
+        color: AppTheme.textPrimary,
         height: 20 / 13,
       ),
     );
@@ -222,7 +222,7 @@ class EstablishmentCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w400,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
               height: 25 / 15,
             ),
           ),
@@ -253,7 +253,7 @@ class EstablishmentCard extends StatelessWidget {
             TextSpan(
               text: '/до $closingTime',
               style: const TextStyle(
-                color: Colors.black,
+                color: AppTheme.textPrimary,
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -271,7 +271,7 @@ class EstablishmentCard extends StatelessWidget {
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w400,
-          color: Colors.black,
+          color: AppTheme.textPrimary,
           height: 20 / 14,
         ),
       ),
@@ -285,7 +285,7 @@ class EstablishmentCard extends StatelessWidget {
       style: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w400,
-        color: Colors.black,
+        color: AppTheme.textPrimary,
         decoration: TextDecoration.underline,
         height: 20 / 14,
       ),

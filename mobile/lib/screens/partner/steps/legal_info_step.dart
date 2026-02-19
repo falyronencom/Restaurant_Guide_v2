@@ -162,7 +162,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
@@ -206,7 +206,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -266,7 +266,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
         inputFormatters: inputFormatters,
         style: const TextStyle(
           fontSize: 16,
-          color: Colors.black,
+          color: AppTheme.textPrimary,
         ),
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -317,7 +317,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  color: _documentFileName != null ? Colors.black : _greyText,
+                  color: _documentFileName != null ? AppTheme.textPrimary : _greyText,
                 ),
               ),
             ),

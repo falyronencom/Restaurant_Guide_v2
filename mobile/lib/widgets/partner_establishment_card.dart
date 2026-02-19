@@ -109,7 +109,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
                     establishment.shortAddress,
                     style: TextStyle(
                       fontSize: 14,
-                      color: isPremium ? _backgroundColor : Colors.black,
+                      color: isPremium ? _backgroundColor : AppTheme.textPrimary,
                     ),
                   ),
                 ),
@@ -136,7 +136,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
               'Редактировать',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
                 decoration: TextDecoration.underline,
               ),
             ),
@@ -194,7 +194,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
-            color: isPremium ? _backgroundColor : Colors.black,
+            color: isPremium ? _backgroundColor : AppTheme.textPrimary,
           ),
         ),
         // Type
@@ -202,7 +202,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
           establishment.categoryDisplayName,
           style: TextStyle(
             fontSize: 15,
-            color: isPremium ? _backgroundColor : Colors.black,
+            color: isPremium ? _backgroundColor : AppTheme.textPrimary,
           ),
         ),
         // Cuisine

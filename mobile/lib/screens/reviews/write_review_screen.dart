@@ -312,7 +312,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     return Container(
       height: 240,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.backgroundPrimary,
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(
           color: isTextTooShort ? Colors.red : _greyBorder,
@@ -329,7 +329,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
         textAlignVertical: TextAlignVertical.top,
         style: const TextStyle(
           fontSize: 15,
-          color: Colors.black,
+          color: AppTheme.textPrimary,
         ),
         decoration: const InputDecoration(
           hintText: 'Начните писать...',
@@ -398,7 +398,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 )
               : const Text(

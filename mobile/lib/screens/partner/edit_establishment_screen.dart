@@ -76,7 +76,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w500,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -102,7 +102,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
-                              color: Colors.white,
+                              color: AppTheme.textOnPrimary,
                             ),
                           ),
                         ),
@@ -188,7 +188,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -215,7 +215,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         style: const TextStyle(
           fontSize: 22,
           fontWeight: FontWeight.w500,
-          color: Colors.black,
+          color: AppTheme.textPrimary,
         ),
       ),
     );
@@ -313,7 +313,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             Icon(
               icon,
               size: 26,
-              color: isEnabled ? Colors.black : _greyText,
+              color: isEnabled ? AppTheme.textPrimary : _greyText,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -321,7 +321,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                 title,
                 style: TextStyle(
                   fontSize: 15,
-                  color: isEnabled ? Colors.black : _greyText,
+                  color: isEnabled ? AppTheme.textPrimary : _greyText,
                 ),
               ),
             ),
@@ -444,7 +444,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -524,7 +524,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             Icon(
               icon,
               size: 28,
-              color: isDestructive ? Colors.red : Colors.black,
+              color: isDestructive ? Colors.red : AppTheme.textPrimary,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -536,7 +536,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
-                      color: isDestructive ? Colors.red : Colors.black,
+                      color: isDestructive ? Colors.red : AppTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),

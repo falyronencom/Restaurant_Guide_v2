@@ -167,7 +167,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.backgroundPrimary,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -185,7 +185,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: const BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.backgroundPrimary,
                     border: Border(
                       bottom: BorderSide(color: _greyStroke, width: 0.5),
                     ),
@@ -200,7 +200,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                           child: const Icon(
                             Icons.chevron_left,
                             size: 25,
-                            color: Colors.black,
+                            color: AppTheme.textPrimary,
                           ),
                         ),
                       ),
@@ -208,8 +208,8 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                         'Местоположение',
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                       Positioned(
@@ -224,7 +224,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                             'Сброс',
                             style: TextStyle(
                               fontSize: 15,
-                              color: Colors.black,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                         ),
@@ -241,7 +241,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ),
@@ -299,7 +299,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _darkOrange,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppTheme.textOnPrimary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                         ),
@@ -342,7 +342,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 children: [
                   Text(
                     city,
-                    style: const TextStyle(fontSize: 15, color: Colors.black),
+                    style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -356,7 +356,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? _secondaryOrange : Colors.white,
+                color: isSelected ? _secondaryOrange : AppTheme.backgroundPrimary,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
                   color: isSelected ? _secondaryOrange : _greyStroke,
@@ -364,7 +364,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 ),
               ),
               child: isSelected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  ? const Icon(Icons.check, size: 16, color: AppTheme.textOnPrimary)
                   : null,
             ),
           ],
@@ -457,10 +457,10 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.black : Colors.transparent,
+                color: isSelected ? AppTheme.textPrimary : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
-                  color: isSelected ? Colors.black : Colors.grey.shade400,
+                  color: isSelected ? AppTheme.textPrimary : Colors.grey.shade400,
                   width: 1.5,
                 ),
               ),
@@ -468,7 +468,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   ? const Icon(
                       Icons.check,
                       size: 16,
-                      color: Colors.white,
+                      color: AppTheme.textOnPrimary,
                     )
                   : null,
             ),
@@ -553,7 +553,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                     'Результаты: ${provider.totalResults}',
                     style: const TextStyle(
                       fontSize: 14,
-                      color: Colors.black,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                 ),
@@ -760,7 +760,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                     child: Text(
                       '${provider.activeFilterCount}',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -788,7 +788,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             alignment: Alignment.center,
             child: const Icon(
               Icons.chevron_left,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
               size: 25,
             ),
           ),
@@ -805,7 +805,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               controller: _searchController,
               style: const TextStyle(
                 fontSize: 18,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
               decoration: const InputDecoration(
                 hintText: 'С чего начнем?',
@@ -846,7 +846,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   child: const Icon(
                     Icons.compare_arrows,
                     size: 22,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -854,7 +854,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   'Сортировка',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
               ],
@@ -873,14 +873,14 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 Icon(
                   Icons.map_outlined,
                   size: 23,
-                  color: Colors.white,
+                  color: AppTheme.textOnPrimary,
                 ),
                 SizedBox(width: 10),
                 Text(
                   'Карта',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
               ],
@@ -1177,7 +1177,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                     child: Text(
                       '${provider.activeFilterCount}',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -1205,7 +1205,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
             alignment: Alignment.center,
             child: const Icon(
               Icons.chevron_left,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
               size: 25,
             ),
           ),
@@ -1222,7 +1222,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
               controller: searchController,
               style: const TextStyle(
                 fontSize: 18,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
               decoration: const InputDecoration(
                 hintText: 'С чего начнем?',
@@ -1263,7 +1263,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                   child: const Icon(
                     Icons.compare_arrows,
                     size: 22,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1271,7 +1271,7 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                   'Сортировка',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
               ],
@@ -1286,14 +1286,14 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
                 Icon(
                   Icons.map_outlined,
                   size: 23,
-                  color: Colors.white,
+                  color: AppTheme.textOnPrimary,
                 ),
                 SizedBox(width: 10),
                 Text(
                   'Карта',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                   ),
                 ),
               ],

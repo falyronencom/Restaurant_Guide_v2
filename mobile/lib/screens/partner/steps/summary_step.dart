@@ -39,7 +39,7 @@ class SummaryStep extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                   height: 1.5,
                 ),
               ),
@@ -116,7 +116,7 @@ class SummaryStep extends StatelessWidget {
                 child: item.isCompleted
                     ? const Icon(
                         Icons.check,
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                         size: 18,
                       )
                     : null,
@@ -128,7 +128,7 @@ class SummaryStep extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
-                  color: item.isCompleted ? Colors.black : _greyText,
+                  color: item.isCompleted ? AppTheme.textPrimary : _greyText,
                 ),
               ),
             ],
@@ -155,7 +155,7 @@ class SummaryStep extends StatelessWidget {
             width: 162,
             height: 47,
             decoration: BoxDecoration(
-              color: Colors.black,
+              color: AppTheme.textPrimary,
               borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: const Center(
