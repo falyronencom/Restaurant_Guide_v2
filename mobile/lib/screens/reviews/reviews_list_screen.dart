@@ -232,10 +232,10 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          const Text(
+          Text(
             'Все отзывы',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -269,7 +269,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
               const Text(
                 'Сортировка',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 14,
                   color: _creamColor,
                 ),
@@ -416,8 +415,8 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                     review.userName.isNotEmpty
                         ? review.userName[0].toUpperCase()
                         : 'A',
-                    style: const TextStyle(
-                      fontFamily: 'Unbounded',
+                    style: TextStyle(
+fontFamily: AppTheme.fontDisplayFamily,
                       fontSize: 25,
                       color: _creamColor,
                     ),
@@ -430,7 +429,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                 child: Text(
                   review.userName,
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     color: _creamColor,
                   ),
@@ -445,7 +443,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                   Text(
                     _formatDate(review.createdAt),
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 12,
                       color: _greyText,
                     ),
@@ -460,7 +457,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
           Text(
             review.text ?? '',
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 12,
               color: _creamColor,
               height: 1.67,
@@ -491,7 +487,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                       const Text(
                         'Ответ заведения',
                         style: TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: _secondaryOrange,
@@ -502,7 +497,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                         Text(
                           _formatDate(review.partnerResponseAt!),
                           style: const TextStyle(
-                            fontFamily: 'Avenir Next',
                             fontSize: 10,
                             color: _greyText,
                           ),
@@ -513,7 +507,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                   Text(
                     review.partnerResponse!,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 11,
                       color: _creamColor,
                       height: 1.4,
@@ -632,10 +625,10 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Сортировка',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 20,
               color: _creamColor,
             ),

@@ -37,7 +37,6 @@ class SummaryStep extends StatelessWidget {
               const Text(
                 'Всё готово! Вы можете вернуться к редактированию, посмотреть карточку заведения или отправить заведение на проверку.',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
                   color: Colors.black,
@@ -127,7 +126,6 @@ class SummaryStep extends StatelessWidget {
               Text(
                 item.title,
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 16,
                   fontWeight: FontWeight.w400,
                   color: item.isCompleted ? Colors.black : _greyText,
@@ -164,7 +162,6 @@ class SummaryStep extends StatelessWidget {
               child: Text(
                 'Превью карточки',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: _backgroundColor,
@@ -192,7 +189,6 @@ class SummaryStep extends StatelessWidget {
               child: Text(
                 'Отправить на верификацию',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: _backgroundColor,

@@ -94,7 +94,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                     Text(
                       '${_descriptionController.text.length}/$_maxDescriptionLength символов',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 13,
                         color: _greyText,
                       ),
@@ -186,7 +185,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 22,
             fontWeight: FontWeight.w500,
             color: Colors.black,
@@ -196,7 +194,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         Text(
           subtitle,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -226,7 +223,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
               child: Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -237,7 +233,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
               const Text(
                 '*',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: _lightOrange,
@@ -249,7 +244,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         Text(
           description,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -284,14 +278,12 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         maxLength: maxLength,
         keyboardType: keyboardType,
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 15,
           color: Colors.black,
         ),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             color: _greyText,
           ),
@@ -326,7 +318,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
         child: Text(
           hasHours ? 'Изменить' : 'Заполнить',
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w500,
             color: Colors.black,
@@ -396,7 +387,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           child: Text(
             label,
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 17,
               fontWeight: FontWeight.w500,
               color: isSelected ? Colors.white : Colors.black,
@@ -441,7 +431,6 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
           Text(
             label,
             style: const TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 15,
               fontWeight: FontWeight.w400,
               color: Colors.black,

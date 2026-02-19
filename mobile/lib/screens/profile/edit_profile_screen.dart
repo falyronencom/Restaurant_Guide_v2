@@ -69,7 +69,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const Text(
                 'Выберите источник',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
@@ -79,7 +78,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 leading: const Icon(Icons.photo_library, color: _primaryOrange),
                 title: const Text(
                   'Галерея',
-                  style: TextStyle(fontFamily: 'Avenir Next'),
+                  style: TextStyle(),
                 ),
                 onTap: () => Navigator.pop(context, ImageSource.gallery),
               ),
@@ -87,7 +86,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 leading: const Icon(Icons.camera_alt, color: _primaryOrange),
                 title: const Text(
                   'Камера',
-                  style: TextStyle(fontFamily: 'Avenir Next'),
+                  style: TextStyle(),
                 ),
                 onTap: () => Navigator.pop(context, ImageSource.camera),
               ),
@@ -266,7 +265,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: Text(
               'Редактировать профиль',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
                 color: Colors.black,
@@ -316,7 +314,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: const Text(
               'Поменять фото',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 color: Colors.black,
               ),
@@ -356,7 +353,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
-          fontFamily: 'Unbounded',
+          fontFamily: AppTheme.fontDisplayFamily,
           fontSize: radius * 0.6,
           color: _backgroundColor,
           fontWeight: FontWeight.w400,
@@ -441,7 +438,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 Text(
                   label,
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
                     color: Colors.black,
@@ -454,7 +450,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     enabled: isEditable && !_isSaving,
                     validator: validator,
                     style: const TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       color: Colors.black,
                     ),
@@ -464,7 +459,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       border: InputBorder.none,
                       hintText: hint,
                       hintStyle: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 15,
                         color: _greyText,
                       ),
@@ -474,7 +468,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   Text(
                     value?.isNotEmpty == true ? value! : (hint ?? 'Не указано'),
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       color:
                           value?.isNotEmpty == true ? Colors.black : _greyText,
@@ -521,7 +514,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             : const Text(
                 'Сохранить',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                 ),

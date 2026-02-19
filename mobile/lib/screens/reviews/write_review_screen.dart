@@ -251,10 +251,10 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          const Text(
+          Text(
             'Написать отзыв',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -297,7 +297,6 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
       child: Text(
         '$currentLength/$_maxTextLength символов',
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 13,
           color: _greyText,
         ),
@@ -329,14 +328,12 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
         enabled: !_isSubmitting,
         textAlignVertical: TextAlignVertical.top,
         style: const TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 15,
           color: Colors.black,
         ),
         decoration: const InputDecoration(
           hintText: 'Начните писать...',
           hintStyle: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             color: _greyBorder,
           ),
@@ -407,7 +404,6 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
               : const Text(
                   'Написать отзыв',
                   style: TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),

@@ -59,12 +59,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   const SizedBox(height: 40),
                   // Title
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
                       'Профиль',
                       style: TextStyle(
-                        fontFamily: 'Unbounded',
+                        fontFamily: AppTheme.fontDisplayFamily,
                         fontSize: 25,
                         fontWeight: FontWeight.w400,
                         color: _primaryOrange,
@@ -143,7 +143,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ? (user?.name ?? 'Пользователь')
                           : 'Гость',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 20,
                         fontWeight: FontWeight.w500,
                         color: Colors.black,
@@ -153,7 +152,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Text(
                       isAuthenticated ? 'Показать профиль' : 'Войти в аккаунт',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 14,
                         color: _greyText,
                       ),
@@ -188,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
-          fontFamily: 'Unbounded',
+          fontFamily: AppTheme.fontDisplayFamily,
           fontSize: radius * 0.8,
           color: _backgroundColor,
           fontWeight: FontWeight.w400,
@@ -226,7 +224,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Text(
             'Основные заведения',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 22,
               fontWeight: FontWeight.w500,
               color: Colors.black,
@@ -319,7 +316,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: const Text(
             'Разместить ваше\nзаведение',
             style: TextStyle(
-              fontFamily: 'Alexandria',
               fontSize: 24,
               fontWeight: FontWeight.w400,
               color: Color(0xFFF4F1EC),
@@ -348,7 +344,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: const Text(
             '+ Добавить заведение',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 15,
               color: Colors.black,
             ),
@@ -392,7 +387,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Text(
             'Настройки',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 22,
               fontWeight: FontWeight.w500,
               color: Colors.black,
@@ -485,7 +479,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   color: Colors.black,
                 ),
@@ -514,13 +507,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text(
           'Выйти из аккаунта?',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontWeight: FontWeight.w600,
           ),
         ),
         content: const Text(
           'Вы уверены, что хотите выйти?',
-          style: TextStyle(fontFamily: 'Avenir Next'),
+          style: TextStyle(),
         ),
         actions: [
           TextButton(
@@ -528,7 +520,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: const Text(
               'Отмена',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 color: Colors.black54,
               ),
             ),
@@ -542,7 +533,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text(
               'Выйти',
-              style: TextStyle(fontFamily: 'Avenir Next'),
+              style: TextStyle(),
             ),
           ),
         ],
@@ -675,10 +666,10 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          const Text(
+          Text(
             'Ваш профиль',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -739,7 +730,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       Text(
                         user?.name ?? 'Пользователь',
                         style: const TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 20,
                           fontWeight: FontWeight.w500,
                           color: Colors.black,
@@ -750,7 +740,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       Text(
                         user?.email ?? user?.phone ?? '',
                         style: const TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 14,
                           color: Colors.black,
                         ),
@@ -766,7 +755,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                     Text(
                       '$_totalReviews',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: Colors.black,
@@ -775,7 +763,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                     const Text(
                       'Отзывов',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 14,
                         color: Colors.black,
                       ),
@@ -790,7 +777,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                     Text(
                       '$favoritesCount',
                       style: const TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: Colors.black,
@@ -799,7 +785,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                     const Text(
                       'В избранном',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 14,
                         color: Colors.black,
                       ),
@@ -821,7 +806,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                 child: const Text(
                   'Редактировать',
                   style: TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 14,
                     color: Colors.black,
                     decoration: TextDecoration.underline,
@@ -849,7 +833,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
-          fontFamily: 'Unbounded',
+          fontFamily: AppTheme.fontDisplayFamily,
           fontSize: radius * 0.7,
           color: _backgroundColor,
           fontWeight: FontWeight.w400,
@@ -868,7 +852,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           const Text(
             'Ваши отзывы',
             style: TextStyle(
-              fontFamily: 'Avenir Next',
               fontSize: 22,
               fontWeight: FontWeight.w500,
               color: Colors.black,
@@ -911,7 +894,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                 child: Text(
                   'У вас пока нет отзывов',
                   style: TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 16,
                     color: _greyText,
                   ),
@@ -988,7 +970,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       Text(
                         review.establishmentName,
                         style: const TextStyle(
-                          fontFamily: 'Avenir Next',
                           fontSize: 18,
                           fontWeight: FontWeight.w500,
                           color: Colors.black,
@@ -1000,7 +981,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         Text(
                           review.establishmentType!,
                           style: const TextStyle(
-                            fontFamily: 'Avenir Next',
                             fontSize: 13,
                             color: Colors.black,
                           ),
@@ -1009,7 +989,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         Text(
                           '{${review.establishmentCuisine}}',
                           style: const TextStyle(
-                            fontFamily: 'Avenir Next',
                             fontSize: 13,
                             color: _greyText,
                           ),
@@ -1033,7 +1012,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         child: Text(
                           review.rating.toStringAsFixed(1).replaceAll('.', ','),
                           style: const TextStyle(
-                            fontFamily: 'Avenir Next',
                             fontSize: 16,
                             color: Color(0xFFF4F1EC),
                           ),
@@ -1044,7 +1022,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                     const Text(
                       'Ваша оценка',
                       style: TextStyle(
-                        fontFamily: 'Avenir Next',
                         fontSize: 13,
                         color: _greyText,
                       ),
@@ -1060,7 +1037,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
             Text(
               '– ${_formatRelativeDate(review.createdAt)}',
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 13,
                 color: Colors.black,
               ),
@@ -1073,7 +1049,6 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               Text(
                 review.text!,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   color: Colors.black,
                   height: 1.3,

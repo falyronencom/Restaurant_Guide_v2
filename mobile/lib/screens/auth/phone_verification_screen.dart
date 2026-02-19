@@ -188,13 +188,13 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
         backgroundColor: const Color(0xFFF4F1EC),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
+          icon: Icon(Icons.arrow_back, color: Color(0xFF3E3E3E)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Регистрация',
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 25,
             fontWeight: FontWeight.w400,
             color: AppTheme.primaryOrangeDark,
@@ -213,7 +213,6 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
               Text(
                 'Верификация телефона',
                 style: theme.textTheme.headlineMedium?.copyWith(
-                  fontFamily: 'Avenir Next',
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   height: 1.18, // 26/22
@@ -226,7 +225,6 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
               Text(
                 'Мы прислали SMS на вашу номер телефона с кодом подтверждения',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   height: 1.53, // 23/15
                 ),
@@ -286,7 +284,6 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                         ? 'Прислать код повторно через 00:${_resendTimer.toString().padLeft(2, '0')}'
                         : 'Прислать код повторно',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'Avenir Next',
                       fontSize: 13,
                       height: 1.15, // 15/13
                       color: _resendTimer > 0
@@ -324,7 +321,6 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                     : Text(
                         'Подтвердить',
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontFamily: 'Avenir Next',
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFFF4F1EC),

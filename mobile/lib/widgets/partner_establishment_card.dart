@@ -108,7 +108,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
                   child: Text(
                     establishment.shortAddress,
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 14,
                       color: isPremium ? _backgroundColor : Colors.black,
                     ),
@@ -136,7 +135,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
             child: Text(
               'Редактировать',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 14,
                 color: Colors.black,
                 decoration: TextDecoration.underline,
@@ -193,7 +191,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
         Text(
           establishment.name,
           style: TextStyle(
-            fontFamily: 'Unbounded',
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
             color: isPremium ? _backgroundColor : Colors.black,
@@ -203,7 +201,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
         Text(
           establishment.categoryDisplayName,
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             color: isPremium ? _backgroundColor : Colors.black,
           ),
@@ -212,7 +209,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
         Text(
           establishment.cuisineDisplayName,
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 13,
             color: isPremium ? _darkGreyText : _greyText,
           ),
@@ -262,7 +258,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
         Text(
           '$value',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 14,
             fontWeight: FontWeight.w500,
             color: color,
@@ -287,7 +282,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
         child: const Text(
           'Продвижение',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w500,
             color: _backgroundColor,
@@ -330,7 +324,6 @@ class PartnerEstablishmentCard extends StatelessWidget {
       child: Text(
         statusText,
         style: TextStyle(
-          fontFamily: 'Avenir Next',
           fontSize: 14,
           fontWeight: FontWeight.w500,
           color: statusColor,

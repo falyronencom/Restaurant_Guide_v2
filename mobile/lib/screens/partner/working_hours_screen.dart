@@ -89,10 +89,10 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             'Ваше заведение',
             style: TextStyle(
-              fontFamily: 'Unbounded',
+              fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 25,
               fontWeight: FontWeight.w400,
               color: _primaryOrange,
@@ -111,7 +111,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
         Text(
           'Время работы',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 22,
             fontWeight: FontWeight.w500,
             color: Colors.black,
@@ -121,7 +120,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
         Text(
           'Введите время открытия и закрытия заведения в разные дни',
           style: TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 15,
             fontWeight: FontWeight.w400,
             color: Colors.black,
@@ -150,7 +148,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
               Text(
                 dayName,
                 style: const TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -161,7 +158,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                   Text(
                     dayHours.isOpen ? 'Работаем' : 'Не работаем',
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       color: dayHours.isOpen ? _primaryOrange : _greyText,
                     ),
@@ -209,7 +205,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
             const Text(
               'Закрыто',
               style: TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 15,
                 color: _greyText,
               ),
@@ -235,7 +230,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
         Text(
           label,
           style: const TextStyle(
-            fontFamily: 'Avenir Next',
             fontSize: 13,
             color: _greyText,
           ),
@@ -256,7 +250,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                 Text(
                   time,
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 15,
                     color: Colors.black,
                   ),
@@ -309,7 +302,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                   Text(
                     'Назад',
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: _greyStroke,
@@ -336,7 +328,6 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                   Text(
                     'Сохранить',
                     style: TextStyle(
-                      fontFamily: 'Avenir Next',
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                       color: _backgroundColor,

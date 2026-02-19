@@ -26,7 +26,6 @@ class CuisineStep extends StatelessWidget {
               const Text(
                 'Категория кухни',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   color: Colors.black,
@@ -39,7 +38,6 @@ class CuisineStep extends StatelessWidget {
               const Text(
                 'Допускается выбрать три категории:\nодна основная и две дополнительные',
                 style: TextStyle(
-                  fontFamily: 'Avenir Next',
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
                   color: Colors.black,
@@ -54,7 +52,6 @@ class CuisineStep extends StatelessWidget {
                 child: Text(
                   '${provider.selectedCuisineCount}/${CuisineOptions.maxSelection}',
                   style: const TextStyle(
-                    fontFamily: 'Avenir Next',
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
                     color: Colors.black,
@@ -160,7 +157,6 @@ class _CuisineCard extends StatelessWidget {
             Text(
               cuisine.name,
               style: const TextStyle(
-                fontFamily: 'Avenir Next',
                 fontSize: 17,
                 fontWeight: FontWeight.w400,
                 color: Colors.black,
