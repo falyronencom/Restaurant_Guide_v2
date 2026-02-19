@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -183,6 +184,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               children: [
                 // Header
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: const BoxDecoration(
                     color: AppTheme.backgroundPrimary,
@@ -204,9 +206,9 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                           ),
                         ),
                       ),
-                      const Text(
+                      Text(
                         'Местоположение',
-                        style: TextStyle(
+                        style: GoogleFonts.nunitoSans(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary,

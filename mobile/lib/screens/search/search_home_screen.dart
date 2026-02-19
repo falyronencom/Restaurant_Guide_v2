@@ -84,6 +84,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
               children: [
                 // Header (Figma: Фильтр/Header)
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: const BoxDecoration(
                     color: AppTheme.backgroundPrimary,
@@ -107,9 +108,9 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         ),
                       ),
                       // Title (center)
-                      const Text(
+                      Text(
                         'Местоположение',
-                        style: TextStyle(
+                        style: GoogleFonts.nunitoSans(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary,
