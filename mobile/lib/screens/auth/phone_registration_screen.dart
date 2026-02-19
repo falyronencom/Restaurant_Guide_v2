@@ -108,7 +108,7 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
         backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -250,8 +250,8 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     minimumSize: const Size(double.infinity, 48),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
@@ -262,8 +262,8 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppTheme.textOnPrimary),
                           ),
                         )
                       : Text(

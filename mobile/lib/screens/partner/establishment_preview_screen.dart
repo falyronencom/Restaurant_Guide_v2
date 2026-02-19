@@ -22,7 +22,8 @@ class EstablishmentPreviewScreen extends StatefulWidget {
       _EstablishmentPreviewScreenState();
 }
 
-class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen> {
+class _EstablishmentPreviewScreenState
+    extends State<EstablishmentPreviewScreen> {
   // Gallery state
   int _currentPhotoIndex = 0;
   final PageController _galleryController = PageController();
@@ -251,7 +252,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(3),
             color: index == _currentPhotoIndex % displayCount
-                ? Colors.white
+                ? AppTheme.backgroundPrimary
                 : Colors.white.withValues(alpha: 0.5),
           ),
         );
@@ -267,7 +268,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         width: 55,
         height: 42,
         decoration: const BoxDecoration(
-          color: Colors.black,
+          color: AppTheme.textPrimary,
           borderRadius: BorderRadius.only(
             topRight: Radius.circular(8),
             bottomRight: Radius.circular(8),
@@ -276,7 +277,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         child: const Center(
           child: Icon(
             Icons.chevron_left,
-            color: Colors.white,
+            color: AppTheme.textOnPrimary,
             size: 28,
           ),
         ),
@@ -297,7 +298,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: Colors.white,
+          color: AppTheme.textOnPrimary,
         ),
       ),
     );
@@ -329,7 +330,7 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
         Text(
           data.name ?? 'Название заведения',
           style: TextStyle(
-fontFamily: AppTheme.fontDisplayFamily,
+            fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 40,
             fontWeight: FontWeight.w400,
             color: _backgroundColor,
@@ -477,7 +478,7 @@ fontFamily: AppTheme.fontDisplayFamily,
               fontFamily: AppTheme.fontDisplayFamily,
               fontSize: 30,
               fontWeight: FontWeight.w400,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 19),
@@ -527,7 +528,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
               ),
@@ -535,7 +536,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                 '${day.openTime ?? ''} - ${day.closeTime ?? ''}',
                 style: const TextStyle(
                   fontSize: 16,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -556,8 +557,7 @@ fontFamily: AppTheme.fontDisplayFamily,
         itemCount: menuPhotos.length > 4 ? 4 : menuPhotos.length,
         itemBuilder: (context, index) {
           final photoPath = menuPhotos[index];
-          final maxIndex =
-              (menuPhotos.length > 4 ? 4 : menuPhotos.length) - 1;
+          final maxIndex = (menuPhotos.length > 4 ? 4 : menuPhotos.length) - 1;
 
           return GestureDetector(
             onTap: () => _openFullscreenGallery(index, menuPhotos),
@@ -646,14 +646,14 @@ fontFamily: AppTheme.fontDisplayFamily,
         children: [
           // Title
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
                 fontFamily: AppTheme.fontDisplayFamily,
                 fontSize: 30,
                 fontWeight: FontWeight.w400,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
@@ -740,7 +740,7 @@ fontFamily: AppTheme.fontDisplayFamily,
             label,
             style: const TextStyle(
               fontSize: 13,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
             textAlign: TextAlign.center,
             maxLines: 2,
@@ -776,7 +776,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                   fontFamily: AppTheme.fontDisplayFamily,
                   fontSize: 30,
                   fontWeight: FontWeight.w400,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 14),
@@ -786,7 +786,7 @@ fontFamily: AppTheme.fontDisplayFamily,
                 '${data.street ?? ''}, ${data.building ?? ''},\n${data.city ?? ''}',
                 style: const TextStyle(
                   fontSize: 16,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -846,7 +846,7 @@ fontFamily: AppTheme.fontDisplayFamily,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -944,7 +944,8 @@ class _PreviewFullscreenGalleryState extends State<_PreviewFullscreenGallery> {
             top: MediaQuery.of(context).padding.top + 8,
             right: 16,
             child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              icon: const Icon(Icons.close,
+                  color: AppTheme.textOnPrimary, size: 28),
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -965,7 +966,7 @@ class _PreviewFullscreenGalleryState extends State<_PreviewFullscreenGallery> {
                 child: Text(
                   '${_currentIndex + 1} / ${widget.photos.length}',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                     fontSize: 14,
                   ),
                 ),
@@ -985,12 +986,12 @@ class _PreviewFullscreenGalleryState extends State<_PreviewFullscreenGallery> {
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return const Center(
-            child: CircularProgressIndicator(color: Colors.white),
+            child: CircularProgressIndicator(color: AppTheme.textOnPrimary),
           );
         },
         errorBuilder: (context, error, stackTrace) {
           return const Center(
-            child: Icon(Icons.error, color: Colors.white, size: 48),
+            child: Icon(Icons.error, color: AppTheme.textOnPrimary, size: 48),
           );
         },
       );
@@ -1000,7 +1001,7 @@ class _PreviewFullscreenGalleryState extends State<_PreviewFullscreenGallery> {
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) {
           return const Center(
-            child: Icon(Icons.error, color: Colors.white, size: 48),
+            child: Icon(Icons.error, color: AppTheme.textOnPrimary, size: 48),
           );
         },
       );

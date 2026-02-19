@@ -100,7 +100,7 @@ class _AddressStepState extends State<AddressStep> {
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
@@ -204,7 +204,7 @@ class _AddressStepState extends State<AddressStep> {
           ),
           style: const TextStyle(
             fontSize: 16,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
           icon: const Icon(Icons.keyboard_arrow_down, color: _greyText),
           dropdownColor: _backgroundColor,
@@ -248,7 +248,7 @@ class _AddressStepState extends State<AddressStep> {
       controller: controller,
       style: const TextStyle(
         fontSize: 16,
-        color: Colors.black,
+        color: AppTheme.textPrimary,
       ),
       decoration: InputDecoration(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

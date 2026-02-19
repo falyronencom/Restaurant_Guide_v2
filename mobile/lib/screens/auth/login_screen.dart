@@ -100,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -238,8 +238,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppTheme.textOnPrimary),
                           ),
                         )
                       : Text(
@@ -278,8 +278,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(11.301),
                     ),
-                    side: const BorderSide(color: Colors.black, width: 1),
-                    backgroundColor: Colors.white,
+                    side:
+                        const BorderSide(color: AppTheme.textPrimary, width: 1),
+                    backgroundColor: AppTheme.backgroundPrimary,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -298,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: AppTheme.textOnPrimary,
                             ),
                           ),
                         ),
@@ -309,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 15,
                           height: 1.33, // 20/15
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                     ],
@@ -336,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       // Apple icon placeholder
                       const Icon(
                         Icons.apple,
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                         size: 20,
                       ),
                       const SizedBox(width: 12),
@@ -345,7 +346,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 15,
                           height: 1.33, // 20/15
-                          color: Colors.white,
+                          color: AppTheme.textOnPrimary,
                         ),
                       ),
                     ],
@@ -375,9 +376,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextSpan(
                             text: 'Регистрация',
                             style: TextStyle(
-                              color: Colors.black,
+                              color: AppTheme.textPrimary,
                               decoration: TextDecoration.underline,
-                              decorationColor: Colors.black,
+                              decorationColor: AppTheme.textPrimary,
                             ),
                           ),
                         ],

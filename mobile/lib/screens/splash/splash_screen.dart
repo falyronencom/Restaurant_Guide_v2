@@ -473,7 +473,7 @@ class _SplashScreenState extends State<SplashScreen>
                             child: CustomPaint(
                               size: const Size(80, 130),
                               painter: PinPainter(
-                                bodyColor: Colors.white,
+                                bodyColor: AppTheme.textOnPrimary,
                                 cutoutColor: AppTheme.primaryOrange,
                                 shadowColor: AppTheme.primaryOrangeDark,
                               ),

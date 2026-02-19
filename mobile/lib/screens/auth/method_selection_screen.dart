@@ -16,7 +16,7 @@ class MethodSelectionScreen extends StatelessWidget {
         backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.textDark),
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -127,7 +127,7 @@ class MethodSelectionScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: const BorderSide(
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
@@ -175,7 +175,7 @@ class MethodSelectionScreen extends StatelessWidget {
                       'Продолжить с Apple',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontSize: 15,
-                        color: Colors.white,
+                        color: AppTheme.textOnPrimary,
                       ),
                     ),
                   ],

@@ -85,7 +85,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -113,7 +113,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w500,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         SizedBox(height: 4),
@@ -122,7 +122,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w400,
-            color: Colors.black,
+            color: AppTheme.textPrimary,
           ),
         ),
         SizedBox(height: 8),
@@ -150,7 +150,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               Row(
@@ -240,7 +240,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.backgroundPrimary,
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: _greyStroke),
             ),
@@ -251,7 +251,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                   time,
                   style: const TextStyle(
                     fontSize: 15,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 const Icon(
@@ -319,7 +319,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
               height: 42,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: Colors.black,
+                color: AppTheme.textPrimary,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: const Row(
@@ -377,9 +377,9 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: _primaryOrange,
-              onPrimary: Colors.white,
+              onPrimary: AppTheme.textOnPrimary,
               surface: _backgroundColor,
-              onSurface: Colors.black,
+              onSurface: AppTheme.textPrimary,
             ),
           ),
           child: child!,

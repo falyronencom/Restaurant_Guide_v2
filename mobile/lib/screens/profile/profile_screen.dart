@@ -48,7 +48,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Consumer2<AuthProvider, PartnerDashboardProvider>(
           builder: (context, authProvider, partnerProvider, child) {
             // Trigger partner data load when user becomes authenticated
-            if (authProvider.isAuthenticated && !partnerProvider.isInitialized && !partnerProvider.isLoading) {
+            if (authProvider.isAuthenticated &&
+                !partnerProvider.isInitialized &&
+                !partnerProvider.isLoading) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 partnerProvider.initializeIfNeeded();
               });
@@ -60,7 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 40),
                   // Title
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
                       'Профиль',
                       style: TextStyle(
@@ -145,7 +147,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -226,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -271,7 +273,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: PartnerEstablishmentCard(
                   establishment: establishment,
                   onTap: () => _onEstablishmentTap(context, establishment),
-                  onEditTap: () => _onEditEstablishmentTap(context, establishment),
+                  onEditTap: () =>
+                      _onEditEstablishmentTap(context, establishment),
                   onPromotionTap: () => _onPromotionTap(context, establishment),
                 ),
               ),
@@ -291,7 +294,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: InkWell(
         onTap: () {
-          Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
+          Navigator.of(context, rootNavigator: true)
+              .pushNamed('/partner/register');
         },
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: Container(
@@ -332,7 +336,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Center(
       child: InkWell(
         onTap: () {
-          Navigator.of(context, rootNavigator: true).pushNamed('/partner/register');
+          Navigator.of(context, rootNavigator: true)
+              .pushNamed('/partner/register');
         },
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: Container(
@@ -345,7 +350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '+ Добавить заведение',
             style: TextStyle(
               fontSize: 15,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
         ),
@@ -354,19 +359,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   /// Handle tap on establishment card
-  void _onEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
+  void _onEstablishmentTap(
+      BuildContext context, PartnerEstablishment establishment) {
     // Navigate to establishment statistics screen (Phase 5.2b)
-    Navigator.of(context, rootNavigator: true).pushNamed('/partner/statistics/${establishment.id}');
+    Navigator.of(context, rootNavigator: true)
+        .pushNamed('/partner/statistics/${establishment.id}');
   }
 
   /// Handle tap on edit establishment
-  void _onEditEstablishmentTap(BuildContext context, PartnerEstablishment establishment) {
+  void _onEditEstablishmentTap(
+      BuildContext context, PartnerEstablishment establishment) {
     // Navigate to edit establishment screen (Phase 5.2b)
-    Navigator.of(context, rootNavigator: true).pushNamed('/partner/edit/${establishment.id}');
+    Navigator.of(context, rootNavigator: true)
+        .pushNamed('/partner/edit/${establishment.id}');
   }
 
   /// Handle tap on promotion button
-  void _onPromotionTap(BuildContext context, PartnerEstablishment establishment) {
+  void _onPromotionTap(
+      BuildContext context, PartnerEstablishment establishment) {
     // TODO: Navigate to promotion/subscription screen (future feature)
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -389,7 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -480,7 +490,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title,
                 style: const TextStyle(
                   fontSize: 15,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ),
@@ -661,7 +671,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
             child: const Icon(
               Icons.chevron_left,
               size: 28,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 8),
@@ -732,7 +742,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w500,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -741,7 +751,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         user?.email ?? user?.phone ?? '',
                         style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                     ],
@@ -757,14 +767,14 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const Text(
                       'Отзывов',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -779,14 +789,14 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const Text(
                       'В избранном',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.black,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ],
@@ -801,13 +811,14 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               alignment: Alignment.centerRight,
               child: GestureDetector(
                 onTap: () {
-                  Navigator.of(context, rootNavigator: true).pushNamed('/profile/edit');
+                  Navigator.of(context, rootNavigator: true)
+                      .pushNamed('/profile/edit');
                 },
                 child: const Text(
                   'Редактировать',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.black,
+                    color: AppTheme.textPrimary,
                     decoration: TextDecoration.underline,
                   ),
                 ),
@@ -854,7 +865,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -972,7 +983,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w500,
-                          color: Colors.black,
+                          color: AppTheme.textPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -982,7 +993,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                           review.establishmentType!,
                           style: const TextStyle(
                             fontSize: 13,
-                            color: Colors.black,
+                            color: AppTheme.textPrimary,
                           ),
                         ),
                       if (review.establishmentCuisine != null)
@@ -1006,7 +1017,8 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       height: 31,
                       decoration: BoxDecoration(
                         color: _greenRating,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.radiusSmall),
                       ),
                       child: Center(
                         child: Text(
@@ -1038,7 +1050,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               '– ${_formatRelativeDate(review.createdAt)}',
               style: const TextStyle(
                 fontSize: 13,
-                color: Colors.black,
+                color: AppTheme.textPrimary,
               ),
             ),
 
@@ -1050,7 +1062,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                 review.text!,
                 style: const TextStyle(
                   fontSize: 15,
-                  color: Colors.black,
+                  color: AppTheme.textPrimary,
                   height: 1.3,
                 ),
                 maxLines: 2,

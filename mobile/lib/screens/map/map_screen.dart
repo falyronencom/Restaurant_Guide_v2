@@ -70,7 +70,7 @@ class _MapScreenState extends State<MapScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.backgroundPrimary,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -114,7 +114,7 @@ class _MapScreenState extends State<MapScreen> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.backgroundPrimary,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   boxShadow: [
                     BoxShadow(
@@ -165,7 +165,7 @@ class _MapScreenState extends State<MapScreen> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.backgroundPrimary,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                   boxShadow: [
                     BoxShadow(
@@ -206,7 +206,7 @@ class _MapScreenState extends State<MapScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                            color: AppTheme.textOnPrimary,
                           ),
                         ),
                       ),
@@ -232,7 +232,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   child: const Icon(
                     Icons.arrow_back_ios_new,
-                    color: Colors.white,
+                    color: AppTheme.textOnPrimary,
                     size: 20,
                   ),
                 ),
@@ -245,7 +245,7 @@ class _MapScreenState extends State<MapScreen> {
             right: 16,
             child: FloatingActionButton(
               mini: true,
-              backgroundColor: Colors.white,
+              backgroundColor: AppTheme.backgroundPrimary,
               onPressed: _goToMyLocation,
               child: const Icon(
                 Icons.my_location,
@@ -582,7 +582,7 @@ class _MapScreenState extends State<MapScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryOrange,
-                foregroundColor: Colors.white,
+                foregroundColor: AppTheme.textOnPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
