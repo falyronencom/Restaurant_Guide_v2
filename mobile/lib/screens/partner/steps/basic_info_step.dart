@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/screens/partner/working_hours_screen.dart';
@@ -21,8 +22,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
   late TextEditingController _linkController;
 
   // Figma colors
-  static const Color _primaryOrange = Color(0xFFDB4F13);
-  static const Color _lightOrange = Color(0xFFEC723D);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
+  static const Color _lightOrange = AppTheme.primaryOrangeLight;
   static const Color _greyStroke = Color(0xFFD2D2D2);
   static const Color _greyText = Color(0xFF9D9D9D);
 

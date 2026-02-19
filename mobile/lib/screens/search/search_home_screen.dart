@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 
@@ -17,13 +18,13 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFFD5F1B);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _greyText = Color(0xFFABABAB);
   static const Color _greyStroke = Color(0xFFD2D2D2);
 
   // Figma colors for City Selector
-  static const Color _secondaryOrange = Color(0xFFEC723D);
-  static const Color _darkOrange = Color(0xFFDB4F13);
+  static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
+  static const Color _darkOrange = AppTheme.primaryOrangeDark;
 
   // Belarus cities with regions (Figma design)
   static const List<Map<String, String>> _citiesWithRegions = [

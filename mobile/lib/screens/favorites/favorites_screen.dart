@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Favorites screen - shows user's favorite establishments
 /// Displays different states: loading, empty (unauth/auth), error, data
@@ -18,7 +19,7 @@ class FavoritesScreen extends StatefulWidget {
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
   // Figma colors
-  static const Color _orangeMain = Color(0xFFF06B32);
+  static const Color _orangeMain = AppTheme.primaryOrange;
   static const Color _backgroundColor = Color(0xFFF4F1EC);
 
   // Local sort state for favorites

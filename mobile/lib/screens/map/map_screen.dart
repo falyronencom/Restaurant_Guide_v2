@@ -10,6 +10,7 @@ import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Map screen displaying establishments on Yandex Map
 /// Users can explore restaurants geographically and tap markers for previews
@@ -34,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   static const double _defaultZoom = 13.0;
 
   // Colors
-  static const Color _primaryOrange = Color(0xFFFD5F1B);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _creamBackground = Color(0xFFF4F1EC);
   static const Color _starYellow = Color(0xFFFFB800);
 

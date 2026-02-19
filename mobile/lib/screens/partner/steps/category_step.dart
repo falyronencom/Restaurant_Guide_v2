@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -113,7 +114,7 @@ class _CategoryCard extends StatelessWidget {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _selectedBorder = Color(0xFFEC723D);
+  static const Color _selectedBorder = AppTheme.primaryOrangeLight;
 
   @override
   Widget build(BuildContext context) {
@@ -194,8 +195,8 @@ class _CategoryCard extends StatelessWidget {
       'assets/icons/$fileName.svg',
       width: 64,
       height: 64,
-      colorFilter: const ColorFilter.mode(
-        Color(0xFFEC723D),
+      colorFilter: ColorFilter.mode(
+        AppTheme.primaryOrangeLight,
         BlendMode.srcIn,
       ),
     );

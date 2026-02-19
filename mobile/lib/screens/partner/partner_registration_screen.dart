@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
@@ -39,7 +40,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _greyStroke = Color(0xFFD2D2D2);
 
   @override
@@ -223,7 +224,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
           end: Alignment.bottomCenter,
           colors: [
             Colors.white.withValues(alpha: 0),
-            const Color(0xFFC8714B).withValues(alpha: 0.15),
+            AppTheme.primaryOrange.withValues(alpha: 0.15),
           ],
         ),
       ),

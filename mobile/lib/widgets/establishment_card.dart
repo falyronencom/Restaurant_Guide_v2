@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Reusable card component for displaying establishment information
 /// Figma design implementation with image on left, content on right
@@ -24,7 +25,7 @@ class EstablishmentCard extends StatelessWidget {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
   static const Color _greenColor = Color(0xFF34C759);
-  static const Color _orangeHeart = Color(0xFFFD5F1B);
+  static const Color _orangeHeart = AppTheme.primaryOrange;
   static const Color _greyText = Color(0xFFAAAAAA);
 
   // Figma dimensions

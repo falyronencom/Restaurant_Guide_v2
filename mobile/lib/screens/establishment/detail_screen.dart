@@ -17,6 +17,7 @@ import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -57,8 +58,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFFD5F1B);
-  static const Color _secondaryOrange = Color(0xFFF06B32);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
+  static const Color _secondaryOrange = AppTheme.primaryOrange;
   static const Color _greenStatus = Color(0xFF34C759);
   static const Color _navyBlue = Color(0xFF3631C0);
   static const Color _greyText = Color(0xFFABABAB);
@@ -1742,7 +1743,7 @@ class _WorkingHoursRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w500,
-                color: isHighlighted ? const Color(0xFFFD5F1B) : Colors.black,
+                color: isHighlighted ? AppTheme.primaryOrange : Colors.black,
               ),
             ),
           ),
@@ -1751,7 +1752,7 @@ class _WorkingHoursRow extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
-              color: isHighlighted ? const Color(0xFFFD5F1B) : Colors.black,
+              color: isHighlighted ? AppTheme.primaryOrange : Colors.black,
             ),
           ),
         ],

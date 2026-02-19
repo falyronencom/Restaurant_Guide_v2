@@ -8,6 +8,7 @@ import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/widgets/partner_establishment_card.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
@@ -22,8 +23,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
-  static const Color _secondaryOrange = Color(0xFFF06B32);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
+  static const Color _secondaryOrange = AppTheme.primaryOrange;
   static const Color _navyBlue = Color(0xFF3631C0);
   static const Color _greyText = Color(0xFFABABAB);
 
@@ -575,7 +576,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _navyBlue = Color(0xFF3631C0);
   static const Color _greyText = Color(0xFFABABAB);
   static const Color _greenRating = Color(0xFF34C759);

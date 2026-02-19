@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/establishment_preview_screen.dart';
 
@@ -17,7 +18,7 @@ class SummaryStep extends StatelessWidget {
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFDB4F13);
+  static const Color _primaryOrange = AppTheme.primaryOrangeDark;
   static const Color _greenCheck = Color(0xFF34C759);
   static const Color _greyText = Color(0xFF949494);
 

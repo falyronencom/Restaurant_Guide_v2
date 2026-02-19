@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
 /// Preview screen for partner to see how their establishment card will look
@@ -28,8 +29,8 @@ class _EstablishmentPreviewScreenState extends State<EstablishmentPreviewScreen>
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFFF4F1EC);
-  static const Color _primaryOrange = Color(0xFFFD5F1B);
-  static const Color _secondaryOrange = Color(0xFFF06B32);
+  static const Color _primaryOrange = AppTheme.primaryOrange;
+  static const Color _secondaryOrange = AppTheme.primaryOrange;
   static const Color _greenStatus = Color(0xFF34C759);
   static const Color _greyBorder = Color(0xFFD2D2D2);
 

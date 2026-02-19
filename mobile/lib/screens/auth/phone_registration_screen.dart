@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
@@ -116,7 +117,7 @@ class _PhoneRegistrationScreenState extends State<PhoneRegistrationScreen> {
             fontFamily: 'Unbounded',
             fontSize: 25,
             fontWeight: FontWeight.w400,
-            color: const Color(0xFFDB4F13),
+            color: AppTheme.primaryOrangeDark,
           ),
         ),
       ),
