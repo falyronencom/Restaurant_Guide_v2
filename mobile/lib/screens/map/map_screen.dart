@@ -1,6 +1,3 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
@@ -11,6 +8,7 @@ import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 
 /// Map screen displaying establishments on Yandex Map
 /// Users can explore restaurants geographically and tap markers for previews
@@ -46,7 +44,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLoading = false;
   bool _isEmpty = false;
   String? _errorMessage;
-  Uint8List? _markerIcon;
+  final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
 
   @override
   Widget build(BuildContext context) {
@@ -261,43 +259,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _createMarkerIcon();
+    _initMarkers();
   }
 
-  /// Create marker icon programmatically (orange circle with white border)
-  Future<void> _createMarkerIcon() async {
-    const double size = 48;
-    const double radius = 20;
-    const double borderWidth = 3;
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    // White border
-    final borderPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(size / 2, size / 2), radius, borderPaint);
-
-    // Orange fill
-    final fillPaint = Paint()
-      ..color = _primaryOrange
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2),
-      radius - borderWidth,
-      fillPaint,
-    );
-
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-    if (byteData != null && mounted) {
-      setState(() {
-        _markerIcon = byteData.buffer.asUint8List();
-      });
-    }
+  /// Pre-generate marker bitmaps (open + closed variants)
+  Future<void> _initMarkers() async {
+    final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    await _markerGenerator.ensureInitialized(dpr);
+    if (mounted) setState(() {});
   }
 
   void _onMapCreated(YandexMapController controller) async {
@@ -381,12 +350,18 @@ class _MapScreenState extends State<MapScreen> {
       // Get visible region from controller
       final VisibleRegion visibleRegion = await _mapController!.getVisibleRegion();
 
-      final double north = visibleRegion.topRight.latitude;
-      final double south = visibleRegion.bottomLeft.latitude;
-      final double east = visibleRegion.topRight.longitude;
-      final double west = visibleRegion.bottomLeft.longitude;
+      // Add 30% buffer around visible bounds so markers don't
+      // disappear at edges when panning slightly
+      final double latSpan = visibleRegion.topRight.latitude - visibleRegion.bottomLeft.latitude;
+      final double lonSpan = visibleRegion.topRight.longitude - visibleRegion.bottomLeft.longitude;
+      const double bufferRatio = 0.3;
 
-      // Fetch establishments within bounds with filters
+      final double north = visibleRegion.topRight.latitude + latSpan * bufferRatio;
+      final double south = visibleRegion.bottomLeft.latitude - latSpan * bufferRatio;
+      final double east = visibleRegion.topRight.longitude + lonSpan * bufferRatio;
+      final double west = visibleRegion.bottomLeft.longitude - lonSpan * bufferRatio;
+
+      // Fetch establishments within buffered bounds with filters
       final establishments = await _establishmentsService.searchByMapBounds(
         north: north,
         south: south,
@@ -417,16 +392,20 @@ class _MapScreenState extends State<MapScreen> {
     return establishments
         .where((e) => e.latitude != null && e.longitude != null)
         .map((establishment) {
+      final markerBytes = _markerGenerator.getMarkerImage(
+        isOpen: establishment.isCurrentlyOpen,
+      );
+
       return PlacemarkMapObject(
         mapId: MapObjectId('marker_${establishment.id}'),
         point: Point(
           latitude: establishment.latitude!,
           longitude: establishment.longitude!,
         ),
-        icon: _markerIcon != null
+        icon: markerBytes != null
             ? PlacemarkIcon.single(
                 PlacemarkIconStyle(
-                  image: BitmapDescriptor.fromBytes(_markerIcon!),
+                  image: BitmapDescriptor.fromBytes(markerBytes),
                   scale: 1.0,
                 ),
               )
