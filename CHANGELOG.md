@@ -6,6 +6,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 20, 2026 — Custom Map Markers (Circle Badge)
+- Mobile: New `MapMarkerPainter` — CustomPainter drawing gradient circle with white border, fork-and-knife icon, and triangular pointer
+- Mobile: New `MapMarkerGenerator` — singleton bitmap renderer with caching (pre-generates open + closed variants)
+- Mobile: Map markers now show open/closed state in real-time — orange gradient (open) vs grey gradient (closed)
+- Mobile: Replaced duplicated `_createMarkerIcon()` in both map_screen.dart and detail_screen.dart with shared generator
+- Mobile: Added 30% bounds buffer for map API requests — markers no longer disappear at edges when panning
+- Architecture ready for future rating badge (nullable `rating` parameter in painter)
+- **4 files changed**: 2 new (map_marker_painter.dart, map_marker_generator.dart) + 2 modified (map_screen.dart, detail_screen.dart)
+
 ### Февраль 20, 2026 — Text Search Implementation + Search UI Fixes
 - Backend: Full text search via `search` query parameter across all 3 search endpoints (searchByRadius, searchWithoutLocation, searchByBounds)
 - Backend: `SEARCH_SYNONYMS` map (25 keywords) — maps food terms to categories/cuisines (e.g., "пицца" → Пиццерия + Итальянская, "суши" → Японская + Азиатская)

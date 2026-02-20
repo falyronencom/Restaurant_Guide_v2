@@ -1,6 +1,3 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +15,7 @@ import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -53,8 +51,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   // Description collapsed by default
   bool _isDescriptionExpanded = false;
 
-  // Mini-map marker icon
-  Uint8List? _markerIcon;
+  // Mini-map marker generator (shared singleton)
+  final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
 
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
@@ -68,7 +66,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   void initState() {
     super.initState();
     _loadData();
-    _createMarkerIcon();
+    _initMarkers();
     // Request user location for distance calculation
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -1114,40 +1112,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Create mini-map marker icon (orange circle with white border)
-  Future<void> _createMarkerIcon() async {
-    const double size = 48;
-    const double radius = 20;
-    const double borderWidth = 3;
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    // White border
-    final borderPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(size / 2, size / 2), radius, borderPaint);
-
-    // Orange fill
-    final fillPaint = Paint()
-      ..color = _primaryOrange
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      const Offset(size / 2, size / 2),
-      radius - borderWidth,
-      fillPaint,
-    );
-
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(size.toInt(), size.toInt());
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
-    if (byteData != null && mounted) {
-      setState(() {
-        _markerIcon = byteData.buffer.asUint8List();
-      });
-    }
+  /// Pre-generate marker bitmaps (reuses shared singleton cache)
+  Future<void> _initMarkers() async {
+    final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    await _markerGenerator.ensureInitialized(dpr);
+    if (mounted) setState(() {});
   }
 
   /// Build map section
@@ -1270,11 +1239,15 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                                   latitude: _establishment!.latitude!,
                                   longitude: _establishment!.longitude!,
                                 ),
-                                icon: _markerIcon != null
+                                icon: _markerGenerator.getMarkerImage(
+                                            isOpen: _establishment?.isCurrentlyOpen ?? true,
+                                          ) !=
+                                          null
                                     ? PlacemarkIcon.single(
                                         PlacemarkIconStyle(
                                           image: BitmapDescriptor.fromBytes(
-                                              _markerIcon!),
+                                              _markerGenerator.getMarkerImage(
+                                                  isOpen: _establishment?.isCurrentlyOpen ?? true)!),
                                           scale: 1.0,
                                         ),
                                       )
