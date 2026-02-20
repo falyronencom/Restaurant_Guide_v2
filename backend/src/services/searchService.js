@@ -11,6 +11,82 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 
 /**
+ * Synonym map: common search terms → related categories and cuisines.
+ * Enables "пицца" → find "Пиццерия" category + "Итальянская" cuisine, etc.
+ * Keys are lowercase for case-insensitive matching.
+ */
+const SEARCH_SYNONYMS = {
+  // Food → category + cuisine
+  'пицца':    { categories: ['Пиццерия'], cuisines: ['Итальянская'] },
+  'пиццу':    { categories: ['Пиццерия'], cuisines: ['Итальянская'] },
+  'паста':    { categories: ['Ресторан'], cuisines: ['Итальянская'] },
+  'суши':     { categories: [], cuisines: ['Японская', 'Азиатская'] },
+  'ролл':     { categories: [], cuisines: ['Японская', 'Азиатская'] },
+  'роллы':    { categories: [], cuisines: ['Японская', 'Азиатская'] },
+  'бургер':   { categories: ['Фаст-фуд'], cuisines: ['Американская'] },
+  'бургеры':  { categories: ['Фаст-фуд'], cuisines: ['Американская'] },
+  'хинкали':  { categories: [], cuisines: ['Грузинская'] },
+  'хачапури': { categories: [], cuisines: ['Грузинская'] },
+  'шашлык':   { categories: [], cuisines: ['Грузинская'] },
+  'лапша':    { categories: [], cuisines: ['Азиатская'] },
+  'рамен':    { categories: [], cuisines: ['Японская', 'Азиатская'] },
+  'вок':      { categories: [], cuisines: ['Азиатская'] },
+  'стейк':    { categories: ['Ресторан'], cuisines: ['Американская', 'Европейская'] },
+  'кофе':     { categories: ['Кофейня'], cuisines: [] },
+  'торт':     { categories: ['Кондитерская'], cuisines: [] },
+  'выпечка':  { categories: ['Пекарня', 'Кондитерская'], cuisines: [] },
+  'пиво':     { categories: ['Бар', 'Паб'], cuisines: [] },
+  'коктейль': { categories: ['Бар'], cuisines: [] },
+  'кальян':   { categories: ['Кальянная', 'Кальян'], cuisines: [] },
+  'драники':  { categories: [], cuisines: ['Народная'] },
+  'веган':    { categories: [], cuisines: ['Вегетарианская'] },
+  'вегетарианское': { categories: [], cuisines: ['Вегетарианская'] },
+};
+
+/**
+ * Helper: Build search conditions for text query.
+ * Combines ILIKE on name/description/categories/cuisines with synonym expansion.
+ *
+ * @param {string} search - User search text
+ * @param {Array} conditions - Existing WHERE conditions array (mutated)
+ * @param {Array} params - Existing params array (mutated)
+ * @param {number} paramIndex - Current parameter index
+ * @returns {number} Updated paramIndex
+ */
+function addSearchConditions(search, conditions, params, paramIndex) {
+  const searchLower = search.toLowerCase();
+  const likePattern = `%${search}%`;
+
+  // Base ILIKE conditions: name, description, categories text, cuisines text
+  const orParts = [
+    `e.name ILIKE $${paramIndex}`,
+    `e.description ILIKE $${paramIndex}`,
+    `e.categories::text ILIKE $${paramIndex}`,
+    `e.cuisines::text ILIKE $${paramIndex}`,
+  ];
+  params.push(likePattern);
+  paramIndex++;
+
+  // Check synonyms — expand search to related categories/cuisines
+  const synonym = SEARCH_SYNONYMS[searchLower];
+  if (synonym) {
+    if (synonym.categories && synonym.categories.length > 0) {
+      orParts.push(`e.categories && $${paramIndex}::varchar[]`);
+      params.push(synonym.categories);
+      paramIndex++;
+    }
+    if (synonym.cuisines && synonym.cuisines.length > 0) {
+      orParts.push(`e.cuisines && $${paramIndex}::varchar[]`);
+      params.push(synonym.cuisines);
+      paramIndex++;
+    }
+  }
+
+  conditions.push(`(${orParts.join(' OR ')})`);
+  return paramIndex;
+}
+
+/**
  * Helper: SQL fragment that extracts close_time from working_hours JSONB.
  * Handles two data formats:
  *   - String: "10:00-22:00" → extracts "22:00"
@@ -109,6 +185,7 @@ export async function searchByRadius({
   sortBy = 'rating',
   hoursFilter = null,
   features = null,
+  search = null,
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -244,6 +321,11 @@ export async function searchByRadius({
       params.push(feature);
       paramIndex++;
     });
+  }
+
+  // Add text search filter (ILIKE + synonyms)
+  if (search) {
+    paramIndex = addSearchConditions(search, conditions, params, paramIndex);
   }
 
   const whereClause = conditions.join(' AND ');
@@ -387,6 +469,7 @@ export async function searchWithoutLocation({
   sortBy = 'rating',
   hoursFilter = null,
   features = null,
+  search = null,
 }) {
   // Validate pagination
   if (limit < 1 || limit > 100) {
@@ -501,6 +584,11 @@ export async function searchWithoutLocation({
     });
   }
 
+  // Add text search filter (ILIKE + synonyms)
+  if (search) {
+    paramIndex = addSearchConditions(search, conditions, params, paramIndex);
+  }
+
   const whereClause = conditions.join(' AND ');
 
   // Main query - sorted by rating (no distance)
@@ -586,6 +674,7 @@ export async function searchByBounds({
   priceRange = null,
   minRating = null,
   limit = 100,
+  search = null,
 }) {
   // Validate bounds (use strict null check to allow 0 values)
   if (minLat == null || maxLat == null || minLon == null || maxLon == null) {
@@ -642,6 +731,11 @@ export async function searchByBounds({
     conditions.push(`e.average_rating >= $${paramIndex}`);
     params.push(minRating);
     paramIndex++;
+  }
+
+  // Add text search filter (ILIKE + synonyms)
+  if (search) {
+    paramIndex = addSearchConditions(search, conditions, params, paramIndex);
   }
 
   const whereClause = conditions.join(' AND ');

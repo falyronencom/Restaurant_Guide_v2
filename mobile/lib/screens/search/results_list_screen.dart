@@ -777,56 +777,47 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     );
   }
 
-  /// Build search bar (Figma design)
+  /// Build search bar (Figma design — back button inside input field)
   Widget _buildSearchBar() {
-    return Row(
-      children: [
-        // Back button
-        GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
-          child: Container(
-            width: 40,
-            height: 64,
-            alignment: Alignment.center,
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: TextField(
+        controller: _searchController,
+        style: const TextStyle(
+          fontSize: 18,
+          color: AppTheme.textPrimary,
+        ),
+        decoration: InputDecoration(
+          hintText: 'С чего начнем?',
+          hintStyle: const TextStyle(
+            fontSize: 18,
+            color: _greyText,
+            fontWeight: FontWeight.w400,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          prefixIcon: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
             child: const Icon(
               Icons.chevron_left,
               color: AppTheme.textPrimary,
               size: 25,
             ),
           ),
-        ),
-        // Search input field
-        Expanded(
-          child: Container(
-            height: 64,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(
-                fontSize: 18,
-                color: AppTheme.textPrimary,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'С чего начнем?',
-                hintStyle: TextStyle(
-                  fontSize: 18,
-                  color: _greyText,
-                  fontWeight: FontWeight.w400,
-                ),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
-                ),
-              ),
-              onSubmitted: (_) => _executeSearch(),
-            ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 44,
+            minHeight: 64,
           ),
         ),
-      ],
+        onSubmitted: (_) => _executeSearch(),
+      ),
     );
   }
 
@@ -1194,56 +1185,47 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
     );
   }
 
-  /// Build search bar
+  /// Build search bar (Figma design — back button inside input field)
   Widget _buildSearchBar() {
-    return Row(
-      children: [
-        // Back button
-        GestureDetector(
-          onTap: onBackTap,
-          child: Container(
-            width: 40,
-            height: 64,
-            alignment: Alignment.center,
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: TextField(
+        controller: searchController,
+        style: const TextStyle(
+          fontSize: 18,
+          color: AppTheme.textPrimary,
+        ),
+        decoration: InputDecoration(
+          hintText: 'С чего начнем?',
+          hintStyle: const TextStyle(
+            fontSize: 18,
+            color: _greyText,
+            fontWeight: FontWeight.w400,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          prefixIcon: GestureDetector(
+            onTap: onBackTap,
             child: const Icon(
               Icons.chevron_left,
               color: AppTheme.textPrimary,
               size: 25,
             ),
           ),
-        ),
-        // Search input field
-        Expanded(
-          child: Container(
-            height: 64,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: TextField(
-              controller: searchController,
-              style: const TextStyle(
-                fontSize: 18,
-                color: AppTheme.textPrimary,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'С чего начнем?',
-                hintStyle: TextStyle(
-                  fontSize: 18,
-                  color: _greyText,
-                  fontWeight: FontWeight.w400,
-                ),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
-                ),
-              ),
-              onSubmitted: (_) => onSearchSubmitted(),
-            ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 44,
+            minHeight: 64,
           ),
         ),
-      ],
+        onSubmitted: (_) => onSearchSubmitted(),
+      ),
     );
   }
 
