@@ -147,17 +147,21 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build establishment name (Unbounded font, 18px)
+  /// Right padding prevents overlap with rating badge + price column
   Widget _buildName() {
-    return Text(
-      establishment.name,
-      style: AppTheme.unbounded(
-        fontSize: 18,
-        fontWeight: FontWeight.w400,
-        color: AppTheme.textPrimary,
-        height: 25 / 18,
+    return Padding(
+      padding: const EdgeInsets.only(right: _ratingSize + 12),
+      child: Text(
+        establishment.name,
+        style: AppTheme.unbounded(
+          fontSize: 18,
+          fontWeight: FontWeight.w400,
+          color: AppTheme.textPrimary,
+          height: 25 / 18,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
     );
   }
 
