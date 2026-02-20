@@ -6,6 +6,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 20, 2026 — Text Search Implementation + Search UI Fixes
+- Backend: Full text search via `search` query parameter across all 3 search endpoints (searchByRadius, searchWithoutLocation, searchByBounds)
+- Backend: `SEARCH_SYNONYMS` map (25 keywords) — maps food terms to categories/cuisines (e.g., "пицца" → Пиццерия + Итальянская, "суши" → Японская + Азиатская)
+- Backend: `addSearchConditions()` helper — ILIKE on name/description/categories/cuisines + synonym expansion
+- Mobile: Search bar UI — flush input+button join (pencil+eraser geometry) on home screen
+- Mobile: Search bar UI — back button moved inside input field on results screen (prefixIcon)
+- Mobile: Map screen now receives `searchQuery` from provider, filters map markers by search text
+- **6 files changed**: 2 backend (searchController.js, searchService.js) + 4 mobile (search_home_screen.dart, results_list_screen.dart, map_screen.dart, establishments_service.dart)
+
 ### Февраль 18, 2026 — Testing Session 2: Profile Edit & Avatar Upload
 - Backend: `PUT /api/v1/auth/profile` — update name/avatar_url (authService + authController + authRoutes)
 - Backend: `POST /api/v1/auth/avatar` — multipart image upload via multer (upload.js middleware, 5MB limit, JPEG/PNG/WebP)
