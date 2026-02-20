@@ -162,6 +162,7 @@ class EstablishmentsService {
     List<String>? cuisines,
     String? priceRange,
     double? minRating,
+    String? search,
   }) async {
     try {
       final queryParams = <String, dynamic>{
@@ -184,6 +185,9 @@ class EstablishmentsService {
       }
       if (minRating != null) {
         queryParams['minRating'] = minRating;
+      }
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
       }
 
       final response = await _apiClient.get(

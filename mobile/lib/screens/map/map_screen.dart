@@ -369,6 +369,7 @@ class _MapScreenState extends State<MapScreen> {
     final String? apiPriceRange = provider.priceFilters.isNotEmpty
         ? provider.priceFilters.first.apiValue
         : null;
+    final String? apiSearch = provider.searchQuery;
 
     setState(() {
       _isLoading = true;
@@ -394,6 +395,7 @@ class _MapScreenState extends State<MapScreen> {
         categories: apiCategories,
         cuisines: apiCuisines,
         priceRange: apiPriceRange,
+        search: apiSearch,
       );
 
       final placemarks = _createPlacemarks(establishments);

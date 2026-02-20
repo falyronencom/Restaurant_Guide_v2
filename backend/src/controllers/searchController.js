@@ -40,6 +40,7 @@ export async function searchEstablishments(req, res, next) {
       sort_by,
       hours_filter,
       features,
+      search,
     } = req.query;
 
     // Parse coordinates (now optional)
@@ -148,6 +149,7 @@ export async function searchEstablishments(req, res, next) {
         sortBy: sort_by,
         hoursFilter: hours_filter,
         features: featuresList,
+        search: search?.trim() || null,
       });
     } else {
       // Search without coordinates - no distance filtering/sorting
@@ -163,6 +165,7 @@ export async function searchEstablishments(req, res, next) {
         sortBy: sort_by,
         hoursFilter: hours_filter,
         features: featuresList,
+        search: search?.trim() || null,
       });
     }
 
@@ -206,6 +209,7 @@ export async function searchMap(req, res, next) {
       priceRange,
       minRating,
       limit,
+      search,
     } = req.query;
 
     // Parse bounds (support both ne/sw and min/max formats)
@@ -247,6 +251,7 @@ export async function searchMap(req, res, next) {
       priceRange,
       minRating: minRatingValue,
       limit: limitValue,
+      search: search?.trim() || null,
     });
 
     res.status(200).json({

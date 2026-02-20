@@ -530,9 +530,12 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
         Expanded(
           child: Container(
             height: 64,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(9),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(9),
+                bottomLeft: Radius.circular(9),
+              ),
             ),
             child: TextField(
               controller: _searchController,
@@ -565,9 +568,12 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
             width: 64,
             height: 64,
             margin: const EdgeInsets.only(left: 0),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: _primaryOrange,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(9),
+                bottomRight: Radius.circular(9),
+              ),
             ),
             child: const Center(
               child: Icon(
