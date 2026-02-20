@@ -316,10 +316,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildBackButton(),
           ),
 
-          // Share button (Figma: right ~24px, near top)
+          // Share button — centered with rating badge & favorite (center at 49px from right)
           Positioned(
             top: MediaQuery.of(context).padding.top + 4,
-            right: 24,
+            right: 35,
             child: _buildShareButton(),
           ),
 
