@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
@@ -61,6 +62,16 @@ class _AdminAppState extends State<AdminApp> {
       child: MaterialApp.router(
         title: '{N}YAMA Admin',
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('ru'),
+          Locale('en'),
+        ],
+        locale: const Locale('ru'),
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: const Color(0xFFDB4F13),

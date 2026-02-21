@@ -72,11 +72,13 @@ class MetricCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildChangeIndicator(),
-              if (subtitle != null) ...[
-                const SizedBox(width: 8),
+              if (subtitle != null)
                 Text(
                   subtitle!,
                   style: TextStyle(
@@ -84,7 +86,6 @@ class MetricCard extends StatelessWidget {
                     color: Colors.grey[500],
                   ),
                 ),
-              ],
             ],
           ),
         ],
