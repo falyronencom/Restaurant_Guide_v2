@@ -139,13 +139,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 800 ? 4 : 2;
+        final childAspectRatio = constraints.maxWidth > 800 ? 1.4 : 1.6;
         return GridView.count(
           crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 16,
           crossAxisSpacing: 16,
-          childAspectRatio: 1.6,
+          childAspectRatio: childAspectRatio,
           children: [
             MetricCard(
               title: 'Пользователи',
