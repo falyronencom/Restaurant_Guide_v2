@@ -115,12 +115,33 @@ export async function createPartnerWithEstablishment(status = 'pending') {
  * Create a test review directly in the database.
  * Used by admin-reviews.test.js to set up test data.
  *
- * @param {string} userId - UUID of the reviewing user
+ * The reviews table has a UNIQUE(user_id, establishment_id) constraint.
+ * Pass userId=null to auto-create a fresh unique user, avoiding constraint
+ * violations in tests that need multiple reviews for the same establishment.
+ *
+ * @param {string|null} userId - UUID of the reviewing user, or null to auto-create
  * @param {string} establishmentId - UUID of the reviewed establishment
  * @param {Object} overrides - Optional field overrides { rating, content, is_visible, is_deleted }
  * @returns {Promise<Object>} Created review record
  */
 export async function createTestReview(userId, establishmentId, overrides = {}) {
+  let effectiveUserId = userId;
+
+  // Auto-create a fresh user when none provided — avoids UNIQUE(user_id, establishment_id)
+  // violations in tests that create multiple reviews for the same establishment
+  if (!effectiveUserId) {
+    const { createUserAndGetTokens } = await import('./auth.js');
+    const freshUser = await createUserAndGetTokens({
+      email: `review-author-${randomUUID()}@test.com`,
+      phone: null,
+      password: 'User123!@#',
+      name: 'Test Author',
+      role: 'user',
+      authMethod: 'email',
+    });
+    effectiveUserId = freshUser.user.id;
+  }
+
   const reviewId = randomUUID();
   const rating = overrides.rating ?? 4;
   const content = overrides.content ?? 'Test review content for admin testing';
@@ -131,7 +152,7 @@ export async function createTestReview(userId, establishmentId, overrides = {}) 
     `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, is_visible, is_deleted, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $5, $6, $7, NOW(), NOW())
      RETURNING *`,
-    [reviewId, userId, establishmentId, rating, content, isVisible, isDeleted],
+    [reviewId, effectiveUserId, establishmentId, rating, content, isVisible, isDeleted],
   );
 
   return result.rows[0];
