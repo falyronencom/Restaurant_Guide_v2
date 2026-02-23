@@ -99,6 +99,7 @@ export default async function globalSetup() {
     console.log('\n🧹 Clearing existing test data...');
 
     await pool.query('SET session_replication_role = replica;');
+    await pool.query('TRUNCATE TABLE audit_log CASCADE');
     await pool.query('TRUNCATE TABLE establishment_media CASCADE');
     await pool.query('TRUNCATE TABLE favorites CASCADE');
     await pool.query('TRUNCATE TABLE reviews CASCADE');
