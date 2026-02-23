@@ -1,0 +1,149 @@
+/* eslint comma-dangle: 0 */
+/**
+ * Admin Test Helpers
+ *
+ * Utility functions for admin endpoint tests.
+ * Follows the same patterns as auth.js and database.js in this directory.
+ *
+ * Used by:
+ *   - admin-auth.test.js
+ *   - admin-authorization.test.js
+ *   - admin-moderation.test.js
+ */
+
+import { randomUUID } from 'crypto';
+import { createUserAndGetTokens } from './auth.js';
+import { query } from './database.js';
+import { testUsers } from '../fixtures/users.js';
+
+// ============================================================================
+// Credentials for login endpoint testing
+// ============================================================================
+
+/**
+ * Known admin credentials — used to test POST /api/v1/admin/auth/login.
+ * Mirrors testUsers.admin from fixtures/users.js.
+ */
+export const ADMIN_CREDENTIALS = {
+  email: testUsers.admin.email,
+  password: testUsers.admin.password,
+};
+
+// ============================================================================
+// User creation helpers
+// ============================================================================
+
+/**
+ * Create an admin user and return { user, accessToken, refreshToken }.
+ * Reuses testUsers.admin fixture from fixtures/users.js.
+ *
+ * @returns {Promise<{ user: Object, accessToken: string, refreshToken: string }>}
+ */
+export async function createAdminAndGetToken() {
+  return createUserAndGetTokens(testUsers.admin);
+}
+
+// ============================================================================
+// Establishment creation helpers
+// ============================================================================
+
+const DEFAULT_WORKING_HOURS = JSON.stringify({
+  monday: { open: '10:00', close: '22:00' },
+  tuesday: { open: '10:00', close: '22:00' },
+  wednesday: { open: '10:00', close: '22:00' },
+  thursday: { open: '10:00', close: '22:00' },
+  friday: { open: '10:00', close: '23:00' },
+  saturday: { open: '11:00', close: '23:00' },
+  sunday: { open: '11:00', close: '22:00' },
+});
+
+/**
+ * Create a partner user and an establishment with the specified status.
+ * Each call creates a unique partner email to avoid DB unique constraint conflicts.
+ *
+ * @param {'draft'|'pending'|'active'|'suspended'|'archived'} status
+ * @returns {Promise<{ partner: { user, accessToken }, establishment: Object }>}
+ */
+export async function createPartnerWithEstablishment(status = 'pending') {
+  const partner = await createUserAndGetTokens({
+    email: `partner-${randomUUID()}@test.com`,
+    phone: null,
+    password: 'Partner123!@#',
+    name: 'Test Partner',
+    role: 'partner',
+    authMethod: 'email',
+  });
+
+  const establishmentId = randomUUID();
+
+  const result = await query(
+    `INSERT INTO establishments (
+      id, partner_id, name, description, city, address,
+      latitude, longitude, categories, cuisines, price_range,
+      working_hours, status, created_at, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+    RETURNING *`,
+    [
+      establishmentId,
+      partner.user.id,
+      'Test Establishment',
+      'Test description for moderation',
+      'Минск',
+      'ул. Тестовая 1',
+      53.9,
+      27.5,
+      ['Ресторан'],
+      ['Европейская'],
+      '$$',
+      DEFAULT_WORKING_HOURS,
+      status,
+    ],
+  );
+
+  return {
+    partner,
+    establishment: result.rows[0],
+  };
+}
+
+// ============================================================================
+// Database query helpers
+// ============================================================================
+
+/**
+ * Fetch an establishment record directly from the DB (bypasses API).
+ * Used in assertions to verify DB state after moderation actions.
+ *
+ * @param {string} establishmentId
+ * @returns {Promise<Object|null>}
+ */
+export async function getEstablishmentFromDb(establishmentId) {
+  const result = await query(
+    'SELECT * FROM establishments WHERE id = $1',
+    [establishmentId],
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Check if an audit_log entry exists for a given entity + action.
+ * Returns null if the audit_log table does not exist (handles undeployed table).
+ * Returns true/false if the table exists.
+ *
+ * @param {string} entityId
+ * @param {string} action - e.g. 'moderate_approve', 'suspend_establishment'
+ * @returns {Promise<boolean|null>}
+ */
+export async function checkAuditLogExists(entityId, action) {
+  try {
+    const result = await query(
+      'SELECT id FROM audit_log WHERE entity_id = $1 AND action = $2 LIMIT 1',
+      [entityId, action],
+    );
+    return result.rows.length > 0;
+  } catch {
+    // audit_log table may not be deployed in the test database
+    return null;
+  }
+}
