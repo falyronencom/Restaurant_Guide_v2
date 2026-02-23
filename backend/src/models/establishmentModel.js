@@ -1100,6 +1100,9 @@ export const changeEstablishmentStatus = async (establishmentId, { fromStatus, t
   }
 
   values.push(establishmentId, fromStatus);
+  // establishmentId is at values.length - 1 (1-based), fromStatus at values.length
+  const idParam = values.length - 1;
+  const statusParam = values.length;
 
   const query = `
     UPDATE establishments
@@ -1107,8 +1110,8 @@ export const changeEstablishmentStatus = async (establishmentId, { fromStatus, t
       status = $1,
       updated_at = CURRENT_TIMESTAMP
       ${notesClause}
-    WHERE id = $${paramCount - 1}
-      AND status = $${paramCount}
+    WHERE id = $${idParam}
+      AND status = $${statusParam}
     RETURNING
       id,
       partner_id,
