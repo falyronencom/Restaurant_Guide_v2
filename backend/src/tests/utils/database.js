@@ -27,6 +27,7 @@ export async function clearAllData() {
     await pool.query('SET session_replication_role = replica;');
 
     // Truncate all tables in correct order (respecting foreign keys)
+    await pool.query('TRUNCATE TABLE audit_log CASCADE');
     await pool.query('TRUNCATE TABLE establishment_media CASCADE');
     await pool.query('TRUNCATE TABLE favorites CASCADE');
     await pool.query('TRUNCATE TABLE reviews CASCADE');
