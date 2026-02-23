@@ -108,6 +108,36 @@ export async function createPartnerWithEstablishment(status = 'pending') {
 }
 
 // ============================================================================
+// Review creation helpers
+// ============================================================================
+
+/**
+ * Create a test review directly in the database.
+ * Used by admin-reviews.test.js to set up test data.
+ *
+ * @param {string} userId - UUID of the reviewing user
+ * @param {string} establishmentId - UUID of the reviewed establishment
+ * @param {Object} overrides - Optional field overrides { rating, content, is_visible, is_deleted }
+ * @returns {Promise<Object>} Created review record
+ */
+export async function createTestReview(userId, establishmentId, overrides = {}) {
+  const reviewId = randomUUID();
+  const rating = overrides.rating ?? 4;
+  const content = overrides.content ?? 'Test review content for admin testing';
+  const isVisible = overrides.is_visible ?? true;
+  const isDeleted = overrides.is_deleted ?? false;
+
+  const result = await query(
+    `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, is_visible, is_deleted, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $5, $6, $7, NOW(), NOW())
+     RETURNING *`,
+    [reviewId, userId, establishmentId, rating, content, isVisible, isDeleted],
+  );
+
+  return result.rows[0];
+}
+
+// ============================================================================
 // Database query helpers
 // ============================================================================
 
