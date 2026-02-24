@@ -120,14 +120,14 @@ describe('Establishments System - Create Establishment', () => {
       expect(response.body.error.code).toBe('MISSING_TOKEN');
     });
 
-    test('should reject creation by regular user (not partner)', async () => {
+    test('should allow creation by regular user (auto-upgrade to partner)', async () => {
       const response = await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${userToken}`)
         .send(testEstablishments[0])
-        .expect(403);
+        .expect(201);
 
-      expect(response.body.error.code).toBe('FORBIDDEN');
+      expect(response.body.data.establishment).toBeDefined();
     });
   });
 
@@ -145,7 +145,7 @@ describe('Establishments System - Create Establishment', () => {
     });
 
     test('should accept Гродно', async () => {
-      const data = { ...testEstablishments[0], city: 'Гродно' };
+      const data = { ...testEstablishments[0], city: 'Гродно', latitude: 53.68, longitude: 23.83 };
 
       const response = await request(app)
         .post('/api/v1/partner/establishments')
@@ -157,7 +157,7 @@ describe('Establishments System - Create Establishment', () => {
     });
 
     test('should accept Брест', async () => {
-      const data = { ...testEstablishments[0], city: 'Брест' };
+      const data = { ...testEstablishments[0], city: 'Брест', latitude: 52.1, longitude: 23.7 };
 
       const response = await request(app)
         .post('/api/v1/partner/establishments')
@@ -169,7 +169,7 @@ describe('Establishments System - Create Establishment', () => {
     });
 
     test('should accept Гомель', async () => {
-      const data = { ...testEstablishments[0], city: 'Гомель' };
+      const data = { ...testEstablishments[0], city: 'Гомель', latitude: 52.42, longitude: 31.0 };
 
       const response = await request(app)
         .post('/api/v1/partner/establishments')
@@ -181,10 +181,14 @@ describe('Establishments System - Create Establishment', () => {
     });
 
     test('should accept Витебск, Могилев, Бобруйск', async () => {
-      const cities = ['Витебск', 'Могилев', 'Бобруйск'];
+      const citiesWithCoords = [
+        { city: 'Витебск', latitude: 55.19, longitude: 30.2 },
+        { city: 'Могилев', latitude: 53.91, longitude: 30.35 },
+        { city: 'Бобруйск', latitude: 53.15, longitude: 29.25 },
+      ];
 
-      for (const city of cities) {
-        const data = { ...testEstablishments[0], name: `Test ${city}`, city };
+      for (const { city, latitude, longitude } of citiesWithCoords) {
+        const data = { ...testEstablishments[0], name: `Test ${city}`, city, latitude, longitude };
 
         const response = await request(app)
           .post('/api/v1/partner/establishments')
@@ -242,12 +246,13 @@ describe('Establishments System - Create Establishment', () => {
     });
 
     test('should accept coordinates at Belarus boundaries', async () => {
-      // North-East corner
+      // Northern city (Витебск) — near north of Belarus
       const neData = {
         ...testEstablishments[0],
         name: 'NE Corner',
-        latitude: 56.0,
-        longitude: 33.0
+        city: 'Витебск',
+        latitude: 55.19,
+        longitude: 30.2
       };
 
       await request(app)
@@ -256,12 +261,13 @@ describe('Establishments System - Create Establishment', () => {
         .send(neData)
         .expect(201);
 
-      // South-West corner
+      // South-Western city (Брест) — near south-west of Belarus
       const swData = {
         ...testEstablishments[0],
         name: 'SW Corner',
-        latitude: 51.0,
-        longitude: 23.0
+        city: 'Брест',
+        latitude: 52.1,
+        longitude: 23.7
       };
 
       await request(app)

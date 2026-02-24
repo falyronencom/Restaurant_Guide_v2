@@ -153,11 +153,12 @@ describe('Search System - Radius-Based Search', () => {
       .query({
         latitude: 53.9,
         longitude: 27.5,
-        radius: 500
+        radius: 500,
+        sort_by: 'distance'
       })
       .expect(200);
 
-    const distances = response.body.data.establishments.map(e => e.distance);
+    const distances = response.body.data.establishments.map(e => e.distance_km);
 
     // Check if sorted ascending
     for (let i = 0; i < distances.length - 1; i++) {

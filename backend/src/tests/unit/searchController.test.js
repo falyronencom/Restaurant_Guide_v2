@@ -7,6 +7,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 jest.unstable_mockModule('../../services/searchService.js', () => ({
   searchByRadius: jest.fn(),
   searchByBounds: jest.fn(),
+  searchWithoutLocation: jest.fn(),
   checkSearchHealth: jest.fn()
 }));
 
@@ -30,16 +31,20 @@ describe('searchController', () => {
   });
 
   describe('searchEstablishments', () => {
-    test('should reject invalid latitude/longitude', async () => {
+    test('should fall back to searchWithoutLocation for invalid coordinates', async () => {
       const req = { query: { latitude: 'not-a-number', longitude: '27.5' } };
       const res = createRes();
       const next = jest.fn();
 
+      searchService.searchWithoutLocation.mockResolvedValue({
+        establishments: [],
+        pagination: { total: 0, page: 1, pages: 0, hasNext: false, hasPrevious: false },
+      });
+
       await searchEstablishments(req, res, next);
 
-      expect(next).toHaveBeenCalledWith(expect.any(AppError));
-      const err = next.mock.calls[0][0];
-      expect(err.code).toBe('VALIDATION_ERROR');
+      expect(searchService.searchWithoutLocation).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
     });
 
     test('should reject invalid page number', async () => {

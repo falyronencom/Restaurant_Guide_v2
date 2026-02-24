@@ -16,6 +16,8 @@ jest.unstable_mockModule('../../models/favoriteModel.js', () => ({
   getUserFavorites: jest.fn(),
   countUserFavorites: jest.fn(),
   isFavorite: jest.fn(),
+  updateEstablishmentFavoriteCount: jest.fn().mockResolvedValue(undefined),
+  getEstablishmentFavoriteCount: jest.fn().mockResolvedValue(0),
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
