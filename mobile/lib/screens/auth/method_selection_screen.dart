@@ -17,7 +17,8 @@ class MethodSelectionScreen extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context)
+                      .pushNamedAndRemoveUntil('/home', (route) => false),
         ),
         title: Text(
           'Регистрация',
