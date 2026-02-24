@@ -6,6 +6,14 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 24, 2026 — Pre-Existing Test Failures Fix (92 failures → 0)
+- **Migration 011**: sync 4 missing columns in test DB (`location`, `average_check_byn`, `is_24_hours`, `primary_image_url`) — root cause of 81 cascade failures
+- **Mock fixes**: searchController (`searchWithoutLocation`), favoriteService (`updateEstablishmentFavoriteCount`), establishmentService (`MediaModel`, `PartnerDocumentsModel`, `ReviewModel`)
+- **Assertion updates**: ORDER BY default changed, authorization auto-upgrade (403→201), city bounds test data, distance ordering
+- **Result**: 626 tests passed, 0 failed (30 suites green, 1 skipped)
+- **Zero production code changes** — all fixes are test infrastructure
+- Commits: `25e217a`, `d44e9f8`
+
 ### Февраль 24, 2026 — Admin Backend Test Coverage Segment C (QA Complete)
 - Backend QA: 97 новых тестов (29 unit + 41 analytics integration + 27 audit log)
 - **Всего admin тестов**: 211 (Segments A+B+C), все 17 admin эндпоинтов покрыты
