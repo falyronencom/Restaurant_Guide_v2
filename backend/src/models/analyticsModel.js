@@ -385,11 +385,11 @@ export const getResponseStats = async () => {
       END AS response_rate,
       COALESCE(
         ROUND(
-          AVG(
-            EXTRACT(EPOCH FROM (partner_responded_at - created_at)) / 3600
-          )::numeric,
+          (AVG(
+            EXTRACT(EPOCH FROM (partner_response_at - created_at)) / 3600
+          ) FILTER (WHERE partner_response_at IS NOT NULL))::numeric,
           1
-        ) FILTER (WHERE partner_responded_at IS NOT NULL),
+        ),
         0
       ) AS avg_response_time_hours
     FROM reviews
