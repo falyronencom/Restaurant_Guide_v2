@@ -1064,7 +1064,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           // Amenities horizontal carousel
           SizedBox(
-            height: 120,
+            height: 130,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),

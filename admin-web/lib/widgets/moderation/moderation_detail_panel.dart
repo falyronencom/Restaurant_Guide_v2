@@ -1,8 +1,12 @@
+import 'dart:js_interop';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
+
+@JS('window.open')
+external void _jsWindowOpen(JSString url, JSString target);
 
 /// Display mode for the detail panel
 enum DetailPanelMode {
@@ -652,12 +656,7 @@ class _MediaTab extends StatelessWidget {
           isReadOnly: isReadOnly,
           readOnlyComment: _note('menu'),
           child: detail.menuMedia.isNotEmpty
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: detail.menuMedia
-                      .map((m) => _FileLink(m.url))
-                      .toList(),
-                )
+              ? _PhotoGrid(photos: detail.menuMedia)
               : const Text(
                   'Меню не загружено',
                   style: TextStyle(color: Color(0xFFABABAB)),
@@ -709,36 +708,10 @@ class _AddressTab extends StatelessWidget {
                   : null),
               if (detail.latitude != null && detail.longitude != null) ...[
                 const SizedBox(height: 12),
-                // Map placeholder
-                Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFD2D2D2)),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.map_outlined,
-                          size: 40,
-                          color: Color(0xFFABABAB),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${detail.latitude!.toStringAsFixed(6)}, '
-                          '${detail.longitude!.toStringAsFixed(6)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFFABABAB),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                // Coordinates + Open in Yandex Maps
+                _MapPreview(
+                  latitude: detail.latitude!,
+                  longitude: detail.longitude!,
                 ),
               ],
             ],
@@ -749,6 +722,80 @@ class _AddressTab extends StatelessWidget {
   }
 
   String? _note(String key) => rejectionNotes?[key]?.toString();
+}
+
+// =============================================================================
+// Map Preview — coordinates + "Open in Yandex Maps" button
+// =============================================================================
+
+class _MapPreview extends StatelessWidget {
+  final double latitude;
+  final double longitude;
+
+  const _MapPreview({
+    required this.latitude,
+    required this.longitude,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFD2D2D2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Coordinates
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.location_on,
+                size: 20,
+                color: Color(0xFFDB4F13),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF333333),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Open in Yandex Maps button
+          SizedBox(
+            height: 40,
+            child: OutlinedButton.icon(
+              onPressed: _openInYandexMaps,
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Открыть в Яндекс Картах'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFDB4F13),
+                side: const BorderSide(color: Color(0xFFDB4F13)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openInYandexMaps() {
+    final url = 'https://yandex.ru/maps/?pt=$longitude,$latitude&z=16&l=map';
+    _jsWindowOpen(url.toJS, '_blank'.toJS);
+  }
 }
 
 // =============================================================================
