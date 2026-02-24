@@ -234,8 +234,8 @@ describe('E2E Journey: Partner Establishment Management', () => {
       expect(response.body.error.code).toBe('FORBIDDEN');
     });
 
-    test('Regular user cannot create establishment', async () => {
-      // Regular user tries to create establishment
+    test('Regular user can create establishment (auto-upgrade to partner)', async () => {
+      // Regular user creates establishment — route allows ['user', 'partner']
       const response = await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${regularUser.accessToken}`)
@@ -244,9 +244,9 @@ describe('E2E Journey: Partner Establishment Management', () => {
           name: 'Попытка создать заведение'
         });
 
-      // Should fail with 403 Forbidden
-      expect(response.status).toBe(403);
-      expect(response.body.error.code).toBe('FORBIDDEN');
+      // User is auto-upgraded to partner and establishment is created
+      expect(response.status).toBe(201);
+      expect(response.body.data.establishment).toBeDefined();
     });
 
     test('Partner cannot submit establishment without required fields', async () => {

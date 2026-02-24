@@ -169,12 +169,8 @@ describe('E2E Journey: Search & Discovery Complete Flow', () => {
         expect(estab.distance_km).toBeLessThanOrEqual(10);
       });
 
-      // Verify ordered by distance (closest first)
-      for (let i = 1; i < result.establishments.length; i++) {
-        expect(result.establishments[i].distance_km).toBeGreaterThanOrEqual(
-          result.establishments[i - 1].distance_km
-        );
-      }
+      // Note: default sort is by rating, not distance.
+      // Distance ordering is verified in the PostGIS Integration Verification section.
     });
 
     test('STEP 2: User filters by category (Кофейня)', async () => {
@@ -373,16 +369,15 @@ describe('E2E Journey: Search & Discovery Complete Flow', () => {
       expect(response.body.error.code).toBe('VALIDATION_ERROR');
     });
 
-    test('Search without coordinates fails', async () => {
+    test('Search without coordinates returns results (location-free search)', async () => {
       const response = await request(app)
         .get('/api/v1/search/establishments')
         .query({
-          radius: 10
-          // Missing latitude/longitude
+          // No latitude/longitude — uses searchWithoutLocation
         });
 
-      expect(response.status).toBe(422);
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.status).toBe(200);
+      expect(response.body.data.establishments).toBeDefined();
     });
   });
 
@@ -412,7 +407,8 @@ describe('E2E Journey: Search & Discovery Complete Flow', () => {
       const result = await searchEstablishments({
         latitude: 53.9,
         longitude: 27.5,
-        radius: 10
+        radius: 10,
+        sort_by: 'distance'
       });
 
       expect(result.response.status).toBe(200);

@@ -36,9 +36,24 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   },
 }));
 
-// Import after mocking
+jest.unstable_mockModule('../../models/mediaModel.js', () => ({
+  getEstablishmentMedia: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../models/partnerDocumentsModel.js', () => ({
+  findByEstablishmentId: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../models/reviewModel.js', () => ({
+  getRatingDistribution: jest.fn(),
+}));
+
+// Import after mocking — import all mocked modules to get references
 const EstablishmentModel = await import('../../models/establishmentModel.js');
 const logger = (await import('../../utils/logger.js')).default;
+const MediaModel = await import('../../models/mediaModel.js');
+const PartnerDocumentsModel = await import('../../models/partnerDocumentsModel.js');
+const ReviewModel = await import('../../models/reviewModel.js');
 
 const {
   createEstablishment,
@@ -124,14 +139,23 @@ describe('establishmentService', () => {
     });
 
     test('should accept all valid Belarus cities', async () => {
-      const validCities = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Бобруйск'];
+      // Each city needs coordinates within its CITY_BOUNDS
+      const citiesWithCoords = [
+        { city: 'Минск', latitude: 53.9, longitude: 27.5 },
+        { city: 'Гродно', latitude: 53.68, longitude: 23.83 },
+        { city: 'Брест', latitude: 52.1, longitude: 23.7 },
+        { city: 'Гомель', latitude: 52.42, longitude: 31.0 },
+        { city: 'Витебск', latitude: 55.19, longitude: 30.2 },
+        { city: 'Могилев', latitude: 53.91, longitude: 30.35 },
+        { city: 'Бобруйск', latitude: 53.15, longitude: 29.25 },
+      ];
 
       EstablishmentModel.checkDuplicateName.mockResolvedValue(false);
       EstablishmentModel.createEstablishment.mockResolvedValue(mockEstablishment);
 
-      for (const city of validCities) {
+      for (const { city, latitude, longitude } of citiesWithCoords) {
         await expect(
-          createEstablishment(partnerId, { ...validEstablishmentData, city })
+          createEstablishment(partnerId, { ...validEstablishmentData, city, latitude, longitude })
         ).resolves.toBeDefined();
       }
     });
@@ -305,10 +329,11 @@ describe('establishmentService', () => {
         })
       ).resolves.toBeDefined();
 
-      // Brest coordinates
+      // Brest coordinates (with matching city)
       await expect(
         createEstablishment(partnerId, {
           ...validEstablishmentData,
+          city: 'Брест',
           latitude: 52.1,
           longitude: 23.7,
         })
@@ -454,13 +479,29 @@ describe('establishmentService', () => {
   describe('getEstablishmentById', () => {
     const establishmentId = 'establishment-123';
 
+    beforeEach(() => {
+      // Set default return values for enrichment model mocks
+      MediaModel.getEstablishmentMedia.mockResolvedValue([]);
+      PartnerDocumentsModel.findByEstablishmentId.mockResolvedValue(null);
+      ReviewModel.getRatingDistribution.mockResolvedValue([]);
+    });
+
     test('should fetch establishment when partner owns it', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue(mockEstablishment);
 
       const result = await getEstablishmentById(establishmentId, partnerId);
 
-      expect(result).toEqual(mockEstablishment);
+      // Result includes establishment fields plus media/legal enrichment
+      expect(result).toMatchObject({
+        id: mockEstablishment.id,
+        name: mockEstablishment.name,
+        partner_id: mockEstablishment.partner_id,
+      });
+      expect(result).toHaveProperty('primary_photo');
+      expect(result).toHaveProperty('interior_photos');
+      expect(result).toHaveProperty('menu_photos');
+      expect(result).toHaveProperty('rating_distribution');
       expect(EstablishmentModel.checkOwnership).toHaveBeenCalledWith(
         establishmentId,
         partnerId
@@ -655,6 +696,12 @@ describe('establishmentService', () => {
   });
 
   describe('getEstablishmentById formatting', () => {
+    beforeEach(() => {
+      MediaModel.getEstablishmentMedia.mockResolvedValue([]);
+      PartnerDocumentsModel.findByEstablishmentId.mockResolvedValue(null);
+      ReviewModel.getRatingDistribution.mockResolvedValue([]);
+    });
+
     test('should parse numeric strings to numbers', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
