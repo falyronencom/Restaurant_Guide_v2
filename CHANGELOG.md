@@ -6,6 +6,19 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 24, 2026 — Admin Backend Test Coverage Segment C (QA Complete)
+- Backend QA: 97 новых тестов (29 unit + 41 analytics integration + 27 audit log)
+- **Всего admin тестов**: 211 (Segments A+B+C), все 17 admin эндпоинтов покрыты
+- **Покрытие**: 61.52% statements, 55.78% branches, 62.39% functions, 61.88% lines
+- Unit tests (`analyticsService.test.js`): `parsePeriod`, `getAggregationType`, `computeChangePercent`, `fillDateGaps` — timezone-independent assertions
+- Integration tests (`admin-analytics.test.js`): #10–#13 — overview, users, establishments, reviews analytics с auth guards и aggregation validation
+- Integration tests (`admin-audit-log.test.js`): #17 — pagination, filtering, sort, include_metadata, auth guards
+- **Bug fix** `analyticsModel.js`: неверное имя колонки `partner_responded_at` → `partner_response_at` (migration 009)
+- **Bug fix** `analyticsModel.js`: невалидный SQL `ROUND() FILTER (WHERE ...)` → `FILTER` перенесён на `AVG()` (PostgreSQL: FILTER только на агрегатах)
+- Оба бага приводили к 500 на `GET /api/v1/admin/analytics/reviews`
+- Session Report: [backend/session_reports/segment_c_completion_report.md](backend/session_reports/segment_c_completion_report.md)
+- Commit: `794c253`
+
 ### Февраль 20, 2026 — Custom Map Markers (Circle Badge)
 - Mobile: New `MapMarkerPainter` — CustomPainter drawing gradient circle with white border, fork-and-knife icon, and triangular pointer
 - Mobile: New `MapMarkerGenerator` — singleton bitmap renderer with caching (pre-generates open + closed variants)

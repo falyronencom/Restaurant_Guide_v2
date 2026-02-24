@@ -143,8 +143,30 @@
 - Files: 3 backend + 19 frontend new, 5 edited
 - Session Report: [admin-web/session_reports/phase_8_segment_d_analytics_dashboard_report.md](../admin-web/session_reports/phase_8_segment_d_analytics_dashboard_report.md)
 
-### Segment E: TBD (Запланировано)
-- To be determined based on project priorities
+### Segment E: Utility Screens (Завершён - Февраль 13, 2026)
+- Backend: Audit Log Model/Service/Controller, Admin Review Model/Service/Controller, +4 admin routes
+- Endpoints: `GET /audit-log`, `GET /reviews`, `POST /reviews/:id/toggle-visibility`, `POST /reviews/:id/delete`
+- Frontend: AuditLogScreen (expandable JSON rows, filter bar, pagination), ReviewsManagementScreen (list+detail panel, status badges, optimistic updates), NotificationsScreen, PaymentsScreen
+- Zero PlaceholderScreens remaining — all sidebar items route to functional screens
+- Files: 5 backend new, 10 frontend new, 3 edited
+
+### Admin Backend QA (Завершено - Февраль 2026)
+Отдельная QA-инициатива для тестового покрытия всех 17 admin API эндпоинтов.
+
+#### Test Segment A: Auth + Authorization + Moderation Core (Завершён - Февраль 18, 2026)
+- 59 тестов, 2 integration файла
+- Покрыты: admin login, JWT guard, role guard, moderation list/detail/action (#1–#9 частично)
+
+#### Test Segment B: Moderation Extended + Reviews (Завершён - Февраль 18, 2026)
+- 55 тестов, 2 integration файла
+- Покрыты: suspend/unsuspend, approved/rejected lists, reviews management (#9–#16)
+
+#### Test Segment C: Analytics + Audit Log (Завершён - Февраль 24, 2026)
+- 97 тестов: 29 unit + 41 integration analytics + 27 integration audit log
+- Покрыты: все analytics endpoints (#10–#13), audit log (#17)
+- Production bugs found & fixed: 2 (колонка `partner_response_at`, SQL FILTER placement)
+- **Итого: 211 admin тестов, все 17 эндпоинтов покрыты**
+- Coverage baseline: 61.52% statements / 55.78% branches / 62.39% functions
 
 ## Фаза 9: Testing & Polish (Запланировано)
 - Comprehensive E2E testing
