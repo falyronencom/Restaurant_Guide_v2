@@ -365,7 +365,7 @@ describe('searchService', () => {
       await searchByRadius(validParams);
 
       const query = pool.query.mock.calls[0][0];
-      expect(query).toContain('ORDER BY ne.distance_km ASC, ne.average_rating DESC, ne.review_count DESC');
+      expect(query).toContain('ORDER BY ne.average_rating DESC NULLS LAST, ne.review_count DESC, ne.name ASC');
     });
 
     test('should only search active establishments', async () => {
