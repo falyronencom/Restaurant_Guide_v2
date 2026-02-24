@@ -19,6 +19,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   intl: ^0.20.2
   fl_chart: ^0.69.2
+  url_launcher: ^6.2.5
   # Для web: используйте web-specific пакеты, если требуется
   # Например, для карт можно использовать flutter_map или другие web-совместимые решения
 

@@ -85,7 +85,6 @@ class PartnerDashboardProvider with ChangeNotifier {
 
     try {
       _establishments = await _partnerService.getMyEstablishments();
-      _isInitialized = true;
       _error = null;
       debugPrint('PartnerDashboard: Loaded ${_establishments.length} establishments');
     } catch (e) {
@@ -96,6 +95,7 @@ class PartnerDashboardProvider with ChangeNotifier {
         _establishments = [];
       }
     } finally {
+      _isInitialized = true;
       _isLoading = false;
       notifyListeners();
     }
