@@ -240,6 +240,40 @@ class ModerationProvider with ChangeNotifier {
   }
 
   // ============================================================================
+  // Coordinate correction
+  // ============================================================================
+
+  /// Update establishment coordinates (admin correction)
+  Future<bool> updateCoordinates(double latitude, double longitude) async {
+    if (_selectedId == null) return false;
+
+    _isSubmitting = true;
+    _submitError = null;
+    notifyListeners();
+
+    try {
+      await _service.updateCoordinates(
+        id: _selectedId!,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+      // Force re-fetch detail to show updated coordinates
+      _selectedDetail = null;
+      await selectEstablishment(_selectedId!);
+
+      _isSubmitting = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _submitError = _extractMessage(e);
+      _isSubmitting = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ============================================================================
   // Helpers
   // ============================================================================
 

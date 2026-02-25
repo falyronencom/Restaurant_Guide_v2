@@ -409,6 +409,24 @@ export const updateEstablishment = async (establishmentId, updates) => {
     paramCount++;
   }
 
+  if (updates.city !== undefined) {
+    fields.push(`city = $${paramCount}`);
+    values.push(updates.city);
+    paramCount++;
+  }
+
+  if (updates.latitude !== undefined) {
+    fields.push(`latitude = $${paramCount}`);
+    values.push(updates.latitude);
+    paramCount++;
+  }
+
+  if (updates.longitude !== undefined) {
+    fields.push(`longitude = $${paramCount}`);
+    values.push(updates.longitude);
+    paramCount++;
+  }
+
   if (updates.phone !== undefined) {
     fields.push(`phone = $${paramCount}`);
     values.push(updates.phone);

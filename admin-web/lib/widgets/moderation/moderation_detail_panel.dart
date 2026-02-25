@@ -191,6 +191,9 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
                 detail: detail,
                 isReadOnly: isReadOnly,
                 rejectionNotes: widget.rejectionNotes,
+                onUpdateCoordinates: (lat, lon) {
+                  context.read<ModerationProvider>().updateCoordinates(lat, lon);
+                },
               ),
             ],
           ),
@@ -677,11 +680,13 @@ class _AddressTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
   final Map<String, dynamic>? rejectionNotes;
+  final void Function(double latitude, double longitude)? onUpdateCoordinates;
 
   const _AddressTab({
     required this.detail,
     this.isReadOnly = false,
     this.rejectionNotes,
+    this.onUpdateCoordinates,
   });
 
   @override
@@ -708,10 +713,10 @@ class _AddressTab extends StatelessWidget {
                   : null),
               if (detail.latitude != null && detail.longitude != null) ...[
                 const SizedBox(height: 12),
-                // Coordinates + Open in Yandex Maps
                 _MapPreview(
                   latitude: detail.latitude!,
                   longitude: detail.longitude!,
+                  onUpdateCoordinates: onUpdateCoordinates,
                 ),
               ],
             ],
@@ -731,10 +736,12 @@ class _AddressTab extends StatelessWidget {
 class _MapPreview extends StatelessWidget {
   final double latitude;
   final double longitude;
+  final void Function(double latitude, double longitude)? onUpdateCoordinates;
 
   const _MapPreview({
     required this.latitude,
     required this.longitude,
+    this.onUpdateCoordinates,
   });
 
   @override
@@ -787,6 +794,25 @@ class _MapPreview extends StatelessWidget {
               ),
             ),
           ),
+          // Correct coordinates button
+          if (onUpdateCoordinates != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: ElevatedButton.icon(
+                onPressed: () => _showCoordinateDialog(context),
+                icon: const Icon(Icons.edit_location_alt, size: 16),
+                label: const Text('Исправить координаты'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDB4F13),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -795,6 +821,61 @@ class _MapPreview extends StatelessWidget {
   void _openInYandexMaps() {
     final url = 'https://yandex.ru/maps/?pt=$longitude,$latitude&z=16&l=map';
     _jsWindowOpen(url.toJS, '_blank'.toJS);
+  }
+
+  void _showCoordinateDialog(BuildContext context) {
+    final latController = TextEditingController(text: latitude.toStringAsFixed(6));
+    final lonController = TextEditingController(text: longitude.toStringAsFixed(6));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Исправить координаты'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: latController,
+              decoration: const InputDecoration(
+                labelText: 'Широта (latitude)',
+                hintText: '53.900000',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: lonController,
+              decoration: const InputDecoration(
+                labelText: 'Долгота (longitude)',
+                hintText: '27.550000',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final lat = double.tryParse(latController.text);
+              final lon = double.tryParse(lonController.text);
+              if (lat != null && lon != null) {
+                Navigator.pop(ctx);
+                onUpdateCoordinates?.call(lat, lon);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDB4F13),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

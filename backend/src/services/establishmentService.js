@@ -62,7 +62,7 @@ const VALID_CUISINES = [
 /**
  * Geographic bounds for Belarus
  */
-const BELARUS_BOUNDS = {
+export const BELARUS_BOUNDS = {
   LAT_MIN: 51.0,
   LAT_MAX: 56.0,
   LON_MIN: 23.0,
@@ -75,7 +75,7 @@ const BELARUS_BOUNDS = {
  * Prevents obvious errors (e.g., Гродно address with Минск coordinates)
  * while allowing suburban areas like Копище, Боровляны, etc.
  */
-const CITY_BOUNDS = {
+export const CITY_BOUNDS = {
   'Минск': { latMin: 53.75, latMax: 54.10, lonMin: 27.30, lonMax: 27.85 },
   'Гродно': { latMin: 53.55, latMax: 53.78, lonMin: 23.70, lonMax: 24.00 },
   'Брест': { latMin: 51.98, latMax: 52.20, lonMin: 23.55, lonMax: 23.85 },
@@ -92,7 +92,7 @@ const CITY_BOUNDS = {
  * @param {number} longitude - Longitude coordinate
  * @returns {{ valid: boolean, message?: string }}
  */
-function validateCityCoordinates(city, latitude, longitude) {
+export function validateCityCoordinates(city, latitude, longitude) {
   const bounds = CITY_BOUNDS[city];
   if (!bounds) {
     // City not in bounds list, skip city-specific validation

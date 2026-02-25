@@ -89,7 +89,8 @@
 - PostgreSQL — основная база данных
 - Redis — кэширование и rate limiting
 - JWT — авторизация (access token 15min + refresh token 7d)
-- Multer — загрузка файлов (локальное хранение `backend/uploads/`)
+- Cloudinary — хранение и оптимизация фотографий заведений (3 разрешения: original/preview/thumbnail)
+- Multer — загрузка аватаров пользователей (локальное хранение `backend/uploads/avatars/`)
 
 **Инфраструктура:**
 
