@@ -13,6 +13,7 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { BELARUS_BOUNDS, CITY_BOUNDS, validateCityCoordinates } from './establishmentService.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -562,6 +563,109 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       'Failed to unsuspend establishment',
       500,
       'UNSUSPEND_FAILED',
+    );
+  }
+};
+
+/**
+ * Update establishment coordinates (admin correction)
+ *
+ * Allows admin to fix geocoding errors by directly setting lat/lon.
+ * Validates coordinates against Belarus bounds and city bounds.
+ *
+ * @param {string} establishmentId - UUID
+ * @param {Object} params
+ * @param {number} params.latitude - New latitude
+ * @param {number} params.longitude - New longitude
+ * @param {string} params.adminUserId - Admin UUID
+ * @param {string} params.ipAddress - Request IP
+ * @param {string} params.userAgent - Request User-Agent
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const updateEstablishmentCoordinates = async (establishmentId, params) => {
+  const { latitude, longitude, adminUserId, ipAddress, userAgent } = params;
+
+  try {
+    const existing = await EstablishmentModel.findEstablishmentById(
+      establishmentId,
+      true,
+    );
+
+    if (!existing) {
+      throw new AppError(
+        'Establishment not found',
+        404,
+        'ESTABLISHMENT_NOT_FOUND',
+      );
+    }
+
+    // Validate Belarus bounds
+    if (latitude < BELARUS_BOUNDS.LAT_MIN || latitude > BELARUS_BOUNDS.LAT_MAX) {
+      throw new AppError(
+        `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
+        422,
+        'INVALID_LATITUDE',
+      );
+    }
+
+    if (longitude < BELARUS_BOUNDS.LON_MIN || longitude > BELARUS_BOUNDS.LON_MAX) {
+      throw new AppError(
+        `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
+        422,
+        'INVALID_LONGITUDE',
+      );
+    }
+
+    // Validate coordinates match the establishment's city
+    const cityValidation = validateCityCoordinates(existing.city, latitude, longitude);
+    if (!cityValidation.valid) {
+      throw new AppError(
+        cityValidation.message,
+        422,
+        'COORDINATES_CITY_MISMATCH',
+      );
+    }
+
+    const updated = await EstablishmentModel.updateEstablishment(
+      establishmentId,
+      { latitude, longitude },
+    );
+
+    // Audit log (non-blocking)
+    AuditLogModel.createAuditLog({
+      user_id: adminUserId,
+      action: 'admin_update_coordinates',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: {
+        latitude: existing.latitude ? parseFloat(existing.latitude) : null,
+        longitude: existing.longitude ? parseFloat(existing.longitude) : null,
+      },
+      new_data: { latitude, longitude },
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
+    logger.info('Admin updated establishment coordinates', {
+      establishmentId,
+      adminUserId,
+      oldCoords: { lat: existing.latitude, lon: existing.longitude },
+      newCoords: { lat: latitude, lon: longitude },
+    });
+
+    return updated;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    logger.error('Unexpected error updating coordinates', {
+      error: error.message,
+      establishmentId,
+    });
+
+    throw new AppError(
+      'Failed to update establishment coordinates',
+      500,
+      'COORDINATES_UPDATE_FAILED',
     );
   }
 };

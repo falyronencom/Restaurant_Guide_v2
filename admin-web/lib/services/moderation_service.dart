@@ -148,6 +148,21 @@ class ModerationService {
     );
   }
 
+  /// PATCH /api/v1/admin/establishments/:id/coordinates
+  Future<void> updateCoordinates({
+    required String id,
+    required double latitude,
+    required double longitude,
+  }) async {
+    await _apiClient.patch(
+      '/api/v1/admin/establishments/$id/coordinates',
+      data: {
+        'latitude': latitude,
+        'longitude': longitude,
+      },
+    );
+  }
+
   /// GET /api/v1/admin/establishments/search
   Future<SearchListResponse> searchEstablishments({
     required String search,
