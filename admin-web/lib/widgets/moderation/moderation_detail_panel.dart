@@ -41,7 +41,7 @@ class ModerationDetailPanel extends StatefulWidget {
   final String? selectedId;
 
   // Optional actions
-  final VoidCallback? onSuspend;
+  final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
 
   // Rejection notes for per-field display (from audit log)
@@ -212,7 +212,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 // =============================================================================
 
 class _HeaderActionBar extends StatelessWidget {
-  final VoidCallback? onSuspend;
+  final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
   final String establishmentName;
 
@@ -306,9 +306,10 @@ class _HeaderActionBar extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
-              if (reasonController.text.trim().isEmpty) return;
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) return;
               Navigator.pop(ctx);
-              onSuspend?.call();
+              onSuspend?.call(reason);
             },
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFF9500),

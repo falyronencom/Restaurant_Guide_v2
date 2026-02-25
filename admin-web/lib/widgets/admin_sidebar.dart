@@ -65,6 +65,11 @@ class AdminSidebar extends StatelessWidget {
                     path: '/moderation/rejected',
                     currentPath: location,
                   ),
+                  _NavItem(
+                    title: 'Приостановленные',
+                    path: '/moderation/suspended',
+                    currentPath: location,
+                  ),
 
                   const SizedBox(height: 16),
 

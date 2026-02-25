@@ -534,55 +534,11 @@ class _DetailPanel extends StatelessWidget {
       detailError: provider.detailError,
       selectedId: provider.selectedId,
       onSuspend: !isSuspended && detail != null
-          ? () => _showSuspendDialog(context, provider)
+          ? (reason) => provider.suspendEstablishment(reason)
           : null,
       onUnsuspend: isSuspended
           ? () => provider.unsuspendEstablishment()
           : null,
-    );
-  }
-
-  void _showSuspendDialog(BuildContext context, ApprovedProvider provider) {
-    final reasonController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Приостановить заведение?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Заведение будет скрыто из поиска и каталога.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Причина приостановки...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final reason = reasonController.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(ctx);
-              provider.suspendEstablishment(reason);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF9500),
-            ),
-            child: const Text('Приостановить'),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -130,6 +130,32 @@ class ModerationService {
     );
   }
 
+  /// GET /api/v1/admin/establishments/suspended
+  Future<SuspendedListResponse> getSuspendedEstablishments({
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final response = await _apiClient.get(
+      '/api/v1/admin/establishments/suspended',
+      queryParameters: {'page': page, 'per_page': perPage},
+    );
+
+    final data = response.data as Map<String, dynamic>;
+    final items = (data['data'] as List<dynamic>? ?? [])
+        .map((e) =>
+            SuspendedEstablishmentItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    final meta = data['meta'] as Map<String, dynamic>? ?? {};
+
+    return SuspendedListResponse(
+      establishments: items,
+      total: meta['total'] as int? ?? items.length,
+      page: meta['page'] as int? ?? page,
+      pages: meta['pages'] as int? ?? 1,
+    );
+  }
+
   /// POST /api/v1/admin/establishments/:id/suspend
   Future<void> suspendEstablishment({
     required String id,
@@ -240,6 +266,21 @@ class RejectedListResponse {
 
   const RejectedListResponse({
     required this.rejections,
+    required this.total,
+    required this.page,
+    required this.pages,
+  });
+}
+
+/// Response wrapper for the suspended list endpoint
+class SuspendedListResponse {
+  final List<SuspendedEstablishmentItem> establishments;
+  final int total;
+  final int page;
+  final int pages;
+
+  const SuspendedListResponse({
+    required this.establishments,
     required this.total,
     required this.page,
     required this.pages,

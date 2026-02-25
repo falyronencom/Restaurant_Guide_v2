@@ -579,6 +579,60 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
 };
 
 /**
+ * Get paginated list of suspended establishments
+ *
+ * @param {Object} params
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.perPage - Items per page (max 50)
+ * @returns {Promise<Object>} { establishments, meta: { total, page, per_page, pages } }
+ */
+export const getSuspendedEstablishments = async ({ page = 1, perPage = 20 } = {}) => {
+  try {
+    const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
+    const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+
+    const [establishments, total] = await Promise.all([
+      EstablishmentModel.getSuspendedEstablishments(effectivePerPage, offset),
+      EstablishmentModel.countSuspendedEstablishments(),
+    ]);
+
+    // Normalize moderation_notes from TEXT column (string → object)
+    const normalizedEstablishments = establishments.map((e) => ({
+      ...e,
+      moderation_notes:
+        typeof e.moderation_notes === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(e.moderation_notes);
+              } catch {
+                return null;
+              }
+            })()
+          : e.moderation_notes || null,
+    }));
+
+    return {
+      establishments: normalizedEstablishments,
+      meta: {
+        total,
+        page: Math.max(page, 1),
+        per_page: effectivePerPage,
+        pages: Math.ceil(total / effectivePerPage) || 1,
+      },
+    };
+  } catch (error) {
+    logger.error('Error in getSuspendedEstablishments service', {
+      error: error.message,
+    });
+    throw new AppError(
+      'Failed to fetch suspended establishments',
+      500,
+      'SUSPENDED_FETCH_FAILED',
+    );
+  }
+};
+
+/**
  * Update establishment coordinates (admin correction)
  *
  * Allows admin to fix geocoding errors by directly setting lat/lon.
