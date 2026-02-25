@@ -177,6 +177,32 @@ export const listRejectedEstablishments = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /api/v1/admin/establishments/suspended
+ *
+ * Returns paginated list of suspended establishments.
+ * Query params: page (default 1), per_page (default 20, max 50)
+ */
+export const listSuspendedEstablishments = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const perPage = parseInt(req.query.per_page, 10) || 20;
+
+  const result = await adminService.getSuspendedEstablishments({ page, perPage });
+
+  logger.info('Admin fetched suspended establishments', {
+    adminId: req.user.userId,
+    count: result.establishments.length,
+    total: result.meta.total,
+    endpoint: 'GET /api/v1/admin/establishments/suspended',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result.establishments,
+    meta: result.meta,
+  });
+});
+
+/**
  * POST /api/v1/admin/establishments/:id/suspend
  *
  * Suspend an active establishment.

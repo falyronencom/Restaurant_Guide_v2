@@ -1233,3 +1233,83 @@ export const deleteEstablishment = async (establishmentId, partnerId) => {
   }
 };
 
+// =============================================================================
+// Suspended establishments (Admin — Приостановленные tab)
+// =============================================================================
+
+/**
+ * Fetch suspended establishments for admin listing
+ *
+ * Returns establishments with status 'suspended', ordered by most recently
+ * suspended (updated_at DESC). Includes moderation_notes for suspend_reason.
+ *
+ * @param {number} limit
+ * @param {number} offset
+ * @returns {Promise<Array>} Suspended establishments
+ */
+export const getSuspendedEstablishments = async (limit = 20, offset = 0) => {
+  const query = `
+    SELECT
+      e.id,
+      e.name,
+      e.city,
+      e.categories,
+      e.cuisines,
+      e.moderation_notes,
+      e.updated_at,
+      e.created_at,
+      (
+        SELECT json_build_object(
+          'url', em.url,
+          'thumbnail_url', em.thumbnail_url
+        )
+        FROM establishment_media em
+        WHERE em.establishment_id = e.id
+          AND em.is_primary = true
+        LIMIT 1
+      ) as primary_photo
+    FROM establishments e
+    WHERE e.status = 'suspended'
+    ORDER BY e.updated_at DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+  try {
+    const result = await pool.query(query, [limit, offset]);
+
+    logger.debug('Fetched suspended establishments', {
+      count: result.rows.length,
+    });
+
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching suspended establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count suspended establishments (for pagination)
+ *
+ * @returns {Promise<number>} Total count
+ */
+export const countSuspendedEstablishments = async () => {
+  const query = `
+    SELECT COUNT(*) as total
+    FROM establishments
+    WHERE status = 'suspended'
+  `;
+
+  try {
+    const result = await pool.query(query);
+    return parseInt(result.rows[0].total, 10);
+  } catch (error) {
+    logger.error('Error counting suspended establishments', {
+      error: error.message,
+    });
+    throw error;
+  }
+};
+
