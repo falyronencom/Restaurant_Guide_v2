@@ -18,7 +18,7 @@
  */
 
 import * as adminService from '../services/adminService.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -236,6 +236,58 @@ export const unsuspendEstablishment = asyncHandler(async (req, res) => {
     success: true,
     data: result,
     message: 'Establishment reactivated',
+  });
+});
+
+/**
+ * PATCH /api/v1/admin/establishments/:id/coordinates
+ *
+ * Update establishment coordinates (admin correction).
+ * Body: { latitude: number, longitude: number }
+ */
+export const updateCoordinates = asyncHandler(async (req, res) => {
+  const establishmentId = req.params.id;
+  const { latitude, longitude } = req.body;
+
+  if (latitude === undefined || longitude === undefined) {
+    throw new AppError(
+      'latitude and longitude are required',
+      422,
+      'MISSING_COORDINATES',
+    );
+  }
+
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    throw new AppError(
+      'latitude and longitude must be numbers',
+      422,
+      'INVALID_COORDINATES',
+    );
+  }
+
+  const result = await adminService.updateEstablishmentCoordinates(
+    establishmentId,
+    {
+      latitude,
+      longitude,
+      adminUserId: req.user.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  );
+
+  logger.info('Admin updated establishment coordinates', {
+    adminId: req.user.userId,
+    establishmentId,
+    latitude,
+    longitude,
+    endpoint: 'PATCH /api/v1/admin/establishments/:id/coordinates',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: 'Coordinates updated',
   });
 });
 

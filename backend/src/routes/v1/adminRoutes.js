@@ -162,6 +162,19 @@ router.post(
   adminModerationController.unsuspendEstablishment,
 );
 
+/**
+ * PATCH /api/v1/admin/establishments/:id/coordinates
+ *
+ * Update establishment coordinates (admin correction).
+ * Body: { latitude: number, longitude: number }
+ */
+router.patch(
+  '/establishments/:id/coordinates',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.updateCoordinates,
+);
+
 // ============================================================================
 // Segment D: Analytics & Dashboard
 // ============================================================================
