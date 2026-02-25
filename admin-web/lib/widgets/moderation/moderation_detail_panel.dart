@@ -1057,10 +1057,25 @@ class _FileLink extends StatelessWidget {
   }
 }
 
-/// Displays working hours from JSONB
+/// Displays working hours in a readable table: day name → time range or "Закрыто"
 class _WorkingHoursDisplay extends StatelessWidget {
   final Map<String, dynamic>? hours;
   const _WorkingHoursDisplay(this.hours);
+
+  static const _dayOrder = [
+    'monday', 'tuesday', 'wednesday', 'thursday',
+    'friday', 'saturday', 'sunday',
+  ];
+
+  static const _dayNames = {
+    'monday': 'Понедельник',
+    'tuesday': 'Вторник',
+    'wednesday': 'Среда',
+    'thursday': 'Четверг',
+    'friday': 'Пятница',
+    'saturday': 'Суббота',
+    'sunday': 'Воскресенье',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1076,13 +1091,44 @@ class _WorkingHoursDisplay extends StatelessWidget {
         borderRadius: BorderRadius.circular(11),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: hours!.entries.map((entry) {
+        children: _dayOrder.map((dayKey) {
+          final dayData = hours![dayKey];
+          final dayName = _dayNames[dayKey] ?? dayKey;
+          final isOpen = dayData is Map && dayData['is_open'] == true;
+          final open = dayData is Map ? dayData['open'] as String? : null;
+          final close = dayData is Map ? dayData['close'] as String? : null;
+
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Text(
-              '${entry.key}: ${entry.value}',
-              style: const TextStyle(fontSize: 14),
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 120,
+                  child: Text(
+                    dayName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: isOpen
+                          ? Colors.black
+                          : const Color(0xFFABABAB),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    isOpen && open != null && close != null
+                        ? '$open – $close'
+                        : 'Закрыто',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isOpen
+                          ? Colors.black
+                          : const Color(0xFFABABAB),
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         }).toList(),
