@@ -145,7 +145,10 @@ export const getEstablishmentForModeration = async (establishmentId) => {
       menu_media: menuMedia,
 
       // Moderation metadata
-      moderation_notes: establishment.moderation_notes,
+      // moderation_notes is TEXT column — parse JSON string to object for API consistency
+      moderation_notes: typeof establishment.moderation_notes === 'string'
+        ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return null; } })()
+        : (establishment.moderation_notes || null),
       moderated_by: establishment.moderated_by,
       moderated_at: establishment.moderated_at,
 
@@ -349,8 +352,16 @@ export const getRejectedEstablishments = async ({ page = 1, perPage = 20 } = {})
       AuditLogModel.countRejections(),
     ]);
 
+    // Normalize moderation_notes from TEXT column (string → object) for each rejection
+    const normalizedRejections = rejections.map(r => ({
+      ...r,
+      moderation_notes: typeof r.moderation_notes === 'string'
+        ? (() => { try { return JSON.parse(r.moderation_notes); } catch { return null; } })()
+        : (r.moderation_notes || null),
+    }));
+
     return {
-      rejections,
+      rejections: normalizedRejections,
       meta: {
         total,
         page: Math.max(page, 1),
