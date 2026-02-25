@@ -240,6 +240,49 @@ class ActiveEstablishmentItem extends EstablishmentListItem {
   }
 }
 
+/// Model for a suspended establishment in the list card
+class SuspendedEstablishmentItem extends EstablishmentListItem {
+  final String? suspendReason;
+  final DateTime? suspendedAt;
+
+  const SuspendedEstablishmentItem({
+    required super.id,
+    required super.name,
+    super.city,
+    super.categories,
+    super.cuisines,
+    super.thumbnailUrl,
+    super.updatedAt,
+    super.createdAt,
+    this.suspendReason,
+    this.suspendedAt,
+  });
+
+  factory SuspendedEstablishmentItem.fromJson(Map<String, dynamic> json) {
+    final photo = json['primary_photo'];
+    String? thumbnail;
+    if (photo is Map<String, dynamic>) {
+      thumbnail = photo['thumbnail_url'] as String? ?? photo['url'] as String?;
+    }
+
+    // Extract suspend_reason and suspended_at from moderation_notes
+    final notes = _parseJsonMap(json['moderation_notes']);
+
+    return SuspendedEstablishmentItem(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+      city: json['city'] as String?,
+      categories: _parseStringList(json['categories']),
+      cuisines: _parseStringList(json['cuisines']),
+      thumbnailUrl: thumbnail,
+      updatedAt: _parseDate(json['updated_at']),
+      createdAt: _parseDate(json['created_at']),
+      suspendReason: notes?['suspend_reason'] as String?,
+      suspendedAt: _parseDate(notes?['suspended_at']),
+    );
+  }
+}
+
 /// Model for a rejected establishment item (from audit log)
 class RejectedEstablishmentItem {
   final String auditId;

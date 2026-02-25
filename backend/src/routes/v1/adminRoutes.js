@@ -95,6 +95,19 @@ router.get(
 );
 
 /**
+ * GET /api/v1/admin/establishments/suspended
+ *
+ * List suspended establishments.
+ * Query: ?page=1&per_page=20
+ */
+router.get(
+  '/establishments/suspended',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.listSuspendedEstablishments,
+);
+
+/**
  * GET /api/v1/admin/establishments/search
  *
  * Search establishments across all statuses.
