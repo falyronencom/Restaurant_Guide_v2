@@ -86,6 +86,16 @@ class ModerationProvider with ChangeNotifier {
       _currentPage = response.page;
       _totalPages = response.pages;
       _totalCount = response.total;
+
+      // Clear stale selection if the selected item is no longer in the list
+      if (_selectedId != null &&
+          !_establishments.any((e) => e.id == _selectedId)) {
+        _selectedId = null;
+        _selectedDetail = null;
+        _fieldReviews = {};
+        _detailError = null;
+        _submitError = null;
+      }
     } catch (e) {
       _listError = _extractMessage(e);
     } finally {

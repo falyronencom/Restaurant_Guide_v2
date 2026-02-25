@@ -1,6 +1,8 @@
 /// Data models for establishment moderation workflow
 library;
 
+import 'dart:convert' show jsonDecode;
+
 /// Lightweight model for the pending list card
 class EstablishmentListItem {
   final String id;
@@ -151,7 +153,7 @@ class EstablishmentDetail {
       contactEmail: json['contact_email'] as String?,
       interiorPhotos: _parseMediaList(json['interior_photos']),
       menuMedia: _parseMediaList(json['menu_media']),
-      moderationNotes: json['moderation_notes'] as Map<String, dynamic>?,
+      moderationNotes: _parseJsonMap(json['moderation_notes']),
       createdAt: _parseDate(json['created_at']),
       updatedAt: _parseDate(json['updated_at']),
     );
@@ -280,8 +282,8 @@ class RejectedEstablishmentItem {
         notes = innerNotes;
       }
     }
-    // Fallback to establishment's moderation_notes
-    notes ??= json['moderation_notes'] as Map<String, dynamic>?;
+    // Fallback to establishment's moderation_notes (may be String from JSONB)
+    notes ??= _parseJsonMap(json['moderation_notes']);
 
     return RejectedEstablishmentItem(
       auditId: json['audit_id'] as String? ?? '',
@@ -402,5 +404,21 @@ DateTime? _parseDate(dynamic value) {
 double? _parseDouble(dynamic value) {
   if (value is num) return value.toDouble();
   if (value is String) return double.tryParse(value);
+  return null;
+}
+
+/// Parse a JSON map that may arrive as Map or as a JSON-encoded String.
+/// PostgreSQL JSONB columns sometimes return string-wrapped values (e.g. "{}")
+/// when the value was stored as a JSON string instead of a JSON object.
+Map<String, dynamic>? _parseJsonMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is String && value.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {
+      // Malformed JSON — ignore
+    }
+  }
   return null;
 }
