@@ -673,6 +673,7 @@ export async function searchByBounds({
   cuisines = null,
   priceRange = null,
   minRating = null,
+  hoursFilter = null,
   limit = 100,
   search = null,
 }) {
@@ -736,6 +737,61 @@ export async function searchByBounds({
   // Add text search filter (ILIKE + synonyms)
   if (search) {
     paramIndex = addSearchConditions(search, conditions, params, paramIndex);
+  }
+
+  // Add hours filter (same logic as searchByRadius)
+  // working_hours is JSONB with two possible value formats per day:
+  //   String: "10:00-22:00"
+  //   Object: {"open": "10:00", "close": "22:00"} or {"is_open": false}
+  if (hoursFilter) {
+    switch (hoursFilter) {
+      case 'until_22':
+        conditions.push(`
+          NOT EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND (
+              CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) > 22
+              OR (
+                CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) = 22
+                AND CAST(SPLIT_PART(ct.close_time, ':', 2) AS INTEGER) > 0
+              )
+              OR CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+            )
+          )
+        `);
+        break;
+      case 'until_morning':
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE ct.close_time IS NOT NULL
+            AND CAST(SPLIT_PART(ct.close_time, ':', 1) AS INTEGER) <= 6
+          )
+        `);
+        break;
+      case '24_hours':
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM jsonb_each(e.working_hours) AS hours(day, val),
+            ${CLOSE_TIME_SQL}
+            WHERE (
+              ct.close_time IS NOT NULL
+              AND ct.close_time IN ('23:59', '00:00')
+              AND SPLIT_PART(
+                CASE jsonb_typeof(val)
+                  WHEN 'string' THEN val #>> '{}'
+                  WHEN 'object' THEN val->>'open'
+                  ELSE NULL
+                END, ':', 1) = '0'
+            )
+            OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
+          )
+        `);
+        break;
+    }
   }
 
   const whereClause = conditions.join(' AND ');
