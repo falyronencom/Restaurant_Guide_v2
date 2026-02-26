@@ -105,6 +105,16 @@ export const validateGetEstablishmentReviews = [
     .optional()
     .isIn(['newest', 'highest', 'lowest'])
     .withMessage('Sort must be one of: newest, highest, lowest'),
+
+  query('date_from')
+    .optional()
+    .isISO8601()
+    .withMessage('date_from must be a valid ISO 8601 date'),
+
+  query('date_to')
+    .optional()
+    .isISO8601()
+    .withMessage('date_to must be a valid ISO 8601 date'),
 ];
 
 /**

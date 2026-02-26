@@ -99,11 +99,17 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     });
 
     try {
+      // Server-side date filtering: start of dateFrom day → end of dateTo day
+      final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+      final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+
       final result = await _reviewsService.getReviewsForEstablishment(
         widget.establishmentId,
         page: 1,
         perPage: _perPage,
         sort: _backendSort,
+        dateFrom: from,
+        dateTo: to,
       );
 
       final reviews = result.data;
@@ -115,11 +121,10 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
 
       setState(() {
         _reviews = reviews;
+        _filteredReviews = reviews;
         _hasMore = result.meta.page < result.meta.totalPages;
         _isLoading = false;
       });
-
-      _applyDateFilter();
     } catch (e) {
       setState(() {
         _error = 'Не удалось загрузить отзывы';
@@ -135,36 +140,33 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     setState(() => _isLoadingMore = true);
 
     try {
+      final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+      final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+
       final result = await _reviewsService.getReviewsForEstablishment(
         widget.establishmentId,
         page: _currentPage + 1,
         perPage: _perPage,
         sort: _backendSort,
+        dateFrom: from,
+        dateTo: to,
       );
 
       setState(() {
         _currentPage++;
         _reviews.addAll(result.data);
+        _filteredReviews = List.from(_reviews);
         _hasMore = result.meta.page < result.meta.totalPages;
         _isLoadingMore = false;
       });
-
-      _applyDateFilter();
     } catch (e) {
       setState(() => _isLoadingMore = false);
     }
   }
 
-  /// Apply client-side date filter to loaded reviews
+  /// Reload reviews from server with current date range
   void _applyDateFilter() {
-    final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
-    final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
-
-    setState(() {
-      _filteredReviews = _reviews.where((r) {
-        return !r.createdAt.isBefore(from) && !r.createdAt.isAfter(to);
-      }).toList();
-    });
+    _loadReviews();
   }
 
   @override

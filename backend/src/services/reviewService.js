@@ -194,6 +194,8 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
     page = 1,
     limit = 10,
     sort = 'newest',
+    dateFrom,
+    dateTo,
   } = options;
 
   // Verify establishment exists
@@ -209,14 +211,16 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
   const validSortOrders = ['newest', 'highest', 'lowest'];
   const sortBy = validSortOrders.includes(sort) ? sort : 'newest';
 
-  // Fetch reviews and total count
+  // Fetch reviews and total count (with optional date range)
+  const dateOpts = { dateFrom, dateTo };
   const [reviews, totalCount] = await Promise.all([
     ReviewModel.findReviewsByEstablishment(establishmentId, {
       limit,
       offset,
       sortBy,
+      ...dateOpts,
     }),
-    ReviewModel.countReviewsByEstablishment(establishmentId),
+    ReviewModel.countReviewsByEstablishment(establishmentId, dateOpts),
   ]);
 
   // Calculate pagination metadata
