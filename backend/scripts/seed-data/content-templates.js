@@ -352,15 +352,15 @@ export const CITY_COORDINATES = {
 
 /**
  * Generate random coordinates near city center
- * Adds small random offset to city center (±0.05 degrees ~ 5km radius)
+ * Adds small random offset to city center (±0.005 degrees ~ 500m radius)
  *
  * @param {string} city - City name
  * @returns {object} {latitude, longitude}
  */
 export const generateCoordinates = (city) => {
   const center = CITY_COORDINATES[city] || CITY_COORDINATES['Минск'];
-  const latOffset = (Math.random() - 0.5) * 0.1; // ±0.05 degrees
-  const lonOffset = (Math.random() - 0.5) * 0.1;
+  const latOffset = (Math.random() - 0.5) * 0.01; // ±0.005 degrees (~500m)
+  const lonOffset = (Math.random() - 0.5) * 0.01;
 
   return {
     latitude: parseFloat((center.latitude + latOffset).toFixed(6)),
