@@ -385,9 +385,8 @@ class _MapScreenState extends State<MapScreen> {
     final List<String>? apiCuisines = provider.cuisineFilters.isNotEmpty
         ? provider.cuisineFilters.toList()
         : null;
-    // Backend /search/map expects single priceRange value (not array like categories/cuisines)
-    final String? apiPriceRange = provider.priceFilters.isNotEmpty
-        ? provider.priceFilters.first.apiValue
+    final List<String>? apiPriceRanges = provider.priceFilters.isNotEmpty
+        ? provider.priceFilters.map((p) => p.apiValue).toList()
         : null;
     final String? apiSearch = provider.searchQuery;
     final String? apiHoursFilter = provider.hoursFilter?.apiValue;
@@ -421,7 +420,7 @@ class _MapScreenState extends State<MapScreen> {
         west: west,
         categories: apiCategories,
         cuisines: apiCuisines,
-        priceRange: apiPriceRange,
+        priceRanges: apiPriceRanges,
         search: apiSearch,
         hoursFilter: apiHoursFilter,
       );

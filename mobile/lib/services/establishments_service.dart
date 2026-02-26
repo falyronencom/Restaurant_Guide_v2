@@ -150,7 +150,7 @@ class EstablishmentsService {
   /// [limit] - Maximum number of results (default: 100)
   /// [categories] - Filter by categories (API values, e.g., 'restaurant', 'cafe')
   /// [cuisines] - Filter by cuisines (API values, e.g., 'italian', 'japanese')
-  /// [priceRange] - Filter by price range (e.g., '$', '$$', '$$$') - single value
+  /// [priceRanges] - Filter by price ranges (e.g., ['$', '$$']) - multiple allowed
   /// [minRating] - Minimum average rating (1-5)
   /// [hoursFilter] - Filter by working hours (until_22, until_morning, 24_hours)
   Future<List<Establishment>> searchByMapBounds({
@@ -161,7 +161,7 @@ class EstablishmentsService {
     int limit = 100,
     List<String>? categories,
     List<String>? cuisines,
-    String? priceRange,
+    List<String>? priceRanges,
     double? minRating,
     String? search,
     String? hoursFilter,
@@ -182,8 +182,8 @@ class EstablishmentsService {
       if (cuisines != null && cuisines.isNotEmpty) {
         queryParams['cuisines'] = cuisines;
       }
-      if (priceRange != null) {
-        queryParams['priceRange'] = priceRange;
+      if (priceRanges != null && priceRanges.isNotEmpty) {
+        queryParams['priceRange'] = priceRanges;
       }
       if (minRating != null) {
         queryParams['minRating'] = minRating;
