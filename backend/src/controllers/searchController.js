@@ -80,9 +80,9 @@ export async function searchEstablishments(req, res, next) {
       ? (Array.isArray(cuisines) ? cuisines : cuisines.split(',')).map(c => c.trim()).filter(Boolean)
       : null;
 
-    // Parse priceRange (handle array from multi-select, take first element)
-    const priceRangeValue = priceRange
-      ? (Array.isArray(priceRange) ? priceRange[0] : priceRange)
+    // Parse priceRange (support multiple values: comma-separated or array)
+    const priceRangeList = priceRange
+      ? (Array.isArray(priceRange) ? priceRange : priceRange.split(',')).map(p => p.trim()).filter(Boolean)
       : null;
 
     // Parse minRating (optional)
@@ -141,7 +141,7 @@ export async function searchEstablishments(req, res, next) {
         city,
         categories: categoryList,
         cuisines: cuisineList,
-        priceRange: priceRangeValue,
+        priceRange: priceRangeList,
         minRating: minRatingValue,
         limit: limitValue,
         offset: finalOffset,
@@ -157,7 +157,7 @@ export async function searchEstablishments(req, res, next) {
         city,
         categories: categoryList,
         cuisines: cuisineList,
-        priceRange: priceRangeValue,
+        priceRange: priceRangeList,
         minRating: minRatingValue,
         limit: limitValue,
         offset: finalOffset,
@@ -234,6 +234,11 @@ export async function searchMap(req, res, next) {
       ? (Array.isArray(cuisines) ? cuisines : cuisines.split(',')).map(c => c.trim()).filter(Boolean)
       : null;
 
+    // Parse priceRange (support multiple values: comma-separated or array)
+    const priceRangeList = priceRange
+      ? (Array.isArray(priceRange) ? priceRange : priceRange.split(',')).map(p => p.trim()).filter(Boolean)
+      : null;
+
     const minRatingValue = minRating ? parseFloat(minRating) : null;
     if (minRatingValue && (isNaN(minRatingValue) || minRatingValue < 1 || minRatingValue > 5)) {
       throw new AppError('minRating must be between 1 and 5', 422, 'VALIDATION_ERROR');
@@ -255,7 +260,7 @@ export async function searchMap(req, res, next) {
       ...bounds,
       categories: categoryList,
       cuisines: cuisineList,
-      priceRange,
+      priceRange: priceRangeList,
       minRating: minRatingValue,
       hoursFilter: hours_filter,
       limit: limitValue,
