@@ -208,6 +208,7 @@ export async function searchMap(req, res, next) {
       cuisines,
       priceRange,
       minRating,
+      hours_filter,
       limit,
       search,
     } = req.query;
@@ -243,6 +244,12 @@ export async function searchMap(req, res, next) {
       throw new AppError('Invalid limit parameter', 422, 'VALIDATION_ERROR');
     }
 
+    // Validate hours filter
+    const validHoursFilters = ['until_22', 'until_morning', '24_hours'];
+    if (hours_filter && !validHoursFilters.includes(hours_filter)) {
+      throw new AppError(`Invalid hours_filter. Must be one of: ${validHoursFilters.join(', ')}`, 422, 'VALIDATION_ERROR');
+    }
+
     // Execute bounds search
     const result = await searchService.searchByBounds({
       ...bounds,
@@ -250,6 +257,7 @@ export async function searchMap(req, res, next) {
       cuisines: cuisineList,
       priceRange,
       minRating: minRatingValue,
+      hoursFilter: hours_filter,
       limit: limitValue,
       search: search?.trim() || null,
     });
