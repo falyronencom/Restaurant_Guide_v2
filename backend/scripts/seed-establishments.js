@@ -315,6 +315,7 @@ async function uploadEstablishmentMedia(client, establishmentId, config, interio
 
   let position = 0;
   let isPrimarySet = false;
+  let primaryImageUrl = null;
 
   // Upload interior photos
   for (let i = 0; i < interiorCount && i < interiorImages.length; i++) {
@@ -334,7 +335,10 @@ async function uploadEstablishmentMedia(client, establishmentId, config, interio
         [establishmentId, 'interior', urls.url, urls.thumbnail_url, urls.preview_url, position, !isPrimarySet]
       );
 
-      if (!isPrimarySet) isPrimarySet = true;
+      if (!isPrimarySet) {
+        primaryImageUrl = urls.preview_url;
+        isPrimarySet = true;
+      }
       position++;
     } catch (error) {
       console.error(`    ⚠️  Failed to upload interior photo ${i + 1}: ${error.message}`);
@@ -359,11 +363,22 @@ async function uploadEstablishmentMedia(client, establishmentId, config, interio
         [establishmentId, 'menu', urls.url, urls.thumbnail_url, urls.preview_url, position, !isPrimarySet && i === 0]
       );
 
-      if (!isPrimarySet && i === 0) isPrimarySet = true;
+      if (!isPrimarySet && i === 0) {
+        primaryImageUrl = urls.preview_url;
+        isPrimarySet = true;
+      }
       position++;
     } catch (error) {
       console.error(`    ⚠️  Failed to upload menu photo ${i + 1}: ${error.message}`);
     }
+  }
+
+  // Set primary_image_url for search card thumbnails
+  if (primaryImageUrl) {
+    await client.query(
+      'UPDATE establishments SET primary_image_url = $1 WHERE id = $2',
+      [primaryImageUrl, establishmentId]
+    );
   }
 }
 

@@ -215,12 +215,25 @@ async function createEstablishment(client, partnerId, config, index) {
  */
 async function addEstablishmentMedia(client, establishmentId, config, index) {
   const images = generatePlaceholderImages(index, config);
+  let primaryImageUrl = null;
 
   for (const image of images) {
     await client.query(
       `INSERT INTO establishment_media (establishment_id, type, url, thumbnail_url, preview_url, position, is_primary)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [establishmentId, image.type, image.url, image.thumbnail_url, image.preview_url, image.position, image.is_primary]
+    );
+
+    if (image.is_primary) {
+      primaryImageUrl = image.preview_url;
+    }
+  }
+
+  // Set primary_image_url for search card thumbnails
+  if (primaryImageUrl) {
+    await client.query(
+      'UPDATE establishments SET primary_image_url = $1 WHERE id = $2',
+      [primaryImageUrl, establishmentId]
     );
   }
 
