@@ -429,7 +429,7 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
     const offset = (page - 1) * effectiveLimit;
 
     // Fetch establishments
-    const establishments = await EstablishmentModel.getEstablishmentsByPartner(
+    const rawEstablishments = await EstablishmentModel.getEstablishmentsByPartner(
       partnerId,
       {
         status,
@@ -437,6 +437,14 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
         offset,
       },
     );
+
+    // Normalize moderation_notes: TEXT column stores JSON string, parse to object
+    const establishments = rawEstablishments.map(est => ({
+      ...est,
+      moderation_notes: typeof est.moderation_notes === 'string'
+        ? (() => { try { return JSON.parse(est.moderation_notes); } catch { return null; } })()
+        : (est.moderation_notes || null),
+    }));
 
     // Get total count for pagination metadata
     const total = await EstablishmentModel.countPartnerEstablishments(partnerId, status);
@@ -521,12 +529,18 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     const interiorPhotos = media.filter(m => m.type === 'interior').map(m => m.url);
     const menuPhotos = media.filter(m => m.type === 'menu').map(m => m.url);
 
+    // Normalize moderation_notes: TEXT column stores JSON string, parse to object
+    const moderationNotes = typeof establishment.moderation_notes === 'string'
+      ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return null; } })()
+      : (establishment.moderation_notes || null);
+
     // Convert numeric types from PostgreSQL strings to numbers
     return {
       ...establishment,
       latitude: establishment.latitude ? parseFloat(establishment.latitude) : establishment.latitude,
       longitude: establishment.longitude ? parseFloat(establishment.longitude) : establishment.longitude,
       average_rating: establishment.average_rating ? parseFloat(establishment.average_rating) : establishment.average_rating,
+      moderation_notes: moderationNotes,
       primary_photo: primaryMedia ? { url: primaryMedia.url, thumbnail_url: primaryMedia.thumbnail_url } : null,
       interior_photos: interiorPhotos,
       menu_photos: menuPhotos,
@@ -945,10 +959,10 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       );
     }
 
-    // Must be in 'draft' status to submit
-    if (establishment.status !== 'draft') {
+    // Must be in 'draft' or 'rejected' status to submit
+    if (!['draft', 'rejected'].includes(establishment.status)) {
       throw new AppError(
-        `Cannot submit establishment with status '${establishment.status}'. Only draft establishments can be submitted.`,
+        `Cannot submit establishment with status '${establishment.status}'. Only draft or rejected establishments can be submitted.`,
         400,
         'INVALID_STATUS_FOR_SUBMISSION',
       );

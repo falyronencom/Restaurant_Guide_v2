@@ -390,7 +390,12 @@ describe('establishmentService', () => {
 
       const result = await getPartnerEstablishments(partnerId);
 
-      expect(result.establishments).toEqual(mockEstablishments);
+      // Service normalizes moderation_notes (TEXT→object), so each item gets moderation_notes: null
+      const expectedEstablishments = mockEstablishments.map(est => ({
+        ...est,
+        moderation_notes: est.moderation_notes || null,
+      }));
+      expect(result.establishments).toEqual(expectedEstablishments);
       expect(result.meta).toEqual({
         total: 15,
         page: 1,
@@ -745,7 +750,7 @@ describe('establishmentService', () => {
       });
     });
 
-    test('should reject submission when status not draft', async () => {
+    test('should reject submission when status not draft or rejected', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         ...mockEstablishment,

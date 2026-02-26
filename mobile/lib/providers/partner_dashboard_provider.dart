@@ -173,6 +173,23 @@ class PartnerDashboardProvider with ChangeNotifier {
   }
 
   // ============================================================================
+  // Resubmit for Moderation
+  // ============================================================================
+
+  /// Resubmit a rejected establishment for moderation (rejected → pending)
+  Future<bool> resubmitForModeration(String id) async {
+    try {
+      await _partnerService.submitForModeration(id);
+      await loadEstablishments(); // Refresh list
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ============================================================================
   // Suspend / Resume / Delete
   // ============================================================================
 

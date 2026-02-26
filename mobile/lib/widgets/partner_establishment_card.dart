@@ -319,15 +319,63 @@ class PartnerEstablishmentCard extends StatelessWidget {
         break;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text(
-        statusText,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: statusColor,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: statusColor,
+            ),
+          ),
         ),
+        // Feedback section for rejected/suspended
+        if (establishment.status == EstablishmentStatus.rejected &&
+            establishment.hasModerationFeedback)
+          _buildFeedbackHint(
+            establishment.rejectionReason ?? 'Есть комментарии модератора',
+            _statusRejected,
+          ),
+        if (establishment.status == EstablishmentStatus.suspended &&
+            establishment.suspendReason != null)
+          _buildFeedbackHint(
+            establishment.suspendReason!,
+            _statusSuspended,
+          ),
+      ],
+    );
+  }
+
+  /// Build compact feedback hint below status badge
+  Widget _buildFeedbackHint(String text, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(right: 12, left: 12, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.info_outline, size: 14, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
