@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
@@ -467,18 +469,38 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// Build share button (Figma style - no padding)
   Widget _buildShareButton() {
     return GestureDetector(
-      onTap: () {
-        // TODO: Implement share functionality
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Поделиться')),
-        );
-      },
+      onTap: _shareEstablishment,
       child: const Icon(
         Icons.ios_share,
         color: _backgroundColor,
         size: 28,
       ),
     );
+  }
+
+  /// Share establishment info via native share sheet
+  void _shareEstablishment() {
+    if (_establishment == null) return;
+
+    final name = _establishment!.name;
+    final category = _establishment!.category.toLowerCase();
+    final address = '${_establishment!.address}, ${_establishment!.city}';
+
+    final buffer = StringBuffer();
+    buffer.writeln('$name — $category');
+    buffer.writeln('📍 $address');
+
+    if (_establishment!.phone != null && _establishment!.phone!.isNotEmpty) {
+      buffer.writeln('📞 ${_establishment!.phone}');
+    }
+
+    if (_establishment!.website != null && _establishment!.website!.isNotEmpty) {
+      buffer.writeln('🔗 ${_establishment!.website}');
+    }
+
+    buffer.writeln('\nНайдено в Restaurant Guide Belarus');
+
+    Share.share(buffer.toString());
   }
 
   /// Build favorite button
@@ -562,36 +584,87 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         const SizedBox(height: 8),
 
         // Phone
-        if (_establishment!.attributes != null &&
-            _establishment!.attributes!['phone'] != null)
-          GestureDetector(
-            onTap: () {
-              // TODO: Call phone
-            },
-            child: Text(
-              _establishment!.attributes!['phone'].toString(),
-              style: const TextStyle(
-                fontSize: 16,
-                color: _backgroundColor,
-              ),
+        if (_establishment!.phone != null &&
+            _establishment!.phone!.isNotEmpty)
+          Text(
+            _establishment!.phone!,
+            style: const TextStyle(
+              fontSize: 16,
+              color: _backgroundColor,
             ),
           ),
 
-        // Instagram
-        if (_establishment!.attributes != null &&
-            _establishment!.attributes!['instagram'] != null)
+        // Social link chip (Booking-style)
+        if (_establishment!.website != null &&
+            _establishment!.website!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              '@${_establishment!.attributes!['instagram']}',
-              style: const TextStyle(
-                fontSize: 16,
-                color: _backgroundColor,
-              ),
-            ),
+            padding: const EdgeInsets.only(top: 10),
+            child: _buildSocialChip(_establishment!.website!),
           ),
       ],
     );
+  }
+
+  /// Build social link chip (Booking-style — tappable, opens URL)
+  Widget _buildSocialChip(String url) {
+    final info = _parseSocialLink(url);
+    return GestureDetector(
+      onTap: () => _launchSocialUrl(url),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(info.$1, size: 16, color: _backgroundColor),
+            const SizedBox(width: 6),
+            Text(
+              info.$2,
+              style: const TextStyle(
+                fontSize: 14,
+                color: _backgroundColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Detect social platform from URL
+  (IconData, String) _parseSocialLink(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('instagram.com') || lower.contains('instagram')) {
+      return (Icons.camera_alt, 'Instagram');
+    }
+    if (lower.contains('facebook.com') || lower.contains('fb.com')) {
+      return (Icons.facebook, 'Facebook');
+    }
+    if (lower.contains('t.me') || lower.contains('telegram')) {
+      return (Icons.telegram, 'Telegram');
+    }
+    if (lower.contains('vk.com') || lower.contains('vkontakte')) {
+      return (Icons.groups, 'VK');
+    }
+    return (Icons.language, 'Сайт');
+  }
+
+  /// Launch social URL in external browser/app
+  Future<void> _launchSocialUrl(String url) async {
+    // Ensure URL has scheme
+    String fullUrl = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      fullUrl = 'https://$url';
+    }
+    final uri = Uri.parse(fullUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   /// Build status line (Open/Closed with time)

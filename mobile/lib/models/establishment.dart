@@ -59,6 +59,8 @@ class Establishment {
   final double? latitude;
   final double? longitude;
   final Map<String, dynamic>? workingHours;
+  final String? phone;
+  final String? website;
   final Map<String, dynamic>? attributes;
   final String status;
   final List<EstablishmentMedia>? media;
@@ -82,6 +84,8 @@ class Establishment {
     this.latitude,
     this.longitude,
     this.workingHours,
+    this.phone,
+    this.website,
     this.attributes,
     required this.status,
     this.media,
@@ -128,6 +132,8 @@ class Establishment {
           ? (json['longitude'] as num).toDouble()
           : null,
       workingHours: json['working_hours'] as Map<String, dynamic>?,
+      phone: json['phone'] as String?,
+      website: json['website'] as String?,
       attributes: json['attributes'] as Map<String, dynamic>?,
       status: json['status'] as String,
       media: json['media'] != null
@@ -166,6 +172,8 @@ class Establishment {
       'latitude': latitude,
       'longitude': longitude,
       'working_hours': workingHours,
+      'phone': phone,
+      'website': website,
       'attributes': attributes,
       'status': status,
       'media': media?.map((m) => m.toJson()).toList(),
@@ -262,6 +270,8 @@ class Establishment {
     double? latitude,
     double? longitude,
     Map<String, dynamic>? workingHours,
+    String? phone,
+    String? website,
     Map<String, dynamic>? attributes,
     String? status,
     List<EstablishmentMedia>? media,
@@ -285,6 +295,8 @@ class Establishment {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       workingHours: workingHours ?? this.workingHours,
+      phone: phone ?? this.phone,
+      website: website ?? this.website,
       attributes: attributes ?? this.attributes,
       status: status ?? this.status,
       media: media ?? this.media,

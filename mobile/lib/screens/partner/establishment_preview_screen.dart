@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
@@ -28,10 +29,12 @@ class _EstablishmentPreviewScreenState
   int _currentPhotoIndex = 0;
   final PageController _galleryController = PageController();
 
+  // Description collapsed by default
+  bool _isDescriptionExpanded = false;
+
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
-  static const Color _secondaryOrange = AppTheme.primaryOrange;
   static const Color _greenStatus = AppTheme.statusGreen;
   static const Color _greyBorder = AppTheme.strokeGrey;
 
@@ -53,6 +56,9 @@ class _EstablishmentPreviewScreenState
           children: [
             // Hero section with photo and overlay info
             _buildHeroSection(),
+
+            // Description section (shown when present)
+            _buildDescriptionSection(),
 
             // Menu section
             _buildMenuSection(),
@@ -138,7 +144,7 @@ class _EstablishmentPreviewScreenState
 
           // Info overlay
           Positioned(
-            bottom: 190,
+            bottom: 60,
             left: 17,
             right: 17,
             child: _buildInfoOverlay(),
@@ -146,7 +152,7 @@ class _EstablishmentPreviewScreenState
 
           // Rating badge (placeholder)
           Positioned(
-            top: 370,
+            top: 500,
             right: 24,
             child: _buildRatingBadge(),
           ),
@@ -331,7 +337,7 @@ class _EstablishmentPreviewScreenState
           data.name ?? 'Название заведения',
           style: TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
-            fontSize: 40,
+            fontSize: 50,
             fontWeight: FontWeight.w400,
             color: _backgroundColor,
           ),
@@ -387,8 +393,133 @@ class _EstablishmentPreviewScreenState
               color: _backgroundColor,
             ),
           ),
+
+        // Social link chip
+        if (data.instagram != null && data.instagram!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: _buildSocialChip(data.instagram!),
+          ),
       ],
     );
+  }
+
+  /// Build collapsible description section (matches detail_screen.dart)
+  Widget _buildDescriptionSection() {
+    final description = data.description;
+    if (description == null || description.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tappable header
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isDescriptionExpanded = !_isDescriptionExpanded;
+              });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  Text(
+                    'Описание',
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplayFamily,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w400,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AnimatedRotation(
+                    turns: _isDescriptionExpanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 28,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Collapsible body
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _isDescriptionExpanded
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black87,
+                        height: 1.5,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build social link chip (Booking-style — visual only in preview)
+  Widget _buildSocialChip(String url) {
+    final info = _parseSocialLink(url);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(info.$1, size: 16, color: _backgroundColor),
+          const SizedBox(width: 6),
+          Text(
+            info.$2,
+            style: const TextStyle(
+              fontSize: 14,
+              color: _backgroundColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Detect social platform from URL
+  (IconData, String) _parseSocialLink(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('instagram.com') || lower.contains('instagram')) {
+      return (Icons.camera_alt, 'Instagram');
+    }
+    if (lower.contains('facebook.com') || lower.contains('fb.com')) {
+      return (Icons.facebook, 'Facebook');
+    }
+    if (lower.contains('t.me') || lower.contains('telegram')) {
+      return (Icons.telegram, 'Telegram');
+    }
+    if (lower.contains('vk.com') || lower.contains('vkontakte')) {
+      return (Icons.groups, 'VK');
+    }
+    return (Icons.language, 'Сайт');
   }
 
   /// Build status line (Open/Closed with time)
@@ -617,7 +748,7 @@ class _EstablishmentPreviewScreenState
 
   /// Build attributes section
   Widget _buildAttributesSection() {
-    // Map attribute IDs to display info
+    // Map attribute IDs to display info (matching detail_screen SVG approach)
     final amenities = data.attributes.map((id) {
       final item = AttributeOptions.items.firstWhere(
         (a) => a.id == id,
@@ -625,7 +756,7 @@ class _EstablishmentPreviewScreenState
       );
       return {
         'name': item.name,
-        'icon': _getAttributeIcon(id),
+        'svg': _getAttributeSvg(id),
       };
     }).toList();
 
@@ -674,7 +805,7 @@ class _EstablishmentPreviewScreenState
                   ),
                   child: _buildAmenityItem(
                     amenity['name'] as String,
-                    amenity['icon'] as IconData,
+                    amenity['svg'] as String,
                   ),
                 );
               },
@@ -685,67 +816,51 @@ class _EstablishmentPreviewScreenState
     );
   }
 
-  /// Get icon for attribute
-  IconData _getAttributeIcon(String id) {
+  /// Get SVG file name for attribute (matches detail_screen.dart mapping)
+  String _getAttributeSvg(String id) {
     switch (id) {
       case 'delivery':
-        return Icons.delivery_dining;
+        return 'Доставка еды';
       case 'wifi':
-        return Icons.wifi;
+        return 'Wifi';
       case 'banquets':
-        return Icons.celebration;
+        return 'Банкет';
       case 'terrace':
-        return Icons.deck;
+        return 'Терасса';
       case 'smoking':
-        return Icons.smoking_rooms;
+        return 'Курение';
       case 'kids':
-        return Icons.child_friendly;
+        return 'Детская зона';
       case 'pets':
-        return Icons.pets;
+        return 'Животные';
       case 'parking':
-        return Icons.local_parking;
+        return 'Парковка';
+      case 'live_music':
+        return 'Живая музыка';
       default:
-        return Icons.check_circle;
+        return 'Доставка еды';
     }
   }
 
-  /// Build amenity item (icon in circle with label)
-  Widget _buildAmenityItem(String label, IconData icon) {
+  /// Build amenity item (SVG badge with label — matches detail_screen.dart)
+  Widget _buildAmenityItem(String label, String svgFileName) {
     return Column(
       children: [
-        // Circle with icon
-        Container(
+        // SVG is a full circle badge with icon inside
+        SvgPicture.asset(
+          'assets/icons/$svgFileName.svg',
           width: 80,
           height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: _secondaryOrange.withValues(alpha: 0.3),
-              width: 2,
-            ),
-          ),
-          child: Center(
-            child: Icon(
-              icon,
-              size: 36,
-              color: _secondaryOrange,
-            ),
-          ),
         ),
         const SizedBox(height: 8),
         // Label
-        SizedBox(
-          width: 80,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppTheme.textPrimary,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 15,
+            color: AppTheme.textPrimary,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
