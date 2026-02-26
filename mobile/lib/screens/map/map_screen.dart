@@ -8,6 +8,7 @@ import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 
 /// Map screen displaying establishments on Yandex Map
@@ -45,6 +46,9 @@ class _MapScreenState extends State<MapScreen> {
   bool _isEmpty = false;
   String? _errorMessage;
   final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
+
+  /// Track last known city to detect changes when returning to map tab
+  String? _lastCity;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +264,43 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _initMarkers();
+    // Listen for city changes to re-center map when user switches city
+    // and returns to the map tab
+    final provider = context.read<EstablishmentsProvider>();
+    _lastCity = provider.selectedCity;
+    provider.addListener(_onProviderChanged);
+  }
+
+  @override
+  void dispose() {
+    context.read<EstablishmentsProvider>().removeListener(_onProviderChanged);
+    super.dispose();
+  }
+
+  /// React to provider changes — fly to new city when selectedCity changes
+  void _onProviderChanged() {
+    final provider = context.read<EstablishmentsProvider>();
+    final currentCity = provider.selectedCity;
+    if (currentCity != _lastCity && _mapController != null) {
+      _lastCity = currentCity;
+      // Animate camera to new city center
+      final Point target;
+      if (currentCity != null) {
+        final (lat, lon) = CityOptions.coordinatesFor(currentCity);
+        target = Point(latitude: lat, longitude: lon);
+      } else {
+        target = _defaultCenter;
+      }
+      _mapController!.moveCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: target, zoom: _defaultZoom),
+        ),
+        animation: const MapAnimation(
+          type: MapAnimationType.smooth,
+          duration: 1.0,
+        ),
+      );
+    }
   }
 
   /// Pre-generate marker bitmaps (open + closed variants)
@@ -272,7 +313,10 @@ class _MapScreenState extends State<MapScreen> {
   void _onMapCreated(YandexMapController controller) async {
     _mapController = controller;
 
-    // Determine initial position: focused establishment or default (Minsk)
+    // Determine initial position priority:
+    // 1. Focused establishment → center on it (zoom 15)
+    // 2. Selected city from provider → center on city (zoom 13)
+    // 3. Fallback → Minsk default (zoom 13)
     final focused = widget.focusedEstablishment;
     final Point initialTarget;
     final double initialZoom;
@@ -285,7 +329,14 @@ class _MapScreenState extends State<MapScreen> {
       );
       initialZoom = 15.0; // Closer zoom for focused view
     } else {
-      initialTarget = _defaultCenter;
+      // Check selected city from provider
+      final selectedCity = context.read<EstablishmentsProvider>().selectedCity;
+      if (selectedCity != null) {
+        final (lat, lon) = CityOptions.coordinatesFor(selectedCity);
+        initialTarget = Point(latitude: lat, longitude: lon);
+      } else {
+        initialTarget = _defaultCenter;
+      }
       initialZoom = _defaultZoom;
     }
 
@@ -597,10 +648,20 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _goToDefaultLocation() {
+    // Use selected city center if available, otherwise Minsk default
+    final selectedCity = context.read<EstablishmentsProvider>().selectedCity;
+    final Point target;
+    if (selectedCity != null) {
+      final (lat, lon) = CityOptions.coordinatesFor(selectedCity);
+      target = Point(latitude: lat, longitude: lon);
+    } else {
+      target = _defaultCenter;
+    }
+
     _mapController?.moveCamera(
       CameraUpdate.newCameraPosition(
-        const CameraPosition(
-          target: _defaultCenter,
+        CameraPosition(
+          target: target,
           zoom: _defaultZoom,
         ),
       ),
