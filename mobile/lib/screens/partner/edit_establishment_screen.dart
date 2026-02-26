@@ -152,6 +152,17 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Moderation feedback banner (rejected/suspended)
+                        if (establishment.status == EstablishmentStatus.rejected &&
+                            establishment.hasModerationFeedback)
+                          _buildModerationFeedbackBanner(establishment),
+                        if (establishment.status == EstablishmentStatus.suspended)
+                          _buildSuspendedBanner(establishment),
+
+                        // Resubmit button for rejected establishments
+                        if (establishment.status == EstablishmentStatus.rejected)
+                          _buildResubmitButton(context, establishment),
+
                         // Information section
                         _buildSectionTitle('Информация'),
                         const SizedBox(height: 8),
@@ -204,6 +215,243 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         ],
       ),
     );
+  }
+
+  // ============================================================================
+  // Moderation feedback banners
+  // ============================================================================
+
+  static const Color _rejectedColor = Color(0xFFFF3B30);
+  static const Color _suspendedColor = Color(0xFF8E8E93);
+
+  /// Moderation feedback banner for rejected establishments
+  Widget _buildModerationFeedbackBanner(PartnerEstablishment establishment) {
+    final reason = establishment.rejectionReason;
+    final fieldFeedback = establishment.fieldFeedback;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _rejectedColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(color: _rejectedColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(Icons.info_outline, size: 20, color: _rejectedColor),
+              const SizedBox(width: 8),
+              Text(
+                'Комментарии модератора',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: _rejectedColor,
+                ),
+              ),
+            ],
+          ),
+
+          // General reason
+          if (reason != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              reason,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ],
+
+          // Per-field feedback
+          if (fieldFeedback != null && fieldFeedback.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...fieldFeedback.entries.map((entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_fieldLabel(entry.key)}: ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: _rejectedColor.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      entry.value,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Banner for suspended establishments
+  Widget _buildSuspendedBanner(PartnerEstablishment establishment) {
+    final reason = establishment.suspendReason;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _suspendedColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(color: _suspendedColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.block, size: 20, color: _suspendedColor),
+              const SizedBox(width: 8),
+              Text(
+                'Заведение приостановлено',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: _suspendedColor,
+                ),
+              ),
+            ],
+          ),
+          if (reason != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              reason,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            'Редактирование недоступно. Обратитесь в поддержку для восстановления.',
+            style: TextStyle(
+              fontSize: 13,
+              color: _suspendedColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Map field keys to Russian labels for moderation feedback
+  static String _fieldLabel(String key) {
+    const labels = {
+      'name': 'Название',
+      'description': 'Описание',
+      'address': 'Адрес',
+      'phone': 'Телефон',
+      'email': 'Email',
+      'website': 'Сайт',
+      'categories': 'Категория',
+      'cuisines': 'Кухня',
+      'working_hours': 'Время работы',
+      'media': 'Медиа',
+      'price_range': 'Ценовая категория',
+      'attributes': 'Удобства',
+    };
+    return labels[key] ?? key;
+  }
+
+  /// Build resubmit button for rejected establishments
+  Widget _buildResubmitButton(BuildContext context, PartnerEstablishment establishment) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => _handleResubmit(context, establishment),
+          icon: const Icon(Icons.send, size: 18),
+          label: const Text('Отправить повторно на модерацию'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryOrange,
+            foregroundColor: AppTheme.textOnPrimary,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Handle resubmit action
+  Future<void> _handleResubmit(BuildContext context, PartnerEstablishment establishment) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final provider = context.read<PartnerDashboardProvider>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _backgroundColor,
+        title: const Text('Повторная модерация'),
+        content: const Text(
+          'Вы уверены, что хотите отправить заведение повторно на модерацию?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Отправить',
+              style: TextStyle(color: AppTheme.primaryOrange),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final success = await provider.resubmitForModeration(establishment.id);
+
+    if (success) {
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Заведение отправлено на модерацию'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.statusGreen,
+        ),
+      );
+      navigator.pop(); // Return to dashboard
+    } else {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(provider.error ?? 'Ошибка отправки'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   /// Build section title

@@ -301,6 +301,7 @@ export const getEstablishmentsByPartner = async (partnerId, filters = {}) => {
       e.created_at,
       e.updated_at,
       e.published_at,
+      e.moderation_notes,
       (
         SELECT json_build_object(
           'url', url,
@@ -556,8 +557,8 @@ export const updateEstablishment = async (establishmentId, updates) => {
 };
 
 /**
- * Submit establishment for moderation (change status from draft to pending)
- * 
+ * Submit establishment for moderation (change status from draft/rejected to pending)
+ *
  * @param {string} establishmentId - UUID of the establishment
  * @returns {Promise<Object>} Updated establishment object
  * @throws {Error} If establishment not found or database operation fails
@@ -565,12 +566,12 @@ export const updateEstablishment = async (establishmentId, updates) => {
 export const submitForModeration = async (establishmentId) => {
   const query = `
     UPDATE establishments
-    SET 
+    SET
       status = 'pending',
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
-      AND status = 'draft'
-    RETURNING 
+      AND status IN ('draft', 'rejected')
+    RETURNING
       id,
       partner_id,
       name,
@@ -583,7 +584,7 @@ export const submitForModeration = async (establishmentId) => {
     const result = await pool.query(query, [establishmentId]);
 
     if (result.rows.length === 0) {
-      throw new Error('Establishment not found or not in draft status');
+      throw new Error('Establishment not found or not in draft/rejected status');
     }
 
     logger.info('Establishment submitted for moderation', {

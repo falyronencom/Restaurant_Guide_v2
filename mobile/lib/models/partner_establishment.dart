@@ -3,6 +3,8 @@
 /// Phase 5.2 - Partner Dashboard
 library partner_establishment;
 
+import 'dart:convert';
+
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
 // =============================================================================
@@ -73,6 +75,23 @@ List<String> _parseAttributes(dynamic value) {
         .toList();
   }
   return [];
+}
+
+/// Parse moderation_notes: handles null, Map, and JSON String
+Map<String, dynamic>? _parseModerationNotes(dynamic value) {
+  if (value == null) return null;
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  if (value is String && value.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // Not valid JSON — return as simple reason
+      return {'reason': value};
+    }
+  }
+  return null;
 }
 
 /// Safely parse double from dynamic value (handles String and num)
@@ -190,7 +209,8 @@ class PartnerEstablishment {
   final String id;
   final String name;
   final EstablishmentStatus status;
-  final String? statusMessage;       // Rejection reason if rejected
+  final String? statusMessage;       // Legacy field (never populated by backend)
+  final Map<String, dynamic>? moderationNotes; // Parsed moderation feedback from admin
   final String? primaryImageUrl;
   final List<String> categories;
   final List<String> cuisineTypes;
@@ -228,6 +248,7 @@ class PartnerEstablishment {
     required this.name,
     required this.status,
     this.statusMessage,
+    this.moderationNotes,
     this.primaryImageUrl,
     this.categories = const [],
     this.cuisineTypes = const [],
@@ -298,6 +319,39 @@ class PartnerEstablishment {
   /// Check if this is a premium tier (dark card background)
   bool get isPremium => subscriptionTier == 'Премиум';
 
+  // ===========================================================================
+  // Moderation feedback getters
+  // ===========================================================================
+
+  /// General rejection reason from moderator
+  String? get rejectionReason {
+    final reason = moderationNotes?['reason'];
+    return (reason is String && reason.isNotEmpty) ? reason : null;
+  }
+
+  /// Per-field feedback from moderator (excluding meta-keys)
+  Map<String, String>? get fieldFeedback {
+    if (moderationNotes == null) return null;
+    final metaKeys = {'reason', 'suspend_reason', 'suspended_at'};
+    final fields = <String, String>{};
+    for (final entry in moderationNotes!.entries) {
+      if (!metaKeys.contains(entry.key) && entry.value is String && (entry.value as String).isNotEmpty) {
+        fields[entry.key] = entry.value as String;
+      }
+    }
+    return fields.isNotEmpty ? fields : null;
+  }
+
+  /// Suspension reason
+  String? get suspendReason {
+    final reason = moderationNotes?['suspend_reason'];
+    return (reason is String && reason.isNotEmpty) ? reason : null;
+  }
+
+  /// Whether any moderation feedback is available
+  bool get hasModerationFeedback =>
+      rejectionReason != null || fieldFeedback != null || suspendReason != null;
+
   factory PartnerEstablishment.fromJson(Map<String, dynamic> json) {
     // Extract primary image URL from different possible formats
     String? primaryImage;
@@ -327,6 +381,7 @@ class PartnerEstablishment {
       name: json['name'] as String? ?? '',
       status: _parseStatus(json['status'] as String?),
       statusMessage: json['status_message'] as String?,
+      moderationNotes: _parseModerationNotes(json['moderation_notes']),
       primaryImageUrl: primaryImage,
       // Backend uses 'categories' (array), not 'category'
       categories: (json['categories'] as List<dynamic>?)
@@ -386,6 +441,7 @@ class PartnerEstablishment {
     'name': name,
     'status': status.name,
     if (statusMessage != null) 'status_message': statusMessage,
+    if (moderationNotes != null) 'moderation_notes': moderationNotes,
     if (primaryImageUrl != null) 'primary_image_url': primaryImageUrl,
     'category': categories,
     'cuisine_type': cuisineTypes,
