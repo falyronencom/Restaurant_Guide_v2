@@ -114,6 +114,8 @@ export const getEstablishmentReviews = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = Math.min(parseInt(req.query.limit) || 10, 50); // Cap at 50
   const sort = req.query.sort || 'newest';
+  const dateFrom = req.query.date_from || undefined;
+  const dateTo = req.query.date_to || undefined;
 
   // Validate page and limit are positive integers
   if (page < 1 || limit < 1) {
@@ -123,11 +125,13 @@ export const getEstablishmentReviews = asyncHandler(async (req, res) => {
     });
   }
 
-  // Call service layer to fetch reviews with pagination
+  // Call service layer to fetch reviews with pagination and optional date range
   const result = await ReviewService.getEstablishmentReviews(id, {
     page,
     limit,
     sort,
+    dateFrom,
+    dateTo,
   });
 
   // Return 200 OK with reviews and pagination metadata

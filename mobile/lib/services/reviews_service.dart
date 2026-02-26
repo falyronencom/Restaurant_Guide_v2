@@ -26,6 +26,8 @@ class ReviewsService {
     int page = 1,
     int perPage = 10,
     String? sort,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     try {
       final response = await _apiClient.get(
@@ -34,6 +36,8 @@ class ReviewsService {
           'page': page,
           'per_page': perPage,
           if (sort != null) 'sort': sort,
+          if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
+          if (dateTo != null) 'date_to': dateTo.toIso8601String(),
         },
       );
 

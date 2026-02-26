@@ -120,6 +120,8 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
     offset = 0,
     sortBy = 'newest',
     includeDeleted = false,
+    dateFrom,
+    dateTo,
   } = options;
 
   // Determine sort order based on sortBy parameter
@@ -130,34 +132,54 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
     orderClause = 'r.rating ASC, r.created_at DESC';
   }
 
+  // Build dynamic WHERE conditions and params
+  const conditions = ['r.establishment_id = $1'];
+  const values = [establishmentId];
+  let paramIdx = 2;
+
+  if (!includeDeleted) {
+    conditions.push('r.is_deleted = false');
+  }
+  if (dateFrom) {
+    conditions.push(`r.created_at >= $${paramIdx}`);
+    values.push(dateFrom);
+    paramIdx++;
+  }
+  if (dateTo) {
+    conditions.push(`r.created_at <= $${paramIdx}`);
+    values.push(dateTo);
+    paramIdx++;
+  }
+
+  values.push(limit, offset);
+
   const query = `
-    SELECT 
-      r.id, 
-      r.user_id, 
-      r.establishment_id, 
-      r.rating, 
-      COALESCE(r.content, r.text) as content, 
+    SELECT
+      r.id,
+      r.user_id,
+      r.establishment_id,
+      r.rating,
+      COALESCE(r.content, r.text) as content,
       r.partner_response,
       r.partner_response_at,
       r.partner_responder_id,
       r.is_deleted,
       r.is_visible,
       r.is_edited,
-      r.created_at, 
+      r.created_at,
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
       u.avatar_url as author_avatar
     FROM reviews r
     JOIN users u ON r.user_id = u.id
-    WHERE r.establishment_id = $1
-    ${includeDeleted ? '' : 'AND r.is_deleted = false'}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY ${orderClause}
-    LIMIT $2 OFFSET $3
+    LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
   `;
 
   try {
-    const result = await pool.query(query, [establishmentId, limit, offset]);
+    const result = await pool.query(query, values);
     return result.rows;
   } catch (error) {
     logger.error('Error finding reviews by establishment', {
@@ -176,16 +198,37 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
  * @param {boolean} includeDeleted - Whether to include soft-deleted reviews (default: false)
  * @returns {Promise<number>} Total count of reviews
  */
-export const countReviewsByEstablishment = async (establishmentId, includeDeleted = false) => {
+export const countReviewsByEstablishment = async (establishmentId, options = {}) => {
+  const { includeDeleted = false, dateFrom, dateTo } = typeof options === 'boolean'
+    ? { includeDeleted: options }   // backwards-compat: old callers pass boolean
+    : options;
+
+  const conditions = ['establishment_id = $1'];
+  const values = [establishmentId];
+  let paramIdx = 2;
+
+  if (!includeDeleted) {
+    conditions.push('is_deleted = false');
+  }
+  if (dateFrom) {
+    conditions.push(`created_at >= $${paramIdx}`);
+    values.push(dateFrom);
+    paramIdx++;
+  }
+  if (dateTo) {
+    conditions.push(`created_at <= $${paramIdx}`);
+    values.push(dateTo);
+    paramIdx++;
+  }
+
   const query = `
     SELECT COUNT(*) as count
     FROM reviews
-    WHERE establishment_id = $1
-    ${includeDeleted ? '' : 'AND is_deleted = false'}
+    WHERE ${conditions.join(' AND ')}
   `;
 
   try {
-    const result = await pool.query(query, [establishmentId]);
+    const result = await pool.query(query, values);
     return parseInt(result.rows[0].count, 10);
   } catch (error) {
     logger.error('Error counting reviews by establishment', {
