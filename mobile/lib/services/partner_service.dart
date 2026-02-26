@@ -106,6 +106,24 @@ class PartnerService {
   }
 
   // ============================================================================
+  // Submit for Moderation
+  // ============================================================================
+
+  /// Submit an establishment for moderation (draft/rejected → pending)
+  Future<void> submitForModeration(String id) async {
+    try {
+      final response = await _apiClient.dio.post(
+        '/api/v1/partner/establishments/$id/submit',
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Не удалось отправить на модерацию');
+      }
+    } catch (e) {
+      throw Exception('Ошибка отправки: $e');
+    }
+  }
+
+  // ============================================================================
   // Suspend / Resume / Delete
   // ============================================================================
 
