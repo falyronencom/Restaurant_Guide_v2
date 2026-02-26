@@ -1,10 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/bar_chart_widget.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/distribution_chart.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/timeline_chart.dart';
+
+// Status labels: English → Russian
+const _statusToRussian = {
+  'active': 'Активные',
+  'draft': 'Черновик',
+  'pending': 'На модерации',
+  'suspended': 'Приостановлен',
+  'archived': 'Архив',
+  'rejected': 'Отклонён',
+};
+
+// Category labels: English → Russian (matches mobile/establishment.dart)
+const _categoryToRussian = {
+  'restaurant': 'Ресторан',
+  'cafe': 'Кофейня',
+  'fast_food': 'Фаст-фуд',
+  'pizzeria': 'Пиццерия',
+  'bar': 'Бар',
+  'pub': 'Паб',
+  'bakery': 'Пекарня',
+  'confectionery': 'Кондитерская',
+  'karaoke': 'Караоке',
+  'canteen': 'Столовая',
+  'hookah_bar': 'Кальянная',
+  'hookah_lounge': 'Кальянная',
+  'bowling': 'Боулинг',
+  'billiards': 'Бильярд',
+  'nightclub': 'Клуб',
+};
+
+/// Translate label using a mapping, return as-is if no match
+List<DistributionItem> _translateLabels(
+  List<DistributionItem> data,
+  Map<String, String> mapping,
+) {
+  return data
+      .map((item) => DistributionItem(
+            label: mapping[item.label.toLowerCase()] ?? item.label,
+            count: item.count,
+            percentage: item.percentage,
+          ))
+      .toList();
+}
 
 /// Analytics tab: Заведения
 class EstablishmentsAnalyticsTab extends StatefulWidget {
@@ -88,6 +131,15 @@ class _EstablishmentsAnalyticsTabState
                 // Distribution charts row
                 LayoutBuilder(
                   builder: (context, constraints) {
+                    final statusData = _translateLabels(
+                      provider.data!.statusDistribution,
+                      _statusToRussian,
+                    );
+                    final categoryData = _translateLabels(
+                      provider.data!.categoryDistribution,
+                      _categoryToRussian,
+                    );
+
                     if (constraints.maxWidth > 900) {
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,7 +147,7 @@ class _EstablishmentsAnalyticsTabState
                           Expanded(
                             child: DistributionChart(
                               title: 'По статусу',
-                              data: provider.data!.statusDistribution,
+                              data: statusData,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -107,9 +159,9 @@ class _EstablishmentsAnalyticsTabState
                           ),
                           const SizedBox(width: 16),
                           Expanded(
-                            child: HorizontalBarChartWidget(
+                            child: _CategoryProgressList(
                               title: 'По категориям',
-                              data: provider.data!.categoryDistribution,
+                              data: categoryData,
                             ),
                           ),
                         ],
@@ -119,7 +171,7 @@ class _EstablishmentsAnalyticsTabState
                       children: [
                         DistributionChart(
                           title: 'По статусу',
-                          data: provider.data!.statusDistribution,
+                          data: statusData,
                         ),
                         const SizedBox(height: 16),
                         DistributionChart(
@@ -127,9 +179,9 @@ class _EstablishmentsAnalyticsTabState
                           data: provider.data!.cityDistribution,
                         ),
                         const SizedBox(height: 16),
-                        HorizontalBarChartWidget(
+                        _CategoryProgressList(
                           title: 'По категориям',
-                          data: provider.data!.categoryDistribution,
+                          data: categoryData,
                         ),
                       ],
                     );
@@ -237,6 +289,161 @@ class _ErrorState extends StatelessWidget {
               onPressed: onRetry,
               child: const Text('Повторить'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Clean progress-bar list for category distribution.
+/// Each row: category name | progress bar | count.
+/// Sorted by count descending (data comes pre-sorted from backend).
+class _CategoryProgressList extends StatelessWidget {
+  final String title;
+  final List<DistributionItem> data;
+
+  const _CategoryProgressList({
+    required this.title,
+    required this.data,
+  });
+
+  static const _barColor = Color(0xFFF06B32);
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty || data.every((d) => d.count == 0)) {
+      return _buildEmptyState();
+    }
+
+    final maxCount = data.fold<int>(0, (m, d) => d.count > m ? d.count : m);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...data.map((item) => _buildRow(item, maxCount)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRow(DistributionItem item, int maxCount) {
+    final fraction = maxCount > 0 ? item.count / maxCount : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          // Category name
+          SizedBox(
+            width: 110,
+            child: Text(
+              item.label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[700],
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Progress bar
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Stack(
+                  children: [
+                    // Background track
+                    Container(
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    // Filled bar
+                    Container(
+                      height: 22,
+                      width: constraints.maxWidth * fraction,
+                      decoration: BoxDecoration(
+                        color: _barColor.withValues(
+                          alpha: 0.6 + 0.4 * fraction,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Count value
+          SizedBox(
+            width: 36,
+            child: Text(
+              '${item.count}',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      height: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.bar_chart, size: 40, color: Colors.grey[300]),
+            const SizedBox(height: 8),
+            Text(title,
+                style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+            const SizedBox(height: 4),
+            Text('Нет данных',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400])),
           ],
         ),
       ),
