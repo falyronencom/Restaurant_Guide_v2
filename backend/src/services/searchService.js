@@ -240,10 +240,15 @@ export async function searchByRadius({
     paramIndex++;
   }
 
-  // Add price range filter
+  // Add price range filter (supports single value or array)
   if (priceRange) {
-    conditions.push(`e.price_range = $${paramIndex}`);
-    params.push(priceRange);
+    if (Array.isArray(priceRange)) {
+      conditions.push(`e.price_range = ANY($${paramIndex}::varchar[])`);
+      params.push(priceRange);
+    } else {
+      conditions.push(`e.price_range = $${paramIndex}`);
+      params.push(priceRange);
+    }
     paramIndex++;
   }
 
@@ -506,10 +511,15 @@ export async function searchWithoutLocation({
     paramIndex++;
   }
 
-  // Add price range filter
+  // Add price range filter (supports single value or array)
   if (priceRange) {
-    conditions.push(`e.price_range = $${paramIndex}`);
-    params.push(priceRange);
+    if (Array.isArray(priceRange)) {
+      conditions.push(`e.price_range = ANY($${paramIndex}::varchar[])`);
+      params.push(priceRange);
+    } else {
+      conditions.push(`e.price_range = $${paramIndex}`);
+      params.push(priceRange);
+    }
     paramIndex++;
   }
 
@@ -720,10 +730,15 @@ export async function searchByBounds({
     paramIndex++;
   }
 
-  // Add price range filter
+  // Add price range filter (supports single value or array)
   if (priceRange) {
-    conditions.push(`e.price_range = $${paramIndex}`);
-    params.push(priceRange);
+    if (Array.isArray(priceRange)) {
+      conditions.push(`e.price_range = ANY($${paramIndex}::varchar[])`);
+      params.push(priceRange);
+    } else {
+      conditions.push(`e.price_range = $${paramIndex}`);
+      params.push(priceRange);
+    }
     paramIndex++;
   }
 
