@@ -6,6 +6,13 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 26, 2026 — Seed Establishment Visual Quality Fixes
+- **Fix 1**: `primary_image_url` теперь заполняется в обоих seed-скриптах (placeholder + Cloudinary) — карточки поиска показывают изображения
+- **Fix 3**: Разброс координат уменьшен с ±0.05° (~5.5 км) до ±0.005° (~500 м) — пины на карте попадают в застроенную зону
+- Файлы: `seed-establishments-placeholder.js`, `seed-establishments.js`, `content-templates.js`
+- Верификация: DB-запросы (77/77 URL заполнены, max offset 0.00496°), API endpoint подтверждён
+- Commit: `801b3fc`
+
 ### Февраль 24, 2026 — Pre-Existing Test Failures Fix (92 failures → 0)
 - **Migration 011**: sync 4 missing columns in test DB (`location`, `average_check_byn`, `is_24_hours`, `primary_image_url`) — root cause of 81 cascade failures
 - **Mock fixes**: searchController (`searchWithoutLocation`), favoriteService (`updateEstablishmentFavoriteCount`), establishmentService (`MediaModel`, `PartnerDocumentsModel`, `ReviewModel`)
