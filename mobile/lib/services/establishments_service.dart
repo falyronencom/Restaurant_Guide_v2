@@ -152,6 +152,7 @@ class EstablishmentsService {
   /// [cuisines] - Filter by cuisines (API values, e.g., 'italian', 'japanese')
   /// [priceRange] - Filter by price range (e.g., '$', '$$', '$$$') - single value
   /// [minRating] - Minimum average rating (1-5)
+  /// [hoursFilter] - Filter by working hours (until_22, until_morning, 24_hours)
   Future<List<Establishment>> searchByMapBounds({
     required double north,
     required double south,
@@ -163,6 +164,7 @@ class EstablishmentsService {
     String? priceRange,
     double? minRating,
     String? search,
+    String? hoursFilter,
   }) async {
     try {
       final queryParams = <String, dynamic>{
@@ -188,6 +190,9 @@ class EstablishmentsService {
       }
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
+      }
+      if (hoursFilter != null && hoursFilter.isNotEmpty) {
+        queryParams['hours_filter'] = hoursFilter;
       }
 
       final response = await _apiClient.get(
