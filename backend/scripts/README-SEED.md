@@ -109,10 +109,15 @@ Mode: CLEAN (delete existing seed data)
 
 ```
 backend/scripts/
-├── seed-establishments.js          # Main seed script
+├── seed-establishments.js          # Main establishment seed (Cloudinary mode)
+├── seed-establishments-placeholder.js  # Placeholder seed (no Cloudinary)
+├── seed-reviews.js                 # Seed reviews & users (150-250 reviews)
+├── clear-establishments.js         # Remove seed establishments
+├── clear-reviews.js                # Remove seed reviews & users
 ├── seed-data/
 │   ├── establishments-config.js    # 75 establishment templates
-│   └── content-templates.js        # Russian text generation
+│   ├── content-templates.js        # Russian text generation
+│   └── reviews-config.js           # 12 user profiles, review templates
 ├── seed-images/
 │   ├── interiors/                  # Interior photos (18 provided)
 │   ├── food/                       # Food photos (14 provided)
@@ -624,11 +629,96 @@ WHERE email = 'seed.data.generator@restaurantguide.by';
 
 ---
 
+## Reviews & Users Seed (v2.1)
+
+### Overview
+
+Completes the seed ecosystem by adding the human activity layer — reviews and users
+that make the platform feel alive. Creates 12 seed users and 150-250 reviews with
+partner responses across the 75 seed establishments.
+
+### Quick Start
+
+```bash
+# Seed reviews (requires seed establishments to exist)
+npm run seed:reviews
+
+# Clear seed reviews and users only
+npm run clear:reviews
+
+# Full database reset (establishments + reviews)
+npm run db:reset
+```
+
+### npm Scripts
+
+| Command | Action |
+|---------|--------|
+| `npm run seed:reviews` | Create seed users + reviews |
+| `npm run clear:reviews` | Remove seed reviews + users |
+| `npm run db:reset` | Full cycle: clear all → seed establishments → seed reviews |
+
+### Seed Users (12 accounts)
+
+All seed users share password `SeedUser2026!` and email pattern `seed.user.N@restaurantguide.by`.
+
+| # | Name | Email |
+|---|------|-------|
+| 1 | Анна Петрова | seed.user.1@restaurantguide.by |
+| 2 | Дмитрий Козлов | seed.user.2@restaurantguide.by |
+| 3 | Елена Новикова | seed.user.3@restaurantguide.by |
+| 4 | Сергей Морозов | seed.user.4@restaurantguide.by |
+| 5 | Ольга Васильева | seed.user.5@restaurantguide.by |
+| 6 | Александр Лукашевич | seed.user.6@restaurantguide.by |
+| 7 | Наталья Соколова | seed.user.7@restaurantguide.by |
+| 8 | Иван Жуковский | seed.user.8@restaurantguide.by |
+| 9 | Мария Карпович | seed.user.9@restaurantguide.by |
+| 10 | Павел Шевченко | seed.user.10@restaurantguide.by |
+| 11 | Татьяна Борисенко | seed.user.11@restaurantguide.by |
+| 12 | Андрей Климович | seed.user.12@restaurantguide.by |
+
+### Review Distribution
+
+- **Rating skew:** 5★ (25%), 4★ (35%), 3★ (20%), 2★ (12%), 1★ (8%)
+- **Minsk restaurants/cafes:** 5-10 reviews each
+- **Minsk bars/entertainment:** 2-7 reviews each
+- **Regional dining:** 1-5 reviews each
+- **Regional other:** 0-3 reviews each
+- **Partner responses:** ~25% of reviews
+- **Date spread:** last 90 days, 8:00-22:00
+
+### Review Content
+
+Templates organized by category group and rating tier:
+
+| Group | Categories | Positive | Neutral | Negative |
+|-------|-----------|----------|---------|----------|
+| dining | restaurant, cafe | 15 | 8 | 5 |
+| drinks | bar, pub | 8 | 4 | 3 |
+| quick | fast_food, pizzeria, canteen | 8 | 4 | 3 |
+| bakery | bakery | 6 | 3 | 2 |
+| entertainment | hookah, bowling, karaoke, billiards, nightclub | 8 | 4 | 3 |
+
+### Idempotency
+
+Script is safe to run multiple times:
+1. Checks for existing seed users (reuses if found)
+2. Deletes existing reviews by seed users
+3. Creates fresh reviews with deterministic PRNG
+4. Recalculates all establishment aggregates
+
+### Aggregate Recalculation
+
+After seeding, `average_rating` and `review_count` on establishments are recalculated
+from actual reviews. Replaces any fake random values set by `seed-establishments-placeholder.js`.
+
+---
+
 ## Future Enhancements
 
 ### Potential Improvements
 
-1. **Review Generation:** Add realistic reviews with varied ratings
+1. ~~**Review Generation:** Add realistic reviews with varied ratings~~ ✅ Implemented (v2.1)
 2. **Subscription Tiers:** Include basic/standard/premium tier establishments
 3. **Special Hours:** Implement breakfast/lunch special hours for some establishments
 4. **Favorites Simulation:** Pre-populate favorites for test users
@@ -638,10 +728,11 @@ WHERE email = 'seed.data.generator@restaurantguide.by';
 
 ### Extensibility Points
 
-- **Custom Generators:** Add new generator functions in `content-templates.js`
+- **Custom Generators:** Add new generator functions in `content-templates.js` or `reviews-config.js`
 - **Category Expansion:** Extend categories as schema evolves
 - **Cuisine Additions:** Add new cuisine types maintaining distribution
 - **Multi-Language:** Add English/other language content generation
+- **Review Templates:** Add more templates in `reviews-config.js` for less repetition
 
 ---
 
@@ -659,6 +750,7 @@ WHERE email = 'seed.data.generator@restaurantguide.by';
 **Version History:**
 - **v1.0 (October 2025):** Initial seed script for 30 Minsk establishments
 - **v2.0 (November 2025):** Complete rewrite for schema v2.0, 75 establishments across 7 cities, Cloudinary integration, edge cases
+- **v2.1 (February 2026):** Added seed-reviews.js + clear-reviews.js — 12 seed users, 150-250 reviews, partner responses, aggregate recalculation
 
 ---
 
@@ -670,6 +762,6 @@ WHERE email = 'seed.data.generator@restaurantguide.by';
 
 ---
 
-**Last Updated:** November 27, 2025
-**Script Version:** 2.0
+**Last Updated:** February 26, 2026
+**Script Version:** 2.1
 **Maintained By:** Restaurant Guide Belarus Development Team
