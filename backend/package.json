@@ -14,9 +14,11 @@
     "lint": "eslint src/**/*.js",
     "format": "prettier --write \"src/**/*.js\"",
     "seed": "node scripts/seed-establishments.js",
+    "seed:reviews": "node scripts/seed-reviews.js",
     "clear-data": "node scripts/clear-establishments.js",
+    "clear:reviews": "node scripts/clear-reviews.js --force",
     "count": "node scripts/count-establishments.js",
-    "db:reset": "node scripts/clear-establishments.js --force && node scripts/seed-establishments.js"
+    "db:reset": "node scripts/clear-reviews.js --force && node scripts/clear-establishments.js --force && node scripts/seed-establishments.js && node scripts/seed-reviews.js"
   },
   "keywords": [
     "restaurant",
