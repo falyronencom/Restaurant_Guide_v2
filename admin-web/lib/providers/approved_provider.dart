@@ -76,6 +76,15 @@ class ApprovedProvider extends ChangeNotifier {
       _totalPages = result.pages;
       _totalCount = result.total;
       _isLoadingList = false;
+
+      // Clear stale selection if the selected item is no longer in the list
+      if (_selectedId != null &&
+          !_establishments.any((e) => e.id == _selectedId)) {
+        _selectedId = null;
+        _selectedDetail = null;
+        _detailError = null;
+      }
+
       notifyListeners();
     } catch (e) {
       _isLoadingList = false;
@@ -108,6 +117,15 @@ class ApprovedProvider extends ChangeNotifier {
       _totalPages = result.pages;
       _totalCount = result.total;
       _isLoadingList = false;
+
+      // Clear stale selection if the selected item is no longer in search results
+      if (_selectedId != null &&
+          !_establishments.any((e) => e.id == _selectedId)) {
+        _selectedId = null;
+        _selectedDetail = null;
+        _detailError = null;
+      }
+
       notifyListeners();
     } catch (e) {
       _isLoadingList = false;
