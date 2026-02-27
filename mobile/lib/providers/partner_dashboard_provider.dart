@@ -176,11 +176,28 @@ class PartnerDashboardProvider with ChangeNotifier {
   // Resubmit for Moderation
   // ============================================================================
 
-  /// Resubmit a rejected establishment for moderation (rejected → pending)
+  /// Resubmit a rejected/suspended establishment for moderation → pending
+  /// Uses optimistic local update for instant UI feedback
   Future<bool> resubmitForModeration(String id) async {
     try {
       await _partnerService.submitForModeration(id);
-      await loadEstablishments(); // Refresh list
+
+      // Optimistic local update — status → pending, clear stale moderation notes
+      final index = _establishments.indexWhere((e) => e.id == id);
+      if (index != -1) {
+        _establishments[index] = _establishments[index].copyWith(
+          status: EstablishmentStatus.pending,
+          clearModerationNotes: true,
+        );
+      }
+      if (_selectedEstablishment?.id == id) {
+        _selectedEstablishment = _selectedEstablishment!.copyWith(
+          status: EstablishmentStatus.pending,
+          clearModerationNotes: true,
+        );
+      }
+
+      notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -193,11 +210,25 @@ class PartnerDashboardProvider with ChangeNotifier {
   // Suspend / Resume / Delete
   // ============================================================================
 
-  /// Suspend an establishment
+  /// Suspend an establishment (self-suspend by partner)
+  /// Optimistic: active → suspended
   Future<bool> suspendEstablishment(String id) async {
     try {
       await _partnerService.suspendEstablishment(id);
-      await loadEstablishments(); // Refresh list
+
+      final index = _establishments.indexWhere((e) => e.id == id);
+      if (index != -1) {
+        _establishments[index] = _establishments[index].copyWith(
+          status: EstablishmentStatus.suspended,
+        );
+      }
+      if (_selectedEstablishment?.id == id) {
+        _selectedEstablishment = _selectedEstablishment!.copyWith(
+          status: EstablishmentStatus.suspended,
+        );
+      }
+
+      notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -206,11 +237,25 @@ class PartnerDashboardProvider with ChangeNotifier {
     }
   }
 
-  /// Resume a suspended establishment
+  /// Resume a self-suspended establishment
+  /// Optimistic: suspended → active
   Future<bool> resumeEstablishment(String id) async {
     try {
       await _partnerService.resumeEstablishment(id);
-      await loadEstablishments(); // Refresh list
+
+      final index = _establishments.indexWhere((e) => e.id == id);
+      if (index != -1) {
+        _establishments[index] = _establishments[index].copyWith(
+          status: EstablishmentStatus.approved,
+        );
+      }
+      if (_selectedEstablishment?.id == id) {
+        _selectedEstablishment = _selectedEstablishment!.copyWith(
+          status: EstablishmentStatus.approved,
+        );
+      }
+
+      notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
