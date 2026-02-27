@@ -102,8 +102,10 @@ export const createAuditLog = async (data) => {
  * @returns {Promise<Array>} Array of rejection event objects
  */
 export const getRejectionHistory = async (limit = 20, offset = 0) => {
+  // Use DISTINCT ON to show only the latest rejection per establishment.
+  // Multiple audit_log entries exist if an establishment is rejected, resubmitted, rejected again.
   const query = `
-    SELECT
+    SELECT DISTINCT ON (e.id)
       al.id as audit_id,
       al.created_at as rejection_date,
       al.new_data,
@@ -129,12 +131,18 @@ export const getRejectionHistory = async (limit = 20, offset = 0) => {
     WHERE al.action = 'moderate_reject'
       AND al.entity_type = 'establishment'
       AND e.status = 'rejected'
-    ORDER BY al.created_at DESC
+    ORDER BY e.id, al.created_at DESC
+  `;
+
+  // Wrap with subquery for proper pagination + sorting by rejection_date
+  const paginatedQuery = `
+    SELECT * FROM (${query}) AS latest_rejections
+    ORDER BY rejection_date DESC
     LIMIT $1 OFFSET $2
   `;
 
   try {
-    const result = await pool.query(query, [limit, offset]);
+    const result = await pool.query(paginatedQuery, [limit, offset]);
 
     logger.debug('Fetched rejection history', {
       count: result.rows.length,
@@ -157,8 +165,9 @@ export const getRejectionHistory = async (limit = 20, offset = 0) => {
  * @returns {Promise<number>} Total count
  */
 export const countRejections = async () => {
+  // Count unique establishments currently in 'rejected' status (not audit_log entries)
   const query = `
-    SELECT COUNT(*) as total
+    SELECT COUNT(DISTINCT e.id) as total
     FROM audit_log al
     JOIN establishments e ON al.entity_id::text = e.id::text
     WHERE al.action = 'moderate_reject'
