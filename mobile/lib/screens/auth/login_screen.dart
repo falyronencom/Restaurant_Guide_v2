@@ -68,19 +68,26 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
 
-      await authProvider.login(
+      final success = await authProvider.login(
         emailOrPhone: _emailPhoneController.text.trim(),
         password: _passwordController.text,
       );
 
-      // Pop back to the screen that initiated login (e.g. profile tab)
-      if (mounted) {
+      if (success && mounted) {
+        // Pop back to the screen that initiated login (e.g. profile tab)
         Navigator.of(context).popUntil((route) => route.isFirst);
+      } else if (!success && mounted) {
+        setState(() {
+          _errorMessage = authProvider.errorMessage ??
+              'Неверный email/телефон или пароль.';
+        });
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = getHumanErrorMessage(e);
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = getHumanErrorMessage(e);
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
