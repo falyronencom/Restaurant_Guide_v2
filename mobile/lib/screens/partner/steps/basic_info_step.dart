@@ -29,6 +29,8 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
 
   static const int _maxDescriptionLength = 450;
 
+  bool _isFormattingPhone = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,18 +38,83 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     _nameController = TextEditingController(text: provider.data.name ?? '');
     _descriptionController =
         TextEditingController(text: provider.data.description ?? '');
-    _phoneController = TextEditingController(text: provider.data.phone ?? '');
+    _phoneController = TextEditingController(
+      text: _formatBelarusPhone(provider.data.phone ?? ''),
+    );
     _linkController =
         TextEditingController(text: provider.data.instagram ?? '');
+    _phoneController.addListener(_onPhoneChanged);
   }
 
   @override
   void dispose() {
+    _phoneController.removeListener(_onPhoneChanged);
     _nameController.dispose();
     _descriptionController.dispose();
     _phoneController.dispose();
     _linkController.dispose();
     super.dispose();
+  }
+
+  /// Format and limit phone input to +375 XX XXX XX XX (12 digits max)
+  void _onPhoneChanged() {
+    if (_isFormattingPhone) return;
+    _isFormattingPhone = true;
+
+    final text = _phoneController.text;
+    final formatted = _formatBelarusPhone(text);
+
+    if (formatted != text) {
+      _phoneController.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+    _isFormattingPhone = false;
+  }
+
+  /// Format digits into +375 XX XXX XX XX pattern, max 12 digits
+  static String _formatBelarusPhone(String input) {
+    String digits = input.replaceAll(RegExp(r'[^\d]'), '');
+
+    // Ensure starts with 375
+    if (digits.isEmpty) return '';
+    if (!digits.startsWith('375')) {
+      if (digits.startsWith('3') && digits.length < 3) {
+        // User is still typing country code
+      } else if (!digits.startsWith('3')) {
+        digits = '375$digits';
+      }
+    }
+
+    // Limit to 12 digits (375 + 9)
+    if (digits.length > 12) {
+      digits = digits.substring(0, 12);
+    }
+
+    // Format: +375 XX XXX XX XX
+    String result = '+';
+    if (digits.length <= 3) {
+      result += digits;
+    } else {
+      result += '${digits.substring(0, 3)} ';
+      if (digits.length <= 5) {
+        result += digits.substring(3);
+      } else {
+        result += '${digits.substring(3, 5)} ';
+        if (digits.length <= 8) {
+          result += digits.substring(5);
+        } else {
+          result += '${digits.substring(5, 8)} ';
+          if (digits.length <= 10) {
+            result += digits.substring(8);
+          } else {
+            result += '${digits.substring(8, 10)} ${digits.substring(10)}';
+          }
+        }
+      }
+    }
+    return result;
   }
 
   @override
@@ -121,9 +188,13 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 isRequired: true,
                 child: _buildTextField(
                   controller: _phoneController,
-                  hint: 'Телефон',
+                  hint: '+375 29 123 45 67',
                   keyboardType: TextInputType.phone,
-                  onChanged: (value) => provider.updateBasicInfo(phone: value),
+                  onChanged: (value) {
+                    // Strip spaces before saving — backend expects +375XXXXXXXXX
+                    final stripped = value.replaceAll(' ', '');
+                    provider.updateBasicInfo(phone: stripped);
+                  },
                 ),
               ),
 

@@ -371,7 +371,8 @@ class PartnerRegistration {
       // Working hours (required)
       'working_hours': workingHoursJson,
       // Optional fields
-      if (phone != null && phone!.isNotEmpty) 'phone': phone,
+      if (phone != null && phone!.isNotEmpty)
+        'phone': phone!.replaceAll(' ', ''),
       if (email != null && email!.isNotEmpty) 'email': email,
       if (instagram != null && instagram!.isNotEmpty) 'website': instagram,
       if (priceRange != null) 'price_range': priceRange,

@@ -284,10 +284,74 @@ class ApiClient {
     );
   }
 
+  /// Field name translations (backend English → Russian)
+  static const _fieldNames = <String, String>{
+    'name': 'Название',
+    'description': 'Описание',
+    'city': 'Город',
+    'address': 'Адрес',
+    'latitude': 'Широта',
+    'longitude': 'Долгота',
+    'phone': 'Телефон',
+    'email': 'Email',
+    'website': 'Сайт',
+    'categories': 'Категории',
+    'cuisines': 'Кухни',
+    'price_range': 'Ценовая категория',
+    'working_hours': 'Время работы',
+    'special_hours': 'Особые часы',
+    'attributes': 'Атрибуты',
+    'id': 'ID',
+  };
+
+  /// Validation message translations (backend English → Russian)
+  static const _validationMessages = <String, String>{
+    'Establishment name is required': 'Укажите название заведения',
+    'Establishment name must be between 1 and 255 characters':
+        'Название должно быть от 1 до 255 символов',
+    'Establishment name cannot be empty': 'Название не может быть пустым',
+    'Description must not exceed 2000 characters':
+        'Описание не должно превышать 2000 символов',
+    'City is required': 'Укажите город',
+    'Address is required': 'Укажите адрес',
+    'Address cannot be empty': 'Адрес не может быть пустым',
+    'Address must be between 1 and 500 characters':
+        'Адрес должен быть от 1 до 500 символов',
+    'Latitude is required': 'Укажите координаты',
+    'Latitude must be a valid number between 51.0 and 56.0 (Belarus bounds)':
+        'Координаты за пределами Беларуси',
+    'Longitude is required': 'Укажите координаты',
+    'Longitude must be a valid number between 23.0 and 33.0 (Belarus bounds)':
+        'Координаты за пределами Беларуси',
+    'Phone must be in format +375XXXXXXXXX (Belarus number)':
+        'Формат: +375 XX XXX XX XX',
+    'Email must be a valid email address': 'Введите корректный email',
+    'Website must be a valid URL': 'Введите корректную ссылку',
+    'Categories must be an array with 1-2 items': 'Выберите 1–2 категории',
+    'Cuisines must be an array with 1-3 items': 'Выберите 1–3 типа кухни',
+    'Price range must be one of: \$, \$\$, \$\$\$':
+        'Выберите ценовую категорию',
+    'Working hours are required': 'Укажите время работы',
+    'Working hours must be a valid JSON object':
+        'Некорректный формат времени работы',
+    'Special hours must be a valid JSON object':
+        'Некорректный формат особых часов',
+    'Attributes must be a valid JSON object': 'Некорректный формат атрибутов',
+    'Establishment ID is required': 'ID заведения обязателен',
+    'Establishment ID must be a valid UUID': 'Некорректный ID заведения',
+  };
+
+  /// Translate a validation message to Russian
+  String _translateValidation(String field, String message) {
+    final ruField = _fieldNames[field] ?? field;
+    final ruMessage = _validationMessages[message] ?? message;
+    return ruField.isNotEmpty ? '$ruField: $ruMessage' : ruMessage;
+  }
+
   /// Extract error message from response
   String _extractErrorMessage(Response? response) {
     if (response == null) {
-      return 'Server error occurred. Please try again later.';
+      return 'Ошибка сервера. Попробуйте позже.';
     }
 
     // Try to extract message from standardized error format
@@ -297,8 +361,24 @@ class ApiClient {
       // Check for backend standardized format
       if (data.containsKey('error')) {
         final error = data['error'];
-        if (error is Map<String, dynamic> && error.containsKey('message')) {
-          return error['message'] as String;
+        if (error is Map<String, dynamic>) {
+          // Check for validation details array (422 responses)
+          if (error.containsKey('details')) {
+            final details = error['details'];
+            if (details is List && details.isNotEmpty) {
+              return details.map((d) {
+                if (d is Map<String, dynamic>) {
+                  final field = d['field'] as String? ?? '';
+                  final msg = d['message'] as String? ?? '';
+                  return _translateValidation(field, msg);
+                }
+                return d.toString();
+              }).join('\n');
+            }
+          }
+          if (error.containsKey('message')) {
+            return error['message'] as String;
+          }
         }
         if (error is String) {
           return error;
@@ -311,26 +391,26 @@ class ApiClient {
       }
     }
 
-    // Fallback to status code message
+    // Fallback to status code message (Russian)
     switch (response.statusCode) {
       case 400:
-        return 'Invalid request. Please check your input.';
+        return 'Некорректный запрос. Проверьте введённые данные.';
       case 401:
-        return 'Authentication required. Please log in.';
+        return 'Необходима авторизация. Войдите в аккаунт.';
       case 403:
-        return 'Access denied.';
+        return 'Доступ запрещён.';
       case 404:
-        return 'Resource not found.';
+        return 'Ресурс не найден.';
       case 409:
-        return 'Conflict. Resource already exists.';
+        return 'Конфликт. Запись уже существует.';
       case 422:
-        return 'Validation error. Please check your input.';
+        return 'Ошибка валидации. Проверьте введённые данные.';
       case 500:
       case 502:
       case 503:
-        return 'Server error. Please try again later.';
+        return 'Ошибка сервера. Попробуйте позже.';
       default:
-        return 'Error occurred (${response.statusCode}).';
+        return 'Произошла ошибка (${response.statusCode}).';
     }
   }
 
