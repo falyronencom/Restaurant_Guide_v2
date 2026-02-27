@@ -521,42 +521,47 @@ class AuthProvider with ChangeNotifier {
       // Try to extract the actual error message
       final match = RegExp(r'error:\s*(.+?)(?:\n|$)').firstMatch(errorStr);
       if (match != null) {
-        return match.group(1) ?? 'Authentication failed';
+        return match.group(1) ?? 'Ошибка авторизации';
       }
     }
 
     // Common error patterns
-    if (errorStr.contains('401') || errorStr.contains('Unauthorized')) {
-      return 'Invalid credentials. Please check your email/phone and password.';
+    if (errorStr.contains('401') ||
+        errorStr.contains('Unauthorized') ||
+        errorStr.contains('Authentication failed') ||
+        errorStr.contains('INVALID_CREDENTIALS')) {
+      return 'Неверный email/телефон или пароль';
     }
     if (errorStr.contains('Email already registered') ||
-        errorStr.contains('EMAIL_TAKEN')) {
-      return 'This email is already registered. Please login instead.';
+        errorStr.contains('EMAIL_TAKEN') ||
+        errorStr.contains('EMAIL_EXISTS')) {
+      return 'Этот email уже зарегистрирован. Попробуйте войти.';
     }
     if (errorStr.contains('Phone already registered') ||
-        errorStr.contains('PHONE_TAKEN')) {
-      return 'This phone number is already registered. Please login instead.';
+        errorStr.contains('PHONE_TAKEN') ||
+        errorStr.contains('PHONE_EXISTS')) {
+      return 'Этот номер телефона уже зарегистрирован. Попробуйте войти.';
     }
     if (errorStr.contains('Invalid verification code') ||
         errorStr.contains('INVALID_CODE')) {
-      return 'Invalid verification code. Please check and try again.';
+      return 'Неверный код подтверждения. Проверьте и попробуйте снова.';
     }
     if (errorStr.contains('Code expired') || errorStr.contains('CODE_EXPIRED')) {
-      return 'Verification code has expired. Please request a new code.';
+      return 'Код подтверждения истёк. Запросите новый код.';
     }
     if (errorStr.contains('404')) {
-      return 'Service not found. Please try again later.';
+      return 'Сервис недоступен. Попробуйте позже.';
     }
     if (errorStr.contains('429') || errorStr.contains('Too many requests')) {
-      return 'Too many attempts. Please wait a moment and try again.';
+      return 'Слишком много попыток. Подождите немного и попробуйте снова.';
     }
     if (errorStr.contains('500')) {
-      return 'Server error. Please try again later.';
+      return 'Ошибка сервера. Попробуйте позже.';
     }
     if (errorStr.contains('Network') || errorStr.contains('Connection')) {
-      return 'Network error. Please check your internet connection.';
+      return 'Ошибка сети. Проверьте подключение к интернету.';
     }
 
-    return 'An error occurred. Please try again.';
+    return 'Произошла ошибка. Попробуйте снова.';
   }
 }
