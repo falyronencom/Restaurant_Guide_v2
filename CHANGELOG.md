@@ -6,6 +6,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Февраль 28, 2026 — Figma Design Snapshots Archive (Post-MVP Screens)
+- **Архивация**: 7 дизайн-контекстов из Figma перед завершением подписки
+- **Новости** (4 файла): главная лента (таб New), шаблон статьи, таб События, таб Интересное
+- **Избранное** (1 файл): папки-коллекции с круглыми превью
+- **Продвижение** (2 файла): выбор подписки (3 тарифа), текущий план + 5 типов акций
+- Расположение: `docs/figma_snapshots/01-07_*.json`
+- Данные включают: design tokens, typography, layout specs, interactions, reference code
+- Commit: `929f4d6`
+
 ### Февраль 26, 2026 — Seed Establishment Visual Quality Fixes
 - **Fix 1**: `primary_image_url` теперь заполняется в обоих seed-скриптах (placeholder + Cloudinary) — карточки поиска показывают изображения
 - **Fix 3**: Разброс координат уменьшен с ±0.05° (~5.5 км) до ±0.005° (~500 м) — пины на карте попадают в застроенную зону
