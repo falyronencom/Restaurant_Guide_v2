@@ -352,6 +352,10 @@ class PartnerEstablishment {
   bool get hasModerationFeedback =>
       rejectionReason != null || fieldFeedback != null || suspendReason != null;
 
+  /// Whether suspended by admin (has suspend_reason) vs self-suspended by partner
+  bool get isSuspendedByAdmin =>
+      status == EstablishmentStatus.suspended && suspendReason != null;
+
   factory PartnerEstablishment.fromJson(Map<String, dynamic> json) {
     // Extract primary image URL from different possible formats
     String? primaryImage;
