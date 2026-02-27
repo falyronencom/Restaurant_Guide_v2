@@ -128,6 +128,7 @@ export const getRejectionHistory = async (limit = 20, offset = 0) => {
     JOIN establishments e ON al.entity_id::text = e.id::text
     WHERE al.action = 'moderate_reject'
       AND al.entity_type = 'establishment'
+      AND e.status = 'rejected'
     ORDER BY al.created_at DESC
     LIMIT $1 OFFSET $2
   `;
@@ -158,9 +159,11 @@ export const getRejectionHistory = async (limit = 20, offset = 0) => {
 export const countRejections = async () => {
   const query = `
     SELECT COUNT(*) as total
-    FROM audit_log
-    WHERE action = 'moderate_reject'
-      AND entity_type = 'establishment'
+    FROM audit_log al
+    JOIN establishments e ON al.entity_id::text = e.id::text
+    WHERE al.action = 'moderate_reject'
+      AND al.entity_type = 'establishment'
+      AND e.status = 'rejected'
   `;
 
   try {
