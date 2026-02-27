@@ -269,14 +269,12 @@ class PartnerEstablishmentCard extends StatelessWidget {
 
   /// Build promotion button
   Widget _buildPromotionButton() {
-    final isPremium = establishment.isPremium;
-
     return GestureDetector(
       onTap: onPromotionTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isPremium ? _primaryOrange : _cardDarkBg,
+          color: _primaryOrange,
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         child: const Text(
