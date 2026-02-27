@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/screens/search/search_home_screen.dart';
 import 'package:restaurant_guide_mobile/screens/news/news_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
@@ -68,6 +69,11 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
       if (index == 3) {
         _reloadFavoritesIfAuthenticated();
       }
+      // Reload partner data when switching to Profile tab (index 4)
+      // Picks up external status changes (e.g. admin rejected/approved)
+      if (index == 4) {
+        _reloadPartnerDataIfAuthenticated();
+      }
     }
   }
 
@@ -76,6 +82,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
     final authProvider = context.read<AuthProvider>();
     if (authProvider.isAuthenticated) {
       context.read<EstablishmentsProvider>().loadFavorites();
+    }
+  }
+
+  /// Reload partner establishments from server if user is authenticated
+  /// Picks up external status changes (admin reject/approve/suspend)
+  void _reloadPartnerDataIfAuthenticated() {
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.isAuthenticated) {
+      context.read<PartnerDashboardProvider>().loadEstablishments();
     }
   }
 
