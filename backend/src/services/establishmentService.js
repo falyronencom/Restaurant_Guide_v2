@@ -612,13 +612,21 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       );
     }
 
-    // Cannot update suspended establishments (admin-only)
+    // Self-suspended establishments cannot be edited (partner should resume first)
+    // Admin-suspended establishments CAN be edited (partner fixes issues, then resubmits)
     if (currentEstablishment.status === 'suspended') {
-      throw new AppError(
-        'Cannot update suspended establishment. Contact support.',
-        403,
-        'ESTABLISHMENT_SUSPENDED',
-      );
+      const notes = typeof currentEstablishment.moderation_notes === 'string'
+        ? (() => { try { return JSON.parse(currentEstablishment.moderation_notes); } catch { return {}; } })()
+        : (currentEstablishment.moderation_notes || {});
+
+      if (!notes.suspend_reason) {
+        throw new AppError(
+          'Cannot update self-suspended establishment. Resume it first.',
+          403,
+          'ESTABLISHMENT_SUSPENDED',
+        );
+      }
+      // Admin-suspended with suspend_reason: allow editing (fall through)
     }
 
     // Validate updates if provided
@@ -959,10 +967,10 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       );
     }
 
-    // Must be in 'draft' or 'rejected' status to submit
-    if (!['draft', 'rejected'].includes(establishment.status)) {
+    // Must be in 'draft', 'rejected', or 'suspended' (admin-suspended) status to submit
+    if (!['draft', 'rejected', 'suspended'].includes(establishment.status)) {
       throw new AppError(
-        `Cannot submit establishment with status '${establishment.status}'. Only draft or rejected establishments can be submitted.`,
+        `Cannot submit establishment with status '${establishment.status}'. Only draft, rejected, or suspended establishments can be submitted.`,
         400,
         'INVALID_STATUS_FOR_SUBMISSION',
       );
@@ -1046,7 +1054,10 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
 };
 
 /**
- * Resume a partner's establishment (suspended → pending for re-moderation)
+ * Resume a partner's self-suspended establishment (suspended → active)
+ *
+ * Only works for self-suspended establishments (no suspend_reason in moderation_notes).
+ * Admin-suspended establishments must be edited and resubmitted via submitForModeration.
  */
 export const resumeEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -1054,16 +1065,35 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
     throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
   }
 
+  // Check if suspended by admin (has suspend_reason) — partner cannot self-resume
+  const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+  if (!establishment || establishment.status !== 'suspended') {
+    throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
+  }
+
+  const notes = typeof establishment.moderation_notes === 'string'
+    ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return {}; } })()
+    : (establishment.moderation_notes || {});
+
+  if (notes.suspend_reason) {
+    throw new AppError(
+      'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
+      403,
+      'ADMIN_SUSPENDED',
+    );
+  }
+
+  // Self-suspended: restore to active (was approved before self-suspend)
   const result = await EstablishmentModel.changeEstablishmentStatus(establishmentId, {
     fromStatus: 'suspended',
-    toStatus: 'pending',
+    toStatus: 'active',
   });
 
   if (!result) {
     throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
   }
 
-  logger.info('Establishment resume requested by partner', { establishmentId, partnerId });
+  logger.info('Establishment resumed by partner (self-suspend)', { establishmentId, partnerId });
   return result;
 };
 
