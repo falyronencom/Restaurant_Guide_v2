@@ -136,8 +136,8 @@ export async function verifyCredentials(credentials) {
     // Find user by email or phone
     // We use a single query that checks both fields for efficiency
     const query = `
-      SELECT id, email, phone, password_hash, name, role, auth_method, 
-             is_active, last_login_at, created_at
+      SELECT id, email, phone, password_hash, name, role, auth_method,
+             avatar_url, is_active, last_login_at, created_at
       FROM users
       WHERE (email = $1 OR phone = $2) AND is_active = true
     `;
@@ -441,7 +441,7 @@ export async function invalidateAllUserTokens(userId) {
 export async function findUserById(userId) {
   try {
     const query = `
-      SELECT id, email, phone, name, role, auth_method,
+      SELECT id, email, phone, name, role, auth_method, avatar_url,
              email_verified, phone_verified, is_active, created_at
       FROM users
       WHERE id = $1 AND is_active = true
