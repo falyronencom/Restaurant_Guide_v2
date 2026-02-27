@@ -177,7 +177,7 @@ export const getEstablishmentForModeration = async (establishmentId) => {
  * Execute moderation action on a pending establishment
  *
  * Approve: status → 'active', set published_at, record audit log
- * Reject:  status → 'draft', store per-field notes, record audit log
+ * Reject:  status → 'rejected', store per-field notes, record audit log
  *
  * @param {string} establishmentId - UUID
  * @param {Object} params
@@ -224,7 +224,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
     }
 
     // Determine new status and flags
-    const newStatus = action === 'approve' ? 'active' : 'draft';
+    const newStatus = action === 'approve' ? 'active' : 'rejected';
     const setPublishedAt = action === 'approve' && !existing.published_at;
 
     // Execute moderation

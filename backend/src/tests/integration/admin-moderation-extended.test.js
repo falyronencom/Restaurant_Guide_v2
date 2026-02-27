@@ -218,9 +218,8 @@ describe('GET /api/v1/admin/establishments/rejected (#4)', () => {
     expect(rejection.name).toBeDefined();
     expect(rejection.city).toBeDefined();
 
-    // Architectural verification: status is 'draft' after rejection (NOT 'rejected')
-    // Rejected establishments return to draft status; history lives in audit_log only.
-    expect(rejection.current_status).toBe('draft');
+    // After rejection, status is 'rejected' — enables moderation feedback loop
+    expect(rejection.current_status).toBe('rejected');
   });
 
   test('should return multiple rejections sorted by newest first', async () => {
