@@ -93,7 +93,7 @@ describe('searchController', () => {
           categories: ['Кофейня', 'Ресторан'],
           cuisines: ['Европейская'],
           minRating: 4.5,
-          priceRange: '$$',
+          priceRange: ['$$'],
           limit: 10,
           offset: 10, // page 2 -> offset 10
           page: 2
@@ -149,7 +149,7 @@ describe('searchController', () => {
           maxLon: 27.55,
           categories: ['Кофейня'],
           cuisines: ['Европейская'],
-          priceRange: '$',
+          priceRange: ['$'],
           minRating: 4.0,
           limit: 50
         })
