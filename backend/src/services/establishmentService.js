@@ -828,6 +828,18 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         }
       }
 
+      // Fallback: ensure at least one interior photo is marked as primary
+      const updatedMedia = await MediaModel.getEstablishmentMedia(establishmentId);
+      const interiorPhotos = updatedMedia.filter(m => m.type === 'interior');
+      const hasPrimary = interiorPhotos.some(m => m.is_primary);
+      if (!hasPrimary && interiorPhotos.length > 0) {
+        await MediaModel.setPrimaryPhoto(establishmentId, interiorPhotos[0].id);
+        logger.info('Auto-assigned primary photo (fallback)', {
+          establishmentId,
+          mediaId: interiorPhotos[0].id,
+        });
+      }
+
       // Clean media fields from updates before sending to model (not DB columns)
       delete updates.interior_photos;
       delete updates.menu_photos;
