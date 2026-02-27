@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -508,7 +509,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Ошибка при отправке: ${e.toString()}');
+      // Extract user-friendly message from DioException
+      String message;
+      if (e is DioException && e.error is String) {
+        message = e.error as String;
+      } else {
+        message = e.toString();
+      }
+      _setError(message);
       _isSubmitting = false;
       notifyListeners();
       return false;
