@@ -297,7 +297,8 @@ class AuthService {
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
-        final userData = data['data'] as Map<String, dynamic>? ??
+        final userData = data['data']?['user'] as Map<String, dynamic>? ??
+                        data['data'] as Map<String, dynamic>? ??
                         data['user'] as Map<String, dynamic>? ??
                         data;
 
