@@ -23,7 +23,8 @@ class EditEstablishmentScreen extends StatefulWidget {
   });
 
   @override
-  State<EditEstablishmentScreen> createState() => _EditEstablishmentScreenState();
+  State<EditEstablishmentScreen> createState() =>
+      _EditEstablishmentScreenState();
 }
 
 class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
@@ -38,7 +39,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     super.initState();
     // Ensure establishment details are loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PartnerDashboardProvider>().loadEstablishmentDetails(widget.establishmentId);
+      context
+          .read<PartnerDashboardProvider>()
+          .loadEstablishmentDetails(widget.establishmentId);
     });
   }
 
@@ -50,7 +53,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         child: Consumer<PartnerDashboardProvider>(
           builder: (context, provider, child) {
             final establishment = provider.selectedEstablishment ??
-                provider.establishments.where((e) => e.id == widget.establishmentId).firstOrNull;
+                provider.establishments
+                    .where((e) => e.id == widget.establishmentId)
+                    .firstOrNull;
 
             if (provider.isLoadingDetails) {
               return const Center(
@@ -90,12 +95,15 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                       ),
                       const SizedBox(height: 24),
                       GestureDetector(
-                        onTap: () => provider.loadEstablishmentDetails(widget.establishmentId),
+                        onTap: () => provider
+                            .loadEstablishmentDetails(widget.establishmentId),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
                           decoration: BoxDecoration(
                             color: _primaryOrange,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                            borderRadius:
+                                BorderRadius.circular(AppTheme.radiusSmall),
                           ),
                           child: const Text(
                             'Повторить',
@@ -155,14 +163,17 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Moderation feedback banner (rejected/suspended)
-                        if (establishment.status == EstablishmentStatus.rejected &&
+                        if (establishment.status ==
+                                EstablishmentStatus.rejected &&
                             establishment.hasModerationFeedback)
                           _buildModerationFeedbackBanner(establishment),
-                        if (establishment.status == EstablishmentStatus.suspended)
+                        if (establishment.status ==
+                            EstablishmentStatus.suspended)
                           _buildSuspendedBanner(establishment),
 
                         // Resubmit button for rejected or admin-suspended establishments
-                        if (establishment.status == EstablishmentStatus.rejected ||
+                        if (establishment.status ==
+                                EstablishmentStatus.rejected ||
                             establishment.isSuspendedByAdmin)
                           _buildResubmitButton(context, establishment),
 
@@ -244,10 +255,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          Row(
+          const Row(
             children: [
               Icon(Icons.info_outline, size: 20, color: _rejectedColor),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text(
                 'Комментарии модератора',
                 style: TextStyle(
@@ -275,30 +286,30 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           if (fieldFeedback != null && fieldFeedback.isNotEmpty) ...[
             const SizedBox(height: 10),
             ...fieldFeedback.entries.map((entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${_fieldLabel(entry.key)}: ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: _rejectedColor.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      entry.value,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textPrimary,
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_fieldLabel(entry.key)}: ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: _rejectedColor.withValues(alpha: 0.8),
+                        ),
                       ),
-                    ),
+                      Expanded(
+                        child: Text(
+                          entry.value,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            )),
+                )),
           ],
         ],
       ),
@@ -320,10 +331,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
               Icon(Icons.block, size: 20, color: _suspendedColor),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text(
                 'Заведение приостановлено',
                 style: TextStyle(
@@ -349,7 +360,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             establishment.isSuspendedByAdmin
                 ? 'Исправьте замечания и отправьте повторно на модерацию.'
                 : 'Для возобновления работы нажмите «Возобновить» в меню статуса.',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               color: _suspendedColor,
             ),
@@ -389,7 +400,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Build resubmit button for rejected establishments
-  Widget _buildResubmitButton(BuildContext context, PartnerEstablishment establishment) {
+  Widget _buildResubmitButton(
+      BuildContext context, PartnerEstablishment establishment) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: SizedBox(
@@ -416,7 +428,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Handle resubmit action
-  Future<void> _handleResubmit(BuildContext context, PartnerEstablishment establishment) async {
+  Future<void> _handleResubmit(
+      BuildContext context, PartnerEstablishment establishment) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = context.read<PartnerDashboardProvider>();
@@ -436,7 +449,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
+            child: const Text(
               'Отправить',
               style: TextStyle(color: AppTheme.primaryOrange),
             ),
@@ -485,7 +498,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Build edit menu items
-  Widget _buildEditMenu(BuildContext context, PartnerEstablishment establishment, bool canEdit) {
+  Widget _buildEditMenu(
+      BuildContext context, PartnerEstablishment establishment, bool canEdit) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -493,37 +507,51 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           _buildMenuItem(
             icon: Icons.document_scanner_outlined,
             title: 'Ваши данные',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'contact', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'contact', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.local_cafe_outlined,
             title: 'Категория заведения',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'category', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'category', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.restaurant_outlined,
             title: 'Категория кухни',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'cuisine', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'cuisine', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.notifications_outlined,
             title: 'О заведении',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'about', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'about', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.photo_library_outlined,
             title: 'Медиа',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'media', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'media', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.access_time,
             title: 'Время работы',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'hours', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'hours', establishment)
+                : null,
           ),
           _buildMenuItem(
             icon: Icons.map_outlined,
             title: 'Адрес',
-            onTap: canEdit ? () => _navigateToEditStep(context, 'address', establishment) : null,
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'address', establishment)
+                : null,
             showDivider: false,
           ),
         ],
@@ -532,7 +560,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Build status menu items
-  Widget _buildStatusMenu(BuildContext context, PartnerEstablishment establishment) {
+  Widget _buildStatusMenu(
+      BuildContext context, PartnerEstablishment establishment) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -599,8 +628,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     );
   }
 
-  /// Navigate to edit step screen
-  void _navigateToEditStep(BuildContext context, String section, PartnerEstablishment establishment) {
+  /// Navigate to edit step screen and refresh details on return
+  Future<void> _navigateToEditStep(BuildContext context, String section,
+      PartnerEstablishment establishment) async {
     // Map section to registration step index
     // Steps: 0=Category, 1=Cuisine, 2=BasicInfo, 3=Media, 4=Address, 5=Legal, 6=Summary
     int stepIndex;
@@ -632,9 +662,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         stepIndex = 0;
     }
 
-    final initialData = PartnerRegistrationProvider.dataFromEstablishment(establishment);
+    final initialData =
+        PartnerRegistrationProvider.dataFromEstablishment(establishment);
 
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => PartnerRegistrationScreen(
           initialStep: stepIndex,
@@ -644,17 +675,26 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         ),
       ),
     );
+
+    // Refresh details on return so edit menu shows fresh data
+    if (mounted) {
+      context
+          .read<PartnerDashboardProvider>()
+          .loadEstablishmentDetails(widget.establishmentId);
+    }
   }
 
   /// Edit working hours: open screen, capture result, save via PUT
-  Future<void> _editWorkingHours(BuildContext context, PartnerEstablishment establishment) async {
+  Future<void> _editWorkingHours(
+      BuildContext context, PartnerEstablishment establishment) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final dashboardProvider = context.read<PartnerDashboardProvider>();
 
     final result = await Navigator.of(context).push<WeeklyWorkingHours>(
       MaterialPageRoute(
         builder: (context) => WorkingHoursScreen(
-          initialHours: establishment.workingHours ?? const WeeklyWorkingHours(),
+          initialHours:
+              establishment.workingHours ?? const WeeklyWorkingHours(),
         ),
       ),
     );
@@ -688,7 +728,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Show status options dialog
-  void _showStatusOptions(BuildContext context, PartnerEstablishment establishment) {
+  void _showStatusOptions(
+      BuildContext context, PartnerEstablishment establishment) {
     showModalBottomSheet(
       context: context,
       backgroundColor: _backgroundColor,
@@ -820,7 +861,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Show suspend confirmation dialog
-  void _showSuspendConfirmation(BuildContext context, PartnerEstablishment establishment) {
+  void _showSuspendConfirmation(
+      BuildContext context, PartnerEstablishment establishment) {
     final provider = context.read<PartnerDashboardProvider>();
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -829,7 +871,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
         title: const Text(
           'Приостановить заведение?',
           style: TextStyle(fontWeight: FontWeight.w600),
@@ -849,7 +892,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              final success = await provider.suspendEstablishment(establishment.id);
+              final success =
+                  await provider.suspendEstablishment(establishment.id);
               if (success) {
                 navigator.pop(); // Go back to profile
                 messenger.showSnackBar(
@@ -878,7 +922,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Resume establishment
-  void _resumeEstablishment(BuildContext context, PartnerEstablishment establishment) async {
+  void _resumeEstablishment(
+      BuildContext context, PartnerEstablishment establishment) async {
     final provider = context.read<PartnerDashboardProvider>();
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -903,7 +948,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   }
 
   /// Show delete confirmation dialog
-  void _showDeleteConfirmation(BuildContext context, PartnerEstablishment establishment) {
+  void _showDeleteConfirmation(
+      BuildContext context, PartnerEstablishment establishment) {
     final provider = context.read<PartnerDashboardProvider>();
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -912,7 +958,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _backgroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge)),
         title: const Text(
           'Удалить заведение?',
           style: TextStyle(fontWeight: FontWeight.w600),
@@ -932,7 +979,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              final success = await provider.deleteEstablishment(establishment.id);
+              final success =
+                  await provider.deleteEstablishment(establishment.id);
               if (success) {
                 navigator.pop(); // Go back to profile
                 messenger.showSnackBar(
