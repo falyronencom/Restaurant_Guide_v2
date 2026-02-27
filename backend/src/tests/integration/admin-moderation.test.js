@@ -252,7 +252,7 @@ describe('POST /api/v1/admin/establishments/:id/moderate (#7)', () => {
     expect(updated.status).toBe('active');
   });
 
-  test('should reject pending establishment → status becomes draft', async () => {
+  test('should reject pending establishment → status becomes rejected', async () => {
     const { establishment } = await createPartnerWithEstablishment('pending');
 
     const response = await request(app)
@@ -266,7 +266,7 @@ describe('POST /api/v1/admin/establishments/:id/moderate (#7)', () => {
 
     // Verify status in DB
     const updated = await getEstablishmentFromDb(establishment.id);
-    expect(updated.status).toBe('draft');
+    expect(updated.status).toBe('rejected');
   });
 
   test('should store moderation_notes on reject', async () => {
