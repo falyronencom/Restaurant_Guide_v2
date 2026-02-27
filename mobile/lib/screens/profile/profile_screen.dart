@@ -233,8 +233,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Loading state
-          if (partnerProvider.isLoading)
+          // Loading state (only show spinner for initial load, not tab-switch refresh)
+          if (partnerProvider.isLoading && !partnerProvider.hasEstablishments)
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
