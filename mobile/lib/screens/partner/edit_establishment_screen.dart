@@ -139,7 +139,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             }
 
             // Check if establishment can be edited
-            final canEdit = establishment.status.canEdit;
+            // Admin-suspended establishments CAN be edited (partner fixes issues)
+            final canEdit = establishment.status.canEdit ||
+                establishment.isSuspendedByAdmin;
 
             return Column(
               children: [
@@ -159,8 +161,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                         if (establishment.status == EstablishmentStatus.suspended)
                           _buildSuspendedBanner(establishment),
 
-                        // Resubmit button for rejected establishments
-                        if (establishment.status == EstablishmentStatus.rejected)
+                        // Resubmit button for rejected or admin-suspended establishments
+                        if (establishment.status == EstablishmentStatus.rejected ||
+                            establishment.isSuspendedByAdmin)
                           _buildResubmitButton(context, establishment),
 
                         // Information section
@@ -343,7 +346,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
           ],
           const SizedBox(height: 10),
           Text(
-            'Редактирование недоступно. Обратитесь в поддержку для восстановления.',
+            establishment.isSuspendedByAdmin
+                ? 'Исправьте замечания и отправьте повторно на модерацию.'
+                : 'Для возобновления работы нажмите «Возобновить» в меню статуса.',
             style: TextStyle(
               fontSize: 13,
               color: _suspendedColor,

@@ -570,7 +570,7 @@ export const submitForModeration = async (establishmentId) => {
       status = 'pending',
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
-      AND status IN ('draft', 'rejected')
+      AND status IN ('draft', 'rejected', 'suspended')
     RETURNING
       id,
       partner_id,
