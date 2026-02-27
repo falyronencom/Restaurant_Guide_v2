@@ -1,0 +1,82 @@
+{
+  "screen": "News Article Detail",
+  "description": "Full article view for news/blog post (Wise Duck example). Scrollable long-form content with hero image, text sections (Интерьер, Что в меню?), photo carousels, and related news at bottom.",
+  "nodeId": "1:66348",
+  "designTokens": {
+    "Orange/Official": "#F06B32",
+    "Orange/Heart": "#FD5F1B",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "System/Black": "#000000",
+    "System/White": "#FFFFFF",
+    "White/PRIME": "#F4F1EC",
+    "Grey/Arrow": "#3E3E3E"
+  },
+  "typography": {
+    "H2": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%" },
+    "H3/Подзаголовки": { "family": "Avenir Next", "weight": 500, "size": 18, "lineHeight": 22 },
+    "Body": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 23 },
+    "ArticleTitle": { "family": "Unbounded", "weight": 500, "size": 25, "lineHeight": 30, "color": "white" },
+    "ArticleSubtitle": { "family": "Avenir Next", "weight": 500, "size": 15, "lineHeight": 23, "color": "white" },
+    "CarouselTitle": { "family": "Avenir Next", "weight": 500, "size": 23, "lineHeight": 26, "color": "white" },
+    "CarouselSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" },
+    "SectionTitle": { "family": "Avenir Next", "weight": 500, "size": 24, "lineHeight": 28, "color": "black" }
+  },
+  "layout": {
+    "background": "#F4F1EC",
+    "contentPaddingHorizontal": 36,
+    "heroImage": {
+      "height": 302,
+      "borderRadius": "0 0 0 50px (bottom-left rounded)",
+      "gradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "titleOverlay": true
+    },
+    "photoCarousel": {
+      "cardWidth": 222,
+      "cardHeight": 322,
+      "cardBorderRadius": "rounded mask shape",
+      "shadowGradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "gap": "~12px between cards",
+      "horizontalScroll": true
+    },
+    "miniPhotoCarousel": {
+      "cardWidth": 222,
+      "cardHeight": 166,
+      "sameStyleAsMain": true
+    },
+    "inlinePhotos": {
+      "leftPhoto": { "width": 193, "height": 305, "borderRadius": 40 },
+      "rightPhoto": { "width": 169, "height": 300, "borderRadius": 40, "shadow": "0px 4px 4px rgba(0,0,0,0.1)" }
+    },
+    "topBar": {
+      "left": "back chevron (rotated)",
+      "center": "Новости title (Unbounded, orange #F06B32)",
+      "right": "share icon + heart/favourite icons"
+    },
+    "bottomNav": {
+      "tabs": ["Search (magnifyingglass)", "News (text.quote)", "Map", "Favourite (heart)", "Profile (person.fill)"],
+      "borderTop": "#E2E2E2 0.8px",
+      "background": "white"
+    }
+  },
+  "sections": [
+    { "type": "hero", "content": "Large restaurant photo with gradient overlay, title and subtitle" },
+    { "type": "bodyText", "content": "Introductory paragraph about the restaurant" },
+    { "type": "heading", "content": "Интерьер" },
+    { "type": "bodyText", "content": "3 paragraphs about interior design" },
+    { "type": "photoCarousel", "content": "3+ horizontally scrollable photo cards with titles (tall ~322px)" },
+    { "type": "bodyText", "content": "More interior description paragraphs" },
+    { "type": "heading", "content": "Что в меню?" },
+    { "type": "bodyText", "content": "Wine and food description" },
+    { "type": "inlinePhotos", "content": "2 side-by-side rounded photos (food/interior)" },
+    { "type": "bodyText", "content": "Menu items with prices" },
+    { "type": "sectionTitle", "content": "Новости" },
+    { "type": "miniPhotoCarousel", "content": "3+ horizontally scrollable smaller news cards (~166px height)" }
+  ],
+  "interactions": {
+    "backButton": "Navigate back to news list",
+    "shareButton": "Share article (square.and.arrow.up icon)",
+    "favouriteButton": "Toggle heart/favourite",
+    "photoCarousel": "Horizontal scroll",
+    "relatedNews": "Tap to open another article"
+  }
+}

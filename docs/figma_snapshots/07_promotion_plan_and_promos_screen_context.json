@@ -1,0 +1,127 @@
+{
+  "screen": "Promotion — Current Plan & Promotions (Продвижение: План + Акции)",
+  "description": "Partner promotion screen showing current subscription plan (Премиум) with 'Другие планы' button, and a list of available promotion/deal types the partner can create.",
+  "nodeId": "2:67538",
+  "designTokens": {
+    "White/PRIME": "#F4F1EC",
+    "Grey/Side text": "#D2D2D2",
+    "Orange/Official": "#F06B32",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "System/Black": "#000000",
+    "Black/PRIME": "#000000",
+    "Grey/Arrow": "#3E3E3E"
+  },
+  "typography": {
+    "H2_Title": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%", "color": "#F06B32" },
+    "SectionTitle": { "family": "Avenir Next", "weight": 500, "size": 22, "lineHeight": 26, "color": "black" },
+    "SectionSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 23, "color": "black" },
+    "PlanTitle": { "family": "Unbounded", "weight": 400, "size": 22, "lineHeight": 26, "color": "#F4F1EC" },
+    "PlanDescription": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 15, "color": "#F4F1EC" },
+    "PromoCardTitle": { "family": "Avenir Next", "weight": 500, "size": 15, "lineHeight": 20, "color": "varies" },
+    "PromoCardSubtitle": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 20, "color": "varies" },
+    "ButtonText": { "family": "Avenir Next", "weight": 500, "size": 15, "lineHeight": 23, "color": "#F4F1EC" }
+  },
+  "layout": {
+    "background": "#F4F1EC",
+    "header": {
+      "title": "Продвижение",
+      "titleFont": "Unbounded Regular 25px",
+      "titleColor": "#F06B32",
+      "backChevron": true
+    },
+    "restaurantProfileCard": "same as screen 06 (Fiori, ресторан, европейская, Пл. Свободы 8)",
+    "planSection": {
+      "sectionTitle": "План",
+      "sectionSubtitle": "Информация о вашем плане продвижения",
+      "currentPlanCard": {
+        "name": "Премиум",
+        "background": "#000000",
+        "width": 313,
+        "height": 276,
+        "borderRadius": 10,
+        "decorativeIcons": "2 card icons rotated",
+        "features": "same as Премиум card from screen 06"
+      },
+      "otherPlansButton": {
+        "text": "Другие планы",
+        "background": "#000000",
+        "borderRadius": 8,
+        "width": 148,
+        "height": 42,
+        "textColor": "#F4F1EC"
+      },
+      "divider": "thin line after plan section"
+    },
+    "promosSection": {
+      "sectionTitle": "Акции",
+      "sectionSubtitle": "Выбирите подходящую временную акцию",
+      "promoCards": [
+        {
+          "title": "Скидки на позиции в меню",
+          "subtitle": "скидочные предложения на разные позиции из меню",
+          "style": "outline",
+          "borderColor": "#E83A3A",
+          "icon": "% symbol (red #E83A3A, 30px)",
+          "height": 96,
+          "borderRadius": 20,
+          "textColor": "black"
+        },
+        {
+          "title": "Открытие / Переоткрытие / Новое меню от шефа",
+          "subtitle": "расскажите о своих новинках в меню",
+          "style": "filled",
+          "background": "#EFB800",
+          "icon": "scroll/document icon (white)",
+          "height": 116,
+          "borderRadius": 20,
+          "textColor": "#F4F1EC"
+        },
+        {
+          "title": "Счастливые часы / Happy Hours",
+          "subtitle": "предложите вашим гостям расслабляющие напитки",
+          "style": "outline",
+          "borderColor": "#872BB8",
+          "icon": "bar/cocktail icon",
+          "height": 96,
+          "borderRadius": 20,
+          "textColor": "black"
+        },
+        {
+          "title": "Живые события/Мероприятия",
+          "subtitle": "расскажите о живой музыке, дегустациях, мастер-классах у вас",
+          "style": "filled",
+          "background": "#3631C0",
+          "icon": "karaoke/microphone icon",
+          "height": 96,
+          "borderRadius": 20,
+          "textColor": "#F4F1EC"
+        },
+        {
+          "title": "Бизнес-ланчи / Обеденные предложения",
+          "subtitle": "делитесь вашими дневными предложениями в будние дни",
+          "style": "outline",
+          "borderColor": "#2FCED9",
+          "icon": "briefcase/lunchbox icon",
+          "height": 116,
+          "borderRadius": 20,
+          "textColor": "black"
+        }
+      ],
+      "cardLayout": {
+        "width": 310,
+        "leftSection": "icon area (~54px wide) separated by vertical divider line",
+        "rightSection": "title + subtitle text",
+        "verticalDivider": "thin line separating icon from text"
+      }
+    },
+    "bottomNav": {
+      "tabs": ["Search", "News", "Map", "Favourite", "Profile (active)"],
+      "background": "#F4F1EC"
+    }
+  },
+  "interactions": {
+    "backChevron": "Navigate back",
+    "otherPlansButton": "Navigate to subscription plans selection (screen 06)",
+    "promoCardTap": "Open promo creation form for selected type"
+  }
+}

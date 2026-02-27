@@ -1,0 +1,100 @@
+{
+  "screen": "News — Interesting Tab (Интересное)",
+  "description": "News screen with 'Интересное' tab active. Hero card (AI restaurant revolution), mini photo carousel, two text article list blocks separated by a wide banner card at bottom.",
+  "nodeId": "1:66144",
+  "designTokens": {
+    "Grey/Stroke": "#D2D2D2",
+    "Orange/Official": "#F06B32",
+    "Orange/Main dark": "#DB4F13",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "System/Black": "#000000",
+    "Grey/Arrow": "#3E3E3E",
+    "White/PRIME": "#F4F1EC"
+  },
+  "typography": {
+    "H2_Title": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%", "color": "#DB4F13" },
+    "TabActive": { "family": "Avenir Next", "weight": 400, "size": 18, "lineHeight": 22, "color": "white", "background": "#F06B32" },
+    "TabInactive": { "family": "Avenir Next", "weight": 400, "size": 18, "lineHeight": 22, "color": "#ABABAB", "border": "#D2D2D2" },
+    "HeroTitle": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": 30, "color": "white" },
+    "HeroSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" },
+    "ArticleTitle": { "family": "Avenir Next", "weight": 500, "size": 18, "lineHeight": 20, "color": "black" },
+    "ArticleSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "black" },
+    "BannerTitle": { "family": "Avenir Next", "weight": 500, "size": 25, "lineHeight": "normal", "color": "white" },
+    "BannerSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" },
+    "CarouselTitle": { "family": "Avenir Next", "weight": 500, "size": 23, "lineHeight": 26, "color": "white" },
+    "CarouselSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" }
+  },
+  "layout": {
+    "background": "#F4F1EC",
+    "tabs": {
+      "items": ["New", "События", "Интересное"],
+      "activeTab": "Интересное",
+      "activeStyle": { "background": "#F06B32", "textColor": "white", "borderRadius": 10.5 },
+      "inactiveStyle": { "border": "1.3px solid #D2D2D2", "textColor": "#ABABAB", "borderRadius": 10.5 },
+      "height": 40,
+      "gap": 10,
+      "paddingLeft": 16
+    },
+    "heroCard": {
+      "width": 378,
+      "height": 406,
+      "borderRadius": "0 0 50px 0 (bottom-right rounded)",
+      "gradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "titleOverlay": true
+    },
+    "miniPhotoCarousel": {
+      "cardWidth": 222,
+      "cardHeight": 166,
+      "cardShape": "rounded mask (teardrop-like)",
+      "shadowGradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "horizontalScroll": true,
+      "items": [
+        { "title": "Искусственное мясо", "subtitle": "действительно ли оно заменит настоящее?" },
+        { "title": "Новая эра кофе", "subtitle": "почему холодное заваривание и азотные напитки так популярны?" },
+        { "title": "ЗОЖ фастфуд", "subtitle": "как рестораны быстрого питания меняются под влиянием ЗОЖ" }
+      ]
+    },
+    "textArticleListBlock1": {
+      "items": [
+        { "title": "Эксперимент на грани искусства", "subtitle": "рестораны, где подают блюда в темноте и на 3D-принтере" },
+        { "title": "Больше, чем просто хлеб", "subtitle": "ремесленные пекарни и их влияние на современную гастрономию" },
+        { "title": "Молекулярная кухня возвращается?", "subtitle": "как современные шефы осмысляют технологии прошлого" }
+      ]
+    },
+    "bannerCard": {
+      "title": "Главные гастротренды",
+      "subtitle": "что едят в лучших ресторанах мира и какие вкусы завоевывают гурманов",
+      "width": 393,
+      "height": 155,
+      "shape": "wide rounded mask",
+      "gradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent"
+    },
+    "textArticleListBlock2": {
+      "items": [
+        { "title": "Больше, чем просто хлеб", "subtitle": "ремесленные пекарни и их влияние на современную гастрономию" },
+        { "title": "Молекулярная кухня возвращается?", "subtitle": "как современные шефы осмысляют технологии прошлого" }
+      ]
+    },
+    "bottomNav": {
+      "tabs": ["Search", "News", "Map", "Favourite", "Profile"],
+      "borderTop": "#E2E2E2 0.8px",
+      "background": "white"
+    }
+  },
+  "sections": [
+    { "type": "header", "content": "Новости (Unbounded, #DB4F13) + back chevron" },
+    { "type": "tabs", "content": "New | События | Интересное (active)" },
+    { "type": "heroCard", "content": "Революция в мире ресторанов: будущее за AI?" },
+    { "type": "miniPhotoCarousel", "content": "3 cards: Искусственное мясо, Новая эра кофе, ЗОЖ фастфуд" },
+    { "type": "textArticleList", "content": "3 items: Эксперимент на грани искусства, Больше чем просто хлеб, Молекулярная кухня" },
+    { "type": "bannerCard", "content": "Главные гастротренды — wide photo banner with overlay text" },
+    { "type": "textArticleList", "content": "2 items: Больше чем просто хлеб, Молекулярная кухня возвращается?" }
+  ],
+  "interactions": {
+    "tabSwitch": "Switch between New / События / Интересное",
+    "heroCard": "Tap to open article",
+    "carouselCard": "Horizontal scroll, tap to open",
+    "textArticle": "Tap to open article",
+    "bannerCard": "Tap to open article"
+  }
+}

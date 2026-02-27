@@ -1,0 +1,96 @@
+{
+  "screen": "News — Events Tab (События)",
+  "description": "News screen with 'События' tab active. Hero card (street food festival), 'Что в городе?' text article list, photo carousel, 'Мероприятия' text article list.",
+  "nodeId": "1:66220",
+  "designTokens": {
+    "Grey/Stroke": "#D2D2D2",
+    "Orange/Official": "#F06B32",
+    "Orange/Main dark": "#DB4F13",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "System/Black": "#000000",
+    "Grey/Arrow": "#3E3E3E",
+    "White/PRIME": "#F4F1EC"
+  },
+  "typography": {
+    "H2_Title": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%", "color": "#DB4F13" },
+    "TabActive": { "family": "Avenir Next", "weight": 400, "size": 18, "lineHeight": 22, "color": "white", "background": "#F06B32" },
+    "TabInactive": { "family": "Avenir Next", "weight": 400, "size": 18, "lineHeight": 22, "color": "#ABABAB", "border": "#D2D2D2" },
+    "SectionTitle": { "family": "Avenir Next", "weight": 500, "size": 24, "lineHeight": 28, "color": "black" },
+    "ArticleTitle": { "family": "Avenir Next", "weight": 500, "size": 18, "lineHeight": 20, "color": "black" },
+    "ArticleSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "black" },
+    "HeroTitle": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": 30, "color": "white" },
+    "HeroSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" },
+    "CarouselTitle": { "family": "Avenir Next", "weight": 500, "size": 23, "lineHeight": 26, "color": "white" },
+    "CarouselSubtitle": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 18, "color": "white" }
+  },
+  "layout": {
+    "background": "#F4F1EC",
+    "tabs": {
+      "items": ["New", "События", "Интересное"],
+      "activeStyle": { "background": "#F06B32", "textColor": "white", "borderRadius": 10.5 },
+      "inactiveStyle": { "border": "1.3px solid #D2D2D2", "textColor": "#ABABAB", "borderRadius": 10.5 },
+      "height": 40,
+      "gap": 10,
+      "paddingLeft": 16
+    },
+    "heroCard": {
+      "width": 378,
+      "height": 406,
+      "borderRadius": "0 0 50px 0 (bottom-right rounded)",
+      "gradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "titleOverlay": true,
+      "subtitleBelow": true
+    },
+    "textArticleList": {
+      "itemStructure": {
+        "title": "Avenir Next Medium 18px, leading 20, multiline",
+        "subtitle": "Avenir Next Regular 15px, leading 18, grey-ish",
+        "divider": "thin line (vector), full width 361px"
+      },
+      "paddingLeft": 7.5,
+      "gap": 18
+    },
+    "photoCarousel": {
+      "cardWidth": 222,
+      "cardHeight": 258,
+      "cardShape": "rounded mask (teardrop-like)",
+      "shadowGradient": "linear-gradient to top, rgba(0,0,0,0.7) -> transparent",
+      "titleOnCard": true,
+      "subtitleOnCard": true,
+      "horizontalScroll": true
+    },
+    "bottomNav": {
+      "tabs": ["Search", "News", "Map", "Favourite", "Profile"],
+      "borderTop": "#E2E2E2 0.8px",
+      "background": "white"
+    }
+  },
+  "sections": [
+    { "type": "header", "content": "Новости (Unbounded, orange #DB4F13) + back chevron" },
+    { "type": "tabs", "content": "New | События (active) | Интересное" },
+    { "type": "heroCard", "content": "Фестиваль уличной еды: новые вкусы города — street food festival image with overlay text" },
+    { "type": "sectionTitle", "content": "Что в городе?" },
+    { "type": "textArticleList", "items": [
+      { "title": "Вкус лета: сезонные блюда от топ ресторанов", "subtitle": "шеф-повара представляют свежие меню с акцентом на локальные летние продукты" },
+      { "title": "Новый тренд - рестораны с меню без сахара и глютена", "subtitle": "как изменился спрос на здоровое питание и где найти такие заведения" },
+      { "title": "Bistro-kitchen отмечает юбилей с особым меню", "subtitle": "как современные шефы осмысляют технологии прошлого" }
+    ]},
+    { "type": "photoCarousel", "items": [
+      { "title": "Суши фест до 09.05", "subtitle": "Art Sushi предлагают наборы суши сетов по спец предложени" },
+      { "title": "Дубайский шоколад", "subtitle": "где можно попробовать вкус того самого восточного шоколада" },
+      { "title": "Пицца с грушей?", "subtitle": "Pizza Yolo предлагает попробовать их авторскую пиццу" }
+    ]},
+    { "type": "sectionTitle", "content": "Мероприятия" },
+    { "type": "textArticleList", "items": [
+      { "title": "10 лучше одного", "subtitle": "гастро-фест в Beef and Rolls для компании от 10 человек" },
+      { "title": "Огромные смаженники?", "subtitle": "где попробовать тот самый вкус детства, но в других пропорциях" }
+    ]}
+  ],
+  "interactions": {
+    "tabSwitch": "Switch between New / События / Интересное",
+    "heroCard": "Tap to open article detail",
+    "textArticle": "Tap to open article detail",
+    "photoCarousel": "Horizontal scroll, tap to open",
+    "backChevron": "Navigate back"
+  }
+}

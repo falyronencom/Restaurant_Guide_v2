@@ -1,0 +1,120 @@
+{
+  "screen": "Promotion — Subscription Plans (Продвижение)",
+  "description": "Partner promotion screen accessed from partner dashboard. Shows restaurant profile card at top, 3 subscription tier cards (Базовый, Стандартный, Премиум), period selector and payment button at bottom.",
+  "nodeId": "2:67467",
+  "designTokens": {
+    "White/PRIME": "#F4F1EC",
+    "Grey/Side text": "#D2D2D2",
+    "Orange/Official": "#F06B32",
+    "Orange/Main dark": "#DB4F13",
+    "Orange/Secondary": "#EC723D",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "Orange/Section Shadow": "rgba(211,86,32,0.08)",
+    "System/Black": "#000000",
+    "Grey/Arrow": "#3E3E3E"
+  },
+  "typography": {
+    "H2_Title": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%", "color": "#DB4F13" },
+    "RestaurantName": { "family": "Unbounded", "weight": 400, "size": 22, "lineHeight": 26, "color": "black" },
+    "RestaurantType": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 23, "color": "black" },
+    "RestaurantCategory": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 15, "color": "#D2D2D2" },
+    "RestaurantAddress": { "family": "Avenir Next", "weight": 400, "size": 14, "lineHeight": 16, "color": "black" },
+    "PlanTitle": { "family": "Unbounded", "weight": 400, "size": 22, "lineHeight": 26, "color": "#F4F1EC" },
+    "PlanDescription": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 15, "color": "#F4F1EC" },
+    "PeriodSelector": { "family": "Avenir Next", "weight": 400, "size": 15, "lineHeight": 23, "color": "#F06B32" },
+    "DateRange": { "family": "Avenir Next", "weight": 500, "size": 15, "lineHeight": 23, "color": "black" },
+    "TotalLabel": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 15, "color": "black" },
+    "TotalPrice": { "family": "Avenir Next", "weight": 500, "size": 18, "lineHeight": 22, "color": "black" },
+    "PayButton": { "family": "Avenir Next", "weight": 600, "size": 15, "lineHeight": 23, "color": "#F4F1EC" }
+  },
+  "layout": {
+    "background": "#F4F1EC",
+    "header": {
+      "title": "Продвижение",
+      "titleFont": "Unbounded Regular 25px",
+      "titleColor": "#DB4F13",
+      "backChevron": true
+    },
+    "restaurantProfileCard": {
+      "width": 361,
+      "height": 116,
+      "borderRadius": 10,
+      "background": "#F4F1EC",
+      "shadow": "-4px -4px 15px 2px rgba(211,86,32,0.08), 4px 4px 15px 2px rgba(211,86,32,0.08)",
+      "leftSide": "circular masked photo (~107px)",
+      "rightSide": "name (Unbounded 22), type, category, address"
+    },
+    "subscriptionCards": {
+      "gap": 25,
+      "paddingLeft": 38,
+      "cards": [
+        {
+          "name": "Базовый",
+          "background": "#BC8E66",
+          "width": 313,
+          "height": 243,
+          "borderRadius": 10,
+          "shadow": "same orange section shadow",
+          "decorativeIcons": "2 coffee cup icons, rotated",
+          "subtitle": "идеально для небольших заведений, которые только начинают продвижение",
+          "features": [
+            "объявление выделено цветом или специальной меткой",
+            "приоритет в ранжировании: на 3 позиции выше стандартных объявлений"
+          ]
+        },
+        {
+          "name": "Стандартный",
+          "background": "#010C73",
+          "width": 313,
+          "height": 276,
+          "borderRadius": 10,
+          "shadow": "same orange section shadow",
+          "decorativeIcons": "2 fork/plate icons, rotated",
+          "subtitle": "подходит для растущего бизнеса, который хочет привлечь больше клиентов",
+          "features": [
+            "выделение цветом и специальной меткой",
+            "приоритет в ранжировании: на 5 позиций выше стандартных объявлений",
+            "добавление акций и скидок на страницу заведения"
+          ]
+        },
+        {
+          "name": "Премиум",
+          "background": "#000000",
+          "border": "2px solid #EC723D",
+          "width": 313,
+          "height": 276,
+          "borderRadius": 10,
+          "shadow": "same orange section shadow",
+          "decorativeIcons": "2 card/credit card icons, rotated",
+          "subtitle": "максимальное продвижение и присутствие в приложении",
+          "features": [
+            "уникальный дизайн объявления",
+            "размещение на главной странице (карусель)",
+            "топ-3 в ранжировании",
+            "расширенные возможности акций и мероприятий"
+          ]
+        }
+      ]
+    },
+    "periodSelector": {
+      "button": { "text": "1 неделя", "border": "1px solid #F06B32", "borderRadius": 8, "textColor": "#F06B32", "dropdownChevron": true },
+      "dateRange": { "text": "08 Сен – 14 Сен", "font": "Avenir Next Medium 15px" }
+    },
+    "paymentSection": {
+      "totalLabel": "Итого за период:",
+      "totalPrice": "15 бел. руб.",
+      "divider": "thin line 361px wide",
+      "payButton": { "text": "Оплатить", "background": "#F06B32", "borderRadius": 8, "padding": "10px 16px" }
+    },
+    "bottomNav": {
+      "tabs": ["Search", "News", "Map", "Favourite", "Profile (active)"],
+      "background": "#F4F1EC"
+    }
+  },
+  "interactions": {
+    "backChevron": "Navigate back to partner dashboard",
+    "subscriptionCard": "Select tier (visual selection, possibly highlight)",
+    "periodDropdown": "Change period (1 неделя / 2 недели / 1 месяц etc.)",
+    "payButton": "Proceed to payment"
+  }
+}

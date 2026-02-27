@@ -1,0 +1,74 @@
+{
+  "screen": "Favourites (Избранное)",
+  "description": "Favourites screen with folder-based collections displayed as circular thumbnails in a 2-column grid. Users can organize saved items (articles, recipes, news) into custom folders. Toggle between restaurants and folders view.",
+  "nodeId": "3:66170",
+  "designTokens": {
+    "Grey/Stroke": "#D2D2D2",
+    "Orange/Official": "#F06B32",
+    "Orange/Main dark": "#DB4F13",
+    "Orange/Active Navigation Icon": "#E35E24",
+    "System/Black": "#000000",
+    "Grey/Arrow": "#3E3E3E"
+  },
+  "typography": {
+    "H2_Title": { "family": "Unbounded", "weight": 400, "size": 25, "lineHeight": "100%", "color": "#DB4F13" },
+    "FolderLabel": { "family": "Avenir Next", "weight": 400, "size": 13, "lineHeight": 15, "color": "black", "textAlign": "center" },
+    "Hint": { "family": "Avenir Next", "weight": 400, "size": 14, "lineHeight": 25, "color": "black" }
+  },
+  "layout": {
+    "background": "white",
+    "header": {
+      "title": "Избранное",
+      "titleFont": "Unbounded Regular 25px",
+      "titleColor": "#DB4F13",
+      "backChevron": true,
+      "hint": "Создайте папки по категориям",
+      "divider": "thin line below hint, width 361px"
+    },
+    "modeToggle": {
+      "position": "top-right, next to title",
+      "buttons": [
+        { "icon": "fork.knife", "style": "plain icon, no background", "meaning": "restaurants view" },
+        { "icon": "doc.append", "style": "orange #F06B32 rounded rect background (39x35, radius 10)", "meaning": "folders view (active)" }
+      ]
+    },
+    "folderGrid": {
+      "columns": 2,
+      "folderShape": "circle 150x150px",
+      "folderImageMask": "circular mask with photo collage inside",
+      "labelBelow": true,
+      "horizontalPadding": 36,
+      "gap": "~20px horizontal, ~30px vertical",
+      "items": [
+        {
+          "label": "Интересное",
+          "thumbnailStyle": "single photo in circular mask"
+        },
+        {
+          "label": "Рецепты",
+          "thumbnailStyle": "2 photos layered in circular mask"
+        },
+        {
+          "label": "Новости",
+          "thumbnailStyle": "3 photos layered in circular mask"
+        },
+        {
+          "label": "Добавить",
+          "thumbnailStyle": "empty circle with #D2D2D2 border, plus (+) icon inside",
+          "isAddButton": true
+        }
+      ]
+    },
+    "bottomNav": {
+      "tabs": ["Search", "News", "Map", "Favourite (active)", "Profile"],
+      "borderTop": "#E2E2E2 0.8px",
+      "background": "white"
+    }
+  },
+  "interactions": {
+    "folderTap": "Open folder to see saved items",
+    "addButton": "Create new folder/collection",
+    "modeToggle": "Switch between restaurants list and folders view",
+    "backChevron": "Navigate back"
+  }
+}
