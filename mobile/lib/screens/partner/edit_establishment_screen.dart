@@ -362,17 +362,27 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
   /// Map field keys to Russian labels for moderation feedback
   static String _fieldLabel(String key) {
     const labels = {
+      // Admin panel field keys (from moderation_detail_panel.dart)
+      'legal_name': 'Полное название',
+      'unp': 'УНП',
+      'registration_doc': 'Регистрация',
+      'contact_person': 'Контактное лицо',
+      'contact_email': 'E-mail',
+      'customer_phone': 'Номер для связи',
+      'photos': 'Фото',
+      'menu': 'Меню',
+      // Common field keys
       'name': 'Название',
       'description': 'Описание',
       'address': 'Адрес',
       'phone': 'Телефон',
       'email': 'Email',
-      'website': 'Сайт',
+      'website': 'Сайт / соц. сеть',
       'categories': 'Категория',
       'cuisines': 'Кухня',
       'working_hours': 'Время работы',
       'media': 'Медиа',
-      'price_range': 'Ценовая категория',
+      'price_range': 'Средний чек',
       'attributes': 'Удобства',
     };
     return labels[key] ?? key;
