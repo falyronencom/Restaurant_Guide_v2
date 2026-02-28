@@ -21,9 +21,15 @@ async function createAdmin() {
   try {
     console.log('Creating admin account...');
 
-    const email = 'admin@test.com';
-    const password = 'Test1453';
-    const name = 'Admin';
+    const email = process.env.ADMIN_EMAIL || 'admin@test.com';
+    const password = process.env.ADMIN_PASSWORD;
+    const name = process.env.ADMIN_NAME || 'Admin';
+
+    if (!password) {
+      console.error('❌ ADMIN_PASSWORD env variable is required.');
+      console.error('   Usage: ADMIN_PASSWORD=YourSecurePass node backend/scripts/create-admin.js');
+      process.exit(1);
+    }
 
     const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);
     console.log(`Password hash generated: ${passwordHash.substring(0, 30)}...`);

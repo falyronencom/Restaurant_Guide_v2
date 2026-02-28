@@ -660,7 +660,7 @@ npm run db:reset
 
 ### Seed Users (12 accounts)
 
-All seed users share password `SeedUser2026!` and email pattern `seed.user.N@restaurantguide.by`.
+All seed users share the password set via `SEED_PASSWORD` env variable (see reviews-config.js) and email pattern `seed.user.N@restaurantguide.by`.
 
 | # | Name | Email |
 |---|------|-------|

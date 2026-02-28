@@ -15,7 +15,12 @@ async function createTestPartner() {
     console.log('Creating test partner account...');
     
     // Generate password hash
-    const password = 'test123';
+    const password = process.env.PARTNER_PASSWORD;
+    if (!password) {
+      console.error('❌ PARTNER_PASSWORD env variable is required.');
+      console.error('   Usage: PARTNER_PASSWORD=YourPass node backend/scripts/create-test-partner.js');
+      process.exit(1);
+    }
     const passwordHash = await argon2.hash(password);
     console.log(`Password hash generated: ${passwordHash.substring(0, 30)}...`);
     
