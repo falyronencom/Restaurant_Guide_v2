@@ -11,8 +11,7 @@ class Environment {
   static String get apiBaseUrl {
     switch (_environment) {
       case 'production':
-        // Production backend URL - to be configured when backend is deployed
-        return 'https://api.restaurant-guide.by';
+        return 'https://restaurantguidev2-production.up.railway.app';
       case 'staging':
         // Staging environment for testing
         return 'https://staging-api.restaurant-guide.by';
