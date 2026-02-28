@@ -28,7 +28,7 @@ export const SEED_USERS = [
   { name: 'Андрей Климович', email: 'seed.user.12@restaurantguide.by' },
 ];
 
-export const SEED_USER_PASSWORD = '***REDACTED_PASSWORD***';
+export const SEED_USER_PASSWORD = process.env.SEED_PASSWORD || '***REDACTED_PASSWORD***';
 
 export const SEED_USER_EMAIL_PATTERN = 'seed.user.%@restaurantguide.by';
 
