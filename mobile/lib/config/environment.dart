@@ -4,7 +4,7 @@ class Environment {
   /// Current environment mode
   static const String _environment = String.fromEnvironment(
     'ENV',
-    defaultValue: 'development',
+    defaultValue: 'production',
   );
 
   /// Backend API base URL based on environment
