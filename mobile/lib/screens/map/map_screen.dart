@@ -50,6 +50,11 @@ class _MapScreenState extends State<MapScreen> {
   /// Track last known city to detect changes when returning to map tab
   String? _lastCity;
 
+  /// Gate flag: skip onCameraPositionChanged until initial moveCamera completes.
+  /// Prevents race condition on real iOS devices where the default camera position
+  /// (world view) triggers a fetch+setState that interferes with moveCamera.
+  bool _initialCameraReady = false;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -340,6 +345,11 @@ class _MapScreenState extends State<MapScreen> {
       initialZoom = _defaultZoom;
     }
 
+    // Delay to ensure native map view is fully initialized on real iOS devices.
+    // Without this, moveCamera can be silently ignored on hardware.
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
     await controller.moveCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
@@ -349,17 +359,19 @@ class _MapScreenState extends State<MapScreen> {
       ),
       animation: const MapAnimation(
         type: MapAnimationType.smooth,
-        duration: 0.3,
+        duration: 0.5,
       ),
     );
 
-    // Don't call _fetchEstablishmentsForCurrentBounds() here —
-    // onCameraPositionChanged(finished: true) will trigger it
-    // after the camera animation completes, ensuring correct bounds.
+    // Now safe to respond to user camera movements
+    _initialCameraReady = true;
 
-    // Show preview for focused establishment after camera settles
+    // Fetch establishments for the correct (post-move) position
+    _fetchEstablishmentsForCurrentBounds();
+
+    // Show preview for focused establishment after markers load
     if (focused != null) {
-      Future.delayed(const Duration(milliseconds: 800), () {
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           _showEstablishmentPreview(focused);
         }
@@ -372,6 +384,11 @@ class _MapScreenState extends State<MapScreen> {
     CameraUpdateReason reason,
     bool finished,
   ) {
+    // Skip until initial camera positioning is complete.
+    // On real iOS devices, this fires for the default world-view position
+    // before moveCamera finishes, causing a fetch+setState that resets the camera.
+    if (!_initialCameraReady) return;
+
     // Only fetch when camera movement finished
     if (finished) {
       _fetchEstablishmentsForCurrentBounds();
