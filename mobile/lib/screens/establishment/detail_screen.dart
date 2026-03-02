@@ -318,10 +318,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildBackButton(),
           ),
 
-          // Share button — centered with rating badge & favorite (center at 49px from right)
+          // Share button — mirrored position of back button
           Positioned(
-            top: MediaQuery.of(context).padding.top + 4,
-            right: 35,
+            top: MediaQuery.of(context).padding.top + 36,
+            right: 0,
             child: _buildShareButton(),
           ),
 
@@ -466,14 +466,27 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build share button (Figma style - no padding)
+  /// Build share button (mirrored style of back button)
   Widget _buildShareButton() {
     return GestureDetector(
       onTap: _shareEstablishment,
-      child: const Icon(
-        Icons.ios_share,
-        color: _backgroundColor,
-        size: 28,
+      child: Container(
+        width: 55,
+        height: 42,
+        decoration: const BoxDecoration(
+          color: AppTheme.textPrimary,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(8),
+            bottomLeft: Radius.circular(8),
+          ),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.ios_share,
+            color: AppTheme.textOnPrimary,
+            size: 24,
+          ),
+        ),
       ),
     );
   }

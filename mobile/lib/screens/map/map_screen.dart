@@ -347,15 +347,19 @@ class _MapScreenState extends State<MapScreen> {
           zoom: initialZoom,
         ),
       ),
+      animation: const MapAnimation(
+        type: MapAnimationType.smooth,
+        duration: 0.3,
+      ),
     );
 
-    // Fetch establishments for initial view
-    _fetchEstablishmentsForCurrentBounds();
+    // Don't call _fetchEstablishmentsForCurrentBounds() here —
+    // onCameraPositionChanged(finished: true) will trigger it
+    // after the camera animation completes, ensuring correct bounds.
 
-    // Show preview for focused establishment after markers are loaded
+    // Show preview for focused establishment after camera settles
     if (focused != null) {
-      // Small delay to ensure markers are rendered
-      Future.delayed(const Duration(milliseconds: 500), () {
+      Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
           _showEstablishmentPreview(focused);
         }
