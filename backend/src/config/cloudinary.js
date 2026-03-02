@@ -41,7 +41,7 @@ cloudinary.config({
   secure: true, // Always use HTTPS for security
 });
 
-// Startup diagnostic: verify Cloudinary credentials are loaded
+// Startup diagnostic: verify Cloudinary credentials are loaded and valid
 const _cn = process.env.CLOUDINARY_CLOUD_NAME;
 const _ak = process.env.CLOUDINARY_API_KEY;
 const _as = process.env.CLOUDINARY_API_SECRET;
@@ -50,6 +50,14 @@ logger.info('Cloudinary config loaded', {
   api_key: _ak ? `${_ak.slice(0, 4)}...${_ak.slice(-4)}` : 'MISSING',
   api_secret: _as ? `${_as.slice(0, 4)}...${_as.slice(-4)} (len=${_as.length})` : 'MISSING',
 });
+
+// Verify credentials by pinging Cloudinary API
+cloudinary.api.ping()
+  .then(() => logger.info('Cloudinary credentials VALID - ping OK'))
+  .catch((err) => logger.error('Cloudinary credentials INVALID - ping failed', {
+    error: err.message,
+    http_code: err.http_code,
+  }));
 
 /**
  * Image resolution configurations for the three-tier system
