@@ -33,8 +33,18 @@ app.use(helmet());
  * ...existing code...
  */
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
-  credentials: process.env.CORS_CREDENTIALS === 'true',
+  origin: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',')
+    : function (origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        // and any localhost origin (Flutter Web dev server uses random ports)
+        if (!origin || origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID'],
 };
