@@ -272,16 +272,6 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   ),
                 ),
                 Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0),
-                        _secondaryOrange.withValues(alpha: 0.1),
-                      ],
-                    ),
-                  ),
                   padding: EdgeInsets.fromLTRB(
                     16,
                     24,
