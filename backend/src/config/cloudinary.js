@@ -41,6 +41,16 @@ cloudinary.config({
   secure: true, // Always use HTTPS for security
 });
 
+// Startup diagnostic: verify Cloudinary credentials are loaded
+const _cn = process.env.CLOUDINARY_CLOUD_NAME;
+const _ak = process.env.CLOUDINARY_API_KEY;
+const _as = process.env.CLOUDINARY_API_SECRET;
+logger.info('Cloudinary config loaded', {
+  cloud_name: _cn || 'MISSING',
+  api_key: _ak ? `${_ak.slice(0, 4)}...${_ak.slice(-4)}` : 'MISSING',
+  api_secret: _as ? `${_as.slice(0, 4)}...${_as.slice(-4)} (len=${_as.length})` : 'MISSING',
+});
+
 /**
  * Image resolution configurations for the three-tier system
  * 
@@ -102,13 +112,13 @@ export const uploadImage = async (filePath, establishmentId, mediaType) => {
     const uploadResult = await cloudinary.uploader.upload(filePath, {
       folder: `establishments/${establishmentId}/${mediaType}`,
       resource_type: 'image',
-      quality: 'auto', // Automatic quality optimization
-      fetch_format: 'auto', // Automatic format selection (WebP when supported)
       transformation: [
         {
           width: RESOLUTION_CONFIG.original.width,
           height: RESOLUTION_CONFIG.original.height,
           crop: RESOLUTION_CONFIG.original.crop,
+          quality: 'auto',
+          fetch_format: 'auto',
         },
       ],
     });
