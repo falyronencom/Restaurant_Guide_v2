@@ -427,6 +427,8 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
 
   /// Animate PageView to specific page
   void _animateToPage(int page) {
+    // Dismiss keyboard when switching steps
+    FocusManager.instance.primaryFocus?.unfocus();
     _pageController.animateToPage(
       page,
       duration: const Duration(milliseconds: 300),
