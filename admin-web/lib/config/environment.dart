@@ -11,13 +11,13 @@ class Environment {
   static String get apiBaseUrl {
     switch (_environment) {
       case 'production':
-        return 'https://api.restaurant-guide.by';
-      case 'staging':
-        return 'https://staging-api.restaurant-guide.by';
+        return 'https://restaurantguidev2-production.up.railway.app';
+      case 'local':
+        return 'http://localhost:3000';
       case 'development':
       default:
-        // Flutter Web runs in browser — localhost works directly
-        return 'http://localhost:3000';
+        // Default: Railway production backend (no local setup needed)
+        return 'https://restaurantguidev2-production.up.railway.app';
     }
   }
 
