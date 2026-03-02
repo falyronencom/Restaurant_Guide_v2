@@ -179,18 +179,8 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                   ),
                 ),
 
-                // Bottom gradient and Apply button
+                // Apply button
                 Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0),
-                        _secondaryOrange.withValues(alpha: 0.1),
-                      ],
-                    ),
-                  ),
                   padding: EdgeInsets.fromLTRB(
                     16,
                     24,
