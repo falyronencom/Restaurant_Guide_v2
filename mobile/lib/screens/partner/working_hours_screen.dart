@@ -372,6 +372,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: initialTime,
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
