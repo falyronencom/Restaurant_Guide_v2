@@ -180,7 +180,7 @@ class _CuisineCard extends StatelessWidget {
       'georgian': 'Грузинская',
       'vegetarian': 'Вегетарианская',
       'mixed': 'Смешанная',
-      'continental': 'Континентальная',
+      'continental': 'Европейская',
     };
     final fileName = iconToFile[iconName] ?? 'Народная';
     return SvgPicture.asset(
