@@ -366,7 +366,7 @@ describe('authService', () => {
       expect(result).toEqual({
         accessToken: 'access_token_abc',
         refreshToken: 'refresh_token_xyz',
-        expiresIn: 900,
+        expiresIn: 14400,
       });
 
       // Verify access token was generated with user data

@@ -260,7 +260,7 @@ export async function generateTokenPair(user) {
     return {
       accessToken,
       refreshToken,
-      expiresIn: 900, // 15 minutes in seconds
+      expiresIn: 14400, // 4 hours in seconds
     };
     
   } catch (error) {
