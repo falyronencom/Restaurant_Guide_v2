@@ -11,7 +11,7 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '15m';
+const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '4h';
 
 /**
  * Validates that JWT_SECRET is properly configured.
@@ -37,9 +37,10 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
  * Generates an access token with short expiration time.
  * Access tokens are used for API authentication and are validated without database access.
  * 
- * Architecture decision: 15 minute expiry balances security and user experience.
+ * Architecture decision: 4 hour expiry balances security and mobile UX.
  * Short expiry limits the damage window if a token is compromised, while refresh
- * tokens allow seamless session continuation.
+ * tokens allow seamless session continuation. 15m was too aggressive for mobile
+ * apps where users leave the app for hours between sessions.
  * 
  * @param {Object} payload - User data to encode in token
  * @param {string} payload.userId - User's unique identifier
