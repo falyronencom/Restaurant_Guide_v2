@@ -126,12 +126,18 @@ All phases apply. Scale depth to task complexity.
 | Session report | After each implementation session | `mobile/session_reports/` or `admin-web/session_reports/` |
 | Roadmap status | When entire phase completes | `docs/ROADMAP.md` — update phase status |
 | README latest update | Optional, periodic | `README.md` section "Последнее обновление" |
+| Claude Code memory | After each session | Auto-memory: `MEMORY.md`, `session_history.md`, `lessons_learned.md` |
 
 **Rules:**
 - CHANGELOG.md: 5-10 lines per entry, reverse chronological, date + task name + key results
 - Session reports: detailed technical report following `phase_N_name_report.md` naming
 - README.md: do NOT expand beyond current structure. Only refresh "Последнее обновление" section
 - Roadmap: change status markers (planned -> in progress -> completed) when a full phase finishes
+- Claude Code memory (auto-memory directory, 3-file architecture):
+  - `MEMORY.md` (≤150 lines, auto-loaded every session): update **Current Phase** if project status changes. Do NOT add session entries or lessons here
+  - `session_history.md`: append session summary (date, type, files changed, key results) — one bullet per session
+  - `lessons_learned.md`: append new lessons under appropriate category (Backend, Mobile, DB, YandexMap, Testing, Deploy, Tooling, Moderation). Check existing entries first — do NOT duplicate
+  - If MEMORY.md approaches 150 lines, move lower-priority content to sub-files before adding new content
 
 ---
 
@@ -401,6 +407,10 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.2 (March 2026)
+- **Added Claude Code memory** to Documentation Updates — 3-file architecture: MEMORY.md (≤150 lines, auto-loaded), session_history.md (session log), lessons_learned.md (categorized lessons)
+- Rules for memory maintenance: what goes where, deduplication, 150-line budget management
 
 ### v1.1 (February 2026)
 - **Added Documentation Updates table** to Phase 4 (Report) — specifies which files to update after task completion (CHANGELOG.md, session reports, ROADMAP.md, README.md)
