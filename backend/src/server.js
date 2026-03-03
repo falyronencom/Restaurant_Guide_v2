@@ -33,17 +33,24 @@ app.use(helmet());
  * ...existing code...
  */
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',')
-    : function (origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        // and any localhost origin (Flutter Web dev server uses random ports)
-        if (!origin || origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      },
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    // Always allow localhost (Flutter Web dev server uses random ports)
+    if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
+      return callback(null, true);
+    }
+    // Check additional allowed origins from env var
+    if (process.env.CORS_ORIGIN) {
+      const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim());
+      if (allowed.includes(origin)) {
+        return callback(null, true);
+      }
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID'],
