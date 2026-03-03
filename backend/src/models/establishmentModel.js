@@ -309,7 +309,7 @@ export const getEstablishmentsByPartner = async (partnerId, filters = {}) => {
         )
         FROM establishment_media
         WHERE establishment_id = e.id
-        ORDER BY is_primary DESC, position ASC
+        ORDER BY is_primary DESC, (CASE WHEN type = 'interior' THEN 0 ELSE 1 END), position ASC
         LIMIT 1
       ) as primary_photo
     FROM establishments e
@@ -703,7 +703,7 @@ export const getPendingEstablishments = async (limit = 20, offset = 0) => {
         )
         FROM establishment_media em
         WHERE em.establishment_id = e.id
-        ORDER BY em.is_primary DESC, em.position ASC
+        ORDER BY em.is_primary DESC, (CASE WHEN em.type = 'interior' THEN 0 ELSE 1 END), em.position ASC
         LIMIT 1
       ) as primary_photo
     FROM establishments e
@@ -890,7 +890,7 @@ export const getActiveEstablishments = async (limit = 20, offset = 0, filters = 
         )
         FROM establishment_media em
         WHERE em.establishment_id = e.id
-        ORDER BY em.is_primary DESC, em.position ASC
+        ORDER BY em.is_primary DESC, (CASE WHEN em.type = 'interior' THEN 0 ELSE 1 END), em.position ASC
         LIMIT 1
       ) as primary_photo
     FROM establishments e
@@ -1019,7 +1019,7 @@ export const searchAllEstablishments = async (search, filters = {}) => {
         )
         FROM establishment_media em
         WHERE em.establishment_id = e.id
-        ORDER BY em.is_primary DESC, em.position ASC
+        ORDER BY em.is_primary DESC, (CASE WHEN em.type = 'interior' THEN 0 ELSE 1 END), em.position ASC
         LIMIT 1
       ) as primary_photo
     FROM establishments e
@@ -1266,7 +1266,7 @@ export const getSuspendedEstablishments = async (limit = 20, offset = 0) => {
         )
         FROM establishment_media em
         WHERE em.establishment_id = e.id
-        ORDER BY em.is_primary DESC, em.position ASC
+        ORDER BY em.is_primary DESC, (CASE WHEN em.type = 'interior' THEN 0 ELSE 1 END), em.position ASC
         LIMIT 1
       ) as primary_photo
     FROM establishments e
