@@ -224,7 +224,7 @@ export const getUserFavorites = async (userId, options = {}) => {
         SELECT url
         FROM establishment_media
         WHERE establishment_id = e.id
-        ORDER BY is_primary DESC, position ASC
+        ORDER BY is_primary DESC, (CASE WHEN type = 'interior' THEN 0 ELSE 1 END), position ASC
         LIMIT 1
       ) as establishment_primary_image
     FROM favorites f

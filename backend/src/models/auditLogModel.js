@@ -123,7 +123,7 @@ export const getRejectionHistory = async (limit = 20, offset = 0) => {
         )
         FROM establishment_media em
         WHERE em.establishment_id = e.id
-        ORDER BY em.is_primary DESC, em.position ASC
+        ORDER BY em.is_primary DESC, (CASE WHEN em.type = 'interior' THEN 0 ELSE 1 END), em.position ASC
         LIMIT 1
       ) as primary_photo
     FROM audit_log al
