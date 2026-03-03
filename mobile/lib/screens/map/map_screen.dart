@@ -345,11 +345,15 @@ class _MapScreenState extends State<MapScreen> {
       initialZoom = _defaultZoom;
     }
 
-    // Delay to ensure native map view is fully initialized on real iOS devices.
-    // Without this, moveCamera can be silently ignored on hardware.
-    await Future.delayed(const Duration(milliseconds: 300));
+    // On real iOS devices the native map view needs time to fully initialize.
+    // Without sufficient delay, moveCamera is silently ignored on hardware.
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
 
+    // Instant camera positioning (no animation) to avoid race conditions:
+    // animated moveCamera can be interrupted by setState-triggered rebuilds
+    // (from _fetchEstablishmentsForCurrentBounds), causing the camera to
+    // snap back to the default world-view position.
     await controller.moveCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
@@ -357,11 +361,13 @@ class _MapScreenState extends State<MapScreen> {
           zoom: initialZoom,
         ),
       ),
-      animation: const MapAnimation(
-        type: MapAnimationType.smooth,
-        duration: 0.5,
-      ),
     );
+
+    // Let the map settle at the new position before enabling user-driven
+    // camera tracking — prevents stale onCameraPositionChanged events
+    // from triggering premature fetches.
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
 
     // Now safe to respond to user camera movements
     _initialCameraReady = true;
