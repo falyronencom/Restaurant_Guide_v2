@@ -21,7 +21,7 @@ import { upgradeUserToPartner } from './authService.js';
 /**
  * Valid city values for Belarus
  */
-const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Бобруйск'];
+const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Могилёв', 'Бобруйск'];
 
 /**
  * Valid category values
@@ -82,6 +82,7 @@ export const CITY_BOUNDS = {
   'Гомель': { latMin: 52.32, latMax: 52.52, lonMin: 30.85, lonMax: 31.15 },
   'Витебск': { latMin: 55.10, latMax: 55.28, lonMin: 30.05, lonMax: 30.35 },
   'Могилев': { latMin: 53.82, latMax: 54.00, lonMin: 30.20, lonMax: 30.50 },
+  'Могилёв': { latMin: 53.82, latMax: 54.00, lonMin: 30.20, lonMax: 30.50 },
   'Бобруйск': { latMin: 53.08, latMax: 53.22, lonMin: 29.10, lonMax: 29.40 },
 };
 

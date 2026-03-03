@@ -345,28 +345,29 @@ class _MapScreenState extends State<MapScreen> {
       initialZoom = _defaultZoom;
     }
 
-    // On real iOS devices the native map view needs time to fully initialize.
-    // Without sufficient delay, moveCamera is silently ignored on hardware.
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-
-    // Instant camera positioning (no animation) to avoid race conditions:
-    // animated moveCamera can be interrupted by setState-triggered rebuilds
-    // (from _fetchEstablishmentsForCurrentBounds), causing the camera to
-    // snap back to the default world-view position.
-    await controller.moveCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: initialTarget,
-          zoom: initialZoom,
-        ),
-      ),
+    // On real iOS devices the native map view can silently ignore moveCamera
+    // if called before the native view is fully initialized.  We fire an
+    // immediate attempt (works when tile cache is warm, e.g. Minsk after using
+    // the map tab), then retry after a longer delay for cold regions.
+    final cameraPosition = CameraPosition(
+      target: initialTarget,
+      zoom: initialZoom,
     );
 
-    // Let the map settle at the new position before enabling user-driven
-    // camera tracking — prevents stale onCameraPositionChanged events
-    // from triggering premature fetches.
-    await Future.delayed(const Duration(milliseconds: 300));
+    // Attempt 1: immediate (often succeeds for cached tile regions)
+    await controller.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+
+    // Attempt 2: after native view is reliably ready
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    await controller.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+
+    // Let the map settle before enabling user-driven camera tracking
+    await Future.delayed(const Duration(milliseconds: 250));
     if (!mounted) return;
 
     // Now safe to respond to user camera movements

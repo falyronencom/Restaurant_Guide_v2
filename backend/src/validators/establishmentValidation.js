@@ -21,7 +21,7 @@ import { body, param, query } from 'express-validator';
 /**
  * Valid city enum values for Belarus
  */
-const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Бобруйск'];
+const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Могилёв', 'Бобруйск'];
 
 /**
  * Valid establishment category values
