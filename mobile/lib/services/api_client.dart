@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
@@ -7,6 +9,12 @@ import 'package:restaurant_guide_mobile/config/environment.dart';
 class ApiClient {
   late final Dio _dio;
   final FlutterSecureStorage _storage;
+
+  /// Lock to prevent concurrent token refresh attempts.
+  /// When multiple requests get 401 simultaneously, only the first triggers
+  /// a refresh — the rest wait for it. Without this, strict single-use
+  /// token rotation detects "reuse" and invalidates ALL user tokens.
+  Completer<bool>? _refreshCompleter;
 
   // Singleton pattern
   static final ApiClient _instance = ApiClient._internal();
@@ -172,8 +180,32 @@ class ApiClient {
   // Token Management
   // ============================================================================
 
-  /// Attempt to refresh access token using refresh token
+  /// Attempt to refresh access token using refresh token.
+  /// Uses a Completer lock so that concurrent 401 responses share a single
+  /// refresh call. Without this, strict single-use token rotation on the
+  /// backend detects "reuse" and invalidates ALL user tokens.
   Future<bool> _attemptTokenRefresh() async {
+    // If a refresh is already in progress, wait for its result
+    if (_refreshCompleter != null) {
+      return _refreshCompleter!.future;
+    }
+
+    _refreshCompleter = Completer<bool>();
+
+    try {
+      final result = await _doTokenRefresh();
+      _refreshCompleter!.complete(result);
+      return result;
+    } catch (e) {
+      _refreshCompleter!.complete(false);
+      return false;
+    } finally {
+      _refreshCompleter = null;
+    }
+  }
+
+  /// Internal refresh logic — called only once per refresh cycle
+  Future<bool> _doTokenRefresh() async {
     try {
       final refreshToken = await _storage.read(key: 'refresh_token');
       if (refreshToken == null || refreshToken.isEmpty) {

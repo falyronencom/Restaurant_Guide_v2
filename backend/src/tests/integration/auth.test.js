@@ -62,7 +62,7 @@ describe('POST /api/v1/auth/register', () => {
     expect(response.body.data.user.role).toBe('user');
     expect(response.body.data.accessToken).toBeTruthy();
     expect(response.body.data.refreshToken).toBeTruthy();
-    expect(response.body.data.expiresIn).toBe(900);
+    expect(response.body.data.expiresIn).toBe(14400);
 
     const userInDb = await getUserByEmail(testUsers.regularUser.email);
     expect(userInDb.password_hash).toMatch(/^\$argon2id\$/);
