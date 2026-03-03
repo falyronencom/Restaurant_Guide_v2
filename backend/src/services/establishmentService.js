@@ -525,7 +525,11 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     ]);
 
     // Map media to frontend-expected format
-    const primaryMedia = media.find(m => m.is_primary);
+    // Priority: is_primary flag → first interior photo → first any photo
+    const primaryMedia = media.find(m => m.is_primary)
+      || media.find(m => m.type === 'interior')
+      || media[0]
+      || null;
     const interiorPhotos = media.filter(m => m.type === 'interior').map(m => m.url);
     const menuPhotos = media.filter(m => m.type === 'menu').map(m => m.url);
 
