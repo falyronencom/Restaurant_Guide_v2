@@ -56,6 +56,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   // Mini-map marker generator (shared singleton)
   final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
 
+  // Mini-map controller (stored for retry positioning on iOS)
+  YandexMapController? _miniMapController;
+
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
@@ -1205,6 +1208,33 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Position mini-map camera on establishment with retry for iOS devices
+  /// where the first moveCamera can be silently ignored.
+  Future<void> _positionMiniMap() async {
+    if (_miniMapController == null || _establishment == null) return;
+    if (_establishment!.latitude == null || _establishment!.longitude == null) return;
+
+    final cameraPosition = CameraPosition(
+      target: Point(
+        latitude: _establishment!.latitude!,
+        longitude: _establishment!.longitude!,
+      ),
+      zoom: 16.0,
+    );
+
+    // Attempt 1: immediate (works when tile cache is warm)
+    await _miniMapController!.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+
+    // Attempt 2: after native view is reliably ready
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    await _miniMapController!.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+  }
+
   /// Build map section
   Widget _buildMapSection() {
     return Column(
@@ -1305,17 +1335,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                           // Prevent map gestures, only allow tap on container
                           child: YandexMap(
                             onMapCreated: (YandexMapController controller) {
-                              controller.moveCamera(
-                                CameraUpdate.newCameraPosition(
-                                  CameraPosition(
-                                    target: Point(
-                                      latitude: _establishment!.latitude!,
-                                      longitude: _establishment!.longitude!,
-                                    ),
-                                    zoom: 16.0,
-                                  ),
-                                ),
-                              );
+                              _miniMapController = controller;
+                              _positionMiniMap();
                             },
                             mapObjects: [
                               PlacemarkMapObject(
