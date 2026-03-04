@@ -33,7 +33,7 @@
 - Moderation workflow
 - Comprehensive testing
 
-## Фаза 5: Mobile MVP Frontend (Текущая фаза)
+## Фаза 5: Mobile MVP Frontend (Завершена — Январь 2026)
 
 ### Sub-Phase 1: Foundation Architecture (Завершена - Ноябрь 2025)
 - Flutter project setup с dependencies
@@ -149,6 +149,7 @@
 - Frontend: AuditLogScreen (expandable JSON rows, filter bar, pagination), ReviewsManagementScreen (list+detail panel, status badges, optimistic updates), NotificationsScreen, PaymentsScreen
 - Zero PlaceholderScreens remaining — all sidebar items route to functional screens
 - Files: 5 backend new, 10 frontend new, 3 edited
+- Session Report: [admin-web/session_reports/phase_8_segment_e_utility_screens_report.md](../admin-web/session_reports/phase_8_segment_e_utility_screens_report.md)
 
 ### Admin Backend QA (Завершено - Февраль 2026)
 Отдельная QA-инициатива для тестового покрытия всех 17 admin API эндпоинтов.
@@ -167,6 +168,12 @@
 - Production bugs found & fixed: 2 (колонка `partner_response_at`, SQL FILTER placement)
 - **Итого: 211 admin тестов, все 17 эндпоинтов покрыты**
 - Coverage baseline: 61.52% statements / 55.78% branches / 62.39% functions
+
+### Production Deployment (Завершено — Февраль–Март 2026)
+- Railway: Backend (Node.js) + PostGIS + Redis — Hobby Plan
+- Seed data: 77 establishments (7 cities), 281 reviews, 546 media
+- iOS: TestFlight external testing approved (Apple ID: 6759831819)
+- Fixes: map zoom retry, Могилёв ё/е validators, CORS localhost
 
 ## Фаза 9: Testing & Polish (Запланировано)
 - Comprehensive E2E testing

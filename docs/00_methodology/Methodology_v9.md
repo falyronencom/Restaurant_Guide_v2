@@ -1,0 +1,959 @@
+# Distributed Intelligence Methodology v9.0
+
+**Version:** 9.0
+**Date:** February 2026
+**Status:** Active Operational Standard
+**Core Paradigm:** Co-Creative Partnership Between Human Coordination and Autonomous Agents
+
+---
+
+## Part 0: Operational Kernel
+
+*This is your pre-flight orientation. These protocols represent the shared agreements that keep the co-creative process coherent. Everything beyond this section is reference material — consult when the situation calls for it.*
+
+---
+
+### The Eight Protocols
+
+**Protocol 1 — Thinking and Action Have Different Homes**
+
+Trunk thinks and plans (browser). Leaf builds and tests (CLI). Each environment enables what the other cannot: Trunk has strategic breadth without codebase access; Leaf has direct code interaction without strategic memory. The Coordinator bridges them — routing artifacts, providing operational context, and applying human judgment where neither environment alone is sufficient.
+
+**Protocol 2 — Reality Before Plan**
+
+Before creating an implementation directive, verify the actual state of code. Standard flow: Trunk formulates Discovery Directive (targeted questions) → Librarian investigates codebase → Discovery Report (verified answers) → Trunk creates Informed Directive grounded in facts.
+
+Verification standard: a finding of "NOT FOUND" is valid only after semantic reading of the relevant entry point — keyword search alone is insufficient to confirm absence.
+
+Skipping Pre-flight Discovery means Trunk plans on assumptions, and Implementer spends 50-80% of context rediscovering reality. For simple ad-hoc tasks that don't require Trunk involvement, use Mode B directly (see Protocol 6).
+
+**Protocol 3 — Artifacts Pass Through Unaltered**
+
+All technical artifacts — Discovery Directives, Discovery Reports, Informed Directives, Semantic Handoffs — pass through the Coordinator without editing, filtering, or summarizing their content. The Coordinator's contribution is different in nature: routing artifacts to the correct recipient, appending operational context from the environment ("backend returns error X", "emulator shows Y"), and making strategic decisions about next steps. The artifact itself remains as created by its author.
+
+**Protocol 4 — Transfer Understanding, Not Coordinates**
+
+When a session ends with incomplete work, the Semantic Handoff must transfer *why* the problem exists (Problem Model), *what was confirmed* (Verified Facts), and *what was ruled out* (Eliminated Hypotheses). This is the difference between giving someone a map pin and explaining the terrain. Without Problem Model and Eliminated Hypotheses, the next session re-discovers what was already known — a system failure in collective memory.
+
+Mandatory sections: Problem Model, Verified Facts, Eliminated Hypotheses, Current State, Continuation Point.
+
+**Protocol 5 — Trust the Signal**
+
+The Coordinator often senses when a session is approaching its productive limit before explicit indicators confirm it. This intuition is a valid signal and should be acted on immediately — not deferred for "one more message."
+
+Observable patterns that reinforce this signal: rising uncertainty in agent responses, repetition of previously attempted approaches, increasing ambiguity in proposed solutions. When any of these appear, or when the Coordinator's instinct says "it's time" — initiate handoff without delay.
+
+**Protocol 6 — Two Ways to Launch an Implementer**
+
+Every Implementer session begins in one of two modes. The Coordinator's decision is a single question:
+
+*Do I have a Discovery Report for this task?*
+
+Yes → **Mode A (Informed Execution).** Implementer receives Informed Directive + Discovery Report. Performs Quick Sanity Check (verify 2-3 key gap claims from the report), then proceeds to planning and implementation. Context-efficient — discovery work already done by Librarian.
+
+No → **Mode B (Autonomous Execution).** Implementer receives task description from Coordinator. Performs full cycle: Pre-scan → Discovery → Planning → Implementation. Context-intensive — agent builds understanding independently. For complex tasks (5+ files, 3+ modules), consider pausing and escalating to Trunk for proper Pre-flight Discovery.
+
+**Protocol 7 — Recognize When a Session Has Lost Its Way**
+
+Three escalating signals: repeated proposal of similar solutions (early warning — review what's happening), fixes that introduce new problems (critical — prepare to end session), contradictory patterns emerging in code (critical — stop immediately).
+
+A degraded session cannot recover by trying harder. The productive response: commit current state with WIP label, generate a Semantic Handoff with thorough Eliminated Hypotheses, and start a fresh session with clean context. The next session, armed with a quality handoff, typically resolves the problem more efficiently.
+
+**Protocol 8 — Strategic Continuity Across Trunk Sessions**
+
+Trunk sessions have finite context, just like Leaf sessions. The strategic thread must be preserved explicitly.
+
+*When closing a Trunk session:*
+1. Update Project Status Briefing (current state of the project — what works, what's in progress)
+2. Create Trunk-to-Trunk Handoff (what this session accomplished, key decisions and their rationale, recommended next priorities)
+
+*When opening a new Trunk session:*
+1. New Trunk reads updated Project Status Briefing automatically from Instructions
+2. Coordinator provides the Trunk-to-Trunk Handoff from the previous session
+3. Trunk orients, confirms understanding, and continues the strategic thread
+
+---
+
+### Coordinator's Session Checklists
+
+#### Starting a Trunk Session
+
+- [ ] Previous Trunk-to-Trunk Handoff ready to provide
+- [ ] Project Status Briefing in Instructions reflects current state
+- [ ] Clear objective for this session (what strategic work needs to happen)
+
+#### Starting a Leaf Session
+
+- [ ] Role decided: **Librarian** (investigation only) or **Implementer** (execution)
+- [ ] Mode decided: **Mode A** (Discovery Report available) or **Mode B** (ad-hoc task)
+- [ ] Active paradigm confirmed: **Flutter mobile**, not web
+- [ ] Git working directory clean (`git status` — no uncommitted changes)
+- [ ] Backend / emulator running in Coordinator's terminal (not in agent's context)
+- [ ] Launch package prepared:
+  - *Librarian:* Discovery Directive from Trunk
+  - *Implementer Mode A:* Informed Directive + Discovery Report
+  - *Implementer Mode B:* Task description + previous Semantic Handoff (if continuation)
+
+#### Closing a Trunk Session
+
+- [ ] Project Status Briefing updated with current state
+- [ ] Trunk-to-Trunk Handoff created (accomplishments, decisions, next priorities)
+- [ ] Any methodology or documentation changes noted for synchronization
+
+---
+
+### Trunk-to-Trunk Handoff Format
+
+```markdown
+# Trunk Handoff: Session [N] → Session [N+1]
+
+## Session Accomplishments
+- [What was planned, analyzed, or decided]
+- [Directives created and their status]
+
+## Key Decisions
+- [Decision]: [rationale]
+
+## Current Project Focus
+[What the project is actively working on]
+
+## Recommended Next Priorities
+1. [Most important strategic task]
+2. [Secondary task]
+
+## Open Questions (if any)
+- [Unresolved question for future consideration]
+```
+
+---
+
+### Quick Orientation: The Co-Creative Roles
+
+| Participant | Environment | Contributes | Relies on Others For |
+|-------------|-------------|-------------|----------------------|
+| **Trunk** | Browser (Claude.ai) | Strategic vision, directive creation, cross-session analysis | Current codebase state (via Discovery Reports) |
+| **Librarian** | CLI (Claude Code) | Codebase investigation, verified facts, navigation maps | Focused questions (via Discovery Directive) |
+| **Implementer** | CLI (Claude Code) | Code creation, testing, integration, problem-solving | Strategic direction (via Directives), verified starting point (via Discovery Report) |
+| **Coordinator** | Both | Human judgment, artifact routing, operational context, intuitive signals | Technical execution (via Leaf agents), strategic analysis (via Trunk) |
+
+---
+
+*End of Operational Kernel. Everything below is reference material for specific situations.*
+
+---
+---
+
+## Part I: Operational Workflows
+
+*This is the flight manual. It details the procedures, artifact formats, and safety practices that support the Kernel's protocols. Read the relevant section at session start, or consult when handling non-routine situations.*
+
+---
+
+### 1.1 Role Details
+
+#### Trunk: The Strategic Partner
+
+Trunk operates in the Claude.ai Project Interface (browser), maintaining global context and long-term architectural vision. Trunk's contributions include analyzing session reports and accumulated project knowledge, formulating Discovery Directives for Pre-flight investigation, creating Informed Directives based on Discovery Reports, coordinating cross-domain integration and phase transitions, evolving methodology based on operational learnings, and managing project documentation and specifications.
+
+Trunk works with strategic breadth rather than codebase detail. It does not write implementation code directly and relies on Discovery Reports for current code state. Directives focus on *what* needs to be accomplished and *why*, leaving *how* to the Implementer's judgment and direct codebase access.
+
+#### Leaf Roles: Librarian and Implementer
+
+Leaf sessions operate in VS Code Terminal via Claude Code Extension, with direct access to the codebase. Two specialized roles serve different purposes, and role specialization enables context-efficient workflows by separating investigation from implementation.
+
+**Librarian** is a short-lived session focused exclusively on codebase investigation. The Librarian reads files, traces data flows, and produces a Discovery Report that serves both Trunk (for directive creation) and Implementer (for navigation). Key properties: the Librarian does not write code or make commits, context is disposable (session closes after report delivery), and the Coordinator transfers the Discovery Report to both Trunk and Implementer following Protocol 3 (Pass-Through). The Librarian is always launched as Phase 2 of Pre-flight Discovery (see Section 1.2).
+
+**Implementer** is the standard Leaf session for code execution. The Implementer reads the codebase, creates and edits files, runs tests for verification, iterates autonomously on failures, and commits changes to Git with descriptive messages. Operates in Mode A (Informed) or Mode B (Autonomous) as described in Protocol 6 and detailed in Section 1.3.
+
+#### Coordinator: Practices and Patterns
+
+The Coordinator bridges Trunk and Leaf environments, contributing human judgment that neither AI participant can provide independently.
+
+**Strategic Vision Keeping** means maintaining long-term architectural coherence across sessions, ensuring individual session outputs align with overall project direction, and making final decisions when agent proposals conflict with project principles.
+
+**Context Bridging** involves transferring Discovery Directives from Trunk to Librarian, Discovery Reports from Librarian to Trunk, and Informed Directives from Trunk to Implementer — managing the information flow between systems with different interfaces and capabilities, always following Protocol 3.
+
+**Safety Oversight** requires approving or rejecting file operations proposed by Leaf agents, validating that proposed changes align with project intent before execution, and ensuring backups exist before complex refactoring operations.
+
+**Resource Management** encompasses monitoring context utilization across sessions, planning session continuity and handoffs, and selecting appropriate tools (Trunk vs Leaf, browser vs CLI) based on task requirements.
+
+**Scope Authority** means authorizing proactive scope extension when Leaf identifies high-value opportunities beyond strict directive boundaries (see Section 1.3 on Proactive Scope Extension).
+
+**Proactive Information Provision** is an observed operational pattern where the Coordinator provides relevant information (log fragments, test results, infrastructure status) without waiting for Leaf to request it. This reflects the Coordinator's real-time visibility into systems that Leaf cannot access — particularly when processes run in the Coordinator's terminal (see Kernel checklist: "Backend / emulator running in Coordinator's terminal").
+
+**Observed Initiative Distribution** across the co-creative system:
+
+| Action | Typical Initiator |
+|--------|-------------------|
+| Provide logs after failed test | Coordinator (proactive) |
+| Request infrastructure status | Leaf |
+| Signal scope mismatch | Leaf |
+| Signal handoff needed | Coordinator |
+| Subagent discovery (Mode B) | Leaf (autonomous) |
+| Complexity assessment | Joint |
+
+---
+
+### 1.2 Pre-flight Discovery in Detail
+
+Pre-flight Discovery implements Protocol 2 (Reality Before Plan). This section provides the detailed procedures for each phase.
+
+#### The Four Phases
+
+**Phase 1 — Discovery Directive (Trunk → Coordinator → Librarian)**
+
+Trunk formulates a Discovery Directive — a compact document with 5-10 targeted questions about the current state of code (see Section 1.4 for format). This is not an implementation directive but focused guidance for investigation. The Coordinator transfers the Discovery Directive to a new Librarian session.
+
+**Phase 2 — Investigation (Librarian)**
+
+The Librarian investigates the codebase, answering each question with concrete evidence (file:line, code snippets, or NOT FOUND). The Librarian adds an "Additional Findings" section for relevant discoveries beyond the questions and forms a "Navigation for Implementer" section with file paths, data flow, and reading order. The session produces a Discovery Report (see Section 1.4 for format) and then closes — Librarian context is disposable.
+
+**Phase 3 — Informed Directive (Coordinator → Trunk)**
+
+The Coordinator transfers the Discovery Report to Trunk session following Protocol 3. Trunk analyzes the answers and creates an Informed Directive — a directive grounded in verified facts rather than architectural assumptions.
+
+**Phase 4 — Informed Execution (Implementer)**
+
+The Implementer receives the Informed Directive plus Discovery Report and proceeds according to Mode A (see Section 1.3).
+
+**Information Flow:**
+
+```
+Trunk                    Coordinator          Leaf (Librarian)
+  │                           │                    │
+  │── Discovery Directive ───>│──────────────────> │
+  │   (5-10 questions)        │                    │
+  │                           │                    │── investigates
+  │                           │                    │
+  │<── Discovery Report ──────│<───────────────────│
+  │   (answers + findings)    │                    │
+  │                           │                    │
+  │── Informed Directive ────>│──────────────────> │ (Implementer)
+  │   (based on reality)      │                    │
+```
+
+#### When Pre-flight Discovery is Not Required
+
+Pre-flight Discovery is the standard flow for all Trunk directives. However, for simple tasks that the Coordinator resolves directly with Leaf without involving Trunk, use Mode B (Autonomous Execution) — see Section 1.3. The Coordinator's judgment determines when a task is straightforward enough for Mode B versus when the strategic grounding of Pre-flight Discovery is warranted.
+
+#### Discovery Beyond Code
+
+Pre-flight Discovery's value extends beyond codebase investigation. Any resource that requires "coordinates" for autonomous access benefits from Librarian collecting those coordinates in advance. Figma frame nodeIds are GPS coordinates for design, just as file paths are GPS coordinates for code. When a feature involves external resources (Figma designs, API endpoints, configuration files), the Discovery Directive should include investigation questions that collect access coordinates for the Implementer. This transforms resources that would otherwise require Coordinator mediation into autonomously accessible assets.
+
+---
+
+### 1.3 Execution Cycle Details
+
+This section details the phase sequences for both execution modes described in Protocol 6.
+
+#### Mode A: Informed Execution
+
+Activated when the Implementer receives an Informed Directive plus Discovery Report from Trunk.
+
+**Phase sequence:** Quick Sanity Check → Planning → Implementation → Delivery
+
+**Quick Sanity Check** (not a full Pre-scan) serves to confirm that conditions haven't changed since the Discovery Report was created. The Implementer checks whether files from the Navigation section still exist and weren't modified, verifies no new commits that might affect the task, and confirms integration points are still as described. Additionally, for each item marked as "missing" or "gap" in the Discovery Report that drives implementation scope, the Implementer performs a targeted read of the relevant code section (e.g., build() method for UI gaps) to confirm the gap exists before implementing. Proportional verification means checking the 2-3 highest-impact gaps that determine the largest portion of implementation work — full re-verification of all findings is not required, as that would duplicate the Librarian's role. If the Sanity Check reveals significant changes or that a key gap does not exist, the Implementer signals to the Coordinator before proceeding.
+
+**Planning and Approval** involves the Implementer proposing an implementation plan in plain language, including files to create or modify, approach, and potential risks. The Navigation section from the Discovery Report serves as the primary map. The Coordinator validates that the plan makes logical sense before granting execution permission.
+
+**Implementation and Local Verification** is where the Implementer creates and edits files according to the approved plan, runs code or tests (flutter test, npm test, etc.) to verify syntax and logic, and iterates autonomously if tests fail using accumulated troubleshooting knowledge. This continues until tests pass or a blocking issue is identified.
+
+**Delivery** means the Implementer runs git commit with a message referencing the directive origin. If the session ends with incomplete work, the Implementer generates a Semantic Handoff (see Section 1.4). If the task is completed, a Completion Report is generated instead.
+
+#### Mode B: Autonomous Execution
+
+Activated when the Coordinator initiates an ad-hoc task directly with Leaf, without a Trunk directive.
+
+**Phase sequence:** Pre-scan → Discovery → Planning → Implementation → Delivery
+
+**Pre-scan** involves the Implementer launching 2-3 targeted Explore subagents to create a mini-Discovery Map: mapping all files related to the task domain, tracing data flow from entry point to endpoint, and listing all providers or services interacting with the component. Cost is approximately 2-5% of context, providing data to assess task complexity.
+
+**Complexity Assessment** after Pre-scan:
+
+| Pre-scan Result | Decision | Rationale |
+|----------------|----------|-----------|
+| 2-3 files, single module | Proceed in main context | Discovery will be manageable |
+| 4-6 files, two modules | Proceed with caution | Monitor discovery cost |
+| 5+ files, 3+ modules | Signal to Coordinator | Consider escalating to Trunk for Pre-flight Discovery |
+
+**Discovery (Read-Only)** uses the Pre-scan map to read relevant files and build understanding. Focus main context on *understanding*, not *finding*. Pre-scan and Discovery can overlap — validate assumptions while simultaneously reading relevant files. The essential discipline: do not write code until the landscape is understood.
+
+**Planning, Implementation, and Delivery** follow the same procedures as Mode A.
+
+#### Proactive Scope Extension
+
+When the Implementer identifies high-value opportunities beyond strict directive scope: if value is clear and effort is small, proceed; document the extension and rationale in the session report; and the Coordinator validates the extension post-hoc. This encourages initiative while maintaining accountability.
+
+---
+
+### 1.4 Artifact Formats
+
+This section collects all artifact templates used in the co-creative workflow.
+
+#### Standard Directive Format
+
+Since the Leaf can read the codebase directly, directives focus on intent and constraints rather than exhaustive specifications. Trust Leaf competence for implementation details.
+
+```
+DIRECTIVE: [Feature/Task Name]
+
+Objective: One-sentence summary of the goal.
+
+Paradigm: [Flutter Mobile / Node.js Backend / etc.] — No Web Paradigms for mobile.
+
+Execution Mode: [Standard / Multi-Session Roadmap (N Segments)]
+Current Segment: [A / B / C] (if multi-session)
+
+Scope:
+- Feature or screen to implement
+- Files likely to be touched
+- Integration points with existing code
+
+Constraints:
+- What must not break
+- Performance or security requirements
+- Patterns that must be followed
+
+Reference:
+- Links to similar patterns in codebase (e.g., "Follow auth_service.dart structure")
+- Relevant documentation paths
+
+Success Criteria:
+- How to verify completion
+- Tests that must pass
+```
+
+**Context-Aware Sizing:** Standard features (CRUD operations, established patterns) fit in 1-2 pages. Complex features (new patterns, significant integration) need 2-3 pages. Architectural initiatives (system-wide changes) should not exceed 3-4 pages. Brevity is intentional — Leaf discovers details autonomously, and for Informed Directives the Librarian has already mapped the territory.
+
+#### Informed Directive
+
+An Informed Directive is a standard directive created by Trunk after receiving a Discovery Report. It follows the same format but is grounded in verified facts rather than architectural assumptions, and is marked accordingly:
+
+```
+DIRECTIVE: [Feature Name]
+Based on: Discovery Report [date]
+```
+
+Trunk includes from the Discovery Report specific files for modification (from the Navigation section), existing patterns to follow (from Additional Findings), known constraints and risks, and integration points with current code. Trunk does not copy full answers to questions or the reading order — the Implementer receives the Discovery Report separately.
+
+#### Discovery Directive Format
+
+A Discovery Directive is a compact artifact for Pre-flight Discovery. It guides investigation, not implementation.
+
+```
+DISCOVERY DIRECTIVE: [Task Name]
+
+Role: Librarian (Investigation Only)
+Output: Discovery Report
+Complexity Estimate: [Low / Medium / High] — [brief rationale: N files, M modules]
+
+## Mission
+[One paragraph describing what Trunk needs to understand before creating
+implementation directive. What uncertainties need to be resolved.]
+
+## Investigation Questions
+
+Q1: [Specific question]
+Search in: [specific paths or patterns]
+Expected answer format: [found with details / NOT FOUND]
+
+Q2: [Specific question]
+Search in: [specific paths]
+Expected answer format: [description of what to report]
+
+...
+
+[5-10 questions total]
+
+## Discovery Report Format
+[Template for Librarian to follow — ensures consistent output structure]
+
+## Constraints
+- Do NOT modify any files
+- Do NOT create commits
+- Do NOT implement solutions
+- Do NOT estimate implementation effort (that is Trunk's responsibility)
+- ONLY investigate and document findings
+```
+
+**Complexity Estimate** indicates scope in terms affecting session planning: Low means 2-3 files within a single module, Medium means 4-6 files across two modules, and High means 5+ files spanning 3+ modules requiring cross-layer investigation.
+
+**Question Design Principles:** Each question should be binary-answerable (found with details, or NOT FOUND), include WHERE to search (specific paths, grep patterns), and address one specific uncertainty.
+
+Well-crafted questions look like: "Is `geolocator` package in `mobile/pubspec.yaml`? If yes, provide version." Or: "Does `EstablishmentsProvider` have fields for user coordinates? Check `mobile/lib/providers/establishments_provider.dart`." Or: "Where is distance '0.3 km' hardcoded in UI? Search in `mobile/lib/screens/` and `mobile/lib/widgets/`. Provide file, line number, and 5 lines of surrounding code."
+
+Questions to avoid: "How does geolocation work?" (too open-ended), "Is the code good?" (subjective), "What should we implement?" (that's Trunk's job), "Tell me everything about the search system" (no focus).
+
+**Gap Verification:** For any investigation question where the answer determines whether implementation work is needed (e.g., "does screen X handle error states?"), the Librarian verifies by reading the complete build() method or equivalent entry point — not only by searching for expected keyword patterns. Code may implement expected behavior through patterns different from those specified in the search guidance. Keyword search identifies known patterns; semantic reading identifies any pattern.
+
+#### Discovery Report Format
+
+The Discovery Report serves two audiences: Trunk (for creating the Informed Directive) and Implementer (for navigation coordinates).
+
+```markdown
+# Discovery Report: [Task Name]
+
+## Answers to Discovery Questions
+
+Q1: [Question from Discovery Directive]
+→ [Answer with concrete evidence: file:line, code snippet, or NOT FOUND]
+
+Q2: [Question]
+→ [Answer with evidence]
+
+...
+
+## Additional Findings
+
+- [Relevant discovery beyond the questions]
+- [Potential risk or constraint discovered]
+- [Existing pattern worth noting]
+- [Dependency that might be affected]
+
+## Navigation for Implementer
+
+### Relevant Files
+- [path]: [role in the task — 1 line]
+
+### Data Flow
+[Component A] → [Component B] → [Component C]
+Key transformation point: [where data changes shape or format]
+
+### Recommended Reading Order
+1. [file] — start here because [reason]
+2. [file] — then this for [reason]
+3. [file] — finally [reason]
+```
+
+| Section | Audience | Purpose |
+|---------|----------|---------|
+| Answers to Questions | Trunk | Informs directive creation |
+| Additional Findings | Trunk + Implementer | Risks and context for both |
+| Navigation for Implementer | Implementer | Coordinates for quick start |
+
+The Coordinator transfers the entire document to both recipients without editing (Protocol 3). Trunk focuses on the first two sections; Implementer focuses on the last.
+
+**Absence Verification Confidence:** When a finding determines that something is "missing," "absent," or "NOT FOUND," and this absence directly creates implementation scope, the Librarian indicates how the absence was verified: **KW (Keyword Search)** means the finding is based on pattern/keyword search only, which is acceptable for presence checks but insufficient for absence claims that drive implementation. **SR (Semantic Read)** means the finding was confirmed by reading the complete relevant code section (e.g., full build() method, entire service class), and this is required for any absence claim that determines implementation scope.
+
+**Length:** 20-40 lines. The Discovery Report provides GPS coordinates, not a codebase tour.
+
+#### Semantic Handoff Format
+
+The Semantic Handoff transfers understanding when a session ends with incomplete work (Protocol 4).
+
+```markdown
+# Handoff: [Task Name]
+
+## Problem Model
+[How I understand WHY the problem exists — the causal chain,
+not just the symptom. This is the most valuable section.]
+
+## Verified Facts
+- [Fact 1]: confirmed by [evidence — file:line or test result]
+- [Fact 2]: confirmed by [evidence]
+
+## Eliminated Hypotheses
+- [Hypothesis 1]: eliminated because [concrete evidence]
+- [Hypothesis 2]: eliminated because [concrete evidence]
+
+## Dependency Graph (task-specific)
+[File A] → calls → [File B] → depends on → [File C]
+Key transformation point: [where data changes shape or format]
+
+## Semantic Anchors
+- [Variable/function/class]: [why it matters for this task]
+- [Pattern or convention]: [how it's used in this context]
+
+## Current State
+Files created/modified: [list with paths]
+What works: [specific functionality confirmed]
+What doesn't: [specific failure with observed behavior]
+
+## Continuation Point
+Open: [specific file]
+First action: [specific action]
+Expected outcome: [what should happen if the action is correct]
+
+## Scope Corrections (if any)
+- [What was changed from original directive and why]
+```
+
+Problem Model, Verified Facts, Eliminated Hypotheses, Current State, and Continuation Point are mandatory. Dependency Graph and Semantic Anchors are recommended — they provide structural navigation and immediate vocabulary for the problem domain. Manual Semantic Handoff is always preferred over auto-compact for session transitions.
+
+**The Fresh Session Effect:** When a session reaches its limit with an unresolved problem, the next session typically resolves the problem using less context — but only when the Semantic Handoff quality is sufficient. GPS-style handoffs (files modified, next action) do NOT produce this effect; Semantic Handoffs with Problem Model and Eliminated Hypotheses do.
+
+**Length:** 25-50 lines. Longer than GPS-style handoffs, but the investment pays for itself in reduced rediscovery for the next session.
+
+#### Completion Report Format
+
+For tasks that finish successfully, a brief Completion Report replaces the Semantic Handoff. The Semantic Handoff is a tool for transferring unfinished understanding — it should not be used for successfully completed tasks.
+
+```markdown
+# Completion: [Task Name]
+
+## Changes Made
+- [File]: [what was done]
+
+## Commit Reference
+[commit hash and message]
+
+## Notes for Future Work (optional)
+- [Any observations relevant to future work in this area]
+```
+
+#### Checkpoint Report Format
+
+For mid-session checkpoints during multi-session work (see Section 1.5):
+
+```markdown
+# Checkpoint: [Task Name]
+
+## Completed
+- [File]: [What was done]
+
+## Problem Model (current understanding)
+[Brief causal chain]
+
+## Next Steps
+1. [Immediate next action]
+2. [Following action]
+
+## Critical Context
+- [Key decision or constraint for continuation]
+```
+
+---
+
+### 1.5 Session Management
+
+#### Trunk Session Lifecycle
+
+Trunk sessions follow a three-phase lifecycle that ensures strategic continuity across the project's development arc.
+
+**Opening Phase:** The new Trunk session reads the Project Status Briefing from Project Instructions (this happens automatically as part of the project context). The Coordinator provides the Trunk-to-Trunk Handoff from the previous session. Trunk orients by confirming understanding of current project state, reviewing key decisions from the previous session, and identifying the strategic work ahead. This orientation can be brief — a few sentences confirming readiness — or detailed if the handoff raises questions.
+
+**Working Phase:** Trunk performs its strategic contributions: analyzing Discovery Reports, creating directives, evolving methodology, coordinating cross-domain integration. Throughout this phase, the Coordinator monitors context usage. Trunk sessions are subject to the same context limitations as Leaf sessions, though they tend to be more efficient since they don't perform codebase discovery.
+
+**Closing Phase:** Before ending, the Trunk session updates the Project Status Briefing with the current state of the project and creates a Trunk-to-Trunk Handoff (see Kernel for format) documenting accomplishments, decisions, and recommended next priorities. Any methodology or documentation changes are noted for synchronization between Project Instructions and Git repository.
+
+#### Session Planning and Complexity Calibration
+
+Before each Leaf session, estimating expected complexity helps in choosing the right execution mode and planning for session continuity.
+
+| Category | Indicators | Typical Context Usage (Mode B) |
+|----------|------------|--------------------------------|
+| Low | 2-3 files, single module, established pattern | 30-50% |
+| Medium | 4-6 files, two modules, minor integration | 50-70% |
+| High | 5+ files, 3+ modules, cross-layer changes | 70-90% |
+
+For High complexity tasks, consider Multi-Session Segmentation rather than attempting completion in a single session.
+
+#### Multi-Session Work (Checkpoint Continuation Protocol)
+
+For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation Protocol provides structured segmentation.
+
+**Session Execution Header** (added to directives for multi-session work):
+
+```markdown
+---
+## Execution Mode: Multi-Session Roadmap
+
+**Total Segments:** [N]
+**Current Segment:** [A / B / C / ...]
+**Assigned Phases:** [List specific phases for this segment]
+
+### Segment Execution Rules
+
+1. **Scope Discipline:** Execute ONLY phases assigned to current segment.
+2. **Continuation Awareness:** If segment B or later, read previous Semantic Handoff FIRST.
+3. **Naming Consistency:** Use EXACTLY the names specified in directive and previous reports.
+---
+```
+
+**Segmentation guidance:**
+
+| Complexity | Segments | Phases per Segment |
+|------------|----------|-------------------|
+| Medium-High | 2 | 3-4 phases each |
+| High | 3 | 2-3 phases each |
+| Very High | 4+ | 2 phases each |
+
+#### Context Management Patterns
+
+**Discovery Tax** is the context consumed by codebase investigation before implementation begins. In Mode B sessions, this consistently amounts to 50-80% of available context, independent of task complexity. This is a systemic characteristic of the LLM workflow, not a failure of any particular session. It has two components: Navigational Tax (finding relevant files, mapping structure) and Semantic Tax (reading, understanding, correlating code logic). Pre-flight Discovery addresses this structurally — the Librarian pays the tax in disposable context, and the Implementer receives compressed results. The tax is paid once, not repeated across sessions.
+
+**Practical Context Patterns:**
+
+| Scenario | Context Used | What Happens |
+|----------|-------------|--------------|
+| Mode A: Sanity Check + Planning | 10-20% | Implementer uses Discovery Report |
+| Mode B: Pre-scan + Discovery | 50-80% | Full autonomous discovery |
+| Implementation + Testing | 20-40% | Code changes and verification |
+| Handoff or Commit | 5% | Semantic Handoff or commit |
+
+**Coordinator Decision Matrix:**
+
+| Observation | Action |
+|-------------|--------|
+| Implementer working from Discovery Report (Mode A) | Normal operation — context efficient |
+| Implementer in Mode B, building understanding | Do not interrupt — discovery cannot be accelerated |
+| Solution proposed, tests pass | Allow commit and report |
+| Solution proposed, tests fail, context approaching limit | Signal handoff |
+| Context at limit, no solution yet | Signal handoff immediately |
+
+---
+
+### 1.6 Safety Practices
+
+These practices protect the codebase while enabling autonomous agent work. Safety protocols retain directive tone where codebase protection requires it.
+
+#### Dry Run Protocol
+
+Before any destructive action (delete, overwrite, move, major refactor), the agent must explain the impact in non-technical language. The Coordinator asks: "Explain what will be lost or changed if we execute this action." The agent responds with files affected and how, data that could be lost, and rollback strategy if something goes wrong. Only after Coordinator understanding and approval should the action proceed.
+
+#### Backup and Recovery
+
+Before starting a complex Leaf session, the current branch must be clean (`git status` shows no uncommitted changes). For architectural changes or risky refactoring, a temporary safety branch is created: `git checkout -b refactor/[feature-name]-safe-mode`. If something breaks catastrophically, recovery follows: `git stash` (save current work), then `git checkout main` (return to stable state).
+
+#### Blocking Issue Protocol
+
+When the agent encounters an issue it cannot resolve autonomously, the productive response is to document the issue with full technical context, list attempted solutions and their results, propose hypotheses for root cause, and request Coordinator decision: escalate to Trunk, seek external help, or defer. Spinning endlessly on unsolvable problems is not productive — recognizing when human judgment is needed is part of effective collaboration.
+
+#### Information Recursion: Prevention and Recovery
+
+Information Recursion occurs when agent decisions based on degraded context create cascading problems that cannot reach a stable state. Protocol 7 covers the recognition signals. This section details prevention and recovery.
+
+**Prevention Strategies:**
+
+Scope Discipline means limiting task scope to what fits comfortably in fresh context. For High complexity tasks, Multi-Session Segmentation (Section 1.5) is preferred over attempting completion in a single session.
+
+Context Hygiene prevents "garbage" accumulation through filtered log access and Coordinator terminal ownership of heavy processes (see Reference Library, Section 2.3).
+
+**Recovery Protocol when degradation is detected:**
+
+1. Commit current state with WIP label
+2. Generate Semantic Handoff with emphasis on the Eliminated Hypotheses section
+3. Note which solutions were attempted and why they failed
+4. Trunk creates new directive with explicit "avoid these approaches" guidance
+5. Fresh Leaf session starts with clean context and the Semantic Handoff
+
+If a bug is not resolved by the time the session shows terminal degradation signals (contradictory patterns, second compact activation), the session must end. The Coordinator terminates the current session, reassembles the task in Trunk with fresh analysis, and launches a new Leaf session with a refined directive.
+
+---
+
+### 1.7 Development Principles
+
+**Pragmatism Over Purity.** A working feature with "good enough" code is better than a broken feature with "perfect" architecture. When a refactor hits unexpected complexity: revert to the simplest working solution, document the technical debt in the session report, and note the ideal architecture for future consideration. Do not stall progress for theoretical elegance. Creative use of existing infrastructure often beats elegant solutions requiring migrations or extensive refactoring.
+
+**Documentation Hygiene.** Leaf sessions remove temporary analysis files, debug logs, and scratch work before closing. Any update to methodology documentation must be committed to the Git repository AND updated in Claude Project Knowledge — this dual sync ensures both Trunk (browser) and Leaf (IDE) sessions operate from synchronized understanding.
+
+**Living Document.** This methodology evolves through operational practice. Changes address real problems encountered in actual development and are tested on real features before permanent adoption. Theoretical protocols that are not used in practice get simplified or removed. As the project grows, the methodology scales: specialized directive templates, domain-specific troubleshooting patterns, and reusable component libraries emerge from practice, not from pre-planning.
+
+---
+
+### 1.8 Knowledge Practices
+
+#### Bank of Failures
+
+When a complex bug is solved or a non-obvious solution is discovered, the knowledge base is updated.
+
+**Location:** `docs/troubleshooting_bank.md`
+
+**Entry Format:**
+```
+## [Descriptive Title]
+
+**Symptom:** What the error looked like or how the bug manifested.
+
+**Root Cause:** Why the error actually occurred.
+
+**Solution:** Specific steps that resolved the issue.
+
+**Prevention:** How to avoid this in future code.
+```
+
+Before requesting human help for debugging, Leaf sessions query this file for similar symptoms.
+
+**Pattern Categories:** Alpha (Authentication and sessions), Bravo (Database and queries), Charlie (API integration), Delta (State management), Echo (Build and dependencies), Foxtrot (Test infrastructure), Golf (Figma MCP integration), Hotel (Information Recursion incidents).
+
+#### External Memory Continuity
+
+The co-creative system relies on external memory to maintain coherence across sessions.
+
+**GitHub as Primary Truth Source:** All code lives in the repository. Commit messages reference originating sessions. Version history enables tracking architectural decisions. Branch strategy enables safe experimentation.
+
+**Claude Projects as Knowledge Layer:** Provides Project Knowledge search across sessions. Maintains methodology and specification access. Enables Trunk to analyze Leaf outputs through synced session reports.
+
+**The Continuity Cycle:**
+
+1. Trunk creates Discovery Directive based on task requirements
+2. Coordinator transfers to Librarian; Librarian produces Discovery Report
+3. Coordinator transfers Discovery Report to Trunk (Protocol 3)
+4. Trunk receives Discovery Report, creates Informed Directive
+5. Implementer executes, commits to GitHub, generates Semantic Handoff
+6. GitHub syncs to Project Knowledge
+7. Trunk queries Project Knowledge for session outputs
+8. Trunk formulates next directive building on completed work
+9. Cycle continues with accumulated context
+
+---
+---
+
+## Part II: Reference Library
+
+*These are technical appendices for specific domains. Consult only when working with the relevant technology or situation.*
+
+---
+
+### 2.1 Flutter Semantic Gap Mitigation
+
+*Consult when creating or reviewing Flutter directives and implementations.*
+
+AI models exhibit bias toward web development patterns. Every Flutter directive must explicitly declare mobile paradigm and actively counter this tendency.
+
+**Paradigm Declaration** for every Flutter directive: state clearly "This is Flutter mobile development using Dart and Flutter widgets" and explicitly exclude "Do not use HTML, CSS, or web paradigms."
+
+The semantic gap operates at three distinct levels. Level 1 (syntax) produces visible errors. Level 2 (architecture) produces code that compiles but follows wrong paradigms. Level 3 (state management) produces project-specific anti-patterns.
+
+#### Level 1: Syntax Mapping
+
+| Wrong (Web) | Correct (Flutter) |
+|-------------|-------------------|
+| className | Widget parameters |
+| div, span | Column, Row, Stack, Container |
+| CSS styling, style={{}} | ThemeData, BoxDecoration, widget properties |
+| href, Link | Navigator.push/pop, named routes |
+| onClick | onTap, onPressed, GestureDetector |
+| DOM manipulation | Widget trees and state management |
+| margin/padding as strings | EdgeInsets |
+
+#### Level 2: Architectural Patterns
+
+| Wrong (Web Thinking) | Correct (Flutter Thinking) | Risk |
+|----------------------|---------------------------|------|
+| setState everywhere, prop drilling | Provider/ChangeNotifier | Uncontrolled rebuilds |
+| componentDidMount / useEffect | initState + dispose | Resource leaks |
+| Promise.then in render | FutureBuilder, StreamBuilder | Unresponsive UI |
+| map() → div for lists | ListView.builder (lazy) | Performance collapse |
+| React Router, URL-based | Navigator 2.0, GoRouter | Broken navigation |
+| controlled input + onChange | TextEditingController + dispose | Memory leaks |
+| flexbox, grid, media queries | LayoutBuilder, MediaQuery, Expanded | Overflow errors |
+| CSS variables | ThemeData, Theme.of(context) | Inconsistent theming |
+
+#### Level 3: State Management (Project-Specific)
+
+| Anti-Pattern | Correct Pattern |
+|-------------|-----------------|
+| Business logic in Widget build() | Logic in Provider/Service, Widget only renders |
+| Direct API calls from screens | Screen → Provider → Service → API |
+| Local state for shared data | ChangeNotifierProvider at appropriate scope |
+| Forgetting notifyListeners() | Always call after state mutation |
+| Not disposing controllers | Always dispose in State.dispose() |
+
+**Directive Integration:** When creating directives that involve UI work, reference the appropriate level. For new screens: emphasize all three levels. For bug fixes in existing screens: Level 3 is most relevant. Include reference to existing Flutter implementations in codebase — Level 3 patterns reference project-specific files (providers/, services/, main.dart).
+
+---
+
+### 2.2 Figma MCP Integration
+
+*Consult when working with Figma designs in Leaf sessions.*
+
+Figma MCP enables direct design-to-code workflows within Leaf sessions. These protocols establish optimal patterns for context-efficient design analysis and Flutter code generation.
+
+#### Design Analysis Workflow
+
+**Prerequisites:** Figma Desktop app installed and running, design file open with target screens, Claude Code session initiated with Figma MCP enabled.
+
+**Phase 1 — Frame Selection:** Select the target frame/node in Figma Desktop (single selection for screenshots, multi-selection supported for metadata). A blue border confirms active selection.
+
+**Phase 2 — Agent Invocation:** For Flutter projects, always specify target framework:
+
+```typescript
+// Screenshot capture (single selection only)
+mcp__figma__get_screenshot({
+  fileKey: "[extracted-from-url]",
+  nodeId: "[frame-id]",
+  clientLanguages: "dart",
+  clientFrameworks: "flutter"
+})
+
+// Design context retrieval (supports multi-selection)
+mcp__figma__get_design_context({
+  fileKey: "[extracted-from-url]",
+  nodeId: "[frame-id]",
+  clientLanguages: "dart",
+  clientFrameworks: "flutter"
+})
+```
+
+Without `clientLanguages` and `clientFrameworks` parameters, Figma MCP returns React + Tailwind code requiring transformation. Always specify these parameters for Flutter projects.
+
+**Phase 3 — Response Handling:** Two response types are possible. A *Full Code Response* returns complete React + Tailwind code requiring transformation to Flutter (higher semantic gap risk). A *Sparse Metadata Response* returns XML structure with element IDs, types, positions, and dimensions — the agent generates Flutter from this blueprint (minimal semantic gap risk, triggered automatically for large designs). The system message indicates metadata mode when applicable.
+
+**Phase 4 — Selective Deep-Dive:** For large screens returned as metadata, request full code for specific sections using sublayer nodeId.
+
+#### Discovery-Informed Figma Access
+
+Figma MCP supports two access modes that enable different levels of autonomy:
+
+**Selection-Based Access** (implicit nodeId): When `get_design_context` or `get_screenshot` is called without a nodeId parameter, the tool reads whatever is currently selected in Figma Desktop. Each frame access requires a Coordinator action — selecting the frame in the Figma app. This creates N interaction points for N frames.
+
+**Direct Access** (explicit nodeId): When a nodeId parameter is provided, the tool accesses that specific node regardless of the current Figma Desktop selection. No Coordinator action required. This enables fully autonomous design-to-code workflow.
+
+**Connecting Pre-flight Discovery to Figma:** When Figma designs exist for a feature, the Discovery Directive should include an investigation question requesting nodeId collection:
+
+```
+Q: What are the Figma frame names and nodeIds for the [feature] screens?
+Method: Extract from Figma file via MCP metadata scan or from URLs provided by Coordinator.
+Expected answer: Table of frame name → nodeId mappings.
+```
+
+The Discovery Report includes these mappings in the Navigation for Implementer section:
+
+```markdown
+### Relevant Figma Frames
+| nodeId | Screen Name | Role |
+|--------|-------------|------|
+| `93:1092` | Модерация (Данные) | Primary moderation — Data tab |
+| `93:1292` | Модерация (О заведении) | About tab |
+```
+
+When the Discovery Report contains nodeId mappings, direct access is preferred — the Implementer calls Figma MCP with explicit nodeIds from the report, achieving the same level of autonomy as codebase access. Selection-based access remains available for ad-hoc exploration where nodeIds are not known in advance.
+
+#### Context Budget Guidelines
+
+| Operation | Context Cost | Notes |
+|-----------|--------------|-------|
+| Simple screen metadata | ~3-4% | Standard analysis |
+| Complex screen metadata | ~3-4% | Auto-optimized via sparse response |
+| Multi-screen batch (7 frames) | ~5% | ~0.7% per screen average |
+| Full Flutter code generation | ~6-7% | Metadata + code generation |
+| Design system extraction | ~10-20% | Depends on scope |
+
+**Session Capacity Planning:**
+
+| Session Type | Screens Analyzed | Code Generated | Expected Context |
+|--------------|------------------|----------------|------------------|
+| Design Survey | 10-15 | 0 | 30-60% |
+| Selective Implementation | 5-8 | 3-5 | 40-60% |
+| Deep Dive Single Screen | 1-2 | 1-2 (with animations) | 15-25% |
+
+**Optimization Tactics:** Use metadata-first approach (analyze all screens as metadata, generate code only for approved designs). Target sublayers for complex screens. Batch similar screens for redundancy optimization. Defer exploration if context is tight — prioritize implementation over survey.
+
+#### Workflow Protocols
+
+**Protocol A — Iterative Design Review:** Use for reviewing Figma designs during development and providing feedback. Context budget: ~20-30% (5-8 screens analyzed).
+
+**Protocol B — Implementation Preparation:** Use when design is finalized, preparing to implement in Flutter. Context budget: ~15-25% (1-2 screens with full code).
+
+**Protocol C — Design System Extraction:** Use for extracting reusable components, colors, typography from Figma. Context budget: ~10-20%.
+
+#### Multi-Screen Flow Analysis
+
+When analyzing complete interaction flows (onboarding, checkout, registration): select all frames in the flow (multi-select in Figma), call get_design_context (screenshot will fail for multi-selection, metadata succeeds), receive sparse metadata for all frames, and trace the logical sequence including state progression, validation rules, error states, interactive elements, and transition triggers. Context cost is approximately 0.7% per screen, making this highly efficient for batch analysis.
+
+**Emergency Protocol for Mid-Session Overflow:** If context approaches the limit with Figma work incomplete: commit analyzed metadata to documentation, generate Semantic Handoff with sublayer IDs for the next session, prioritize critical screens for code generation, and defer exploratory analysis to a future session.
+
+---
+
+### 2.3 Context Hygiene
+
+*Consult when setting up debugging workflows or when context pollution is suspected.*
+
+Unfiltered logs consume context rapidly. The Passive Observation Pattern distributes responsibility: the Coordinator owns heavy processes and has real-time log visibility; the agent receives filtered access, preserving context for implementation work.
+
+**Toxic Log Categories** to keep out of agent context: full authentication tokens (JWT, refresh tokens), complete API response bodies with nested data, duplicate error messages from retry loops, verbose framework debug output, and unfiltered emulator/simulator logs.
+
+**Filtered Log Access Commands:**
+
+For Flutter development:
+```bash
+flutter run 2>&1 | grep -Ei "error|exception|fail|warning|conflict"
+```
+
+For backend debugging:
+```bash
+tail -f backend.log | grep -Ei "error|exception|fail|status:[45]"
+```
+
+For specific error investigation:
+```bash
+grep -A 5 "ErrorClassName" logfile.log
+```
+
+When filtered output is insufficient for debugging, the agent requests a specific log segment from the Coordinator. The Coordinator extracts the relevant portion (e.g., last 50 lines around the error) and provides it. This manual handoff prevents automatic context pollution while maintaining debugging capability.
+
+---
+
+### 2.4 Code Quality Standards
+
+*Consult when reviewing code or establishing quality expectations for a directive.*
+
+All code produced in the co-creative process is expected to be production-ready.
+
+**Error Handling:** Proper try-catch with appropriate recovery strategies. User-facing error messages that are helpful without exposing internals.
+
+**Security:** Input validation at controller level. Authentication checks on protected routes. Sanitization of user-provided content.
+
+**Performance:** Database queries with appropriate indexing. Avoiding N+1 query patterns. Lazy loading for expensive operations.
+
+**Maintainability:** Clear naming that reveals intent. Logical file organization following established patterns. Comments for complex logic, not obvious operations.
+
+**Consistency:** Follow patterns established elsewhere in the codebase. Use existing utilities rather than reimplementing. Match code style of surrounding files.
+
+---
+---
+
+## Changelog
+
+### v9.0 (February 2026)
+
+**Core change: Structural reorganization from monolithic encyclopedia to three-layer operational guide.** The document is restructured into Layer 0 (Operational Kernel), Layer 1 (Operational Workflows), and Layer 2 (Reference Library), with content organized by operational priority rather than by topic.
+
+**Process:** This restructuring was informed by a cross-model reflective analysis (Claude, Gemini, ChatGPT) of v8.6, synthesized with the Coordinator's accumulated operational experience across 20+ development sessions. The analysis identified structural risks (monolithic document causing equal attention distribution across all content), semantic risks (artifact transfer "telephone game"), and ambiguity between mandatory rules and contextual guidelines.
+
+**Major Changes:**
+
+- **Three-layer architecture introduced.** Layer 0 (Kernel) contains the eight co-creative protocols and session checklists — always active, ~2-3 pages. Layer 1 (Operational Workflows) contains detailed procedures, artifact formats, and safety practices — consulted at session start or for non-routine situations, ~8-12 pages. Layer 2 (Reference Library) contains domain-specific playbooks (Flutter, Figma, Context Hygiene, Code Quality) — consulted only when working with the specific domain.
+
+- **Tonal shift from command hierarchy to co-creative partnership.** "Laws" became "Protocols." "The agent must" became "The Implementer contributes." Role descriptions reframed as mutual dependency ("Contributes / Relies on Others For") rather than authority hierarchy ("Does / Does NOT"). Safety protocols retain directive tone where codebase protection requires it.
+
+- **Eight Protocols formalized in Kernel.** Condensed from 40+ pages of scattered principles into eight named agreements: Thinking and Action Have Different Homes, Reality Before Plan, Artifacts Pass Through Unaltered, Transfer Understanding Not Coordinates, Trust the Signal, Two Ways to Launch an Implementer, Recognize When a Session Has Lost Its Way, Strategic Continuity Across Trunk Sessions.
+
+- **Protocol 8 (Strategic Continuity) is new content.** Formalizes Trunk session lifecycle (opening, working, closing phases) and Trunk-to-Trunk Handoff format, addressing the previously implicit practice of cross-Trunk continuity.
+
+- **Coordinator Session Checklists streamlined.** Replaced the detailed Session Auditor Role with concise, actionable checklists for starting Trunk sessions, starting Leaf sessions, and closing Trunk sessions.
+
+- **Discovery Tax defined canonically in one location.** Previously spread across Sections 3.3, 3.3.2, 5.2, 6.1, and the Changelog of v8.6. Now defined once in Section 1.5 (Context Management Patterns) with all other content referencing that definition.
+
+- **Part VI (Evolution and Adaptation) dissolved.** Operational principles migrated to Kernel (Protocol 5) and Layer 1 (Development Principles). Continuous improvement compressed to brief statement in Development Principles. Scaling considerations noted as emerging from practice. Retrospective history lives in Changelog only.
+
+- **Figma MCP and Context Hygiene moved to Reference Library.** These domain-specific sections are now clearly marked as reference material, reducing cognitive load for sessions that don't involve Figma or debugging workflows.
+
+- **Four refinements from cross-model analysis integrated.** Pass-Through Protocol allows appending operational context (Protocol 3). Intuition Trigger backed by observable patterns (Protocol 5). Verification standard included in Reality Before Plan (Protocol 2). Flutter paradigm anchor added to Leaf session checklist.
+
+- **Discovery-Informed Figma Access integrated.** Operational observation from admin panel development: Librarian collects Figma nodeIds during Pre-flight Discovery, enabling Implementer to access designs via direct nodeId without Coordinator mediation. Broader principle formalized: Pre-flight Discovery extends beyond code to any resource requiring "coordinates" for autonomous access.
+
+**Rationale:** Operational experience showed that the monolithic v8.6 document created "cognitive engineering" problems — AI agents distributed attention equally across 40+ pages, reducing focus on operationally critical content. The three-layer structure ensures Kernel protocols receive priority attention, while detailed procedures and domain references remain accessible when needed. The tonal shift reflects the project's philosophical foundation: the distributed intelligence system works as a partnership between participants with different capabilities, not as a command chain.
+
+### v8.6 (February 2026)
+
+Information flow inversion: Pre-flight Discovery became the standard flow for all Trunk directives. Added Pass-Through Principle, Informed Directive concept, and Discovery Directive/Report formats. Introduced Gap Verification Rule and Absence Verification Confidence markers after first operational application revealed false negatives in Discovery Reports.
+
+### v8.5 (February 2026)
+
+Practice-driven revision synchronized with Compact Protocol v1.4. Replaced graduated 5-zone context threshold system with binary Coordinator decision model. Introduced Semantic Handoff format replacing GPS-style handoffs. Added Proactive Information Provider to Coordinator responsibilities.
+
+### v8.4 (January 2026)
+
+Added Pre-flight Discovery Protocol (experimental), Specialized Leaf Roles (Implementer and Librarian), Discovery Tax Management. Updated Three-Level Anti-Pattern System for Flutter. Corrected Context Thresholds for Claude Code visibility.
+
+### v8.3 (January 2026)
+
+Initial version with two-tier agentic architecture, Figma MCP integration protocols, and comprehensive safety systems.
+
+---
+
+*This methodology serves as the operational reference for all Trunk and Leaf sessions in the Restaurant Guide project. It establishes the co-creative partnership architecture enabling efficient collaboration between strategic planning and autonomous execution.*
+
+**Synchronization Requirement:** This document must exist in both Claude Project Instructions (for Trunk session runtime access) and the Git repository docs/ directory (for Leaf session reference). Updates to either location must be synchronized immediately.

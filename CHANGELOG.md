@@ -6,6 +6,21 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Март 2026 — Production Deployment + TestFlight
+
+#### Март 3, 2026 — Claude Code Memory Architecture
+- Реорганизация auto-memory: 3-файловая архитектура (MEMORY.md, session_history.md, lessons_learned.md)
+- Обновление Protocol Autonomous v1.2 и Protocol Informed v1.3 — добавлены правила ведения Claude Code memory
+- Commits: `c903cc7`, `5a538f8`
+
+#### Февраль–Март 2026 — Railway Production Deployment
+- **Backend**: Railway deployment (Node.js + PostGIS + Redis) — Hobby Plan
+- **Database**: PostGIS proxy `turntable.proxy.rlwy.net:44099`, SSL с `rejectUnauthorized: false`
+- **Seed data**: 77 establishments (7 cities), 281 reviews, 546 media
+- **iOS fixes**: map zoom retry for all cities, Могилёв ё/е в backend validators, CORS localhost for admin-web
+- **TestFlight**: Apple approved for external testing (Apple ID: 6759831819)
+- Commits: `bf6c200`, `757a3c8`, `0a8e4fd`
+
 ### Февраль 28, 2026 — Figma Design Snapshots Archive (Post-MVP Screens)
 - **Архивация**: 7 дизайн-контекстов из Figma перед завершением подписки
 - **Новости** (4 файла): главная лента (таб New), шаблон статьи, таб События, таб Интересное
