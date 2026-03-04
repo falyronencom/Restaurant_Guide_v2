@@ -479,44 +479,51 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   }
 
   /// Build summary metrics row (Average rating, Ratings, Reviews)
+  /// Uses IntrinsicHeight so all columns share the same height,
+  /// keeping the divider line aligned even when titles wrap (e.g. iPhone 11).
   Widget _buildSummaryMetrics(PartnerEstablishment establishment) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          // Average rating
-          Expanded(
-            child: _buildMetricItem(
-              title: 'Средняя оценка',
-              value: establishment.stats.averageRating
-                      ?.toStringAsFixed(1)
-                      .replaceAll('.', ',') ??
-                  '-',
-              showStar: true,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Average rating
+            Expanded(
+              child: _buildMetricItem(
+                title: 'Средняя\nоценка',
+                value: establishment.stats.averageRating
+                        ?.toStringAsFixed(1)
+                        .replaceAll('.', ',') ??
+                    '-',
+                showStar: true,
+              ),
             ),
-          ),
 
-          // Ratings count (same as reviews — one review = one rating)
-          Expanded(
-            child: _buildMetricItem(
-              title: 'Оценки',
-              value: _formatNumber(establishment.stats.reviews),
+            // Ratings count (same as reviews — one review = one rating)
+            Expanded(
+              child: _buildMetricItem(
+                title: 'Оценки',
+                value: _formatNumber(establishment.stats.reviews),
+              ),
             ),
-          ),
 
-          // Reviews count
-          Expanded(
-            child: _buildMetricItem(
-              title: 'Отзывы',
-              value: '${establishment.stats.reviews}',
+            // Reviews count
+            Expanded(
+              child: _buildMetricItem(
+                title: 'Отзывы',
+                value: '${establishment.stats.reviews}',
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   /// Build single metric item
+  /// Uses Spacer between title and divider so the divider + value
+  /// are pushed to the bottom, aligning across columns of different title height.
   Widget _buildMetricItem({
     required String title,
     required String value,
@@ -538,6 +545,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             color: AppTheme.textPrimary,
           ),
         ),
+        const Spacer(),
         Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
           height: 1,

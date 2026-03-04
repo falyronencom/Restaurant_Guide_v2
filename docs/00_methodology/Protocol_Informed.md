@@ -124,6 +124,28 @@ Execute approved plan:
 
 **Trigger conditions:** API errors, database failures, timeouts, connection refused, tests failing without code changes.
 
+### 3.1 Local Environment Requirements
+
+**Current setup:** No local PostgreSQL / Docker. Backend runs only on Railway (production). Local environment supports unit tests (mocked DB) but NOT integration tests with a real database.
+
+**Decision rule — when local DB is required:**
+
+| Safe to deploy directly (unit tests + push) | Requires local backend + DB first |
+|----------------------------------------------|-----------------------------------|
+| Business logic changes in services | New migrations / ALTER TABLE / new columns |
+| Validation rule changes | New or modified SQL queries (especially PostGIS) |
+| Response format changes | New indexes / constraints / triggers |
+| Refactoring without behavior change | New table creation or schema redesign |
+| Middleware / auth logic changes | Integration with new services (Redis, queues) |
+
+**When a task falls in the right column:**
+1. **STOP** — Do not push directly to production
+2. **INFORM** coordinator: "This change requires local database testing before deploy"
+3. **GUIDE** coordinator through Docker + local PostgreSQL setup (one-time)
+4. **TEST** locally, verify migrations apply cleanly, then push
+
+**Note:** Coordinator is not a programmer. Leaf must proactively identify when local testing is needed — coordinator will not flag this independently.
+
 ---
 
 ## 4. Completion Report
