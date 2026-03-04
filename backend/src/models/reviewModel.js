@@ -20,7 +20,7 @@ import logger from '../utils/logger.js';
  * @param {string} reviewData.user_id - UUID of the user creating the review
  * @param {string} reviewData.establishment_id - UUID of the establishment being reviewed
  * @param {number} reviewData.rating - Rating from 1 to 5
- * @param {string} reviewData.content - Review text content (20-1000 characters)
+ * @param {string} reviewData.content - Review text content (1-1000 characters)
  * @returns {Promise<Object>} The created review object with all database fields
  * @throws {Error} If database operation fails
  */

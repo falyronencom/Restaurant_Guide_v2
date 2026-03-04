@@ -40,8 +40,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
   static const Color _starActiveColor = Color(0xFFFFB800); // Yellow for active stars
   static const Color _starInactiveColor = AppTheme.strokeGrey; // Grey for inactive
 
-  // Validation constants (must match backend: min 20, max 1000)
-  static const int _minTextLength = 20;
+  // Validation constants (must match backend: min 1, max 1000)
   static const int _maxTextLength = 1000;
 
   @override
@@ -70,7 +69,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
   /// Check if form is valid for submission
   bool get _isFormValid {
     return _selectedRating > 0 &&
-        _textController.text.trim().length >= _minTextLength;
+        _textController.text.trim().isNotEmpty;
   }
 
   /// Handle star rating selection
@@ -306,16 +305,13 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
 
   /// Build text input field
   Widget _buildTextInputField() {
-    final hasText = _textController.text.isNotEmpty;
-    final isTextTooShort = hasText && _textController.text.trim().length < _minTextLength;
-
     return Container(
       height: 240,
       decoration: BoxDecoration(
         color: AppTheme.backgroundPrimary,
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(
-          color: isTextTooShort ? Colors.red : _greyBorder,
+          color: _greyBorder,
           width: 1.13,
         ),
       ),
