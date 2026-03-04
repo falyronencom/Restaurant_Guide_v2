@@ -98,9 +98,12 @@ class RestaurantGuideApp extends StatelessWidget {
               settings.name!.startsWith('/establishment/')) {
             final id = settings.name!.split('/').last;
             if (id.isNotEmpty) {
+              final args = settings.arguments as Map<String, dynamic>?;
+              final distanceKm = args?['distanceKm'] as double?;
               return MaterialPageRoute(
                 builder: (context) => EstablishmentDetailScreen(
                   establishmentId: id,
+                  distanceKm: distanceKm,
                 ),
                 settings: settings,
               );

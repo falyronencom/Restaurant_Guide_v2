@@ -23,10 +23,13 @@ import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
 class EstablishmentDetailScreen extends StatefulWidget {
   final String establishmentId;
+  /// Pre-calculated distance from search results (avoids recalculation discrepancy)
+  final double? distanceKm;
 
   const EstablishmentDetailScreen({
     super.key,
     required this.establishmentId,
+    this.distanceKm,
   });
 
   @override
@@ -53,12 +56,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   // Description collapsed by default
   bool _isDescriptionExpanded = false;
 
-  // Mini-map marker generator (shared singleton)
-  final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
-
-  // Mini-map controller (stored for retry positioning on iOS)
-  YandexMapController? _miniMapController;
-
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrange;
@@ -71,7 +68,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   void initState() {
     super.initState();
     _loadData();
-    _initMarkers();
     // Request user location for distance calculation
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -264,10 +260,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build hero section with photo and overlay info
   Widget _buildHeroSection() {
-    // Filter only establishment photos (not menu)
-    final photos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'photo' || m.type == 'interior')
-        .toList();
+    // Get establishment photos sorted with primary image first
+    final photos = _getSortedPhotos();
 
     // Use thumbnailUrl (primary_image_url) as fallback if no media
     final hasPrimaryImage = _establishment!.thumbnailUrl != null;
@@ -763,17 +757,24 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   }
 
   /// Get distance text for display
+  /// Priority: 1) passed distanceKm from search results, 2) backend distance,
+  /// 3) client-side calculation, 4) null
   String? _getDistanceText() {
     if (_establishment == null) {
       return null;
     }
 
-    // Try backend-provided distance first
+    // 1. Use distance passed from search results (exact match with card)
+    if (widget.distanceKm != null) {
+      return _formatDistance(widget.distanceKm!);
+    }
+
+    // 2. Try backend-provided distance
     if (_establishment!.distance != null) {
       return _formatDistance(_establishment!.distance!);
     }
 
-    // Fallback: calculate client-side if we have user location
+    // 3. Fallback: calculate client-side if we have user location
     final provider = context.read<EstablishmentsProvider>();
 
     if (provider.hasRealLocation &&
@@ -797,6 +798,29 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       return '${(km * 1000).round()} м от вас';
     }
     return '${km.toStringAsFixed(1)} км от вас';
+  }
+
+  /// Get establishment photos sorted with primary image first.
+  /// Matches primary by url against thumbnailUrl (primary_image_url).
+  List<EstablishmentMedia> _getSortedPhotos() {
+    final photos = (_establishment!.media ?? [])
+        .where((m) => m.type == 'photo' || m.type == 'interior')
+        .toList();
+
+    if (photos.isEmpty) return photos;
+
+    final primaryUrl = _establishment!.thumbnailUrl;
+    if (primaryUrl == null) return photos;
+
+    final primaryIndex = photos.indexWhere(
+      (m) => m.url == primaryUrl || m.thumbnailUrl == primaryUrl,
+    );
+    if (primaryIndex > 0) {
+      final primary = photos.removeAt(primaryIndex);
+      photos.insert(0, primary);
+    }
+
+    return photos;
   }
 
   /// Build menu section
@@ -1201,40 +1225,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Pre-generate marker bitmaps (reuses shared singleton cache)
-  Future<void> _initMarkers() async {
-    final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
-    await _markerGenerator.ensureInitialized(dpr);
-    if (mounted) setState(() {});
-  }
-
-  /// Position mini-map camera on establishment with retry for iOS devices
-  /// where the first moveCamera can be silently ignored.
-  Future<void> _positionMiniMap() async {
-    if (_miniMapController == null || _establishment == null) return;
-    if (_establishment!.latitude == null || _establishment!.longitude == null) return;
-
-    final cameraPosition = CameraPosition(
-      target: Point(
-        latitude: _establishment!.latitude!,
-        longitude: _establishment!.longitude!,
-      ),
-      zoom: 16.0,
-    );
-
-    // Attempt 1: immediate (works when tile cache is warm)
-    await _miniMapController!.moveCamera(
-      CameraUpdate.newCameraPosition(cameraPosition),
-    );
-
-    // Attempt 2: after native view is reliably ready
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    await _miniMapController!.moveCamera(
-      CameraUpdate.newCameraPosition(cameraPosition),
-    );
-  }
-
   /// Build map section
   Widget _buildMapSection() {
     return Column(
@@ -1331,44 +1321,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                           topRight: Radius.circular(30),
                           bottomLeft: Radius.circular(30),
                         ),
-                        child: AbsorbPointer(
-                          // Prevent map gestures, only allow tap on container
-                          child: YandexMap(
-                            onMapCreated: (YandexMapController controller) {
-                              _miniMapController = controller;
-                              _positionMiniMap();
-                            },
-                            mapObjects: [
-                              PlacemarkMapObject(
-                                mapId:
-                                    const MapObjectId('establishment_marker'),
-                                point: Point(
-                                  latitude: _establishment!.latitude!,
-                                  longitude: _establishment!.longitude!,
-                                ),
-                                icon: _markerGenerator.getMarkerImage(
-                                            isOpen: _establishment?.isCurrentlyOpen ?? true,
-                                          ) !=
-                                          null
-                                    ? PlacemarkIcon.single(
-                                        PlacemarkIconStyle(
-                                          image: BitmapDescriptor.fromBytes(
-                                              _markerGenerator.getMarkerImage(
-                                                  isOpen: _establishment?.isCurrentlyOpen ?? true)!),
-                                          scale: 1.0,
-                                        ),
-                                      )
-                                    : PlacemarkIcon.single(
-                                        PlacemarkIconStyle(
-                                          image: BitmapDescriptor.fromAssetImage(
-                                              'packages/yandex_mapkit/assets/place.png'),
-                                          scale: 2.0,
-                                        ),
-                                      ),
-                                opacity: 1.0,
-                              ),
-                            ],
-                          ),
+                        child: _EstablishmentMiniMap(
+                          latitude: _establishment!.latitude!,
+                          longitude: _establishment!.longitude!,
+                          isOpen: _establishment?.isCurrentlyOpen ?? true,
                         ),
                       ),
                       // Tap hint overlay
@@ -1755,9 +1711,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Open fullscreen gallery for establishment photos
   void _openFullscreenGallery(int initialIndex) {
-    final photos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'photo' || m.type == 'interior')
-        .toList();
+    final photos = _getSortedPhotos();
     if (photos.isEmpty) return;
 
     Navigator.of(context).push(
@@ -1837,6 +1791,109 @@ class _WorkingHoursRow extends StatelessWidget {
               color:
                   isHighlighted ? AppTheme.primaryOrange : AppTheme.textPrimary,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Extracted mini-map widget that manages its own YandexMapController.
+/// Prevents parent setState() from rebuilding the native map view, which
+/// would reset camera to default Eurasia zoom on iOS.
+class _EstablishmentMiniMap extends StatefulWidget {
+  final double latitude;
+  final double longitude;
+  final bool isOpen;
+
+  const _EstablishmentMiniMap({
+    required this.latitude,
+    required this.longitude,
+    required this.isOpen,
+  });
+
+  @override
+  State<_EstablishmentMiniMap> createState() => _EstablishmentMiniMapState();
+}
+
+class _EstablishmentMiniMapState extends State<_EstablishmentMiniMap> {
+  final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
+
+  /// Gate flag: prevents duplicate positioning if onMapCreated fires again.
+  /// Also mirrors the pattern from map_screen.dart (lines 53-56, 358-374).
+  bool _mapReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initMarkers();
+  }
+
+  Future<void> _initMarkers() async {
+    final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    await _markerGenerator.ensureInitialized(dpr);
+    if (mounted) setState(() {});
+  }
+
+  /// Position camera with immediate + delayed retry for iOS.
+  /// Sets _mapReady = true when complete to prevent duplicate calls.
+  Future<void> _positionMap(YandexMapController controller) async {
+    if (_mapReady) return;
+
+    final cameraPosition = CameraPosition(
+      target: Point(
+        latitude: widget.latitude,
+        longitude: widget.longitude,
+      ),
+      zoom: 16.0,
+    );
+
+    // Attempt 1: immediate (works when tile cache is warm)
+    await controller.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+
+    // Attempt 2: after native view is reliably ready
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    await controller.moveCamera(
+      CameraUpdate.newCameraPosition(cameraPosition),
+    );
+
+    _mapReady = true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AbsorbPointer(
+      // Prevent map gestures, only allow tap on parent GestureDetector
+      child: YandexMap(
+        onMapCreated: (YandexMapController controller) {
+          _positionMap(controller);
+        },
+        mapObjects: [
+          PlacemarkMapObject(
+            mapId: const MapObjectId('establishment_marker'),
+            point: Point(
+              latitude: widget.latitude,
+              longitude: widget.longitude,
+            ),
+            icon: _markerGenerator.getMarkerImage(isOpen: widget.isOpen) != null
+                ? PlacemarkIcon.single(
+                    PlacemarkIconStyle(
+                      image: BitmapDescriptor.fromBytes(
+                          _markerGenerator.getMarkerImage(isOpen: widget.isOpen)!),
+                      scale: 1.0,
+                    ),
+                  )
+                : PlacemarkIcon.single(
+                    PlacemarkIconStyle(
+                      image: BitmapDescriptor.fromAssetImage(
+                          'packages/yandex_mapkit/assets/place.png'),
+                      scale: 2.0,
+                    ),
+                  ),
+            opacity: 1.0,
           ),
         ],
       ),

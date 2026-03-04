@@ -77,8 +77,11 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   }
 
   /// Navigate to establishment detail screen
-  void _navigateToDetail(String establishmentId) {
-    Navigator.of(context).pushNamed('/establishment/$establishmentId');
+  void _navigateToDetail(String establishmentId, {double? distanceKm}) {
+    Navigator.of(context).pushNamed(
+      '/establishment/$establishmentId',
+      arguments: distanceKm != null ? {'distanceKm': distanceKm} : null,
+    );
   }
 
   /// Toggle favorite status with authentication check
@@ -579,7 +582,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                     return EstablishmentCard(
                       establishment: establishment,
                       isFavorite: isFavorite,
-                      onTap: () => _navigateToDetail(establishment.id),
+                      onTap: () => _navigateToDetail(establishment.id, distanceKm: distanceKm),
                       onFavoriteToggle: () => _toggleFavorite(establishment.id),
                       distanceKm: distanceKm,
                     );
