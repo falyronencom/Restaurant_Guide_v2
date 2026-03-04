@@ -20,7 +20,7 @@ import { body, param, query } from 'express-validator';
  * These rules enforce the directive's specifications:
  * - establishment_id must be a valid UUID
  * - rating must be an integer between 1 and 5 inclusive
- * - content must be between 20 and 1000 characters after trimming
+ * - content must be between 1 and 1000 characters after trimming
  * 
  * The user_id comes from authenticated context, not request body, so we don't validate it here.
  */
@@ -42,17 +42,8 @@ export const validateCreateReview = [
     .trim()
     .notEmpty()
     .withMessage('Review content is required')
-    .isLength({ min: 20, max: 1000 })
-    .withMessage('Review content must be between 20 and 1000 characters')
-    // Custom validation to ensure content is substantive, not just repeated characters
-    .custom((value) => {
-      // Check if content is not just whitespace or repeated characters
-      const uniqueChars = new Set(value.replace(/\s/g, '')).size;
-      if (uniqueChars < 5) {
-        throw new Error('Review content must contain meaningful text, not just repeated characters');
-      }
-      return true;
-    }),
+    .isLength({ min: 1, max: 1000 })
+    .withMessage('Review content must be between 1 and 1000 characters'),
 ];
 
 /**
@@ -179,17 +170,8 @@ export const validateUpdateReview = [
   body('content')
     .optional()
     .trim()
-    .isLength({ min: 20, max: 1000 })
-    .withMessage('Review content must be between 20 and 1000 characters')
-    // Same substantive content check as creation
-    .custom((value) => {
-      if (!value) return true; // Skip if not provided
-      const uniqueChars = new Set(value.replace(/\s/g, '')).size;
-      if (uniqueChars < 5) {
-        throw new Error('Review content must contain meaningful text, not just repeated characters');
-      }
-      return true;
-    }),
+    .isLength({ min: 1, max: 1000 })
+    .withMessage('Review content must be between 1 and 1000 characters'),
 
   // Custom validation to ensure at least one field is being updated
   body()
