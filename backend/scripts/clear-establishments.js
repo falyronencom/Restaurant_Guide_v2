@@ -1,12 +1,16 @@
 /**
  * Clear Establishments Script
- * 
- * Utility script to remove all establishments from the database.
+ *
+ * Utility script to remove establishments from the database.
  * Useful for cleaning up test data or resetting the database state.
- * 
- * Usage: npm run clear-data
- * or: node scripts/clear-establishments.js
- * 
+ *
+ * Usage: npm run clear-data                    — delete ALL establishments (with confirmation)
+ *        npm run clear-data -- --seed-only     — delete ONLY seed establishments
+ *        npm run clear-data -- --force         — skip confirmation prompt
+ *
+ * --seed-only: Deletes only establishments owned by seed.data.generator@restaurantguide.by
+ *              Safe to use when real partner data exists in the database.
+ *
  * Safety: Prompts for confirmation before deleting unless --force flag used
  */
 
@@ -46,11 +50,21 @@ function promptConfirmation(message) {
   });
 }
 
+const SEED_PARTNER_EMAIL = 'seed.data.generator@restaurantguide.by';
+
 /**
- * Get current establishment count
+ * Get establishment count (all or seed-only)
  */
-async function getEstablishmentCount() {
+async function getEstablishmentCount(seedOnly = false) {
   try {
+    if (seedOnly) {
+      const result = await pool.query(
+        `SELECT COUNT(*) FROM establishments
+         WHERE partner_id = (SELECT id FROM users WHERE email = $1)`,
+        [SEED_PARTNER_EMAIL]
+      );
+      return parseInt(result.rows[0].count);
+    }
     const result = await pool.query('SELECT COUNT(*) FROM establishments');
     return parseInt(result.rows[0].count);
   } catch (error) {
@@ -60,10 +74,19 @@ async function getEstablishmentCount() {
 }
 
 /**
- * Clear all establishments from database
+ * Clear establishments from database
+ * @param {boolean} seedOnly - if true, delete only seed partner's establishments
  */
-async function clearEstablishments() {
+async function clearEstablishments(seedOnly = false) {
   try {
+    if (seedOnly) {
+      const result = await pool.query(
+        `DELETE FROM establishments
+         WHERE partner_id = (SELECT id FROM users WHERE email = $1)`,
+        [SEED_PARTNER_EMAIL]
+      );
+      return result.rowCount;
+    }
     const result = await pool.query('DELETE FROM establishments');
     return result.rowCount;
   } catch (error) {
@@ -76,33 +99,51 @@ async function clearEstablishments() {
  * Main execution function
  */
 async function main() {
+  const seedOnly = process.argv.includes('--seed-only');
+  const forceMode = process.argv.includes('--force') || process.argv.includes('-f');
+
+  const modeLabel = seedOnly ? 'Seed-Only Cleanup' : 'Full Database Cleanup';
+
   console.log('═══════════════════════════════════════════════════════');
-  console.log('   🗑️  Clear Establishments - Database Cleanup');
+  console.log(`   🗑️  Clear Establishments - ${modeLabel}`);
   console.log('═══════════════════════════════════════════════════════\n');
+
+  if (seedOnly) {
+    console.log(`ℹ️  Mode: --seed-only (only ${SEED_PARTNER_EMAIL})\n`);
+  }
 
   try {
     // Test database connection
     await pool.query('SELECT 1');
     console.log('✅ Database connection successful\n');
 
-    // Get current count
-    const currentCount = await getEstablishmentCount();
-    console.log(`📊 Current establishments in database: ${currentCount}\n`);
+    // Get counts
+    const targetCount = await getEstablishmentCount(seedOnly);
+    const totalCount = seedOnly ? await getEstablishmentCount(false) : targetCount;
 
-    if (currentCount === 0) {
-      console.log('ℹ️  Database is already empty. Nothing to clear.');
+    if (seedOnly) {
+      console.log(`📊 Total establishments in database: ${totalCount}`);
+      console.log(`📊 Seed establishments to delete: ${targetCount}`);
+      console.log(`📊 Partner establishments (safe): ${totalCount - targetCount}\n`);
+    } else {
+      console.log(`📊 Current establishments in database: ${totalCount}\n`);
+    }
+
+    if (targetCount === 0) {
+      const msg = seedOnly
+        ? 'No seed establishments found. Nothing to clear.'
+        : 'Database is already empty. Nothing to clear.';
+      console.log(`ℹ️  ${msg}`);
       await pool.end();
       return;
     }
 
-    // Check for --force flag
-    const forceMode = process.argv.includes('--force') || process.argv.includes('-f');
-
     if (!forceMode) {
-      // Prompt for confirmation
-      const confirmed = await promptConfirmation(
-        `⚠️  This will DELETE all ${currentCount} establishments. Are you sure?`
-      );
+      const promptMsg = seedOnly
+        ? `⚠️  This will DELETE ${targetCount} seed establishments (${totalCount - targetCount} partner establishments will be kept). Are you sure?`
+        : `⚠️  This will DELETE all ${targetCount} establishments. Are you sure?`;
+
+      const confirmed = await promptConfirmation(promptMsg);
 
       if (!confirmed) {
         console.log('\n❌ Operation cancelled by user.');
@@ -114,12 +155,15 @@ async function main() {
     console.log('\n🗑️  Clearing establishments...');
 
     // Perform deletion
-    const deletedCount = await clearEstablishments();
+    const deletedCount = await clearEstablishments(seedOnly);
 
     console.log('\n═══════════════════════════════════════════════════════');
-    console.log(`✅ Successfully deleted ${deletedCount} establishments`);
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('\n✨ Database is now empty and ready for new data.\n');
+    console.log(`✅ Successfully deleted ${deletedCount} ${seedOnly ? 'seed ' : ''}establishments`);
+    if (seedOnly) {
+      const remaining = totalCount - deletedCount;
+      console.log(`✅ ${remaining} partner establishment(s) preserved`);
+    }
+    console.log('═══════════════════════════════════════════════════════\n');
 
   } catch (error) {
     console.error('\n❌ Fatal error:', error.message);
