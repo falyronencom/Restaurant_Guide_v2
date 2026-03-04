@@ -8,6 +8,11 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 4, 2026 — Safe Seed Data Cleanup (--seed-only)
+- Добавлен флаг `--seed-only` в `clear-establishments.js` — удаляет только тестовые заведения (seed.data.generator), сохраняя карточки реальных партнёров
+- Новый npm script: `npm run clear-data:seed`
+- Подготовка к наполнению базы реальными заведениями параллельно с Closing QA
+
 #### Март 3, 2026 — Claude Code Memory Architecture
 - Реорганизация auto-memory: 3-файловая архитектура (MEMORY.md, session_history.md, lessons_learned.md)
 - Обновление Protocol Autonomous v1.2 и Protocol Informed v1.3 — добавлены правила ведения Claude Code memory
