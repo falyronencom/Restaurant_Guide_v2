@@ -8,6 +8,13 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 4, 2026 — iOS Detail Screen: Three Bug Fixes
+- **Fix 1 — Distance Consistency**: detail screen теперь получает distanceKm из экрана поиска через route arguments. Приоритет: переданное → backend → client-side → null
+- **Fix 2 — Gallery Primary Image**: фотогалерея сортируется с primary image (thumbnailUrl) на первой позиции. Карточка и галерея показывают одно фото
+- **Fix 3 — Mini-Map iOS Race Condition**: YandexMap извлечён в отдельный `_EstablishmentMiniMap` StatefulWidget. Parent setState() больше не пересоздаёт нативный map view. Gate flag `_mapReady` предотвращает дублирование позиционирования
+- Файлы: `detail_screen.dart`, `results_list_screen.dart`, `main.dart`
+- `flutter analyze`: 0 новых issues
+
 #### Март 4, 2026 — Safe Seed Data Cleanup (--seed-only)
 - Добавлен флаг `--seed-only` в `clear-establishments.js` — удаляет только тестовые заведения (seed.data.generator), сохраняя карточки реальных партнёров
 - Новый npm script: `npm run clear-data:seed`
