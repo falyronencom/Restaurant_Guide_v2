@@ -582,8 +582,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
  * Business rules for updates:
  * - Partner must own the establishment
  * - Cannot update if status is 'suspended' (admin-only change)
- * - Major changes (name, categories, cuisines) require status reset to 'pending' if currently 'active'
- * - Minor changes (hours, description, contact) don't require re-moderation
+ * - Edits to an already-approved establishment do NOT require re-moderation
  * 
  * @param {string} establishmentId - UUID of the establishment
  * @param {string} partnerId - UUID of the authenticated partner
@@ -744,28 +743,11 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       }
     }
 
-    // Determine if major fields are being changed
-    const majorFieldsChanged =
-      (updates.name !== undefined && updates.name !== currentEstablishment.name) ||
-      (updates.categories !== undefined) ||
-      (updates.cuisines !== undefined);
-
-    // If currently 'active' and major fields changed, reset to 'pending'
-    if (currentEstablishment.status === 'active' && majorFieldsChanged) {
-      updates.status = 'pending';
-      
-      logger.info('Major fields updated, status reset to pending', {
-        establishmentId,
-        partnerId,
-        changedFields: Object.keys(updates),
-      });
-    }
-
-    // Prevent partners from changing status directly (except through major field changes above)
+    // Prevent partners from changing status directly
     // Status changes should only come from admin moderation or submission workflow
-    if (updates.status !== undefined && updates.status !== 'pending' && !majorFieldsChanged) {
+    if (updates.status !== undefined) {
       delete updates.status;
-      
+
       logger.warn('Partner attempted to change status directly', {
         establishmentId,
         partnerId,

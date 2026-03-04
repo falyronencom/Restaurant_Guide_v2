@@ -634,15 +634,18 @@ describe('establishmentService', () => {
       });
     });
 
-    test('should reset status to pending when major fields change on active establishment', async () => {
+    test('should NOT reset status to pending when fields change on active establishment', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         ...mockEstablishment,
         status: 'active',
       });
       EstablishmentModel.checkDuplicateName.mockResolvedValue(false);
-      const updated = { ...mockEstablishment, status: 'pending' };
-      EstablishmentModel.updateEstablishment.mockResolvedValue(updated);
+      EstablishmentModel.updateEstablishment.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'active',
+        name: 'New Name',
+      });
 
       const updates = { name: 'New Name', categories: ['Ресторан'], cuisines: ['Европейская'] };
 
@@ -650,7 +653,7 @@ describe('establishmentService', () => {
 
       expect(EstablishmentModel.updateEstablishment).toHaveBeenCalledWith(
         establishmentId,
-        expect.objectContaining({ status: 'pending' })
+        expect.not.objectContaining({ status: 'pending' })
       );
     });
 
