@@ -1,6 +1,6 @@
-# Distributed Intelligence Methodology v9.0
+# Distributed Intelligence Methodology v9.1
 
-**Version:** 9.0
+**Version:** 9.1
 **Date:** February 2026
 **Status:** Active Operational Standard
 **Core Paradigm:** Co-Creative Partnership Between Human Coordination and Autonomous Agents
@@ -99,6 +99,7 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 - [ ] Project Status Briefing updated with current state
 - [ ] Trunk-to-Trunk Handoff created (accomplishments, decisions, next priorities)
 - [ ] Any methodology or documentation changes noted for synchronization
+- [ ] Documentation Hygiene Checkpoint needed? (phase completed / transient artifacts accumulating)
 
 ---
 
@@ -697,6 +698,63 @@ The co-creative system relies on external memory to maintain coherence across se
 9. Cycle continues with accumulated context
 
 ---
+
+### 1.9 Documentation Hygiene
+
+The co-creative methodology generates documentation as a natural byproduct of every session: session reports, discovery reports, directives, handoffs, checkpoints. Over time, transient artifacts accumulate alongside permanent documentation, degrading both repository cleanliness and Project Knowledge search effectiveness.
+
+Documentation Hygiene operates at two scales: session-level (Protocol updates in Autonomous v1.2 / Informed v1.3 already handle CHANGELOG, session_history, lessons_learned) and phase-level (the Documentation Hygiene Checkpoint described below).
+
+#### Documentation Hygiene Checkpoint
+
+**Triggers:**
+
+Primary: completion of a major phase (Phase 5, Phase 8, etc.) — the natural boundary where a body of work is done and its transient artifacts are no longer needed.
+
+Secondary: Coordinator observes that Project Knowledge search returns outdated documents above current ones, or that transient files are visibly accumulating in docs/ or project root.
+
+**Executor:** Leaf session in Mode B (Autonomous Execution). No Trunk directive or Pre-flight Discovery required — the Coordinator provides the standardized checklist below as the task description.
+
+**Checklist:**
+
+Step 1 — Scan for Transient Artifacts.
+Scan docs/discovery_reports/, docs/handoffs/, project root, outputs/, and any *checkpoint* files. Delete files where: (a) the task they were created for is complete, AND (b) the final session report captures the outcome. For handoffs, preserve any that relate to active (in-progress) work.
+
+Step 2 — Verify Permanent Documentation.
+CHANGELOG.md has entries for all phases completed since last checkpoint. docs/ROADMAP.md phase statuses are current. README.md "Последнее обновление" reflects latest work. All links in README.md resolve to existing files. PROJECT_MAP.md reflects current module structure (see Section 1.9.1).
+
+Step 3 — Check for Accumulation Patterns.
+backend/ root contains only essential docs (no session reports or implementation notes). Session report directories (mobile/session_reports/, admin-web/session_reports/) have complete series without orphaned checkpoints. docs/00_methodology/ contains only current protocol versions.
+
+Step 4 — Git Hygiene.
+No untracked .md files remain. No empty directories remain after deletions.
+
+Step 5 — Hygiene Report.
+Produce a brief report: files removed (count and total lines), files updated, issues flagged for Trunk attention, expected trigger for next checkpoint. Single commit with message: docs: documentation hygiene checkpoint — [phase/trigger name].
+
+**Kernel Integration:** The Trunk session closing checklist includes a line: "Documentation Hygiene Checkpoint needed?" This ensures the practice is evaluated at every strategic boundary, not only when accumulation becomes visible.
+
+#### 1.9.1 Semantic Project Map
+
+PROJECT_MAP.md is a navigation document optimized for agent orientation at session start. Unlike architectural documentation (which explains *why* the system is designed as it is), the Project Map answers: *if I need to work on X, which files do I open?*
+
+**Structure — Three Layers:**
+
+Layer 1 — Directory Semantics. The role of each directory and when to look there. Not a file listing (README provides that), but a functional description: "this is where Y happens."
+
+Layer 2 — Module Flow Maps. For each functional module (auth, establishments, reviews, search, moderation, media, admin, partner), the data flow from entry point to database: route → controller → service → model, with specific file paths and key function names. Includes "if bug in X, start at Y" navigation hints.
+
+Layer 3 — Cross-Cutting Concerns. Middleware chain, error handling pattern, audit logging, Provider architecture on frontend — patterns that span multiple modules.
+
+**Location:** PROJECT_MAP.md in project root (same level as README.md and CHANGELOG.md — the three "lobby documents" that orient anyone entering the project).
+
+**Maintenance:** Updated during every Documentation Hygiene Checkpoint (Step 2 of the checklist). When new modules are added or existing modules are significantly restructured, the corresponding flow map is updated. An outdated map is worse than no map — it creates false confidence in navigation.
+
+**Design Principles:** Optimized for scanning, not reading. Consistent format across all modules. File paths are exact (copy-pasteable). Function names included for key entry points. No explanations of *why* — only *where* and *what*.
+
+**Discovery Tax Impact:** The Project Map directly addresses the Discovery Tax (Section 1.5) by converting navigational cost from per-session (each session rediscovers structure) to per-change (map updated only when structure changes). Expected reduction: Mode B navigational tax from 50-80% to 20-30% of context, preserving cognitive resources for problem-solving.
+
+---
 ---
 
 ## Part II: Reference Library
@@ -905,6 +963,12 @@ All code produced in the co-creative process is expected to be production-ready.
 ---
 
 ## Changelog
+
+### v9.1 (March 2026)
+
+- **Added Section 1.9: Documentation Hygiene.** Defines the Documentation Hygiene Checkpoint (5-step checklist: scan transient artifacts, verify permanent docs, check accumulation patterns, git hygiene, hygiene report) with triggers, executor, and kernel integration.
+- **Added Section 1.9.1: Semantic Project Map.** Defines PROJECT_MAP.md structure (3 layers: directory semantics, module flow maps, cross-cutting concerns), location, maintenance rules, and Discovery Tax impact.
+- **Added Kernel checklist trigger** for Documentation Hygiene Checkpoint in "Closing a Trunk Session" checklist.
 
 ### v9.0 (February 2026)
 
