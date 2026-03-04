@@ -279,21 +279,23 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   : _buildPrimaryImageFallback())
               : _buildNoPhotoPlaceholder(),
 
-          // Gradient overlay at bottom
+          // Gradient overlay at bottom (IgnorePointer so swipe reaches PageView)
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             height: 333,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.6),
-                  ],
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.6),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -322,12 +324,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildShareButton(),
           ),
 
-          // Info overlay
+          // Info overlay (IgnorePointer so swipe reaches PageView)
           Positioned(
             bottom: 60,
             left: 17,
             right: 17,
-            child: _buildInfoOverlay(),
+            child: IgnorePointer(
+              child: _buildInfoOverlay(),
+            ),
           ),
 
           // Rating badge
@@ -438,50 +442,58 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Build back button (Figma style)
+  /// Build back button — semi-transparent glass style, enlarged tap area
   Widget _buildBackButton({bool dark = false}) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.of(context).pop(),
-      child: Container(
-        width: 55,
-        height: 42,
-        decoration: const BoxDecoration(
-          color: AppTheme.textPrimary,
-          borderRadius: BorderRadius.only(
-            topRight: Radius.circular(8),
-            bottomRight: Radius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12, top: 4, bottom: 4),
+        child: Container(
+          width: 55,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.45),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(8),
+              bottomRight: Radius.circular(8),
+            ),
           ),
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.chevron_left,
-            color: AppTheme.textOnPrimary,
-            size: 28,
+          child: const Center(
+            child: Icon(
+              Icons.chevron_left,
+              color: AppTheme.textOnPrimary,
+              size: 28,
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Build share button (mirrored style of back button)
+  /// Build share button — semi-transparent glass style, enlarged tap area
   Widget _buildShareButton() {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: _shareEstablishment,
-      child: Container(
-        width: 55,
-        height: 42,
-        decoration: const BoxDecoration(
-          color: AppTheme.textPrimary,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(8),
-            bottomLeft: Radius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+        child: Container(
+          width: 55,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.45),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(8),
+              bottomLeft: Radius.circular(8),
+            ),
           ),
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.ios_share,
-            color: AppTheme.textOnPrimary,
-            size: 24,
+          child: const Center(
+            child: Icon(
+              Icons.ios_share,
+              color: AppTheme.textOnPrimary,
+              size: 24,
+            ),
           ),
         ),
       ),
