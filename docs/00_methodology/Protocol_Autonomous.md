@@ -1,4 +1,4 @@
-# Protocol Autonomous v1.1
+# Protocol Autonomous v1.3
 ## Leaf Execution Protocol for Ad-hoc Tasks
 
 **Context:** This protocol applies when coordinator requests help **without a Trunk Directive** — direct requests like "fix this bug", "add this feature", "investigate this error".
@@ -24,7 +24,12 @@ All phases apply. Scale depth to task complexity.
 
 **Purpose:** Create navigational map before committing context to file reading.
 
-**Mandatory Step:** Launch 2-3 targeted Explore subagents:
+**Step 1 — Read PROJECT_MAP.md** (if exists in project root):
+- Use Layer 2 (Module Flow Maps) to identify the relevant module chain (route → controller → service → model)
+- Use bug hints to locate likely starting points
+- Skip Explore subagents for well-mapped modules — proceed directly to Phase 1 (Discovery) with known file paths
+
+**Step 2 — Launch Explore subagents** (if PROJECT_MAP.md is absent, or task spans unmapped areas):
 - "Map files related to [task area]"
 - "Find where [component/function] is defined and used"
 - "Trace data flow for [feature]"
@@ -394,7 +399,7 @@ Request: [What you need from coordinator]
 
 | Situation | Action |
 |-----------|--------|
-| Session start | Launch Pre-scan subagents |
+| Session start | Read PROJECT_MAP.md, then Pre-scan subagents if needed |
 | Pre-scan complete | Present results, wait for confirmation |
 | Task unclear | Use Clarification format |
 | Before fixing errors | Ask about infrastructure |
@@ -407,6 +412,10 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.3 (March 2026)
+- **Phase 0 Pre-scan**: Added PROJECT_MAP.md as Step 1 before Explore subagents. Well-mapped modules skip subagents entirely — proceed directly to Discovery with known file paths
+- Updated Quick Reference table
 
 ### v1.2 (March 2026)
 - **Added Claude Code memory** to Documentation Updates — 3-file architecture: MEMORY.md (≤150 lines, auto-loaded), session_history.md (session log), lessons_learned.md (categorized lessons)

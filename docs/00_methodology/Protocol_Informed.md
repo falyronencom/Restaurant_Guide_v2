@@ -1,4 +1,4 @@
-# Protocol Informed v1.2
+# Protocol Informed v1.4
 ## Leaf Execution Protocol for Trunk Directives
 
 **Context:** This protocol applies when Leaf receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
@@ -8,6 +8,7 @@
 **Input Package:**
 - Informed Directive from Trunk (based on Discovery Report)
 - Discovery Report from Librarian (use Navigation section for coordinates)
+- PROJECT_MAP.md (if exists) — use for navigational context during Sanity Check and implementation. Module flow maps provide file paths without re-reading Discovery Report navigation sections
 
 **Design Principle:** Skip redundant discovery. Focus context on implementation.
 
@@ -320,6 +321,10 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.4 (March 2026)
+- **Input Package**: Added PROJECT_MAP.md as navigational resource for Sanity Check and implementation phases
+- Fixed header version (was v1.2, should have been v1.3 after previous update)
 
 ### v1.3 (March 2026)
 - **Added Claude Code memory** to Documentation Updates — 3-file architecture: MEMORY.md (≤150 lines, auto-loaded), session_history.md (session log), lessons_learned.md (categorized lessons)
