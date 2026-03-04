@@ -14,7 +14,7 @@ Restaurant Guide Belarus — кроссплатформенное мобильн
 - Панель аналитики для партнёров (статистика, отзывы, редактирование)
 - Веб-панель администрирования с модерацией контента
 
-**Текущий этап**: Фаза 8 — Admin Web Panel (Segment A Foundation complete)
+**Текущий этап**: Фаза 8 — Admin Web Panel (Segments A-E complete, MVP deployed)
 
 ## Технологический стек
 
@@ -32,12 +32,11 @@ Restaurant Guide Belarus — кроссплатформенное мобильн
 ```
 restaurant-guide-belarus/
 ├── docs/                    # Документация проекта
-│   ├── 00_methodology/      # Методология разработки v8.6
+│   ├── 00_methodology/      # Методология разработки v9
 │   ├── 01_specifications/   # Функциональные спецификации
 │   ├── 02_architecture/     # Архитектура API
 │   ├── 03_coordination/     # Координационные документы
-│   ├── handoffs/            # Активные handoff-документы
-│   └── reports/             # Отчёты мобильного тестирования
+│   └── handoffs/            # Активные handoff-документы
 ├── backend/                 # Backend API (Node.js/Express)
 │   ├── src/
 │   │   ├── models/          # Модели данных
@@ -61,10 +60,11 @@ restaurant-guide-belarus/
 └── admin-web/               # Flutter Web админ-панель
     ├── lib/
     │   ├── config/          # GoRouter, environment
-    │   ├── providers/       # AuthProvider
-    │   ├── screens/         # Login, placeholder screens
-    │   ├── services/        # ApiClient, AuthService
-    │   └── widgets/         # AdminShell, AdminSidebar
+    │   ├── models/          # Analytics, audit log, review models
+    │   ├── providers/       # 10 ChangeNotifiers (auth, moderation, analytics...)
+    │   ├── screens/         # Dashboard, moderation, analytics, audit, reviews
+    │   ├── services/        # ApiClient, auth, moderation, analytics, audit, reviews
+    │   └── widgets/         # AdminShell, sidebar, charts, moderation panels
     └── web/                 # Flutter Web entry point
 ```
 
@@ -109,12 +109,12 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 
 | Слой | Статус | Детали |
 |------|--------|--------|
-| **Backend API** | Production-ready | 64% coverage, 400+ тестов, все модули complete |
+| **Backend API** | Production-ready | 61.52% coverage, 626 тестов, все модули complete |
 | **Mobile Foundation** | Production-ready | Theme, API client, navigation, state management |
 | **Mobile Auth** | Production-ready | Email + phone registration, login, JWT |
 | **Mobile Search** | Production-ready | Results list, filters (6 секций), detail view, city selector |
 | **Mobile Extended** | Production-ready | Favorites, reviews, map (Yandex), profile, partner flows |
-| **Admin Web** | Segment A done | Login, sidebar, auth guard, placeholder screens |
+| **Admin Web** | MVP complete (A-E) | Moderation, analytics, audit log, reviews management |
 
 ### Реализованные модули Backend
 
@@ -123,7 +123,7 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 - **Reviews**: CRUD, daily quota (10/day), partner responses, aggregate caching, soft deletion
 - **Favorites**: Idempotent operations, batch status check, rich responses
 - **Establishments**: CRUD с draft-pending-active workflow, Belarus validation, Cloudinary media (3 resolutions), tier-based limits
-- **Admin Auth**: Admin login endpoint с role gate
+- **Admin**: Login, moderation (full lifecycle), analytics (4 endpoints), audit log, review management — 17 admin endpoints total
 
 ### Реализованные экраны Mobile (Phase 5)
 
@@ -149,7 +149,7 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 | 5. Mobile MVP | Завершена | Foundation, auth, search, extended features, partner |
 | 6. User Features Integration | Запланировано | Auth flow integration, push notifications |
 | 7. Partner Mobile Features | Запланировано | Dashboard, analytics, notifications |
-| 8. Admin Web Panel | В работе | Segment A done, B-E planned |
+| 8. Admin Web Panel | В работе | Segments A-E done, MVP deployed, Segment F planned |
 | 9. Testing & Polish | Запланировано | E2E, performance, UX |
 | 10. Launch Preparation | Запланировано | Deploy, monitoring, beta |
 
@@ -157,7 +157,7 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 
 ## Тестирование
 
-**Backend** (400+ тестов, 64% overall coverage):
+**Backend** (626 тестов, 61.52% overall coverage):
 
 | Модуль | Coverage | Тесты |
 |--------|----------|-------|
@@ -179,7 +179,7 @@ npm run test:coverage      # С отчётом покрытия
 
 | Документ | Описание |
 |----------|----------|
-| [docs/00_methodology/Methodology_v8.6.md](docs/00_methodology/Methodology_v8.6.md) | Методология разработки (Distributed Intelligence) |
+| [docs/00_methodology/Methodology_v9.md](docs/00_methodology/Methodology_v9.md) | Методология разработки (Distributed Intelligence v9) |
 | [docs/01_specifications/functional_spec_v3.md](docs/01_specifications/functional_spec_v3.md) | Функциональная спецификация |
 | [docs/02_architecture/api_endpoints_overview.md](docs/02_architecture/api_endpoints_overview.md) | Обзор API endpoints |
 | [docs/01_specifications/api_architecture_review_v1.1.md](docs/01_specifications/api_architecture_review_v1.1.md) | Архитектурный обзор API |
@@ -192,7 +192,7 @@ npm run test:coverage      # С отчётом покрытия
 
 ## Методология разработки
 
-Проект использует **Distributed Intelligence Methodology v8.6**, реализующую двухуровневую модель координации:
+Проект использует **Distributed Intelligence Methodology v9.0**, реализующую двухуровневую модель координации:
 
 - **Strategic Trunk** (Web Interface): архитектурное планирование, анализ session reports, формулирование директив
 - **Autonomous Leaf** (CLI/VSCode): автономное выполнение — discovery, planning, implementation, delivery через Git
@@ -202,16 +202,17 @@ Execution cycle: Discovery (read-only) -> Planning -> Implementation -> Delivery
 
 Context management: Green (<70%) -> Yellow (70-85%) -> Orange (85-90%) -> Red (>90%, emergency stop)
 
-Полная методология: [docs/00_methodology/Methodology_v8.6.md](docs/00_methodology/Methodology_v8.6.md)
+Полная методология: [docs/00_methodology/Methodology_v9.md](docs/00_methodology/Methodology_v9.md)
 
 ## Последнее обновление
 
-**Февраль 8, 2026** — Admin Panel Segment A: Foundation + Login
+**Март 2026** — Production Deployment + TestFlight
 
-- Backend: admin login endpoint (`POST /api/v1/admin/auth/login`) с role gate
-- Admin-Web: Flutter Web project (GoRouter, Provider, Dio) — 15 files, ~1,800 lines
-- LoginScreen, AdminShell (363px sidebar), 7 navigation items, auth guard
-- Build: `flutter build web` successful, 0 errors
+- Admin Panel MVP complete (Segments A-E): модерация, аналитика, аудит, управление отзывами
+- Railway production deployment: Backend + PostGIS + Redis
+- TestFlight: Apple approved for external testing
+- 626 backend tests (211 admin), 61.52% coverage
+- iOS fixes: map zoom, Могилёв ё/е, CORS
 
 Полная история обновлений: [CHANGELOG.md](CHANGELOG.md)
 
@@ -223,8 +224,8 @@ Proprietary — все права защищены.
 
 **Основатель проекта**: Всеволод
 **Архитектурный координатор**: Claude (Anthropic AI)
-**Методология**: Distributed Intelligence v8.6
+**Методология**: Distributed Intelligence v9.0
 
 ---
 
-*Последнее обновление: Февраль 8, 2026*
+*Последнее обновление: Март 4, 2026*
