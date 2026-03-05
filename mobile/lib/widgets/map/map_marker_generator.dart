@@ -39,16 +39,19 @@ class MapMarkerGenerator {
     final results = await Future.wait([
       _renderMarker(isOpen: true, devicePixelRatio: devicePixelRatio),
       _renderMarker(isOpen: false, devicePixelRatio: devicePixelRatio),
+      _renderMarker(isOpen: true, isSelected: true, devicePixelRatio: devicePixelRatio),
     ]);
 
     _cache['marker_open'] = results[0];
     _cache['marker_closed'] = results[1];
+    _cache['marker_selected'] = results[2];
     _cachedDpr = devicePixelRatio;
     _initialized = true;
   }
 
   /// Get cached marker image bytes. Returns null if not initialized.
-  Uint8List? getMarkerImage({required bool isOpen}) {
+  Uint8List? getMarkerImage({required bool isOpen, bool isSelected = false}) {
+    if (isSelected) return _cache['marker_selected'];
     final key = isOpen ? 'marker_open' : 'marker_closed';
     return _cache[key];
   }
@@ -56,6 +59,7 @@ class MapMarkerGenerator {
   /// Render a single marker variant to PNG bytes.
   Future<Uint8List> _renderMarker({
     required bool isOpen,
+    bool isSelected = false,
     required double devicePixelRatio,
   }) async {
     const double canvasW = MapMarkerPainter.canvasWidth;
@@ -73,6 +77,7 @@ class MapMarkerGenerator {
 
     final painter = MapMarkerPainter(
       isOpen: isOpen,
+      isSelected: isSelected,
       devicePixelRatio: devicePixelRatio,
     );
 
