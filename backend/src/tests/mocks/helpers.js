@@ -216,6 +216,26 @@ export function createMockNext() {
 }
 
 /**
+ * Generate mock media data
+ */
+export function createMockMedia(overrides = {}) {
+  return {
+    id: uuidv4(),
+    establishment_id: uuidv4(),
+    type: 'interior',
+    url: 'https://res.cloudinary.com/test/image/upload/w_1920,h_1080,c_limit/f_auto,q_auto,fl_progressive/test-public-id.jpg',
+    thumbnail_url: 'https://res.cloudinary.com/test/image/upload/w_200,h_150,c_fill/f_auto,q_auto,fl_progressive/test-public-id.jpg',
+    preview_url: 'https://res.cloudinary.com/test/image/upload/w_800,h_600,c_fit/f_auto,q_auto,fl_progressive/test-public-id.jpg',
+    position: 0,
+    is_primary: false,
+    caption: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    ...overrides,
+  };
+}
+
+/**
  * Extract mock call arguments helper
  */
 export function getLastCallArgs(mockFn) {
