@@ -41,11 +41,15 @@ class _MapScreenState extends State<MapScreen> {
   YandexMapController? _mapController;
   final EstablishmentsService _establishmentsService = EstablishmentsService();
 
+  List<Establishment> _establishments = [];
   List<PlacemarkMapObject> _placemarks = [];
   bool _isLoading = false;
   bool _isEmpty = false;
   String? _errorMessage;
   final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
+
+  /// Currently selected establishment for inline preview (replaces modal bottom sheet)
+  Establishment? _selectedEstablishment;
 
   /// Track last known city to detect changes when returning to map tab
   String? _lastCity;
@@ -221,6 +225,15 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
+            ),
+
+          // Establishment preview card (inline, no modal barrier)
+          if (_selectedEstablishment != null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildPreviewContent(_selectedEstablishment!),
             ),
 
           // Back button (only when pushed as standalone route, not as tab)
@@ -453,10 +466,9 @@ class _MapScreenState extends State<MapScreen> {
         hoursFilter: apiHoursFilter,
       );
 
-      final placemarks = _createPlacemarks(establishments);
-
       setState(() {
-        _placemarks = placemarks;
+        _establishments = establishments;
+        _placemarks = _createPlacemarks(establishments);
         _isLoading = false;
         _isEmpty = establishments.isEmpty;
       });
@@ -469,11 +481,25 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   List<PlacemarkMapObject> _createPlacemarks(List<Establishment> establishments) {
-    return establishments
+    final valid = establishments
         .where((e) => e.latitude != null && e.longitude != null)
-        .map((establishment) {
+        .toList();
+
+    // Sort: selected marker last so it renders on top of others
+    if (_selectedEstablishment != null) {
+      final selectedId = _selectedEstablishment!.id;
+      valid.sort((a, b) {
+        if (a.id == selectedId) return 1;
+        if (b.id == selectedId) return -1;
+        return 0;
+      });
+    }
+
+    return valid.map((establishment) {
+      final bool selected = _selectedEstablishment?.id == establishment.id;
       final markerBytes = _markerGenerator.getMarkerImage(
         isOpen: establishment.isCurrentlyOpen,
+        isSelected: selected,
       );
 
       return PlacemarkMapObject(
@@ -482,6 +508,7 @@ class _MapScreenState extends State<MapScreen> {
           latitude: establishment.latitude!,
           longitude: establishment.longitude!,
         ),
+        zIndex: selected ? 1.0 : 0.0,
         icon: markerBytes != null
             ? PlacemarkIcon.single(
                 PlacemarkIconStyle(
@@ -504,19 +531,40 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _showEstablishmentPreview(Establishment establishment) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _creamBackground,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => _buildPreviewContent(establishment),
-    );
+    setState(() {
+      _selectedEstablishment = establishment;
+      _placemarks = _createPlacemarks(_establishments);
+    });
+  }
+
+  void _dismissPreview() {
+    setState(() {
+      _selectedEstablishment = null;
+      _placemarks = _createPlacemarks(_establishments);
+    });
   }
 
   Widget _buildPreviewContent(Establishment establishment) {
-    return Container(
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        // Swipe down to dismiss (positive velocity = downward)
+        if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+          _dismissPreview();
+        }
+      },
+      child: Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _creamBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -534,7 +582,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Content row
+          // Content row with close button
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -628,6 +676,26 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
+
+              const SizedBox(width: 8),
+
+              // Close button
+              GestureDetector(
+                onTap: _dismissPreview,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close,
+                    size: 18,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ),
             ],
           ),
 
@@ -638,7 +706,7 @@ class _MapScreenState extends State<MapScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.of(context).pop(); // Close bottom sheet
+                _dismissPreview();
                 _navigateToDetail(establishment);
               },
               style: ElevatedButton.styleFrom(
@@ -663,6 +731,7 @@ class _MapScreenState extends State<MapScreen> {
           SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],
       ),
+    ),  // closes GestureDetector
     );
   }
 

@@ -10,11 +10,13 @@ import 'package:flutter/material.dart';
 /// Architecture-ready for future rating badge (optional [rating] parameter).
 class MapMarkerPainter extends CustomPainter {
   final bool isOpen;
+  final bool isSelected;
   final double? rating; // Reserved for future rating badge
   final double devicePixelRatio;
 
   MapMarkerPainter({
     required this.isOpen,
+    this.isSelected = false,
     this.rating,
     this.devicePixelRatio = 1.0,
   });
@@ -43,6 +45,11 @@ class MapMarkerPainter extends CustomPainter {
   static const Color _closedGradientEnd = Color(0xFF94A3B8);
   static const Color _closedShadowColor = Color(0x26000000); // ~0.15 alpha
 
+  // Selected state colors (golden yellow gradient)
+  static const Color _selectedGradientStart = Color(0xFFFFD54F);
+  static const Color _selectedGradientEnd = Color(0xFFFFB300);
+  static const Color _selectedShadowColor = Color(0x59FFB300); // ~0.35 alpha
+
   @override
   void paint(Canvas canvas, Size size) {
     // Center of the circle (offset for shadow padding)
@@ -51,7 +58,9 @@ class MapMarkerPainter extends CustomPainter {
 
     // --- Shadow ---
     final shadowPaint = Paint()
-      ..color = isOpen ? _openShadowColor : _closedShadowColor
+      ..color = isSelected
+          ? _selectedShadowColor
+          : (isOpen ? _openShadowColor : _closedShadowColor)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, shadowBlur / 2);
     canvas.drawCircle(
       Offset(cx, cy + shadowOffsetY),
@@ -71,9 +80,11 @@ class MapMarkerPainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(cx - innerRadius, cy - innerRadius), // top-left
         Offset(cx + innerRadius, cy + innerRadius), // bottom-right
-        isOpen
-            ? [_openGradientStart, _openGradientEnd]
-            : [_closedGradientStart, _closedGradientEnd],
+        isSelected
+            ? [_selectedGradientStart, _selectedGradientEnd]
+            : (isOpen
+                ? [_openGradientStart, _openGradientEnd]
+                : [_closedGradientStart, _closedGradientEnd]),
       )
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(cx, cy), innerRadius, gradientPaint);
@@ -176,6 +187,8 @@ class MapMarkerPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant MapMarkerPainter oldDelegate) {
-    return oldDelegate.isOpen != isOpen || oldDelegate.rating != rating;
+    return oldDelegate.isOpen != isOpen ||
+        oldDelegate.isSelected != isSelected ||
+        oldDelegate.rating != rating;
   }
 }
