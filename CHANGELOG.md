@@ -8,6 +8,13 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 5, 2026 — QA Étape 3: Validator Sync & Review Model Coverage
+- **reviewValidation.test.js**: 62 новых unit-тестов — подтверждение удаления 20-char минимума, рейтинг 1-5, UUID, пагинация, партнёрский ответ
+- **reviewModel.test.js**: 59 новых unit-тестов — все 17 методов модели (partner responses, aggregation, soft/hard delete, transactions, error paths)
+- **Skipped/TODO review**: 5 test.todo в search.test.js — документированы как unimplemented features; 34 skipped из Feb 24 — отсутствуют в коде
+- Unit-тесты: 217 → 338 (+121). Итого с интеграцией: 664 + 121 = 785. 0 регрессий
+- Файлы: `reviewValidation.test.js`, `reviewModel.test.js`, `search.test.js` (comments only)
+
 #### Март 5, 2026 — Media Module: Testing & Critical Bug Fix (QA Segment A)
 - **Phase 1 — Mock Infrastructure**: Создан `tests/mocks/cloudinary.js` (7 mock-экспортов + `resetCloudinaryMocks()`), добавлен `createMockMedia()` хелпер
 - **Phase 2 — Fix Existing Tests**: Исправлены и разблокированы 31 тест в `media.test.js` (2 `describe.skip` → working). Баги: mock name (`generateMediaUrls` → `generateAllResolutions`), table name (`media` → `establishment_media`), response format (`data.media` → `data`), HTTP method (PATCH → PUT), tier counting (aggregated → per-type)
