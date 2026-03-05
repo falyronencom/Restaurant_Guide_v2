@@ -803,7 +803,7 @@ describe('Establishments System - Update Operations', () => {
     expect(response.body.data.establishment.id).toBe(establishmentId);
   });
 
-  test('should reset active establishment to pending on major change', async () => {
+  test('should keep active status on major change (re-moderation removed)', async () => {
     await query('UPDATE establishments SET status = $1 WHERE id = $2', ['active', establishmentId]);
 
     const response = await request(app)
@@ -816,7 +816,7 @@ describe('Establishments System - Update Operations', () => {
       })
       .expect(200);
 
-    expect(response.body.data.establishment.status).toBe('pending');
+    expect(response.body.data.establishment.status).toBe('active');
     expect(response.body.data.establishment.name).toBe('Updated Name');
   });
 

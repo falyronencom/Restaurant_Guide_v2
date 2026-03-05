@@ -203,7 +203,7 @@ describe('POST /api/v1/auth/login', () => {
     expect(response.body.error.code).toBe('INVALID_CREDENTIALS');
   });
 
-  test('produces 15 minute access token with expected claims', async () => {
+  test('produces access token with expected claims and configured expiry', async () => {
     const response = await request(app)
       .post('/api/v1/auth/login')
       .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })
@@ -213,8 +213,9 @@ describe('POST /api/v1/auth/login', () => {
     expect(decoded.userId).toBeDefined();
     expect(decoded.role).toBe('user');
     const ttl = decoded.exp - decoded.iat;
-    expect(ttl).toBeGreaterThanOrEqual(899);
-    expect(ttl).toBeLessThanOrEqual(901);
+    // JWT_ACCESS_EXPIRY in .env.test is 4h = 14400s
+    expect(ttl).toBeGreaterThanOrEqual(14399);
+    expect(ttl).toBeLessThanOrEqual(14401);
   });
 });
 
