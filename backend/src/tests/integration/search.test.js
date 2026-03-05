@@ -442,12 +442,14 @@ describe('Search System - Validation', () => {
 });
 
 // Advanced ranking and performance tests
+// TODO: Requires implementing combined scoring in searchService (boost_score column exists but unused in queries)
 describe('Search System - Intelligent Ranking', () => {
   test.todo('should rank by combined distance + rating + review_count');
   test.todo('should prioritize establishments with boost_score');
   test.todo('should handle establishments with no reviews (NULL rating)');
 });
 
+// TODO: Requires seeding 1000+ test establishments and EXPLAIN ANALYZE queries — deferred to performance phase
 describe('Search System - Performance', () => {
   test.todo('should perform well with 1000+ establishments');
   test.todo('should use PostGIS indexes efficiently');
