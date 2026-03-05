@@ -8,6 +8,14 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 5, 2026 — Media Module: Testing & Critical Bug Fix (QA Segment A)
+- **Phase 1 — Mock Infrastructure**: Создан `tests/mocks/cloudinary.js` (7 mock-экспортов + `resetCloudinaryMocks()`), добавлен `createMockMedia()` хелпер
+- **Phase 2 — Fix Existing Tests**: Исправлены и разблокированы 31 тест в `media.test.js` (2 `describe.skip` → working). Баги: mock name (`generateMediaUrls` → `generateAllResolutions`), table name (`media` → `establishment_media`), response format (`data.media` → `data`), HTTP method (PATCH → PUT), tier counting (aggregated → per-type)
+- **Phase 3 — Production Bug Fix**: `setPrimaryPhoto()` теперь синхронизирует `establishments.primary_image_url` — обёрнут в транзакцию (BEGIN/COMMIT/ROLLBACK). `deleteMedia()` очищает `primary_image_url = NULL` при удалении последнего фото
+- **4 новых теста**: sync primary_image_url при upload/update/delete/last-photo-deleted
+- **Итого**: 38 media тестов, 664 всего (было 626). 0 failed
+- Файлы: `mediaModel.js`, `mediaService.js`, `media.test.js`, `mocks/cloudinary.js`, `mocks/helpers.js`
+
 #### Март 4, 2026 — iOS Detail Screen: Three Bug Fixes
 - **Fix 1 — Distance Consistency**: detail screen теперь получает distanceKm из экрана поиска через route arguments. Приоритет: переданное → backend → client-side → null
 - **Fix 2 — Gallery Primary Image**: фотогалерея сортируется с primary image (thumbnailUrl) на первой позиции. Карточка и галерея показывают одно фото

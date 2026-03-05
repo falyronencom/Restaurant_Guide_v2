@@ -14,6 +14,7 @@
 import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
+import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -408,14 +409,24 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
     // If deleted photo was primary, set another photo as primary (lowest position number)
     if (media.is_primary) {
       const remainingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
-      
+
       if (remainingMedia.length > 0) {
-        // Set the first media (lowest position) as primary
+        // Set the first media (lowest position) as primary — also syncs primary_image_url
         await MediaModel.setPrimaryPhoto(establishmentId, remainingMedia[0].id);
-        
+
         logger.info('New primary photo set after deletion', {
           establishmentId,
           newPrimaryMediaId: remainingMedia[0].id,
+        });
+      } else {
+        // No remaining photos — clear primary_image_url
+        await pool.query(
+          'UPDATE establishments SET primary_image_url = NULL WHERE id = $1',
+          [establishmentId]
+        );
+
+        logger.info('primary_image_url cleared — no remaining media', {
+          establishmentId,
         });
       }
     }
