@@ -344,21 +344,24 @@ export const deleteMedia = async (mediaId) => {
  * @returns {Promise<Object>} The updated media object
  */
 export const setPrimaryPhoto = async (establishmentId, mediaId) => {
+  const client = await pool.connect();
   try {
-    // First, set all media for this establishment to is_primary = false
+    await client.query('BEGIN');
+
+    // Clear all primary flags for this establishment
     const clearQuery = `
       UPDATE establishment_media
       SET is_primary = false
       WHERE establishment_id = $1
     `;
-    await pool.query(clearQuery, [establishmentId]);
+    await client.query(clearQuery, [establishmentId]);
 
-    // Then, set the specified media to is_primary = true
+    // Set the specified media as primary
     const setQuery = `
       UPDATE establishment_media
       SET is_primary = true
       WHERE id = $1 AND establishment_id = $2
-      RETURNING 
+      RETURNING
         id,
         establishment_id,
         type,
@@ -370,25 +373,45 @@ export const setPrimaryPhoto = async (establishmentId, mediaId) => {
         is_primary,
         created_at
     `;
-    const result = await pool.query(setQuery, [mediaId, establishmentId]);
+    const result = await client.query(setQuery, [mediaId, establishmentId]);
 
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       throw new Error('Media not found or does not belong to establishment');
     }
 
-    logger.info('Primary photo set', {
+    // Sync primary_image_url on establishments table
+    const syncQuery = `
+      UPDATE establishments
+      SET primary_image_url = COALESCE($1, $2)
+      WHERE id = $3
+    `;
+    const primaryMedia = result.rows[0];
+    await client.query(syncQuery, [
+      primaryMedia.preview_url,
+      primaryMedia.url,
+      establishmentId,
+    ]);
+
+    await client.query('COMMIT');
+
+    logger.info('Primary photo set and primary_image_url synced', {
       establishmentId,
       mediaId,
+      primaryImageUrl: primaryMedia.preview_url || primaryMedia.url,
     });
 
-    return result.rows[0];
+    return primaryMedia;
   } catch (error) {
+    await client.query('ROLLBACK');
     logger.error('Error setting primary photo', {
       error: error.message,
       establishmentId,
       mediaId,
     });
     throw error;
+  } finally {
+    client.release();
   }
 };
 
