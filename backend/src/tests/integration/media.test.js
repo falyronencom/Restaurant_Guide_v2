@@ -32,6 +32,10 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
     height: 600,
     format: 'jpg',
   })),
+  uploadAvatar: jest.fn(async () => ({
+    public_id: 'avatars/test-user-id/test-avatar',
+    secure_url: 'https://res.cloudinary.com/test/image/upload/w_256,h_256,c_fill/avatars/test-user-id/test-avatar.jpg',
+  })),
   generateAllResolutions: jest.fn(() => ({
     url: 'https://res.cloudinary.com/test/image/upload/w_1920,h_1080,c_limit/test-public-id.jpg',
     thumbnail_url: 'https://res.cloudinary.com/test/image/upload/w_200,h_150,c_fill/test-public-id.jpg',
