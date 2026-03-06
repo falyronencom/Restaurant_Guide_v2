@@ -343,6 +343,56 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // ============================================================================
+  // OAuth Login Flow
+  // ============================================================================
+
+  /// Login with Google Sign-In
+  Future<bool> loginWithGoogle() async {
+    _setLoading(true);
+    _clearError();
+    _status = AuthenticationStatus.authenticating;
+    notifyListeners();
+
+    try {
+      final authResponse = await _authService.loginWithGoogle();
+
+      _currentUser = authResponse.user;
+      _status = AuthenticationStatus.authenticated;
+      _setLoading(false);
+
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _status = AuthenticationStatus.unauthenticated;
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Login with Yandex OAuth
+  Future<bool> loginWithYandex() async {
+    _setLoading(true);
+    _clearError();
+    _status = AuthenticationStatus.authenticating;
+    notifyListeners();
+
+    try {
+      final authResponse = await _authService.loginWithYandex();
+
+      _currentUser = authResponse.user;
+      _status = AuthenticationStatus.authenticated;
+      _setLoading(false);
+
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _status = AuthenticationStatus.unauthenticated;
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Logout current user
   Future<void> logout() async {
     _setLoading(true);
@@ -523,6 +573,14 @@ class AuthProvider with ChangeNotifier {
       if (match != null) {
         return match.group(1) ?? 'Ошибка авторизации';
       }
+    }
+
+    // OAuth-specific errors
+    if (errorStr.contains('cancelled') || errorStr.contains('CANCELED')) {
+      return 'Вход отменён';
+    }
+    if (errorStr.contains('not configured')) {
+      return 'Этот способ входа ещё не настроен';
     }
 
     // Common error patterns
