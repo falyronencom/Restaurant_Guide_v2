@@ -8,6 +8,13 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 6, 2026 — Avatar Storage Migration: Local Disk → Cloudinary
+- **cloudinary.js**: avatar config (256×256, fill crop, face detection) + `uploadAvatar(filePath, userId)` function
+- **upload.js**: avatar multer destination switched from `uploads/avatars/` to `tmp/uploads/` (temp before Cloudinary transfer)
+- **authController.js**: refactored `uploadAvatar` — Cloudinary upload, old avatar deletion, temp file cleanup in `finally`
+- Legacy relative URLs still served via express.static fallback. No mobile changes needed (`fullAvatarUrl` already handles absolute URLs)
+- Commit: `eb63a85`
+
 #### Март 5, 2026 — QA Étape 3: Validator Sync & Review Model Coverage
 - **reviewValidation.test.js**: 62 новых unit-тестов — подтверждение удаления 20-char минимума, рейтинг 1-5, UUID, пагинация, партнёрский ответ
 - **reviewModel.test.js**: 59 новых unit-тестов — все 17 методов модели (partner responses, aggregation, soft/hard delete, transactions, error paths)
