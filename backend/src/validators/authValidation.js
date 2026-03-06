@@ -296,3 +296,27 @@ export const validatePassword = body('password')
   .matches(/[0-9]/)
   .withMessage('Password must contain at least one digit');
 
+/**
+ * OAuth login validation rules
+ *
+ * Validates provider name (enum) and token (non-empty string).
+ * Token format varies by provider so we only check presence and type.
+ */
+export const validateOAuthLogin = [
+  body('provider')
+    .notEmpty()
+    .withMessage('Provider is required')
+    .isIn(['google', 'yandex'])
+    .withMessage('Provider must be: google or yandex'),
+
+  body('token')
+    .notEmpty()
+    .withMessage('Token is required')
+    .isString()
+    .withMessage('Token must be a string')
+    .isLength({ min: 10, max: 5000 })
+    .withMessage('Invalid token format'),
+
+  handleValidationErrors,
+];
+

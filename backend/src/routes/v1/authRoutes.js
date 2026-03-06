@@ -20,6 +20,7 @@ import {
   validateLogin,
   validateRefresh,
   validateLogout,
+  validateOAuthLogin,
 } from '../../validators/authValidation.js';
 import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
@@ -50,6 +51,28 @@ router.post(
   }),
   validateRegister,
   authController.register,
+);
+
+/**
+ * POST /api/v1/auth/oauth
+ *
+ * Public endpoint for OAuth authentication (Google, Yandex).
+ * Verifies provider token, creates/links user, returns JWT tokens.
+ *
+ * Middleware chain:
+ * 1. Rate limiter: 20 requests per minute per IP (same as registration)
+ * 2. Validation: Check provider enum and token presence
+ * 3. Controller: Verify OAuth token and authenticate user
+ */
+router.post(
+  '/oauth',
+  createRateLimiter({
+    limit: 20,
+    windowSeconds: 60,
+    keyPrefix: 'oauth',
+  }),
+  validateOAuthLogin,
+  authController.oauthLogin,
 );
 
 /**
