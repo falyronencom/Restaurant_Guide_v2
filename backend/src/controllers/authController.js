@@ -13,7 +13,9 @@
  * 4. Handle errors gracefully
  */
 
+import fs from 'fs/promises';
 import * as authService from '../services/authService.js';
+import { uploadAvatar as cloudinaryUploadAvatar, deleteImage, extractPublicIdFromUrl } from '../config/cloudinary.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -498,6 +500,7 @@ export async function updateProfile(req, res, next) {
  * - 401 Unauthorized: Not authenticated
  */
 export async function uploadAvatar(req, res, next) {
+  const tempFilePath = req.file?.path;
   try {
     const userId = req.user.userId;
 
@@ -511,11 +514,29 @@ export async function uploadAvatar(req, res, next) {
       });
     }
 
-    // Build public URL for the uploaded file
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    // Fetch current avatar URL to delete old Cloudinary image later
+    const currentUser = await authService.findUserById(userId);
+    const oldAvatarUrl = currentUser?.avatar_url;
 
-    // Update avatar_url in database
+    // Upload new avatar to Cloudinary
+    const uploadResult = await cloudinaryUploadAvatar(tempFilePath, userId);
+    const avatarUrl = uploadResult.secure_url;
+
+    // Update avatar_url in database with absolute Cloudinary URL
     const user = await authService.updateUserProfile(userId, { avatarUrl });
+
+    // Delete old avatar from Cloudinary if it was a Cloudinary URL
+    if (oldAvatarUrl && oldAvatarUrl.includes('res.cloudinary.com')) {
+      const oldPublicId = extractPublicIdFromUrl(oldAvatarUrl);
+      if (oldPublicId) {
+        deleteImage(oldPublicId).catch((err) => {
+          logger.warn('Failed to delete old avatar from Cloudinary', {
+            oldPublicId,
+            error: err.message,
+          });
+        });
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -546,6 +567,11 @@ export async function uploadAvatar(req, res, next) {
       });
     }
     next(error);
+  } finally {
+    // Always clean up temp file
+    if (tempFilePath) {
+      fs.unlink(tempFilePath).catch(() => {});
+    }
   }
 }
 

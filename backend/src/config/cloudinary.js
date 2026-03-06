@@ -57,6 +57,20 @@ cloudinary.config({
  * - Thumbnail: 200x150, fill entire bounds with cropping
  *   Used for: List views, gallery thumbnails, fast loading
  */
+/**
+ * Avatar image configuration
+ *
+ * Avatars use a single optimized size (256×256) instead of the three-tier
+ * system used for establishment media. Mobile picker constrains to 512×512,
+ * so server-side 256×256 is always a downscale — never an upscale.
+ */
+const AVATAR_CONFIG = {
+  width: 256,
+  height: 256,
+  crop: 'fill',
+  gravity: 'face', // Cloudinary face detection for better avatar crops
+};
+
 const RESOLUTION_CONFIG = {
   original: {
     width: 1920,
@@ -342,6 +356,54 @@ export const isValidImageType = (mimetype) => {
 export const isValidImageSize = (sizeInBytes) => {
   const MAX_SIZE = 10 * 1024 * 1024; // 10MB in bytes
   return sizeInBytes <= MAX_SIZE;
+};
+
+/**
+ * Upload an avatar image to Cloudinary
+ *
+ * Stores avatars in a dedicated folder structure: avatars/{userId}/{filename}
+ * Applies a single 256×256 fill crop with face detection for optimal results.
+ *
+ * @param {string} filePath - Local file path of the image to upload
+ * @param {string} userId - UUID of the user (for folder organization)
+ * @returns {Promise<Object>} Upload result with public_id and secure_url
+ * @throws {Error} If upload fails
+ */
+export const uploadAvatar = async (filePath, userId) => {
+  try {
+    const uploadResult = await cloudinary.uploader.upload(filePath, {
+      folder: `avatars/${userId}`,
+      resource_type: 'image',
+      transformation: [
+        {
+          width: AVATAR_CONFIG.width,
+          height: AVATAR_CONFIG.height,
+          crop: AVATAR_CONFIG.crop,
+          gravity: AVATAR_CONFIG.gravity,
+          quality: 'auto',
+          fetch_format: 'auto',
+        },
+      ],
+    });
+
+    logger.info('Avatar uploaded to Cloudinary', {
+      publicId: uploadResult.public_id,
+      userId,
+      format: uploadResult.format,
+      bytes: uploadResult.bytes,
+    });
+
+    return {
+      public_id: uploadResult.public_id,
+      secure_url: uploadResult.secure_url,
+    };
+  } catch (error) {
+    logger.error('Error uploading avatar to Cloudinary', {
+      error: error.message,
+      userId,
+    });
+    throw new Error(`Failed to upload avatar: ${error.message}`);
+  }
 };
 
 export default cloudinary;

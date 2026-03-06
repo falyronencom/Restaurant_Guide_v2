@@ -17,9 +17,13 @@ const __dirname = path.dirname(__filename);
 // Uploads root directory (backend/uploads/)
 const UPLOADS_ROOT = path.join(__dirname, '..', '..', 'uploads');
 
-// Ensure upload directories exist
+// Legacy avatars directory — kept for express.static fallback of old relative URLs
 const AVATARS_DIR = path.join(UPLOADS_ROOT, 'avatars');
 fs.mkdirSync(AVATARS_DIR, { recursive: true });
+
+// Temp directory for avatar uploads before Cloudinary transfer
+const AVATAR_TEMP_DIR = path.join(__dirname, '..', '..', 'tmp', 'uploads');
+fs.mkdirSync(AVATAR_TEMP_DIR, { recursive: true });
 
 // Allowed image MIME types
 const ALLOWED_IMAGE_TYPES = [
@@ -34,7 +38,7 @@ const ALLOWED_IMAGE_TYPES = [
  */
 const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, AVATARS_DIR);
+    cb(null, AVATAR_TEMP_DIR);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
