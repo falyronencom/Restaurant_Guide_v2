@@ -51,6 +51,9 @@ class _MapScreenState extends State<MapScreen> {
   /// Currently selected establishment for inline preview (replaces modal bottom sheet)
   Establishment? _selectedEstablishment;
 
+  /// Drag offset for swipe-to-dismiss gesture (0 = resting, positive = dragged down)
+  double _previewDragOffset = 0.0;
+
   /// Track last known city to detect changes when returning to map tab
   String? _lastCity;
 
@@ -533,6 +536,7 @@ class _MapScreenState extends State<MapScreen> {
   void _showEstablishmentPreview(Establishment establishment) {
     setState(() {
       _selectedEstablishment = establishment;
+      _previewDragOffset = 0.0;
       _placemarks = _createPlacemarks(_establishments);
     });
   }
@@ -546,13 +550,26 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget _buildPreviewContent(Establishment establishment) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (details) {
+        setState(() {
+          // Only allow downward drag (clamp to >= 0)
+          _previewDragOffset = (_previewDragOffset + details.delta.dy).clamp(0.0, double.infinity);
+        });
+      },
       onVerticalDragEnd: (details) {
-        // Swipe down to dismiss (positive velocity = downward)
-        if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+        // Dismiss if dragged far enough (>80px) or fast enough (>200 px/s)
+        if (_previewDragOffset > 80 || (details.primaryVelocity ?? 0) > 200) {
+          _previewDragOffset = 0.0;
           _dismissPreview();
+        } else {
+          // Snap back to resting position
+          setState(() => _previewDragOffset = 0.0);
         }
       },
-      child: Container(
+      child: Transform.translate(
+        offset: Offset(0, _previewDragOffset),
+        child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _creamBackground,
@@ -731,6 +748,7 @@ class _MapScreenState extends State<MapScreen> {
           SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],
       ),
+    ),  // closes Transform.translate
     ),  // closes GestureDetector
     );
   }
