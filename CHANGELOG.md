@@ -8,6 +8,16 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 6, 2026 — OAuth Mobile Integration (Segment B)
+- **pubspec.yaml**: added `google_sign_in ^6.2.1` + `flutter_web_auth_2 ^4.0.1` (for Yandex browser-based OAuth)
+- **auth_service.dart**: `loginWithGoogle()` (Google Sign-In SDK → ID token → POST /auth/oauth) + `loginWithYandex()` (browser OAuth flow → access token → POST /auth/oauth) + shared `_authenticateWithOAuth()` helper
+- **auth_provider.dart**: `loginWithGoogle()` / `loginWithYandex()` mirroring existing `login()` pattern + OAuth-specific error messages (cancelled, not configured)
+- **method_selection_screen.dart**: converted to StatefulWidget, Google button activated, Yandex button added, loading state during OAuth, Apple button stays placeholder
+- **login_screen.dart**: Google button activated, Yandex button added, loading state disables all inputs during OAuth
+- **environment.dart**: `GOOGLE_CLIENT_ID`, `YANDEX_CLIENT_ID` env vars + redirect scheme config
+- **Platform config**: Android `AndroidManifest.xml` — CallbackActivity for Yandex redirect scheme; iOS `Info.plist` — URL scheme `restaurantguide` for OAuth callbacks
+- Both flows use backend endpoint `POST /api/v1/auth/oauth { provider, token }` from Segment A
+
 #### Март 6, 2026 — OAuth Backend Infrastructure (Segment A)
 - **Migration**: `add_oauth_provider_id.sql` — added `oauth_provider_id VARCHAR(255)` to users table + unique compound index `(auth_method, oauth_provider_id)`
 - **oauthService.js** (new): `verifyGoogleToken()` (google-auth-library) + `verifyYandexToken()` (native fetch to Yandex Login API)
