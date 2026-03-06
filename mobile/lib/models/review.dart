@@ -1,3 +1,5 @@
+import '../config/environment.dart';
+
 /// Review model representing a user review for an establishment
 /// Matches backend API response format
 class Review {
@@ -67,6 +69,13 @@ class Review {
           : null,
       partnerResponderId: json['partner_responder_id']?.toString(),
     );
+  }
+
+  /// Get full avatar URL (resolves relative paths from backend)
+  String? get fullAvatarUrl {
+    if (userAvatar == null || userAvatar!.isEmpty) return null;
+    if (userAvatar!.startsWith('http')) return userAvatar;
+    return '${Environment.apiBaseUrl}$userAvatar';
   }
 
   /// Convert to JSON
