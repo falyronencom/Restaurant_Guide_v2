@@ -1566,26 +1566,34 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           Row(
             children: [
               // Avatar
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  color: _navyBlue,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    review.userName.isNotEmpty
-                        ? review.userName[0].toUpperCase()
-                        : 'A',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplayFamily,
-                      fontSize: 25,
-                      color: _backgroundColor,
+              if (review.fullAvatarUrl != null)
+                CircleAvatar(
+                  radius: 21,
+                  backgroundImage: NetworkImage(review.fullAvatarUrl!),
+                  onBackgroundImageError: (_, __) {},
+                  backgroundColor: _navyBlue,
+                )
+              else
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: _navyBlue,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      review.userName.isNotEmpty
+                          ? review.userName[0].toUpperCase()
+                          : 'A',
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontDisplayFamily,
+                        fontSize: 25,
+                        color: _backgroundColor,
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: 10),
               // Name
               Text(
