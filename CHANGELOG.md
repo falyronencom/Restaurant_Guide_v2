@@ -8,6 +8,16 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 6, 2026 — OAuth Backend Infrastructure (Segment A)
+- **Migration**: `add_oauth_provider_id.sql` — added `oauth_provider_id VARCHAR(255)` to users table + unique compound index `(auth_method, oauth_provider_id)`
+- **oauthService.js** (new): `verifyGoogleToken()` (google-auth-library) + `verifyYandexToken()` (native fetch to Yandex Login API)
+- **authService.js**: `authenticateWithOAuth()` — 3 scenarios: existing OAuth user login, email-match account linking (verified only), new user creation (password_hash=NULL)
+- **authController.js**: `oauthLogin()` endpoint with full error handling (invalid token, no email, unverified email, deactivated account, race condition)
+- **authValidation.js**: `validateOAuthLogin` — provider enum (google/yandex) + token string validation
+- **authRoutes.js**: `POST /api/v1/auth/oauth` with 20 req/min/IP rate limit
+- **package.json**: added `google-auth-library ^9.14.0`
+- All 747 existing tests green, no regressions. 38 media.test.js failures pre-existing (cloudinary export issue)
+
 #### Март 6, 2026 — Avatar Storage Migration: Local Disk → Cloudinary
 - **cloudinary.js**: avatar config (256×256, fill crop, face detection) + `uploadAvatar(filePath, userId)` function
 - **upload.js**: avatar multer destination switched from `uploads/avatars/` to `tmp/uploads/` (temp before Cloudinary transfer)

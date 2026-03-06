@@ -15,6 +15,7 @@
 
 import fs from 'fs/promises';
 import * as authService from '../services/authService.js';
+import { verifyGoogleToken, verifyYandexToken } from '../services/oauthService.js';
 import { uploadAvatar as cloudinaryUploadAvatar, deleteImage, extractPublicIdFromUrl } from '../config/cloudinary.js';
 import logger from '../utils/logger.js';
 
@@ -625,8 +626,120 @@ export async function getCurrentUser(req, res, next) {
         },
       },
     });
-    
+
   } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * OAuth login
+ *
+ * POST /api/v1/auth/oauth
+ *
+ * Authenticates user via Google or Yandex OAuth token.
+ * Creates new user or links existing account as needed.
+ *
+ * Request body:
+ * - provider: 'google' or 'yandex'
+ * - token: ID token (Google) or OAuth token (Yandex)
+ *
+ * Response matches login response structure exactly.
+ */
+export async function oauthLogin(req, res, next) {
+  try {
+    const { provider, token } = req.body;
+
+    // Verify token with appropriate provider
+    let providerData;
+    if (provider === 'google') {
+      providerData = await verifyGoogleToken(token);
+    } else if (provider === 'yandex') {
+      providerData = await verifyYandexToken(token);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_PROVIDER',
+          message: 'Unsupported OAuth provider',
+        },
+      });
+    }
+
+    // Authenticate or create user
+    const result = await authService.authenticateWithOAuth(providerData);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          phone: result.user.phone || null,
+          name: result.user.name,
+          role: result.user.role,
+          authMethod: result.user.auth_method,
+          avatarUrl: result.user.avatar_url,
+          lastLoginAt: result.user.last_login_at,
+        },
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenType: 'Bearer',
+        expiresIn: result.expiresIn,
+      },
+    });
+
+  } catch (error) {
+    if (error.message === 'OAUTH_INVALID_TOKEN') {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Invalid or expired OAuth token',
+        },
+      });
+    }
+
+    if (error.message === 'OAUTH_NO_EMAIL') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'OAUTH_NO_EMAIL',
+          message: 'OAuth account does not have an email address',
+        },
+      });
+    }
+
+    if (error.message === 'OAUTH_EMAIL_NOT_VERIFIED') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'OAUTH_EMAIL_NOT_VERIFIED',
+          message: 'Cannot link account: OAuth email is not verified',
+        },
+      });
+    }
+
+    if (error.message === 'ACCOUNT_DEACTIVATED') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_DEACTIVATED',
+          message: 'This account has been deactivated',
+        },
+      });
+    }
+
+    if (error.message === 'OAUTH_ACCOUNT_CONFLICT') {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_CONFLICT',
+          message: 'An account with this OAuth provider already exists',
+        },
+      });
+    }
+
     next(error);
   }
 }

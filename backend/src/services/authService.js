@@ -17,7 +17,7 @@ import argon2 from 'argon2';
 import { pool } from '../config/database.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 
 /**
  * Argon2id Parameters
@@ -530,6 +530,160 @@ export async function updateUserProfile(userId, profileData) {
  * @returns {Promise<Object>} Updated user object with new role
  * @throws {Error} If user not found or already a partner/admin
  */
+/**
+ * Authenticates a user via OAuth provider data.
+ *
+ * Three scenarios handled:
+ * 1. Existing OAuth user (same provider + providerId) → login
+ * 2. Email matches existing user + provider email verified → link account
+ * 3. No match → create new user (password_hash = NULL)
+ *
+ * Security: unverified provider emails cannot claim existing accounts.
+ *
+ * @param {Object} providerData - Normalized data from oauthService
+ * @param {string} providerData.providerId - External user ID from provider
+ * @param {string} providerData.email - User's email from provider
+ * @param {string} providerData.name - Display name from provider
+ * @param {string} providerData.avatarUrl - Avatar URL from provider
+ * @param {boolean} providerData.emailVerified - Whether provider verified email
+ * @param {string} providerData.provider - 'google' or 'yandex'
+ * @returns {Promise<Object>} { user, accessToken, refreshToken, expiresIn }
+ */
+export async function authenticateWithOAuth(providerData) {
+  const { providerId, email, name, avatarUrl, emailVerified, provider } = providerData;
+
+  try {
+    // 1. Look up existing OAuth user by provider + providerId
+    const oauthLookup = await pool.query(
+      `SELECT id, email, phone, name, role, auth_method, avatar_url,
+              oauth_provider_id, is_active, last_login_at, created_at
+       FROM users
+       WHERE auth_method = $1 AND oauth_provider_id = $2`,
+      [provider, providerId],
+    );
+
+    if (oauthLookup.rows.length > 0) {
+      const user = oauthLookup.rows[0];
+
+      if (!user.is_active) {
+        throw new Error('ACCOUNT_DEACTIVATED');
+      }
+
+      // Existing OAuth user — update last_login_at and return
+      await pool.query(
+        'UPDATE users SET last_login_at = $1 WHERE id = $2',
+        [new Date(), user.id],
+      );
+
+      logger.info('OAuth login: existing user', { userId: user.id, provider });
+
+      const tokens = await generateTokenPair(user);
+      return { user, ...tokens };
+    }
+
+    // 2. Check if email exists in users table
+    const emailLookup = await pool.query(
+      `SELECT id, email, phone, name, role, auth_method, avatar_url,
+              oauth_provider_id, is_active, last_login_at, created_at
+       FROM users
+       WHERE email = $1`,
+      [email.toLowerCase().trim()],
+    );
+
+    if (emailLookup.rows.length > 0) {
+      const existingUser = emailLookup.rows[0];
+
+      if (!existingUser.is_active) {
+        throw new Error('ACCOUNT_DEACTIVATED');
+      }
+
+      // 2a. Email exists + provider email verified → link account
+      if (!emailVerified) {
+        // 2b. Unverified email cannot claim existing account
+        logger.warn('OAuth login: unverified email tried to claim existing account', {
+          email,
+          provider,
+        });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
+      // Link: update auth_method, set oauth_provider_id, optionally update avatar
+      const updateFields = [provider, providerId, new Date()];
+      let avatarClause = '';
+      if (!existingUser.avatar_url && avatarUrl) {
+        avatarClause = ', avatar_url = $4';
+        updateFields.push(avatarUrl);
+      }
+
+      const linkResult = await pool.query(
+        `UPDATE users
+         SET auth_method = $1, oauth_provider_id = $2,
+             last_login_at = $3, email_verified = true${avatarClause}
+         WHERE id = $${updateFields.length + 1}
+         RETURNING id, email, phone, name, role, auth_method, avatar_url,
+                   oauth_provider_id, is_active, last_login_at, created_at`,
+        [...updateFields, existingUser.id],
+      );
+
+      const linkedUser = linkResult.rows[0];
+      logger.info('OAuth login: linked existing account', {
+        userId: linkedUser.id,
+        provider,
+        previousAuthMethod: existingUser.auth_method,
+      });
+
+      const tokens = await generateTokenPair(linkedUser);
+      return { user: linkedUser, ...tokens };
+    }
+
+    // 3. No match → create new user
+    const userId = randomUUID();
+    const createResult = await pool.query(
+      `INSERT INTO users (
+        id, email, password_hash, name, role, auth_method,
+        oauth_provider_id, email_verified, phone_verified,
+        is_active, avatar_url, last_login_at, created_at, updated_at
+      )
+      VALUES ($1, $2, NULL, $3, 'user', $4, $5, $6, false, true, $7, $8, $8, $8)
+      RETURNING id, email, phone, name, role, auth_method, avatar_url,
+                oauth_provider_id, is_active, last_login_at, created_at`,
+      [
+        userId,
+        email.toLowerCase().trim(),
+        name,
+        provider,
+        providerId,
+        emailVerified,
+        avatarUrl,
+        new Date(),
+      ],
+    );
+
+    const newUser = createResult.rows[0];
+    logger.info('OAuth login: new user created', {
+      userId: newUser.id,
+      provider,
+      email,
+    });
+
+    const tokens = await generateTokenPair(newUser);
+    return { user: newUser, ...tokens };
+
+  } catch (error) {
+    // Re-throw known error codes
+    if (['ACCOUNT_DEACTIVATED', 'OAUTH_EMAIL_NOT_VERIFIED'].includes(error.message)) {
+      throw error;
+    }
+    // Handle unique constraint violations (race condition: concurrent OAuth signup)
+    if (error.code === '23505') {
+      logger.warn('OAuth signup race condition detected', { email, provider });
+      throw new Error('OAUTH_ACCOUNT_CONFLICT');
+    }
+    logger.error('OAuth authentication failed', { error: error.message, provider });
+    throw error;
+  }
+}
+
 export async function upgradeUserToPartner(userId) {
   try {
     // First check current role
