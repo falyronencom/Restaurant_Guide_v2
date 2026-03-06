@@ -23,6 +23,7 @@ CREATE TABLE users (
     avatar_url VARCHAR(500),
     role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'partner', 'admin')),
     auth_method VARCHAR(20) NOT NULL CHECK (auth_method IN ('email', 'phone', 'google', 'yandex')),
+    oauth_provider_id VARCHAR(255),
     email_verified BOOLEAN DEFAULT FALSE,
     phone_verified BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
@@ -34,6 +35,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_phone ON users(phone);
 CREATE INDEX idx_users_role ON users(role);
+CREATE UNIQUE INDEX idx_users_oauth_provider ON users(auth_method, oauth_provider_id) WHERE oauth_provider_id IS NOT NULL;
 
 -- =====================================================
 -- ESTABLISHMENTS (RESTAURANTS/CAFES/BARS)
