@@ -45,6 +45,22 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- URL schemes for OAuth callbacks -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<!-- Yandex OAuth redirect scheme -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>restaurantguide</string>
+			</array>
+		</dict>
+		<!-- Google Sign-In reversed client ID
+		     TODO: Replace with actual reversed client ID from GoogleService-Info.plist
+		     Format: com.googleusercontent.apps.YOUR_CLIENT_ID -->
+	</array>
 	<!-- Location permissions for finding nearby restaurants -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>

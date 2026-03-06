@@ -1,4 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:restaurant_guide_mobile/config/environment.dart';
 import 'package:restaurant_guide_mobile/models/auth_response.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
@@ -201,6 +205,150 @@ class AuthService {
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  // ============================================================================
+  // OAuth Authentication
+  // ============================================================================
+
+  /// Login with Google Sign-In
+  ///
+  /// Triggers Google Sign-In SDK flow, obtains ID token,
+  /// then authenticates with backend via /api/v1/auth/oauth
+  Future<AuthResponse> loginWithGoogle() async {
+    try {
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+      );
+
+      // Trigger the Google Sign-In flow
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        throw Exception('Google Sign-In was cancelled');
+      }
+
+      // Get authentication details
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('Failed to obtain Google ID token');
+      }
+
+      debugPrint('AuthService: Google Sign-In successful, sending to backend');
+
+      // Send token to our backend
+      return await _authenticateWithOAuth(
+        provider: 'google',
+        token: idToken,
+      );
+    } on Exception {
+      rethrow;
+    }
+  }
+
+  /// Login with Yandex OAuth
+  ///
+  /// Opens browser-based Yandex OAuth flow, obtains access token,
+  /// then authenticates with backend via /api/v1/auth/oauth
+  Future<AuthResponse> loginWithYandex() async {
+    try {
+      const clientId = Environment.yandexClientId;
+      if (clientId.isEmpty) {
+        throw Exception(
+          'Yandex OAuth is not configured. '
+          'Set YANDEX_CLIENT_ID environment variable.',
+        );
+      }
+
+      final redirectUri = Environment.yandexRedirectUri;
+
+      // Build Yandex OAuth authorization URL (implicit flow — returns token directly)
+      final authUrl = Uri.https('oauth.yandex.ru', '/authorize', {
+        'response_type': 'token',
+        'client_id': clientId,
+        'redirect_uri': redirectUri,
+        'force_confirm': 'yes',
+      });
+
+      debugPrint('AuthService: Launching Yandex OAuth: $authUrl');
+
+      // Open browser for authentication and wait for redirect
+      final resultUrl = await _launchYandexOAuth(authUrl, redirectUri);
+
+      // Extract access token from redirect URL fragment
+      // Yandex returns: redirect_uri#access_token=TOKEN&token_type=bearer&expires_in=...
+      final fragment = Uri.parse(resultUrl.replaceFirst('#', '?')).queryParameters;
+      final accessToken = fragment['access_token'];
+
+      if (accessToken == null || accessToken.isEmpty) {
+        throw Exception('Failed to obtain Yandex access token');
+      }
+
+      debugPrint('AuthService: Yandex OAuth successful, sending to backend');
+
+      // Send token to our backend
+      return await _authenticateWithOAuth(
+        provider: 'yandex',
+        token: accessToken,
+      );
+    } on Exception {
+      rethrow;
+    }
+  }
+
+  /// Launch Yandex OAuth in external browser and capture redirect
+  ///
+  /// Uses flutter_web_auth_2 for browser-based OAuth flow
+  Future<String> _launchYandexOAuth(Uri authUrl, String redirectUri) async {
+    // Import is deferred to avoid hard dependency if package not available
+    // flutter_web_auth_2 handles:
+    //   - Opening secure browser (Custom Tabs on Android, ASWebAuthenticationSession on iOS)
+    //   - Catching the redirect back to the app
+    //   - Returning the full callback URL
+    try {
+      final result = await FlutterWebAuth2.authenticate(
+        url: authUrl.toString(),
+        callbackUrlScheme: Environment.yandexRedirectScheme,
+      );
+      return result;
+    } catch (e) {
+      if (e.toString().contains('CANCELED') || e.toString().contains('cancelled')) {
+        throw Exception('Yandex Sign-In was cancelled');
+      }
+      rethrow;
+    }
+  }
+
+  /// Common OAuth backend call
+  ///
+  /// Posts provider token to /api/v1/auth/oauth and handles response
+  /// identically to login() — stores tokens, returns AuthResponse
+  Future<AuthResponse> _authenticateWithOAuth({
+    required String provider,
+    required String token,
+  }) async {
+    final response = await _apiClient.post(
+      '/api/v1/auth/oauth',
+      data: {
+        'provider': provider,
+        'token': token,
+      },
+    );
+
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      final responseData = data['data'] as Map<String, dynamic>? ?? data;
+
+      final authResponse = AuthResponse.fromJson(responseData);
+
+      // Store tokens and user — identical to login()
+      await _storeAuthData(authResponse);
+
+      return authResponse;
+    } else {
+      throw Exception('OAuth authentication failed');
     }
   }
 

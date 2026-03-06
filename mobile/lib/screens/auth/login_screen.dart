@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isOAuthLoading = false;
   String? _errorMessage;
 
   @override
@@ -97,9 +98,72 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isOAuthLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.loginWithGoogle();
+
+      if (success && mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else if (!success && mounted) {
+        setState(() {
+          _errorMessage =
+              authProvider.errorMessage ?? 'Ошибка входа через Google';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = getHumanErrorMessage(e);
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOAuthLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleYandexSignIn() async {
+    setState(() {
+      _isOAuthLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.loginWithYandex();
+
+      if (success && mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else if (!success && mounted) {
+        setState(() {
+          _errorMessage =
+              authProvider.errorMessage ?? 'Ошибка входа через Яндекс';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = getHumanErrorMessage(e);
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOAuthLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isAnyLoading = _isLoading || _isOAuthLoading;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
@@ -169,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   validator: _validateEmailOrPhone,
-                  enabled: !_isLoading,
+                  enabled: !isAnyLoading,
                 ),
 
                 const SizedBox(height: 18),
@@ -186,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     }
                     return null;
                   },
-                  enabled: !_isLoading,
+                  enabled: !isAnyLoading,
                   onFieldSubmitted: (_) => _handleSubmit(),
                 ),
 
@@ -196,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: _isLoading
+                    onPressed: isAnyLoading
                         ? null
                         : () {
                             // TODO: Navigate to forgot password screen
@@ -229,7 +293,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Login button
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _handleSubmit,
+                  onPressed: isAnyLoading ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryOrange,
                     minimumSize: const Size(double.infinity, 48),
@@ -277,7 +341,63 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Google login button
                 OutlinedButton(
-                  onPressed: null, // Disabled for now
+                  onPressed: isAnyLoading ? null : _handleGoogleSignIn,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 45),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(11.301),
+                    ),
+                    side:
+                        const BorderSide(color: AppTheme.textPrimary, width: 1),
+                    backgroundColor: AppTheme.backgroundPrimary,
+                  ),
+                  child: _isOAuthLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'G',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.textOnPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Продолжить с Google',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 15,
+                                height: 1.33, // 20/15
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Yandex login button
+                OutlinedButton(
+                  onPressed: isAnyLoading ? null : _handleYandexSignIn,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 45),
                     padding: const EdgeInsets.symmetric(
@@ -292,28 +412,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Google icon placeholder
-                      Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            'G',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textOnPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
                       Text(
-                        'Продолжить с Google',
+                        'Продолжить с Яндекс',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 15,
                           height: 1.33, // 20/15
@@ -326,9 +426,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 12),
 
-                // Apple login button
+                // Apple login button (disabled placeholder)
                 ElevatedButton(
-                  onPressed: null, // Disabled for now
+                  onPressed: null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     minimumSize: const Size(double.infinity, 45),
@@ -341,7 +441,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Apple icon placeholder
                       const Icon(
                         Icons.apple,
                         color: AppTheme.textOnPrimary,
@@ -365,7 +464,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Registration link
                 Center(
                   child: TextButton(
-                    onPressed: _isLoading
+                    onPressed: isAnyLoading
                         ? null
                         : () {
                             Navigator.pushNamed(

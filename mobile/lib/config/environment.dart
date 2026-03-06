@@ -32,6 +32,28 @@ class Environment {
     defaultValue: '',
   );
 
+  /// Google OAuth Client ID (for Google Sign-In server-side verification)
+  /// Configure in Google Cloud Console → APIs & Services → Credentials
+  /// Must match the OAuth 2.0 client ID used on the backend
+  static const String googleClientId = String.fromEnvironment(
+    'GOOGLE_CLIENT_ID',
+    defaultValue: '',
+  );
+
+  /// Yandex OAuth Client ID
+  /// Configure at https://oauth.yandex.ru/
+  static const String yandexClientId = String.fromEnvironment(
+    'YANDEX_CLIENT_ID',
+    defaultValue: '',
+  );
+
+  /// Yandex OAuth redirect URI scheme (must match app's URL scheme)
+  static const String yandexRedirectScheme = 'restaurantguide';
+
+  /// Yandex OAuth redirect URI
+  static String get yandexRedirectUri =>
+      '$yandexRedirectScheme://auth/yandex';
+
   /// Whether we're running in production
   static bool get isProduction => _environment == 'production';
 

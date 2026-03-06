@@ -1,10 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 
 /// Method Selection Screen
 /// User chooses registration method: Email, Phone, or OAuth
-class MethodSelectionScreen extends StatelessWidget {
+class MethodSelectionScreen extends StatefulWidget {
   const MethodSelectionScreen({super.key});
+
+  @override
+  State<MethodSelectionScreen> createState() => _MethodSelectionScreenState();
+}
+
+class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
+  bool _isOAuthLoading = false;
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isOAuthLoading = true);
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.loginWithGoogle();
+
+      if (success && mounted) {
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
+      } else if (!success && mounted) {
+        _showError(authProvider.errorMessage ?? 'Ошибка входа через Google');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Ошибка входа через Google');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOAuthLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleYandexSignIn() async {
+    setState(() => _isOAuthLoading = true);
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final success = await authProvider.loginWithYandex();
+
+      if (success && mounted) {
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
+      } else if (!success && mounted) {
+        _showError(authProvider.errorMessage ?? 'Ошибка входа через Яндекс');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Ошибка входа через Яндекс');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOAuthLoading = false);
+      }
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +94,7 @@ class MethodSelectionScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -51,9 +114,11 @@ class MethodSelectionScreen extends StatelessWidget {
 
               // Email button
               OutlinedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/auth/email-registration');
-                },
+                onPressed: _isOAuthLoading
+                    ? null
+                    : () {
+                        Navigator.pushNamed(context, '/auth/email-registration');
+                      },
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(
@@ -78,9 +143,11 @@ class MethodSelectionScreen extends StatelessWidget {
 
               // Phone button
               OutlinedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/auth/phone-registration');
-                },
+                onPressed: _isOAuthLoading
+                    ? null
+                    : () {
+                        Navigator.pushNamed(context, '/auth/phone-registration');
+                      },
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(
@@ -117,14 +184,41 @@ class MethodSelectionScreen extends StatelessWidget {
 
               // Google button
               OutlinedButton(
-                onPressed: () {
-                  // TODO: Implement Google OAuth
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Вход через Google скоро будет доступен'),
-                    ),
-                  );
-                },
+                onPressed: _isOAuthLoading ? null : _handleGoogleSignIn,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(
+                    color: AppTheme.textPrimary,
+                    width: 1,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                  ),
+                ),
+                child: _isOAuthLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Продолжить с Google',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Yandex button
+              OutlinedButton(
+                onPressed: _isOAuthLoading ? null : _handleYandexSignIn,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: const BorderSide(
@@ -138,9 +232,8 @@ class MethodSelectionScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // TODO: Add Google logo icon
                     Text(
-                      'Продолжить с Google',
+                      'Продолжить с Яндекс',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontSize: 15,
                       ),
@@ -151,10 +244,9 @@ class MethodSelectionScreen extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // Apple button
+              // Apple button (disabled placeholder)
               ElevatedButton(
                 onPressed: () {
-                  // TODO: Implement Apple OAuth
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Вход через Apple скоро будет доступен'),
@@ -171,7 +263,6 @@ class MethodSelectionScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // TODO: Add Apple logo icon
                     Text(
                       'Продолжить с Apple',
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -183,7 +274,7 @@ class MethodSelectionScreen extends StatelessWidget {
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 32),
 
               // Login link
               Row(
