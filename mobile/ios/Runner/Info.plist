@@ -57,9 +57,15 @@
 				<string>restaurantguide</string>
 			</array>
 		</dict>
-		<!-- Google Sign-In reversed client ID
-		     TODO: Replace with actual reversed client ID from GoogleService-Info.plist
-		     Format: com.googleusercontent.apps.YOUR_CLIENT_ID -->
+		<!-- Google Sign-In reversed client ID -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.486251629564-14a4nbpnke2e9imj0glgm3snb26oj6ab</string>
+			</array>
+		</dict>
 	</array>
 	<!-- Location permissions for finding nearby restaurants -->
 	<key>NSLocationWhenInUseUsageDescription</key>
