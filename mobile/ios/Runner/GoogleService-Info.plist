@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>486251629564-14a4nbpnke2e9imj0glgm3snb26oj6ab.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.486251629564-14a4nbpnke2e9imj0glgm3snb26oj6ab</string>
+	<key>SERVER_CLIENT_ID</key>
+	<string>486251629564-3aef99s1bv779lqkafnsc28f0j9g5ltk.apps.googleusercontent.com</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.nirivio.app</string>
+</dict>
+</plist>
