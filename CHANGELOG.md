@@ -8,6 +8,14 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 9, 2026 — Notification System Backend (Segment A)
+- **Migration**: `add_notifications.sql` — notifications table (UUID PK, user_id FK, type, title, message, establishment_id FK, review_id FK, is_read, created_at) + 2 indexes (partial unread, user+created_at DESC)
+- **notificationModel.js** (new): create, getByUserId (paginated + category filter), getUnreadCount, markAsRead, markAllAsRead, deleteOld
+- **notificationService.js** (new): 5 core methods + 4 non-blocking trigger helpers (notifyEstablishmentStatusChange, notifyNewReview, notifyPartnerResponse, notifyReviewModerated)
+- **notificationController.js + notificationRoutes.js** (new): GET /notifications, GET /unread-count, PUT /:id/read, PUT /read-all — rate limited (100/50 req/min)
+- **Trigger integration**: adminService.js (3 triggers: moderate, suspend, unsuspend), reviewService.js (2: createReview, addPartnerResponse), adminReviewService.js (2: toggleVisibility hide-only, deleteReview)
+- All 785 existing tests green, 4 endpoints verified on live server (Docker pg-test + redis-test)
+
 #### Март 6, 2026 — OAuth Mobile Integration (Segment B)
 - **pubspec.yaml**: added `google_sign_in ^6.2.1` + `flutter_web_auth_2 ^4.0.1` (for Yandex browser-based OAuth)
 - **auth_service.dart**: `loginWithGoogle()` (Google Sign-In SDK → ID token → POST /auth/oauth) + `loginWithYandex()` (browser OAuth flow → access token → POST /auth/oauth) + shared `_authenticateWithOAuth()` helper

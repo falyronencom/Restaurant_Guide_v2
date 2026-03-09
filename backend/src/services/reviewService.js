@@ -11,6 +11,7 @@
  */
 
 import * as ReviewModel from '../models/reviewModel.js';
+import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { incrementWithExpiry, getCounter } from '../config/redis.js';
@@ -108,6 +109,10 @@ export const createReview = async (reviewData) => {
 
     // Fetch complete review with author information for response
     const reviewWithAuthor = await ReviewModel.findReviewById(createdReview.id);
+
+    // Notify establishment partner (non-blocking)
+    NotificationService.notifyNewReview(createdReview.id, establishment_id)
+      .catch(() => {});
 
     logger.info('Review created successfully', {
       reviewId: createdReview.id,
@@ -588,6 +593,10 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
   await ReviewModel.addPartnerResponse(reviewId, partnerId, responseText);
 
   const updatedReview = await ReviewModel.findReviewById(reviewId);
+
+  // Notify review author (non-blocking)
+  NotificationService.notifyPartnerResponse(reviewId, reviewWithEstablishment.establishment_id)
+    .catch(() => {});
 
   logger.info('Partner response saved', {
     reviewId,
