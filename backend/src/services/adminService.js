@@ -12,6 +12,7 @@ import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
+import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { BELARUS_BOUNDS, CITY_BOUNDS, validateCityCoordinates } from './establishmentService.js';
 import logger from '../utils/logger.js';
@@ -261,6 +262,13 @@ export const moderateEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
+    // Notify partner (non-blocking)
+    NotificationService.notifyEstablishmentStatusChange(
+      establishmentId,
+      newStatus,
+      action === 'reject' ? (moderation_notes.rejection_reason || null) : null,
+    ).catch(() => {});
+
     logger.info('Establishment moderation completed', {
       establishmentId,
       action,
@@ -467,6 +475,13 @@ export const suspendEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
+    // Notify partner (non-blocking)
+    NotificationService.notifyEstablishmentStatusChange(
+      establishmentId,
+      'suspended',
+      reason,
+    ).catch(() => {});
+
     logger.info('Establishment suspended', {
       establishmentId,
       adminUserId,
@@ -555,6 +570,12 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       ip_address: ipAddress,
       user_agent: userAgent,
     });
+
+    // Notify partner (non-blocking) — unsuspend = back to active
+    NotificationService.notifyEstablishmentStatusChange(
+      establishmentId,
+      'active',
+    ).catch(() => {});
 
     logger.info('Establishment unsuspended', {
       establishmentId,

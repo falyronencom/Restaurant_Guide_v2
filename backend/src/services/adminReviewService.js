@@ -12,6 +12,7 @@
 import * as AdminReviewModel from '../models/adminReviewModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
+import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -103,6 +104,12 @@ export const toggleVisibility = async (reviewId, adminUserId) => {
       new_data: { is_visible: result.is_visible },
     });
 
+    // Notify review author only when hiding (non-blocking)
+    if (!result.is_visible) {
+      NotificationService.notifyReviewModerated(reviewId, 'hidden')
+        .catch(() => {});
+    }
+
     return result;
   } catch (error) {
     if (error.code) throw error; // Re-throw AppError
@@ -160,6 +167,10 @@ export const deleteReview = async (reviewId, adminUserId, reason) => {
 
     // Recalculate establishment aggregates (rating/count)
     await ReviewModel.updateEstablishmentAggregates(review.establishment_id);
+
+    // Notify review author (non-blocking)
+    NotificationService.notifyReviewModerated(reviewId, 'deleted')
+      .catch(() => {});
 
     // Non-blocking audit log write
     AuditLogModel.createAuditLog({

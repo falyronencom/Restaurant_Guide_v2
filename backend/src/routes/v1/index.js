@@ -34,6 +34,7 @@ import favoriteRoutes from './favoriteRoutes.js';
 import establishmentRoutes from './establishmentRoutes.js';
 import tempMediaRoutes from './tempMediaRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
 
 const router = express.Router();
 
@@ -217,6 +218,17 @@ router.use('/partner/media', tempMediaRoutes);
  * Rate limiting: Stricter than standard auth (5 req/min for login).
  */
 router.use('/admin', adminRoutes);
+
+/**
+ * /api/v1/notifications/*
+ *
+ * User notification endpoints (all require authentication):
+ * - GET /notifications — paginated list with filters
+ * - GET /notifications/unread-count — lightweight polling for badge
+ * - PUT /notifications/:id/read — mark one as read
+ * - PUT /notifications/read-all — mark all as read
+ */
+router.use('/notifications', notificationRoutes);
 
 /**
  * Placeholder for future route modules
