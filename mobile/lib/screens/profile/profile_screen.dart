@@ -9,6 +9,8 @@ import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/widgets/partner_establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
+import 'package:restaurant_guide_mobile/screens/notifications/notification_list_screen.dart';
 
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
@@ -60,17 +62,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 40),
-                  // Title
+                  // Title + Bell icon
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Профиль',
-                      style: TextStyle(
-                        fontFamily: AppTheme.fontDisplayFamily,
-                        fontSize: 25,
-                        fontWeight: FontWeight.w400,
-                        color: _primaryOrange,
-                      ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Профиль',
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontDisplayFamily,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w400,
+                            color: _primaryOrange,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Bell icon with unread badge
+                        Consumer<NotificationProvider>(
+                          builder: (context, notifProvider, _) {
+                            final count = notifProvider.unreadCount;
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.of(context, rootNavigator: true).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const NotificationListScreen(),
+                                  ),
+                                );
+                              },
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Icon(
+                                    count > 0
+                                        ? Icons.notifications
+                                        : Icons.notifications_outlined,
+                                    color: _primaryOrange,
+                                    size: 26,
+                                  ),
+                                  if (count > 0)
+                                    Positioned(
+                                      right: -6,
+                                      top: -4,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(3),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 18,
+                                          minHeight: 18,
+                                        ),
+                                        child: Text(
+                                          count > 99 ? '99+' : '$count',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -537,6 +597,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              context.read<NotificationProvider>().stopPolling();
               context.read<PartnerDashboardProvider>().reset();
               context.read<AuthProvider>().logout();
             },

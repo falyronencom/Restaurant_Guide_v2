@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
+import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/search/search_home_screen.dart';
 import 'package:restaurant_guide_mobile/screens/news/news_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
@@ -40,6 +41,13 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     instance = this;
+    // Start notification polling after frame is built (only when authenticated)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isAuthenticated) {
+        context.read<NotificationProvider>().startPolling();
+      }
+    });
   }
 
   @override
@@ -155,32 +163,55 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
             _buildTabNavigator(4, const ProfileScreen()),
           ],
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: _onTabSelected,
-          type: BottomNavigationBarType.fixed,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.search),
-              label: 'Поиск',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.newspaper),
-              label: 'Новости',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: 'Карта',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.favorite),
-              label: 'Избранное',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Профиль',
-            ),
-          ],
+        bottomNavigationBar: Consumer<NotificationProvider>(
+          builder: (context, notificationProvider, _) {
+            final hasUnread = notificationProvider.unreadCount > 0;
+            return BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: _onTabSelected,
+              type: BottomNavigationBarType.fixed,
+              items: [
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Поиск',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.newspaper),
+                  label: 'Новости',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.map),
+                  label: 'Карта',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.favorite),
+                  label: 'Избранное',
+                ),
+                BottomNavigationBarItem(
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.person),
+                      if (hasUnread)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  label: 'Профиль',
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
