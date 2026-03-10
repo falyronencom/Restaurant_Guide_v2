@@ -94,31 +94,35 @@ class AdminReviewsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle visibility of the selected review
+  /// Toggle visibility of the selected review (optimistic with rollback)
   Future<bool> toggleVisibility() async {
     if (_selectedId == null) return false;
 
     _isSubmitting = true;
     _submitError = null;
+
+    // Optimistic update: toggle immediately for instant UI feedback
+    final index = _reviews.indexWhere((r) => r.id == _selectedId);
+    final bool prevVisible = index >= 0 ? _reviews[index].isVisible : true;
+    if (index >= 0) {
+      final updated = _reviews[index].copyWith(isVisible: !prevVisible);
+      _reviews[index] = updated;
+      _selectedReview = updated;
+    }
     notifyListeners();
 
     try {
       await _service.toggleVisibility(_selectedId!);
-
-      // Optimistic update: toggle is_visible in local list
-      final index = _reviews.indexWhere((r) => r.id == _selectedId);
-      if (index >= 0) {
-        final updated = _reviews[index].copyWith(
-          isVisible: !_reviews[index].isVisible,
-        );
-        _reviews[index] = updated;
-        _selectedReview = updated;
-      }
-
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
+      // Rollback: revert to previous visibility state
+      if (index >= 0 && index < _reviews.length) {
+        final reverted = _reviews[index].copyWith(isVisible: prevVisible);
+        _reviews[index] = reverted;
+        _selectedReview = reverted;
+      }
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
@@ -126,29 +130,35 @@ class AdminReviewsProvider extends ChangeNotifier {
     }
   }
 
-  /// Delete the selected review
+  /// Delete the selected review (optimistic with rollback)
   Future<bool> deleteReview(String? reason) async {
     if (_selectedId == null) return false;
 
     _isSubmitting = true;
     _submitError = null;
+
+    // Optimistic update: mark as deleted immediately
+    final index = _reviews.indexWhere((r) => r.id == _selectedId);
+    AdminReviewItem? prevReview;
+    if (index >= 0) {
+      prevReview = _reviews[index];
+      final updated = _reviews[index].copyWith(isDeleted: true);
+      _reviews[index] = updated;
+      _selectedReview = updated;
+    }
     notifyListeners();
 
     try {
       await _service.deleteReview(_selectedId!, reason: reason);
-
-      // Optimistic update: mark as deleted in local list
-      final index = _reviews.indexWhere((r) => r.id == _selectedId);
-      if (index >= 0) {
-        final updated = _reviews[index].copyWith(isDeleted: true);
-        _reviews[index] = updated;
-        _selectedReview = updated;
-      }
-
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
+      // Rollback: restore original review state
+      if (index >= 0 && index < _reviews.length && prevReview != null) {
+        _reviews[index] = prevReview;
+        _selectedReview = prevReview;
+      }
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();

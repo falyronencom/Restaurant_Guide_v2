@@ -94,6 +94,9 @@ export const toggleVisibility = async (reviewId, adminUserId) => {
       );
     }
 
+    // Recalculate establishment aggregates (hidden reviews excluded from rating)
+    await ReviewModel.updateEstablishmentAggregates(result.establishment_id);
+
     // Non-blocking audit log write
     const action = result.is_visible ? 'review_show' : 'review_hide';
     AuditLogModel.createAuditLog({

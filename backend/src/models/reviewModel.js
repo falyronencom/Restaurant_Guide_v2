@@ -522,12 +522,14 @@ export const updateEstablishmentAggregates = async (establishmentId) => {
         FROM reviews
         WHERE establishment_id = $1
         AND is_deleted = false
+        AND is_visible = true
       ),
       review_count = (
         SELECT COUNT(*)
         FROM reviews
         WHERE establishment_id = $1
         AND is_deleted = false
+        AND is_visible = true
       ),
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
@@ -571,6 +573,7 @@ export const getRatingDistribution = async (establishmentId) => {
     FROM reviews
     WHERE establishment_id = $1
       AND is_deleted = false
+      AND is_visible = true
     GROUP BY rating
     ORDER BY rating
   `;
