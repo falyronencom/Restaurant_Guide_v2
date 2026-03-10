@@ -8,6 +8,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 10, 2026 — Notification System Mobile UI + Polling (Segment B)
+- **notification_model.dart** (new): NotificationType enum (7 types), NotificationCategory, icon/color getters, fromJson (snake_case + camelCase), Russian relative time formatter
+- **notification_service.dart** (new): Singleton, ApiClient-based — getNotifications (paginated), getUnreadCount, markAsRead, markAllAsRead
+- **notification_provider.dart** (new): ChangeNotifier — unread count badge, 30s polling (Timer.periodic), pagination, category filter, optimistic mark-as-read with rollback
+- **notification_list_screen.dart** (new): AppBar + "Прочитать все", ChoiceChip filters (Все/Мои заведения/Мои отзывы), time grouping (Новые/Сегодня/На этой неделе/Ранее), NotificationCard widget, pull-to-refresh, scroll pagination, empty state, tap → navigate to target
+- **main.dart**: Added NotificationProvider to MultiProvider
+- **main_navigation.dart**: Red dot badge on Profile tab via Consumer<NotificationProvider>, polling start in initState
+- **profile_screen.dart**: Bell icon with unread count badge (Row + Spacer layout), stopPolling on logout
+
 #### Март 9, 2026 — Notification System Backend (Segment A)
 - **Migration**: `add_notifications.sql` — notifications table (UUID PK, user_id FK, type, title, message, establishment_id FK, review_id FK, is_read, created_at) + 2 indexes (partial unread, user+created_at DESC)
 - **notificationModel.js** (new): create, getByUserId (paginated + category filter), getUnreadCount, markAsRead, markAllAsRead, deleteOld
