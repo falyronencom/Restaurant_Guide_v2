@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
 
 /// Screen displaying a grouped list of notifications
 /// Supports filtering by category, pull-to-refresh, and pagination
@@ -45,25 +46,36 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Уведомления'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              context.read<NotificationProvider>().markAllAsRead();
-            },
-            child: const Text(
-              'Прочитать все',
-              style: TextStyle(
-                color: AppTheme.primaryOrange,
-                fontSize: 14,
-              ),
+      backgroundColor: AppTheme.backgroundWarm,
+      body: SafeArea(
+        child: Column(
+        children: [
+          // Header matching profile screen style
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const Icon(
+                    Icons.chevron_left,
+                    size: 28,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Уведомления',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontDisplayFamily,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w400,
+                    color: AppTheme.primaryOrangeDark,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-      body: Column(
-        children: [
           // Filter chips
           _buildFilterChips(),
           // Notification list
@@ -97,6 +109,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -156,7 +169,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         side: BorderSide(
           color: selected ? AppTheme.primaryOrange : AppTheme.gray300,
         ),
@@ -308,8 +321,18 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
 
     // Navigate based on type
     switch (notification.type) {
-      case NotificationType.establishmentApproved:
       case NotificationType.newReview:
+        // Partner tapped "new review" → open partner reviews screen to respond
+        if (notification.establishmentId != null) {
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => PartnerReviewsScreen(
+                establishmentId: notification.establishmentId!,
+              ),
+            ),
+          );
+        }
+      case NotificationType.establishmentApproved:
       case NotificationType.partnerResponse:
         // Navigate to establishment detail
         if (notification.establishmentId != null) {
