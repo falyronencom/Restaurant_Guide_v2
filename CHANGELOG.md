@@ -8,6 +8,11 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 10, 2026 — Admin Moderation Notification Polish
+- **notificationService.js**: Added `extractRejectionReason()` helper — parses field-level rejection comments from `moderation_notes` object (priority: `rejection_reason` key → first `"rejected:"` field → generic fallback). Added `establishment_unsuspended` type with title "Заведение возобновлено" and message "«{name}» снова активно"
+- **adminService.js**: Reject notification now passes full `moderation_notes` object (was `.rejection_reason` only). Unsuspend uses `'unsuspended'` status (was `'active'` → misleading "Заведение одобрено")
+- **notificationService.test.js**: +5 new tests (field-level rejection extraction, rejection_reason key priority, empty notes fallback, empty object fallback, unsuspended notification). Total: 44 notification tests, 855 full suite
+
 #### Март 10, 2026 — Notification System Mobile UI + Polling (Segment B)
 - **notification_model.dart** (new): NotificationType enum (7 types), NotificationCategory, icon/color getters, fromJson (snake_case + camelCase), Russian relative time formatter
 - **notification_service.dart** (new): Singleton, ApiClient-based — getNotifications (paginated), getUnreadCount, markAsRead, markAllAsRead

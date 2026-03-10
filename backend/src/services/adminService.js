@@ -266,7 +266,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
     NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
       newStatus,
-      action === 'reject' ? (moderation_notes.rejection_reason || null) : null,
+      action === 'reject' ? (moderation_notes || null) : null,
     ).catch(() => {});
 
     logger.info('Establishment moderation completed', {
@@ -571,10 +571,10 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
-    // Notify partner (non-blocking) — unsuspend = back to active
+    // Notify partner (non-blocking) — distinct unsuspend notification
     NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
-      'active',
+      'unsuspended',
     ).catch(() => {});
 
     logger.info('Establishment unsuspended', {

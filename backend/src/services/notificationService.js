@@ -19,6 +19,7 @@ const TITLES = {
   establishment_approved: 'Заведение одобрено',
   establishment_rejected: 'Заведение отклонено',
   establishment_suspended: 'Заведение приостановлено',
+  establishment_unsuspended: 'Заведение возобновлено',
   new_review: 'Новый отзыв',
   partner_response: 'Ответ на ваш отзыв',
   review_hidden: 'Отзыв скрыт модератором',
@@ -107,6 +108,28 @@ export const markAllAsRead = async (userId) => {
 };
 
 // ============================================================================
+// Internal helpers
+// ============================================================================
+
+/**
+ * Extract a human-readable rejection reason from moderation_notes or a plain string.
+ * Priority: 1) string as-is, 2) rejection_reason key, 3) first "rejected:" field value.
+ */
+const extractRejectionReason = (reason) => {
+  if (!reason) return null;
+  if (typeof reason === 'string') return reason;
+  if (typeof reason === 'object') {
+    if (reason.rejection_reason) return reason.rejection_reason;
+    for (const value of Object.values(reason)) {
+      if (typeof value === 'string' && value.toLowerCase().startsWith('rejected:')) {
+        return value.replace(/^rejected:\s*/i, '').trim();
+      }
+    }
+  }
+  return null;
+};
+
+// ============================================================================
 // Trigger helpers (NON-BLOCKING — called without await from other services)
 // ============================================================================
 
@@ -115,8 +138,8 @@ export const markAllAsRead = async (userId) => {
  * Called after: moderateEstablishment, suspendEstablishment, unsuspendEstablishment
  *
  * @param {string} establishmentId
- * @param {string} newStatus - 'active' | 'rejected' | 'suspended'
- * @param {string} [reason] - Rejection/suspension reason
+ * @param {string} newStatus - 'active' | 'rejected' | 'suspended' | 'unsuspended'
+ * @param {string|object} [reason] - Rejection/suspension reason (string or moderation_notes object)
  */
 export const notifyEstablishmentStatusChange = async (establishmentId, newStatus, reason) => {
   try {
@@ -127,6 +150,7 @@ export const notifyEstablishmentStatusChange = async (establishmentId, newStatus
       active: 'establishment_approved',
       rejected: 'establishment_rejected',
       suspended: 'establishment_suspended',
+      unsuspended: 'establishment_unsuspended',
     };
 
     const type = typeMap[newStatus];
@@ -138,13 +162,16 @@ export const notifyEstablishmentStatusChange = async (establishmentId, newStatus
     if (type === 'establishment_approved') {
       message = `«${name}» одобрено модерацией`;
     } else if (type === 'establishment_rejected') {
-      message = reason
-        ? `«${name}» отклонено: ${reason}`
+      const parsed = extractRejectionReason(reason);
+      message = parsed
+        ? `«${name}» отклонено: ${parsed}`
         : `«${name}» отклонено модерацией`;
     } else if (type === 'establishment_suspended') {
       message = reason
         ? `«${name}» приостановлено: ${reason}`
         : `«${name}» приостановлено модерацией`;
+    } else if (type === 'establishment_unsuspended') {
+      message = `«${name}» снова активно`;
     }
 
     await NotificationModel.create({

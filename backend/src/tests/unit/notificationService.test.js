@@ -130,6 +130,7 @@ describe('notificationService', () => {
         'establishment_approved',
         'establishment_rejected',
         'establishment_suspended',
+        'establishment_unsuspended',
         'new_review',
         'partner_response',
         'review_hidden',
@@ -379,6 +380,80 @@ describe('notificationService', () => {
           message: '«Заведение» одобрено модерацией',
         })
       );
+    });
+
+    // --- Fix 1: field-level rejection reason extraction ---
+
+    test('should extract rejection reason from moderation_notes object with "rejected:" field', async () => {
+      const moderationNotes = {
+        name: 'approved',
+        description: 'rejected: текст слишком короткий',
+        address: 'approved',
+      };
+
+      await notifyEstablishmentStatusChange(establishmentId, 'rejected', moderationNotes);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'establishment_rejected',
+          title: 'Заведение отклонено',
+          message: '«Кафе Тест» отклонено: текст слишком короткий',
+        })
+      );
+    });
+
+    test('should use rejection_reason key from moderation_notes if present', async () => {
+      const moderationNotes = {
+        rejection_reason: 'Общая причина отказа',
+        name: 'rejected: имя не подходит',
+      };
+
+      await notifyEstablishmentStatusChange(establishmentId, 'rejected', moderationNotes);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '«Кафе Тест» отклонено: Общая причина отказа',
+        })
+      );
+    });
+
+    test('should fall back to generic message when moderation_notes has no rejections', async () => {
+      const moderationNotes = {
+        name: 'approved',
+        description: 'approved',
+      };
+
+      await notifyEstablishmentStatusChange(establishmentId, 'rejected', moderationNotes);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '«Кафе Тест» отклонено модерацией',
+        })
+      );
+    });
+
+    test('should fall back to generic message when moderation_notes is empty object', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'rejected', {});
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '«Кафе Тест» отклонено модерацией',
+        })
+      );
+    });
+
+    // --- Fix 2: unsuspend notification ---
+
+    test('should create notification for unsuspended status', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'unsuspended');
+
+      expect(NotificationModel.create).toHaveBeenCalledWith({
+        userId: partnerId,
+        type: 'establishment_unsuspended',
+        title: 'Заведение возобновлено',
+        message: '«Кафе Тест» снова активно',
+        establishmentId,
+      });
     });
   });
 
