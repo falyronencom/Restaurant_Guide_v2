@@ -166,7 +166,7 @@ export const countAdminReviews = async (filters = {}) => {
  * Toggle review visibility (is_visible = NOT is_visible)
  *
  * @param {string} reviewId - UUID of the review
- * @returns {Promise<Object|null>} Updated review { id, is_visible } or null if not found
+ * @returns {Promise<Object|null>} Updated review { id, is_visible, establishment_id } or null if not found
  */
 export const toggleReviewVisibility = async (reviewId) => {
   const query = `
@@ -176,7 +176,7 @@ export const toggleReviewVisibility = async (reviewId) => {
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     AND is_deleted = false
-    RETURNING id, is_visible
+    RETURNING id, is_visible, establishment_id
   `;
 
   try {

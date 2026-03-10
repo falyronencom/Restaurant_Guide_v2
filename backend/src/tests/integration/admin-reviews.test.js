@@ -462,3 +462,65 @@ describe('POST /api/v1/admin/reviews/:id/delete (#16)', () => {
       .expect(401);
   });
 });
+
+// ============================================================================
+// #17 — Aggregate recalculation on visibility toggle
+// ============================================================================
+
+describe('Aggregate recalculation on toggle-visibility (#17)', () => {
+  test('hiding a 1-star review should exclude it from average_rating', async () => {
+    // Create two reviews: 5-star + 1-star → average = 3.00
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    const lowReview = await createTestReview(null, testEstablishmentId, { rating: 1 });
+
+    // Verify initial aggregates (trigger recalc via any toggle or direct query)
+    let estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
+    // Note: createTestReview inserts directly — aggregates may be stale, so we use the toggle to trigger recalc
+
+    // Hide the 1-star review → should recalculate to 5.00 / count=1
+    await request(app)
+      .post(`/api/v1/admin/reviews/${lowReview.id}/toggle-visibility`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
+    expect(Number(estRow.rows[0].average_rating)).toBe(5);
+    expect(Number(estRow.rows[0].review_count)).toBe(1);
+  });
+
+  test('showing (un-hiding) a review should include it back in aggregates', async () => {
+    // Create 5-star visible + 3-star hidden
+    await createTestReview(null, testEstablishmentId, { rating: 5, is_visible: true });
+    const hiddenReview = await createTestReview(null, testEstablishmentId, { rating: 3, is_visible: false });
+
+    // Un-hide the 3-star review → should recalculate to 4.00 / count=2
+    await request(app)
+      .post(`/api/v1/admin/reviews/${hiddenReview.id}/toggle-visibility`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
+    expect(Number(estRow.rows[0].average_rating)).toBe(4);
+    expect(Number(estRow.rows[0].review_count)).toBe(2);
+  });
+
+  test('deleting an already-hidden review should not double-count exclusion', async () => {
+    // Create 5-star visible + 2-star hidden
+    await createTestReview(null, testEstablishmentId, { rating: 5, is_visible: true });
+    const hiddenReview = await createTestReview(null, testEstablishmentId, { rating: 2, is_visible: false });
+
+    // Force initial aggregate recalc so hidden review is already excluded
+    // Toggle a dummy action: hide then show the 5-star to trigger recalc
+    // Simpler: just check after delete
+    // Delete the hidden 2-star review
+    await request(app)
+      .post(`/api/v1/admin/reviews/${hiddenReview.id}/delete`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // Aggregates should be: only the 5-star visible review → avg=5.00, count=1
+    const estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
+    expect(Number(estRow.rows[0].average_rating)).toBe(5);
+    expect(Number(estRow.rows[0].review_count)).toBe(1);
+  });
+});
