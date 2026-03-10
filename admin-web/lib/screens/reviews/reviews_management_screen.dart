@@ -645,11 +645,17 @@ class _DetailPanel extends StatelessWidget {
   ) {
     return Row(
       children: [
-        // Toggle visibility
+        // Toggle visibility (hide requires confirmation, show is immediate)
         OutlinedButton.icon(
           onPressed: provider.isSubmitting
               ? null
-              : () => provider.toggleVisibility(),
+              : () {
+                  if (review.isVisible) {
+                    _showHideDialog(context, provider);
+                  } else {
+                    provider.toggleVisibility();
+                  }
+                },
           icon: Icon(
             review.isVisible ? Icons.visibility_off : Icons.visibility,
             size: 18,
@@ -682,6 +688,39 @@ class _DetailPanel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+
+  void _showHideDialog(
+      BuildContext context, AdminReviewsProvider provider) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Скрыть отзыв?'),
+          content: const Text(
+            'Отзыв будет скрыт от пользователей. '
+            'Автор получит уведомление. '
+            'Вы сможете показать его снова.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                provider.toggleVisibility();
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFF57F17),
+              ),
+              child: const Text('Скрыть'),
+            ),
+          ],
+        );
+      },
     );
   }
 
