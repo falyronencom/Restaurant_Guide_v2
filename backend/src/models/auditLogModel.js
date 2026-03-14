@@ -272,6 +272,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'review_hide' AND al.entity_type = 'review' THEN 'Скрыт отзыв'
         WHEN al.action = 'review_show' AND al.entity_type = 'review' THEN 'Показан отзыв'
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
+        WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         ELSE al.action || ' (' || al.entity_type || ')'
       END as summary
       ${metadataColumns}
