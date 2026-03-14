@@ -8,6 +8,20 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 14, 2026 — Analytics: Visibility Consistency & Performance Indexes
+- **analyticsModel.js**: Added `AND is_visible = true` to all 5 review-related analytics queries (`getReviewCounts`, `countReviewsInPeriod`, `getReviewTimeline`, `getGlobalRatingDistribution`, `getResponseStats`) — dashboard metrics now consistent with establishment-level aggregates (commit ad04f16 fix)
+- **013_add_analytics_indexes.sql** (new migration): B-tree indexes on `users(created_at)`, `establishments(created_at)`, `audit_log(created_at)`, and partial index `reviews(created_at) WHERE is_deleted=false AND is_visible=true` for analytics timeline query performance
+- **admin-analytics.test.js**: +5 integration tests — hidden review excluded from overview total, reviews total, rating distribution, timeline counts, response stats. Total: 869 tests (35 suites)
+
+#### Март 10, 2026 — Admin Reviews: Moderation Quality Fixes
+- **reviewModel.js**: `updateEstablishmentAggregates()` and `getRatingDistribution()` now filter `AND is_visible = true` — hidden reviews no longer inflate establishment ratings/counts
+- **adminReviewModel.js**: `toggleVisibility` RETURNING clause includes `establishment_id` for post-toggle aggregate recalculation
+- **adminReviewService.js**: `toggleVisibility` calls `updateEstablishmentAggregates()` after toggling — ratings update immediately
+- **admin_reviews_provider.dart**: Converted `toggleVisibility` and `deleteReview` to true optimistic updates with rollback on API failure
+- **reviews_management_screen.dart**: Added confirmation dialog "Скрыть отзыв?" for hide action; show (un-hide) remains immediate
+- **admin-reviews.test.js**: +3 integration tests (#17) — hidden reviews excluded from aggregates, toggle triggers recalculation, rating distribution excludes hidden. Total: 858 tests (35 suites), flutter analyze clean
+- Commit: `ad04f16`
+
 #### Март 10, 2026 — Admin Moderation Notification Polish
 - **notificationService.js**: Added `extractRejectionReason()` helper — parses field-level rejection comments from `moderation_notes` object (priority: `rejection_reason` key → first `"rejected:"` field → generic fallback). Added `establishment_unsuspended` type with title "Заведение возобновлено" and message "«{name}» снова активно"
 - **adminService.js**: Reject notification now passes full `moderation_notes` object (was `.rejection_reason` only). Unsuspend uses `'unsuspended'` status (was `'active'` → misleading "Заведение одобрено")
