@@ -82,7 +82,7 @@ export const getReviews = async ({
  * @param {string} adminUserId - UUID of admin performing the action
  * @returns {Promise<Object>} Updated review { id, is_visible }
  */
-export const toggleVisibility = async (reviewId, adminUserId) => {
+export const toggleVisibility = async (reviewId, adminUserId, { ipAddress, userAgent } = {}) => {
   try {
     const result = await AdminReviewModel.toggleReviewVisibility(reviewId);
 
@@ -105,6 +105,8 @@ export const toggleVisibility = async (reviewId, adminUserId) => {
       entity_type: 'review',
       entity_id: reviewId,
       new_data: { is_visible: result.is_visible },
+      ip_address: ipAddress,
+      user_agent: userAgent,
     });
 
     // Notify review author only when hiding (non-blocking)
@@ -136,7 +138,7 @@ export const toggleVisibility = async (reviewId, adminUserId) => {
  * @param {string} [reason] - Optional reason for deletion
  * @returns {Promise<Object>} { success: true }
  */
-export const deleteReview = async (reviewId, adminUserId, reason) => {
+export const deleteReview = async (reviewId, adminUserId, reason, { ipAddress, userAgent } = {}) => {
   try {
     // Get review info before deletion (for establishment_id)
     const review = await AdminReviewModel.getReviewForAdmin(reviewId);
@@ -190,6 +192,8 @@ export const deleteReview = async (reviewId, adminUserId, reason) => {
         is_deleted: true,
         reason: reason || null,
       },
+      ip_address: ipAddress,
+      user_agent: userAgent,
     });
 
     return { success: true };

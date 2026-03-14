@@ -462,7 +462,7 @@ describe('POST /api/v1/admin/establishments/:id/suspend (#8)', () => {
       .send({ reason: 'Test suspension' })
       .expect(200);
 
-    const auditExists = await checkAuditLogExists(establishment.id, 'suspend_establishment');
+    const auditExists = await checkAuditLogExists(establishment.id, 'suspend');
     if (auditExists !== null) {
       expect(auditExists).toBe(true);
     }
@@ -532,7 +532,7 @@ describe('POST /api/v1/admin/establishments/:id/unsuspend (#9)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    const auditExists = await checkAuditLogExists(establishment.id, 'unsuspend_establishment');
+    const auditExists = await checkAuditLogExists(establishment.id, 'unsuspend');
     if (auditExists !== null) {
       expect(auditExists).toBe(true);
     }

@@ -466,7 +466,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
     // Audit log (non-blocking)
     AuditLogModel.createAuditLog({
       user_id: adminUserId,
-      action: 'suspend_establishment',
+      action: 'suspend',
       entity_type: 'establishment',
       entity_id: establishmentId,
       old_data: { status: 'active' },
@@ -562,7 +562,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
     // Audit log (non-blocking)
     AuditLogModel.createAuditLog({
       user_id: adminUserId,
-      action: 'unsuspend_establishment',
+      action: 'unsuspend',
       entity_type: 'establishment',
       entity_id: establishmentId,
       old_data: { status: 'suspended' },

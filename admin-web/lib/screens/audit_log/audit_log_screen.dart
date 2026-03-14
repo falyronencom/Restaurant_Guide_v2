@@ -131,6 +131,9 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                         DropdownMenuItem(
                             value: 'review_delete',
                             child: Text('Удаление отзыва')),
+                        DropdownMenuItem(
+                            value: 'admin_update_coordinates',
+                            child: Text('Обновление координат')),
                       ],
                       onChanged: (value) => provider.setActionFilter(value),
                     ),
