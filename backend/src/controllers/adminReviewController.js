@@ -72,7 +72,10 @@ export const toggleVisibility = asyncHandler(async (req, res) => {
   const reviewId = req.params.id;
   const adminUserId = req.user.userId;
 
-  const result = await adminReviewService.toggleVisibility(reviewId, adminUserId);
+  const result = await adminReviewService.toggleVisibility(reviewId, adminUserId, {
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+  });
 
   logger.info('Admin toggled review visibility', {
     adminId: adminUserId,
@@ -99,7 +102,10 @@ export const deleteReview = asyncHandler(async (req, res) => {
   const adminUserId = req.user.userId;
   const { reason } = req.body || {};
 
-  const result = await adminReviewService.deleteReview(reviewId, adminUserId, reason);
+  const result = await adminReviewService.deleteReview(reviewId, adminUserId, reason, {
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+  });
 
   logger.info('Admin deleted review', {
     adminId: adminUserId,
