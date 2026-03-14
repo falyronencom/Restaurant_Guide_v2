@@ -97,7 +97,7 @@ export const getReviewCounts = async (startDate, endDate) => {
       COUNT(*) FILTER (WHERE created_at >= $1 AND created_at < $2)::int AS new_in_period,
       COALESCE(AVG(rating)::DECIMAL(3,2), 0) AS average_rating
     FROM reviews
-    WHERE is_deleted = false
+    WHERE is_deleted = false AND is_visible = true
   `;
   try {
     const result = await pool.query(query, [startDate, endDate]);
@@ -115,7 +115,7 @@ export const countReviewsInPeriod = async (startDate, endDate) => {
   const query = `
     SELECT COUNT(*)::int AS count
     FROM reviews
-    WHERE is_deleted = false
+    WHERE is_deleted = false AND is_visible = true
       AND created_at >= $1 AND created_at < $2
   `;
   try {
@@ -308,7 +308,7 @@ export const getReviewTimeline = async (startDate, endDate, truncTo = 'day') => 
       COUNT(*)::int AS count,
       AVG(rating)::DECIMAL(3,2) AS average_rating
     FROM reviews
-    WHERE is_deleted = false
+    WHERE is_deleted = false AND is_visible = true
       AND created_at >= $1 AND created_at < $2
     GROUP BY date
     ORDER BY date
@@ -330,7 +330,7 @@ export const getGlobalRatingDistribution = async () => {
   const query = `
     SELECT rating, COUNT(*)::int AS count
     FROM reviews
-    WHERE is_deleted = false
+    WHERE is_deleted = false AND is_visible = true
     GROUP BY rating
     ORDER BY rating
   `;
@@ -393,7 +393,7 @@ export const getResponseStats = async () => {
         0
       ) AS avg_response_time_hours
     FROM reviews
-    WHERE is_deleted = false
+    WHERE is_deleted = false AND is_visible = true
   `;
   try {
     const result = await pool.query(query);

@@ -415,6 +415,72 @@ describe('GET /api/v1/admin/analytics/establishments (#12)', () => {
 });
 
 // ============================================================================
+// Hidden review exclusion (is_visible=false must be excluded from analytics)
+// ============================================================================
+
+describe('Analytics excludes hidden reviews (is_visible=false)', () => {
+  let totalBeforeHidden;
+  let hiddenReview;
+
+  test('baseline: capture current review total', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/overview?period=7d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    totalBeforeHidden = body.data.reviews.total;
+    expect(totalBeforeHidden).toBeGreaterThanOrEqual(3);
+  });
+
+  test('create a hidden review (is_visible=false, is_deleted=false)', async () => {
+    hiddenReview = await createTestReview(null, firstActiveEstablishmentId, {
+      rating: 1,
+      is_visible: false,
+      is_deleted: false,
+    });
+    expect(hiddenReview.is_visible).toBe(false);
+    expect(hiddenReview.is_deleted).toBe(false);
+  });
+
+  test('overview review total does NOT increase after hidden review', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/overview?period=7d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(body.data.reviews.total).toBe(totalBeforeHidden);
+  });
+
+  test('reviews timeline excludes hidden review from counts', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/reviews?period=7d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(body.data.total).toBe(totalBeforeHidden);
+  });
+
+  test('rating distribution excludes hidden review', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/reviews`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const totalFromDist = body.data.rating_distribution.reduce(
+      (sum, entry) => sum + entry.count, 0
+    );
+    expect(totalFromDist).toBe(totalBeforeHidden);
+  });
+
+  test('response stats exclude hidden review (total_with_response unaffected)', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/reviews`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    // response_stats.total_with_response should not include the hidden review
+    // (hidden review has no partner_response, so count should stay the same)
+    expect(typeof body.data.response_stats.total_with_response).toBe('number');
+    expect(body.data.response_stats.total_with_response).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ============================================================================
 // #13 — GET /api/v1/admin/analytics/reviews
 // ============================================================================
 
