@@ -47,7 +47,7 @@ const validateListSearch = [
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-        'Боулинг', 'Караоке', 'Бильярд',
+        'Боулинг', 'Караоке', 'Бильярд', 'Клуб',
       ];
       
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));
@@ -205,7 +205,7 @@ const validateMapSearch = [
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-        'Боулинг', 'Караоке', 'Бильярд',
+        'Боулинг', 'Караоке', 'Бильярд', 'Клуб',
       ];
       
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));

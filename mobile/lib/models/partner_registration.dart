@@ -406,6 +406,7 @@ class PartnerRegistration {
       'bowling': 'Боулинг',
       'karaoke': 'Караоке',
       'billiards': 'Бильярд',
+      'nightclub': 'Клуб',
     };
     return mapping[id] ?? id;
   }
@@ -530,7 +531,7 @@ class PartnerRegistration {
 class CategoryOptions {
   static const List<CategoryItem> items = [
     CategoryItem(id: 'restaurant', name: 'Ресторан', icon: 'restaurant'),
-    CategoryItem(id: 'coffee', name: 'Кафейня', icon: 'coffee'),
+    CategoryItem(id: 'coffee', name: 'Кофейня', icon: 'coffee'),
     CategoryItem(id: 'fastfood', name: 'Фаст-фуд', icon: 'fastfood'),
     CategoryItem(id: 'bar', name: 'Бар', icon: 'bar'),
     CategoryItem(id: 'confectionery', name: 'Кондитерская', icon: 'cake'),
@@ -542,6 +543,7 @@ class CategoryOptions {
     CategoryItem(id: 'bowling', name: 'Боулинг', icon: 'bowling'),
     CategoryItem(id: 'karaoke', name: 'Караоке', icon: 'karaoke'),
     CategoryItem(id: 'billiards', name: 'Бильярд', icon: 'billiards'),
+    CategoryItem(id: 'nightclub', name: 'Клуб', icon: 'nightclub'),
   ];
 
   static const int maxSelection = 2;
