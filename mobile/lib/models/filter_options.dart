@@ -138,6 +138,7 @@ class FilterConstants {
     'Кальянная',
     'Боулинг',
     'Бильярд',
+    'Клуб',
   ];
 
   /// Map Russian category names to English API values
@@ -155,6 +156,7 @@ class FilterConstants {
     'Кальянная': 'hookah_bar',
     'Боулинг': 'bowling',
     'Бильярд': 'billiards',
+    'Клуб': 'nightclub',
   };
 
   /// Convert Russian category names to English API values
