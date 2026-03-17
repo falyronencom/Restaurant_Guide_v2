@@ -1,7 +1,9 @@
 # Protocol Informed v1.4
-## Leaf Execution Protocol for Trunk Directives
+## Leaf Execution Protocol for Trunk Directives (Mode A)
 
-**Context:** This protocol applies when Leaf receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
+**Context:** This protocol applies when a **new Implementer session** receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
+
+**Applies to:** Mode A (Informed Execution) only. For Mode C (Informed Continuation), the workflow is defined in Methodology v9.2 Section 1.3 — a separate protocol is not needed because the agent retains context from its own Librarian phase.
 
 **Key Assumption:** Discovery phase is already complete. Trunk has seen reality through Librarian's report. Directive reflects actual codebase state.
 
@@ -343,6 +345,10 @@ Request: [What you need from coordinator]
 ---
 
 ## Changelog
+
+### v1.4.1 (March 2026)
+- **Scope clarified:** Protocol explicitly scoped to Mode A only. Mode C workflow is defined in Methodology v9.2 Section 1.3 and does not require a separate execution protocol.
+- **Header updated** with "Applies to" field referencing Mode A and pointing to Methodology for Mode C.
 
 ### v1.4 (March 2026)
 - **Input Package**: Added PROJECT_MAP.md as navigational resource for Sanity Check and implementation phases

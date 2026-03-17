@@ -1,7 +1,7 @@
-# Distributed Intelligence Methodology v9.1
+# Distributed Intelligence Methodology v9.2
 
-**Version:** 9.1
-**Date:** February 2026
+**Version:** 9.2
+**Date:** March 2026
 **Status:** Active Operational Standard
 **Core Paradigm:** Co-Creative Partnership Between Human Coordination and Autonomous Agents
 
@@ -43,15 +43,19 @@ The Coordinator often senses when a session is approaching its productive limit 
 
 Observable patterns that reinforce this signal: rising uncertainty in agent responses, repetition of previously attempted approaches, increasing ambiguity in proposed solutions. When any of these appear, or when the Coordinator's instinct says "it's time" — initiate handoff without delay.
 
-**Protocol 6 — Two Ways to Launch an Implementer**
+**Protocol 6 — Three Ways to Launch an Implementer**
 
-Every Implementer session begins in one of two modes. The Coordinator's decision is a single question:
+Every Implementer session begins in one of three modes. The Coordinator's decision follows two questions:
 
 *Do I have a Discovery Report for this task?*
 
-Yes → **Mode A (Informed Execution).** Implementer receives Informed Directive + Discovery Report. Performs Quick Sanity Check (verify 2-3 key gap claims from the report), then proceeds to planning and implementation. Context-efficient — discovery work already done by Librarian.
-
 No → **Mode B (Autonomous Execution).** Implementer receives task description from Coordinator. Performs full cycle: Pre-scan → Discovery → Planning → Implementation. Context-intensive — agent builds understanding independently. For complex tasks (5+ files, 3+ modules), consider pausing and escalating to Trunk for proper Pre-flight Discovery.
+
+Yes → *Will this task require clean cognitive focus that outweighs the benefit of preserved context from investigation? Is independent double-verification of facts important?*
+
+Yes → **Mode A (Informed Execution).** A new Implementer session receives Informed Directive + Discovery Report. Performs Quick Sanity Check (verify 2-3 key gap claims from the report), then proceeds to planning and implementation. The double verification (Discovery Report → Quick Sanity Check by a fresh session) is a structural advantage for high-complexity tasks where the cost of error is high. Recommended for tasks spanning 5+ modules or 20+ files.
+
+No → **Mode C (Informed Continuation).** The same session that performed Librarian investigation receives the Informed Directive from Trunk and continues as Implementer. Performs Continuity Check (git status/diff to confirm working directory unchanged since Librarian phase), then proceeds to planning and implementation. The agent retains full context from discovery — no re-reading of files, no orientation phase. Recommended for tasks of low to medium complexity where investigation and implementation fit within one session without significant cognitive degradation. Key caution: preserved context from Librarian phase creates an "already know" effect — the agent must maintain critical attitude toward its own findings and not substitute verification with confidence.
 
 **Protocol 7 — Recognize When a Session Has Lost Its Way**
 
@@ -84,15 +88,27 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 
 #### Starting a Leaf Session
 
-- [ ] Role decided: **Librarian** (investigation only) or **Implementer** (execution)
-- [ ] Mode decided: **Mode A** (Discovery Report available) or **Mode B** (ad-hoc task)
+- [ ] Role decided: **Librarian** (investigation only) or **Implementer** (execution) or **Librarian→Implementer** (Mode C)
+- [ ] Mode decided: **Mode A** (Discovery Report available, new session) or **Mode B** (ad-hoc task) or **Mode C** (Librarian continues as Implementer)
 - [ ] Active paradigm confirmed: **Flutter mobile**, not web
 - [ ] Git working directory clean (`git status` — no uncommitted changes)
 - [ ] Backend / emulator running in Coordinator's terminal (not in agent's context)
+- [ ] Effort level set: `/effort [level]` per role table:
+
+| Role / Mode | Effort Level |
+|-------------|-------------|
+| Librarian | Max |
+| Implementer Mode A | High |
+| Implementer Mode C (after Librarian phase) | High |
+| Mode B — discovery phase | Max |
+| Mode B — implementation phase | High |
+| Simple fixes | Medium |
+
 - [ ] Launch package prepared:
   - *Librarian:* Discovery Directive from Trunk
   - *Implementer Mode A:* Informed Directive + Discovery Report
   - *Implementer Mode B:* Task description + previous Semantic Handoff (if continuation)
+  - *Mode C:* Discovery Directive from Trunk (Informed Directive provided mid-session after Discovery Report)
 
 #### Closing a Trunk Session
 
@@ -245,7 +261,7 @@ Pre-flight Discovery's value extends beyond codebase investigation. Any resource
 
 ### 1.3 Execution Cycle Details
 
-This section details the phase sequences for both execution modes described in Protocol 6.
+This section details the phase sequences for all three execution modes described in Protocol 6.
 
 #### Mode A: Informed Execution
 
@@ -280,6 +296,29 @@ Activated when the Coordinator initiates an ad-hoc task directly with Leaf, with
 **Discovery (Read-Only)** uses the Pre-scan map to read relevant files and build understanding. Focus main context on *understanding*, not *finding*. Pre-scan and Discovery can overlap — validate assumptions while simultaneously reading relevant files. The essential discipline: do not write code until the landscape is understood.
 
 **Planning, Implementation, and Delivery** follow the same procedures as Mode A.
+
+#### Mode C: Informed Continuation
+
+Activated when the Coordinator decides that the current Librarian session should continue as Implementer after receiving an Informed Directive from Trunk. Introduced in v9.2 based on the Twin Task experiment, which demonstrated that combining Librarian and Implementer in a single session (with 1M context) produces identical code quality to Mode A while reducing coordinator overhead.
+
+**Phase sequence:** Discovery (as Librarian) → Discovery Report → *pause for Trunk* → Receive Informed Directive → Continuity Check → Planning → Implementation → Delivery
+
+**Discovery (as Librarian)** follows the standard Librarian protocol — investigating the codebase, answering Discovery Directive questions, and producing a Discovery Report. The agent operates under Librarian constraints: no file modifications, no commits. Discovery Report is delivered to the Coordinator for transfer to Trunk.
+
+**Pause for Trunk** is the critical mid-session transition. The session waits while the Coordinator transfers the Discovery Report to Trunk and receives back an Informed Directive. This is a new pattern — in Mode A, the session would close here and a new one would open.
+
+**Continuity Check** replaces Mode A's Quick Sanity Check. Since the agent just completed discovery in the same session, full re-verification is unnecessary. Instead, the agent runs `git status` and `git diff` to confirm the working directory is unchanged since the Librarian phase. If no changes detected — proceed with implementation using the full context from discovery. If changes detected — re-read affected files before continuing.
+
+**Planning, Implementation, and Delivery** follow Mode A procedures. The key difference: the Informed Directive serves not as a "map of territory" (the agent already knows the territory from its own investigation) but as a **checklist and scope limiter** — "do this, don't touch that." The Navigation section of the Discovery Report is already internalized.
+
+**When to prefer Mode C over Mode A:**
+
+| Factor | Mode C preferred | Mode A preferred |
+|--------|-----------------|-----------------|
+| Task complexity | Low to medium (2-4 modules) | High (5+ modules, 20+ files) |
+| Context budget | Discovery + implementation fit in one session | Discovery consumed significant context |
+| Verification needs | Standard — single-pass sufficient | Critical — independent double-verification valuable |
+| Coordinator time | Limited — fewer handoff steps preferred | Available — quality over speed |
 
 #### Proactive Scope Extension
 
@@ -366,6 +405,22 @@ Expected answer format: [description of what to report]
 
 [5-10 questions total]
 
+## Peripheral Scan
+
+QP1: [Test coverage question — what tests cover the affected area?]
+Search in: [test directories]
+
+QP2: [Adjacent module question — what neighboring modules might be affected?]
+Search in: [related paths]
+
+QP3: [Seed/fixture question — do test fixtures or seed data need updating?]
+Search in: [seed/fixture paths]
+
+QP4: [PROJECT_MAP.md navigation — what does the map say about this module's flow?]
+Search in: PROJECT_MAP.md
+
+[3-5 peripheral questions total]
+
 ## Discovery Report Format
 [Template for Librarian to follow — ensures consistent output structure]
 
@@ -384,6 +439,8 @@ Expected answer format: [description of what to report]
 Well-crafted questions look like: "Is `geolocator` package in `mobile/pubspec.yaml`? If yes, provide version." Or: "Does `EstablishmentsProvider` have fields for user coordinates? Check `mobile/lib/providers/establishments_provider.dart`." Or: "Where is distance '0.3 km' hardcoded in UI? Search in `mobile/lib/screens/` and `mobile/lib/widgets/`. Provide file, line number, and 5 lines of surrounding code."
 
 Questions to avoid: "How does geolocation work?" (too open-ended), "Is the code good?" (subjective), "What should we implement?" (that's Trunk's job), "Tell me everything about the search system" (no focus).
+
+**Peripheral Scan** is a mandatory section of the Discovery Directive (introduced in v9.2). It extends investigation beyond the direct task scope to identify tests covering the affected area, adjacent modules that might be impacted, seed/fixture data requiring updates, and PROJECT_MAP.md navigation hints. The Peripheral Scan was validated by the Twin Task experiment, where it excluded unnecessary work (admin panel already ready, seed data already present, migration not needed) and included necessary work (test on line 415 listing all categories). Without Peripheral Scan, the Informed Directive would have been either broader (including unnecessary edits) or incomplete (missing test updates).
 
 **Gap Verification:** For any investigation question where the answer determines whether implementation work is needed (e.g., "does screen X handle error states?"), the Librarian verifies by reading the complete build() method or equivalent entry point — not only by searching for expected keyword patterns. Code may implement expected behavior through patterns different from those specified in the search guidance. Keyword search identifies known patterns; semantic reading identifies any pattern.
 
@@ -500,7 +557,14 @@ For tasks that finish successfully, a brief Completion Report replaces the Seman
 
 ## Notes for Future Work (optional)
 - [Any observations relevant to future work in this area]
+
+## Process Reflection (optional — for experimental or non-standard sessions)
+- Cognitive load assessment: [how demanding was the task on focus and working memory]
+- Positive/negative transfer between phases: [did earlier phases help or hinder later ones]
+- Mode recommendation for similar tasks: [Mode A / B / C and why]
 ```
+
+**Process Reflection** is not required for every session. It is recommended when the Coordinator wants to calibrate methodological decisions — for example, after using a new mode, after an unusually complex task, or when comparing approaches. The reflection helps build empirical evidence for mode selection over time.
 
 #### Checkpoint Report Format
 
@@ -581,14 +645,23 @@ For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation
 
 #### Context Management Patterns
 
-**Discovery Tax** is the context consumed by codebase investigation before implementation begins. In Mode B sessions, this consistently amounts to 50-80% of available context, independent of task complexity. This is a systemic characteristic of the LLM workflow, not a failure of any particular session. It has two components: Navigational Tax (finding relevant files, mapping structure) and Semantic Tax (reading, understanding, correlating code logic). Pre-flight Discovery addresses this structurally — the Librarian pays the tax in disposable context, and the Implementer receives compressed results. The tax is paid once, not repeated across sessions.
+**Discovery Tax** is the context consumed by codebase investigation before implementation begins. It has two distinct components that behave differently as context windows scale:
+
+**Discovery Tax (Navigational)** — tokens spent on finding and reading files, mapping directory structure, locating entry points. In Mode B sessions with 200K context, this consistently amounts to 50-80% of available context. With 1M context, this component ceases to be a critical constraint — the same navigational work consumes only 10-16% of available context.
+
+**Cognitive Tax (Intellectual)** — cognitive resources spent on holding discovered relationships, patterns, and dependencies in active focus. This component does not scale with context window size — it depends on the inherent complexity of the code being analyzed, not the amount of context available. A session analyzing 20 interconnected files experiences the same Cognitive Tax whether the context window is 200K or 1M.
+
+In Mode A (classic protocol), the Librarian absorbs both taxes, and the Implementer begins with full cognitive capacity in a clean session. In Mode C (hybrid), the navigational tax transforms into an advantage (the agent already "knows" the territory), but the Cognitive Tax persists in the session. This distinction is the primary factor when choosing between Mode A and Mode C for complex tasks.
+
+Pre-flight Discovery addresses both taxes structurally — the Librarian pays them in disposable context, and the Implementer receives compressed results. In Mode C, navigational tax is paid once and retained as an asset; Cognitive Tax is the factor to monitor.
 
 **Practical Context Patterns:**
 
 | Scenario | Context Used | What Happens |
 |----------|-------------|--------------|
 | Mode A: Sanity Check + Planning | 10-20% | Implementer uses Discovery Report |
-| Mode B: Pre-scan + Discovery | 50-80% | Full autonomous discovery |
+| Mode B: Pre-scan + Discovery | 50-80% (200K) / 10-16% (1M) | Full autonomous discovery |
+| Mode C: Discovery + Implementation | 30-50% (1M) | Combined workflow, context retained |
 | Implementation + Testing | 20-40% | Code changes and verification |
 | Handoff or Commit | 5% | Semantic Handoff or commit |
 
@@ -963,6 +1036,19 @@ All code produced in the co-creative process is expected to be production-ready.
 ---
 
 ## Changelog
+
+### v9.2 (March 2026)
+
+Empirical methodology update based on Twin Task experiment (adding 14th establishment category "Клуб" via two parallel branches: `experiment/unified-leaf` and `experiment/classic-protocol`). Both paths produced identical code quality, validating the hybrid approach.
+
+- **Mode C (Informed Continuation) introduced in Protocol 6.** Session begins as Librarian, produces Discovery Report, receives Informed Directive from Trunk mid-session, performs Continuity Check (git status/diff), and continues as Implementer. Recommended for low-to-medium complexity tasks. Includes "already know" caution and Coordinator decision criteria for Mode A vs Mode C selection.
+- **Peripheral Scan added as mandatory Discovery Directive section.** 3-5 additional questions covering tests, adjacent modules, seed/fixture data, and PROJECT_MAP.md navigation. Validated by experiment: excluded unnecessary work and included necessary test updates.
+- **Cognitive Tax defined as distinct concept from Discovery Tax.** Discovery Tax (navigational) scales with context window — becomes non-critical at 1M. Cognitive Tax (intellectual) does not scale with context window — depends on code complexity. This distinction drives Mode A vs Mode C selection for complex tasks.
+- **Effort Level added to Coordinator's Leaf Session checklist.** Role-based table: Librarian → Max, Implementer Mode A → High, Mode C post-Librarian → High, Mode B discovery → Max, simple fixes → Medium.
+- **Process Reflection added as optional Completion Report section.** For experimental or non-standard sessions: cognitive load assessment, phase transfer effects, mode recommendation for similar tasks.
+- **Protocol 6 renamed** from "Two Ways to Launch an Implementer" to "Three Ways to Launch an Implementer."
+- **Section 1.3 expanded** with Mode C execution cycle details, including Continuity Check definition and Mode A vs Mode C comparison table.
+- **Context Management Patterns updated** with Mode C context usage row and 1M-adjusted percentages for Mode B.
 
 ### v9.1 (March 2026)
 
