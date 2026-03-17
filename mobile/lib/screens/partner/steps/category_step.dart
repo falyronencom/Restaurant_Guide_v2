@@ -184,6 +184,7 @@ class _CategoryCard extends StatelessWidget {
       'bowling': 'Боулинг',
       'karaoke': 'Караоке',
       'billiards': 'Бильярд',
+      'nightclub': 'Клуб',
     };
     final fileName = iconToFile[iconName] ?? 'Ресторан';
     return SvgPicture.asset(
