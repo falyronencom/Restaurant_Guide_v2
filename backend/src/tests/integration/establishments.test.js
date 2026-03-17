@@ -415,7 +415,7 @@ describe('Establishments System - Create Establishment', () => {
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальян',
-        'Боулинг', 'Караоке', 'Бильярд'
+        'Боулинг', 'Караоке', 'Бильярд', 'Клуб'
       ];
 
       for (const category of validCategories) {
