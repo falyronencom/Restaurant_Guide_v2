@@ -8,6 +8,20 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 17, 2026 — Category & Cuisine Audit: Add Кафе, Китайская, Восточная; Remove Континентальная
+- **Category audit**: Reviewed all 14 establishment categories and 11 cuisine types for Belarus market relevance
+- **Added establishment category**: `Кафе` (cafe_dining) — positioned after Кофейня in all UI lists. SVG icon `Кафе.svg` already existed
+- **Added cuisine types**: `Китайская` (chinese), `Восточная` (eastern) — new SVG placeholder icons created
+- **Removed cuisine**: `Континентальная` — redundant with Европейская, removed from all validators/services/mappings (was already absent from mobile UI)
+- **Removed from seed**: `indian` (Индийская), `mediterranean` (Средиземноморская) — never in validators, only in seed data
+- **Backend** (7 files): establishmentValidation.js, establishmentService.js, searchValidation.js (3 locations incl. getValidationConstants), establishments-config.js, normalize-cuisine-categories.sql, run-normalize.js, establishments.test.js
+- **Mobile** (6 files): filter_options.dart, partner_registration.dart, establishment.dart, filter_screen.dart, category_step.dart, cuisine_step.dart
+- **Admin-web** (1 file): establishments_analytics_tab.dart
+- **Assets** (2 new): Китайская.svg, Восточная.svg (placeholder icons for designer replacement)
+- **Bonus fix**: searchValidation.js `getValidationConstants()` was missing Клуб in categories and Европейская in cuisines (stale since Клуб addition)
+- **Tests**: 109 passed (51 establishments + 20 search + 38 service unit), 0 failures
+- **Totals**: 15 establishment categories, 12 cuisine types
+
 #### Март 14, 2026 — Analytics: Visibility Consistency & Performance Indexes
 - **analyticsModel.js**: Added `AND is_visible = true` to all 5 review-related analytics queries (`getReviewCounts`, `countReviewsInPeriod`, `getReviewTimeline`, `getGlobalRatingDistribution`, `getResponseStats`) — dashboard metrics now consistent with establishment-level aggregates (commit ad04f16 fix)
 - **013_add_analytics_indexes.sql** (new migration): B-tree indexes on `users(created_at)`, `establishments(created_at)`, `audit_log(created_at)`, and partial index `reviews(created_at) WHERE is_deleted=false AND is_visible=true` for analytics timeline query performance

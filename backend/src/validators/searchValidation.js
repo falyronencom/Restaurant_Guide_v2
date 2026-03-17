@@ -45,11 +45,11 @@ const validateListSearch = [
       // Split by comma and check each category
       const categories = value.split(',').map(c => c.trim());
       const validCategories = [
-        'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
+        'Ресторан', 'Кофейня', 'Кафе', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
         'Боулинг', 'Караоке', 'Бильярд', 'Клуб',
       ];
-      
+
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));
       if (invalidCategories.length > 0) {
         throw new Error(`Invalid categories: ${invalidCategories.join(', ')}`);
@@ -66,7 +66,7 @@ const validateListSearch = [
       const validCuisines = [
         'Народная', 'Авторская', 'Азиатская', 'Американская',
         'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-        'Смешанная', 'Континентальная',
+        'Смешанная', 'Европейская', 'Китайская', 'Восточная',
       ];
       
       const invalidCuisines = cuisines.filter(cui => !validCuisines.includes(cui));
@@ -203,7 +203,7 @@ const validateMapSearch = [
     .custom((value) => {
       const categories = value.split(',').map(c => c.trim());
       const validCategories = [
-        'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
+        'Ресторан', 'Кофейня', 'Кафе', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
         'Боулинг', 'Караоке', 'Бильярд', 'Клуб',
       ];
@@ -223,7 +223,7 @@ const validateMapSearch = [
       const validCuisines = [
         'Народная', 'Авторская', 'Азиатская', 'Американская',
         'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-        'Смешанная', 'Континентальная',
+        'Смешанная', 'Европейская', 'Китайская', 'Восточная',
       ];
       
       const invalidCuisines = cuisines.filter(cui => !validCuisines.includes(cui));
@@ -317,14 +317,14 @@ function handleValidationErrors(req, res, next) {
 function getValidationConstants() {
   return {
     categories: [
-      'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
+      'Ресторан', 'Кофейня', 'Кафе', 'Фаст-фуд', 'Бар', 'Кондитерская',
       'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
-      'Боулинг', 'Караоке', 'Бильярд',
+      'Боулинг', 'Караоке', 'Бильярд', 'Клуб',
     ],
     cuisines: [
       'Народная', 'Авторская', 'Азиатская', 'Американская',
       'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-      'Смешанная', 'Континентальная',
+      'Смешанная', 'Европейская', 'Китайская', 'Восточная',
     ],
     features: [
       'delivery', 'wifi', 'banquet', 'terrace',
