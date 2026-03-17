@@ -402,7 +402,7 @@ class PartnerRegistration {
       'bakery': 'Пекарня',
       'pub': 'Паб',
       'canteen': 'Столовая',
-      'hookah': 'Кальян',
+      'hookah': 'Кальянная',
       'bowling': 'Боулинг',
       'karaoke': 'Караоке',
       'billiards': 'Бильярд',

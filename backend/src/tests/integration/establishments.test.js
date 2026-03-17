@@ -414,7 +414,7 @@ describe('Establishments System - Create Establishment', () => {
     test('should accept all valid category types', async () => {
       const validCategories = [
         'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
-        'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальян',
+        'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
         'Боулинг', 'Караоке', 'Бильярд', 'Клуб'
       ];
 
