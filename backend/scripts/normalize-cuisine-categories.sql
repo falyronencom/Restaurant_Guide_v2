@@ -20,10 +20,10 @@ UPDATE establishments SET cuisines = array_replace(cuisines, 'japanese', 'Япо
 UPDATE establishments SET cuisines = array_replace(cuisines, 'vegetarian', 'Вегетарианская') WHERE 'vegetarian' = ANY(cuisines);
 UPDATE establishments SET cuisines = array_replace(cuisines, 'mixed', 'Смешанная')           WHERE 'mixed' = ANY(cuisines);
 UPDATE establishments SET cuisines = array_replace(cuisines, 'international', 'Смешанная')   WHERE 'international' = ANY(cuisines);
-UPDATE establishments SET cuisines = array_replace(cuisines, 'continental', 'Континентальная') WHERE 'continental' = ANY(cuisines);
-UPDATE establishments SET cuisines = array_replace(cuisines, 'indian', 'Индийская')          WHERE 'indian' = ANY(cuisines);
-UPDATE establishments SET cuisines = array_replace(cuisines, 'mediterranean', 'Средиземноморская') WHERE 'mediterranean' = ANY(cuisines);
+UPDATE establishments SET cuisines = array_replace(cuisines, 'continental', 'Европейская')    WHERE 'continental' = ANY(cuisines);
 UPDATE establishments SET cuisines = array_replace(cuisines, 'fusion', 'Авторская')          WHERE 'fusion' = ANY(cuisines);
+UPDATE establishments SET cuisines = array_replace(cuisines, 'chinese', 'Китайская')         WHERE 'chinese' = ANY(cuisines);
+UPDATE establishments SET cuisines = array_replace(cuisines, 'eastern', 'Восточная')         WHERE 'eastern' = ANY(cuisines);
 UPDATE establishments SET cuisines = array_replace(cuisines, 'author', 'Авторская')          WHERE 'author' = ANY(cuisines);
 
 -- ============================================
@@ -45,6 +45,7 @@ UPDATE establishments SET categories = array_replace(categories, 'karaoke', 'К�
 UPDATE establishments SET categories = array_replace(categories, 'billiards', 'Бильярд')       WHERE 'billiards' = ANY(categories);
 UPDATE establishments SET categories = array_replace(categories, 'nightclub', 'Клуб')          WHERE 'nightclub' = ANY(categories);
 UPDATE establishments SET categories = array_replace(categories, 'confectionery', 'Кондитерская') WHERE 'confectionery' = ANY(categories);
+UPDATE establishments SET categories = array_replace(categories, 'cafe_dining', 'Кафе')      WHERE 'cafe_dining' = ANY(categories);
 
 -- ============================================
 -- 3. Verification — check for remaining English values

@@ -12,16 +12,17 @@ const _cuisineToRussian = {
   'italian': 'Итальянская',
   'mixed': 'Смешанная',
   'international': 'Смешанная',
-  'continental': 'Континентальная',
+  'continental': 'Европейская',
   'european': 'Европейская',
-  'indian': 'Индийская',
-  'mediterranean': 'Средиземноморская',
+  'chinese': 'Китайская',
+  'eastern': 'Восточная',
 };
 
 /// English→Russian mapping for category values (legacy/test data compatibility)
 const _categoryToRussian = {
   'restaurant': 'Ресторан',
   'cafe': 'Кофейня',
+  'cafe_dining': 'Кафе',
   'fast_food': 'Фаст-фуд',
   'pizzeria': 'Пиццерия',
   'bar': 'Бар',
