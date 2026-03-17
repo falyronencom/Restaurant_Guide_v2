@@ -395,6 +395,7 @@ class PartnerRegistration {
     const mapping = {
       'restaurant': 'Ресторан',
       'coffee': 'Кофейня',
+      'cafe_dining': 'Кафе',
       'fastfood': 'Фаст-фуд',
       'bar': 'Бар',
       'confectionery': 'Кондитерская',
@@ -417,6 +418,7 @@ class PartnerRegistration {
       'Ресторан': 'restaurant',
       'Кофейня': 'coffee',
       'Кафейня': 'coffee',
+      'Кафе': 'cafe_dining',
       'Фаст-фуд': 'fastfood',
       'Бар': 'bar',
       'Кондитерская': 'confectionery',
@@ -446,7 +448,8 @@ class PartnerRegistration {
       'vegetarian': 'Вегетарианская',
       'mixed': 'Смешанная',
       'european': 'Европейская',
-      'continental': 'Континентальная',
+      'chinese': 'Китайская',
+      'eastern': 'Восточная',
     };
     return mapping[id] ?? id;
   }
@@ -464,7 +467,8 @@ class PartnerRegistration {
       'Вегетарианская': 'vegetarian',
       'Смешанная': 'mixed',
       'Европейская': 'european',
-      'Континентальная': 'continental',
+      'Китайская': 'chinese',
+      'Восточная': 'eastern',
     };
     return mapping[name] ?? name;
   }
@@ -532,6 +536,7 @@ class CategoryOptions {
   static const List<CategoryItem> items = [
     CategoryItem(id: 'restaurant', name: 'Ресторан', icon: 'restaurant'),
     CategoryItem(id: 'coffee', name: 'Кофейня', icon: 'coffee'),
+    CategoryItem(id: 'cafe_dining', name: 'Кафе', icon: 'cafe'),
     CategoryItem(id: 'fastfood', name: 'Фаст-фуд', icon: 'fastfood'),
     CategoryItem(id: 'bar', name: 'Бар', icon: 'bar'),
     CategoryItem(id: 'confectionery', name: 'Кондитерская', icon: 'cake'),
@@ -576,6 +581,8 @@ class CuisineOptions {
     CuisineItem(id: 'vegetarian', name: 'Вегетарианская', icon: 'vegetarian'),
     CuisineItem(id: 'mixed', name: 'Смешанная', icon: 'mixed'),
     CuisineItem(id: 'european', name: 'Европейская', icon: 'continental'),
+    CuisineItem(id: 'chinese', name: 'Китайская', icon: 'chinese'),
+    CuisineItem(id: 'eastern', name: 'Восточная', icon: 'eastern'),
   ];
 
   static const int maxSelection = 3;

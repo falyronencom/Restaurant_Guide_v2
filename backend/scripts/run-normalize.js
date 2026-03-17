@@ -33,10 +33,10 @@ const cuisineMappings = [
   ['vegetarian', 'Вегетарианская'],
   ['mixed', 'Смешанная'],
   ['international', 'Смешанная'],
-  ['continental', 'Континентальная'],
-  ['indian', 'Индийская'],
-  ['mediterranean', 'Средиземноморская'],
+  ['continental', 'Европейская'],
   ['fusion', 'Авторская'],
+  ['chinese', 'Китайская'],
+  ['eastern', 'Восточная'],
   ['author', 'Авторская'],
 ];
 
@@ -56,6 +56,7 @@ const categoryMappings = [
   ['billiards', 'Бильярд'],
   ['nightclub', 'Клуб'],
   ['confectionery', 'Кондитерская'],
+  ['cafe_dining', 'Кафе'],
 ];
 
 async function run() {

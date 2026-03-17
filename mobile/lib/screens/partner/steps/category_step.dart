@@ -172,6 +172,7 @@ class _CategoryCard extends StatelessWidget {
     const iconToFile = {
       'restaurant': 'Ресторан',
       'cafe': 'Кафе',
+      'cafe_dining': 'Кафе',
       'coffee': 'Кофейня',
       'fastfood': 'ФастФуд',
       'bar': 'Бар',

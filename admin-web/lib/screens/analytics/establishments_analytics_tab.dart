@@ -20,6 +20,7 @@ const _statusToRussian = {
 const _categoryToRussian = {
   'restaurant': 'Ресторан',
   'cafe': 'Кофейня',
+  'cafe_dining': 'Кафе',
   'fast_food': 'Фаст-фуд',
   'pizzeria': 'Пиццерия',
   'bar': 'Бар',

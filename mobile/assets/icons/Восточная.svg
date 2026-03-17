@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px"
+	 viewBox="0 0 62 67" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#D24F16;}
+</style>
+<g>
+	<!-- Tagine/dome lid -->
+	<path class="st0" d="M31,8 Q31,8 31,8 C31,8 20,22 14,36 L48,36 C42,22 31,8 31,8 Z"/>
+	<!-- Plate/base -->
+	<ellipse class="st0" cx="31" cy="40" rx="24" ry="6"/>
+	<!-- Decorative dot on top -->
+	<circle class="st0" cx="31" cy="8" r="2.5"/>
+	<!-- Steam lines -->
+	<path class="st0" d="M22,48 Q24,52 22,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+	<path class="st0" d="M31,48 Q33,52 31,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+	<path class="st0" d="M40,48 Q42,52 40,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+</g>
+</svg>

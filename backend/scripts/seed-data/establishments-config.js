@@ -19,6 +19,7 @@
 export const CATEGORIES = [
   'restaurant',
   'cafe',
+  'cafe_dining',
   'bar',
   'fast_food',
   'pizzeria',
@@ -42,10 +43,12 @@ export const CUISINES = [
   'asian',
   'american',
   'georgian',
-  'indian',
-  'mediterranean',
+  'japanese',
   'vegetarian',
   'international',
+  'chinese',
+  'eastern',
+  'fusion',
 ];
 
 /**
@@ -282,7 +285,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Гомель',
     categories: ['restaurant', 'bar'],
-    cuisines: ['italian', 'mediterranean'],
+    cuisines: ['italian', 'european'],
     price_range: '$$$',
     nameIndex: 28, // "Wine Gallery"
     descriptionLength: 'long',
@@ -441,7 +444,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Минск',
     categories: ['restaurant'],
-    cuisines: ['indian', 'asian'],
+    cuisines: ['chinese', 'asian'],
     price_range: '$$',
     nameIndex: 34,
     descriptionLength: 'medium',
@@ -465,7 +468,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Минск',
     categories: ['restaurant'],
-    cuisines: ['mediterranean'],
+    cuisines: ['eastern'],
     price_range: '$$',
     nameIndex: 26,
     descriptionLength: 'medium',
@@ -1088,7 +1091,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Могилёв',
     categories: ['restaurant'],
-    cuisines: ['indian'],
+    cuisines: ['eastern'],
     price_range: '$$',
     nameIndex: 68,
     descriptionLength: 'medium',

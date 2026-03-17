@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px"
+	 viewBox="0 0 62 67" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#D24F16;}
+</style>
+<g>
+	<!-- Chopsticks -->
+	<line class="st0" x1="20" y1="5" x2="30" y2="40" style="stroke:#D24F16;stroke-width:2.5;stroke-linecap:round"/>
+	<line class="st0" x1="42" y1="5" x2="32" y2="40" style="stroke:#D24F16;stroke-width:2.5;stroke-linecap:round"/>
+	<!-- Bowl -->
+	<path class="st0" d="M10,40 Q10,58 31,58 Q52,58 52,40 Z"/>
+	<!-- Steam lines -->
+	<path class="st0" d="M22,32 Q24,28 22,24" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+	<path class="st0" d="M31,30 Q33,26 31,22" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+	<path class="st0" d="M40,32 Q42,28 40,24" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
+</g>
+</svg>

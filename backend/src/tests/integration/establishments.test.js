@@ -413,7 +413,7 @@ describe('Establishments System - Create Establishment', () => {
 
     test('should accept all valid category types', async () => {
       const validCategories = [
-        'Ресторан', 'Кофейня', 'Фаст-фуд', 'Бар', 'Кондитерская',
+        'Ресторан', 'Кофейня', 'Кафе', 'Фаст-фуд', 'Бар', 'Кондитерская',
         'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная',
         'Боулинг', 'Караоке', 'Бильярд', 'Клуб'
       ];
@@ -521,7 +521,7 @@ describe('Establishments System - Create Establishment', () => {
       const validCuisines = [
         'Народная', 'Авторская', 'Азиатская', 'Американская',
         'Вегетарианская', 'Японская', 'Грузинская', 'Итальянская',
-        'Смешанная', 'Континентальная', 'Европейская'
+        'Смешанная', 'Европейская', 'Китайская', 'Восточная'
       ];
 
       for (const cuisine of validCuisines) {

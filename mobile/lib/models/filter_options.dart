@@ -123,10 +123,11 @@ enum HoursFilter {
 class FilterConstants {
   FilterConstants._();
 
-  /// Establishment categories (13 items from Figma)
+  /// Establishment categories (15 items)
   static const List<String> categories = [
     'Ресторан',
     'Кофейня',
+    'Кафе',
     'Фаст-фуд',
     'Пиццерия',
     'Бар',
@@ -145,6 +146,7 @@ class FilterConstants {
   static const Map<String, String> categoryMapping = {
     'Ресторан': 'restaurant',
     'Кофейня': 'cafe',
+    'Кафе': 'cafe_dining',
     'Фаст-фуд': 'fast_food',
     'Пиццерия': 'pizzeria',
     'Бар': 'bar',
@@ -166,7 +168,7 @@ class FilterConstants {
         .toList();
   }
 
-  /// Cuisine types (10 items from Figma)
+  /// Cuisine types (12 items)
   static const List<String> cuisines = [
     'Народная',
     'Американская',
@@ -178,6 +180,8 @@ class FilterConstants {
     'Европейская',
     'Японская',
     'Авторская',
+    'Китайская',
+    'Восточная',
   ];
 
   /// Map Russian cuisine names to English API values
@@ -192,6 +196,8 @@ class FilterConstants {
     'Европейская': 'european',
     'Японская': 'japanese',
     'Авторская': 'fusion',
+    'Китайская': 'chinese',
+    'Восточная': 'eastern',
   };
 
   /// Convert Russian cuisine names to English API values
