@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
+import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
 import 'package:restaurant_guide_mobile/services/partner_service.dart';
 
 /// Partner Dashboard state provider
@@ -21,6 +22,13 @@ class PartnerDashboardProvider with ChangeNotifier {
   PartnerEstablishment? _selectedEstablishment;
   bool _isLoadingDetails = false;
   String? _detailsError;
+
+  // Analytics state
+  String _analyticsPeriod = '7d';
+  EstablishmentOverview? _analyticsOverview;
+  AnalyticsTrends? _analyticsTrends;
+  bool _isLoadingAnalytics = false;
+  String? _analyticsError;
 
   // ============================================================================
   // Getters
@@ -52,6 +60,21 @@ class PartnerDashboardProvider with ChangeNotifier {
 
   /// Error from loading establishment details (separate from list error)
   String? get detailsError => _detailsError;
+
+  /// Current analytics period code (7d, 30d, 90d)
+  String get analyticsPeriod => _analyticsPeriod;
+
+  /// Analytics overview for the selected establishment
+  EstablishmentOverview? get analyticsOverview => _analyticsOverview;
+
+  /// Time-series trends for the selected establishment
+  AnalyticsTrends? get analyticsTrends => _analyticsTrends;
+
+  /// Whether analytics are currently loading
+  bool get isLoadingAnalytics => _isLoadingAnalytics;
+
+  /// Analytics error message
+  String? get analyticsError => _analyticsError;
 
   /// Get establishments by status
   List<PartnerEstablishment> getByStatus(EstablishmentStatus status) {
@@ -282,6 +305,45 @@ class PartnerDashboardProvider with ChangeNotifier {
   }
 
   // ============================================================================
+  // Analytics
+  // ============================================================================
+
+  /// Fetch analytics for the selected establishment with the given period.
+  /// Called when period selector changes or when statistics screen opens.
+  Future<void> fetchAnalytics(String establishmentId, String period) async {
+    _analyticsPeriod = period;
+    _isLoadingAnalytics = true;
+    _analyticsError = null;
+    notifyListeners();
+
+    try {
+      final overviews = await _partnerService.getAnalyticsOverview(period);
+      _analyticsOverview = overviews
+          .where((o) => o.establishmentId == establishmentId)
+          .firstOrNull;
+
+      _analyticsTrends = await _partnerService.getAnalyticsTrends(
+        establishmentId,
+        period,
+      );
+    } catch (e) {
+      _analyticsError = e.toString().replaceFirst('Exception: ', '');
+      debugPrint('PartnerDashboard: Analytics error: $_analyticsError');
+    } finally {
+      _isLoadingAnalytics = false;
+      notifyListeners();
+    }
+  }
+
+  /// Clear analytics state
+  void clearAnalytics() {
+    _analyticsOverview = null;
+    _analyticsTrends = null;
+    _analyticsError = null;
+    _isLoadingAnalytics = false;
+  }
+
+  // ============================================================================
   // Error Handling
   // ============================================================================
 
@@ -304,6 +366,7 @@ class PartnerDashboardProvider with ChangeNotifier {
     _selectedEstablishment = null;
     _isLoadingDetails = false;
     _detailsError = null;
+    clearAnalytics();
     notifyListeners();
   }
 }

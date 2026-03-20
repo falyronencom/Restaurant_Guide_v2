@@ -15,6 +15,7 @@
  */
 
 import * as FavoriteModel from '../models/favoriteModel.js';
+import * as PartnerAnalyticsModel from '../models/partnerAnalyticsModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -62,6 +63,9 @@ export const addToFavorites = async (userId, establishmentId) => {
   // Sync cached favorite_count in establishments table
   await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
 
+  // Track in per-day analytics (fire-and-forget)
+  PartnerAnalyticsModel.trackFavorite(establishmentId, 1);
+
   logger.info('Favorite added successfully', {
     userId,
     establishmentId,
@@ -101,6 +105,11 @@ export const removeFromFavorites = async (userId, establishmentId) => {
 
   // Sync cached favorite_count in establishments table
   await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
+
+  // Track in per-day analytics (fire-and-forget, only if actually deleted)
+  if (wasDeleted) {
+    PartnerAnalyticsModel.trackFavorite(establishmentId, -1);
+  }
 
   if (wasDeleted) {
     logger.info('Favorite removed successfully', {

@@ -35,6 +35,8 @@ import establishmentRoutes from './establishmentRoutes.js';
 import tempMediaRoutes from './tempMediaRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
+import partnerAnalyticsRoutes from './partnerAnalyticsRoutes.js';
+import { trackCall } from '../../controllers/partnerAnalyticsController.js';
 
 const router = express.Router();
 
@@ -229,6 +231,24 @@ router.use('/admin', adminRoutes);
  * - PUT /notifications/read-all — mark all as read
  */
 router.use('/notifications', notificationRoutes);
+
+/**
+ * POST /api/v1/establishments/:id/track-call
+ *
+ * Public endpoint for recording phone tap events from the mobile app.
+ * No authentication required — lightweight fire-and-forget tracking.
+ */
+router.post('/establishments/:id/track-call', trackCall);
+
+/**
+ * /api/v1/partner/analytics/*
+ *
+ * Partner analytics endpoints (all require partner auth):
+ * - GET /partner/analytics/overview — per-establishment metrics with period comparison
+ * - GET /partner/analytics/trends — time-series for charts
+ * - GET /partner/analytics/ratings — rating distribution
+ */
+router.use('/partner/analytics', partnerAnalyticsRoutes);
 
 /**
  * Placeholder for future route modules
