@@ -12,6 +12,7 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
+import 'package:restaurant_guide_mobile/services/partner_service.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
@@ -605,14 +606,25 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         const SizedBox(height: 8),
 
-        // Phone
+        // Phone (tappable — opens dialer and tracks call event)
         if (_establishment!.phone != null &&
             _establishment!.phone!.isNotEmpty)
-          Text(
-            _establishment!.phone!,
-            style: const TextStyle(
-              fontSize: 16,
-              color: _backgroundColor,
+          GestureDetector(
+            onTap: () => _launchPhoneCall(_establishment!.phone!),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.phone, size: 16, color: _backgroundColor),
+                const SizedBox(width: 6),
+                Text(
+                  _establishment!.phone!,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: _backgroundColor,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -674,6 +686,18 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       return (Icons.groups, 'VK');
     }
     return (Icons.language, 'Сайт');
+  }
+
+  /// Launch phone dialer and track call event (fire-and-forget)
+  Future<void> _launchPhoneCall(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone.replaceAll(' ', ''));
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+    // Track call event (fire-and-forget)
+    if (_establishment?.id != null) {
+      PartnerService().trackCall(_establishment!.id);
+    }
   }
 
   /// Launch social URL in external browser/app
