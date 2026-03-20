@@ -662,6 +662,9 @@ export const incrementViewCount = async (establishmentId) => {
 
   try {
     await pool.query(query, [establishmentId]);
+    // Dual write: also record in per-day analytics table (fire-and-forget)
+    const { trackView } = await import('./partnerAnalyticsModel.js');
+    trackView(establishmentId);
     logger.debug('View count incremented', { establishmentId });
   } catch (error) {
     // Non-critical: log but don't throw to avoid breaking the detail endpoint

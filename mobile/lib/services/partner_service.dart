@@ -1,4 +1,5 @@
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
+import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Partner-specific API service
@@ -167,6 +168,79 @@ class PartnerService {
     } catch (e) {
       throw Exception('Ошибка удаления: $e');
     }
+  }
+
+  // ============================================================================
+  // Analytics
+  // ============================================================================
+
+  /// Get analytics overview for all partner establishments
+  /// period: "7d", "30d", "90d"
+  Future<List<EstablishmentOverview>> getAnalyticsOverview(String period) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/partner/analytics/overview',
+        queryParameters: {'period': period},
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        final list = data['data']?['establishments'] as List? ?? [];
+        return list
+            .map((e) => EstablishmentOverview.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      throw Exception('Не удалось загрузить аналитику');
+    } catch (e) {
+      throw Exception('Ошибка загрузки аналитики: $e');
+    }
+  }
+
+  /// Get time-series trends for a specific establishment
+  Future<AnalyticsTrends> getAnalyticsTrends(
+    String establishmentId,
+    String period,
+  ) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/partner/analytics/trends',
+        queryParameters: {
+          'establishment_id': establishmentId,
+          'period': period,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        return AnalyticsTrends.fromJson(data['data'] as Map<String, dynamic>);
+      }
+      throw Exception('Не удалось загрузить тренды');
+    } catch (e) {
+      throw Exception('Ошибка загрузки трендов: $e');
+    }
+  }
+
+  /// Get rating distribution for a specific establishment
+  Future<AnalyticsRatings> getAnalyticsRatings(String establishmentId) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/partner/analytics/ratings',
+        queryParameters: {'establishment_id': establishmentId},
+      );
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        return AnalyticsRatings.fromJson(data['data'] as Map<String, dynamic>);
+      }
+      throw Exception('Не удалось загрузить рейтинги');
+    } catch (e) {
+      throw Exception('Ошибка загрузки рейтингов: $e');
+    }
+  }
+
+  /// Track phone call click (fire-and-forget)
+  void trackCall(String establishmentId) {
+    _apiClient.post('/api/v1/establishments/$establishmentId/track-call').ignore();
   }
 
   // ============================================================================
