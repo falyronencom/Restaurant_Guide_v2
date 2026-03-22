@@ -358,14 +358,19 @@ describe('searchService', () => {
       expect(result.establishments[0].distance_km).toBe(2.5);
     });
 
-    test('should order results by distance, then rating, then review count', async () => {
+    test('should order results with two-tier rating sort', async () => {
       pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
       pool.query.mockResolvedValue({ rows: [{ total: '0' }], rowCount: 1 });
 
       await searchByRadius(validParams);
 
       const query = pool.query.mock.calls[0][0];
-      expect(query).toContain('ORDER BY ne.average_rating DESC NULLS LAST, ne.review_count DESC, ne.name ASC');
+      // Default sort is 'rating' with hasDistance=true (searchByRadius)
+      expect(query).toContain('CASE WHEN ne.review_count >= 3 THEN 0 ELSE 1 END ASC');
+      expect(query).toContain('ne.average_rating DESC NULLS LAST');
+      expect(query).toContain('ne.review_count DESC');
+      expect(query).toContain('distance_km ASC');
+      expect(query).toContain('ne.name ASC');
     });
 
     test('should only search active establishments', async () => {

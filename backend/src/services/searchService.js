@@ -113,42 +113,68 @@ const CLOSE_TIME_SQL = `
 `;
 
 /**
+ * Minimum number of reviews required for an establishment to be
+ * in the "trusted rating" tier. Establishments below this threshold
+ * sort after those above it when sorting by rating.
+ */
+const RATING_SORT_MIN_REVIEWS = 3;
+
+/**
  * Helper: Build ORDER BY clause based on sort parameter
+ *
+ * Two-tier rating: establishments with >= RATING_SORT_MIN_REVIEWS reviews
+ * sort in tier 0 (top), others in tier 1. Within each tier, normal
+ * sort order applies. This prevents a 5.0★×1 review from outranking
+ * a 4.8★×200 reviews.
  *
  * @param {string} sortBy - Sort option (rating, price_asc, price_desc, distance)
  * @param {boolean} hasDistance - Whether distance_km column is available
  * @returns {string} SQL ORDER BY clause
  */
 function buildOrderByClause(sortBy, hasDistance = false) {
-  // Convert price range to numeric for sorting
+  // Convert price range to numeric for sorting — NULL/missing sorts last (ELSE 4)
   const priceToNum = `(CASE e.price_range
     WHEN '$' THEN 1
     WHEN '$$' THEN 2
     WHEN '$$$' THEN 3
-    WHEN '$$$$' THEN 4
-    ELSE 0
+    ELSE 4
   END)`;
+
+  // Two-tier rating: trusted (3+ reviews) first, then unverified
+  const twoTierRating = `CASE WHEN e.review_count >= ${RATING_SORT_MIN_REVIEWS} THEN 0 ELSE 1 END ASC`;
 
   switch (sortBy) {
     case 'rating':
-      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+      if (hasDistance) {
+        return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, distance_km ASC, e.name ASC`;
+      }
+      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
 
     case 'price_asc':
-      return `${priceToNum} ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+      if (hasDistance) {
+        return `${priceToNum} ASC, distance_km ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+      }
+      return `${priceToNum} ASC, e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC`;
 
     case 'price_desc':
-      return `${priceToNum} DESC, e.average_rating DESC NULLS LAST, e.name ASC`;
+      if (hasDistance) {
+        return `${priceToNum} DESC, distance_km ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+      }
+      return `${priceToNum} DESC, e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC`;
 
     case 'distance':
       if (hasDistance) {
-        return 'distance_km ASC, e.average_rating DESC, e.name ASC';
+        return `distance_km ASC, e.base_score DESC, e.average_rating DESC NULLS LAST, e.name ASC`;
       }
       // Fallback to rating if distance not available
-      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
 
     default:
-      // Default: rating-based
-      return 'e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC';
+      // Default: rating-based (same as 'rating')
+      if (hasDistance) {
+        return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, distance_km ASC, e.name ASC`;
+      }
+      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
   }
 }
 
@@ -819,7 +845,11 @@ export async function searchByBounds({
     FROM establishments e
     LEFT JOIN users u ON e.partner_id = u.id
     WHERE ${whereClause}
-    ORDER BY e.average_rating DESC, e.review_count DESC
+    ORDER BY
+      CASE WHEN e.review_count >= ${RATING_SORT_MIN_REVIEWS} THEN 0 ELSE 1 END ASC,
+      e.average_rating DESC NULLS LAST,
+      e.review_count DESC,
+      e.name ASC
     LIMIT $${paramIndex}
   `;
 
@@ -910,6 +940,9 @@ export async function checkSearchHealth() {
     };
   }
 }
+
+// Named exports for testing
+export { buildOrderByClause, RATING_SORT_MIN_REVIEWS };
 
 export default {
   searchByRadius,
