@@ -8,6 +8,21 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 22, 2026 — Partner Analytics: Activate Ghost Table, Time-Series Endpoints, Mobile Charts
+- **Discovery**: Full audit of partner analytics infrastructure (8 questions + 4 peripheral scan)
+- **Migration 017**: Added `call_count` column + composite index to `establishment_analytics` (ghost table activated)
+- **Event tracking**: Dual-write views (cumulative + per-day UPSERT), favorites (+1/-1 UPSERT), phone call clicks (new endpoint)
+- **Backend endpoints (3 new)**: `GET /partner/analytics/overview` (metrics with period comparison), `GET /partner/analytics/trends` (gap-filled time-series), `GET /partner/analytics/ratings` (distribution)
+- **Backend model/service/controller/routes**: `partnerAnalyticsModel.js`, `partnerAnalyticsService.js`, `partnerAnalyticsController.js`, `partnerAnalyticsRoutes.js`
+- **Backend tests**: 27 unit tests (partnerAnalyticsModel + partnerAnalyticsService), all existing 869 tests passing
+- **Mobile models**: `partner_analytics.dart` (EstablishmentOverview, AnalyticsTrends, TrendPoint, AnalyticsRatings)
+- **Mobile service**: 4 new API methods in `partner_service.dart` + fire-and-forget `trackCall()`
+- **Mobile provider**: `partner_dashboard_provider.dart` — analytics state, `fetchAnalytics()` method
+- **Mobile UI**: `partner_statistics_screen.dart` rewritten — functional period selector (7d/30d/90d), fl_chart bar chart replacing placeholder, change% badges, "Звонки" section
+- **Detail screen**: Phone number now tappable (tel: URI + call tracking via POST /track-call)
+- **Methodology**: Discovered "Directive Coherence Check" — Librarian Step 0 for analyzing directives before execution (candidate for Protocol Informed v1.5)
+- **Session stats**: Discovery + Segment A + Segment B in single session, 15% of 1M context used
+
 #### Март 17, 2026 — Category & Cuisine Audit: Add Кафе, Китайская, Восточная; Remove Континентальная
 - **Category audit**: Reviewed all 14 establishment categories and 11 cuisine types for Belarus market relevance
 - **Added establishment category**: `Кафе` (cafe_dining) — positioned after Кофейня in all UI lists. SVG icon `Кафе.svg` already existed
