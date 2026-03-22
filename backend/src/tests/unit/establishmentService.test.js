@@ -25,6 +25,8 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
   updateEstablishment: jest.fn(),
   deleteEstablishment: jest.fn(),
   submitForModeration: jest.fn(),
+  calculateCompletenessScore: jest.fn().mockReturnValue(0),
+  updateBaseScore: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({

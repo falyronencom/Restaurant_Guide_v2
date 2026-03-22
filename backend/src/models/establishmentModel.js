@@ -20,6 +20,55 @@ import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 
 /**
+ * Calculate completeness score (base_score) for an establishment.
+ * Pure function — no I/O. Scores optional fields that help users
+ * choose a restaurant. Maximum score: 100.
+ *
+ * @param {Object} establishment - Establishment data (from DB row or request body)
+ * @returns {number} Score 0-100
+ */
+export function calculateCompletenessScore(establishment) {
+  let score = 0;
+
+  // Description (25 pts) — most impactful for user decision
+  if (establishment.description && establishment.description.length > 0) {
+    score += 25;
+  }
+
+  // Price range (25 pts) — key filter/sort field
+  if (establishment.price_range) {
+    score += 25;
+  }
+
+  // Attributes (20 pts) — amenities like Wi-Fi, parking, terrace
+  if (establishment.attributes) {
+    const attrs = typeof establishment.attributes === 'string'
+      ? (() => { try { return JSON.parse(establishment.attributes); } catch { return {}; } })()
+      : establishment.attributes;
+    if (attrs && Object.keys(attrs).length > 0) {
+      score += 20;
+    }
+  }
+
+  // Phone (15 pts) — actionable contact info
+  if (establishment.phone && establishment.phone.length > 0) {
+    score += 15;
+  }
+
+  // Email (10 pts)
+  if (establishment.email && establishment.email.length > 0) {
+    score += 10;
+  }
+
+  // Website (5 pts)
+  if (establishment.website && establishment.website.length > 0) {
+    score += 5;
+  }
+
+  return score;
+}
+
+/**
  * Create a new establishment in the database
  * 
  * This function inserts a new establishment with 'draft' status, allowing
@@ -553,6 +602,30 @@ export const updateEstablishment = async (establishmentId, updates) => {
       establishmentId,
     });
     throw error;
+  }
+};
+
+/**
+ * Update base_score for an establishment
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @param {number} score - Completeness score (0-100)
+ * @returns {Promise<void>}
+ */
+export const updateBaseScore = async (establishmentId, score) => {
+  try {
+    await pool.query(
+      'UPDATE establishments SET base_score = $1 WHERE id = $2',
+      [score, establishmentId],
+    );
+    logger.debug('Base score updated', { establishmentId, score });
+  } catch (error) {
+    logger.error('Error updating base score', {
+      error: error.message,
+      establishmentId,
+    });
+    // Non-blocking: don't throw — score update failure
+    // should not break establishment operations
   }
 };
 
