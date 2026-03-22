@@ -358,6 +358,13 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       });
     }
 
+    // Calculate and save completeness score (non-blocking)
+    const baseScore = EstablishmentModel.calculateCompletenessScore(establishment);
+    if (baseScore > 0) {
+      EstablishmentModel.updateBaseScore(establishment.id, baseScore);
+      establishment.base_score = baseScore;
+    }
+
     logger.info('Establishment created successfully', {
       establishmentId: establishment.id,
       partnerId,
@@ -881,6 +888,13 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       establishmentId,
       updates,
     );
+
+    // Recalculate completeness score (non-blocking)
+    const newScore = EstablishmentModel.calculateCompletenessScore(updatedEstablishment);
+    if (newScore !== updatedEstablishment.base_score) {
+      EstablishmentModel.updateBaseScore(establishmentId, newScore);
+      updatedEstablishment.base_score = newScore;
+    }
 
     // Extract features and capacity from attributes for response compatibility
     if (updatedEstablishment.attributes) {
