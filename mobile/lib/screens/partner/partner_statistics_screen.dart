@@ -123,7 +123,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                         _buildDivider(),
                         _buildViewsSection(establishment, overview, trends),
                         _buildDivider(),
-                        _buildInteractionsSection(overview),
+                        _buildCallsSection(overview),
                         _buildFavoritesSection(establishment, overview),
                         _buildRatingsSection(establishment),
                         _buildReviewsButton(context, establishment),
@@ -485,13 +485,19 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               getTitlesWidget: (value, meta) {
                 final idx = value.toInt();
                 if (idx < 0 || idx >= data.length) return const SizedBox.shrink();
-                // Show every Nth label to avoid crowding
-                final step = (data.length / 5).ceil().clamp(1, data.length);
-                if (idx % step != 0 && idx != data.length - 1) return const SizedBox.shrink();
+                // For <= 7 data points show all labels; otherwise thin out
+                if (data.length > 7) {
+                  final step = (data.length / 5).ceil().clamp(1, data.length);
+                  // Always show labels where there's data, first, and last
+                  final hasData = data[idx].count > 0;
+                  if (!hasData && idx % step != 0 && idx != data.length - 1) {
+                    return const SizedBox.shrink();
+                  }
+                }
                 final d = data[idx].date;
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text('${d.day}.${d.month.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 10, color: _greyText)),
+                  child: Text('${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 10, color: _greyText)),
                 );
               },
             ),
@@ -533,36 +539,15 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   }
 
   // ============================================================================
-  // Interactions Section (calls from analytics)
+  // Calls Section
   // ============================================================================
 
-  Widget _buildInteractionsSection(EstablishmentOverview? overview) {
+  Widget _buildCallsSection(EstablishmentOverview? overview) {
     final callsInPeriod = overview?.calls.inPeriod ?? 0;
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Text('Взаимодействия', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-                  if (overview?.calls.changePercent != null) ...[
-                    const SizedBox(width: 8),
-                    _buildChangeChip(overview!.calls.changePercent!),
-                  ],
-                ],
-              ),
-              Text('$callsInPeriod', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildSubStatRow(title: 'Звонки', value: callsInPeriod),
-        ],
-      ),
+    return _buildStatSection(
+      title: 'Звонки',
+      value: callsInPeriod,
+      changePercent: overview?.calls.changePercent,
     );
   }
 
@@ -617,23 +602,6 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           _buildDivider(),
         ],
       ),
-    );
-  }
-
-  Widget _buildSubStatRow({required String title, required int value}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-            Text('$value', style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(height: 0.5, color: _strokeGrey),
-      ],
     );
   }
 
