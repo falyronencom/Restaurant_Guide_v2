@@ -1,6 +1,6 @@
-# Distributed Intelligence Methodology v9.2
+# Distributed Intelligence Methodology v9.3
 
-**Version:** 9.2
+**Version:** 9.3
 **Date:** March 2026
 **Status:** Active Operational Standard
 **Core Paradigm:** Co-Creative Partnership Between Human Coordination and Autonomous Agents
@@ -45,17 +45,17 @@ Observable patterns that reinforce this signal: rising uncertainty in agent resp
 
 **Protocol 6 — Three Ways to Launch an Implementer**
 
-Every Implementer session begins in one of three modes. The Coordinator's decision follows two questions:
+Every Implementer session begins in one of three modes. The Coordinator's decision follows one question and one empirical measurement:
 
-*Do I have a Discovery Report for this task?*
+*Do I have a Discovery Report (or Discovery Directive) for this task?*
 
 No → **Mode B (Autonomous Execution).** Implementer receives task description from Coordinator. Performs full cycle: Pre-scan → Discovery → Planning → Implementation. Context-intensive — agent builds understanding independently. For complex tasks (5+ files, 3+ modules), consider pausing and escalating to Trunk for proper Pre-flight Discovery.
 
-Yes → *Will this task require clean cognitive focus that outweighs the benefit of preserved context from investigation? Is independent double-verification of facts important?*
+Yes → **Mode C (Unified Execution) is the default path.** The session starts as Librarian (with Directive Coherence Check — Step 0), performs investigation, delivers Discovery Report, receives Informed Directive from Trunk, and continues as Implementer. After Discovery Report delivery, the Coordinator checks `/context`. If context consumption is within normal range (< 25% for Low-Medium tasks at 1M), the session continues. The agent retains full context from discovery — no re-reading, no orientation phase. Key caution: preserved context from Librarian phase creates an "already know" effect — the agent must maintain critical attitude toward its own findings.
 
-Yes → **Mode A (Informed Execution).** A new Implementer session receives Informed Directive + Discovery Report. Performs Quick Sanity Check (verify 2-3 key gap claims from the report), then proceeds to planning and implementation. The double verification (Discovery Report → Quick Sanity Check by a fresh session) is a structural advantage for high-complexity tasks where the cost of error is high. Recommended for tasks spanning 5+ modules or 20+ files.
+Mode A escalation → **Mode A (Informed Execution)** is activated when the Context Checkpoint after Discovery reveals anomalous consumption (> 40%), signaling High+ complexity where Cognitive Tax may degrade implementation quality. Also activated when independent double-verification is critical: production-breaking changes, data-loss migrations, security-sensitive code — where fresh eyes on the Discovery Report catch what the "already know" effect may miss. In Mode A, a new Implementer session receives Informed Directive + Discovery Report and performs Quick Sanity Check before implementation.
 
-No → **Mode C (Informed Continuation).** The same session that performed Librarian investigation receives the Informed Directive from Trunk and continues as Implementer. Performs Continuity Check (git status/diff to confirm working directory unchanged since Librarian phase), then proceeds to planning and implementation. The agent retains full context from discovery — no re-reading of files, no orientation phase. Recommended for tasks of low to medium complexity where investigation and implementation fit within one session without significant cognitive degradation. Key caution: preserved context from Librarian phase creates an "already know" effect — the agent must maintain critical attitude toward its own findings and not substitute verification with confidence.
+This inverts the previous logic: instead of "estimate complexity → choose mode → launch," the flow is "launch Mode C → measure reality → escalate if needed." This mirrors Protocol 2 (Reality Before Plan) applied to the process itself.
 
 **Protocol 7 — Recognize When a Session Has Lost Its Way**
 
@@ -88,8 +88,7 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 
 #### Starting a Leaf Session
 
-- [ ] Role decided: **Librarian** (investigation only) or **Implementer** (execution) or **Librarian→Implementer** (Mode C)
-- [ ] Mode decided: **Mode A** (Discovery Report available, new session) or **Mode B** (ad-hoc task) or **Mode C** (Librarian continues as Implementer)
+- [ ] Path decided: **Mode C** (default — Discovery Directive exists) or **Mode B** (ad-hoc task, no Trunk) or **Mode A** (pre-selected for critical double-verification)
 - [ ] Active paradigm confirmed: **Flutter mobile**, not web
 - [ ] Git working directory clean (`git status` — no uncommitted changes)
 - [ ] Backend / emulator running in Coordinator's terminal (not in agent's context)
@@ -97,18 +96,18 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 
 | Role / Mode | Effort Level |
 |-------------|-------------|
-| Librarian | Max |
+| Mode C — Librarian phase | Max |
+| Mode C — Implementer phase | High |
 | Implementer Mode A | High |
-| Implementer Mode C (after Librarian phase) | High |
 | Mode B — discovery phase | Max |
 | Mode B — implementation phase | High |
 | Simple fixes | Medium |
 
 - [ ] Launch package prepared:
-  - *Librarian:* Discovery Directive from Trunk
-  - *Implementer Mode A:* Informed Directive + Discovery Report
-  - *Implementer Mode B:* Task description + previous Semantic Handoff (if continuation)
-  - *Mode C:* Discovery Directive from Trunk (Informed Directive provided mid-session after Discovery Report)
+  - *Mode C (default):* Discovery Directive from Trunk + Protocol_Unified.md (Informed Directive provided mid-session after Discovery Report)
+  - *Mode A:* Informed Directive + Discovery Report + Protocol_Informed.md
+  - *Mode B:* Task description + Protocol_Autonomous.md + previous Semantic Handoff (if continuation)
+- [ ] Context Checkpoints planned: after Discovery Report delivery, after each Implementation Segment
 
 #### Closing a Trunk Session
 
@@ -178,9 +177,9 @@ Trunk works with strategic breadth rather than codebase detail. It does not writ
 
 Leaf sessions operate in VS Code Terminal via Claude Code Extension, with direct access to the codebase. Two specialized roles serve different purposes, and role specialization enables context-efficient workflows by separating investigation from implementation.
 
-**Librarian** is a short-lived session focused exclusively on codebase investigation. The Librarian reads files, traces data flows, and produces a Discovery Report that serves both Trunk (for directive creation) and Implementer (for navigation). Key properties: the Librarian does not write code or make commits, context is disposable (session closes after report delivery), and the Coordinator transfers the Discovery Report to both Trunk and Implementer following Protocol 3 (Pass-Through). The Librarian is always launched as Phase 2 of Pre-flight Discovery (see Section 1.2).
+**Librarian** is a role focused exclusively on codebase investigation. The Librarian reads files, traces data flows, and produces a Discovery Report that serves both Trunk (for directive creation) and Implementer (for navigation). Key properties: the Librarian does not write code or make commits, and the Coordinator transfers the Discovery Report to both Trunk and Implementer following Protocol 3 (Pass-Through). In Mode C (default), the Librarian role is the first phase of a unified session that continues as Implementer. In standalone use, the Librarian is launched as Phase 2 of Pre-flight Discovery (see Section 1.2) and context is disposable.
 
-**Implementer** is the standard Leaf session for code execution. The Implementer reads the codebase, creates and edits files, runs tests for verification, iterates autonomously on failures, and commits changes to Git with descriptive messages. Operates in Mode A (Informed) or Mode B (Autonomous) as described in Protocol 6 and detailed in Section 1.3.
+**Implementer** is the standard Leaf role for code execution. The Implementer reads the codebase, creates and edits files, runs tests for verification, iterates autonomously on failures, and commits changes to Git with descriptive messages. Operates in Mode C (unified, default), Mode A (informed, separate session), or Mode B (autonomous) as described in Protocol 6 and detailed in Section 1.3.
 
 #### Coordinator: Practices and Patterns
 
@@ -297,28 +296,33 @@ Activated when the Coordinator initiates an ad-hoc task directly with Leaf, with
 
 **Planning, Implementation, and Delivery** follow the same procedures as Mode A.
 
-#### Mode C: Informed Continuation
+#### Mode C: Unified Execution (Default Path)
 
-Activated when the Coordinator decides that the current Librarian session should continue as Implementer after receiving an Informed Directive from Trunk. Introduced in v9.2 based on the Twin Task experiment, which demonstrated that combining Librarian and Implementer in a single session (with 1M context) produces identical code quality to Mode A while reducing coordinator overhead.
+**Mode C is the default execution path** when a Discovery Directive exists. The decision to use Mode C is not made upfront based on complexity estimates — the session starts as Mode C, and the Coordinator decides whether to escalate to Mode A based on empirical context measurement after Discovery.
 
-**Phase sequence:** Discovery (as Librarian) → Discovery Report → *pause for Trunk* → Receive Informed Directive → Continuity Check → Planning → Implementation → Delivery
+Introduced in v9.2 based on the Twin Task experiment. Elevated to default in v9.3 based on empirical data from Partner Analytics session, which demonstrated that at 1M context, Discovery + full Implementation consistently fits within a single session for Low-Medium complexity tasks.
+
+**Phase sequence:** Directive Coherence Check (Step 0) → Discovery (as Librarian) → Discovery Report → Context Checkpoint → *pause for Trunk* → Receive Informed Directive → Continuity Check → Planning → Implementation → Delivery
+
+**Directive Coherence Check (Step 0)** is performed before investigation begins. The agent analyzes the Discovery Directive for internal coherence: Mission↔Questions coverage, search scope completeness, absence verification instructions, and cross-question gaps. Findings are reported to Coordinator with proposed additions before proceeding. For simple directives (2-3 questions, single module), this step is skipped. Full protocol in Protocol_Unified.md Section 2.
 
 **Discovery (as Librarian)** follows the standard Librarian protocol — investigating the codebase, answering Discovery Directive questions, and producing a Discovery Report. The agent operates under Librarian constraints: no file modifications, no commits. Discovery Report is delivered to the Coordinator for transfer to Trunk.
 
-**Pause for Trunk** is the critical mid-session transition. The session waits while the Coordinator transfers the Discovery Report to Trunk and receives back an Informed Directive. This is a new pattern — in Mode A, the session would close here and a new one would open.
+**Context Checkpoint** is the empirical decision point. The Coordinator requests `/context` after Discovery Report delivery. If context consumption is within normal range (< 25% at 1M for Low-Medium tasks), the session continues as Implementer. If consumption is anomalous (> 40%), this signals High+ complexity where Cognitive Tax may degrade implementation quality — the Coordinator considers transitioning to Mode A. Context measurement is recorded in the session's final report for calibration data.
+
+**Pause for Trunk:** The session waits while the Coordinator transfers the Discovery Report to Trunk and receives back an Informed Directive.
 
 **Continuity Check** replaces Mode A's Quick Sanity Check. Since the agent just completed discovery in the same session, full re-verification is unnecessary. Instead, the agent runs `git status` and `git diff` to confirm the working directory is unchanged since the Librarian phase. If no changes detected — proceed with implementation using the full context from discovery. If changes detected — re-read affected files before continuing.
 
 **Planning, Implementation, and Delivery** follow Mode A procedures. The key difference: the Informed Directive serves not as a "map of territory" (the agent already knows the territory from its own investigation) but as a **checklist and scope limiter** — "do this, don't touch that." The Navigation section of the Discovery Report is already internalized.
 
-**When to prefer Mode C over Mode A:**
+**When Mode A is activated instead:**
 
-| Factor | Mode C preferred | Mode A preferred |
-|--------|-----------------|-----------------|
-| Task complexity | Low to medium (2-4 modules) | High (5+ modules, 20+ files) |
-| Context budget | Discovery + implementation fit in one session | Discovery consumed significant context |
-| Verification needs | Standard — single-pass sufficient | Critical — independent double-verification valuable |
-| Coordinator time | Limited — fewer handoff steps preferred | Available — quality over speed |
+| Trigger | Rationale |
+|---------|-----------|
+| Context Checkpoint > 40% after Discovery | High Cognitive Tax — fresh session preserves implementation quality |
+| Production-breaking changes, data-loss migrations | Independent double-verification catches what "already know" effect may miss |
+| Security-sensitive code modifications | Fresh eyes on Discovery Report provide structural safety |
 
 #### Proactive Scope Extension
 
@@ -611,11 +615,22 @@ Before each Leaf session, estimating expected complexity helps in choosing the r
 | Medium | 4-6 files, two modules, minor integration | 50-70% |
 | High | 5+ files, 3+ modules, cross-layer changes | 70-90% |
 
-For High complexity tasks, consider Multi-Session Segmentation rather than attempting completion in a single session.
+For High complexity tasks, consider Multi-Session Segmentation — but at 1M context, the reasons for segmentation have fundamentally changed (see below).
 
 #### Multi-Session Work (Checkpoint Continuation Protocol)
 
 For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation Protocol provides structured segmentation.
+
+**Segmentation rationale at 1M context:** With 200K context, segmentation was a survival necessity — Discovery + Implementation physically did not fit in one session for Medium+ tasks. With 1M context, the navigational constraint is largely eliminated. Segmentation becomes an **architectural choice**, not a forced measure. Valid reasons to segment at 1M:
+
+| Reason | Example | Why it matters |
+|--------|---------|---------------|
+| Independent verification between layers | Backend → curl test → Mobile | Catches integration issues before building on them |
+| Different technology stacks | Node.js backend → Flutter mobile | Different "cognitive mode" benefits from fresh context |
+| Strategic review point | Trunk analyzes Segment A before formulating Segment B | Coordinator maintains architectural control |
+| Empirical: Context Checkpoint > 50% | `/context` shows high consumption mid-task | Cognitive Tax risk — fresh session for remaining work |
+
+If the **only** reason for segmentation is "won't fit in context," at 1M this reason almost always disappears. If the reason is quality-driven (verification, review, cognitive mode switching), segmentation is justified regardless of context availability.
 
 **Session Execution Header** (added to directives for multi-session work):
 
@@ -626,6 +641,7 @@ For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation
 **Total Segments:** [N]
 **Current Segment:** [A / B / C / ...]
 **Assigned Phases:** [List specific phases for this segment]
+**Segmentation Rationale:** [Why this task is segmented — verification / stack switch / strategic review]
 
 ### Segment Execution Rules
 
@@ -640,8 +656,8 @@ For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation
 | Complexity | Segments | Phases per Segment |
 |------------|----------|-------------------|
 | Medium-High | 2 | 3-4 phases each |
-| High | 3 | 2-3 phases each |
-| Very High | 4+ | 2 phases each |
+| High | 2-3 | 2-4 phases each |
+| Very High | 3+ | 2-3 phases each |
 
 #### Context Management Patterns
 
@@ -651,29 +667,56 @@ For complex phases requiring multiple Leaf sessions, the Checkpoint Continuation
 
 **Cognitive Tax (Intellectual)** — cognitive resources spent on holding discovered relationships, patterns, and dependencies in active focus. This component does not scale with context window size — it depends on the inherent complexity of the code being analyzed, not the amount of context available. A session analyzing 20 interconnected files experiences the same Cognitive Tax whether the context window is 200K or 1M.
 
-In Mode A (classic protocol), the Librarian absorbs both taxes, and the Implementer begins with full cognitive capacity in a clean session. In Mode C (hybrid), the navigational tax transforms into an advantage (the agent already "knows" the territory), but the Cognitive Tax persists in the session. This distinction is the primary factor when choosing between Mode A and Mode C for complex tasks.
+In Mode A (classic protocol), the Librarian absorbs both taxes, and the Implementer begins with full cognitive capacity in a clean session. In Mode C (unified), the navigational tax transforms into an advantage (the agent already "knows" the territory), but the Cognitive Tax persists in the session. This distinction is the primary factor when choosing between continuing in Mode C and escalating to Mode A at the Context Checkpoint.
 
 Pre-flight Discovery addresses both taxes structurally — the Librarian pays them in disposable context, and the Implementer receives compressed results. In Mode C, navigational tax is paid once and retained as an asset; Cognitive Tax is the factor to monitor.
 
-**Practical Context Patterns:**
+#### Context Checkpoints (Standard Practice)
+
+Context Checkpoints replace intuitive context management with data-driven decisions. The Coordinator requests `/context` at three defined points:
+
+1. **After Discovery Report delivery** — decides Mode C continuation vs Mode A escalation
+2. **After each Implementation Segment** — decides whether to continue in the same session or open a new one
+3. **After task completion** — calibration data for methodology tables
+
+Each measurement is recorded in the session's final report (Completion Report or Semantic Handoff) as Context Telemetry. Over time, accumulated measurements refine the calibration tables below.
+
+#### Calibration Tables
+
+**End-to-end session context (empirical):**
+
+| Category | 200K (legacy data) | 1M (empirical, v9.3) |
+|----------|-------------------|----------------------|
+| Low complexity (Discovery + Implementation) | 60-80% | 5-10% |
+| Medium complexity (Discovery + Implementation) | Does not fit | 15-25% |
+| Medium complexity (Discovery + 2 Segments) | Two sessions required | 15-25% in one session |
+| High complexity | Three+ sessions | 30-50% (estimated, needs measurement) |
+
+**Important:** These figures reflect navigational consumption (Discovery Tax), not Cognitive Tax. A task consuming only 15% of context may still be cognitively demanding if it involves 20 interconnected files. The Coordinator must separately assess cognitive complexity — Context Checkpoints measure the navigational dimension only.
+
+**Calibration data sources:** Twin Task "Клуб" experiment (v9.2), Partner Analytics session (v9.3). High complexity row is extrapolated — empirical measurement pending.
+
+**Per-phase context patterns:**
 
 | Scenario | Context Used | What Happens |
 |----------|-------------|--------------|
 | Mode A: Sanity Check + Planning | 10-20% | Implementer uses Discovery Report |
 | Mode B: Pre-scan + Discovery | 50-80% (200K) / 10-16% (1M) | Full autonomous discovery |
-| Mode C: Discovery + Implementation | 30-50% (1M) | Combined workflow, context retained |
-| Implementation + Testing | 20-40% | Code changes and verification |
+| Mode C: Discovery + Implementation | 15-25% (1M, Medium) | Unified workflow, context retained |
+| Implementation + Testing | 10-20% (1M) | Code changes and verification |
 | Handoff or Commit | 5% | Semantic Handoff or commit |
 
 **Coordinator Decision Matrix:**
 
 | Observation | Action |
 |-------------|--------|
-| Implementer working from Discovery Report (Mode A) | Normal operation — context efficient |
-| Implementer in Mode B, building understanding | Do not interrupt — discovery cannot be accelerated |
+| Context Checkpoint after Discovery: < 25% | Continue as Implementer (default) |
+| Context Checkpoint after Discovery: 25-40% | Continue with awareness, checkpoint again after planning |
+| Context Checkpoint after Discovery: > 40% | Consider Mode A escalation |
+| Context Checkpoint after Segment: < 50% total | Continue with next segment |
+| Context Checkpoint after Segment: > 50% total | Handoff to new session |
 | Solution proposed, tests pass | Allow commit and report |
 | Solution proposed, tests fail, context approaching limit | Signal handoff |
-| Context at limit, no solution yet | Signal handoff immediately |
 
 ---
 
@@ -722,6 +765,8 @@ If a bug is not resolved by the time the session shows terminal degradation sign
 **Documentation Hygiene.** Leaf sessions remove temporary analysis files, debug logs, and scratch work before closing. Any update to methodology documentation must be committed to the Git repository AND updated in Claude Project Knowledge — this dual sync ensures both Trunk (browser) and Leaf (IDE) sessions operate from synchronized understanding.
 
 **Living Document.** This methodology evolves through operational practice. Changes address real problems encountered in actual development and are tested on real features before permanent adoption. Theoretical protocols that are not used in practice get simplified or removed. As the project grows, the methodology scales: specialized directive templates, domain-specific troubleshooting patterns, and reusable component libraries emerge from practice, not from pre-planning.
+
+**Calibration Data Expires With Infrastructure.** All empirical measurements in this methodology (context consumption percentages, session capacity estimates, segmentation thresholds) are calibrated against specific infrastructure: model version, context window size, tooling capabilities. When infrastructure changes — a new model, a larger context window (2M, 5M), different tooling — calibration data becomes unreliable and must be re-measured empirically before trusting the existing tables. The methodology architecture must support **recalibration without restructuring**: tables have clear data sources, measurements are recorded in session reports via Context Telemetry, and the Calibration Tables section (1.5) is designed for column addition rather than rewrite. The transition from 200K to 1M invalidated all context estimates in a single day — this will happen again.
 
 ---
 
@@ -1036,6 +1081,19 @@ All code produced in the co-creative process is expected to be production-ready.
 ---
 
 ## Changelog
+
+### v9.3 (March 2026)
+
+Empirical methodology update based on accumulated data from two 1M context sessions: Twin Task "Клуб" (v9.2) and Partner Analytics Enhancement. Shifts methodology from forecast-based to data-driven session management.
+
+- **Mode C elevated to default execution path (Protocol 6).** Instead of pre-selecting a mode based on complexity estimates, sessions start as Mode C and the Coordinator decides whether to escalate to Mode A based on empirical context measurement after Discovery. This inverts the previous logic: "launch Mode C → measure reality → escalate if needed" replaces "estimate complexity → choose mode → launch." Mirrors Protocol 2 (Reality Before Plan) applied to the process itself.
+- **Protocol_Unified.md created** as the Leaf execution protocol for Mode C sessions. Contains: Directive Coherence Check (Step 0, formalized from Partner Analytics session), Librarian phase, Context Checkpoint decision point, Continuity Check, Implementer phase, Context Telemetry in reports. Companion to Protocol_Informed.md (Mode A) and Protocol_Autonomous.md (Mode B).
+- **Context Checkpoints formalized as standard practice (Section 1.5).** `/context` measurement at three defined points: after Discovery Report (Mode C vs Mode A decision), after each Implementation Segment (continue vs handoff), after task completion (calibration data). Transforms context management from "intuition + safety margin" to data-driven process.
+- **Calibration Tables added with 1M column (Section 1.5).** Empirical data: Low complexity 5-10%, Medium 15-25%, Medium+2 Segments 15-25% in one session, High 30-50% (estimated). Explicit warning that these figures reflect navigational consumption only — Cognitive Tax requires separate assessment.
+- **Multi-Session Segmentation reconsidered (Section 1.5).** At 1M, segmentation becomes an architectural choice, not a survival necessity. Valid reasons: independent verification between layers, different technology stacks, strategic review points, empirical context overload. "Won't fit in context" is no longer a valid standalone reason at 1M.
+- **Mode A scope narrowed (Section 1.3).** Mode A remains valid for two specific scenarios: (1) independent double-verification critical (production-breaking changes, data-loss migrations, security-sensitive code), (2) Discovery consumed > 40% context (anomalously heavy, signaling High+ Cognitive Tax).
+- **Calibration Data Expiry principle added (Section 1.7).** All empirical measurements are calibrated against specific infrastructure. Infrastructure changes (new model, larger context window) invalidate calibration data — methodology architecture must support recalibration without restructuring.
+- **Coordinator checklist updated** with Protocol_Unified.md as launch package for Mode C, Context Checkpoints as standard practice.
 
 ### v9.2 (March 2026)
 

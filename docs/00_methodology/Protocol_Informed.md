@@ -3,7 +3,7 @@
 
 **Context:** This protocol applies when a **new Implementer session** receives an **Informed Directive** from Trunk — a directive created after Pre-flight Discovery, based on real codebase state via Semantic Map from Librarian.
 
-**Applies to:** Mode A (Informed Execution) only. For Mode C (Informed Continuation), the workflow is defined in Methodology v9.2 Section 1.3 — a separate protocol is not needed because the agent retains context from its own Librarian phase.
+**Applies to:** Mode A (Informed Execution) only. For Mode C (Unified Execution), see Protocol_Unified.md — the default execution path with its own protocol. Mode A is activated when Context Checkpoint after Discovery signals anomalous consumption (> 40%) or when independent double-verification is critical.
 
 **Key Assumption:** Discovery phase is already complete. Trunk has seen reality through Librarian's report. Directive reflects actual codebase state.
 
@@ -346,8 +346,11 @@ Request: [What you need from coordinator]
 
 ## Changelog
 
+### v1.4.2 (March 2026)
+- **Mode C reference updated:** Mode C now has its own protocol (Protocol_Unified.md v1.0). Header updated to reference Protocol_Unified.md instead of Methodology Section 1.3. Mode A activation criteria clarified (Context Checkpoint > 40% or critical double-verification).
+
 ### v1.4.1 (March 2026)
-- **Scope clarified:** Protocol explicitly scoped to Mode A only. Mode C workflow is defined in Methodology v9.2 Section 1.3 and does not require a separate execution protocol.
+- **Scope clarified:** Protocol explicitly scoped to Mode A only. Mode C workflow was defined in Methodology v9.2 Section 1.3.
 - **Header updated** with "Applies to" field referencing Mode A and pointing to Methodology for Mode C.
 
 ### v1.4 (March 2026)
