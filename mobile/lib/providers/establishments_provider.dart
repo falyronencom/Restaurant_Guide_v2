@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
@@ -46,10 +48,6 @@ class EstablishmentsProvider with ChangeNotifier {
   final EstablishmentsService _service;
   final LocationService _locationService = LocationService();
 
-  // Default coordinates for Minsk city center
-  static const double _defaultLatitude = 53.9006;
-  static const double _defaultLongitude = 27.5590;
-
   // Search results state
   List<Establishment> _establishments = [];
   PaginationMeta? _paginationMeta;
@@ -57,9 +55,12 @@ class EstablishmentsProvider with ChangeNotifier {
   bool _isLoadingMore = false;
   String? _error;
 
-  // User location (null = use default Minsk coordinates)
+  // User location (null = no GPS, triggers searchWithoutLocation)
   double? _userLatitude;
   double? _userLongitude;
+
+  // Geolocation banner: show once per session when GPS denied
+  bool _hasShownLocationBanner = false;
 
   // Sort state
   SortOption _currentSort = SortOption.rating;
@@ -216,9 +217,15 @@ class EstablishmentsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Use user location if available, otherwise default to Minsk center
-      final latitude = _userLatitude ?? _defaultLatitude;
-      final longitude = _userLongitude ?? _defaultLongitude;
+      // Use real GPS coordinates if available, otherwise null
+      // (null triggers searchWithoutLocation on backend)
+      final latitude = _userLatitude;
+      final longitude = _userLongitude;
+
+      // If no GPS and distance sort selected, fall back to rating
+      final effectiveSort = (!hasRealLocation && _currentSort == SortOption.distance)
+          ? SortOption.rating
+          : _currentSort;
 
       final result = await _service.searchEstablishments(
         page: page,
@@ -234,9 +241,9 @@ class EstablishmentsProvider with ChangeNotifier {
             : null,
         latitude: latitude,
         longitude: longitude,
-        maxDistance: _distanceFilter.toMeters()?.toDouble(),
+        maxDistance: hasRealLocation ? _distanceFilter.toMeters()?.toDouble() : null,
         search: _searchQuery,
-        sortBy: _currentSort.toApiValue(),
+        sortBy: effectiveSort.toApiValue(),
         hoursFilter: _hoursFilter?.apiValue,
         features: _amenityFilters.isNotEmpty
             ? _amenityFilters.toList()
@@ -293,7 +300,6 @@ class EstablishmentsProvider with ChangeNotifier {
   // ============================================================================
 
   /// Set user location for distance-based search
-  /// If not set, defaults to Minsk city center
   void setUserLocation(double? latitude, double? longitude) {
     _userLatitude = latitude;
     _userLongitude = longitude;
@@ -302,21 +308,47 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Fetch user's GPS location and update state
   Future<bool> fetchUserLocation() async {
-    print('DEBUG: fetchUserLocation() called');
     final position = await _locationService.getCurrentPosition();
     if (position != null) {
-      print('DEBUG: GPS position received: ${position.latitude}, ${position.longitude}');
       setUserLocation(position.latitude, position.longitude);
       return true;
     }
-    print('DEBUG: GPS position is NULL - permission denied or unavailable');
     return false;
   }
 
-  /// Set city filter
+  /// Set city filter and persist to SharedPreferences
   void setCity(String? city) {
     _selectedCity = city;
     notifyListeners();
+    // Persist asynchronously (fire-and-forget)
+    if (city != null) {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString(BelarusCities.persistenceKey, city);
+      });
+    }
+  }
+
+  /// Load persisted city from SharedPreferences.
+  /// Returns true if a saved city was found.
+  Future<bool> loadPersistedCity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(BelarusCities.persistenceKey);
+    if (saved != null) {
+      _selectedCity = saved;
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  // --- Geolocation banner state ---
+
+  /// Whether the "enable location" banner has been shown this session
+  bool get hasShownLocationBanner => _hasShownLocationBanner;
+
+  /// Mark banner as shown for this session
+  void markLocationBannerShown() {
+    _hasShownLocationBanner = true;
   }
 
   /// Set search query
