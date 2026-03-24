@@ -139,6 +139,7 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
 
   if (!includeDeleted) {
     conditions.push('r.is_deleted = false');
+    conditions.push('r.is_visible = true');
   }
   if (dateFrom) {
     conditions.push(`r.created_at >= $${paramIdx}`);
@@ -209,6 +210,7 @@ export const countReviewsByEstablishment = async (establishmentId, options = {})
 
   if (!includeDeleted) {
     conditions.push('is_deleted = false');
+    conditions.push('is_visible = true');
   }
   if (dateFrom) {
     conditions.push(`created_at >= $${paramIdx}`);
@@ -277,7 +279,7 @@ export const findReviewsByUser = async (userId, options = {}) => {
     FROM reviews r
     JOIN establishments e ON r.establishment_id = e.id
     WHERE r.user_id = $1
-    ${includeDeleted ? '' : 'AND r.is_deleted = false'}
+    ${includeDeleted ? '' : 'AND r.is_deleted = false AND r.is_visible = true'}
     ORDER BY r.created_at DESC
     LIMIT $2 OFFSET $3
   `;
@@ -307,7 +309,7 @@ export const countReviewsByUser = async (userId, includeDeleted = false) => {
     SELECT COUNT(*) as count
     FROM reviews
     WHERE user_id = $1
-    ${includeDeleted ? '' : 'AND is_deleted = false'}
+    ${includeDeleted ? '' : 'AND is_deleted = false AND is_visible = true'}
   `;
 
   try {
