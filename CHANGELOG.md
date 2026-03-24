@@ -8,6 +8,20 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Март 2026 — Production Deployment + TestFlight
 
+#### Март 24, 2026 — Ranking Core: Bayesian Weighted Rating, Completeness Score, Geolocation Fix
+- **Discovery**: Full map of search algorithm — 4 query paths, buildOrderByClause, mobile geolocation flow (8 questions + 4 peripheral)
+- **Bayesian weighted rating**: Replaced two-tier sort (caused 3.0★×4 > 5.0★×2 bug) with `(v×R + 5×3.5)/(v+5)` — industry-standard formula per monetization strategy v0.5 §2.5
+- **Completeness score**: `calculateCompletenessScore()` (100pts max: description 25, price 25, attributes 20, phone 15, email 10, website 5), integrated into create/update paths
+- **Migration 018**: Backfill base_score for all 92 establishments (production applied)
+- **Price NULL fix**: `ELSE 5` — establishments without price_range sort last in both directions
+- **Geolocation "тихий Минск" fix**: Removed hardcoded Minsk fallback coordinates — GPS denied now activates searchWithoutLocation path
+- **City persistence**: SharedPreferences — selected city survives app restart
+- **Smart defaults**: GPS on → sort by distance, GPS off → sort by rating, distance sort/filter greyed out without GPS
+- **Location banner**: "Включите геолокацию" once per session, opens app settings on deniedForever
+- **City list deduplicated**: `config/cities.dart` — single source of truth (was in 2 files)
+- **Backend tests**: 46 new (buildOrderByClause 21 + completenessScore 20 + updated 5), 481 unit tests passing
+- **Context telemetry**: Discovery 14% → Final ~20% of 1M context
+
 #### Март 22, 2026 — Partner Analytics: Activate Ghost Table, Time-Series Endpoints, Mobile Charts
 - **Discovery**: Full audit of partner analytics infrastructure (8 questions + 4 peripheral scan)
 - **Migration 017**: Added `call_count` column + composite index to `establishment_analytics` (ghost table activated)
