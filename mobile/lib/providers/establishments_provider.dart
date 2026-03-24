@@ -306,11 +306,18 @@ class EstablishmentsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch user's GPS location and update state
+  /// Fetch user's GPS location and update state.
+  /// When GPS is granted, switches default sort to distance.
   Future<bool> fetchUserLocation() async {
     final position = await _locationService.getCurrentPosition();
     if (position != null) {
       setUserLocation(position.latitude, position.longitude);
+      // Switch to distance sort when GPS becomes available
+      // (only if user hasn't manually changed sort)
+      if (_currentSort == SortOption.rating) {
+        _currentSort = SortOption.distance;
+        notifyListeners();
+      }
       return true;
     }
     return false;
