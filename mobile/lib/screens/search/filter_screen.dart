@@ -127,17 +127,21 @@ class FilterScreen extends StatelessWidget {
   }
 
   /// Distance filter section (single selection with checkboxes)
+  /// Disabled when GPS is not available
   Widget _buildDistanceSection(
       BuildContext context, EstablishmentsProvider provider) {
+    final isDisabled = !provider.hasRealLocation;
+
     return _FilterSection(
-      title: 'Расстояние от вас',
+      title: isDisabled ? 'Расстояние от вас (нужна геолокация)' : 'Расстояние от вас',
       child: Column(
         children: DistanceOption.values.map((option) {
-          final isSelected = provider.distanceFilter == option;
+          final isSelected = !isDisabled && provider.distanceFilter == option;
           return _DistanceOptionTile(
             label: option.displayLabel,
             isSelected: isSelected,
-            onTap: () => provider.setDistanceFilter(option),
+            onTap: isDisabled ? () {} : () => provider.setDistanceFilter(option),
+            isDisabled: isDisabled,
           );
         }).toList(),
       ),
@@ -365,17 +369,19 @@ class _DistanceOptionTile extends StatelessWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  final bool isDisabled;
 
   const _DistanceOptionTile({
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.isDisabled = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: isDisabled ? null : onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppDimensions.paddingS),
         child: Row(
@@ -383,9 +389,9 @@ class _DistanceOptionTile extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                color: AppTheme.textPrimary,
+                color: isDisabled ? Colors.grey.shade400 : AppTheme.textPrimary,
               ),
             ),
             Container(
