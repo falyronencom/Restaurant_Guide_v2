@@ -506,15 +506,12 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
           TextButton(
             onPressed: () async {
               provider.markLocationBannerShown();
-              // If permission was permanently denied, open app settings
-              final isDeniedForever = await LocationService().isPermissionDeniedForever();
-              if (isDeniedForever) {
-                await LocationService().openSettings();
+              // Try to get GPS — if fails, open app settings
+              final granted = await provider.fetchUserLocation();
+              if (granted && mounted) {
+                provider.searchEstablishments();
               } else {
-                final granted = await provider.fetchUserLocation();
-                if (granted && mounted) {
-                  provider.searchEstablishments();
-                }
+                await LocationService().openSettings();
               }
             },
             style: TextButton.styleFrom(
