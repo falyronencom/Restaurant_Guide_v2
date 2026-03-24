@@ -78,6 +78,17 @@ class LocationService {
     }
   }
 
+  /// Check if permission is permanently denied (user must go to Settings)
+  Future<bool> isPermissionDeniedForever() async {
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.deniedForever;
+  }
+
+  /// Open device app settings so user can grant location permission
+  Future<bool> openSettings() async {
+    return Geolocator.openAppSettings();
+  }
+
   /// Calculate distance between two points in kilometers
   double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
     return Geolocator.distanceBetween(lat1, lng1, lat2, lng2) / 1000;
