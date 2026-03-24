@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
@@ -29,16 +30,8 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
   static const Color _darkOrange = AppTheme.primaryOrangeDark;
 
-  // Belarus cities with regions (Figma design)
-  static const List<Map<String, String>> _citiesWithRegions = [
-    {'city': 'Минск', 'region': 'Минская область'},
-    {'city': 'Гродно', 'region': 'Гродненская область'},
-    {'city': 'Брест', 'region': 'Брестская область'},
-    {'city': 'Гомель', 'region': 'Гомельская область'},
-    {'city': 'Витебск', 'region': 'Витебская область'},
-    {'city': 'Могилёв', 'region': 'Могилёвская область'},
-    {'city': 'Бобруйск', 'region': 'Могилёвская область'},
-  ];
+  // City list from shared constant
+  static const _citiesWithRegions = BelarusCities.citiesWithRegions;
 
   @override
   void initState() {
@@ -411,14 +404,20 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
               ),
               const Divider(height: 1),
               // Sort options with checkboxes
-              ...SortOption.values.map((option) => _buildSortOption(
+              ...SortOption.values.map((option) {
+                final isDisabled = option == SortOption.distance && !provider.hasRealLocation;
+                return _buildSortOption(
                     option: option,
                     isSelected: provider.currentSort == option,
-                    onTap: () {
-                      provider.setSort(option);
-                      Navigator.of(context).pop();
-                    },
-                  )),
+                    isDisabled: isDisabled,
+                    onTap: isDisabled
+                        ? null
+                        : () {
+                            provider.setSort(option);
+                            Navigator.of(context).pop();
+                          },
+                  );
+              }),
               const SizedBox(height: AppDimensions.paddingM),
             ],
           ),
@@ -431,8 +430,14 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   Widget _buildSortOption({
     required SortOption option,
     required bool isSelected,
-    required VoidCallback onTap,
+    bool isDisabled = false,
+    VoidCallback? onTap,
   }) {
+    final textColor = isDisabled ? Colors.grey.shade400 : null;
+    final label = isDisabled
+        ? '${option.displayLabel} (нужна геолокация)'
+        : option.displayLabel;
+
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -444,22 +449,26 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              option.displayLabel,
-              style: Theme.of(context).textTheme.bodyLarge,
+              label,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: textColor,
+                  ),
             ),
             // Checkbox style indicator
             Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: isSelected ? AppTheme.textPrimary : Colors.transparent,
+                color: isSelected && !isDisabled ? AppTheme.textPrimary : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
                 border: Border.all(
-                  color: isSelected ? AppTheme.textPrimary : Colors.grey.shade400,
+                  color: isDisabled
+                      ? Colors.grey.shade300
+                      : (isSelected ? AppTheme.textPrimary : Colors.grey.shade400),
                   width: 1.5,
                 ),
               ),
-              child: isSelected
+              child: isSelected && !isDisabled
                   ? const Icon(
                       Icons.check,
                       size: 16,
@@ -469,6 +478,55 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Build non-blocking banner suggesting to enable geolocation
+  Widget _buildLocationBanner(EstablishmentsProvider provider) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryOrangeLight.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.primaryOrangeLight, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_off, size: 20, color: AppTheme.primaryOrangeDark),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Включите геолокацию, чтобы видеть заведения рядом',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () async {
+              provider.markLocationBannerShown();
+              final granted = await provider.fetchUserLocation();
+              if (granted && mounted) {
+                provider.searchEstablishments();
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.primaryOrangeDark,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Включить', style: TextStyle(fontSize: 13)),
+          ),
+          IconButton(
+            onPressed: () => provider.markLocationBannerShown(),
+            icon: const Icon(Icons.close, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            color: Colors.grey.shade500,
+          ),
+        ],
       ),
     );
   }
@@ -553,6 +611,12 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   ),
                 ),
               ),
+
+              // Location banner (once per session, only when GPS denied)
+              if (!provider.hasRealLocation && !provider.hasShownLocationBanner)
+                SliverToBoxAdapter(
+                  child: _buildLocationBanner(provider),
+                ),
 
               // Results list
               SliverList(

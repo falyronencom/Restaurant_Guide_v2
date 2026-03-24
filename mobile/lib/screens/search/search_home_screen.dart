@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
@@ -27,32 +28,32 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   static const Color _secondaryOrange = AppTheme.primaryOrangeLight;
   static const Color _darkOrange = AppTheme.primaryOrangeDark;
 
-  // Belarus cities with regions (Figma design)
-  static const List<Map<String, String>> _citiesWithRegions = [
-    {'city': 'Минск', 'region': 'Минская область'},
-    {'city': 'Гродно', 'region': 'Гродненская область'},
-    {'city': 'Брест', 'region': 'Брестская область'},
-    {'city': 'Гомель', 'region': 'Гомельская область'},
-    {'city': 'Витебск', 'region': 'Витебская область'},
-    {'city': 'Могилёв', 'region': 'Могилёвская область'},
-    {'city': 'Бобруйск', 'region': 'Могилёвская область'},
-  ];
-
   @override
   void initState() {
     super.initState();
-    // Initialize search query from provider if exists
     final provider = context.read<EstablishmentsProvider>();
     _searchController.text = provider.searchQuery ?? '';
 
-    // Set default city if not set (deferred to avoid calling during build)
-    // Also request user location for distance-based features
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 1. Load persisted city or set default
       if (provider.selectedCity == null) {
-        provider.setCity('Минск');
+        final hasSaved = await provider.loadPersistedCity();
+        if (!hasSaved) {
+          provider.setCity(BelarusCities.defaultCity);
+        }
       }
-      // Request GPS location (shows permission dialog on first launch)
-      provider.fetchUserLocation();
+
+      // 2. Request GPS location
+      if (!mounted) return;
+      final gpsGranted = await provider.fetchUserLocation();
+
+      // 3. If GPS denied and no city was persisted, show city picker
+      if (!gpsGranted && mounted) {
+        final hadSavedCity = await provider.loadPersistedCity();
+        if (!hadSavedCity) {
+          _showCityPicker();
+        }
+      }
     });
   }
 
@@ -158,9 +159,9 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemCount: _citiesWithRegions.length,
+                    itemCount: BelarusCities.citiesWithRegions.length,
                     itemBuilder: (context, index) {
-                      final cityData = _citiesWithRegions[index];
+                      final cityData = BelarusCities.citiesWithRegions[index];
                       final city = cityData['city']!;
                       final region = cityData['region']!;
                       final isSelected = tempSelectedCity == city;
