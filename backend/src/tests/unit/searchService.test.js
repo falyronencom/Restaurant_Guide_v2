@@ -358,7 +358,7 @@ describe('searchService', () => {
       expect(result.establishments[0].distance_km).toBe(2.5);
     });
 
-    test('should order results with two-tier rating sort', async () => {
+    test('should order results with Bayesian weighted rating', async () => {
       pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
       pool.query.mockResolvedValue({ rows: [{ total: '0' }], rowCount: 1 });
 
@@ -366,8 +366,9 @@ describe('searchService', () => {
 
       const query = pool.query.mock.calls[0][0];
       // Default sort is 'rating' with hasDistance=true (searchByRadius)
-      expect(query).toContain('CASE WHEN ne.review_count >= 3 THEN 0 ELSE 1 END ASC');
-      expect(query).toContain('ne.average_rating DESC NULLS LAST');
+      // Bayesian formula: (review_count * average_rating + 5 * 3.5) / (review_count + 5)
+      expect(query).toContain('ne.review_count * ne.average_rating');
+      expect(query).toContain('5 * 3.5');
       expect(query).toContain('ne.review_count DESC');
       expect(query).toContain('distance_km ASC');
       expect(query).toContain('ne.name ASC');

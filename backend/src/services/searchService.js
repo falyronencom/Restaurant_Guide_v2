@@ -113,68 +113,77 @@ const CLOSE_TIME_SQL = `
 `;
 
 /**
- * Minimum number of reviews required for an establishment to be
- * in the "trusted rating" tier. Establishments below this threshold
- * sort after those above it when sorting by rating.
+ * Bayesian prior: number of "virtual" reviews at the prior rating.
+ * Until an establishment accumulates this many real reviews, its
+ * weighted rating is pulled toward BAYESIAN_PRIOR_RATING.
+ * m=5: standard industry practice (IMDB, Amazon, Yelp).
  */
-const RATING_SORT_MIN_REVIEWS = 3;
+const BAYESIAN_PRIOR_COUNT = 5;
+
+/**
+ * Conservative prior rating. Not the platform average (~4.2),
+ * but a deliberately lower constant that creates incentive to
+ * collect reviews (each real review above 3.5 raises the weighted score).
+ */
+const BAYESIAN_PRIOR_RATING = 3.5;
 
 /**
  * Helper: Build ORDER BY clause based on sort parameter
  *
- * Two-tier rating: establishments with >= RATING_SORT_MIN_REVIEWS reviews
- * sort in tier 0 (top), others in tier 1. Within each tier, normal
- * sort order applies. This prevents a 5.0★×1 review from outranking
- * a 4.8★×200 reviews.
+ * Uses Bayesian weighted rating instead of raw average_rating:
+ *   weighted = (review_count × average_rating + m × C) / (review_count + m)
+ * This prevents 5.0★×1 from outranking 4.8★×200, while avoiding
+ * the hard-wall problem of two-tier sorting (3.0★×4 > 5.0★×2).
  *
  * @param {string} sortBy - Sort option (rating, price_asc, price_desc, distance)
  * @param {boolean} hasDistance - Whether distance_km column is available
  * @returns {string} SQL ORDER BY clause
  */
 function buildOrderByClause(sortBy, hasDistance = false) {
-  // Convert price range to numeric for sorting — NULL/missing sorts last (ELSE 4)
+  // Convert price range to numeric for sorting — NULL/missing sorts last (ELSE 5)
   const priceToNum = `(CASE e.price_range
     WHEN '$' THEN 1
     WHEN '$$' THEN 2
     WHEN '$$$' THEN 3
-    ELSE 4
+    WHEN '$$$$' THEN 4
+    ELSE 5
   END)`;
 
-  // Two-tier rating: trusted (3+ reviews) first, then unverified
-  const twoTierRating = `CASE WHEN e.review_count >= ${RATING_SORT_MIN_REVIEWS} THEN 0 ELSE 1 END ASC`;
+  // Bayesian weighted rating: plavnaya formula bez zhyostkikh porogov
+  const weightedRating = `(e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT})`;
 
   switch (sortBy) {
     case 'rating':
       if (hasDistance) {
-        return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, distance_km ASC, e.name ASC`;
+        return `${weightedRating} DESC, e.review_count DESC, distance_km ASC, e.name ASC`;
       }
-      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
+      return `${weightedRating} DESC, e.review_count DESC, e.base_score DESC, e.name ASC`;
 
     case 'price_asc':
       if (hasDistance) {
-        return `${priceToNum} ASC, distance_km ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+        return `${priceToNum} ASC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} ASC, e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} ASC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'price_desc':
       if (hasDistance) {
-        return `${priceToNum} DESC, distance_km ASC, e.average_rating DESC NULLS LAST, e.name ASC`;
+        return `${priceToNum} DESC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} DESC, e.average_rating DESC NULLS LAST, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} DESC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'distance':
       if (hasDistance) {
-        return `distance_km ASC, e.base_score DESC, e.average_rating DESC NULLS LAST, e.name ASC`;
+        return `distance_km ASC, e.base_score DESC, ${weightedRating} DESC, e.name ASC`;
       }
       // Fallback to rating if distance not available
-      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
+      return `${weightedRating} DESC, e.review_count DESC, e.base_score DESC, e.name ASC`;
 
     default:
       // Default: rating-based (same as 'rating')
       if (hasDistance) {
-        return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, distance_km ASC, e.name ASC`;
+        return `${weightedRating} DESC, e.review_count DESC, distance_km ASC, e.name ASC`;
       }
-      return `${twoTierRating}, e.average_rating DESC NULLS LAST, e.review_count DESC, e.base_score DESC, e.name ASC`;
+      return `${weightedRating} DESC, e.review_count DESC, e.base_score DESC, e.name ASC`;
   }
 }
 
@@ -846,8 +855,7 @@ export async function searchByBounds({
     LEFT JOIN users u ON e.partner_id = u.id
     WHERE ${whereClause}
     ORDER BY
-      CASE WHEN e.review_count >= ${RATING_SORT_MIN_REVIEWS} THEN 0 ELSE 1 END ASC,
-      e.average_rating DESC NULLS LAST,
+      (e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT}) DESC,
       e.review_count DESC,
       e.name ASC
     LIMIT $${paramIndex}
@@ -942,7 +950,7 @@ export async function checkSearchHealth() {
 }
 
 // Named exports for testing
-export { buildOrderByClause, RATING_SORT_MIN_REVIEWS };
+export { buildOrderByClause, BAYESIAN_PRIOR_COUNT, BAYESIAN_PRIOR_RATING };
 
 export default {
   searchByRadius,
