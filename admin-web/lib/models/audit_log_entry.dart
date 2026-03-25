@@ -13,6 +13,7 @@ class AuditLogEntry {
   final DateTime createdAt;
   final Map<String, dynamic>? oldData;
   final Map<String, dynamic>? newData;
+  final Map<String, dynamic>? entityContext;
   final String? ipAddress;
   final String? userAgent;
 
@@ -27,6 +28,7 @@ class AuditLogEntry {
     required this.createdAt,
     this.oldData,
     this.newData,
+    this.entityContext,
     this.ipAddress,
     this.userAgent,
   });
@@ -43,6 +45,7 @@ class AuditLogEntry {
       createdAt: DateTime.parse(json['created_at'] as String),
       oldData: json['old_data'] as Map<String, dynamic>?,
       newData: json['new_data'] as Map<String, dynamic>?,
+      entityContext: json['entity_context'] as Map<String, dynamic>?,
       ipAddress: json['ip_address'] as String?,
       userAgent: json['user_agent'] as String?,
     );
