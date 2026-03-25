@@ -274,10 +274,34 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         ELSE al.action || ' (' || al.entity_type || ')'
-      END as summary
+      END as summary,
+      CASE
+        WHEN al.entity_type = 'establishment' THEN
+          json_build_object(
+            'name', e_direct.name,
+            'city', e_direct.city
+          )
+        WHEN al.entity_type = 'review' THEN
+          json_build_object(
+            'reviewer_name', reviewer.name,
+            'rating', r.rating,
+            'text_snippet', LEFT(r.text, 120),
+            'establishment_name', e_review.name,
+            'establishment_city', e_review.city
+          )
+        ELSE NULL
+      END as entity_context
       ${metadataColumns}
     FROM audit_log al
     LEFT JOIN users u ON al.user_id = u.id
+    LEFT JOIN establishments e_direct
+      ON al.entity_type = 'establishment' AND al.entity_id = e_direct.id
+    LEFT JOIN reviews r
+      ON al.entity_type = 'review' AND al.entity_id = r.id
+    LEFT JOIN users reviewer
+      ON al.entity_type = 'review' AND r.user_id = reviewer.id
+    LEFT JOIN establishments e_review
+      ON al.entity_type = 'review' AND r.establishment_id = e_review.id
     ${whereClause}
     ORDER BY al.created_at ${sortOrder}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
