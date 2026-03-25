@@ -243,6 +243,9 @@ class PartnerEstablishment {
   // Subscription tier (from Figma: Бесплатный, Базовый, Стандарт, Премиум)
   final String subscriptionTier;
 
+  // Completeness score (0-100) from backend calculateCompletenessScore()
+  final int baseScore;
+
   const PartnerEstablishment({
     required this.id,
     required this.name,
@@ -274,6 +277,7 @@ class PartnerEstablishment {
     this.contactPerson,
     this.contactEmail,
     this.subscriptionTier = 'Бесплатный',
+    this.baseScore = 0,
   });
 
   /// Get formatted address
@@ -437,6 +441,7 @@ class PartnerEstablishment {
       contactPerson: json['contact_person'] as String?,
       contactEmail: json['contact_email'] as String?,
       subscriptionTier: json['subscription_tier'] as String? ?? 'Бесплатный',
+      baseScore: _parseIntSafe(json['base_score']),
     );
   }
 
@@ -503,6 +508,7 @@ class PartnerEstablishment {
     String? contactPerson,
     String? contactEmail,
     String? subscriptionTier,
+    int? baseScore,
   }) {
     return PartnerEstablishment(
       id: id ?? this.id,
@@ -535,6 +541,7 @@ class PartnerEstablishment {
       contactPerson: contactPerson ?? this.contactPerson,
       contactEmail: contactEmail ?? this.contactEmail,
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
+      baseScore: baseScore ?? this.baseScore,
     );
   }
 
