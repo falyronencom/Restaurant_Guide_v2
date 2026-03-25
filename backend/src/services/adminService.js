@@ -15,6 +15,8 @@ import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { BELARUS_BOUNDS, CITY_BOUNDS, validateCityCoordinates } from './establishmentService.js';
+import { upgradeUserToPartner } from './authService.js';
+import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -809,4 +811,206 @@ export const searchAllEstablishments = async ({ search, status, city, page = 1, 
       'SEARCH_FAILED',
     );
   }
+};
+
+// ============================================================================
+// Claiming: Admin assigns establishment to a registered user
+// ============================================================================
+
+/**
+ * Claim an establishment for a target user.
+ *
+ * Atomically transfers ownership (partner_id) and upgrades the target user
+ * to partner role. Follows the moderateEstablishment pattern (lines 192-296)
+ * with the addition of a database transaction wrapping both operations.
+ *
+ * @param {string} establishmentId - UUID of the establishment to claim
+ * @param {string} targetUserId - UUID of the user receiving ownership
+ * @param {string} adminUserId - UUID of the admin performing the action
+ * @param {Object} req - Express request (for audit log ip/user-agent)
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const claimEstablishment = async (establishmentId, targetUserId, adminUserId, req) => {
+  // 1. Validate establishment exists and is suitable for claiming
+  const establishment = await EstablishmentModel.findEstablishmentById(
+    establishmentId,
+    true,
+  );
+
+  if (!establishment) {
+    throw new AppError(
+      'Establishment not found',
+      404,
+      'ESTABLISHMENT_NOT_FOUND',
+    );
+  }
+
+  if (establishment.status === 'archived') {
+    throw new AppError(
+      'Cannot claim an archived establishment',
+      400,
+      'ESTABLISHMENT_ARCHIVED',
+    );
+  }
+
+  if (establishment.partner_id === targetUserId) {
+    throw new AppError(
+      'Establishment already belongs to this user',
+      400,
+      'ALREADY_OWNED',
+    );
+  }
+
+  // 2. Validate target user exists and is active
+  const userResult = await dbQuery(
+    'SELECT id, role, is_active FROM users WHERE id = $1',
+    [targetUserId],
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new AppError(
+      'Target user not found',
+      404,
+      'USER_NOT_FOUND',
+    );
+  }
+
+  const targetUser = userResult.rows[0];
+
+  if (!targetUser.is_active) {
+    throw new AppError(
+      'Target user account is inactive',
+      400,
+      'USER_INACTIVE',
+    );
+  }
+
+  // 3. TRANSACTION — atomic partner_id change + role upgrade
+  const previousPartnerId = establishment.partner_id;
+  let updated;
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 3a. Update establishment partner_id
+    updated = await EstablishmentModel.claimEstablishment(
+      establishmentId,
+      targetUserId,
+      adminUserId,
+      client,
+    );
+
+    // 3b. Upgrade user to partner role (idempotent)
+    // Execute within transaction using same client for atomicity
+    if (targetUser.role === 'user') {
+      await client.query(
+        "UPDATE users SET role = 'partner', updated_at = $1 WHERE id = $2",
+        [new Date(), targetUserId],
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    logger.error('Claiming transaction failed', {
+      error: err.message,
+      establishmentId,
+      targetUserId,
+    });
+    throw new AppError(
+      'Failed to claim establishment',
+      500,
+      'CLAIM_FAILED',
+    );
+  } finally {
+    client.release();
+  }
+
+  // 4. Audit log (non-blocking, outside transaction)
+  AuditLogModel.createAuditLog({
+    user_id: adminUserId,
+    action: 'claim_establishment',
+    entity_type: 'establishment',
+    entity_id: establishmentId,
+    old_data: { partner_id: previousPartnerId },
+    new_data: { partner_id: targetUserId },
+    ip_address: req.ip,
+    user_agent: req.get('User-Agent'),
+  });
+
+  // 5. Notify new partner (non-blocking)
+  NotificationService.notifyEstablishmentClaimed(
+    establishmentId,
+    targetUserId,
+  ).catch(() => {});
+
+  logger.info('Establishment claimed successfully', {
+    establishmentId,
+    previousPartnerId,
+    newPartnerId: targetUserId,
+    adminUserId,
+  });
+
+  return updated;
+};
+
+/**
+ * Admin-initiated upgrade of a user to partner role.
+ *
+ * Thin wrapper around authService.upgradeUserToPartner with
+ * validation, audit logging, and proper error handling.
+ *
+ * @param {string} targetUserId - UUID of the user to upgrade
+ * @param {string} adminUserId - UUID of the admin performing the action
+ * @param {Object} req - Express request (for audit log)
+ * @returns {Promise<Object>} Updated user object
+ */
+export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) => {
+  // Validate target user exists and is active
+  const userResult = await dbQuery(
+    'SELECT id, role, is_active FROM users WHERE id = $1',
+    [targetUserId],
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new AppError(
+      'User not found',
+      404,
+      'USER_NOT_FOUND',
+    );
+  }
+
+  const targetUser = userResult.rows[0];
+
+  if (!targetUser.is_active) {
+    throw new AppError(
+      'User account is inactive',
+      400,
+      'USER_INACTIVE',
+    );
+  }
+
+  // Upgrade role (idempotent — safe for already-partner users)
+  const updatedUser = await upgradeUserToPartner(targetUserId);
+
+  // Audit log (non-blocking)
+  AuditLogModel.createAuditLog({
+    user_id: adminUserId,
+    action: 'upgrade_user_to_partner',
+    entity_type: 'user',
+    entity_id: targetUserId,
+    old_data: { role: targetUser.role },
+    new_data: { role: 'partner' },
+    ip_address: req.ip,
+    user_agent: req.get('User-Agent'),
+  });
+
+  logger.info('Admin upgraded user to partner', {
+    targetUserId,
+    previousRole: targetUser.role,
+    adminUserId,
+  });
+
+  return updatedUser;
 };
