@@ -350,3 +350,83 @@ export const searchEstablishments = asyncHandler(async (req, res) => {
     meta: result.meta,
   });
 });
+
+// ============================================================================
+// Claiming: Admin assigns establishment to a registered user
+// ============================================================================
+
+/**
+ * POST /api/v1/admin/establishments/:id/claim
+ *
+ * Transfer establishment ownership to a target user.
+ * Body: { user_id: "UUID of target user" }
+ */
+export const claimEstablishment = asyncHandler(async (req, res) => {
+  const establishmentId = req.params.id;
+  const { user_id } = req.body;
+
+  if (!user_id) {
+    throw new AppError(
+      'user_id is required',
+      422,
+      'MISSING_USER_ID',
+    );
+  }
+
+  // Basic UUID format check
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(user_id)) {
+    throw new AppError(
+      'user_id must be a valid UUID',
+      422,
+      'INVALID_USER_ID',
+    );
+  }
+
+  const result = await adminService.claimEstablishment(
+    establishmentId,
+    user_id,
+    req.user.userId,
+    req,
+  );
+
+  logger.info('Admin claimed establishment', {
+    adminId: req.user.userId,
+    establishmentId,
+    newPartnerId: user_id,
+    endpoint: 'POST /api/v1/admin/establishments/:id/claim',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: { establishment: result },
+    message: 'Establishment claimed successfully',
+  });
+});
+
+/**
+ * POST /api/v1/admin/users/:id/upgrade-to-partner
+ *
+ * Upgrade a regular user to partner role.
+ */
+export const upgradeToPartner = asyncHandler(async (req, res) => {
+  const targetUserId = req.params.id;
+
+  const result = await adminService.adminUpgradeUserToPartner(
+    targetUserId,
+    req.user.userId,
+    req,
+  );
+
+  logger.info('Admin upgraded user to partner', {
+    adminId: req.user.userId,
+    targetUserId,
+    endpoint: 'POST /api/v1/admin/users/:id/upgrade-to-partner',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: { user: result },
+    message: 'User upgraded to partner',
+  });
+});
