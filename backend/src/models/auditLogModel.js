@@ -273,6 +273,8 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'review_show' AND al.entity_type = 'review' THEN 'Показан отзыв'
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
+        WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
+        WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
         ELSE al.action || ' (' || al.entity_type || ')'
       END as summary,
       CASE

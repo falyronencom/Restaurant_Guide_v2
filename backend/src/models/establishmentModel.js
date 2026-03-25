@@ -1390,3 +1390,66 @@ export const countSuspendedEstablishments = async () => {
   }
 };
 
+// =============================================================================
+// Claiming (Admin — ownership transfer)
+// =============================================================================
+
+/**
+ * Transfer establishment ownership to a new partner (claiming).
+ *
+ * This is a privileged operation — partner_id is intentionally excluded
+ * from the dynamic updateEstablishment builder. Only admin can claim.
+ *
+ * @param {string} establishmentId - UUID of the establishment to claim
+ * @param {string} newPartnerId - UUID of the target user (new owner)
+ * @param {string} adminId - UUID of the admin performing the action
+ * @param {import('pg').PoolClient} [client] - Optional DB client for transaction support
+ * @returns {Promise<Object>} Updated establishment with full fields
+ */
+export const claimEstablishment = async (establishmentId, newPartnerId, adminId, client) => {
+  const queryExecutor = client || pool;
+
+  const query = `
+    UPDATE establishments
+    SET partner_id = $1,
+        claimed_at = NOW(),
+        claimed_by = $2,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    RETURNING
+      id, partner_id, name, description, city, address,
+      latitude, longitude, phone, email, website,
+      categories, cuisines, price_range,
+      working_hours, special_hours, attributes,
+      status, moderation_notes, moderated_by, moderated_at,
+      subscription_tier, subscription_started_at, subscription_expires_at,
+      base_score, boost_score,
+      view_count, favorite_count, review_count, average_rating,
+      primary_image_url, is_seed, claimed_at, claimed_by,
+      created_at, updated_at, published_at
+  `;
+
+  try {
+    const result = await queryExecutor.query(query, [newPartnerId, adminId, establishmentId]);
+
+    if (result.rows.length === 0) {
+      throw new Error('Establishment not found');
+    }
+
+    logger.info('Establishment claimed', {
+      establishmentId,
+      newPartnerId,
+      adminId,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error claiming establishment', {
+      error: error.message,
+      establishmentId,
+      newPartnerId,
+    });
+    throw error;
+  }
+};
+

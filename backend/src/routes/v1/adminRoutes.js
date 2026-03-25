@@ -188,6 +188,36 @@ router.patch(
   adminModerationController.updateCoordinates,
 );
 
+/**
+ * POST /api/v1/admin/establishments/:id/claim
+ *
+ * Transfer establishment ownership to a target user.
+ * User is automatically upgraded to partner role.
+ * Body: { user_id: "UUID of target user" }
+ */
+router.post(
+  '/establishments/:id/claim',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.claimEstablishment,
+);
+
+// ============================================================================
+// User management
+// ============================================================================
+
+/**
+ * POST /api/v1/admin/users/:id/upgrade-to-partner
+ *
+ * Upgrade a regular user to partner role (without claiming).
+ */
+router.post(
+  '/users/:id/upgrade-to-partner',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.upgradeToPartner,
+);
+
 // ============================================================================
 // Segment D: Analytics & Dashboard
 // ============================================================================

@@ -24,6 +24,7 @@ const TITLES = {
   partner_response: 'Ответ на ваш отзыв',
   review_hidden: 'Отзыв скрыт модератором',
   review_deleted: 'Отзыв удалён модератором',
+  establishment_claimed: 'Заведение добавлено в ваш кабинет',
 };
 
 const VALID_TYPES = Object.keys(TITLES);
@@ -290,6 +291,36 @@ export const notifyReviewModerated = async (reviewId, action) => {
       error: error.message,
       reviewId,
       action,
+    });
+  }
+};
+
+/**
+ * Notify new partner that an establishment has been claimed for them
+ * Called after: adminService.claimEstablishment
+ *
+ * @param {string} establishmentId
+ * @param {string} newPartnerId - UUID of the new owner
+ */
+export const notifyEstablishmentClaimed = async (establishmentId, newPartnerId) => {
+  try {
+    const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+    if (!establishment) return;
+
+    const name = establishment.name || 'Заведение';
+
+    await NotificationModel.create({
+      userId: newPartnerId,
+      type: 'establishment_claimed',
+      title: TITLES.establishment_claimed,
+      message: `«${name}» добавлено в ваш кабинет`,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create establishment claimed notification', {
+      error: error.message,
+      establishmentId,
+      newPartnerId,
     });
   }
 };
