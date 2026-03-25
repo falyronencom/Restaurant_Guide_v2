@@ -351,6 +351,10 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (entry.entityContext != null) ...[
+            _buildEntityContext(entry),
+            const SizedBox(height: 12),
+          ],
           if (entry.oldData != null) ...[
             Text('Данные до:',
                 style: TextStyle(
@@ -394,7 +398,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               ),
             ),
           ],
-          if (entry.oldData == null && entry.newData == null)
+          if (entry.oldData == null && entry.newData == null && entry.entityContext == null)
             Text(
               'Нет данных',
               style: TextStyle(
@@ -402,6 +406,86 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   color: Colors.grey[500],
                   fontStyle: FontStyle.italic),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntityContext(AuditLogEntry entry) {
+    final ctx = entry.entityContext!;
+    final List<Widget> rows = [];
+
+    if (entry.entityType == 'review') {
+      final reviewerName = ctx['reviewer_name'] as String?;
+      final rating = ctx['rating'];
+      final textSnippet = ctx['text_snippet'] as String?;
+      final estName = ctx['establishment_name'] as String?;
+      final estCity = ctx['establishment_city'] as String?;
+
+      if (reviewerName != null) {
+        rows.add(_contextRow('Автор:', reviewerName));
+      }
+      if (rating != null) {
+        final ratingInt = rating is int ? rating : (rating as num).toInt();
+        final stars = '★' * ratingInt + '☆' * (5 - ratingInt);
+        rows.add(_contextRow('Оценка:', '$stars ($ratingInt/5)'));
+      }
+      if (estName != null) {
+        final location = estCity != null ? '$estName, $estCity' : estName;
+        rows.add(_contextRow('Заведение:', location));
+      }
+      if (textSnippet != null && textSnippet.isNotEmpty) {
+        final snippet = textSnippet.length == 120 ? '$textSnippet...' : textSnippet;
+        rows.add(_contextRow('Отзыв:', snippet));
+      }
+    } else if (entry.entityType == 'establishment') {
+      final name = ctx['name'] as String?;
+      final city = ctx['city'] as String?;
+      if (name != null) {
+        rows.add(_contextRow('Заведение:', city != null ? '$name, $city' : name));
+      }
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF06B32).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFF06B32).withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+
+  Widget _contextRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
         ],
       ),
     );
