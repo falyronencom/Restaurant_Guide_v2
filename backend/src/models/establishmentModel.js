@@ -347,6 +347,7 @@ export const getEstablishmentsByPartner = async (partnerId, filters = {}) => {
       e.favorite_count,
       e.review_count,
       e.average_rating,
+      e.base_score,
       e.created_at,
       e.updated_at,
       e.published_at,

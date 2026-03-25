@@ -104,7 +104,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
                 // Address (bottom left)
                 Positioned(
                   left: 18,
-                  bottom: 45,
+                  bottom: establishment.baseScore < 100 ? 50 : 45,
                   child: Text(
                     establishment.shortAddress,
                     style: TextStyle(
@@ -113,6 +113,15 @@ class PartnerEstablishmentCard extends StatelessWidget {
                     ),
                   ),
                 ),
+
+                // Completeness progress bar (bottom, only when < 100%)
+                if (establishment.baseScore < 100)
+                  Positioned(
+                    left: 18,
+                    right: 160,
+                    bottom: 10,
+                    child: _buildCompletenessBar(isPremium),
+                  ),
 
                 // Promotion button (bottom right)
                 Positioned(
@@ -262,6 +271,52 @@ class PartnerEstablishmentCard extends StatelessWidget {
             fontWeight: FontWeight.w500,
             color: color,
           ),
+        ),
+      ],
+    );
+  }
+
+  /// Build completeness progress bar with label
+  Widget _buildCompletenessBar(bool isPremium) {
+    final score = establishment.baseScore;
+    final progress = score / 100.0;
+    final labelColor = isPremium ? _greyText : _darkGreyText;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Заполненность данных',
+          style: TextStyle(
+            fontSize: 11,
+            color: labelColor,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: labelColor.withValues(alpha: 0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(_primaryOrange),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$score%',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: labelColor,
+              ),
+            ),
+          ],
         ),
       ],
     );
