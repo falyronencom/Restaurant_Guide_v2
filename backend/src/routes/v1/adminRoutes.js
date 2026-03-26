@@ -203,6 +203,22 @@ router.post(
 );
 
 // ============================================================================
+// User search (for claiming UI)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/users/search?q=email_or_name
+ *
+ * Search users by email or name (for claim dialog).
+ */
+router.get(
+  '/users/search',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.searchUsers,
+);
+
+// ============================================================================
 // User management
 // ============================================================================
 
