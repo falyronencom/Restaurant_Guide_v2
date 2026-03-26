@@ -685,16 +685,25 @@ Each measurement is recorded in the session's final report (Completion Report or
 
 **End-to-end session context (empirical):**
 
-| Category | 200K (legacy data) | 1M (empirical, v9.3) |
-|----------|-------------------|----------------------|
-| Low complexity (Discovery + Implementation) | 60-80% | 5-10% |
-| Medium complexity (Discovery + Implementation) | Does not fit | 15-25% |
-| Medium complexity (Discovery + 2 Segments) | Two sessions required | 15-25% in one session |
-| High complexity | Three+ sessions | 30-50% (estimated, needs measurement) |
+| Category | 200K (legacy data) | 1M (empirical, v9.3) | Empirical Source |
+|----------|-------------------|----------------------|------------------|
+| Low complexity (Discovery + Implementation) | 60-80% | 5-10% | Twin Task "Клуб" |
+| Low-Medium complexity (Discovery + Implementation) | Does not fit | ~15% | Claiming Infrastructure |
+| Medium complexity (Discovery + 2 Segments) | Two sessions required | 15% in one session | Partner Analytics |
+| High complexity (Discovery + 2 Segments) | Three+ sessions | 22% | Ranking Core |
 
 **Important:** These figures reflect navigational consumption (Discovery Tax), not Cognitive Tax. A task consuming only 15% of context may still be cognitively demanding if it involves 20 interconnected files. The Coordinator must separately assess cognitive complexity — Context Checkpoints measure the navigational dimension only.
 
-**Calibration data sources:** Twin Task "Клуб" experiment (v9.2), Partner Analytics session (v9.3). High complexity row is extrapolated — empirical measurement pending.
+**Calibration data sources:** Twin Task "Клуб" (v9.2), Partner Analytics, Ranking Core, Claiming Infrastructure (v9.3). All four complexity categories now have empirical measurements. High complexity (Ranking Core, 22%) came in significantly below the initial estimate of 30-50%, suggesting that 1M context handles even complex multi-segment tasks efficiently.
+
+**Raw empirical data (individual sessions):**
+
+| Task | Complexity | Context Used | Session Type | Version |
+|------|-----------|-------------|--------------|---------|
+| Twin Task "Клуб" | Low | ~5-8% | Mode C | v9.2 |
+| Partner Analytics (Disc+2Seg) | Medium | 15% | Mode C | v9.3 |
+| Ranking Core (Disc+2Seg) | High | 22% | Mode C | v9.3 |
+| Claiming (Disc+Impl) | Low-Medium | 15% | Mode C | v9.3 |
 
 **Per-phase context patterns:**
 
@@ -702,7 +711,7 @@ Each measurement is recorded in the session's final report (Completion Report or
 |----------|-------------|--------------|
 | Mode A: Sanity Check + Planning | 10-20% | Implementer uses Discovery Report |
 | Mode B: Pre-scan + Discovery | 50-80% (200K) / 10-16% (1M) | Full autonomous discovery |
-| Mode C: Discovery + Implementation | 15-25% (1M, Medium) | Unified workflow, context retained |
+| Mode C: Discovery + Implementation | 5-22% (1M, Low→High) | Unified workflow, context retained |
 | Implementation + Testing | 10-20% (1M) | Code changes and verification |
 | Handoff or Commit | 5% | Semantic Handoff or commit |
 
@@ -1084,12 +1093,12 @@ All code produced in the co-creative process is expected to be production-ready.
 
 ### v9.3 (March 2026)
 
-Empirical methodology update based on accumulated data from two 1M context sessions: Twin Task "Клуб" (v9.2) and Partner Analytics Enhancement. Shifts methodology from forecast-based to data-driven session management.
+Empirical methodology update based on accumulated data from four 1M context sessions: Twin Task "Клуб" (v9.2), Partner Analytics, Ranking Core, and Claiming Infrastructure. Shifts methodology from forecast-based to data-driven session management.
 
 - **Mode C elevated to default execution path (Protocol 6).** Instead of pre-selecting a mode based on complexity estimates, sessions start as Mode C and the Coordinator decides whether to escalate to Mode A based on empirical context measurement after Discovery. This inverts the previous logic: "launch Mode C → measure reality → escalate if needed" replaces "estimate complexity → choose mode → launch." Mirrors Protocol 2 (Reality Before Plan) applied to the process itself.
 - **Protocol_Unified.md created** as the Leaf execution protocol for Mode C sessions. Contains: Directive Coherence Check (Step 0, formalized from Partner Analytics session), Librarian phase, Context Checkpoint decision point, Continuity Check, Implementer phase, Context Telemetry in reports. Companion to Protocol_Informed.md (Mode A) and Protocol_Autonomous.md (Mode B).
 - **Context Checkpoints formalized as standard practice (Section 1.5).** `/context` measurement at three defined points: after Discovery Report (Mode C vs Mode A decision), after each Implementation Segment (continue vs handoff), after task completion (calibration data). Transforms context management from "intuition + safety margin" to data-driven process.
-- **Calibration Tables added with 1M column (Section 1.5).** Empirical data: Low complexity 5-10%, Medium 15-25%, Medium+2 Segments 15-25% in one session, High 30-50% (estimated). Explicit warning that these figures reflect navigational consumption only — Cognitive Tax requires separate assessment.
+- **Calibration Tables with 1M column (Section 1.5).** Four empirical data points: Low 5-10% (Twin Task), Low-Medium ~15% (Claiming), Medium 15% (Partner Analytics), High 22% (Ranking Core). All categories now measured — High came in well below initial 30-50% estimate. Raw data table added for future recalibration. Explicit warning that figures reflect navigational consumption only — Cognitive Tax requires separate assessment.
 - **Multi-Session Segmentation reconsidered (Section 1.5).** At 1M, segmentation becomes an architectural choice, not a survival necessity. Valid reasons: independent verification between layers, different technology stacks, strategic review points, empirical context overload. "Won't fit in context" is no longer a valid standalone reason at 1M.
 - **Mode A scope narrowed (Section 1.3).** Mode A remains valid for two specific scenarios: (1) independent double-verification critical (production-breaking changes, data-loss migrations, security-sensitive code), (2) Discovery consumed > 40% context (anomalously heavy, signaling High+ Cognitive Tax).
 - **Calibration Data Expiry principle added (Section 1.7).** All empirical measurements are calibrated against specific infrastructure. Infrastructure changes (new model, larger context window) invalidate calibration data — methodology architecture must support recalibration without restructuring.
