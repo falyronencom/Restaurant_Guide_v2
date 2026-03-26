@@ -539,6 +539,9 @@ class _DetailPanel extends StatelessWidget {
       onUnsuspend: isSuspended
           ? () => provider.unsuspendEstablishment()
           : null,
+      onClaim: detail != null
+          ? (userId) => provider.claimEstablishment(userId)
+          : null,
     );
   }
 }

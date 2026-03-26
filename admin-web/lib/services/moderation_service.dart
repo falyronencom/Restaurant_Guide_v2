@@ -189,6 +189,36 @@ class ModerationService {
     );
   }
 
+  // ==========================================================================
+  // Claiming
+  // ==========================================================================
+
+  /// POST /api/v1/admin/establishments/:id/claim
+  Future<void> claimEstablishment({
+    required String id,
+    required String userId,
+  }) async {
+    await _apiClient.post(
+      '/api/v1/admin/establishments/$id/claim',
+      data: {'user_id': userId},
+    );
+  }
+
+  /// GET /api/v1/admin/users/search?q=query
+  Future<List<UserSearchResult>> searchUsers(String query) async {
+    final response = await _apiClient.get(
+      '/api/v1/admin/users/search',
+      queryParameters: {'q': query},
+    );
+
+    final data = response.data as Map<String, dynamic>;
+    final items = data['data'] as List<dynamic>? ?? [];
+
+    return items
+        .map((e) => UserSearchResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// GET /api/v1/admin/establishments/search
   Future<SearchListResponse> searchEstablishments({
     required String search,
@@ -285,6 +315,30 @@ class SuspendedListResponse {
     required this.page,
     required this.pages,
   });
+}
+
+/// User search result for claiming dialog
+class UserSearchResult {
+  final String id;
+  final String email;
+  final String name;
+  final String role;
+
+  const UserSearchResult({
+    required this.id,
+    required this.email,
+    required this.name,
+    required this.role,
+  });
+
+  factory UserSearchResult.fromJson(Map<String, dynamic> json) {
+    return UserSearchResult(
+      id: json['id'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      role: json['role'] as String? ?? 'user',
+    );
+  }
 }
 
 /// Response wrapper for the search endpoint

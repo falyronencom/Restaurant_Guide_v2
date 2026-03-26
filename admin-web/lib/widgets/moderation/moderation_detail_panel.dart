@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
 
 @JS('window.open')
@@ -43,6 +44,7 @@ class ModerationDetailPanel extends StatefulWidget {
   // Optional actions
   final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
+  final ValueChanged<String>? onClaim;
 
   // Rejection notes for per-field display (from audit log)
   final Map<String, dynamic>? rejectionNotes;
@@ -56,6 +58,7 @@ class ModerationDetailPanel extends StatefulWidget {
     this.selectedId,
     this.onSuspend,
     this.onUnsuspend,
+    this.onClaim,
     this.rejectionNotes,
   });
 
@@ -132,10 +135,11 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
     return Column(
       children: [
         // Header actions (suspend / unsuspend)
-        if (widget.onSuspend != null || widget.onUnsuspend != null)
+        if (widget.onSuspend != null || widget.onUnsuspend != null || widget.onClaim != null)
           _HeaderActionBar(
             onSuspend: widget.onSuspend,
             onUnsuspend: widget.onUnsuspend,
+            onClaim: widget.onClaim,
             establishmentName: detail.name,
           ),
 
@@ -214,11 +218,13 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 class _HeaderActionBar extends StatelessWidget {
   final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
+  final ValueChanged<String>? onClaim;
   final String establishmentName;
 
   const _HeaderActionBar({
     this.onSuspend,
     this.onUnsuspend,
+    this.onClaim,
     required this.establishmentName,
   });
 
@@ -269,6 +275,23 @@ class _HeaderActionBar extends StatelessWidget {
                 ),
               ),
             ),
+          if (onClaim != null) ...[
+            if (onSuspend != null || onUnsuspend != null)
+              const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => _showClaimDialog(context),
+              icon: const Icon(Icons.person_add_outlined, size: 18),
+              label: const Text('Назначить партнёра'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFF06B32),
+                side: const BorderSide(color: Color(0xFFF06B32)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -346,6 +369,185 @@ class _HeaderActionBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showClaimDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _ClaimUserSearchDialog(
+        establishmentName: establishmentName,
+        onUserSelected: (userId) {
+          Navigator.pop(ctx);
+          onClaim?.call(userId);
+        },
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Claim User Search Dialog
+// =============================================================================
+
+class _ClaimUserSearchDialog extends StatefulWidget {
+  final String establishmentName;
+  final ValueChanged<String> onUserSelected;
+
+  const _ClaimUserSearchDialog({
+    required this.establishmentName,
+    required this.onUserSelected,
+  });
+
+  @override
+  State<_ClaimUserSearchDialog> createState() => _ClaimUserSearchDialogState();
+}
+
+class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
+  final _searchController = TextEditingController();
+  final _service = ModerationService();
+  List<UserSearchResult> _results = [];
+  bool _isLoading = false;
+  String? _error;
+  String? _selectedUserId;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search(String query) async {
+    if (query.trim().length < 2) {
+      setState(() {
+        _results = [];
+        _error = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final results = await _service.searchUsers(query);
+      setState(() {
+        _results = results;
+        _isLoading = false;
+        _selectedUserId = null;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Ошибка поиска';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Назначить партнёра'),
+      content: SizedBox(
+        width: 420,
+        height: 400,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Заведение «${widget.establishmentName}» будет передано выбранному пользователю.',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: 'Поиск по email или имени...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: _search,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _buildResultsList(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _selectedUserId != null
+              ? () => widget.onUserSelected(_selectedUserId!)
+              : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFF06B32),
+          ),
+          child: const Text('Назначить'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultsList() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+      );
+    }
+
+    if (_searchController.text.trim().length < 2) {
+      return const Center(
+        child: Text(
+          'Введите минимум 2 символа для поиска',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    if (_results.isEmpty) {
+      return const Center(
+        child: Text(
+          'Пользователи не найдены',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _results.length,
+      itemBuilder: (context, index) {
+        final user = _results[index];
+        final isSelected = _selectedUserId == user.id;
+
+        return ListTile(
+          selected: isSelected,
+          selectedTileColor: const Color(0xFFF06B32).withValues(alpha: 0.1),
+          leading: CircleAvatar(
+            backgroundColor: user.role == 'partner'
+                ? const Color(0xFFF06B32)
+                : Colors.grey.shade400,
+            child: Text(
+              user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+          title: Text(user.name),
+          subtitle: Text('${user.email} · ${user.role}'),
+          onTap: () => setState(() => _selectedUserId = user.id),
+        );
+      },
     );
   }
 }

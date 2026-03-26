@@ -814,6 +814,35 @@ export const searchAllEstablishments = async ({ search, status, city, page = 1, 
 };
 
 // ============================================================================
+// User search (for claiming UI)
+// ============================================================================
+
+/**
+ * Search users by email or name for the claiming dialog.
+ *
+ * @param {string} query - Search query (matches email or name via ILIKE)
+ * @param {number} limit - Max results (default 10)
+ * @returns {Promise<Array>} Array of { id, email, name, role }
+ */
+export const searchUsers = async (query, limit = 10) => {
+  if (!query || query.trim().length < 2) {
+    return [];
+  }
+
+  const result = await dbQuery(
+    `SELECT id, email, name, role
+     FROM users
+     WHERE is_active = true
+       AND (email ILIKE $1 OR name ILIKE $1)
+     ORDER BY name ASC
+     LIMIT $2`,
+    [`%${query.trim()}%`, limit],
+  );
+
+  return result.rows;
+};
+
+// ============================================================================
 // Claiming: Admin assigns establishment to a registered user
 // ============================================================================
 

@@ -352,6 +352,26 @@ export const searchEstablishments = asyncHandler(async (req, res) => {
 });
 
 // ============================================================================
+// User search (for claiming UI)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/users/search?q=email_or_name
+ *
+ * Search active users by email or name for the claiming dialog.
+ */
+export const searchUsers = asyncHandler(async (req, res) => {
+  const { q } = req.query;
+
+  const users = await adminService.searchUsers(q);
+
+  res.status(200).json({
+    success: true,
+    data: users,
+  });
+});
+
+// ============================================================================
 // Claiming: Admin assigns establishment to a registered user
 // ============================================================================
 
