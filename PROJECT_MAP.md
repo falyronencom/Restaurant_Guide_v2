@@ -18,8 +18,8 @@ Answers: **if I need to work on X, which files do I open?**
 | `backend/src/middleware/` | Auth (JWT verify), error handling, rate limiting, file upload | Auth failures, 401/403 issues, rate limit tuning, upload bugs |
 | `backend/src/utils/` | JWT generation/verification, Winston logger | Token issues, logging changes |
 | `backend/src/config/` | DB pool, Redis connection, Cloudinary pipeline | Connection issues, pool tuning, image upload config |
-| `backend/migrations/` | Schema evolution (base + 12 migrations) | Adding columns, changing constraints, debugging schema mismatches |
-| `backend/src/tests/` | Jest test suites (30 suites, 626 tests) | Running/fixing tests, adding coverage |
+| `backend/migrations/` | Schema evolution (base + 19 migrations) | Adding columns, changing constraints, debugging schema mismatches |
+| `backend/src/tests/` | Jest test suites (40 suites, ~869 tests) | Running/fixing tests, adding coverage |
 
 ### Mobile (Flutter)
 
@@ -215,6 +215,71 @@ Bug hints:
 - Audit entries missing → `auditLogModel.createAuditLog()` — non-blocking, fails silently. Check if called in service
 - Response format different → audit log uses `{ data: entries[], meta }` not standard `{ items, pagination }`
 
+### Notifications
+```
+Route:      backend/src/routes/v1/notificationRoutes.js
+            GET /notifications, GET /notifications/unread-count,
+            PUT /notifications/read-all, PUT /notifications/:id/read
+Controller: backend/src/controllers/notificationController.js
+            getNotifications, getUnreadCount, markAllAsRead, markAsRead
+Service:    backend/src/services/notificationService.js
+            createNotification, getUserNotifications, getUnreadCount, markAsRead, markAllAsRead
+            Triggers: onEstablishmentApproved/Rejected/Suspended, onNewReview, onPartnerResponse,
+            onReviewHidden/Deleted, onEstablishmentClaimed (all non-blocking)
+Model:      backend/src/models/notificationModel.js
+            create, findById, findByUser, getUnreadCount, markAsRead, markAllAsRead
+```
+Bug hints:
+- Notifications not appearing → check trigger calls in adminService/adminReviewService (non-blocking, fail silently)
+- Wrong category filter → `notificationModel.CATEGORY_TYPES` mapping: establishments → [approved, rejected, suspended, new_review]; reviews → [partner_response, hidden, deleted]
+
+### Partner Analytics
+```
+Route:      backend/src/routes/v1/partnerAnalyticsRoutes.js
+            GET /partner/analytics/overview, GET /partner/analytics/trends, GET /partner/analytics/ratings
+Controller: backend/src/controllers/partnerAnalyticsController.js
+            trackCall, getOverview, getTrends, getRatings
+Service:    backend/src/services/partnerAnalyticsService.js
+            trackCall, getOverview, getTrends, getRatings
+Model:      backend/src/models/partnerAnalyticsModel.js
+            trackCall, getPartnerEstablishments, getEstablishmentViews, getEstablishmentReviews, getRatingDistribution
+```
+Bug hints:
+- Analytics empty → check `establishment_analytics` table has data (migration 017 activated ghost table)
+- Wrong period → reuses `parsePeriod` from admin analyticsService
+- Call tracking fails → `trackCall()` validates establishment exists & active
+
+### OAuth
+```
+Route:      backend/src/routes/v1/authRoutes.js
+            POST /auth/oauth (rate limited)
+Controller: backend/src/controllers/authController.js
+            oauthLogin
+Service:    backend/src/services/oauthService.js
+            verifyGoogleToken (JWT + Google public keys), verifyYandexToken (API call)
+            + authService: getOrCreateOAuthUser, handleNewOAuthUser, handleExistingOAuthUser
+```
+Bug hints:
+- OAuth fails → `oauthService.verifyGoogleToken()` validates audience against GOOGLE_CLIENT_ID env var
+- Duplicate account → `handleExistingOAuthUser` checks unverified email security
+- Migration 015 adds `oauth_provider_id` column to users
+
+### Claiming (Admin)
+```
+Route:      backend/src/routes/v1/adminRoutes.js
+            POST /admin/establishments/:id/claim, GET /admin/users/search
+Controller: backend/src/controllers/adminModerationController.js
+            claimEstablishment, searchUsersForClaim
+Service:    backend/src/services/adminService.js
+            claimEstablishment, searchUsersForClaim
+Model:      backend/src/models/establishmentModel.js
+            claimEstablishment (validates, updates owner_id, upgrades user to partner)
+```
+Bug hints:
+- Claim fails → check establishment not archived, target user exists
+- User not upgraded → `claimEstablishment` auto-upgrades role to 'partner'
+- Migration 019 adds `is_seed`, `claimed_by`, `claimed_at` columns
+
 ### Admin Reviews
 ```
 Route:      backend/src/routes/v1/adminRoutes.js
@@ -298,14 +363,14 @@ Screen (Widget)
       → ApiClient (Dio) — token inject/extract/refresh interceptors
         → Backend API
 ```
-- 4 providers: auth, establishments, partner_dashboard, partner_registration
+- 5 providers: auth, establishments, partner_dashboard, partner_registration, notification
 - `notifyListeners()` after every state mutation
 - Provider stale selection fix: verify `_selectedId` exists in list after reload
 
 ### Frontend State Pattern (Admin)
 ```
 Same pattern as Mobile, with differences:
-- 10 providers (dedicated per-status: moderation, approved, rejected, suspended + analytics + audit + reviews)
+- 11 providers (dedicated per-status: moderation, approved, rejected, suspended + dashboard + analytics ×3 + audit + reviews)
 - Desktop layout: AdminShell (AppBar + 363px Sidebar + content area)
 - GoRouter with auth redirect guard (unauthenticated → /login)
 ```
@@ -327,7 +392,8 @@ Same pattern as Mobile, with differences:
 | `partner_documents` | company_name, tax_id, contact_person — legal verification |
 | `promotions` | Future: title, valid_from/until, is_active |
 | `subscriptions` | Future: tier, duration_type, started_at, expires_at |
-| `establishment_analytics` | Ghost table — exists in schema but not used by models |
+| `notifications` | User/partner notifications: type, title, message, is_read, category (establishments/reviews) |
+| `establishment_analytics` | Partner analytics: view_count, review_count, call_count — activated by migration 017 |
 
 ### Critical Constraints
 - **City CHECK**: includes BOTH `Могилев` AND `Могилёв` (ё/е fix)
@@ -346,11 +412,12 @@ users
   │     ├─→ promotions
   │     ├─→ subscriptions
   │     └─→ partner_documents
+  ├─→ notifications (user_id + optional establishment_id, review_id)
   ├─→ refresh_tokens (+ self-ref replaced_by)
   └─→ audit_log (admin user_id)
 ```
 
-### Migrations (12 total)
+### Migrations (19 total)
 | # | Purpose |
 |---|---------|
 | 001 | Token rotation: used_at, replaced_by |
@@ -365,7 +432,14 @@ users
 | 010 | audit_log table |
 | 011 | Test DB column sync |
 | 012 | Added rejected to status CHECK |
+| 013 | Analytics performance indexes (created_at on users, establishments, reviews) |
+| 014 | Audit log action index |
+| 015 | OAuth: oauth_provider_id column on users |
+| 016 | Notifications table |
+| 017 | Activate partner analytics: call_count + composite index |
+| 018 | Backfill base_score (completeness score) for establishments |
+| 019 | Claiming infrastructure: is_seed, claimed_by, claimed_at |
 
 ---
 
-*Navigation document. Updated during Documentation Hygiene Checkpoints. See Methodology v9.1 Section 1.9.1 for maintenance rules.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-03-26.*
