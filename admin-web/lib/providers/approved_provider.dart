@@ -251,6 +251,33 @@ class ApprovedProvider extends ChangeNotifier {
     }
   }
 
+  /// Claim the currently selected establishment for a target user
+  Future<bool> claimEstablishment(String userId) async {
+    if (_selectedId == null) return false;
+
+    _isSubmitting = true;
+    _submitError = null;
+    notifyListeners();
+
+    try {
+      await _service.claimEstablishment(
+        id: _selectedId!,
+        userId: userId,
+      );
+
+      // Refresh detail to show new owner
+      _isSubmitting = false;
+      notifyListeners();
+      await selectEstablishment(_selectedId!);
+      return true;
+    } catch (e) {
+      _isSubmitting = false;
+      _submitError = _extractMessage(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
   String _extractMessage(Object error) {
     final msg = error.toString();
     if (msg.contains('403')) return 'Доступ запрещён';
