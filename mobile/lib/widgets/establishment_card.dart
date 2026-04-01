@@ -41,12 +41,47 @@ class EstablishmentCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 13, vertical: 15),
         child: Row(
           children: [
-            // Left: Image with custom shape
-            _buildImage(),
+            // Left: Image with custom shape + optional promotion badge
+            _buildImageWithBadge(),
             // Right: Content area
             Expanded(child: _buildContentArea()),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Wrap image with optional [АКЦИЯ] badge overlay
+  Widget _buildImageWithBadge() {
+    if (!establishment.hasPromotion) return _buildImage();
+
+    return SizedBox(
+      width: _imageWidth,
+      height: _cardHeight,
+      child: Stack(
+        children: [
+          _buildImage(),
+          Positioned(
+            bottom: 12,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _orangeHeart,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'АКЦИЯ',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

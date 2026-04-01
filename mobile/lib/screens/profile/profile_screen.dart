@@ -11,6 +11,7 @@ import 'package:restaurant_guide_mobile/widgets/partner_establishment_card.dart'
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/notifications/notification_list_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/promotions_screen.dart';
 
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
@@ -434,14 +435,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .pushNamed('/partner/edit/${establishment.id}');
   }
 
-  /// Handle tap on promotion button
+  /// Handle tap on promotion button — navigate to promotion management
   void _onPromotionTap(
       BuildContext context, PartnerEstablishment establishment) {
-    // TODO: Navigate to promotion/subscription screen (future feature)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Продвижение: ${establishment.name}'),
-        behavior: SnackBarBehavior.floating,
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (context) => PromotionsScreen(
+          establishmentId: establishment.id,
+          establishmentName: establishment.name,
+        ),
       ),
     );
   }
