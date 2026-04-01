@@ -6,6 +6,22 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Апрель 2026 — Horizon 2: Monetization Features
+
+#### Апрель 1, 2026 — Component 4: Promotions (Segments A+B)
+- **Discovery**: Full investigation of subscription fields, media/Cloudinary patterns, search query structure, partner dashboard, detail screen (8 questions + 4 peripheral)
+- **Migration 020**: Modified `promotions` table — added image_url/thumbnail_url/preview_url, replaced is_active→status (active/expired/hidden_by_admin), nullable valid_until for indefinite promotions
+- **Backend CRUD**: promotionModel + promotionService + promotionController + promotionRoutes — create/list/update/deactivate with ownership verification, Cloudinary image upload, max 3 active limit per establishment
+- **Search enrichment**: Post-query enrichment adds has_promotion/promotion_count to all 3 search paths without touching ORDER BY queries (non-blocking — search never breaks from promotion issues)
+- **Detail endpoint**: Parallel fetch of promotions array alongside media, included in public detail response
+- **Analytics**: trackPromotionView UPSERT into existing promotion_view_count column, public endpoint POST /analytics/promotion-view
+- **Mobile model**: Promotion.dart + Establishment model updated with hasPromotion, promotionCount, promotions fields
+- **Search card**: [АКЦИЯ] badge overlay on image when hasPromotion=true
+- **Detail screen**: Promotion trigger banner below hero → carousel bottom sheet (PageView with indicator dots, auto-generated visuals for imageless promotions, per-slide analytics tracking)
+- **Partner UI**: PromotionsScreen (active N/3 + expired sections, edit/deactivate), CreatePromotionScreen (title, description, image picker, date pickers), PromotionProvider with full CRUD
+- **Tests**: 24 new integration tests (CRUD, limits, search enrichment, detail inclusion, analytics, ownership, lazy expiry, auth). 973 total tests passing, zero regressions
+- **Context telemetry**: Discovery ~15% → Final ~18% of 1M context (Mode C unified session)
+
 ### Март 2026 — Production Deployment + TestFlight
 
 #### Март 24, 2026 — Ranking Core: Bayesian Weighted Rating, Completeness Score, Geolocation Fix
