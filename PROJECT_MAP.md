@@ -18,15 +18,15 @@ Answers: **if I need to work on X, which files do I open?**
 | `backend/src/middleware/` | Auth (JWT verify), error handling, rate limiting, file upload | Auth failures, 401/403 issues, rate limit tuning, upload bugs |
 | `backend/src/utils/` | JWT generation/verification, Winston logger | Token issues, logging changes |
 | `backend/src/config/` | DB pool, Redis connection, Cloudinary pipeline | Connection issues, pool tuning, image upload config |
-| `backend/migrations/` | Schema evolution (base + 19 migrations) | Adding columns, changing constraints, debugging schema mismatches |
-| `backend/src/tests/` | Jest test suites (40 suites, ~869 tests) | Running/fixing tests, adding coverage |
+| `backend/migrations/` | Schema evolution (base + 20 migrations) | Adding columns, changing constraints, debugging schema mismatches |
+| `backend/src/tests/` | Jest test suites (41 suites, ~973 tests) | Running/fixing tests, adding coverage |
 
 ### Mobile (Flutter)
 
 | Directory | Role | When to look here |
 |-----------|------|-------------------|
 | `mobile/lib/screens/` | UI by feature (auth, search, map, favorites, partner, profile) | Fixing UI bugs, adding screens, changing layouts |
-| `mobile/lib/providers/` | State management — 4 ChangeNotifiers | State bugs, data flow issues, provider not updating |
+| `mobile/lib/providers/` | State management — 5 ChangeNotifiers | State bugs, data flow issues, provider not updating |
 | `mobile/lib/services/` | API singletons — Dio HTTP calls | API integration bugs, request/response issues |
 | `mobile/lib/models/` | Data classes (7 files) | Parsing bugs, missing fields, serialization |
 | `mobile/lib/widgets/` | Reusable components (cards, forms, map widgets) | Shared UI changes, component bugs |
@@ -249,6 +249,29 @@ Bug hints:
 - Wrong period → reuses `parsePeriod` from admin analyticsService
 - Call tracking fails → `trackCall()` validates establishment exists & active
 
+### Promotions
+```
+Route:      backend/src/routes/v1/promotionRoutes.js
+            POST /partner/promotions, GET /partner/promotions/establishment/:id,
+            PATCH /partner/promotions/:id, DELETE /partner/promotions/:id
+Controller: backend/src/controllers/promotionController.js
+            createPromotion, getPromotions, updatePromotion, deletePromotion
+Service:    backend/src/services/promotionService.js
+            createPromotion, getPromotions, updatePromotion, deactivatePromotion
+Model:      backend/src/models/promotionModel.js
+            createPromotion, getPromotionsByEstablishment, getPromotionById,
+            updatePromotion, deactivatePromotion, getActivePromotionsForEstablishments
+Mobile:     mobile/lib/models/promotion.dart
+            mobile/lib/providers/promotion_provider.dart
+            mobile/lib/screens/partner/promotions_screen.dart
+            mobile/lib/screens/partner/create_promotion_screen.dart
+```
+Bug hints:
+- 4th promotion rejected → max 3 active per establishment enforced in model (`MAX_ACTIVE_PROMOTIONS`)
+- Expired promo still showing → lazy expiry runs on read, check `deactivateExpired()` in model
+- Search missing has_promotion → `enrichWithPromotions()` in searchService.js (non-blocking, catch returns false)
+- Image upload fails → reuses Cloudinary pattern from mediaService, folder: `establishments/{id}/promotions/`
+
 ### OAuth
 ```
 Route:      backend/src/routes/v1/authRoutes.js
@@ -390,7 +413,7 @@ Same pattern as Mobile, with differences:
 | `refresh_tokens` | Token rotation chain: token (unique), expires_at, replaced_by→self |
 | `audit_log` | action, entity_type/id, old_data/new_data (JSONB), non-blocking writes |
 | `partner_documents` | company_name, tax_id, contact_person — legal verification |
-| `promotions` | Future: title, valid_from/until, is_active |
+| `promotions` | Active: title, description, image URLs (3-tier), valid_from/until, status (active/expired/hidden_by_admin), max 3 active per establishment |
 | `subscriptions` | Future: tier, duration_type, started_at, expires_at |
 | `notifications` | User/partner notifications: type, title, message, is_read, category (establishments/reviews) |
 | `establishment_analytics` | Partner analytics: view_count, review_count, call_count — activated by migration 017 |
@@ -417,7 +440,7 @@ users
   └─→ audit_log (admin user_id)
 ```
 
-### Migrations (19 total)
+### Migrations (20 total)
 | # | Purpose |
 |---|---------|
 | 001 | Token rotation: used_at, replaced_by |
@@ -439,7 +462,8 @@ users
 | 017 | Activate partner analytics: call_count + composite index |
 | 018 | Backfill base_score (completeness score) for establishments |
 | 019 | Claiming infrastructure: is_seed, claimed_by, claimed_at |
+| 020 | Modify promotions: +image URLs, is_active→status, nullable valid_until |
 
 ---
 
-*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-03-26.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-01.*
