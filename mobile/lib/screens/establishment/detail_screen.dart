@@ -13,6 +13,8 @@ import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/services/partner_service.dart';
+import 'package:restaurant_guide_mobile/services/api_client.dart';
+import 'package:restaurant_guide_mobile/models/promotion.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
@@ -175,6 +177,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           children: [
             // Hero section with photo and overlay info
             _buildHeroSection(),
+
+            // Promotion trigger banner (shown when promotions exist)
+            if (_establishment?.promotions != null &&
+                _establishment!.promotions!.isNotEmpty)
+              _buildPromotionBanner(),
 
             // Description section (shown when present)
             _buildDescriptionSection(),
@@ -1793,6 +1800,277 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         ),
       ),
     );
+  }
+
+  // ==========================================================================
+  // Promotion Banner & Carousel
+  // ==========================================================================
+
+  /// Trigger banner below hero — tapping opens promotion carousel
+  Widget _buildPromotionBanner() {
+    final count = _establishment!.promotions!.length;
+    return GestureDetector(
+      onTap: () => _showPromotionCarousel(),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _primaryOrange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _primaryOrange.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Text('\u{1F525}', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                count == 1 ? 'Акция \u00b7 Подробнее \u2192' : '$count акции \u00b7 Подробнее \u2192',
+                style: TextStyle(
+                  color: _primaryOrange,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 14, color: _primaryOrange),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show promotion carousel as modal bottom sheet
+  void _showPromotionCarousel() {
+    final promotions = _establishment!.promotions!;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PromotionCarouselSheet(
+        promotions: promotions,
+        establishmentId: _establishment!.id,
+        establishmentName: _establishment!.name,
+      ),
+    );
+  }
+}
+
+/// Promotion carousel bottom sheet — PageView with indicator dots
+class _PromotionCarouselSheet extends StatefulWidget {
+  final List<Promotion> promotions;
+  final String establishmentId;
+  final String establishmentName;
+
+  const _PromotionCarouselSheet({
+    required this.promotions,
+    required this.establishmentId,
+    required this.establishmentName,
+  });
+
+  @override
+  State<_PromotionCarouselSheet> createState() => _PromotionCarouselSheetState();
+}
+
+class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
+  int _currentPage = 0;
+  final PageController _pageController = PageController();
+  final Set<int> _viewedPages = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _trackPromotionView(0);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  /// Fire-and-forget analytics call (non-blocking)
+  void _trackPromotionView(int pageIndex) {
+    if (_viewedPages.contains(pageIndex)) return;
+    _viewedPages.add(pageIndex);
+
+    ApiClient().post('/api/v1/analytics/promotion-view', data: {
+      'establishmentId': widget.establishmentId,
+    }).then((_) {}).catchError((_) => null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.65,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.promotions.length == 1 ? 'Акция' : 'Акции',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, size: 24),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.promotions.length,
+              onPageChanged: (index) {
+                setState(() => _currentPage = index);
+                _trackPromotionView(index);
+              },
+              itemBuilder: (context, index) =>
+                  _buildPromotionSlide(widget.promotions[index]),
+            ),
+          ),
+          if (widget.promotions.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24, top: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.promotions.length,
+                  (i) => Container(
+                    width: i == _currentPage ? 12 : 6,
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: i == _currentPage
+                          ? AppTheme.primaryOrange
+                          : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPromotionSlide(Promotion promotion) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 200,
+              width: double.infinity,
+              child: promotion.hasImage
+                  ? CachedNetworkImage(
+                      imageUrl: promotion.previewUrl ?? promotion.imageUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: Colors.grey[200],
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) => _buildAutoVisual(promotion),
+                    )
+                  : _buildAutoVisual(promotion),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            promotion.title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          ),
+          if (promotion.description != null && promotion.description!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              promotion.description!,
+              style: TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
+            ),
+          ],
+          if (promotion.validUntil != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.schedule, size: 16, color: Colors.grey[500]),
+                const SizedBox(width: 6),
+                Text(
+                  'до ${_formatDate(promotion.validUntil!)}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAutoVisual(Promotion promotion) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primaryOrange, AppTheme.primaryOrangeDark],
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                promotion.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.establishmentName,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
   }
 }
 
