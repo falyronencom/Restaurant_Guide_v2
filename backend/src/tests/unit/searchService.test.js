@@ -82,8 +82,9 @@ describe('searchService', () => {
         hasPrevious: false,
       });
 
-      // Verify query was called
-      expect(pool.query).toHaveBeenCalledTimes(2);
+      // Verify search + count queries were called (+ promotion enrichment queries)
+      expect(pool.query).toHaveBeenCalled();
+      expect(pool.query.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     test('should throw error for missing coordinates', async () => {
@@ -404,7 +405,11 @@ describe('searchService', () => {
         maxLon: 27.55,
       });
 
-      expect(result.establishments).toEqual(mockEstablishments);
+      // Each establishment should contain the original mock data plus promotion enrichment fields
+      expect(result.establishments.length).toBe(mockEstablishments.length);
+      expect(result.establishments[0]).toMatchObject(mockEstablishments[0]);
+      expect(result.establishments[0]).toHaveProperty('has_promotion');
+      expect(result.establishments[0]).toHaveProperty('promotion_count');
 
       // Verify query uses bounding box
       const query = pool.query.mock.calls[0][0];

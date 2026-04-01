@@ -9,6 +9,8 @@ import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
+import * as PromotionModel from '../models/promotionModel.js';
+import logger from '../utils/logger.js';
 
 /**
  * Synonym map: common search terms → related categories and cuisines.
@@ -184,6 +186,34 @@ function buildOrderByClause(sortBy, hasDistance = false) {
         return `${weightedRating} DESC, e.review_count DESC, distance_km ASC, e.name ASC`;
       }
       return `${weightedRating} DESC, e.review_count DESC, e.base_score DESC, e.name ASC`;
+  }
+}
+
+/**
+ * Enrich an array of establishments with promotion flags.
+ * Post-query enrichment: one batch query for all IDs, then attach has_promotion
+ * and promotion_count to each result. Does NOT modify the search query or ORDER BY.
+ *
+ * @param {Object[]} establishments - Array of establishment objects (must have .id)
+ * @returns {Promise<Object[]>} Same array with has_promotion and promotion_count added
+ */
+async function enrichWithPromotions(establishments) {
+  if (!establishments || establishments.length === 0) return establishments;
+
+  try {
+    const ids = establishments.map(e => e.id);
+    const promoMap = await PromotionModel.getActivePromotionsForEstablishments(ids);
+
+    return establishments.map(e => ({
+      ...e,
+      has_promotion: promoMap.has(e.id),
+      promotion_count: promoMap.has(e.id) ? promoMap.get(e.id).length : 0,
+    }));
+  } catch (error) {
+    // Non-blocking: if promotion enrichment fails, return results without promotion data.
+    // Search must never break due to promotion system issues.
+    logger.warn('Promotion enrichment failed, returning results without promotion data', { error: error.message });
+    return establishments.map(e => ({ ...e, has_promotion: false, promotion_count: 0 }));
   }
 }
 
@@ -459,7 +489,7 @@ export async function searchByRadius({
   const hasPrevious = page > 1;
 
   // Transform results with type conversions and distance field
-  const establishments = result.rows.map(row => ({
+  const rawEstablishments = result.rows.map(row => ({
     ...row,
     distance: row.distance_km, // Add 'distance' field that tests expect
     distance_km: parseFloat(row.distance_km),
@@ -468,6 +498,9 @@ export async function searchByRadius({
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
     review_count: parseInt(row.review_count) || 0,
   }));
+
+  // Post-query enrichment: add promotion flags without touching ORDER BY
+  const establishments = await enrichWithPromotions(rawEstablishments);
 
   return {
     establishments,
@@ -671,7 +704,7 @@ export async function searchWithoutLocation({
   const hasPrevious = page > 1;
 
   // Transform results (no distance field)
-  const establishments = result.rows.map(row => ({
+  const rawEstablishments = result.rows.map(row => ({
     ...row,
     distance: null, // No distance without coordinates
     distance_km: null,
@@ -680,6 +713,9 @@ export async function searchWithoutLocation({
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
     review_count: parseInt(row.review_count) || 0,
   }));
+
+  // Post-query enrichment: add promotion flags without touching ORDER BY
+  const establishments = await enrichWithPromotions(rawEstablishments);
 
   return {
     establishments,
@@ -866,11 +902,14 @@ export async function searchByBounds({
   const result = await pool.query(query, params);
 
   // Convert latitude/longitude from strings to numbers for JSON serialization
-  const establishments = result.rows.map(row => ({
+  const rawEstablishments = result.rows.map(row => ({
     ...row,
     latitude: parseFloat(row.latitude),
     longitude: parseFloat(row.longitude),
   }));
+
+  // Post-query enrichment: add promotion flags without touching ORDER BY
+  const establishments = await enrichWithPromotions(rawEstablishments);
 
   return {
     establishments,
@@ -910,8 +949,15 @@ export async function getEstablishmentById(id) {
   // Track view (non-blocking, fire-and-forget)
   EstablishmentModel.incrementViewCount(id);
 
-  // Load media from establishment_media table
-  const media = await MediaModel.getEstablishmentMedia(id);
+  // Load media and active promotions in parallel
+  // Promotions fetch is non-blocking: if it fails, detail still returns without promotions
+  const [media, promotions] = await Promise.all([
+    MediaModel.getEstablishmentMedia(id),
+    PromotionModel.getPromotionsByEstablishment(id, false).catch(err => {
+      logger.warn('Failed to fetch promotions for detail endpoint', { id, error: err.message });
+      return [];
+    }),
+  ]);
 
   return {
     ...row,
@@ -920,6 +966,7 @@ export async function getEstablishmentById(id) {
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
     review_count: parseInt(row.review_count) || 0,
     media, // Include all photos (interior, menu, etc.)
+    promotions, // Active promotions for this establishment
   };
 }
 
