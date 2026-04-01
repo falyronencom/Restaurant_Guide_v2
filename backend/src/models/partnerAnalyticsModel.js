@@ -88,6 +88,29 @@ export const trackCall = async (establishmentId) => {
   }
 };
 
+/**
+ * UPSERT a promotion view event.
+ * Column promotion_view_count already exists in establishment_analytics.
+ *
+ * @param {string} establishmentId - UUID
+ */
+export const trackPromotionView = async (establishmentId) => {
+  const query = `
+    INSERT INTO establishment_analytics (establishment_id, date, promotion_view_count)
+    VALUES ($1, CURRENT_DATE, 1)
+    ON CONFLICT (establishment_id, date)
+    DO UPDATE SET promotion_view_count = establishment_analytics.promotion_view_count + 1
+  `;
+  try {
+    await pool.query(query, [establishmentId]);
+  } catch (error) {
+    logger.error('Error tracking promotion view in analytics', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
 // ============================================================================
 // Partner Analytics Queries
 // ============================================================================

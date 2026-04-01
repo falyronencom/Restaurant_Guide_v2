@@ -43,6 +43,30 @@ export const trackCall = asyncHandler(async (req, res) => {
 });
 
 /**
+ * POST /api/v1/analytics/promotion-view
+ *
+ * Record a promotion view event. Public endpoint (no auth required).
+ */
+export const trackPromotionView = asyncHandler(async (req, res) => {
+  const { establishmentId } = req.body;
+
+  if (!establishmentId) {
+    return res.status(400).json({
+      success: false,
+      message: 'establishmentId is required',
+      error: { code: 'VALIDATION_ERROR' },
+    });
+  }
+
+  await partnerAnalyticsService.trackPromotionView(establishmentId);
+
+  res.status(200).json({
+    success: true,
+    data: { message: 'Promotion view event recorded' },
+  });
+});
+
+/**
  * GET /api/v1/partner/analytics/overview
  *
  * Returns aggregated metrics per establishment for the authenticated partner.

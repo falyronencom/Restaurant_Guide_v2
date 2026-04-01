@@ -33,6 +33,15 @@ export const trackCall = async (establishmentId) => {
   logger.debug('Call event tracked', { establishmentId });
 };
 
+/**
+ * Record a promotion view event.
+ * @param {string} establishmentId - UUID
+ */
+export const trackPromotionView = async (establishmentId) => {
+  await PartnerAnalyticsModel.trackPromotionView(establishmentId);
+  logger.debug('Promotion view event tracked', { establishmentId });
+};
+
 // ============================================================================
 // Analytics Endpoints
 // ============================================================================
