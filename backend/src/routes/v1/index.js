@@ -36,7 +36,8 @@ import tempMediaRoutes from './tempMediaRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import partnerAnalyticsRoutes from './partnerAnalyticsRoutes.js';
-import { trackCall } from '../../controllers/partnerAnalyticsController.js';
+import promotionRoutes from './promotionRoutes.js';
+import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
 
 const router = express.Router();
 
@@ -241,6 +242,15 @@ router.use('/notifications', notificationRoutes);
 router.post('/establishments/:id/track-call', trackCall);
 
 /**
+ * POST /api/v1/analytics/promotion-view
+ *
+ * Public endpoint for recording promotion view events from the mobile app.
+ * No authentication required — lightweight fire-and-forget tracking.
+ * Body: { establishmentId: UUID }
+ */
+router.post('/analytics/promotion-view', trackPromotionView);
+
+/**
  * /api/v1/partner/analytics/*
  *
  * Partner analytics endpoints (all require partner auth):
@@ -249,6 +259,17 @@ router.post('/establishments/:id/track-call', trackCall);
  * - GET /partner/analytics/ratings — rating distribution
  */
 router.use('/partner/analytics', partnerAnalyticsRoutes);
+
+/**
+ * /api/v1/partner/promotions/*
+ *
+ * Partner promotion endpoints (all require partner auth):
+ * - POST /partner/promotions — create promotion
+ * - GET /partner/promotions/establishment/:id — list promotions
+ * - PATCH /partner/promotions/:id — update promotion
+ * - DELETE /partner/promotions/:id — deactivate promotion
+ */
+router.use('/partner/promotions', promotionRoutes);
 
 /**
  * Placeholder for future route modules
