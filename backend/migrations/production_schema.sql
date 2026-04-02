@@ -1,7 +1,8 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- Generated for Railway deployment, Feb 2026
--- Combines base schema + all 12 migrations into final state
+-- Updated: April 2026 — includes migrations 001-020
+-- Combines base schema + all migrations into final state
 -- =====================================================
 
 -- Enable PostGIS extension (required for ST_MakePoint in search)
@@ -98,6 +99,11 @@ CREATE TABLE establishments (
     average_check_byn NUMERIC(10, 2),
     is_24_hours BOOLEAN DEFAULT FALSE,
 
+    -- Claiming infrastructure (migration 019)
+    is_seed BOOLEAN DEFAULT FALSE,
+    claimed_at TIMESTAMP,
+    claimed_by UUID REFERENCES users(id),
+
     -- Metadata
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -105,6 +111,7 @@ CREATE TABLE establishments (
 );
 
 CREATE INDEX idx_establishments_partner ON establishments(partner_id);
+CREATE INDEX idx_establishments_is_seed ON establishments(is_seed) WHERE is_seed = TRUE;
 CREATE INDEX idx_establishments_city ON establishments(city);
 CREATE INDEX idx_establishments_status ON establishments(status);
 CREATE INDEX idx_establishments_categories ON establishments USING GIN (categories);
@@ -192,16 +199,19 @@ CREATE TABLE promotions (
     title VARCHAR(255) NOT NULL,
     description TEXT,
     terms_and_conditions TEXT,
-    valid_from DATE NOT NULL,
-    valid_until DATE NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
+    image_url VARCHAR(500),                -- Cloudinary original (migration 020)
+    thumbnail_url VARCHAR(500),            -- 200x150 (migration 020)
+    preview_url VARCHAR(500),              -- 800x600 (migration 020)
+    valid_from DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_until DATE,                      -- nullable: null = бессрочная (migration 020)
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'expired', 'hidden_by_admin')),  -- replaces is_active (migration 020)
     position INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_promotions_establishment ON promotions(establishment_id);
-CREATE INDEX idx_promotions_active ON promotions(establishment_id, is_active);
+CREATE INDEX idx_promotions_status ON promotions(establishment_id, status);
 CREATE INDEX idx_promotions_dates ON promotions(valid_from, valid_until);
 
 -- =====================================================
@@ -236,6 +246,7 @@ CREATE TABLE establishment_analytics (
     detail_view_count INTEGER DEFAULT 0,
     favorite_count INTEGER DEFAULT 0,
     review_count INTEGER DEFAULT 0,
+    call_count INTEGER DEFAULT 0,              -- клики на телефон
     promotion_view_count INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(establishment_id, date)
