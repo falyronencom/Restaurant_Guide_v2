@@ -103,7 +103,7 @@
 - Analytics viewing
 - Notifications
 
-## Фаза 8: Admin Web Panel (Текущая фаза)
+## Фаза 8: Admin Web Panel (Завершена — Февраль 2026)
 
 ### Segment A: Foundation + Login (Завершён - Февраль 8, 2026)
 - Backend: admin login endpoint (`POST /api/v1/admin/auth/login`) с role gate

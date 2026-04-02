@@ -206,13 +206,16 @@ Context management: Green (<70%) -> Yellow (70-85%) -> Orange (85-90%) -> Red (>
 
 ## Последнее обновление
 
-**Март 2026** — Production Deployment + TestFlight
+**Апрель 2026** — MVP функционально завершён, приложение в TestFlight
 
-- Admin Panel MVP complete (Segments A-E): модерация, аналитика, аудит, управление отзывами
-- Railway production deployment: Backend + PostGIS + Redis
-- TestFlight: Apple approved for external testing
-- 626 backend tests (211 admin), 61.52% coverage
-- iOS fixes: map zoom, Могилёв ё/е, CORS
+- Акции партнёров (Component 4): backend CRUD, Cloudinary upload, бейдж в поиске, карусель на карточке
+- Ранжирование: байесовский средний рейтинг (m=5, C=3.5), completeness score, GPS-aware сортировка
+- Аналитика партнёра: графики, тренды, просмотры акций
+- Уведомления: 7 типов, 30-сек polling, группировка по времени
+- OAuth: Google + Yandex
+- Admin Panel MVP (модерация, аналитика, отзывы, claiming, аудит-лог)
+- 973 backend теста (41 suite)
+- Функциональная спецификация v3.4: полный аудит + двухслойная структура
 
 Полная история обновлений: [CHANGELOG.md](CHANGELOG.md)
 
@@ -228,4 +231,4 @@ Proprietary — все права защищены.
 
 ---
 
-*Последнее обновление: Март 4, 2026*
+*Последнее обновление: Апрель 2, 2026*
