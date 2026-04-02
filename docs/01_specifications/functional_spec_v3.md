@@ -1,8 +1,9 @@
 # Функциональная спецификация — Restaurant Guide Belarus (Nirivio)
 
-*Версия 3.2 — Актуальная редакция*
-*Последнее обновление: Март 2026*
+*Версия 3.3 — Актуальная редакция*
+*Последнее обновление: Апрель 2026*
 *Синхронизировано со Стратегией монетизации v0.4 (20 марта 2026)*
+*Синхронизировано с кодовой базой: апрель 2, 2026*
 
 ---
 
@@ -95,9 +96,9 @@
 **Инфраструктура:**
 
 - SendGrid — email уведомления (запланировано)
-- Docker — контейнеризация (запланировано)
+- Docker — контейнеризация для тестовой среды (redis-test, pg-test)
 - GitHub Actions — CI/CD (запланировано)
-- Хостинг в регионе (Литва/Польша для низкой латентности)
+- Railway — production хостинг (Backend + PostGIS + Redis, Hobby Plan)
 
 ### 2.2 Архитектура данных
 
@@ -108,12 +109,18 @@ Users {
   id: UUID
   email: string (unique)
   phone: string (unique, optional)
+  password_hash: string
   name: string
   avatar_url: string
   role: enum (user, partner, admin)
   auth_method: enum (email, phone, google, yandex)
-  created_at: timestamp
+  oauth_provider_id: string (nullable) — для Google/Yandex OAuth
+  email_verified: boolean (default false)
+  phone_verified: boolean (default false)
   is_active: boolean
+  last_login_at: timestamp (nullable)
+  created_at: timestamp
+  updated_at: timestamp
 }
 
 Establishments {
@@ -121,6 +128,7 @@ Establishments {
   partner_id: UUID (FK to Users)
   name: string
   description: text (nullable)
+  city: varchar(50) — CHECK constraint: Минск, Гродно, Брест, Гомель, Витебск, Могилев/Могилёв, Бобруйск
   address: string
   latitude: decimal
   longitude: decimal
@@ -162,11 +170,16 @@ Reviews {
   user_id: UUID
   establishment_id: UUID
   rating: integer (1-5)
-  content: text
-  is_visible: boolean
-  is_deleted: boolean
+  text: text — legacy column
+  content: text — standard column (migration 007)
+  is_visible: boolean (default true)
+  is_edited: boolean (default false)
+  is_deleted: boolean (default false) — soft deletion
+  partner_response: text (nullable) — ответ партнёра
+  partner_response_at: timestamptz (nullable)
   partner_responder_id: UUID (nullable)
   created_at: timestamp
+  updated_at: timestamp
 }
 
 EstablishmentMedia {
@@ -182,13 +195,107 @@ EstablishmentMedia {
   created_at: timestamp
 }
 
+Favorites {
+  id: UUID
+  user_id: UUID (FK to Users, CASCADE)
+  establishment_id: UUID (FK to Establishments, CASCADE)
+  created_at: timestamp
+  UNIQUE(user_id, establishment_id)
+}
+
+Promotions {
+  id: UUID
+  establishment_id: UUID (FK to Establishments, CASCADE)
+  title: varchar(255)
+  description: text (nullable)
+  terms_and_conditions: text (nullable) — резерв для будущего
+  image_url: varchar(500) (nullable) — Cloudinary original
+  thumbnail_url: varchar(500) (nullable) — 200x150
+  preview_url: varchar(500) (nullable) — 800x600
+  valid_from: date
+  valid_until: date (nullable) — null = бессрочная
+  status: varchar(20) — active/expired/hidden_by_admin
+  position: integer (default 0)
+  created_at: timestamp
+  updated_at: timestamp
+  Ограничения: max 3 активных на establishment, lazy expiry при чтении
+}
+
+Subscriptions {
+  id: UUID
+  establishment_id: UUID (FK to Establishments, CASCADE)
+  tier: enum (basic, standard, premium)
+  duration_type: enum (day, three_days, week, month)
+  started_at: timestamp
+  expires_at: timestamp
+  is_active: boolean (default true)
+  auto_renew: boolean (default false)
+  created_at: timestamp
+  Примечание: таблица создана, код не активен (Phase 1 = всё бесплатно)
+}
+
+EstablishmentAnalytics {
+  id: UUID
+  establishment_id: UUID (FK to Establishments, CASCADE)
+  date: date
+  view_count: integer (default 0)
+  detail_view_count: integer (default 0)
+  favorite_count: integer (default 0)
+  review_count: integer (default 0)
+  call_count: integer (default 0) — клики на телефон
+  promotion_view_count: integer (default 0)
+  created_at: timestamp
+  UNIQUE(establishment_id, date) — UPSERT per day
+}
+
+RefreshTokens {
+  id: UUID
+  user_id: UUID (FK to Users, CASCADE)
+  token: varchar(500) (unique)
+  expires_at: timestamp
+  created_at: timestamp
+  used_at: timestamp (nullable) — для ротации
+  replaced_by: UUID (nullable, FK to RefreshTokens)
+}
+
+PartnerDocuments {
+  id: UUID
+  partner_id: UUID (FK to Users, CASCADE)
+  establishment_id: UUID (FK to Establishments, nullable)
+  document_type: varchar(50)
+  document_url: varchar(500)
+  company_name: varchar(255) (nullable)
+  tax_id: varchar(50) (nullable) — УНП, 9 цифр
+  contact_person: varchar(100) (nullable)
+  contact_email: varchar(255) (nullable)
+  verified: boolean (default false)
+  verified_by: UUID (nullable)
+  verified_at: timestamp (nullable)
+  created_at: timestamp
+}
+
+Notifications {
+  id: UUID
+  user_id: UUID (FK to Users, CASCADE)
+  type: varchar(50) — establishment_approved, establishment_rejected, review_received, etc.
+  title: varchar(255)
+  message: text (nullable)
+  establishment_id: UUID (nullable, FK to Establishments)
+  review_id: UUID (nullable, FK to Reviews, SET NULL)
+  is_read: boolean (default false)
+  created_at: timestamp
+}
+
 AuditLog {
   id: UUID
-  admin_id: UUID
-  action: string
-  entity_type: string
+  user_id: UUID (FK to Users)
+  action: varchar(100)
+  entity_type: varchar(50)
   entity_id: UUID
-  details: jsonb
+  old_data: jsonb — состояние до изменения
+  new_data: jsonb — состояние после изменения
+  ip_address: inet (nullable)
+  user_agent: text (nullable)
   created_at: timestamp
 }
 ```
@@ -371,6 +478,14 @@ AuditLog {
 - Расстояние от пользователя
 - Интерактивная карта с маркером (тап открывает полноэкранную карту)
 
+**Секция «Акции» (если есть активные промо-предложения):**
+
+- Триггер-баннер под hero-секцией: "Акция · Подробнее →"
+- По тапу — модальный bottom sheet с каруселью акций (PageView)
+- Каждый слайд: изображение промо (Cloudinary preview) или автогенерированный визуал (градиент + название), заголовок, описание, дата окончания
+- Индикатор-точки при нескольких акциях
+- Аналитика: POST /analytics/promotion-view при просмотре каждого слайда (fire-and-forget)
+
 **Отзывы и рейтинги:**
 
 - Общий рейтинг (большая цифра)
@@ -494,6 +609,29 @@ AuditLog {
 - Редактирование (без повторной модерации для большинства изменений)
 - Добавить новое заведение
 
+#### 3.3.2a Управление акциями (экран «Продвижение»)
+
+**Навигация:** Кнопка «Продвижение» на виньетке заведения → экран «Акции»
+
+**Структура экрана:**
+
+- AppBar: "Акции" + кнопка "+ Создать акцию"
+- Секция «Активные (N/3)» — список активных акций с заголовком, датой окончания, счётчиком просмотров. Действия: редактировать, деактивировать
+- Секция «Завершённые» — список истёкших/деактивированных акций
+
+**Ограничения:** Максимум 3 активных акции на заведение. При попытке создать 4-ю — ошибка 400.
+
+**Создание/редактирование акции (отдельный экран):**
+
+- Название (обязательно, макс 80 символов)
+- Описание (опционально, многострочное)
+- Изображение (опционально, image picker → preview → Cloudinary upload server-side)
+- Дата начала (DatePicker, по умолчанию сегодня)
+- Дата окончания (опционально, null = бессрочная)
+- Кнопка «Сохранить» → POST/PATCH → возврат к списку
+
+**Важно:** В Phase 1 подписка не требуется — все одобренные партнёры могут создавать акции бесплатно. Никакого UI, связанного с оплатой, на этом экране.
+
 #### 3.3.3 Аналитика партнера
 
 **Селектор периода:**
@@ -507,7 +645,7 @@ AuditLog {
 - Добавления в избранное (favorite_count)
 - Отзывы и оценки (review_count, average_rating)
 - Completeness score (прогресс-бар полноты карточки)
-- Просмотры/клики акций (для платного тарифа)
+- Просмотры акций (promotion_view_count — доступно всем партнёрам в Phase 1)
 
 **Особенности визуализации:**
 
@@ -523,6 +661,25 @@ AuditLog {
 - Просмотр всех отзывов с фильтрацией по периоду
 - Возможность ответить на отзыв
 - Индикация отзывов с ответами и без
+
+### 3.3.5 Система уведомлений
+
+**Backend:**
+
+- Таблица `notifications` — per-user, типизированные уведомления
+- Типы: `establishment_approved`, `establishment_rejected`, `establishment_suspended`, `establishment_unsuspended`, `review_received`, `review_response`, `system`
+- Автоматическое создание при модераторских действиях и новых отзывах
+- API: `GET /notifications` (пагинация + фильтр по категории), `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`
+
+**Mobile:**
+
+- NotificationProvider с 30-секундным polling (Timer.periodic)
+- Красная точка на вкладке «Профиль» при наличии непрочитанных
+- Иконка колокольчика в шапке профиля с счётчиком
+- Экран уведомлений: группировка по времени (Новые / Сегодня / На этой неделе / Ранее)
+- Фильтры: Все / Мои заведения / Мои отзывы
+- Тап → навигация к целевому объекту (заведение или отзыв)
+- Pull-to-refresh, scroll pagination
 
 ### 3.4 Административная панель (Web)
 
@@ -563,6 +720,13 @@ AuditLog {
 - Действия: скрыть / показать отзыв, мягкое удаление
 - Пагинация
 
+**Claiming (управление seed-карточками):**
+
+- Кнопка «Передать партнёру» на карточке seed-заведения
+- Диалог поиска пользователя по email/имени
+- Действие: смена partner_id + role upgrade до 'partner' + установка claimed_at
+- Аудит-лог записывает claiming действие
+
 **Журнал действий:**
 
 - Хронологический лог всех административных действий
@@ -576,10 +740,12 @@ AuditLog {
 - Множественные уровни доступа (модератор, старший модератор, супер-админ)
 - Экспорт данных из аналитики
 - Управление подписками и платежами партнёров (таблица plans, не enum)
-- Система уведомлений администраторам
-- Admin-эндпоинты для claiming: смена partner_id, upgrade-to-partner, invite-link генерация
+- Система уведомлений администраторам (push/email)
+- ~~Admin-эндпоинты для claiming~~ — **реализовано** (migration 019, admin UI)
+- Invite-link claiming (Фаза 1.5, когда seed > 50)
 - Полуавтоматическая верификация партнёров (форматные проверки + ссылка на egr.gov.by)
 - AI-модерация отзывов
+- Модерация акций (admin → status='hidden_by_admin', инфраструктура готова)
 
 ---
 
@@ -606,7 +772,7 @@ AuditLog {
 
 Предварительно один тариф (финальное решение привязано к ценовой точке — отдельная сессия):
 
-- **Акции** — промо-предложения, видимые как бейдж на карточке + бейдж на пине карты. Не влияют на позицию в выдаче. Отдельная метрика кликов.
+- **Акции** — промо-предложения, видимые как бейдж [АКЦИЯ] на карточке поиска + карусель на детальной карточке. Не влияют на позицию в выдаче (post-query enrichment). Отдельная метрика просмотров (promotion_view_count). **Реализовано** (апрель 2026): CRUD, Cloudinary upload, max 3 на заведение, lazy expiry. В Phase 1 — бесплатно для всех партнёров.
 - **Бронирование** — дата, время, гости → партнёр подтверждает/отклоняет. Без комиссий. Релевантно для Dining и Entertainment, не для Quick-сегмента.
 - *(Будущее)* Push-уведомления пользователям из «Избранного»
 
