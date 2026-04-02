@@ -65,3 +65,7 @@ nul
 # Claude scratchpad files (temp data)
 *scratchpad*.json
 
+# Internal documentation (methodology, specs — local only, not for public repo)
+docs/00_methodology/
+docs/01_specifications/
+
