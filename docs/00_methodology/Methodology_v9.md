@@ -1,7 +1,7 @@
-# Distributed Intelligence Methodology v9.3
+# Distributed Intelligence Methodology v9.4
 
-**Version:** 9.3
-**Date:** March 2026
+**Version:** 9.4
+**Date:** April 2026
 **Status:** Active Operational Standard
 **Core Paradigm:** Co-Creative Partnership Between Human Coordination and Autonomous Agents
 
@@ -65,15 +65,21 @@ A degraded session cannot recover by trying harder. The productive response: com
 
 **Protocol 8 — Strategic Continuity Across Trunk Sessions**
 
-Trunk sessions have finite context, just like Leaf sessions. The strategic thread must be preserved explicitly.
+Trunk sessions have finite context, just like Leaf sessions. The strategic thread must be preserved explicitly. Two transfer mechanisms serve different purposes:
+
+**Continuation Handoff** is used when the next session continues the strategic thread (Component N → Component N+1). It carries architectural decisions, context, priorities, and open questions. This is the coupling between train cars — each main Trunk session is a car in the train (the project).
+
+**Task Brief** is used for self-contained sessions that serve the project but don't continue the strategic thread. It carries only the minimum context needed for the specific task. Examples: methodology update (receives insight text), documentation hygiene (receives standard checklist), parallel brainstorm session (receives specific questions), ad-hoc fixes (receives bug description). A Task Brief is typically 5-15 lines vs 50-80 lines for a full Handoff — the cognitive tax difference is significant.
+
+**Decision criterion:** Does the next session need to understand the strategic trajectory of the project, or does it need to accomplish a specific bounded task? If strategic trajectory → Continuation Handoff. If bounded task → Task Brief.
 
 *When closing a Trunk session:*
 1. Update Project Status Briefing (current state of the project — what works, what's in progress)
-2. Create Trunk-to-Trunk Handoff (what this session accomplished, key decisions and their rationale, recommended next priorities)
+2. Create Continuation Handoff or Task Brief(s) as needed for planned next sessions
 
 *When opening a new Trunk session:*
 1. New Trunk reads updated Project Status Briefing automatically from Instructions
-2. Coordinator provides the Trunk-to-Trunk Handoff from the previous session
+2. Coordinator provides the Continuation Handoff from the previous session (or Task Brief if the session is bounded)
 3. Trunk orients, confirms understanding, and continues the strategic thread
 
 ---
@@ -82,8 +88,9 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 
 #### Starting a Trunk Session
 
-- [ ] Previous Trunk-to-Trunk Handoff ready to provide
+- [ ] Previous Continuation Handoff or Task Brief ready to provide (see Protocol 8 for selection criteria)
 - [ ] Project Status Briefing in Instructions reflects current state
+- [ ] Are business decisions crystallized, or is Pre-flight Conceptual Resolution needed? (see §1.2.1)
 - [ ] Clear objective for this session (what strategic work needs to happen)
 
 #### Starting a Leaf Session
@@ -112,13 +119,15 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 #### Closing a Trunk Session
 
 - [ ] Project Status Briefing updated with current state
-- [ ] Trunk-to-Trunk Handoff created (accomplishments, decisions, next priorities)
+- [ ] Continuation Handoff and/or Task Briefs created for planned next sessions (see Protocol 8)
 - [ ] Any methodology or documentation changes noted for synchronization
 - [ ] Documentation Hygiene Checkpoint needed? (phase completed / transient artifacts accumulating)
 
 ---
 
-### Trunk-to-Trunk Handoff Format
+### Continuation Handoff Format
+
+Used when the next session continues the strategic thread (see Protocol 8).
 
 ```markdown
 # Trunk Handoff: Session [N] → Session [N+1]
@@ -140,6 +149,8 @@ Trunk sessions have finite context, just like Leaf sessions. The strategic threa
 ## Open Questions (if any)
 - [Unresolved question for future consideration]
 ```
+
+Task Brief format: see §1.4 Artifact Formats.
 
 ---
 
@@ -255,6 +266,25 @@ Pre-flight Discovery is the standard flow for all Trunk directives. However, for
 #### Discovery Beyond Code
 
 Pre-flight Discovery's value extends beyond codebase investigation. Any resource that requires "coordinates" for autonomous access benefits from Librarian collecting those coordinates in advance. Figma frame nodeIds are GPS coordinates for design, just as file paths are GPS coordinates for code. When a feature involves external resources (Figma designs, API endpoints, configuration files), the Discovery Directive should include investigation questions that collect access coordinates for the Implementer. This transforms resources that would otherwise require Coordinator mediation into autonomously accessible assets.
+
+#### 1.2.1 Pre-flight Conceptual Resolution
+
+Pre-flight Discovery resolves uncertainties about *code state*. Pre-flight Conceptual Resolution resolves uncertainties about *business decisions*. Both feed into Trunk, which synthesizes facts and decisions into an Informed Directive.
+
+```
+Pre-flight Discovery:       Trunk → Discovery Directive → Librarian → code facts
+Conceptual Resolution:      Coordinator → brainstorm session → business decisions
+
+Both feed into Trunk → Informed Directive (synthesizes facts + decisions)
+```
+
+**Rationale:** Business-conceptual work ("what do we want?") and operational-architectural work ("how do we build it?") require different modes of thinking. When both arrive at Trunk simultaneously, cognitive competition degrades both. Separating them into dedicated spaces allows each to receive full attention. This extends the Cognitive Tax framework (§1.5) — conceptual tax is a third distinct type alongside navigational and intellectual. See §1.5 for the complete taxonomy.
+
+**Trigger:** The Coordinator arrives at Trunk with open questions about the same feature — formulations like "I was thinking about this as..." or "there could be another option." Business decisions are still fluid.
+
+**Output:** A **Business Brief** — a compact document (1-3 pages) with decisions as table (parameter → decision → rationale), lifecycle rules, UI/UX sketches if relevant, phasing, and explicit "open questions deferred to later."
+
+**Empirical validation:** Component 4 (Promotions, v9.4). Business Brief → Discovery Report → Informed Directive with zero ambiguity, zero mid-implementation clarification requests.
 
 ---
 
@@ -591,6 +621,31 @@ For mid-session checkpoints during multi-session work (see Section 1.5):
 - [Key decision or constraint for continuation]
 ```
 
+#### Task Brief Format
+
+A Task Brief is a lightweight inter-session transfer for self-contained tasks that don't continue the strategic thread (see Protocol 8). It carries only the minimum context needed, avoiding cognitive overload from irrelevant strategic context.
+
+```markdown
+# Task Brief: [Task Name]
+
+## Context
+[2-3 sentences: why this task exists and what triggered it]
+
+## Specific Input
+[The actual content needed — insight text, checklist, questions,
+bug description. This is the payload.]
+
+## Expected Output
+[What the session should produce]
+
+## Constraints (if any)
+[Boundaries or things to avoid]
+```
+
+**Length:** 5-15 lines. Contrast with Continuation Handoff (50-80 lines). The receiving agent processes only what it needs.
+
+**Examples of Task Brief use:** methodology update (receives insight text), documentation hygiene checkpoint (receives standard checklist), parallel brainstorm session (receives specific questions), ad-hoc operational fixes (receives bug description).
+
 ---
 
 ### 1.5 Session Management
@@ -599,11 +654,11 @@ For mid-session checkpoints during multi-session work (see Section 1.5):
 
 Trunk sessions follow a three-phase lifecycle that ensures strategic continuity across the project's development arc.
 
-**Opening Phase:** The new Trunk session reads the Project Status Briefing from Project Instructions (this happens automatically as part of the project context). The Coordinator provides the Trunk-to-Trunk Handoff from the previous session. Trunk orients by confirming understanding of current project state, reviewing key decisions from the previous session, and identifying the strategic work ahead. This orientation can be brief — a few sentences confirming readiness — or detailed if the handoff raises questions.
+**Opening Phase:** The new Trunk session reads the Project Status Briefing from Project Instructions (this happens automatically as part of the project context). The Coordinator provides the Continuation Handoff from the previous session (or a Task Brief if the session is bounded — see Protocol 8). Trunk orients by confirming understanding of current project state, reviewing key decisions from the previous session, and identifying the strategic work ahead. This orientation can be brief — a few sentences confirming readiness — or detailed if the handoff raises questions.
 
 **Working Phase:** Trunk performs its strategic contributions: analyzing Discovery Reports, creating directives, evolving methodology, coordinating cross-domain integration. Throughout this phase, the Coordinator monitors context usage. Trunk sessions are subject to the same context limitations as Leaf sessions, though they tend to be more efficient since they don't perform codebase discovery.
 
-**Closing Phase:** Before ending, the Trunk session updates the Project Status Briefing with the current state of the project and creates a Trunk-to-Trunk Handoff (see Kernel for format) documenting accomplishments, decisions, and recommended next priorities. Any methodology or documentation changes are noted for synchronization between Project Instructions and Git repository.
+**Closing Phase:** Before ending, the Trunk session updates the Project Status Briefing with the current state of the project and creates a Continuation Handoff and/or Task Briefs as needed (see Kernel, Protocol 8 for formats and selection criteria). Any methodology or documentation changes are noted for synchronization between Project Instructions and Git repository.
 
 #### Session Planning and Complexity Calibration
 
@@ -667,9 +722,19 @@ If the **only** reason for segmentation is "won't fit in context," at 1M this re
 
 **Cognitive Tax (Intellectual)** — cognitive resources spent on holding discovered relationships, patterns, and dependencies in active focus. This component does not scale with context window size — it depends on the inherent complexity of the code being analyzed, not the amount of context available. A session analyzing 20 interconnected files experiences the same Cognitive Tax whether the context window is 200K or 1M.
 
-In Mode A (classic protocol), the Librarian absorbs both taxes, and the Implementer begins with full cognitive capacity in a clean session. In Mode C (unified), the navigational tax transforms into an advantage (the agent already "knows" the territory), but the Cognitive Tax persists in the session. This distinction is the primary factor when choosing between continuing in Mode C and escalating to Mode A at the Context Checkpoint.
+**Conceptual Tax (Business-Decisional)** — cognitive resources spent on resolving uncrystallized business decisions within a strategic session. When the Coordinator arrives at Trunk with open questions about subscription models, feature lifecycles, or pricing, Trunk must simultaneously resolve "what do we want?" and "how do we build it?" This creates cognitive competition between business-conceptual and operational-architectural work. Pre-flight Conceptual Resolution (§1.2.1) addresses this by giving business decisions a dedicated resolution space before Trunk begins architectural planning.
 
-Pre-flight Discovery addresses both taxes structurally — the Librarian pays them in disposable context, and the Implementer receives compressed results. In Mode C, navigational tax is paid once and retained as an asset; Cognitive Tax is the factor to monitor.
+The three taxes form a complete taxonomy of cognitive costs in the co-creative system:
+
+| Tax Type | Where It Occurs | Addressed By |
+|----------|----------------|-------------|
+| Navigational | Leaf (finding code) | Pre-flight Discovery |
+| Intellectual | Leaf (holding complexity) | Mode A escalation |
+| Conceptual | Trunk (unresolved business questions) | Pre-flight Conceptual Resolution |
+
+In Mode A (classic protocol), the Librarian absorbs navigational and intellectual taxes, and the Implementer begins with full cognitive capacity in a clean session. In Mode C (unified), the navigational tax transforms into an advantage (the agent already "knows" the territory), but the Cognitive Tax persists in the session. This distinction is the primary factor when choosing between continuing in Mode C and escalating to Mode A at the Context Checkpoint.
+
+Pre-flight Discovery addresses navigational and intellectual taxes structurally — the Librarian pays them in disposable context, and the Implementer receives compressed results. In Mode C, navigational tax is paid once and retained as an asset; Cognitive Tax is the factor to monitor. Pre-flight Conceptual Resolution addresses conceptual tax at the Coordinator/Trunk boundary — the brainstorm session pays it in a separate context, and Trunk receives crystallized decisions.
 
 #### Context Checkpoints (Standard Practice)
 
@@ -694,7 +759,7 @@ Each measurement is recorded in the session's final report (Completion Report or
 
 **Important:** These figures reflect navigational consumption (Discovery Tax), not Cognitive Tax. A task consuming only 15% of context may still be cognitively demanding if it involves 20 interconnected files. The Coordinator must separately assess cognitive complexity — Context Checkpoints measure the navigational dimension only.
 
-**Calibration data sources:** Twin Task "Клуб" (v9.2), Partner Analytics, Ranking Core, Claiming Infrastructure (v9.3). All four complexity categories now have empirical measurements. High complexity (Ranking Core, 22%) came in significantly below the initial estimate of 30-50%, suggesting that 1M context handles even complex multi-segment tasks efficiently.
+**Calibration data sources:** Twin Task "Клуб" (v9.2), Partner Analytics, Ranking Core, Claiming Infrastructure (v9.3), Promotions (v9.4). All four complexity categories now have empirical measurements. High complexity (Ranking Core, 22%) came in significantly below the initial estimate of 30-50%, suggesting that 1M context handles even complex multi-segment tasks efficiently. Promotions (21%) is the first measurement where Pre-flight Conceptual Resolution was used, confirming that crystallized business decisions improve directive quality.
 
 **Raw empirical data (individual sessions):**
 
@@ -704,6 +769,7 @@ Each measurement is recorded in the session's final report (Completion Report or
 | Partner Analytics (Disc+2Seg) | Medium | 15% | Mode C | v9.3 |
 | Ranking Core (Disc+2Seg) | High | 22% | Mode C | v9.3 |
 | Claiming (Disc+Impl) | Low-Medium | 15% | Mode C | v9.3 |
+| Promotions (Disc+2Seg+Docs) | Medium | 21% | Mode C | v9.4 |
 
 **Per-phase context patterns:**
 
@@ -1088,7 +1154,7 @@ All code produced in the co-creative process is expected to be production-ready.
 
 ---
 
-*Methodology v9.3 — Version history tracked in git: `git log docs/00_methodology/Methodology_v9.md`*
+*Methodology v9.4 — Version history tracked in git: `git log docs/00_methodology/Methodology_v9.md`*
 
 *This methodology serves as the operational reference for all Trunk and Leaf sessions in the Restaurant Guide project. It establishes the co-creative partnership architecture enabling efficient collaboration between strategic planning and autonomous execution.*
 
