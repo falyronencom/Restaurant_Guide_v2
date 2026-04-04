@@ -1,0 +1,147 @@
+import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_mobile/models/booking.dart';
+import 'package:restaurant_guide_mobile/services/api_client.dart';
+
+/// Provider for partner booking management.
+/// Handles listing, confirming, declining, and status updates.
+class BookingProvider with ChangeNotifier {
+  final ApiClient _apiClient = ApiClient();
+
+  // State
+  List<Booking> _pendingBookings = [];
+  List<Booking> _confirmedBookings = [];
+  List<Booking> _historyBookings = [];
+  bool _isLoading = false;
+  String? _error;
+
+  // Getters
+  List<Booking> get pendingBookings => _pendingBookings;
+  List<Booking> get confirmedBookings => _confirmedBookings;
+  List<Booking> get historyBookings => _historyBookings;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  int get pendingCount => _pendingBookings.length;
+  int get confirmedCount => _confirmedBookings.length;
+
+  /// Load all partner bookings for an establishment
+  Future<void> loadPartnerBookings(String establishmentId) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiClient
+          .get('/api/v1/partner/bookings/$establishmentId');
+
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final data = (response.data as Map<String, dynamic>)['data'];
+        final items = (data is Map<String, dynamic>)
+            ? (data['items'] as List? ?? [])
+            : (data is List ? data : []);
+
+        final allBookings = items
+            .map((b) => Booking.fromJson(b as Map<String, dynamic>))
+            .toList();
+
+        _pendingBookings =
+            allBookings.where((b) => b.isPending).toList();
+        _confirmedBookings =
+            allBookings.where((b) => b.isConfirmed).toList();
+        _historyBookings = allBookings
+            .where((b) =>
+                !b.isPending && !b.isConfirmed)
+            .toList();
+      }
+    } catch (e) {
+      _error = 'Ошибка загрузки бронирований';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Confirm a pending booking
+  Future<bool> confirmBooking(
+      String establishmentId, String bookingId) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/partner/bookings/$establishmentId/$bookingId/confirm',
+      );
+
+      if (response.statusCode == 200) {
+        await loadPartnerBookings(establishmentId);
+        return true;
+      }
+      _error = 'Не удалось подтвердить бронь';
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Ошибка подтверждения';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Decline a pending booking
+  Future<bool> declineBooking(
+      String establishmentId, String bookingId, String reason) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/partner/bookings/$establishmentId/$bookingId/decline',
+        data: {'reason': reason},
+      );
+
+      if (response.statusCode == 200) {
+        await loadPartnerBookings(establishmentId);
+        return true;
+      }
+      _error = 'Не удалось отклонить бронь';
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Ошибка отклонения';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Mark as no-show
+  Future<bool> markNoShow(
+      String establishmentId, String bookingId) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/partner/bookings/$establishmentId/$bookingId/no-show',
+      );
+
+      if (response.statusCode == 200) {
+        await loadPartnerBookings(establishmentId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _error = 'Ошибка отметки неявки';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Mark as completed
+  Future<bool> markCompleted(
+      String establishmentId, String bookingId) async {
+    try {
+      final response = await _apiClient.put(
+        '/api/v1/partner/bookings/$establishmentId/$bookingId/complete',
+      );
+
+      if (response.statusCode == 200) {
+        await loadPartnerBookings(establishmentId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _error = 'Ошибка завершения';
+      notifyListeners();
+      return false;
+    }
+  }
+}

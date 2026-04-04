@@ -8,7 +8,14 @@ enum NotificationType {
   newReview,
   partnerResponse,
   reviewHidden,
-  reviewDeleted;
+  reviewDeleted,
+  establishmentUnsuspended,
+  establishmentClaimed,
+  bookingReceived,
+  bookingConfirmed,
+  bookingDeclined,
+  bookingExpired,
+  bookingCancelled;
 
   static NotificationType fromString(String value) {
     switch (value) {
@@ -18,6 +25,10 @@ enum NotificationType {
         return NotificationType.establishmentRejected;
       case 'establishment_suspended':
         return NotificationType.establishmentSuspended;
+      case 'establishment_unsuspended':
+        return NotificationType.establishmentUnsuspended;
+      case 'establishment_claimed':
+        return NotificationType.establishmentClaimed;
       case 'new_review':
         return NotificationType.newReview;
       case 'partner_response':
@@ -26,6 +37,16 @@ enum NotificationType {
         return NotificationType.reviewHidden;
       case 'review_deleted':
         return NotificationType.reviewDeleted;
+      case 'booking_received':
+        return NotificationType.bookingReceived;
+      case 'booking_confirmed':
+        return NotificationType.bookingConfirmed;
+      case 'booking_declined':
+        return NotificationType.bookingDeclined;
+      case 'booking_expired':
+        return NotificationType.bookingExpired;
+      case 'booking_cancelled':
+        return NotificationType.bookingCancelled;
       default:
         return NotificationType.newReview;
     }
@@ -68,12 +89,20 @@ class NotificationModel {
       case NotificationType.establishmentApproved:
       case NotificationType.establishmentRejected:
       case NotificationType.establishmentSuspended:
+      case NotificationType.establishmentUnsuspended:
+      case NotificationType.establishmentClaimed:
       case NotificationType.newReview:
         return NotificationCategory.establishments;
       case NotificationType.partnerResponse:
       case NotificationType.reviewHidden:
       case NotificationType.reviewDeleted:
         return NotificationCategory.reviews;
+      case NotificationType.bookingReceived:
+      case NotificationType.bookingConfirmed:
+      case NotificationType.bookingDeclined:
+      case NotificationType.bookingExpired:
+      case NotificationType.bookingCancelled:
+        return NotificationCategory.establishments;
     }
   }
 
@@ -94,6 +123,20 @@ class NotificationModel {
         return Icons.visibility_off;
       case NotificationType.reviewDeleted:
         return Icons.delete_outline;
+      case NotificationType.establishmentUnsuspended:
+        return Icons.play_circle;
+      case NotificationType.establishmentClaimed:
+        return Icons.store;
+      case NotificationType.bookingReceived:
+        return Icons.calendar_today;
+      case NotificationType.bookingConfirmed:
+        return Icons.event_available;
+      case NotificationType.bookingDeclined:
+        return Icons.event_busy;
+      case NotificationType.bookingExpired:
+        return Icons.schedule;
+      case NotificationType.bookingCancelled:
+        return Icons.cancel_schedule_send;
     }
   }
 
@@ -112,6 +155,18 @@ class NotificationModel {
         return const Color(0xFF2196F3);
       case NotificationType.reviewHidden:
       case NotificationType.reviewDeleted:
+        return const Color(0xFF9E9E9E);
+      case NotificationType.establishmentUnsuspended:
+        return const Color(0xFF4CAF50);
+      case NotificationType.establishmentClaimed:
+        return const Color(0xFF2196F3);
+      case NotificationType.bookingReceived:
+        return const Color(0xFFF06B32);
+      case NotificationType.bookingConfirmed:
+        return const Color(0xFF4CAF50);
+      case NotificationType.bookingDeclined:
+      case NotificationType.bookingExpired:
+      case NotificationType.bookingCancelled:
         return const Color(0xFF9E9E9E);
     }
   }
