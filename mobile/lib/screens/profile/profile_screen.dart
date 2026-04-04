@@ -12,6 +12,8 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/notifications/notification_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/promotion_hub_screen.dart';
+import 'package:restaurant_guide_mobile/screens/profile/user_bookings_screen.dart';
+import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
@@ -705,6 +707,11 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
 
                           const SizedBox(height: 24),
 
+                          // Bookings section
+                          _buildBookingsEntry(),
+
+                          const SizedBox(height: 24),
+
                           // Reviews section
                           _buildReviewsSection(),
 
@@ -912,6 +919,67 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           color: _backgroundColor,
           fontWeight: FontWeight.w400,
         ),
+      ),
+    );
+  }
+
+  /// Build bookings entry point
+  Widget _buildBookingsEntry() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Consumer<BookingProvider>(
+        builder: (context, provider, _) {
+          final activeCount = provider.userActiveBookings.length;
+          return GestureDetector(
+            onTap: () {
+              Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(
+                  builder: (context) => const UserBookingsScreen(),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, color: AppTheme.primaryOrange),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Мои бронирования',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (activeCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryOrange,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$activeCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right, color: AppTheme.gray400),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
