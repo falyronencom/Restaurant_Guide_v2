@@ -8,6 +8,16 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 2: Monetization Features
 
+#### Апрель 4, 2026 — Component 5: Reservations / Booking System (Segments A+B+C)
+- **Discovery**: Full investigation of 10 integration points + 4 peripheral (promotions hub, detail screen boundary, notification/analytics patterns, working_hours format, subscriptions table, migration state)
+- **Migration 021**: `booking_settings` + `bookings` tables, `booking_enabled` on establishments, `booking_request_count`/`booking_confirmed_count` on analytics
+- **Backend**: bookingSettingsModel (UPSERT), bookingModel (CRUD + lazy expiry), bookingSettingsService (transactional activate/deactivate), bookingService (full lifecycle with 9 validations: user limits, working hours, time constraints, status transitions), 12 endpoints (4 settings + 5 partner + 3 user), 5 notification types + helpers, 2 analytics tracking functions
+- **Mobile Partner**: PromotionHubScreen (replaces direct PromotionsScreen navigation — Акции + Бронирование sections), BookingWizardScreen (3-step activation: settings → time → confirmation), BookingsManagementScreen (pending with countdown timers, confirmed grouped by date, history with filters), BookingSettingsProvider + BookingProvider
+- **Mobile User**: BookingBottomSheet (date/time/guests picker with time slot generation from both working_hours formats), booking CTA "Хочу забронировать" on detail screen, "Онлайн бронь" indicator on search cards, UserBookingsScreen (active + history with cancel/retry/call actions), "Мои бронирования" in profile with active count badge
+- **Notification sync**: +7 types in mobile enum (unsuspended, claimed, 5 booking types) — now 14 total
+- **Tests**: 54 new backend unit tests (model + service + settings). 1032 total tests passing, zero regressions
+- **Context telemetry**: Discovery ~14% → Final ~28% of 1M context (Mode C unified session, 3 segments)
+
 #### Апрель 1, 2026 — Component 4: Promotions (Segments A+B)
 - **Discovery**: Full investigation of subscription fields, media/Cloudinary patterns, search query structure, partner dashboard, detail screen (8 questions + 4 peripheral)
 - **Migration 020**: Modified `promotions` table — added image_url/thumbnail_url/preview_url, replaced is_active→status (active/expired/hidden_by_admin), nullable valid_until for indefinite promotions
