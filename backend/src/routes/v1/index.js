@@ -37,6 +37,8 @@ import adminRoutes from './adminRoutes.js';
 import notificationRoutes from './notificationRoutes.js';
 import partnerAnalyticsRoutes from './partnerAnalyticsRoutes.js';
 import promotionRoutes from './promotionRoutes.js';
+import bookingSettingsRoutes from './bookingSettingsRoutes.js';
+import { partnerBookingRouter, userBookingRouter } from './bookingRoutes.js';
 import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
 
 const router = express.Router();
@@ -270,6 +272,39 @@ router.use('/partner/analytics', partnerAnalyticsRoutes);
  * - DELETE /partner/promotions/:id — deactivate promotion
  */
 router.use('/partner/promotions', promotionRoutes);
+
+/**
+ * /api/v1/partner/booking-settings/*
+ *
+ * Partner booking settings endpoints (all require partner auth):
+ * - GET /partner/booking-settings/:id — get settings
+ * - POST /partner/booking-settings/:id/activate — activate booking
+ * - PUT /partner/booking-settings/:id — update settings
+ * - POST /partner/booking-settings/:id/deactivate — deactivate booking
+ */
+router.use('/partner/booking-settings', bookingSettingsRoutes);
+
+/**
+ * /api/v1/partner/bookings/*
+ *
+ * Partner booking management endpoints (all require partner auth):
+ * - GET /partner/bookings/:establishmentId — list bookings
+ * - PUT /partner/bookings/:establishmentId/:bookingId/confirm — confirm
+ * - PUT /partner/bookings/:establishmentId/:bookingId/decline — decline
+ * - PUT /partner/bookings/:establishmentId/:bookingId/no-show — mark no-show
+ * - PUT /partner/bookings/:establishmentId/:bookingId/complete — mark completed
+ */
+router.use('/partner/bookings', partnerBookingRouter);
+
+/**
+ * /api/v1/bookings/*
+ *
+ * User booking endpoints (all require user auth):
+ * - POST /bookings — create booking
+ * - GET /bookings/my — list user's bookings
+ * - PUT /bookings/:bookingId/cancel — cancel booking
+ */
+router.use('/bookings', userBookingRouter);
 
 /**
  * Placeholder for future route modules
