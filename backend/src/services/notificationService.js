@@ -25,6 +25,11 @@ const TITLES = {
   review_hidden: 'Отзыв скрыт модератором',
   review_deleted: 'Отзыв удалён модератором',
   establishment_claimed: 'Заведение добавлено в ваш кабинет',
+  booking_received: 'Новая бронь',
+  booking_confirmed: 'Бронь подтверждена',
+  booking_declined: 'Бронь отклонена',
+  booking_expired: 'Бронь истекла',
+  booking_cancelled: 'Бронь отменена',
 };
 
 const VALID_TYPES = Object.keys(TITLES);
@@ -321,6 +326,158 @@ export const notifyEstablishmentClaimed = async (establishmentId, newPartnerId) 
       error: error.message,
       establishmentId,
       newPartnerId,
+    });
+  }
+};
+
+// ============================================================================
+// Booking notification helpers (NON-BLOCKING)
+// ============================================================================
+
+/**
+ * Notify partner about a new booking request.
+ *
+ * @param {string} partnerId
+ * @param {object} bookingData - { id, establishment_name, user_name, booking_date, booking_time, guest_count }
+ * @param {string} establishmentId
+ */
+export const notifyBookingReceived = async (partnerId, bookingData, establishmentId) => {
+  try {
+    const name = bookingData.establishment_name || 'Заведение';
+    await NotificationModel.create({
+      userId: partnerId,
+      type: 'booking_received',
+      title: TITLES.booking_received,
+      message: `Новая бронь на «${name}» — ${bookingData.guest_count} гост., ${bookingData.booking_date} ${bookingData.booking_time}`,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create booking received notification', {
+      error: error.message,
+      partnerId,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * Notify user that their booking is confirmed.
+ *
+ * @param {string} userId
+ * @param {object} bookingData
+ * @param {string} establishmentId
+ */
+export const notifyBookingConfirmed = async (userId, bookingData, establishmentId) => {
+  try {
+    const name = bookingData.establishment_name || 'Заведение';
+    await NotificationModel.create({
+      userId,
+      type: 'booking_confirmed',
+      title: TITLES.booking_confirmed,
+      message: `Ваша бронь на «${name}» подтверждена — ${bookingData.booking_date} ${bookingData.booking_time}`,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create booking confirmed notification', {
+      error: error.message,
+      userId,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * Notify user that their booking was declined.
+ *
+ * @param {string} userId
+ * @param {object} bookingData
+ * @param {string} establishmentId
+ * @param {string} reason
+ */
+export const notifyBookingDeclined = async (userId, bookingData, establishmentId, reason) => {
+  try {
+    const name = bookingData.establishment_name || 'Заведение';
+    const msg = reason
+      ? `Бронь на «${name}» отклонена: ${reason}`
+      : `Бронь на «${name}» отклонена`;
+    await NotificationModel.create({
+      userId,
+      type: 'booking_declined',
+      title: TITLES.booking_declined,
+      message: msg,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create booking declined notification', {
+      error: error.message,
+      userId,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * Notify BOTH user and partner that a booking expired.
+ *
+ * @param {string} userId
+ * @param {string} partnerId
+ * @param {object} bookingData
+ * @param {string} establishmentId
+ */
+export const notifyBookingExpired = async (userId, partnerId, bookingData, establishmentId) => {
+  try {
+    const name = bookingData.establishment_name || 'Заведение';
+    const msg = `Бронь на «${name}» (${bookingData.booking_date} ${bookingData.booking_time}) истекла`;
+
+    // Notify user
+    await NotificationModel.create({
+      userId,
+      type: 'booking_expired',
+      title: TITLES.booking_expired,
+      message: msg,
+      establishmentId,
+    });
+
+    // Notify partner
+    await NotificationModel.create({
+      userId: partnerId,
+      type: 'booking_expired',
+      title: TITLES.booking_expired,
+      message: msg,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create booking expired notifications', {
+      error: error.message,
+      userId,
+      partnerId,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * Notify partner that user cancelled a booking.
+ *
+ * @param {string} partnerId
+ * @param {object} bookingData
+ * @param {string} establishmentId
+ */
+export const notifyBookingCancelled = async (partnerId, bookingData, establishmentId) => {
+  try {
+    const name = bookingData.establishment_name || 'Заведение';
+    await NotificationModel.create({
+      userId: partnerId,
+      type: 'booking_cancelled',
+      title: TITLES.booking_cancelled,
+      message: `Бронь на «${name}» (${bookingData.booking_date} ${bookingData.booking_time}) отменена гостем`,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create booking cancelled notification', {
+      error: error.message,
+      partnerId,
+      establishmentId,
     });
   }
 };
