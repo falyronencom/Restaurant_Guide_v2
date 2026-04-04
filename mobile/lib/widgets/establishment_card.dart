@@ -162,6 +162,17 @@ class EstablishmentCard extends StatelessWidget {
               if (distanceKm != null) _buildDistance(),
               // Address
               _buildAddress(),
+              // Booking indicator
+              if (establishment.bookingEnabled)
+                const Text(
+                  'Онлайн бронь',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.successGreen,
+                    height: 18 / 12,
+                  ),
+                ),
             ],
           ),
           // Rating badge (top right)

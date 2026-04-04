@@ -21,6 +21,7 @@ import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
+import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -200,6 +201,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
             // Map section
             _buildMapSection(),
+
+            // Booking CTA (only when booking enabled)
+            if (_establishment?.bookingEnabled == true)
+              _buildBookingCTA(),
 
             // Reviews section (dark background)
             _buildReviewsSection(),
@@ -1423,6 +1428,41 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
+  /// Build booking CTA button between map and reviews
+  Widget _buildBookingCTA() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      color: AppTheme.backgroundWarm,
+      child: ElevatedButton(
+        onPressed: () async {
+          final result = await BookingBottomSheet.show(context, _establishment!);
+          if (result == true && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Запрос на бронирование отправлен!'),
+                backgroundColor: AppTheme.successGreen,
+              ),
+            );
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primaryOrange,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          ),
+          elevation: 0,
+        ),
+        child: const Text(
+          'Хочу забронировать',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
   /// Build reviews section (dark background)
   Widget _buildReviewsSection() {
     return Container(
@@ -1519,14 +1559,22 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                     }
                   });
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _secondaryOrange,
-                  foregroundColor: _backgroundColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                  ),
-                  elevation: 0,
-                ),
+                style: _establishment?.bookingEnabled == true
+                    ? OutlinedButton.styleFrom(
+                        foregroundColor: _secondaryOrange,
+                        side: const BorderSide(color: AppTheme.primaryOrange),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                        ),
+                      )
+                    : ElevatedButton.styleFrom(
+                        backgroundColor: _secondaryOrange,
+                        foregroundColor: _backgroundColor,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                        ),
+                        elevation: 0,
+                      ),
                 child: const Text(
                   'Написать отзыв',
                   style: TextStyle(

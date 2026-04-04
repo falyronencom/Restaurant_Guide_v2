@@ -71,6 +71,7 @@ class Establishment {
   final double? distance; // Distance from user in km (from API or calculated)
   final bool hasPromotion; // From search enrichment
   final int promotionCount; // From search enrichment
+  final bool bookingEnabled; // From establishments.booking_enabled
   final List<Promotion>? promotions; // From detail endpoint
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -99,6 +100,7 @@ class Establishment {
     this.distance,
     this.hasPromotion = false,
     this.promotionCount = 0,
+    this.bookingEnabled = false,
     this.promotions,
     required this.createdAt,
     required this.updatedAt,
@@ -153,6 +155,7 @@ class Establishment {
       thumbnailUrl: json['thumbnail_url'] ?? json['primary_image_url'] as String?,
       distance: _parseDoubleSafe(json['distance']),
       hasPromotion: json['has_promotion'] == true,
+      bookingEnabled: json['booking_enabled'] == true,
       promotionCount: json['promotion_count'] as int? ?? 0,
       promotions: json['promotions'] != null
           ? (json['promotions'] as List)
