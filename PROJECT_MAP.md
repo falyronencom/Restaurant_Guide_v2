@@ -18,17 +18,17 @@ Answers: **if I need to work on X, which files do I open?**
 | `backend/src/middleware/` | Auth (JWT verify), error handling, rate limiting, file upload | Auth failures, 401/403 issues, rate limit tuning, upload bugs |
 | `backend/src/utils/` | JWT generation/verification, Winston logger | Token issues, logging changes |
 | `backend/src/config/` | DB pool, Redis connection, Cloudinary pipeline | Connection issues, pool tuning, image upload config |
-| `backend/migrations/` | Schema evolution (base + 20 migrations) | Adding columns, changing constraints, debugging schema mismatches |
-| `backend/src/tests/` | Jest test suites (41 suites, ~973 tests) | Running/fixing tests, adding coverage |
+| `backend/migrations/` | Schema evolution (base + 21 migrations) | Adding columns, changing constraints, debugging schema mismatches |
+| `backend/src/tests/` | Jest test suites (44 suites, ~1032 tests) | Running/fixing tests, adding coverage |
 
 ### Mobile (Flutter)
 
 | Directory | Role | When to look here |
 |-----------|------|-------------------|
 | `mobile/lib/screens/` | UI by feature (auth, search, map, favorites, partner, profile) | Fixing UI bugs, adding screens, changing layouts |
-| `mobile/lib/providers/` | State management — 5 ChangeNotifiers | State bugs, data flow issues, provider not updating |
+| `mobile/lib/providers/` | State management — 7 ChangeNotifiers | State bugs, data flow issues, provider not updating |
 | `mobile/lib/services/` | API singletons — Dio HTTP calls | API integration bugs, request/response issues |
-| `mobile/lib/models/` | Data classes (7 files) | Parsing bugs, missing fields, serialization |
+| `mobile/lib/models/` | Data classes (9 files) | Parsing bugs, missing fields, serialization |
 | `mobile/lib/widgets/` | Reusable components (cards, forms, map widgets) | Shared UI changes, component bugs |
 | `mobile/lib/config/` | Theme (design tokens), routes (GoRouter), environment (API URL) | Theming, navigation, environment switching |
 
@@ -272,6 +272,44 @@ Bug hints:
 - Search missing has_promotion → `enrichWithPromotions()` in searchService.js (non-blocking, catch returns false)
 - Image upload fails → reuses Cloudinary pattern from mediaService, folder: `establishments/{id}/promotions/`
 
+### Booking / Reservations
+```
+Route:      backend/src/routes/v1/bookingSettingsRoutes.js
+            GET /partner/booking-settings/:id, POST .../activate, PUT .../, POST .../deactivate
+Route:      backend/src/routes/v1/bookingRoutes.js
+            Partner: GET /partner/bookings/:id, PUT .../:bookingId/confirm|decline|no-show|complete
+            User: POST /bookings, GET /bookings/my, PUT /bookings/:id/cancel
+Controller: backend/src/controllers/bookingSettingsController.js
+            getSettings, activate, updateSettings, deactivate
+Controller: backend/src/controllers/bookingController.js
+            getPartnerBookings, confirmBooking, declineBooking, markNoShow, markCompleted,
+            createBooking, getUserBookings, cancelBooking
+Service:    backend/src/services/bookingSettingsService.js
+            getSettings, activate (transactional), deactivate (transactional), updateSettings
+Service:    backend/src/services/bookingService.js
+            createBooking (9 validations), confirmBooking, declineBooking, cancelBooking,
+            markNoShow, markCompleted, getPartnerBookings, getUserBookings
+Model:      backend/src/models/bookingSettingsModel.js
+            getByEstablishmentId, createOrUpdate (UPSERT), updateEnabled
+Model:      backend/src/models/bookingModel.js
+            create, updateStatus, getById, getByEstablishmentId, getByUserId,
+            getActiveCountForUser, getActiveForEstablishmentAndUser (+ lazy expiry)
+Mobile:     mobile/lib/models/booking.dart, mobile/lib/models/booking_settings.dart
+            mobile/lib/providers/booking_provider.dart, mobile/lib/providers/booking_settings_provider.dart
+            mobile/lib/screens/partner/promotion_hub_screen.dart (hub entry)
+            mobile/lib/screens/partner/booking_wizard_screen.dart (3-step activation)
+            mobile/lib/screens/partner/bookings_management_screen.dart (partner view)
+            mobile/lib/widgets/booking_bottom_sheet.dart (user booking form)
+            mobile/lib/screens/profile/user_bookings_screen.dart (user history)
+```
+Bug hints:
+- Booking not visible → check `booking_enabled` on establishment (denormalized, synced by bookingSettingsService)
+- Time slots empty → working_hours has TWO formats (string "09:00-22:00" and object {is_open, open, close})
+- Pending not expiring → lazy expiry runs on read, check `expirePendingBookings()` in bookingModel
+- 2-booking limit → `getActiveCountForUser()` counts pending+confirmed after lazy expiry
+- activate/deactivate → transactional (BEGIN/COMMIT) via getClient(), syncs booking_settings.is_enabled + establishments.booking_enabled
+- Notification types: booking_received, booking_confirmed, booking_declined, booking_expired (both user+partner), booking_cancelled
+
 ### OAuth
 ```
 Route:      backend/src/routes/v1/authRoutes.js
@@ -414,6 +452,8 @@ Same pattern as Mobile, with differences:
 | `audit_log` | action, entity_type/id, old_data/new_data (JSONB), non-blocking writes |
 | `partner_documents` | company_name, tax_id, contact_person — legal verification |
 | `promotions` | Active: title, description, image URLs (3-tier), valid_from/until, status (active/expired/hidden_by_admin), max 3 active per establishment |
+| `booking_settings` | One per establishment: max_guests, timeout, max_days_ahead, min_hours_before, is_enabled |
+| `bookings` | Reservations: date, time, guest_count, status (7 values), expires_at, lazy expiry |
 | `subscriptions` | Future: tier, duration_type, started_at, expires_at |
 | `notifications` | User/partner notifications: type, title, message, is_read, category (establishments/reviews) |
 | `establishment_analytics` | Partner analytics: view_count, review_count, call_count — activated by migration 017 |
@@ -433,6 +473,8 @@ users
   │     ├─→ reviews (+ user_id → users)
   │     ├─→ favorites (+ user_id → users)
   │     ├─→ promotions
+  │     ├─→ booking_settings (UNIQUE establishment_id)
+  │     ├─→ bookings (+ user_id → users)
   │     ├─→ subscriptions
   │     └─→ partner_documents
   ├─→ notifications (user_id + optional establishment_id, review_id)
@@ -440,7 +482,7 @@ users
   └─→ audit_log (admin user_id)
 ```
 
-### Migrations (20 total)
+### Migrations (21 total)
 | # | Purpose |
 |---|---------|
 | 001 | Token rotation: used_at, replaced_by |
@@ -463,7 +505,8 @@ users
 | 018 | Backfill base_score (completeness score) for establishments |
 | 019 | Claiming infrastructure: is_seed, claimed_by, claimed_at |
 | 020 | Modify promotions: +image URLs, is_active→status, nullable valid_until |
+| 021 | Booking system: booking_settings + bookings tables, booking_enabled on establishments, booking analytics columns |
 
 ---
 
-*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-01.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-04.*
