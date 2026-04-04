@@ -111,6 +111,50 @@ export const trackPromotionView = async (establishmentId) => {
   }
 };
 
+/**
+ * UPSERT a booking request event.
+ *
+ * @param {string} establishmentId - UUID
+ */
+export const trackBookingRequest = async (establishmentId) => {
+  const query = `
+    INSERT INTO establishment_analytics (establishment_id, date, booking_request_count)
+    VALUES ($1, CURRENT_DATE, 1)
+    ON CONFLICT (establishment_id, date)
+    DO UPDATE SET booking_request_count = establishment_analytics.booking_request_count + 1
+  `;
+  try {
+    await pool.query(query, [establishmentId]);
+  } catch (error) {
+    logger.error('Error tracking booking request in analytics', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * UPSERT a booking confirmed event.
+ *
+ * @param {string} establishmentId - UUID
+ */
+export const trackBookingConfirmed = async (establishmentId) => {
+  const query = `
+    INSERT INTO establishment_analytics (establishment_id, date, booking_confirmed_count)
+    VALUES ($1, CURRENT_DATE, 1)
+    ON CONFLICT (establishment_id, date)
+    DO UPDATE SET booking_confirmed_count = establishment_analytics.booking_confirmed_count + 1
+  `;
+  try {
+    await pool.query(query, [establishmentId]);
+  } catch (error) {
+    logger.error('Error tracking booking confirmed in analytics', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
 // ============================================================================
 // Partner Analytics Queries
 // ============================================================================
