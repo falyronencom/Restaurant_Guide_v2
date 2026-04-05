@@ -1,9 +1,9 @@
 # Функциональная спецификация — Restaurant Guide Belarus (Nirivio)
 
-*Версия 3.4 — Актуальная редакция*
+*Версия 3.5 — Актуальная редакция*
 *Последнее обновление: Апрель 2026*
 *Синхронизировано со Стратегией монетизации v0.5 (24 марта 2026)*
-*Синхронизировано с кодовой базой: апрель 2, 2026 (аудит-сверка)*
+*Синхронизировано с кодовой базой: апрель 4, 2026 (Component 5 — Reservations)*
 
 > **Структура документа:** Части I-IV — основная спецификация (бизнес-логика, flow, правила). Приложения A-C — справочные данные (схема БД, перечисления, планы). В Leaf/Code-сессиях приложения можно пропустить — данные доступны в коде.
 
@@ -13,7 +13,7 @@
 
 **Проблема:** В Беларуси отсутствует единая современная платформа для поиска заведений общепита.
 
-**Решение:** Мобильное приложение Nirivio — геолокационный поиск с честным ранжированием (без платных бустов), прозрачные отзывы, инструменты для партнёров (акции, бронирование).
+**Решение:** Мобильное приложение Nirivio — геолокационный поиск с честным ранжированием (без платных бустов), прозрачные отзывы, инструменты для партнёров (акции, бронирование столиков).
 
 **Три роли:** User (поиск, отзывы, избранное), Partner (управление заведениями, акции, аналитика), Admin (модерация, claiming, аудит).
 
@@ -36,9 +36,9 @@
 ### 2.2 Архитектура данных
 
 > Полная схема всех 12 таблиц с полями — см. **Приложение A**.
-> Актуальное состояние БД: миграции 001-020 в `backend/migrations/`. Файл `production_schema.sql` — стартовый snapshot (февраль 2026), не содержит миграций 019-020.
+> Актуальное состояние БД: миграции 001-021 в `backend/migrations/`. Файл `production_schema.sql` — стартовый snapshot (февраль 2026), не содержит миграций 019-021.
 
-**12 таблиц:** Users, Establishments, Reviews, EstablishmentMedia, Favorites, Promotions, Subscriptions, EstablishmentAnalytics, RefreshTokens, PartnerDocuments, Notifications, AuditLog.
+**14 таблиц:** Users, Establishments, Reviews, EstablishmentMedia, Favorites, Promotions, BookingSettings, Bookings, Subscriptions, EstablishmentAnalytics, RefreshTokens, PartnerDocuments, Notifications, AuditLog.
 
 **Ключевые бизнес-правила в схеме:**
 - `moderation_notes`: TEXT, не JSONB — JSON.stringify на запись, JSON.parse на чтение
@@ -46,7 +46,9 @@
 - `is_seed` + `claimed_at` — инфраструктура claiming (миграция 019)
 - Promotions: `status` (active/expired/hidden_by_admin), max 3 активных, lazy expiry (миграция 020)
 - Subscriptions: таблица создана, код не активен (Phase 1 = всё бесплатно)
-- EstablishmentAnalytics: UPSERT per day, включает `call_count` и `promotion_view_count`
+- BookingSettings: одна запись на заведение, UPSERT, транзакционная синхронизация с `establishments.booking_enabled` (миграция 021)
+- Bookings: 7 статусов (pending→confirmed→completed/cancelled/no_show/declined/expired), lazy expiry (миграция 021)
+- EstablishmentAnalytics: UPSERT per day, включает `call_count`, `promotion_view_count`, `booking_request_count`, `booking_confirmed_count`
 
 ### 2.3 Оптимизация
 
@@ -88,6 +90,7 @@
 - Счётчик результатов + вертикальный список карточек с пагинацией
 - **Карточка:** изображение, название, рейтинг, чек, категория/кухня, часы + «Открыто/Закрыто», расстояние, адрес, кнопка «В избранное»
 - **Бейдж «АКЦИЯ»** на карточках с активной акцией (визуальный, без влияния на позицию)
+- **Индикатор «Онлайн бронь»** — текст под адресом на карточках заведений с включённым бронированием
 
 **Ранжирование (честная выдача):**
 - С геолокацией: PostGIS ST_Distance, тайбрейкеры: completeness → рейтинг → имя
@@ -102,6 +105,7 @@
 - **Атрибуты:** иконки с подписями, горизонтальный скролл
 - **Карта:** адрес, расстояние, Yandex Map с маркером (тап → полноэкранная)
 - **Секция «Акции»:** триггер-баннер → bottom sheet с каруселью (PageView), индикатор-точки, аналитика `POST /analytics/promotion-view` (fire-and-forget)
+- **CTA «Хочу забронировать»:** между картой и отзывами, только при `booking_enabled=true`. Открывает bottom sheet бронирования. Когда CTA присутствует, кнопка «Написать отзыв» становится secondary (outlined)
 - **Отзывы:** общий рейтинг, карусель отзывов (горизонтальный скролл), кнопка «Написать отзыв» (только авторизованные)
 
 ### 3.2 Личный кабинет пользователя
@@ -110,7 +114,7 @@
 
 **Регистрация:** email, телефон (SMS-верификация), Google OAuth, Yandex OAuth. После — имя + фото (опционально).
 
-**Авторизованный профиль:** Фото (загрузка через `POST /auth/avatar`), имя, счётчики отзывов/оценок. Секция «Ваши отзывы» — удаление, редактирование (24 часа).
+**Авторизованный профиль:** Фото (загрузка через `POST /auth/avatar`), имя, счётчики отзывов/оценок. Секция «Мои бронирования» — активные (pending/confirmed) с бейджем-счётчиком, история (с действиями: отмена, повторная бронь, звонок). Секция «Ваши отзывы» — удаление, редактирование (24 часа).
 
 **Избранное:** список с сортировкой, упрощённые фильтры, batch-проверка (`POST /favorites/check-batch`, до 50 ID).
 
@@ -136,6 +140,30 @@
 - **Создание:** название (макс 80), описание, изображение (Cloudinary), даты начала/окончания (null = бессрочная)
 - **Phase 1:** акции бесплатны для всех партнёров, никакого UI оплаты
 
+#### 3.3.2b Бронирование (экран «Продвижение» → секция «Бронирование»)
+
+**Хаб-экран «Продвижение»** — заменяет прямую навигацию к акциям. Две секции: «Акции» (мини-превью N/3 + кнопка «Управление акциями») и «Бронирование» (State A/B ниже).
+
+**State A (не подключено):** Приглашение + кнопка «Подключить» → визард активации.
+
+**Визард активации (3 шага):**
+1. Основные настройки — макс. гостей на бронь (chip selector: 2/4/6/8/10/12+)
+2. Время бронирования — дней вперёд (0/1/3/7/14/30), минимум за (1/2/3/6/12/24ч), время на подтверждение (2/4/6ч), часы = по расписанию
+3. Подтверждение — summary настроек + кнопка «Подключить»
+
+**State B (подключено):** Счётчики новых/подтверждённых + «Управление →» + «Настройки».
+
+**Экран управления бронированиями:**
+- Секция «Новые запросы (N)» — карточки: имя, дата, время, гости, комментарий, телефон (кликабельный), таймер обратного отсчёта (оранжевый <1ч, красный <30мин). Действия: Подтвердить / Отклонить (с причиной)
+- Секция «Подтверждённые» — группировка по дню (Сегодня/Завтра/Позже). Кнопка «Не пришёл» после прохождения времени
+- Секция «История» — фильтры: Все/Завершённые/Отменённые/Неявки. Статусные бейджи
+
+**Бронирование (пользовательская сторона):**
+- Bottom sheet: дата (горизонтальный скролл), время (слоты из working_hours, оба формата), гости (stepper 1..max), комментарий, телефон (предзаполнен из профиля)
+- Валидация: макс 2 активных на пользователя, макс 1 на заведение, дата/время/working_hours/min_hours_before
+- 7 статусов: pending → confirmed → completed | cancelled | no_show | declined | expired (lazy expiry)
+- **Phase 1:** бронирование бесплатно для всех партнёров
+
 #### 3.3.3 Аналитика партнера
 
 - Периоды: 7 / 30 / 90 дней + произвольный
@@ -151,7 +179,7 @@
 
 #### 3.3.5 Уведомления
 
-**Backend:** Типы: `establishment_approved/rejected/suspended/unsuspended`, `review_received/response`, `system`. API: `GET /notifications` (пагинация + фильтр), `GET /unread-count`, `PUT /:id/read`, `PUT /read-all`.
+**Backend:** 14 типов: `establishment_approved/rejected/suspended/unsuspended/claimed`, `new_review/partner_response`, `review_hidden/review_deleted`, `booking_received/confirmed/declined/expired/cancelled`. API: `GET /notifications` (пагинация + фильтр), `GET /unread-count`, `PUT /:id/read`, `PUT /read-all`.
 
 **Mobile:** 30-сек polling, красная точка на «Профиль», колокольчик с счётчиком. Экран: группировка (Новые / Сегодня / На этой неделе / Ранее), фильтры (Все / Заведения / Отзывы), тап → навигация, pull-to-refresh + scroll pagination.
 
@@ -193,7 +221,7 @@
 
 **Бесплатный — «Присутствие»:** полная карточка, полная аналитика, ответы на отзывы, честная позиция.
 
-**Платный — «Продвижение»:** акции (бейдж + карусель, без влияния на позицию, **реализовано**, в Phase 1 бесплатно), бронирование (запланировано), push из «Избранного» (будущее).
+**Платный — «Продвижение»:** акции (бейдж + карусель, без влияния на позицию, **реализовано**, в Phase 1 бесплатно), бронирование столиков (визард активации, управление, пользовательский bottom sheet, **реализовано**, в Phase 1 бесплатно), push из «Избранного» (будущее).
 
 **Подписка на уровне establishment**, не user.
 
@@ -221,7 +249,7 @@ Claiming и верификация — независимые процессы.
 
 ## Приложение A: Схема данных (справочное)
 
-> Актуальное состояние: миграции 001-020 в `backend/migrations/`.
+> Актуальное состояние: миграции 001-021 в `backend/migrations/`.
 
 ```
 Users {
@@ -256,6 +284,7 @@ Establishments {
   view_count, favorite_count, review_count: integer
   average_rating: decimal(3,2), primary_image_url: text
   average_check_byn: numeric(10,2) (nullable)
+  booking_enabled: boolean (default false) — денормализовано, синхронизируется транзакционно (мигр. 021)
   is_seed: boolean — маркер seed-карточки (мигр. 019)
   claimed_at: timestamp — когда забрана партнёром (мигр. 019)
   created_at, updated_at, published_at: timestamp
@@ -296,6 +325,31 @@ Promotions {
   Лимит: max 3 активных, lazy expiry
 }
 
+BookingSettings {
+  id: UUID, establishment_id: UUID (CASCADE, UNIQUE)
+  is_enabled: boolean (default false)
+  max_guests_per_booking: integer (default 10)
+  confirmation_timeout_hours: integer — CHECK (2, 4, 6)
+  max_days_ahead: integer — CHECK (0, 1, 3, 7, 14, 30)
+  min_hours_before: integer — CHECK (1, 2, 3, 6, 12, 24)
+  created_at, updated_at: timestamp
+  Примечание: UPSERT, транзакционная синхронизация с establishments.booking_enabled (мигр. 021)
+}
+
+Bookings {
+  id: UUID, establishment_id: UUID (CASCADE), user_id: UUID (CASCADE)
+  booking_date: date, booking_time: time
+  guest_count: integer (CHECK >= 1)
+  comment: text, contact_phone: varchar(20)
+  status: enum (pending, confirmed, declined, cancelled, expired, no_show, completed)
+  decline_reason: text, expires_at: timestamp
+  confirmed_at, cancelled_at: timestamp
+  created_at, updated_at: timestamp
+  Лимиты: max 2 активных на пользователя, max 1 на заведение
+  Lazy expiry: pending + expires_at < NOW() → expired (на каждом чтении)
+  Примечание: мигр. 021
+}
+
 Subscriptions {
   id: UUID, establishment_id: UUID (CASCADE)
   tier: enum (basic, standard, premium)
@@ -310,6 +364,8 @@ EstablishmentAnalytics {
   view_count, detail_view_count, favorite_count, review_count: integer
   call_count: integer — клики на телефон
   promotion_view_count: integer
+  booking_request_count: integer — запросы на бронирование (мигр. 021)
+  booking_confirmed_count: integer — подтверждённые брони (мигр. 021)
   UNIQUE(establishment_id, date) — UPSERT per day
 }
 
@@ -371,7 +427,7 @@ AuditLog {
 
 **Платформа:**
 - Вкладка «Новости» — контент-направление (Horizon 3-4)
-- Бронирование столиков (Фаза 2)
+- ~~Бронирование столиков~~ — **реализовано** (Component 5, миграция 021, апрель 2026). В Phase 2 войдёт в подписку
 - Push-уведомления пользователям из «Избранного» (будущее)
 - Cron-агрегация метрик
 - Офлайн-кэширование и синхронизация
