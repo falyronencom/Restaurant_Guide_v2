@@ -18,15 +18,15 @@ Answers: **if I need to work on X, which files do I open?**
 | `backend/src/middleware/` | Auth (JWT verify), error handling, rate limiting, file upload | Auth failures, 401/403 issues, rate limit tuning, upload bugs |
 | `backend/src/utils/` | JWT generation/verification, Winston logger | Token issues, logging changes |
 | `backend/src/config/` | DB pool, Redis connection, Cloudinary pipeline | Connection issues, pool tuning, image upload config |
-| `backend/migrations/` | Schema evolution (base + 21 migrations) | Adding columns, changing constraints, debugging schema mismatches |
-| `backend/src/tests/` | Jest test suites (44 suites, ~1032 tests) | Running/fixing tests, adding coverage |
+| `backend/migrations/` | Schema evolution (base + 22 migrations) | Adding columns, changing constraints, debugging schema mismatches |
+| `backend/src/tests/` | Jest test suites (47 suites, ~1085 tests) | Running/fixing tests, adding coverage |
 
 ### Mobile (Flutter)
 
 | Directory | Role | When to look here |
 |-----------|------|-------------------|
 | `mobile/lib/screens/` | UI by feature (auth, search, map, favorites, partner, profile) | Fixing UI bugs, adding screens, changing layouts |
-| `mobile/lib/providers/` | State management — 7 ChangeNotifiers | State bugs, data flow issues, provider not updating |
+| `mobile/lib/providers/` | State management — 8 ChangeNotifiers | State bugs, data flow issues, provider not updating |
 | `mobile/lib/services/` | API singletons — Dio HTTP calls | API integration bugs, request/response issues |
 | `mobile/lib/models/` | Data classes (9 files) | Parsing bugs, missing fields, serialization |
 | `mobile/lib/widgets/` | Reusable components (cards, forms, map widgets) | Shared UI changes, component bugs |
@@ -219,19 +219,36 @@ Bug hints:
 ```
 Route:      backend/src/routes/v1/notificationRoutes.js
             GET /notifications, GET /notifications/unread-count,
-            PUT /notifications/read-all, PUT /notifications/:id/read
+            PUT /notifications/read-all, PUT /notifications/:id/read,
+            PUT /notifications/device-token, DELETE /notifications/device-token,
+            GET /notifications/preferences, PUT /notifications/preferences
 Controller: backend/src/controllers/notificationController.js
             getNotifications, getUnreadCount, markAllAsRead, markAsRead
+            backend/src/controllers/deviceTokenController.js — registerToken, removeToken
+            backend/src/controllers/notificationPreferencesController.js — getPreferences, updatePreferences
 Service:    backend/src/services/notificationService.js
             createNotification, getUserNotifications, getUnreadCount, markAsRead, markAllAsRead
-            Triggers: onEstablishmentApproved/Rejected/Suspended, onNewReview, onPartnerResponse,
-            onReviewHidden/Deleted, onEstablishmentClaimed (all non-blocking)
+            Triggers (15 types, all non-blocking, 11 with push):
+              notifyEstablishmentStatusChange (approved/rejected/suspended/unsuspended) + push
+              notifyNewReview, notifyPartnerResponse + push
+              notifyReviewModerated (hidden/deleted) — NO push (in-app only)
+              notifyEstablishmentClaimed — NO push (in-app only)
+              notifyBookingReceived/Confirmed/Declined/Expired/Cancelled + push
+              notifyPromotionNew + push (fan-out to favorited users via Promise.allSettled)
+            backend/src/services/pushService.js — sendPush (FCM multicast, stale token cleanup, preference check)
+            backend/src/services/deviceTokenService.js — registerToken, removeToken, getUserTokens
 Model:      backend/src/models/notificationModel.js
             create, findById, findByUser, getUnreadCount, markAsRead, markAllAsRead
+            CATEGORY_TYPES: establishments, reviews, booking, promotions (15 types total)
+            backend/src/models/deviceTokenModel.js — create (UPSERT), findByUserId, deactivate, deleteByUserId
+            backend/src/models/notificationPreferencesModel.js — getByUserId (with defaults), upsert, deleteByUserId
+Config:     backend/src/config/firebaseAdmin.js — Firebase Admin SDK init (graceful fallback if no credentials)
 ```
 Bug hints:
-- Notifications not appearing → check trigger calls in adminService/adminReviewService (non-blocking, fail silently)
-- Wrong category filter → `notificationModel.CATEGORY_TYPES` mapping: establishments → [approved, rejected, suspended, new_review]; reviews → [partner_response, hidden, deleted]
+- Notifications not appearing → check trigger calls in services (non-blocking, fail silently)
+- Push not sending → check FIREBASE_SERVICE_ACCOUNT env var on Railway, check device_tokens table for active tokens
+- Wrong category filter → `notificationModel.CATEGORY_TYPES`: establishments (5), reviews (4), booking (5), promotions (1)
+- Stale tokens → pushService auto-deactivates on FCM `registration-token-not-registered` error
 
 ### Partner Analytics
 ```

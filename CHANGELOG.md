@@ -6,6 +6,19 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ## Recent Updates
 
+### Апрель 2026 — Horizon 3: User Experience & Engagement
+
+#### Апрель 6, 2026 — Component 6: Push Notifications (Segments A+B+C)
+- **Discovery**: Full investigation of notification infrastructure (backend creation flow, mobile polling/display, 14 notification types, Firebase config status, user preferences, permission handling) + 4 peripheral (tests, PROJECT_MAP, packages, external API patterns). Directive Coherence Check identified missing Q1.5 (REST endpoints)
+- **Migration 022**: `device_tokens` (UPSERT, UNIQUE user+token, platform CHECK) + `notification_preferences` (one row per user, 3 boolean categories)
+- **Backend infrastructure**: firebaseAdmin.js (graceful fallback if no credentials), pushService.js (FCM multicast + stale token deactivation + category-based preference check), deviceTokenModel (UPSERT), deviceTokenService, 4 new REST endpoints (PUT/DELETE device-token, GET/PUT preferences)
+- **Backend integration**: pushService.sendPush() wired into 11 of 14 trigger helpers (3 in-app only: claimed, review_hidden, review_deleted). booking_expired sends to both user + partner. Category mapping fixed to cover all 15 types across 4 categories
+- **New type**: `promotion_new` — 15th notification type. Fan-out to all users who favorited the establishment via Promise.allSettled(). Trigger from promotionService.createPromotion()
+- **Mobile**: Firebase core+messaging config, PushNotificationService (token lifecycle, permission request, foreground snackbar + badge refresh, background/terminated tap → deep link navigation), NotificationPreferencesProvider (optimistic updates), NotificationPreferencesScreen (3 SwitchListTile + booking disable warning), promotionNew enum type with icon/color/routing
+- **Android**: Package renamed com.example.restaurant_guide_mobile → com.nirivio.app, POST_NOTIFICATIONS permission, google-services plugin
+- **Tests**: 39 new unit tests (Segment A) + 19 new tests (Segment B) = 58 total new. 1085 backend tests passing, zero regressions
+- **Context telemetry**: Discovery ~10% → Final ~21% of 1M context (Mode C unified session, 3 segments)
+
 ### Апрель 2026 — Horizon 2: Monetization Features
 
 #### Апрель 4, 2026 — Component 5: Reservations / Booking System (Segments A+B+C)
