@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "852928744466",
+    "project_id": "nirivio-f8d33",
+    "storage_bucket": "nirivio-f8d33.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:852928744466:android:a42039851e3ab498a19ccb",
+        "android_client_info": {
+          "package_name": "com.nirivio.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzT3R-GNZ6x8T6I9zg5zVJeSuyOmRfrh0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

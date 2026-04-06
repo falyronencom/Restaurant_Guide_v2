@@ -29,9 +29,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context
-          .read<PromotionProvider>()
-          .fetchPromotions(widget.establishmentId);
+      context.read<PromotionProvider>().fetchPromotions(widget.establishmentId);
       context
           .read<BookingSettingsProvider>()
           .loadSettings(widget.establishmentId);
@@ -87,14 +85,13 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: activeCount > 0
                           ? AppTheme.successGreen.withValues(alpha: 0.1)
                           : AppTheme.gray100,
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusSmall),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     child: Text(
                       'Активных: $activeCount/3',
@@ -127,8 +124,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
                     foregroundColor: AppTheme.primaryOrange,
                     side: const BorderSide(color: AppTheme.primaryOrange),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusSmall),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                   ),
                   child: const Text('Управление акциями →'),
@@ -181,7 +177,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Принимайте онлайн-бронирования от гостей прямо в приложении. '
             'Управляйте расписанием и подтверждайте брони в пару нажатий.',
             style: TextStyle(fontSize: 14, color: AppTheme.gray600),
@@ -198,8 +194,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppTheme.radiusSmall),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 ),
               ),
             ),
@@ -255,8 +250,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppTheme.radiusSmall),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 ),
               ),
               child: const Text('Управление →'),

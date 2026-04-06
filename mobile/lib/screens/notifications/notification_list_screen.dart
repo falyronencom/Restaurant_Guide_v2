@@ -377,6 +377,17 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         // Go to profile tab (bookings accessible from there)
         Navigator.of(context).pop();
         MainNavigationScreenState.instance?.switchToTab(4);
+      case NotificationType.promotionNew:
+        // Navigate to establishment detail (promotion visible there)
+        if (notification.establishmentId != null) {
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => EstablishmentDetailScreen(
+                establishmentId: notification.establishmentId!,
+              ),
+            ),
+          );
+        }
     }
   }
 }

@@ -42,12 +42,12 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           final history = provider.userHistoryBookings;
 
           if (active.isEmpty && history.isEmpty) {
-            return Center(
+            return const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.calendar_today, size: 48, color: AppTheme.gray400),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Text(
                     'У вас пока нет бронирований',
                     style: TextStyle(fontSize: 16, color: AppTheme.gray600),
@@ -171,8 +171,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
                   foregroundColor: AppTheme.errorRed,
                   side: const BorderSide(color: AppTheme.errorRed),
                   shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusSmall),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                 ),
                 child: const Text('Отменить бронь'),
@@ -227,7 +226,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           const SizedBox(height: 8),
           Text(
             '${booking.formattedDate} • ${booking.formattedTime} • ${booking.guestCount} гост.',
-            style: TextStyle(fontSize: 13, color: AppTheme.gray500),
+            style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
           ),
 
           // Declined — show reason + retry
@@ -236,7 +235,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
               const SizedBox(height: 8),
               Text(
                 'Причина: ${booking.declineReason}',
-                style: TextStyle(fontSize: 13, color: AppTheme.gray600),
+                style: const TextStyle(fontSize: 13, color: AppTheme.gray600),
               ),
             ],
             const SizedBox(height: 12),
@@ -248,8 +247,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
                   foregroundColor: AppTheme.primaryOrange,
                   side: const BorderSide(color: AppTheme.primaryOrange),
                   shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusSmall),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                 ),
                 child: const Text('Выбрать другое время'),
@@ -260,7 +258,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           // Expired — retry + call
           if (booking.isExpired) ...[
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Заведение не успело ответить',
               style: TextStyle(fontSize: 13, color: AppTheme.gray600),
             ),
@@ -287,7 +285,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
                     onPressed: () => _callPhone(booking.establishmentPhone!),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.gray600,
-                      side: BorderSide(color: AppTheme.gray400),
+                      side: const BorderSide(color: AppTheme.gray400),
                       shape: RoundedRectangleBorder(
                         borderRadius:
                             BorderRadius.circular(AppTheme.radiusSmall),

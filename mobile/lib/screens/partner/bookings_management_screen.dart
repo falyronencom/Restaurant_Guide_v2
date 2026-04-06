@@ -71,7 +71,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               provider.confirmedBookings.isEmpty) {
             return Center(
               child: Text(provider.error!,
-                  style: TextStyle(color: AppTheme.gray600)),
+                  style: const TextStyle(color: AppTheme.gray600)),
             );
           }
 
@@ -165,8 +165,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: timerColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
@@ -226,8 +225,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                     foregroundColor: AppTheme.errorRed,
                     side: const BorderSide(color: AppTheme.errorRed),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusSmall),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                   ),
                   child: const Text('Отклонить'),
@@ -242,8 +240,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusSmall),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                   ),
                   child: const Text('Подтвердить'),
@@ -319,7 +316,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Text(
         label,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: AppTheme.gray600,
@@ -331,8 +328,8 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
   Widget _buildConfirmedItem(Booking booking) {
     // Check if booking time has passed (for no-show button)
     final now = DateTime.now();
-    final bookingDt = DateTime.tryParse(
-        '${booking.bookingDate}T${booking.bookingTime}:00');
+    final bookingDt =
+        DateTime.tryParse('${booking.bookingDate}T${booking.bookingTime}:00');
     final isPast = bookingDt != null && bookingDt.isBefore(now);
 
     return Container(
@@ -364,7 +361,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                 ),
                 Text(
                   '${booking.guestCount} гост.',
-                  style: TextStyle(fontSize: 13, color: AppTheme.gray500),
+                  style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
                 ),
               ],
             ),
@@ -459,7 +456,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               children: [
                 Text(
                   '${booking.formattedDate} • ${booking.formattedTime}',
-                  style: TextStyle(fontSize: 13, color: AppTheme.gray500),
+                  style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -530,7 +527,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       ),
       child: Center(
-        child: Text(text, style: TextStyle(color: AppTheme.gray500)),
+        child: Text(text, style: const TextStyle(color: AppTheme.gray500)),
       ),
     );
   }

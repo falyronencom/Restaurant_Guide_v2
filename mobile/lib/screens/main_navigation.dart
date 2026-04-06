@@ -9,6 +9,9 @@ import 'package:restaurant_guide_mobile/screens/news/news_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 import 'package:restaurant_guide_mobile/screens/favorites/favorites_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/profile_screen.dart';
+import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
+import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
 
 /// Main navigation screen with bottom tab bar
 /// Manages tab switching and maintains separate navigation stacks per tab
@@ -46,6 +49,7 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isAuthenticated) {
         context.read<NotificationProvider>().startPolling();
+        _initializePushNotifications();
       }
     });
   }
@@ -56,6 +60,82 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
       instance = null;
     }
     super.dispose();
+  }
+
+  /// Initialize push notification service with foreground + tap handlers.
+  void _initializePushNotifications() {
+    final pushService = PushNotificationService();
+
+    // Foreground: show snackbar + refresh badge
+    pushService.onForegroundMessage = (message) {
+      final title = message.notification?.title ?? '';
+      final body = message.notification?.body ?? '';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(title.isNotEmpty ? '$title: $body' : body),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        // Refresh badge count immediately instead of waiting for next poll
+        context.read<NotificationProvider>().fetchUnreadCount();
+      }
+    };
+
+    // Tap: navigate based on push data payload
+    pushService.onMessageTap = (message) {
+      if (!mounted) return;
+      final data = message.data;
+      final type = data['type'] as String?;
+      final establishmentId = data['establishmentId'] as String?;
+
+      if (type == null) return;
+
+      switch (type) {
+        case 'new_review':
+          if (establishmentId != null) {
+            Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(
+                builder: (_) => PartnerReviewsScreen(
+                  establishmentId: establishmentId,
+                ),
+              ),
+            );
+          }
+        case 'establishment_approved':
+        case 'partner_response':
+        case 'establishment_unsuspended':
+        case 'establishment_claimed':
+        case 'promotion_new':
+          if (establishmentId != null) {
+            Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(
+                builder: (_) => EstablishmentDetailScreen(
+                  establishmentId: establishmentId,
+                ),
+              ),
+            );
+          }
+        case 'establishment_rejected':
+        case 'establishment_suspended':
+          if (establishmentId != null) {
+            Navigator.of(context, rootNavigator: true).pushNamed(
+              '/partner/edit/$establishmentId',
+            );
+          }
+        case 'booking_received':
+        case 'booking_confirmed':
+        case 'booking_declined':
+        case 'booking_expired':
+        case 'booking_cancelled':
+          switchToTab(4); // Profile tab (bookings)
+        default:
+          break;
+      }
+    };
+
+    pushService.initialize();
   }
 
   /// Switch to specified tab (accessible via static instance)

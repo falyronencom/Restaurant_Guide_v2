@@ -148,7 +148,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Укажите максимальное количество гостей на одну бронь',
             style: TextStyle(fontSize: 15, color: AppTheme.gray600),
           ),
@@ -242,11 +242,11 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               border: Border.all(color: AppTheme.gray300),
             ),
-            child: Row(
+            child: const Row(
               children: [
                 Icon(Icons.schedule, color: AppTheme.primaryOrange, size: 20),
-                const SizedBox(width: 12),
-                const Expanded(
+                SizedBox(width: 12),
+                Expanded(
                   child: Text(
                     'Совпадают с часами работы',
                     style: TextStyle(fontSize: 15),
@@ -283,12 +283,10 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               const SizedBox(height: 8),
               Text(
                 'Проверьте настройки бронирования для «${widget.establishmentName}»',
-                style: TextStyle(fontSize: 15, color: AppTheme.gray600),
+                style: const TextStyle(fontSize: 15, color: AppTheme.gray600),
               ),
               const SizedBox(height: 24),
-
               _buildSummaryCard(),
-
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -296,12 +294,12 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   color: AppTheme.primaryOrange.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
                     Icon(Icons.info_outline,
                         color: AppTheme.primaryOrange, size: 20),
-                    const SizedBox(width: 12),
-                    const Expanded(
+                    SizedBox(width: 12),
+                    Expanded(
                       child: Text(
                         'Вы сможете изменить настройки в любой момент',
                         style: TextStyle(fontSize: 14),
@@ -310,7 +308,6 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   ],
                 ),
               ),
-
               if (provider.error != null) ...[
                 const SizedBox(height: 16),
                 Text(
@@ -318,7 +315,6 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   style: const TextStyle(color: AppTheme.errorRed),
                 ),
               ],
-
               const SizedBox(height: 40),
               _buildNextButton(
                 provider.isLoading ? 'Подключение...' : 'Подключить',
@@ -345,9 +341,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           const Divider(height: 24),
           _buildSummaryRow(
             'Бронирование на',
-            _maxDaysAhead == 0
-                ? 'Только сегодня'
-                : '$_maxDaysAhead дн. вперёд',
+            _maxDaysAhead == 0 ? 'Только сегодня' : '$_maxDaysAhead дн. вперёд',
           ),
           const Divider(height: 24),
           _buildSummaryRow('Минимум за', '$_minHoursBefore ч'),
@@ -364,7 +358,8 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: AppTheme.gray600, fontSize: 15)),
+        Text(label,
+            style: const TextStyle(color: AppTheme.gray600, fontSize: 15)),
         Text(value,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
       ],

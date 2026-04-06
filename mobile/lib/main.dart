@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -25,12 +26,16 @@ import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
+import 'package:restaurant_guide_mobile/providers/notification_preferences_provider.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
-void main() {
+void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase (required before any Firebase service)
+  await Firebase.initializeApp();
 
   // Lock to portrait orientation only
   SystemChrome.setPreferredOrientations([
@@ -83,6 +88,11 @@ class RestaurantGuideApp extends StatelessWidget {
         // Booking provider (partner booking management)
         ChangeNotifierProvider(
           create: (_) => BookingProvider(),
+        ),
+
+        // Notification preferences provider (push settings)
+        ChangeNotifierProvider(
+          create: (_) => NotificationPreferencesProvider(),
         ),
       ],
       child: MaterialApp(

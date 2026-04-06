@@ -1,4 +1,4 @@
-package com.example.restaurant_guide_mobile
+package com.nirivio.app
 
 import android.app.Application
 import com.yandex.mapkit.MapKitFactory

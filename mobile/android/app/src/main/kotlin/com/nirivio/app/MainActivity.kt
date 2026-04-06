@@ -1,4 +1,4 @@
-package com.example.restaurant_guide_mobile
+package com.nirivio.app
 
 import io.flutter.embedding.android.FlutterActivity
 
