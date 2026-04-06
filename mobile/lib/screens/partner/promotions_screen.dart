@@ -44,7 +44,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
             onPressed: _navigateToCreate,
             icon: const Icon(Icons.add, size: 20),
             label: const Text('Создать'),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.primaryOrange),
+            style:
+                TextButton.styleFrom(foregroundColor: AppTheme.primaryOrange),
           ),
         ],
       ),
@@ -59,10 +60,12 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(provider.error!, style: const TextStyle(color: Colors.red)),
+                  Text(provider.error!,
+                      style: const TextStyle(color: Colors.red)),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () => provider.fetchPromotions(widget.establishmentId),
+                    onPressed: () =>
+                        provider.fetchPromotions(widget.establishmentId),
                     child: const Text('Повторить'),
                   ),
                 ],
@@ -96,7 +99,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                 if (expired.isNotEmpty) ...[
                   _buildSectionHeader('Завершённые'),
                   const SizedBox(height: 8),
-                  ...expired.map((p) => _buildPromotionCard(p, isActive: false)),
+                  ...expired
+                      .map((p) => _buildPromotionCard(p, isActive: false)),
                 ],
               ],
             ),
@@ -192,7 +196,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               ),
               if (!isActive)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.grey[200],
                     borderRadius: BorderRadius.circular(4),
@@ -206,7 +211,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           ),
 
           // Description
-          if (promotion.description != null && promotion.description!.isNotEmpty) ...[
+          if (promotion.description != null &&
+              promotion.description!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               promotion.description!,
@@ -233,14 +239,15 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               children: [
                 TextButton(
                   onPressed: () => _navigateToEdit(promotion),
+                  style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primaryOrange),
                   child: const Text('Изменить'),
-                  style: TextButton.styleFrom(foregroundColor: AppTheme.primaryOrange),
                 ),
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed: () => _confirmDeactivate(promotion),
-                  child: const Text('Завершить'),
                   style: TextButton.styleFrom(foregroundColor: Colors.grey),
+                  child: const Text('Завершить'),
                 ),
               ],
             ),

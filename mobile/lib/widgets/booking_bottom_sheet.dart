@@ -39,8 +39,13 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   BookingSettings? _settings;
 
   static const _dayKeys = [
-    'monday', 'tuesday', 'wednesday', 'thursday',
-    'friday', 'saturday', 'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
   ];
 
   @override
@@ -79,7 +84,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   }
 
   List<String> _generateTimeSlots() {
-    if (_settings == null || widget.establishment.workingHours == null) return [];
+    if (_settings == null || widget.establishment.workingHours == null)
+      return [];
 
     final dayIndex = (_selectedDate.weekday - 1) % 7; // 0=Mon
     final dayKey = _dayKeys[dayIndex];
@@ -98,7 +104,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     if (openParts.length != 2 || closeParts.length != 2) return [];
 
     final openMinutes = int.parse(openParts[0]) * 60 + int.parse(openParts[1]);
-    final closeMinutes = int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
+    final closeMinutes =
+        int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
 
     final slots = <String>[];
     for (int m = openMinutes; m <= closeMinutes - 30; m += 30) {
@@ -122,8 +129,11 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 
     final parts = slot.split(':');
     final slotTime = DateTime(
-      _selectedDate.year, _selectedDate.month, _selectedDate.day,
-      int.parse(parts[0]), int.parse(parts[1]),
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
     );
 
     final minTime = now.add(Duration(hours: _settings!.minHoursBefore));
@@ -198,7 +208,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           // Drag handle
           Center(
             child: Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: AppTheme.gray300,
@@ -215,7 +226,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           const SizedBox(height: 4),
           Text(
             '${widget.establishment.name} • ${widget.establishment.address}',
-            style: TextStyle(fontSize: 13, color: AppTheme.gray600),
+            style: const TextStyle(fontSize: 13, color: AppTheme.gray600),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -237,7 +248,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                 color: AppTheme.gray100,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
-              child: Text(
+              child: const Text(
                 'Заведение не работает в этот день',
                 style: TextStyle(color: AppTheme.gray600),
               ),
@@ -260,14 +271,14 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             maxLines: 2,
             decoration: InputDecoration(
               hintText: 'Детское кресло, аллергии, повод...',
-              hintStyle: TextStyle(color: AppTheme.gray400),
+              hintStyle: const TextStyle(color: AppTheme.gray400),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.gray300),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.gray300),
               ),
               contentPadding: const EdgeInsets.all(12),
             ),
@@ -282,14 +293,14 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             keyboardType: TextInputType.phone,
             decoration: InputDecoration(
               hintText: '+375 __ _______',
-              hintStyle: TextStyle(color: AppTheme.gray400),
+              hintStyle: const TextStyle(color: AppTheme.gray400),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.gray300),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.gray300),
               ),
               contentPadding: const EdgeInsets.all(12),
             ),
@@ -304,7 +315,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Text(
                     provider.error!,
-                    style: const TextStyle(color: AppTheme.errorRed, fontSize: 14),
+                    style:
+                        const TextStyle(color: AppTheme.errorRed, fontSize: 14),
                   ),
                 );
               }
@@ -325,7 +337,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: AppTheme.gray300,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                      borderRadius:
+                          BorderRadius.circular(AppTheme.radiusMedium),
                     ),
                     elevation: 0,
                   ),
@@ -344,7 +357,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             Text(
               'Заведение подтвердит бронь в течение ${_settings!.confirmationTimeoutHours} часов. '
               'Администратор может связаться с вами для уточнения.',
-              style: TextStyle(fontSize: 12, color: AppTheme.gray500),
+              style: const TextStyle(fontSize: 12, color: AppTheme.gray500),
               textAlign: TextAlign.center,
             ),
           ],
@@ -436,7 +449,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 
   Widget _buildTimeSelector(List<String> slots) {
     if (slots.isEmpty) {
-      return Text(
+      return const Text(
         'Нет доступных слотов',
         style: TextStyle(color: AppTheme.gray500),
       );
@@ -492,9 +505,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
       children: [
         _buildStepperButton(
           Icons.remove,
-          _guestCount > 1
-              ? () => setState(() => _guestCount--)
-              : null,
+          _guestCount > 1 ? () => setState(() => _guestCount--) : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -505,9 +516,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         ),
         _buildStepperButton(
           Icons.add,
-          _guestCount < max
-              ? () => setState(() => _guestCount++)
-              : null,
+          _guestCount < max ? () => setState(() => _guestCount++) : null,
         ),
       ],
     );
@@ -517,7 +526,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40, height: 40,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: onTap != null ? AppTheme.gray100 : AppTheme.gray200,
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),

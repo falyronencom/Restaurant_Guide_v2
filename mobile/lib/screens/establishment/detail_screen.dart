@@ -27,6 +27,7 @@ import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
 class EstablishmentDetailScreen extends StatefulWidget {
   final String establishmentId;
+
   /// Pre-calculated distance from search results (avoids recalculation discrepancy)
   final double? distanceKm;
 
@@ -203,8 +204,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             _buildMapSection(),
 
             // Booking CTA (only when booking enabled)
-            if (_establishment?.bookingEnabled == true)
-              _buildBookingCTA(),
+            if (_establishment?.bookingEnabled == true) _buildBookingCTA(),
 
             // Reviews section (dark background)
             _buildReviewsSection(),
@@ -529,7 +529,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       buffer.writeln('📞 ${_establishment!.phone}');
     }
 
-    if (_establishment!.website != null && _establishment!.website!.isNotEmpty) {
+    if (_establishment!.website != null &&
+        _establishment!.website!.isNotEmpty) {
       buffer.writeln('🔗 ${_establishment!.website}');
     }
 
@@ -619,8 +620,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         const SizedBox(height: 8),
 
         // Phone (tappable — opens dialer and tracks call event)
-        if (_establishment!.phone != null &&
-            _establishment!.phone!.isNotEmpty)
+        if (_establishment!.phone != null && _establishment!.phone!.isNotEmpty)
           GestureDetector(
             onTap: () => _launchPhoneCall(_establishment!.phone!),
             child: Row(
@@ -1436,7 +1436,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       color: AppTheme.backgroundWarm,
       child: ElevatedButton(
         onPressed: () async {
-          final result = await BookingBottomSheet.show(context, _establishment!);
+          final result =
+              await BookingBottomSheet.show(context, _establishment!);
           if (result == true && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1564,14 +1565,16 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                         foregroundColor: _secondaryOrange,
                         side: const BorderSide(color: AppTheme.primaryOrange),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                          borderRadius:
+                              BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                       )
                     : ElevatedButton.styleFrom(
                         backgroundColor: _secondaryOrange,
                         foregroundColor: _backgroundColor,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                          borderRadius:
+                              BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                         elevation: 0,
                       ),
@@ -1873,15 +1876,18 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                count == 1 ? 'Акция \u00b7 Подробнее \u2192' : '$count акции \u00b7 Подробнее \u2192',
-                style: TextStyle(
+                count == 1
+                    ? 'Акция \u00b7 Подробнее \u2192'
+                    : '$count акции \u00b7 Подробнее \u2192',
+                style: const TextStyle(
                   color: _primaryOrange,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            Icon(Icons.arrow_forward_ios, size: 14, color: _primaryOrange),
+            const Icon(Icons.arrow_forward_ios,
+                size: 14, color: _primaryOrange),
           ],
         ),
       ),
@@ -1918,7 +1924,8 @@ class _PromotionCarouselSheet extends StatefulWidget {
   });
 
   @override
-  State<_PromotionCarouselSheet> createState() => _PromotionCarouselSheetState();
+  State<_PromotionCarouselSheet> createState() =>
+      _PromotionCarouselSheetState();
 }
 
 class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
@@ -1943,9 +1950,12 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
     if (_viewedPages.contains(pageIndex)) return;
     _viewedPages.add(pageIndex);
 
-    ApiClient().post('/api/v1/analytics/promotion-view', data: {
-      'establishmentId': widget.establishmentId,
-    }).then((_) {}).catchError((_) => null);
+    ApiClient()
+        .post('/api/v1/analytics/promotion-view', data: {
+          'establishmentId': widget.establishmentId,
+        })
+        .then((_) {})
+        .catchError((_) => null);
   }
 
   @override
@@ -1975,7 +1985,8 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               children: [
                 Text(
                   widget.promotions.length == 1 ? 'Акция' : 'Акции',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -2055,11 +2066,13 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
             promotion.title,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
-          if (promotion.description != null && promotion.description!.isNotEmpty) ...[
+          if (promotion.description != null &&
+              promotion.description!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               promotion.description!,
-              style: TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
+              style:
+                  TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
             ),
           ],
           if (promotion.validUntil != null) ...[
@@ -2108,7 +2121,8 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               Text(
                 widget.establishmentName,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
               ),
             ],
           ),
@@ -2200,7 +2214,8 @@ class _EstablishmentMiniMapState extends State<_EstablishmentMiniMap> {
   }
 
   Future<void> _initMarkers() async {
-    final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final dpr =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
     await _markerGenerator.ensureInitialized(dpr);
     if (mounted) setState(() {});
   }
@@ -2251,8 +2266,8 @@ class _EstablishmentMiniMapState extends State<_EstablishmentMiniMap> {
             icon: _markerGenerator.getMarkerImage(isOpen: widget.isOpen) != null
                 ? PlacemarkIcon.single(
                     PlacemarkIconStyle(
-                      image: BitmapDescriptor.fromBytes(
-                          _markerGenerator.getMarkerImage(isOpen: widget.isOpen)!),
+                      image: BitmapDescriptor.fromBytes(_markerGenerator
+                          .getMarkerImage(isOpen: widget.isOpen)!),
                       scale: 1.0,
                     ),
                   )

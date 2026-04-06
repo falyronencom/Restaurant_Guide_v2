@@ -15,7 +15,8 @@ enum NotificationType {
   bookingConfirmed,
   bookingDeclined,
   bookingExpired,
-  bookingCancelled;
+  bookingCancelled,
+  promotionNew;
 
   static NotificationType fromString(String value) {
     switch (value) {
@@ -47,6 +48,8 @@ enum NotificationType {
         return NotificationType.bookingExpired;
       case 'booking_cancelled':
         return NotificationType.bookingCancelled;
+      case 'promotion_new':
+        return NotificationType.promotionNew;
       default:
         return NotificationType.newReview;
     }
@@ -103,6 +106,8 @@ class NotificationModel {
       case NotificationType.bookingExpired:
       case NotificationType.bookingCancelled:
         return NotificationCategory.establishments;
+      case NotificationType.promotionNew:
+        return NotificationCategory.establishments;
     }
   }
 
@@ -137,6 +142,8 @@ class NotificationModel {
         return Icons.schedule;
       case NotificationType.bookingCancelled:
         return Icons.cancel_schedule_send;
+      case NotificationType.promotionNew:
+        return Icons.local_offer;
     }
   }
 
@@ -168,6 +175,8 @@ class NotificationModel {
       case NotificationType.bookingExpired:
       case NotificationType.bookingCancelled:
         return const Color(0xFF9E9E9E);
+      case NotificationType.promotionNew:
+        return const Color(0xFFFF9800);
     }
   }
 

@@ -13,6 +13,8 @@ import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/notifications/notification_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/promotion_hub_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/user_bookings_screen.dart';
+import 'package:restaurant_guide_mobile/screens/profile/notification_preferences_screen.dart';
+import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 
 /// Profile screen - main profile tab with settings
@@ -468,16 +470,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Notifications
+          // Notification preferences
           _buildSettingsItem(
             context,
             icon: Icons.notifications_outlined,
             title: 'Уведомления',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Настройки уведомлений скоро будут доступны'),
-                  behavior: SnackBarBehavior.floating,
+              Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(
+                  builder: (_) => const NotificationPreferencesScreen(),
                 ),
               );
             },
@@ -599,11 +600,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogContext);
               context.read<NotificationProvider>().stopPolling();
               context.read<PartnerDashboardProvider>().reset();
-              context.read<AuthProvider>().logout();
+              // Deregister FCM token before clearing auth state
+              await PushNotificationService().deregisterToken();
+              if (context.mounted) {
+                context.read<AuthProvider>().logout();
+              }
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text(
@@ -946,7 +951,8 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.calendar_today, color: AppTheme.primaryOrange),
+                  const Icon(Icons.calendar_today,
+                      color: AppTheme.primaryOrange),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
@@ -959,7 +965,8 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                   ),
                   if (activeCount > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: AppTheme.primaryOrange,
                         borderRadius: BorderRadius.circular(10),
@@ -974,7 +981,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                       ),
                     ),
                   const SizedBox(width: 8),
-                  Icon(Icons.chevron_right, color: AppTheme.gray400),
+                  const Icon(Icons.chevron_right, color: AppTheme.gray400),
                 ],
               ),
             ),
