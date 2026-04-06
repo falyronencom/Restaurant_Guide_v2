@@ -11,6 +11,7 @@
 import * as PromotionModel from '../models/promotionModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
+import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -87,6 +88,9 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
     position: data.position || 0,
     ...imageUrls,
   });
+
+  // Notify users who favorited this establishment (non-blocking)
+  NotificationService.notifyPromotionNew(establishmentId, data.title).catch(() => {});
 
   logger.info('Promotion created', {
     promotionId: promotion.id,

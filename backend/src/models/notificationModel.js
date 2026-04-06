@@ -14,12 +14,24 @@ const CATEGORY_TYPES = {
     'establishment_approved',
     'establishment_rejected',
     'establishment_suspended',
-    'new_review',
+    'establishment_unsuspended',
+    'establishment_claimed',
   ],
   reviews: [
+    'new_review',
     'partner_response',
     'review_hidden',
     'review_deleted',
+  ],
+  booking: [
+    'booking_received',
+    'booking_confirmed',
+    'booking_declined',
+    'booking_expired',
+    'booking_cancelled',
+  ],
+  promotions: [
+    'promotion_new',
   ],
 };
 

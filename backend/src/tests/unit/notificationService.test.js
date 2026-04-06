@@ -29,11 +29,20 @@ jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   findReviewById: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../models/favoriteModel.js', () => ({
+  getUserIdsByEstablishment: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../services/pushService.js', () => ({
+  sendPush: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: {
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    debug: jest.fn(),
   },
 }));
 
@@ -41,6 +50,8 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const NotificationModel = await import('../../models/notificationModel.js');
 const EstablishmentModel = await import('../../models/establishmentModel.js');
 const ReviewModel = await import('../../models/reviewModel.js');
+const FavoriteModel = await import('../../models/favoriteModel.js');
+const PushService = await import('../../services/pushService.js');
 const logger = (await import('../../utils/logger.js')).default;
 
 const {
@@ -53,6 +64,13 @@ const {
   notifyNewReview,
   notifyPartnerResponse,
   notifyReviewModerated,
+  notifyEstablishmentClaimed,
+  notifyBookingReceived,
+  notifyBookingConfirmed,
+  notifyBookingDeclined,
+  notifyBookingExpired,
+  notifyBookingCancelled,
+  notifyPromotionNew,
 } = await import('../../services/notificationService.js');
 
 import { createMockEstablishment, createMockReview } from '../mocks/helpers.js';
@@ -135,6 +153,13 @@ describe('notificationService', () => {
         'partner_response',
         'review_hidden',
         'review_deleted',
+        'establishment_claimed',
+        'booking_received',
+        'booking_confirmed',
+        'booking_declined',
+        'booking_expired',
+        'booking_cancelled',
+        'promotion_new',
       ];
 
       for (const type of validTypes) {
@@ -682,6 +707,294 @@ describe('notificationService', () => {
       expect(logger.error).toHaveBeenCalledWith(
         'Failed to create review moderation notification',
         expect.objectContaining({ reviewId, action: 'hidden' })
+      );
+    });
+
+    test('should NOT call pushService for review_hidden (in-app only)', async () => {
+      await notifyReviewModerated(reviewId, 'hidden');
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('should NOT call pushService for review_deleted (in-app only)', async () => {
+      await notifyReviewModerated(reviewId, 'deleted');
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Push integration in trigger helpers
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('push integration — establishment status', () => {
+    const establishmentId = uuidv4();
+    const partnerId = uuidv4();
+
+    beforeEach(() => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        createMockEstablishment({ id: establishmentId, partner_id: partnerId, name: 'Тест' })
+      );
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+    });
+
+    test('should call pushService for approved', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'active');
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          title: 'Заведение одобрено',
+          data: expect.objectContaining({ type: 'establishment_approved', establishmentId }),
+        })
+      );
+    });
+
+    test('should call pushService for rejected', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'rejected', 'Причина');
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'establishment_rejected' }),
+        })
+      );
+    });
+
+    test('should call pushService for suspended', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'suspended');
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'establishment_suspended' }),
+        })
+      );
+    });
+
+    test('should call pushService for unsuspended', async () => {
+      await notifyEstablishmentStatusChange(establishmentId, 'unsuspended');
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'establishment_unsuspended' }),
+        })
+      );
+    });
+  });
+
+  describe('push integration — reviews', () => {
+    const reviewId = uuidv4();
+    const establishmentId = uuidv4();
+    const partnerId = uuidv4();
+    const reviewUserId = uuidv4();
+
+    beforeEach(() => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        createMockEstablishment({ id: establishmentId, partner_id: partnerId, name: 'Бар' })
+      );
+      ReviewModel.findReviewById.mockResolvedValue(
+        createMockReview({ id: reviewId, user_id: reviewUserId, establishment_id: establishmentId })
+      );
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+    });
+
+    test('should call pushService for new review', async () => {
+      await notifyNewReview(reviewId, establishmentId);
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'new_review', establishmentId, reviewId }),
+        })
+      );
+    });
+
+    test('should call pushService for partner response', async () => {
+      await notifyPartnerResponse(reviewId, establishmentId);
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        reviewUserId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'partner_response', establishmentId, reviewId }),
+        })
+      );
+    });
+  });
+
+  describe('push integration — no push for claimed', () => {
+    test('should NOT call pushService for establishment_claimed', async () => {
+      const establishmentId = uuidv4();
+      const newPartnerId = uuidv4();
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        createMockEstablishment({ id: establishmentId, name: 'Кафе' })
+      );
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+
+      await notifyEstablishmentClaimed(establishmentId, newPartnerId);
+
+      expect(NotificationModel.create).toHaveBeenCalled();
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('push integration — bookings', () => {
+    const establishmentId = uuidv4();
+    const partnerId = uuidv4();
+    const userId = uuidv4();
+    const bookingData = {
+      id: uuidv4(),
+      establishment_name: 'Ресторан',
+      booking_date: '2026-04-10',
+      booking_time: '19:00:00',
+      guest_count: 4,
+    };
+
+    beforeEach(() => {
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+    });
+
+    test('should call pushService for booking_received', async () => {
+      await notifyBookingReceived(partnerId, bookingData, establishmentId);
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'booking_received', establishmentId }),
+        })
+      );
+    });
+
+    test('should call pushService for booking_confirmed', async () => {
+      await notifyBookingConfirmed(userId, bookingData, establishmentId);
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        userId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'booking_confirmed' }),
+        })
+      );
+    });
+
+    test('should call pushService for booking_declined', async () => {
+      await notifyBookingDeclined(userId, bookingData, establishmentId, 'Нет мест');
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        userId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'booking_declined' }),
+        })
+      );
+    });
+
+    test('should call pushService for BOTH recipients on booking_expired', async () => {
+      // Debug: check NotificationModel.create call count before
+      const createBefore = NotificationModel.create.mock.calls.length;
+      await notifyBookingExpired(userId, partnerId, bookingData, establishmentId);
+      const createAfter = NotificationModel.create.mock.calls.length;
+
+      // Expired creates 2 in-app notifications
+      expect(createAfter - createBefore).toBe(2);
+
+      // Push should be called for both user and partner
+      const pushCalls = PushService.sendPush.mock.calls;
+      const expiredPushCalls = pushCalls.filter(
+        (c) => c[1] && c[1].data && c[1].data.type === 'booking_expired'
+      );
+      expect(expiredPushCalls.length).toBe(2);
+
+      const pushUserIds = expiredPushCalls.map((c) => c[0]);
+      expect(pushUserIds).toContain(userId);
+      expect(pushUserIds).toContain(partnerId);
+    });
+
+    test('should call pushService for booking_cancelled', async () => {
+      await notifyBookingCancelled(partnerId, bookingData, establishmentId);
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'booking_cancelled' }),
+        })
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // notifyPromotionNew
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('notifyPromotionNew', () => {
+    const establishmentId = uuidv4();
+
+    beforeEach(() => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        createMockEstablishment({ id: establishmentId, name: 'Пиццерия Люкс' })
+      );
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+    });
+
+    test('should create notifications for all users who favorited', async () => {
+      const userIds = [uuidv4(), uuidv4(), uuidv4()];
+      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue(userIds);
+
+      await notifyPromotionNew(establishmentId, 'Скидка 20%');
+
+      expect(NotificationModel.create).toHaveBeenCalledTimes(3);
+      expect(PushService.sendPush).toHaveBeenCalledTimes(3);
+
+      userIds.forEach((uid) => {
+        expect(NotificationModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: uid,
+            type: 'promotion_new',
+            title: 'Новая акция',
+            message: 'Новая акция в «Пиццерия Люкс»: Скидка 20%',
+            establishmentId,
+          })
+        );
+        expect(PushService.sendPush).toHaveBeenCalledWith(
+          uid,
+          expect.objectContaining({
+            data: expect.objectContaining({ type: 'promotion_new', establishmentId }),
+          })
+        );
+      });
+    });
+
+    test('should do nothing when no favorites exist', async () => {
+      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue([]);
+
+      await notifyPromotionNew(establishmentId, 'Акция');
+
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('should do nothing when establishment not found', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
+
+      await notifyPromotionNew(establishmentId, 'Акция');
+
+      expect(FavoriteModel.getUserIdsByEstablishment).not.toHaveBeenCalled();
+    });
+
+    test('should continue despite individual failures (Promise.allSettled)', async () => {
+      const userIds = [uuidv4(), uuidv4()];
+      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue(userIds);
+      // First create succeeds, second fails
+      NotificationModel.create
+        .mockResolvedValueOnce({ id: uuidv4() })
+        .mockRejectedValueOnce(new Error('DB error'));
+
+      // Should NOT throw
+      await expect(
+        notifyPromotionNew(establishmentId, 'Акция')
+      ).resolves.toBeUndefined();
+
+      // Both create calls were attempted
+      expect(NotificationModel.create).toHaveBeenCalledTimes(2);
+    });
+
+    test('should NOT throw on error (non-blocking)', async () => {
+      FavoriteModel.getUserIdsByEstablishment.mockRejectedValue(new Error('DB error'));
+
+      await expect(
+        notifyPromotionNew(establishmentId, 'Акция')
+      ).resolves.toBeUndefined();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to create promotion notifications',
+        expect.objectContaining({ establishmentId })
       );
     });
   });

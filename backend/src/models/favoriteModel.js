@@ -387,6 +387,34 @@ export const getEstablishmentFavoriteCount = async (establishmentId) => {
 };
 
 /**
+ * Get all user IDs who favorited a specific establishment
+ *
+ * Used by notificationService.notifyPromotionNew to send push
+ * notifications to users interested in an establishment.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<string[]>} Array of user UUIDs
+ */
+export const getUserIdsByEstablishment = async (establishmentId) => {
+  const query = `
+    SELECT user_id
+    FROM favorites
+    WHERE establishment_id = $1
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+    return result.rows.map((row) => row.user_id);
+  } catch (error) {
+    logger.error('Error fetching user IDs for establishment favorites', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Update cached favorite_count in the establishments table
  *
  * This follows the same pattern as updateEstablishmentAggregates in reviewModel.js.
