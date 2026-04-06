@@ -335,6 +335,30 @@ export const notifyEstablishmentClaimed = async (establishmentId, newPartnerId) 
 // ============================================================================
 
 /**
+ * Format booking date/time for human-readable notification messages.
+ * Handles ISO "2026-04-07T00:00:00.000Z" → "7 апреля", time "21:00:00" → "21:00"
+ */
+const MONTHS_RU = [
+  '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
+
+const formatBookingDateTime = (dateStr, timeStr) => {
+  let formattedDate = dateStr;
+  try {
+    const dt = new Date(dateStr);
+    if (!isNaN(dt.getTime())) {
+      formattedDate = `${dt.getUTCDate()} ${MONTHS_RU[dt.getUTCMonth() + 1]}`;
+    }
+  } catch (_) { /* keep raw */ }
+
+  // Strip seconds: "21:00:00" → "21:00"
+  const formattedTime = timeStr ? timeStr.split(':').slice(0, 2).join(':') : timeStr;
+
+  return { date: formattedDate, time: formattedTime };
+};
+
+/**
  * Notify partner about a new booking request.
  *
  * @param {string} partnerId
@@ -344,11 +368,12 @@ export const notifyEstablishmentClaimed = async (establishmentId, newPartnerId) 
 export const notifyBookingReceived = async (partnerId, bookingData, establishmentId) => {
   try {
     const name = bookingData.establishment_name || 'Заведение';
+    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
     await NotificationModel.create({
       userId: partnerId,
       type: 'booking_received',
       title: TITLES.booking_received,
-      message: `Новая бронь на «${name}» — ${bookingData.guest_count} гост., ${bookingData.booking_date} ${bookingData.booking_time}`,
+      message: `Новая бронь на «${name}» — ${bookingData.guest_count} гост., ${date} ${time}`,
       establishmentId,
     });
   } catch (error) {
@@ -370,11 +395,12 @@ export const notifyBookingReceived = async (partnerId, bookingData, establishmen
 export const notifyBookingConfirmed = async (userId, bookingData, establishmentId) => {
   try {
     const name = bookingData.establishment_name || 'Заведение';
+    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
     await NotificationModel.create({
       userId,
       type: 'booking_confirmed',
       title: TITLES.booking_confirmed,
-      message: `Ваша бронь на «${name}» подтверждена — ${bookingData.booking_date} ${bookingData.booking_time}`,
+      message: `Ваша бронь на «${name}» подтверждена — ${date} ${time}`,
       establishmentId,
     });
   } catch (error) {
@@ -397,9 +423,10 @@ export const notifyBookingConfirmed = async (userId, bookingData, establishmentI
 export const notifyBookingDeclined = async (userId, bookingData, establishmentId, reason) => {
   try {
     const name = bookingData.establishment_name || 'Заведение';
+    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
     const msg = reason
-      ? `Бронь на «${name}» отклонена: ${reason}`
-      : `Бронь на «${name}» отклонена`;
+      ? `Бронь на «${name}» (${date} ${time}) отклонена: ${reason}`
+      : `Бронь на «${name}» (${date} ${time}) отклонена`;
     await NotificationModel.create({
       userId,
       type: 'booking_declined',
@@ -427,7 +454,8 @@ export const notifyBookingDeclined = async (userId, bookingData, establishmentId
 export const notifyBookingExpired = async (userId, partnerId, bookingData, establishmentId) => {
   try {
     const name = bookingData.establishment_name || 'Заведение';
-    const msg = `Бронь на «${name}» (${bookingData.booking_date} ${bookingData.booking_time}) истекла`;
+    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
+    const msg = `Бронь на «${name}» (${date} ${time}) истекла`;
 
     // Notify user
     await NotificationModel.create({
@@ -466,11 +494,12 @@ export const notifyBookingExpired = async (userId, partnerId, bookingData, estab
 export const notifyBookingCancelled = async (partnerId, bookingData, establishmentId) => {
   try {
     const name = bookingData.establishment_name || 'Заведение';
+    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
     await NotificationModel.create({
       userId: partnerId,
       type: 'booking_cancelled',
       title: TITLES.booking_cancelled,
-      message: `Бронь на «${name}» (${bookingData.booking_date} ${bookingData.booking_time}) отменена гостем`,
+      message: `Бронь на «${name}» (${date} ${time}) отменена гостем`,
       establishmentId,
     });
   } catch (error) {

@@ -128,9 +128,9 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           const SizedBox(height: 12),
 
           // Details
-          _buildDetailRow(Icons.calendar_today, booking.bookingDate),
+          _buildDetailRow(Icons.calendar_today, booking.formattedDate),
           const SizedBox(height: 6),
-          _buildDetailRow(Icons.access_time, booking.bookingTime),
+          _buildDetailRow(Icons.access_time, booking.formattedTime),
           const SizedBox(height: 6),
           _buildDetailRow(Icons.people, '${booking.guestCount} гост.'),
 
@@ -158,7 +158,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: Text(
-                'Бронь подтверждена! Вас ждут: ${booking.bookingDate}, ${booking.bookingTime}, ${booking.guestCount} гост.',
+                'Бронь подтверждена! Вас ждут: ${booking.formattedDate}, ${booking.formattedTime}, ${booking.guestCount} гост.',
                 style: const TextStyle(fontSize: 13),
               ),
             ),
@@ -226,7 +226,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${booking.bookingDate} • ${booking.bookingTime} • ${booking.guestCount} гост.',
+            '${booking.formattedDate} • ${booking.formattedTime} • ${booking.guestCount} гост.',
             style: TextStyle(fontSize: 13, color: AppTheme.gray500),
           ),
 
@@ -346,7 +346,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Отменить бронь?'),
         content: Text(
-          '${booking.establishmentName}, ${booking.bookingDate} в ${booking.bookingTime}',
+          '${booking.establishmentName}, ${booking.formattedDate} в ${booking.formattedTime}',
         ),
         actions: [
           TextButton(

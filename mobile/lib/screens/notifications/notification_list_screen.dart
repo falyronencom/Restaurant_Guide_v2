@@ -357,6 +357,26 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         // Go to profile tab (my reviews section)
         Navigator.of(context).pop();
         MainNavigationScreenState.instance?.switchToTab(4);
+      case NotificationType.establishmentUnsuspended:
+      case NotificationType.establishmentClaimed:
+        // Navigate to establishment detail
+        if (notification.establishmentId != null) {
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => EstablishmentDetailScreen(
+                establishmentId: notification.establishmentId!,
+              ),
+            ),
+          );
+        }
+      case NotificationType.bookingReceived:
+      case NotificationType.bookingConfirmed:
+      case NotificationType.bookingDeclined:
+      case NotificationType.bookingExpired:
+      case NotificationType.bookingCancelled:
+        // Go to profile tab (bookings accessible from there)
+        Navigator.of(context).pop();
+        MainNavigationScreenState.instance?.switchToTab(4);
     }
   }
 }
