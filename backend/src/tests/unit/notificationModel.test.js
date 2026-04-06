@@ -158,7 +158,8 @@ describe('notificationModel', () => {
       expect(params).toContain('establishment_approved');
       expect(params).toContain('establishment_rejected');
       expect(params).toContain('establishment_suspended');
-      expect(params).toContain('new_review');
+      expect(params).toContain('establishment_unsuspended');
+      expect(params).toContain('establishment_claimed');
     });
 
     test('should apply category filter for reviews', async () => {
@@ -169,6 +170,7 @@ describe('notificationModel', () => {
       await NotificationModel.getByUserId(userId, { category: 'reviews' });
 
       const params = mockQuery.mock.calls[0][1];
+      expect(params).toContain('new_review');
       expect(params).toContain('partner_response');
       expect(params).toContain('review_hidden');
       expect(params).toContain('review_deleted');

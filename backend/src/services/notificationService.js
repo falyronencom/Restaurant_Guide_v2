@@ -9,6 +9,8 @@
 import * as NotificationModel from '../models/notificationModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
+import * as FavoriteModel from '../models/favoriteModel.js';
+import * as PushService from './pushService.js';
 import logger from '../utils/logger.js';
 
 // ============================================================================
@@ -30,6 +32,7 @@ const TITLES = {
   booking_declined: 'Бронь отклонена',
   booking_expired: 'Бронь истекла',
   booking_cancelled: 'Бронь отменена',
+  promotion_new: 'Новая акция',
 };
 
 const VALID_TYPES = Object.keys(TITLES);
@@ -187,6 +190,13 @@ export const notifyEstablishmentStatusChange = async (establishmentId, newStatus
       message,
       establishmentId,
     });
+
+    // Push notification (non-blocking)
+    PushService.sendPush(establishment.partner_id, {
+      title: TITLES[type],
+      message,
+      data: { type, establishmentId },
+    }).catch((err) => logger.error('Push failed for establishment status', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create establishment status notification', {
       error: error.message,
@@ -218,6 +228,12 @@ export const notifyNewReview = async (reviewId, establishmentId) => {
       establishmentId,
       reviewId,
     });
+
+    PushService.sendPush(establishment.partner_id, {
+      title: TITLES.new_review,
+      message: `Новый отзыв на «${name}»`,
+      data: { type: 'new_review', establishmentId, reviewId },
+    }).catch((err) => logger.error('Push failed for new review', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create new review notification', {
       error: error.message,
@@ -250,6 +266,12 @@ export const notifyPartnerResponse = async (reviewId, establishmentId) => {
       establishmentId,
       reviewId,
     });
+
+    PushService.sendPush(review.user_id, {
+      title: TITLES.partner_response,
+      message: `Владелец «${name}» ответил на ваш отзыв`,
+      data: { type: 'partner_response', establishmentId, reviewId },
+    }).catch((err) => logger.error('Push failed for partner response', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create partner response notification', {
       error: error.message,
@@ -369,13 +391,20 @@ export const notifyBookingReceived = async (partnerId, bookingData, establishmen
   try {
     const name = bookingData.establishment_name || 'Заведение';
     const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
+    const message = `Новая бронь на «${name}» — ${bookingData.guest_count} гост., ${date} ${time}`;
     await NotificationModel.create({
       userId: partnerId,
       type: 'booking_received',
       title: TITLES.booking_received,
-      message: `Новая бронь на «${name}» — ${bookingData.guest_count} гост., ${date} ${time}`,
+      message,
       establishmentId,
     });
+
+    PushService.sendPush(partnerId, {
+      title: TITLES.booking_received,
+      message,
+      data: { type: 'booking_received', establishmentId, bookingId: bookingData.id },
+    }).catch((err) => logger.error('Push failed for booking received', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create booking received notification', {
       error: error.message,
@@ -396,13 +425,20 @@ export const notifyBookingConfirmed = async (userId, bookingData, establishmentI
   try {
     const name = bookingData.establishment_name || 'Заведение';
     const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
+    const message = `Ваша бронь на «${name}» подтверждена — ${date} ${time}`;
     await NotificationModel.create({
       userId,
       type: 'booking_confirmed',
       title: TITLES.booking_confirmed,
-      message: `Ваша бронь на «${name}» подтверждена — ${date} ${time}`,
+      message,
       establishmentId,
     });
+
+    PushService.sendPush(userId, {
+      title: TITLES.booking_confirmed,
+      message,
+      data: { type: 'booking_confirmed', establishmentId, bookingId: bookingData.id },
+    }).catch((err) => logger.error('Push failed for booking confirmed', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create booking confirmed notification', {
       error: error.message,
@@ -434,6 +470,12 @@ export const notifyBookingDeclined = async (userId, bookingData, establishmentId
       message: msg,
       establishmentId,
     });
+
+    PushService.sendPush(userId, {
+      title: TITLES.booking_declined,
+      message: msg,
+      data: { type: 'booking_declined', establishmentId, bookingId: bookingData.id },
+    }).catch((err) => logger.error('Push failed for booking declined', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create booking declined notification', {
       error: error.message,
@@ -474,6 +516,21 @@ export const notifyBookingExpired = async (userId, partnerId, bookingData, estab
       message: msg,
       establishmentId,
     });
+
+    // Push to both recipients (parallel, non-blocking)
+    const pushData = { type: 'booking_expired', establishmentId, bookingId: bookingData.id };
+    Promise.allSettled([
+      PushService.sendPush(userId, {
+        title: TITLES.booking_expired,
+        message: msg,
+        data: pushData,
+      }),
+      PushService.sendPush(partnerId, {
+        title: TITLES.booking_expired,
+        message: msg,
+        data: pushData,
+      }),
+    ]).catch((err) => logger.error('Push failed for booking expired', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create booking expired notifications', {
       error: error.message,
@@ -495,17 +552,82 @@ export const notifyBookingCancelled = async (partnerId, bookingData, establishme
   try {
     const name = bookingData.establishment_name || 'Заведение';
     const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
+    const message = `Бронь на «${name}» (${date} ${time}) отменена гостем`;
     await NotificationModel.create({
       userId: partnerId,
       type: 'booking_cancelled',
       title: TITLES.booking_cancelled,
-      message: `Бронь на «${name}» (${date} ${time}) отменена гостем`,
+      message,
       establishmentId,
     });
+
+    PushService.sendPush(partnerId, {
+      title: TITLES.booking_cancelled,
+      message,
+      data: { type: 'booking_cancelled', establishmentId, bookingId: bookingData.id },
+    }).catch((err) => logger.error('Push failed for booking cancelled', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create booking cancelled notification', {
       error: error.message,
       partnerId,
+      establishmentId,
+    });
+  }
+};
+
+// ============================================================================
+// Promotion notification helpers (NON-BLOCKING)
+// ============================================================================
+
+/**
+ * Notify all users who favorited an establishment about a new promotion.
+ * Called after: promotionService.createPromotion (status = 'active')
+ *
+ * Uses Promise.allSettled for batch delivery — one user's failure doesn't block others.
+ *
+ * @param {string} establishmentId
+ * @param {string} promotionTitle
+ */
+export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
+  try {
+    const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+    if (!establishment) return;
+
+    const name = establishment.name || 'Заведение';
+    const message = `Новая акция в «${name}»: ${promotionTitle}`;
+
+    const userIds = await FavoriteModel.getUserIdsByEstablishment(establishmentId);
+    if (userIds.length === 0) return;
+
+    // Batch: create in-app notifications + push for all users
+    const tasks = userIds.flatMap((userId) => [
+      NotificationModel.create({
+        userId,
+        type: 'promotion_new',
+        title: TITLES.promotion_new,
+        message,
+        establishmentId,
+      }),
+      PushService.sendPush(userId, {
+        title: TITLES.promotion_new,
+        message,
+        data: { type: 'promotion_new', establishmentId },
+      }),
+    ]);
+
+    const results = await Promise.allSettled(tasks);
+
+    const failures = results.filter((r) => r.status === 'rejected');
+    if (failures.length > 0) {
+      logger.warn('Some promotion notifications failed', {
+        establishmentId,
+        totalUsers: userIds.length,
+        failures: failures.length,
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to create promotion notifications', {
+      error: error.message,
       establishmentId,
     });
   }
