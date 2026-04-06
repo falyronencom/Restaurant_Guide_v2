@@ -192,9 +192,9 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
           const SizedBox(height: 12),
 
           // Details
-          _buildDetailRow(Icons.calendar_today, booking.bookingDate),
+          _buildDetailRow(Icons.calendar_today, booking.formattedDate),
           const SizedBox(height: 6),
-          _buildDetailRow(Icons.access_time, booking.bookingTime),
+          _buildDetailRow(Icons.access_time, booking.formattedTime),
           const SizedBox(height: 6),
           _buildDetailRow(
             Icons.people,
@@ -346,7 +346,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
         children: [
           // Time
           Text(
-            booking.bookingTime,
+            booking.formattedTime,
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -458,7 +458,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${booking.bookingDate} • ${booking.bookingTime}',
+                  '${booking.formattedDate} • ${booking.formattedTime}',
                   style: TextStyle(fontSize: 13, color: AppTheme.gray500),
                 ),
                 const SizedBox(height: 4),

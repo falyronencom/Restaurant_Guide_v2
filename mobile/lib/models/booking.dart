@@ -99,6 +99,43 @@ class Booking {
     );
   }
 
+  /// Formatted date for display: "7 апреля" or "7 апреля 2026"
+  String get formattedDate {
+    const months = [
+      '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+    ];
+    try {
+      final dt = DateTime.parse(bookingDate);
+      final now = DateTime.now();
+      if (dt.year == now.year) {
+        return '${dt.day} ${months[dt.month]}';
+      }
+      return '${dt.day} ${months[dt.month]} ${dt.year}';
+    } catch (_) {
+      // Fallback: if already "2026-04-07" format, parse manually
+      final parts = bookingDate.split('-');
+      if (parts.length >= 3) {
+        final month = int.tryParse(parts[1]) ?? 0;
+        final day = int.tryParse(parts[2].split('T').first) ?? 0;
+        if (month > 0 && month <= 12) {
+          return '$day ${months[month]}';
+        }
+      }
+      return bookingDate;
+    }
+  }
+
+  /// Formatted time for display: "21:00" (strips seconds)
+  String get formattedTime {
+    // "21:00:00" → "21:00", "21:00" → "21:00"
+    final parts = bookingTime.split(':');
+    if (parts.length >= 2) {
+      return '${parts[0]}:${parts[1]}';
+    }
+    return bookingTime;
+  }
+
   /// Russian status label
   String get statusLabel {
     switch (status) {
