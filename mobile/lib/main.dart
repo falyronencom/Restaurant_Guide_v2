@@ -34,8 +34,12 @@ void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (required before any Firebase service)
-  await Firebase.initializeApp();
+  // Initialize Firebase (non-blocking — app works without it)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase init failed: $e — push notifications disabled');
+  }
 
   // Lock to portrait orientation only
   SystemChrome.setPreferredOrientations([
