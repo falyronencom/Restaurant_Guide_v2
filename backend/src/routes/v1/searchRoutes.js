@@ -6,8 +6,20 @@
 
 import express from 'express';
 import * as searchController from '../../controllers/searchController.js';
+import * as smartSearchController from '../../controllers/smartSearchController.js';
+import { createRateLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
+
+/**
+ * Smart search rate limiter: 30 requests per minute per IP.
+ * Tighter than global limit because each request may call external AI API.
+ */
+const smartSearchLimiter = createRateLimiter({
+  limit: 30,
+  windowSeconds: 60,
+  keyPrefix: 'smart_search',
+});
 
 /**
  * GET /api/v1/search/health
@@ -82,5 +94,27 @@ router.get('/establishments/:id', searchController.getEstablishmentById);
  * Results are ordered by rating (highest first), then by review count
  */
 router.get('/map', searchController.searchMap);
+
+/**
+ * POST /api/v1/search/smart
+ *
+ * AI-powered smart search with natural language intent parsing.
+ * Public endpoint - no authentication required.
+ *
+ * Body Parameters:
+ * - query (required): Natural language search string (max 150 chars)
+ * - latitude (optional): User latitude for distance-based search
+ * - longitude (optional): User longitude for distance-based search
+ * - city (optional): City filter
+ * - limit (optional): Results per page (default: 20, max: 100)
+ * - page (optional): Page number (default: 1)
+ *
+ * Response includes:
+ * - intent: Parsed AI intent (categories, cuisines, tags, etc.) or null
+ * - establishments: Array of matching establishments
+ * - pagination: Pagination metadata
+ * - fallback: Boolean indicating if ILIKE fallback was used
+ */
+router.post('/smart', smartSearchLimiter, smartSearchController.smartSearch);
 
 export default router;
