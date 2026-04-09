@@ -31,8 +31,7 @@ class SmartSearchBar extends StatefulWidget {
   State<SmartSearchBar> createState() => _SmartSearchBarState();
 }
 
-class _SmartSearchBarState extends State<SmartSearchBar>
-    with SingleTickerProviderStateMixin {
+class _SmartSearchBarState extends State<SmartSearchBar> {
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _greyText = AppTheme.textGrey;
 
@@ -41,23 +40,10 @@ class _SmartSearchBarState extends State<SmartSearchBar>
   int _currentHintIndex = 0;
   bool _isFocused = false;
 
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-
   @override
   void initState() {
     super.initState();
     _focusNode.addListener(_onFocusChange);
-
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    // 0.0 → 1.0: opacity goes from visible to invisible during forward()
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-
     _startHintCycle();
   }
 
@@ -66,7 +52,6 @@ class _SmartSearchBarState extends State<SmartSearchBar>
     _hintTimer?.cancel();
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
-    _fadeController.dispose();
     super.dispose();
   }
 
@@ -84,12 +69,8 @@ class _SmartSearchBarState extends State<SmartSearchBar>
     _hintTimer?.cancel();
     _hintTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted || _isFocused) return;
-      _fadeController.forward().then((_) {
-        if (!mounted) return;
-        setState(() {
-          _currentHintIndex = (_currentHintIndex + 1) % _placeholderHints.length;
-        });
-        _fadeController.reverse();
+      setState(() {
+        _currentHintIndex = (_currentHintIndex + 1) % _placeholderHints.length;
       });
     });
   }
@@ -106,6 +87,11 @@ class _SmartSearchBarState extends State<SmartSearchBar>
   Widget build(BuildContext context) {
     final hasText = widget.controller.text.trim().isNotEmpty;
 
+    // Determine hint text: animated cycling when idle, prompt when focused
+    final hintText = _isFocused
+        ? 'Введите запрос...'
+        : _placeholderHints[_currentHintIndex];
+
     return Row(
       children: [
         // Search input field
@@ -119,53 +105,32 @@ class _SmartSearchBarState extends State<SmartSearchBar>
                 bottomLeft: Radius.circular(9),
               ),
             ),
-            child: Stack(
-              alignment: Alignment.centerLeft,
-              children: [
-                // Animated placeholder (shown when empty and unfocused)
-                if (!_isFocused && widget.controller.text.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ListenableBuilder(
-                      listenable: _fadeController,
-                      builder: (context, _) => Opacity(
-                        opacity: 1.0 - _fadeAnimation.value,
-                        child: Text(
-                          _placeholderHints[_currentHintIndex],
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: _greyText,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                // Actual text field
-                TextField(
-                  controller: widget.controller,
-                  focusNode: _focusNode,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    color: AppTheme.textPrimary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: _isFocused ? 'Введите запрос...' : '',
-                    hintStyle: const TextStyle(
-                      fontSize: 18,
-                      color: _greyText,
-                      fontWeight: FontWeight.w400,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                  ),
-                  onSubmitted: (_) => _handleSubmit(),
-                  onChanged: (_) => setState(() {}),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: TextField(
+                key: ValueKey<String>(_isFocused ? 'focused' : hintText),
+                controller: widget.controller,
+                focusNode: _focusNode,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: AppTheme.textPrimary,
                 ),
-              ],
+                decoration: InputDecoration(
+                  hintText: hintText,
+                  hintStyle: const TextStyle(
+                    fontSize: 18,
+                    color: _greyText,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 20,
+                  ),
+                ),
+                onSubmitted: (_) => _handleSubmit(),
+                onChanged: (_) => setState(() {}),
+              ),
             ),
           ),
         ),
