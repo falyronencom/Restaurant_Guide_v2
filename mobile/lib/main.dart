@@ -27,6 +27,7 @@ import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_preferences_provider.dart';
+import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -97,6 +98,11 @@ class RestaurantGuideApp extends StatelessWidget {
         // Notification preferences provider (push settings)
         ChangeNotifierProvider(
           create: (_) => NotificationPreferencesProvider(),
+        ),
+
+        // Smart Search provider (AI intent parsing)
+        ChangeNotifierProvider(
+          create: (_) => SmartSearchProvider(),
         ),
       ],
       child: MaterialApp(
