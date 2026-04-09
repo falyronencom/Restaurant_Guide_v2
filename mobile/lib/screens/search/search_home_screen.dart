@@ -4,7 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
+import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/widgets/smart_search_bar.dart';
+import 'package:restaurant_guide_mobile/widgets/smart_search_suggestions.dart';
+import 'package:restaurant_guide_mobile/widgets/smart_search_preview.dart';
 
 /// Search home screen - main entry point for searching establishments
 /// Implements Figma design with background image, city selector, and search
@@ -17,6 +21,7 @@ class SearchHomeScreen extends StatefulWidget {
 
 class _SearchHomeScreenState extends State<SearchHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  bool _isSearchFocused = false;
 
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
@@ -295,7 +300,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     Navigator.of(context, rootNavigator: true).pushNamed('/filter');
   }
 
-  /// Execute search and navigate to results
+  /// Execute search and navigate to results (existing flow — chevron without text)
   void _executeSearch() {
     final provider = context.read<EstablishmentsProvider>();
     provider.setSearchQuery(_searchController.text);
@@ -304,6 +309,53 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     provider.searchEstablishments();
 
     // Navigate to results using rootNavigator to navigate outside tab navigator
+    Navigator.of(context, rootNavigator: true).pushNamed('/search/results');
+  }
+
+  /// Execute smart search (AI intent parsing path)
+  void _executeSmartSearch() {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    final estProvider = context.read<EstablishmentsProvider>();
+    final smartProvider = context.read<SmartSearchProvider>();
+
+    smartProvider.executeSmartSearch(
+      query,
+      latitude: estProvider.userLatitude,
+      longitude: estProvider.userLongitude,
+      city: estProvider.selectedCity,
+    );
+  }
+
+  /// Handle suggestion chip tap
+  void _onChipTap(String text) {
+    _searchController.text = text;
+    setState(() => _isSearchFocused = false);
+    _executeSmartSearch();
+  }
+
+  /// Navigate to establishment detail
+  void _onEstablishmentTap(String id) {
+    Navigator.of(context, rootNavigator: true).pushNamed(
+      '/establishment/$id',
+    );
+  }
+
+  /// "Show all" from preview → navigate to results with current query
+  void _onShowAll() {
+    final provider = context.read<EstablishmentsProvider>();
+    final smartProvider = context.read<SmartSearchProvider>();
+    final intent = smartProvider.parsedIntent;
+
+    // Transfer parsed intent filters to EstablishmentsProvider
+    if (intent != null && !smartProvider.isFallback) {
+      if (intent.category != null) {
+        provider.setSearchQuery(null);
+      }
+    }
+    provider.setSearchQuery(_searchController.text);
+    provider.searchEstablishments();
     Navigator.of(context, rootNavigator: true).pushNamed('/search/results');
   }
 
@@ -340,14 +392,55 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                     _buildCityFilterRow(provider),
                     const SizedBox(height: 16),
 
-                    // Search bar with button
-                    _buildSearchBar(provider),
+                    // Smart Search bar (refactored from inline)
+                    SmartSearchBar(
+                      controller: _searchController,
+                      onSubmit: _executeSmartSearch,
+                      onChevronTap: _executeSearch,
+                      onFocusChanged: (focused) {
+                        setState(() => _isSearchFocused = focused);
+                        if (!focused) return;
+                        // Clear previous smart results when re-focusing
+                        context.read<SmartSearchProvider>().clear();
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Suggestion chips (visible when focused, hidden when results shown)
+                    SmartSearchSuggestions(
+                      visible: _isSearchFocused &&
+                          context.watch<SmartSearchProvider>().state !=
+                              SmartSearchState.results,
+                      onChipTap: _onChipTap,
+                    ),
+
+                    // Smart Search preview (results from AI)
+                    SmartSearchPreview(
+                      onShowAll: _onShowAll,
+                      onEstablishmentTap: _onEstablishmentTap,
+                    ),
 
                     const Spacer(),
                   ],
                 ),
               ),
             ),
+
+            // Dark overlay when search focused
+            if (_isSearchFocused)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: IgnorePointer(
+                    ignoring: false,
+                    child: AnimatedOpacity(
+                      opacity: _isSearchFocused ? 0.3 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(color: Colors.black),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -507,72 +600,6 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                   ),
                 ),
             ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Build search bar with search button
-  Widget _buildSearchBar(EstablishmentsProvider provider) {
-    return Row(
-      children: [
-        // Search input field
-        Expanded(
-          child: Container(
-            height: 64,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(9),
-                bottomLeft: Radius.circular(9),
-              ),
-            ),
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(
-                fontSize: 18,
-                color: AppTheme.textPrimary,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'С чего начнем?',
-                hintStyle: TextStyle(
-                  fontSize: 18,
-                  color: _greyText,
-                  fontWeight: FontWeight.w400,
-                ),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
-                ),
-              ),
-              onSubmitted: (_) => _executeSearch(),
-            ),
-          ),
-        ),
-        // Search button
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _executeSearch,
-          child: Container(
-            width: 64,
-            height: 64,
-            margin: const EdgeInsets.only(left: 0),
-            decoration: const BoxDecoration(
-              color: _primaryOrange,
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(9),
-                bottomRight: Radius.circular(9),
-              ),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.chevron_right,
-                color: AppTheme.textOnPrimary,
-                size: 30,
-              ),
-            ),
           ),
         ),
       ],
