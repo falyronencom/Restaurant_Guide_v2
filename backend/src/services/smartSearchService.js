@@ -44,7 +44,7 @@ const intentSchema = z.object({
   price_max: z.number().positive().nullable(),
   location: z.string().nullable(),
   sort: z.enum(['distance', 'rating', 'price_asc']).nullable(),
-  tags: z.array(z.string()),
+  tags: z.array(z.string()).nullable().transform(v => v ?? []),
   error: z.string().nullable(),
 });
 
