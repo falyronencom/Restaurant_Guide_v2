@@ -46,7 +46,8 @@
     "pg": "^8.11.3",
     "redis": "^4.6.10",
     "uuid": "^13.0.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
