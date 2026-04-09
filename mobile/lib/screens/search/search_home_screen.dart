@@ -369,6 +369,16 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
             // Background image with dark overlay
             _buildBackground(),
 
+            // Dark overlay when search focused (BEFORE content so it doesn't block taps)
+            if (_isSearchFocused)
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: _isSearchFocused ? 0.3 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(color: Colors.black),
+                ),
+              ),
+
             // Content
             SafeArea(
               child: Padding(
@@ -426,21 +436,6 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
               ),
             ),
 
-            // Dark overlay when search focused
-            if (_isSearchFocused)
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: IgnorePointer(
-                    ignoring: false,
-                    child: AnimatedOpacity(
-                      opacity: _isSearchFocused ? 0.3 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Container(color: Colors.black),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
