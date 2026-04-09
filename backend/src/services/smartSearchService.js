@@ -51,30 +51,20 @@ const intentSchema = z.object({
 /** Cache TTL: 1 hour */
 const CACHE_TTL_SECONDS = 3600;
 
-/** OpenRouter API timeout */
-const API_TIMEOUT_MS = 5000;
+/** OpenRouter API timeout (20s — cold model startup via OpenRouter can be 10-15s) */
+const API_TIMEOUT_MS = 20000;
 
 /**
- * Build the AI prompt with full category/cuisine enums.
+ * System prompt for AI intent parsing.
+ * Pre-built once at module load to avoid repeated string construction.
  */
-function buildSystemPrompt() {
-  return `You are a restaurant search intent parser for Belarus. Parse the user's natural language query into structured JSON.
-
-Available categories (exact values): ${JSON.stringify(VALID_CATEGORIES)}
-Available cuisines (exact values): ${JSON.stringify(VALID_CUISINES)}
-
-Rules:
-- category: pick ONE from the list above, or null if not clear
-- cuisine: pick one or more from the list above as an array, or null
-- meal_type: "breakfast", "lunch", "dinner", "snack", or null (for future use)
-- price_max: approximate max price in BYN per person, or null
-- location: city or area mentioned, or null
-- sort: "distance" if user wants nearby, "rating" if best/top, "price_asc" if cheap/budget, or null
-- tags: additional keywords for text search (e.g. "терраса", "live music", food names)
-- error: null if parsed successfully, or error description
-
-Always respond with valid JSON only, no markdown, no explanation.`;
-}
+const SYSTEM_PROMPT = [
+  'Parse restaurant search query into JSON.',
+  'Categories: ' + VALID_CATEGORIES.join(', '),
+  'Cuisines: ' + VALID_CUISINES.join(', '),
+  'Output JSON: {"category":"one or null","cuisine":["array or null"],"meal_type":"breakfast/lunch/dinner/snack or null","price_max":number_or_null,"location":"city or null","sort":"distance/rating/price_asc or null","tags":["keywords"],"error":null}',
+  'Use EXACT category/cuisine names from lists above. Respond with JSON only.',
+].join('\n');
 
 /**
  * Normalize query for cache key generation.
@@ -154,7 +144,7 @@ export async function parseIntent(query) {
       body: JSON.stringify({
         model: config.model,
         messages: [
-          { role: 'system', content: buildSystemPrompt() },
+          { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: query },
         ],
         temperature: 0.1,
@@ -175,14 +165,25 @@ export async function parseIntent(query) {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    let content = data.choices?.[0]?.message?.content;
 
     if (!content) {
       logger.warn('OpenRouter returned empty content');
       return null;
     }
 
-    const parsed = JSON.parse(content);
+    // Strip markdown code fences if model wraps JSON in ```json ... ```
+    content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+    // Extract JSON object if surrounded by extra text
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      logger.warn('No JSON object found in AI response', { query, content: content.slice(0, 200) });
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    logger.debug('AI raw parsed response', { query, parsed });
     const validated = intentSchema.parse(parsed);
 
     logger.info('AI intent parsed successfully', {
