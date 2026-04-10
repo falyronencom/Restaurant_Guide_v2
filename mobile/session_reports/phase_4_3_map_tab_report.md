@@ -135,7 +135,7 @@ Built build\app\outputs\flutter-apk\app-debug.apk
 ```xml
 <meta-data
     android:name="com.yandex.android.mapkit.MAPKIT_API_KEY"
-    android:value="***YANDEX_MAPKIT_KEY_REDACTED***" />
+    android:value="<YANDEX_MAPKIT_API_KEY>" />
 ```
 
 ### Android (build.gradle.kts)
@@ -147,7 +147,7 @@ minSdk = 26  // Required by yandex_mapkit
 ```swift
 import YandexMapsMobile
 // ...
-YMKMapKit.setApiKey("***YANDEX_MAPKIT_KEY_REDACTED***")
+YMKMapKit.setApiKey("<YANDEX_MAPKIT_API_KEY>")
 ```
 
 ---
