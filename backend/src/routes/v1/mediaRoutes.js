@@ -105,7 +105,7 @@ const upload = multer({
  * the :id parameter from the parent route (establishment ID).
  */
 router.use(authenticate);
-router.use(authorize('partner'));
+router.use(authorize(['partner']));
 
 /**
  * Upload a new media file

@@ -50,7 +50,7 @@ router.use(authenticate);
  */
 router.get(
   '/',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentValidation.validateList,
   validate,
   EstablishmentController.listPartnerEstablishments,
@@ -103,7 +103,7 @@ router.post(
  */
 router.get(
   '/:id',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentValidation.validateGetDetails,
   validate,
   EstablishmentController.getEstablishmentDetails,
@@ -134,7 +134,7 @@ router.get(
  */
 router.put(
   '/:id',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentValidation.validateUpdate,
   validate,
   EstablishmentController.updateEstablishment,
@@ -166,7 +166,7 @@ router.put(
  */
 router.post(
   '/:id/submit',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentValidation.validateSubmit,
   validate,
   EstablishmentController.submitForModeration,
@@ -181,7 +181,7 @@ router.post(
  */
 router.post(
   '/:id/suspend',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentController.suspendEstablishment,
 );
 
@@ -192,7 +192,7 @@ router.post(
  */
 router.post(
   '/:id/resume',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentController.resumeEstablishment,
 );
 
@@ -203,7 +203,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  authorize('partner'),
+  authorize(['partner']),
   EstablishmentController.deleteEstablishment,
 );
 

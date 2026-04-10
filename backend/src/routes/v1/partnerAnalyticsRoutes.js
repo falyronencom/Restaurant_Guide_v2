@@ -18,7 +18,7 @@ const router = express.Router();
 
 // All partner analytics routes require authenticated partner
 router.use(authenticate);
-router.use(authorize('partner'));
+router.use(authorize(['partner']));
 
 router.get('/overview', PartnerAnalyticsController.getOverview);
 router.get('/trends', PartnerAnalyticsController.getTrends);

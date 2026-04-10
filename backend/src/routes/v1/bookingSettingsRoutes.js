@@ -19,7 +19,7 @@ const router = express.Router();
 
 // All routes require authenticated partner
 router.use(authenticate);
-router.use(authorize('partner'));
+router.use(authorize(['partner']));
 
 // GET /:establishmentId — get current settings
 router.get(
