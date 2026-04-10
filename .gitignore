@@ -26,8 +26,8 @@ logs/
 
 # Environment variables - CRITICAL
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # EXCEPTION: .env.example should be committed as template
 !**/.env.example
