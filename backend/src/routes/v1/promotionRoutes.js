@@ -53,7 +53,7 @@ const upload = multer({
 
 // All promotion routes require authenticated partner
 router.use(authenticate);
-router.use(authorize('partner'));
+router.use(authorize(['partner']));
 
 // POST / — create promotion (optional image)
 router.post(

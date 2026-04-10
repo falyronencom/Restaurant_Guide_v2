@@ -29,7 +29,7 @@ import { authenticate, authorize } from '../../middleware/auth.js';
 export const partnerBookingRouter = express.Router();
 
 partnerBookingRouter.use(authenticate);
-partnerBookingRouter.use(authorize('partner'));
+partnerBookingRouter.use(authorize(['partner']));
 
 partnerBookingRouter.get(
   '/:establishmentId',
