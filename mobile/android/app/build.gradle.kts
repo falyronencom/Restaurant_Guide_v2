@@ -6,6 +6,13 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// Read secrets from local.properties (gitignored)
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
 android {
     namespace = "com.nirivio.app"
     compileSdk = flutter.compileSdkVersion
@@ -29,6 +36,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Pass Yandex MapKit API key to AndroidManifest.xml
+        manifestPlaceholders["YANDEX_MAPKIT_API_KEY"] =
+            localProperties.getProperty("YANDEX_MAPKIT_API_KEY", "")
     }
 
     buildTypes {

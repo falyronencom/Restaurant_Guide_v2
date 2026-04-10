@@ -3,7 +3,7 @@
  *
  * Usage:
  *   DB_HOST=... DB_PORT=... DB_NAME=... DB_USER=... DB_PASSWORD=... \
- *   REVIEW_EMAIL=applereview@test.com REVIEW_PASSWORD=***REDACTED_PASSWORD*** \
+ *   REVIEW_EMAIL=applereview@test.com REVIEW_PASSWORD=<your_password> \
  *   node backend/scripts/create-review-user.js
  */
 
@@ -31,8 +31,14 @@ const ARGON2_OPTIONS = {
 
 async function createReviewUser() {
   const email = process.env.REVIEW_EMAIL || 'applereview@test.com';
-  const password = process.env.REVIEW_PASSWORD || '***REDACTED_PASSWORD***';
+  const password = process.env.REVIEW_PASSWORD;
   const name = process.env.REVIEW_NAME || 'Apple Reviewer';
+
+  if (!password) {
+    console.error('❌ REVIEW_PASSWORD env variable is required.');
+    console.error('   Usage: REVIEW_PASSWORD=YourPass node backend/scripts/create-review-user.js');
+    process.exit(1);
+  }
 
   try {
     console.log('Creating review user account...');

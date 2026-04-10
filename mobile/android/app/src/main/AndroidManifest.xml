@@ -36,10 +36,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Yandex MapKit API Key -->
+        <!-- Yandex MapKit API Key (injected from local.properties via manifestPlaceholders) -->
         <meta-data
             android:name="com.yandex.android.mapkit.MAPKIT_API_KEY"
-            android:value="***YANDEX_MAPKIT_KEY_REDACTED***" />
+            android:value="${YANDEX_MAPKIT_API_KEY}" />
 
         <!-- Yandex OAuth callback activity for flutter_web_auth_2 -->
         <activity

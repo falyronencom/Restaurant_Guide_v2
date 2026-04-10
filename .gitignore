@@ -59,6 +59,14 @@ backend/scripts/seed-images/
 # Flutter DevTools
 devtools_options.yaml
 
+# Firebase config files (contain project-specific API keys)
+**/GoogleService-Info.plist
+**/google-services.json
+
+# iOS secrets (Yandex MapKit key, etc.)
+**/Secrets.xcconfig
+!**/Secrets.xcconfig.example
+
 # Windows artifacts
 nul
 

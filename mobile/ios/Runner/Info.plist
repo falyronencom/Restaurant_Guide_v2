@@ -45,6 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Yandex MapKit API Key (injected from Secrets.xcconfig at build time) -->
+	<key>YandexMapKitApiKey</key>
+	<string>$(YANDEX_MAPKIT_API_KEY)</string>
 	<!-- URL schemes for OAuth callbacks -->
 	<key>CFBundleURLTypes</key>
 	<array>
