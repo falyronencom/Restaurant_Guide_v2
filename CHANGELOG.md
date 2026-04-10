@@ -8,6 +8,17 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 3: User Experience & Engagement
 
+#### Апрель 10, 2026 — Security Audit & Hardening (Pre-App Store)
+- **Блок A — Секреты**: Yandex MapKit API key вынесен из хардкода в `local.properties` (Android) и `Secrets.xcconfig` (iOS), инжектируется при сборке через `manifestPlaceholders` / `Info.plist` переменные
+- **Блок A — Пароли**: Удалены захардкоженные пароли из seed-скриптов (`AppleReview2026`, `SeedUser2026!`, `Test1453`) — теперь обязательные env vars с валидацией
+- **Блок A — .gitignore**: Firebase конфиги (`GoogleService-Info.plist`, `google-services.json`), `Secrets.xcconfig`, `.env.test` сняты с отслеживания; `.env.*` паттерн покрывает все варианты
+- **Блок A — Git history**: Полная очистка через `git-filter-repo` — удалены секреты из всей истории коммитов + папка `docs/` (внутренняя документация) убрана из публичного репо
+- **Блок A — Ротация**: Все 5 скомпрометированных ключей ротированы (Yandex MapKit, OpenRouter, Cloudinary, JWT Secret, Admin password)
+- **Блок B — Аудит кода**: Проверены auth/JWT, SQL-инъекции, XSS, CORS, загрузка файлов, rate limiting. Оценка 8.5/10
+- **Блок B — Fix**: `authorize('partner')` → `authorize(['partner'])` в 6 route-файлах (12 call sites) — устранена потенциальная уязвимость substring-match в проверке ролей
+- **Инфраструктура**: `create-admin.js` переписан на upsert (UPDATE if exists, INSERT if not) — исправлена FK constraint ошибка
+- **Коммиты**: `005f760`, `618df36`, `9ed2ca0`, `170ed2b`
+
 #### Апрель 9, 2026 — Component 7: Smart Search — AI Intent Parser (Segments A+B+C)
 - **Discovery**: Full investigation of search pipeline (route→controller→service→SQL), enum mappings (15 categories, 12 cuisines — cyrillic in DB), mobile search flow (SearchHomeScreen→EstablishmentsProvider→EstablishmentsService→ApiClient), Redis usage, middleware chain, rate limiter factory, env vars pattern, promotions enrichment, home screen layout. 8 questions + 4 peripheral
 - **Segment A (Backend)**: `openrouter.js` config (lazy env reading), `smartSearchService.js` (AI intent parsing via OpenRouter Gemini 2.5 Flash-Lite, Zod validation, Redis caching with 1hr TTL, filter builder price_max→price_range mapping), `smartSearchController.js` (POST handler, query sanitization 150 chars, coordinate validation), `POST /api/v1/search/smart` endpoint with custom rate limiter (30/min via `createRateLimiter`). Fallback to existing ILIKE + SEARCH_SYNONYMS when AI unavailable. `zod` added as dependency
