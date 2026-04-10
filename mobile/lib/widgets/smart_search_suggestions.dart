@@ -4,10 +4,10 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 /// Quick suggestion chips shown when search bar is focused
 const _suggestions = [
   'Кофе',
-  'Пиво рядом',
   'Суши',
   'Завтрак',
   'Бизнес-ланч',
+  'Рядом со мной',
 ];
 
 /// Horizontal scrollable suggestion chips.

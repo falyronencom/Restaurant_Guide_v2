@@ -8,7 +8,7 @@ const _placeholderHints = [
   'кофе рядом',
   'суши на вынос',
   'где позавтракать',
-  'пиво недорого',
+  'уютное кафе',
 ];
 
 /// Refactored search bar with animated placeholder.

@@ -8,6 +8,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 3: User Experience & Engagement
 
+#### Апрель 9, 2026 — Component 7: Smart Search — AI Intent Parser (Segments A+B+C)
+- **Discovery**: Full investigation of search pipeline (route→controller→service→SQL), enum mappings (15 categories, 12 cuisines — cyrillic in DB), mobile search flow (SearchHomeScreen→EstablishmentsProvider→EstablishmentsService→ApiClient), Redis usage, middleware chain, rate limiter factory, env vars pattern, promotions enrichment, home screen layout. 8 questions + 4 peripheral
+- **Segment A (Backend)**: `openrouter.js` config (lazy env reading), `smartSearchService.js` (AI intent parsing via OpenRouter Gemini 2.5 Flash-Lite, Zod validation, Redis caching with 1hr TTL, filter builder price_max→price_range mapping), `smartSearchController.js` (POST handler, query sanitization 150 chars, coordinate validation), `POST /api/v1/search/smart` endpoint with custom rate limiter (30/min via `createRateLimiter`). Fallback to existing ILIKE + SEARCH_SYNONYMS when AI unavailable. `zod` added as dependency
+- **Segments B+C (Mobile)**: `SmartSearchService` (Dio POST client), `SmartSearchProvider` (idle/loading/results/error states), `SmartSearchBar` (animated cycling placeholder: "С чего начнём?" → "кофе рядом" → ..., dual-mode button: chevron vs search icon), `SmartSearchSuggestions` (horizontal chips with slide-up animation), `SmartSearchPreview` (top-3 result cards with intent header, promo badges, distance/rating adaptive display, "Показать все (N)" button)
+- **Backward compatible**: chevron without text → existing search flow (unchanged)
+- **Tests**: 28 new (validation 6, fallback 5, response format 4, filter building 11, caching 2). ~1113 backend tests total, zero regressions
+- **Key finding**: Production seed data uses English category IDs — AI parses to cyrillic correctly but no matches until real data added
+- **Context telemetry**: Discovery 5% → Final ~18% of 1M context (Mode C unified session, 3 segments)
+
 #### Апрель 6, 2026 — Component 6: Push Notifications (Segments A+B+C)
 - **Discovery**: Full investigation of notification infrastructure (backend creation flow, mobile polling/display, 14 notification types, Firebase config status, user preferences, permission handling) + 4 peripheral (tests, PROJECT_MAP, packages, external API patterns). Directive Coherence Check identified missing Q1.5 (REST endpoints)
 - **Migration 022**: `device_tokens` (UPSERT, UNIQUE user+token, platform CHECK) + `notification_preferences` (one row per user, 3 boolean categories)
