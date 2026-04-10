@@ -34,18 +34,27 @@ async function createAdmin() {
     const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);
     console.log(`Password hash generated: ${passwordHash.substring(0, 30)}...`);
 
-    // Delete existing admin if exists
-    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+    // Try to update existing admin first, create if not exists
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
 
-    // Create new admin user
-    const result = await pool.query(
-      `INSERT INTO users (id, email, password_hash, name, role, auth_method, email_verified, is_active, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-       RETURNING id, email, role, name`,
-      [email, passwordHash, name, 'admin', 'email', true, true]
-    );
-
-    console.log('✅ Admin created successfully!');
+    let result;
+    if (existing.rows.length > 0) {
+      result = await pool.query(
+        `UPDATE users SET password_hash = $1, name = $2, role = 'admin', is_active = true, updated_at = NOW()
+         WHERE email = $3
+         RETURNING id, email, role, name`,
+        [passwordHash, name, email]
+      );
+      console.log('✅ Admin password updated successfully!');
+    } else {
+      result = await pool.query(
+        `INSERT INTO users (id, email, password_hash, name, role, auth_method, email_verified, is_active, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+         RETURNING id, email, role, name`,
+        [email, passwordHash, name, 'admin', 'email', true, true]
+      );
+      console.log('✅ Admin created successfully!');
+    }
     console.log(`   Email: ${result.rows[0].email}`);
     console.log(`   Name: ${result.rows[0].name}`);
     console.log(`   Role: ${result.rows[0].role}`);
