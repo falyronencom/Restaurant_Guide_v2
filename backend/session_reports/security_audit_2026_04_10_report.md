@@ -21,9 +21,9 @@ Full security audit of public repository before App Store submission. Two blocks
 |---------|----------|-------|
 | Yandex MapKit API key hardcoded | CRITICAL | AppDelegate.swift, MainApplication.kt, AndroidManifest.xml |
 | Firebase configs tracked in git | MEDIUM | GoogleService-Info.plist, google-services.json |
-| Password `Test1453` in git history | HIGH | create-admin.js (commit 271830b, fixed in b35c330) |
-| Password `AppleReview2026` in code | HIGH | create-review-user.js:6, :34 |
-| Password `SeedUser2026!` fallback | HIGH | reviews-config.js:31 |
+| Password `***REDACTED***` in git history | HIGH | create-admin.js (commit 271830b, fixed in b35c330) |
+| Password `***REDACTED***` in code | HIGH | create-review-user.js:6, :34 |
+| Password `***REDACTED***` fallback | HIGH | reviews-config.js:31 |
 | `.env.test` tracked in git | MEDIUM | backend/.env.test |
 
 ### Remediation Applied
@@ -34,8 +34,8 @@ Full security audit of public repository before App Store submission. Two blocks
 - Both config files gitignored; `.example` template committed
 
 #### 2. Passwords removed from code
-- `create-review-user.js`: removed `AppleReview2026` from usage comment and fallback default; now requires `REVIEW_PASSWORD` env var
-- `reviews-config.js`: removed `SeedUser2026!` fallback; now requires `SEED_PASSWORD` env var
+- `create-review-user.js`: removed `***REDACTED***` from usage comment and fallback default; now requires `REVIEW_PASSWORD` env var
+- `reviews-config.js`: removed `***REDACTED***` fallback; now requires `SEED_PASSWORD` env var
 - Both scripts exit with clear error message if env var missing
 
 #### 3. .gitignore hardened
@@ -115,8 +115,8 @@ Note: git-filter-repo rewrote all commit hashes. Hashes above are post-rewrite.
 ## Verification
 
 - `git log -p -S "e585b056"` → empty (Yandex key gone from history)
-- `git log -p -S "Test1453"` → empty (admin password gone)
-- `git log -p -S "AppleReview2026"` → empty (review password gone)
+- `git log -p -S "***REDACTED***"` → empty (admin password gone)
+- `git log -p -S "***REDACTED***"` → empty (review password gone)
 - `git log --all -- "docs/"` → empty (docs folder gone)
 - `grep -r "authorize('" backend/src/routes/` → zero string-parameter calls
 - All Firebase/secret files confirmed gitignored

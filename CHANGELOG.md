@@ -10,7 +10,7 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 #### Апрель 10, 2026 — Security Audit & Hardening (Pre-App Store)
 - **Блок A — Секреты**: Yandex MapKit API key вынесен из хардкода в `local.properties` (Android) и `Secrets.xcconfig` (iOS), инжектируется при сборке через `manifestPlaceholders` / `Info.plist` переменные
-- **Блок A — Пароли**: Удалены захардкоженные пароли из seed-скриптов (`AppleReview2026`, `SeedUser2026!`, `Test1453`) — теперь обязательные env vars с валидацией
+- **Блок A — Пароли**: Удалены захардкоженные пароли из seed-скриптов — теперь обязательные env vars с валидацией
 - **Блок A — .gitignore**: Firebase конфиги (`GoogleService-Info.plist`, `google-services.json`), `Secrets.xcconfig`, `.env.test` сняты с отслеживания; `.env.*` паттерн покрывает все варианты
 - **Блок A — Git history**: Полная очистка через `git-filter-repo` — удалены секреты из всей истории коммитов + папка `docs/` (внутренняя документация) убрана из публичного репо
 - **Блок A — Ротация**: Все 5 скомпрометированных ключей ротированы (Yandex MapKit, OpenRouter, Cloudinary, JWT Secret, Admin password)
