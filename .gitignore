@@ -59,9 +59,11 @@ backend/scripts/seed-images/
 # Flutter DevTools
 devtools_options.yaml
 
-# Firebase config files (contain project-specific API keys)
-**/GoogleService-Info.plist
+# Firebase config files (Android — contains API key)
 **/google-services.json
+# NOTE: GoogleService-Info.plist is tracked — it contains only public
+# identifiers (CLIENT_ID, GCM_SENDER_ID) needed for Google Sign-In and
+# Firebase on iOS. Google recommends committing it.
 
 # iOS secrets (Yandex MapKit key, etc.)
 **/Secrets.xcconfig
