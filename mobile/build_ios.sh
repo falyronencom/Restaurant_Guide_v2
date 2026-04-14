@@ -1,14 +1,23 @@
 #!/bin/bash
-# Build iOS release for TestFlight
-# Usage: ./build_ios.sh
-# Then open Xcode: Product → Archive → Upload to App Store Connect
+# Build iOS for TestFlight
+# Usage: ./build_ios.sh [build-number]
+# Example: ./build_ios.sh 25
+# Then: Xcode Organizer → Distribute App → App Store Connect
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SECRETS_FILE="$SCRIPT_DIR/ios/Flutter/Secrets.xcconfig"
 
-# --- Yandex MapKit API Key (injected into Info.plist via xcconfig) ---
+# --- Build number (optional argument, defaults to auto) ---
+BUILD_NUMBER="${1:-}"
+BUILD_NUMBER_FLAG=""
+if [ -n "$BUILD_NUMBER" ]; then
+  BUILD_NUMBER_FLAG="--build-number=$BUILD_NUMBER"
+  echo "Build number: $BUILD_NUMBER"
+fi
+
+# --- Yandex MapKit API Key ---
 YANDEX_MAPKIT_API_KEY="f050e8e3-a26c-404d-bf1d-2f07aa0c4e4a"
 
 # --- Create Secrets.xcconfig if missing ---
@@ -20,30 +29,27 @@ YANDEX_MAPKIT_API_KEY=$YANDEX_MAPKIT_API_KEY
 EOF
   echo "Created: $SECRETS_FILE"
 else
-  echo "Secrets.xcconfig already exists, skipping creation."
+  echo "Secrets.xcconfig exists, OK."
 fi
 
-# --- Ensure Release.xcconfig has correct includes (no optional '?') ---
-RELEASE_XCCONFIG="$SCRIPT_DIR/ios/Flutter/Release.xcconfig"
-if grep -q '#include?' "$RELEASE_XCCONFIG" 2>/dev/null; then
-  echo "Fixing Release.xcconfig includes (removing '?' optional markers)..."
-  sed -i '' 's/#include?/#include/g' "$RELEASE_XCCONFIG"
-fi
+# --- Ensure xcconfig includes are not optional (#include, not #include?) ---
+for XCCONFIG in "$SCRIPT_DIR/ios/Flutter/Release.xcconfig" "$SCRIPT_DIR/ios/Flutter/Debug.xcconfig"; do
+  if grep -q '#include?' "$XCCONFIG" 2>/dev/null; then
+    echo "Fixing $(basename "$XCCONFIG"): removing optional '?' from includes..."
+    sed -i '' 's/#include?/#include/g' "$XCCONFIG"
+  fi
+done
 
-DEBUG_XCCONFIG="$SCRIPT_DIR/ios/Flutter/Debug.xcconfig"
-if grep -q '#include?' "$DEBUG_XCCONFIG" 2>/dev/null; then
-  echo "Fixing Debug.xcconfig includes (removing '?' optional markers)..."
-  sed -i '' 's/#include?/#include/g' "$DEBUG_XCCONFIG"
-fi
-
-# --- Build ---
-echo "Building iOS release..."
+# --- Build IPA (works reliably; Xcode Archive has issues with YandexMapsMobile xcframework) ---
+echo ""
+echo "Building IPA..."
 cd "$SCRIPT_DIR"
-flutter build ios \
-  --dart-define=YANDEX_CLIENT_ID=bad2912d12db4c59a71511239a68c564
+flutter build ipa \
+  --dart-define=YANDEX_CLIENT_ID=bad2912d12db4c59a71511239a68c564 \
+  $BUILD_NUMBER_FLAG
 
 echo ""
 echo "Build complete! Next steps:"
-echo "  1. Open Xcode: ios/Runner.xcworkspace"
-echo "  2. Product → Archive"
+echo "  1. Open Xcode Organizer (Xcode → Window → Organizer)"
+echo "  2. Select the latest archive"
 echo "  3. Distribute App → App Store Connect"

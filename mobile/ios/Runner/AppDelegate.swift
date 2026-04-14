@@ -8,9 +8,13 @@ import YandexMapsMobile
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Read API key from Info.plist (injected from Secrets.xcconfig at build time)
+    // Initialize Yandex MapKit (non-blocking — empty key disables maps but won't crash)
     let apiKey = Bundle.main.infoDictionary?["YandexMapKitApiKey"] as? String ?? ""
-    YMKMapKit.setApiKey(apiKey)
+    if !apiKey.isEmpty && apiKey != "$(YANDEX_MAPKIT_API_KEY)" {
+      YMKMapKit.setApiKey(apiKey)
+    } else {
+      print("Warning: YandexMapKitApiKey not found in Info.plist — map features disabled")
+    }
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
