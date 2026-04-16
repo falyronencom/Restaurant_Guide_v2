@@ -84,8 +84,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   }
 
   List<String> _generateTimeSlots() {
-    if (_settings == null || widget.establishment.workingHours == null)
+    if (_settings == null || widget.establishment.workingHours == null) {
       return [];
+    }
 
     final dayIndex = (_selectedDate.weekday - 1) % 7; // 0=Mon
     final dayKey = _dayKeys[dayIndex];
@@ -176,15 +177,22 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    final maxHeight = MediaQuery.of(context).size.height * 0.9;
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: _settingsLoaded ? _buildForm() : _buildLoading(),
+        ),
       ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: _settingsLoaded ? _buildForm() : _buildLoading(),
     );
   }
 
@@ -218,10 +226,19 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             ),
           ),
 
-          // Title
-          const Text(
-            'Бронирование столика',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          // Title row with close button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Бронирование столика',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: const Icon(Icons.close, size: 24, color: AppTheme.gray500),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(

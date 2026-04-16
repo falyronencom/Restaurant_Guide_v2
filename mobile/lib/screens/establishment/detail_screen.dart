@@ -135,6 +135,28 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     provider.toggleFavorite(widget.establishmentId);
   }
 
+  /// Navigate to write review screen (with auth check)
+  void _onWriteReviewTap() {
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isAuthenticated) {
+      _showLoginPrompt();
+      return;
+    }
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (context) => WriteReviewScreen(
+          establishment: _establishment!,
+        ),
+      ),
+    )
+        .then((result) {
+      if (result == true) {
+        _loadData();
+      }
+    });
+  }
+
   /// Show login prompt dialog
   void _showLoginPrompt() {
     showDialog(
@@ -1536,40 +1558,28 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: SizedBox(
               width: double.infinity,
               height: 44,
-              child: ElevatedButton(
-                onPressed: () {
-                  // Check authentication before navigating to write review
-                  final authProvider = context.read<AuthProvider>();
-                  if (!authProvider.isAuthenticated) {
-                    _showLoginPrompt();
-                    return;
-                  }
-                  // Navigate to write review screen
-                  Navigator.of(context)
-                      .push(
-                    MaterialPageRoute(
-                      builder: (context) => WriteReviewScreen(
-                        establishment: _establishment!,
-                      ),
-                    ),
-                  )
-                      .then((result) {
-                    // Refresh reviews if a new review was submitted
-                    if (result == true) {
-                      _loadData();
-                    }
-                  });
-                },
-                style: _establishment?.bookingEnabled == true
-                    ? OutlinedButton.styleFrom(
-                        foregroundColor: _secondaryOrange,
+              child: _establishment?.bookingEnabled == true
+                  ? OutlinedButton(
+                      onPressed: _onWriteReviewTap,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryOrange,
                         side: const BorderSide(color: AppTheme.primaryOrange),
                         shape: RoundedRectangleBorder(
                           borderRadius:
                               BorderRadius.circular(AppTheme.radiusSmall),
                         ),
-                      )
-                    : ElevatedButton.styleFrom(
+                      ),
+                      child: const Text(
+                        'Написать отзыв',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: _onWriteReviewTap,
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: _secondaryOrange,
                         foregroundColor: _backgroundColor,
                         shape: RoundedRectangleBorder(
@@ -1578,14 +1588,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                         ),
                         elevation: 0,
                       ),
-                child: const Text(
-                  'Написать отзыв',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
+                      child: const Text(
+                        'Написать отзыв',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
             ),
           ),
         ],
