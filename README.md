@@ -1,70 +1,70 @@
-# Restaurant Guide Belarus v2.0
+# Nirivio — Restaurant Guide Belarus v2.0
 
 Современная мобильная платформа для поиска и выбора заведений общепита в Беларуси.
 
 ## О проекте
 
-Restaurant Guide Belarus — кроссплатформенное мобильное приложение (iOS/Android) и веб-панель администрирования для поиска ресторанов, кафе и баров в 7 крупных городах Беларуси (Минск, Гродно, Брест, Гомель, Витебск, Могилев, Бобруйск).
+Nirivio (Restaurant Guide Belarus) — кроссплатформенное мобильное приложение (iOS/Android) и веб-панель администрирования для поиска ресторанов, кафе и баров в 7 крупных городах Беларуси (Минск, Гродно, Брест, Гомель, Витебск, Могилёв, Бобруйск).
 
 **Ключевые возможности**:
-- Геолокационный поиск с умным ранжированием заведений (PostGIS)
+- Геолокационный поиск с умным ранжированием заведений (PostGIS, байесовский рейтинг)
+- AI-поиск по естественному языку (Smart Search через OpenRouter)
 - Система отзывов и рейтингов с защитой от злоупотреблений
-- Избранное, карта с кластеризацией маркеров, фильтры
+- Избранное, карта с кластеризацией маркеров (Yandex MapKit), фильтры
+- Система бронирования столиков (онлайн-букинг)
+- Акции партнёров с Cloudinary-медиа и поисковым продвижением
+- Push-уведомления (FCM) — 15 типов событий
 - 7-шаговый визард регистрации заведений для партнёров
-- Панель аналитики для партнёров (статистика, отзывы, редактирование)
-- Веб-панель администрирования с модерацией контента
+- Панель аналитики для партнёров (графики, тренды, просмотры акций)
+- OAuth авторизация (Google + Яндекс)
+- Веб-панель администрирования с модерацией, аналитикой и аудит-логом
 
-**Текущий этап**: Фаза 8 — Admin Web Panel (Segments A-E complete, MVP deployed)
+**Текущий этап**: Horizon 3 завершён, подготовка к Horizon 4 — Public Web Platform (Next.js)
 
 ## Технологический стек
 
 | Слой | Технологии |
 |------|-----------|
-| **Mobile** | Flutter 3.x, Provider, Dio, CachedNetworkImage, Yandex MapKit |
-| **Admin Web** | Flutter Web, GoRouter, Provider, Dio |
-| **Backend** | Node.js 18+, Express, JWT (access + refresh rotation) |
+| **Mobile** | Flutter 3.x, Provider, Dio, CachedNetworkImage, Yandex MapKit, Firebase (FCM) |
+| **Admin Web** | Flutter Web, GoRouter, Provider, Dio, fl_chart |
+| **Backend** | Node.js 18+, Express, JWT (access + refresh rotation), Zod |
 | **Database** | PostgreSQL 15+ с PostGIS, Redis 7+ |
+| **AI** | OpenRouter (Gemini 2.5 Flash-Lite) — Smart Search intent parsing |
 | **Media** | Cloudinary (3 резолюции, WebP, progressive loading) |
-| **Infrastructure** | Docker, GitHub Actions CI/CD, SendGrid |
+| **Infrastructure** | Railway (production), Firebase, SendGrid |
 
 ## Структура репозитория
 
 ```
 restaurant-guide-belarus/
-├── docs/                    # Документация проекта
-│   ├── 00_methodology/      # Методология разработки v9
-│   ├── 01_specifications/   # Функциональные спецификации
-│   ├── 02_architecture/     # Архитектура API
-│   ├── 03_coordination/     # Координационные документы
-│   └── handoffs/            # Активные handoff-документы
 ├── backend/                 # Backend API (Node.js/Express)
 │   ├── src/
-│   │   ├── models/          # Модели данных
-│   │   ├── controllers/     # Обработчики запросов
-│   │   ├── services/        # Бизнес-логика
-│   │   ├── middleware/      # Auth, rate limiting, validation
-│   │   ├── routes/          # API endpoints (v1)
-│   │   ├── config/          # PostgreSQL, Redis, Cloudinary
+│   │   ├── models/          # Модели данных (15 файлов)
+│   │   ├── controllers/     # Обработчики запросов (20 файлов)
+│   │   ├── services/        # Бизнес-логика (19 файлов)
+│   │   ├── middleware/      # Auth, rate limiting, validation, upload
+│   │   ├── routes/v1/       # API endpoints (13 route-файлов)
+│   │   ├── config/          # PostgreSQL, Redis, Cloudinary, Firebase, OpenRouter
 │   │   └── utils/           # JWT, logger, helpers
-│   ├── migrations/          # Миграции БД (PostGIS)
-│   └── tests/               # Тесты backend
-├── mobile/                  # Flutter мобильное приложение
+│   ├── migrations/          # 22 миграции БД (PostGIS)
+│   └── src/tests/           # 48 test suites (~1100 тестов)
+├── mobile/                  # Flutter мобильное приложение (com.nirivio.app)
 │   ├── lib/
-│   │   ├── config/          # Theme, dimensions, environment
-│   │   ├── models/          # Establishment, Review, User, Partner
-│   │   ├── providers/       # State management (Provider)
-│   │   ├── screens/         # UI по фичам (search, map, profile, partner)
-│   │   ├── services/        # API services
-│   │   └── widgets/         # Reusable components
+│   │   ├── config/          # Theme, dimensions, environment, cities, routes
+│   │   ├── models/          # 12 моделей (establishment, booking, promotion...)
+│   │   ├── providers/       # 10 ChangeNotifiers
+│   │   ├── screens/         # UI по фичам (auth, search, map, favorites, partner, booking, notifications, profile)
+│   │   ├── services/        # 11 API services (вкл. smart search, push, media)
+│   │   └── widgets/         # Reusable components (smart search, booking, map, forms)
 │   └── session_reports/     # Отчёты сессий разработки
 └── admin-web/               # Flutter Web админ-панель
     ├── lib/
-    │   ├── config/          # GoRouter, environment
-    │   ├── models/          # Analytics, audit log, review models
-    │   ├── providers/       # 10 ChangeNotifiers (auth, moderation, analytics...)
-    │   ├── screens/         # Dashboard, moderation, analytics, audit, reviews
-    │   ├── services/        # ApiClient, auth, moderation, analytics, audit, reviews
-    │   └── widgets/         # AdminShell, sidebar, charts, moderation panels
+    │   ├── config/          # GoRouter + auth guard, environment
+    │   ├── models/          # 6 моделей (analytics, audit, reviews, auth, establishment, user)
+    │   ├── providers/       # 11 ChangeNotifiers (auth, moderation ×4, analytics ×3, audit, dashboard, reviews)
+    │   ├── screens/         # Dashboard, moderation, analytics, audit, reviews, notifications, payments
+    │   ├── services/        # 6 API singletons
+    │   └── widgets/         # AdminShell, sidebar, charts (fl_chart), moderation panels
     └── web/                 # Flutter Web entry point
 ```
 
@@ -109,34 +109,41 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 
 | Слой | Статус | Детали |
 |------|--------|--------|
-| **Backend API** | Production-ready | 61.52% coverage, 626 тестов, все модули complete |
-| **Mobile Foundation** | Production-ready | Theme, API client, navigation, state management |
-| **Mobile Auth** | Production-ready | Email + phone registration, login, JWT |
-| **Mobile Search** | Production-ready | Results list, filters (6 секций), detail view, city selector |
-| **Mobile Extended** | Production-ready | Favorites, reviews, map (Yandex), profile, partner flows |
-| **Admin Web** | MVP complete (A-E) | Moderation, analytics, audit log, reviews management |
+| **Backend API** | Production (Railway) | ~1100 тестов, 48 test suites, 22 миграции |
+| **Mobile App** | TestFlight (iOS) | 13 экранных модулей, 10 провайдеров, 12 моделей |
+| **Admin Web** | Production (Railway) | Модерация, аналитика, аудит-лог, отзывы |
+| **Security** | Аудит пройден (8.5/10) | Секреты вынесены, git-history очищена, ключи ротированы |
 
 ### Реализованные модули Backend
 
-- **Authentication**: JWT с refresh token rotation, role-based access (user/partner/admin), Belarus phone validation
-- **Search & Discovery**: PostGIS geospatial, ranking algorithm (distance + quality + subscription), cursor pagination
+- **Authentication**: JWT с refresh token rotation, role-based access (user/partner/admin), OAuth (Google + Yandex), Belarus phone validation
+- **Search & Discovery**: PostGIS geospatial, байесовский рейтинг `(v×R + m×C)/(v+m)`, completeness score, cursor pagination
+- **Smart Search**: AI intent parsing (OpenRouter + Gemini 2.5 Flash-Lite), Redis-кеш (1hr TTL), fallback на ILIKE + синонимы
 - **Reviews**: CRUD, daily quota (10/day), partner responses, aggregate caching, soft deletion
 - **Favorites**: Idempotent operations, batch status check, rich responses
 - **Establishments**: CRUD с draft-pending-active workflow, Belarus validation, Cloudinary media (3 resolutions), tier-based limits
-- **Admin**: Login, moderation (full lifecycle), analytics (4 endpoints), audit log, review management — 17 admin endpoints total
+- **Promotions**: CRUD с Cloudinary images, search enrichment (has_promotion badge), max 3 active, lazy expiry
+- **Bookings**: Настройки бронирования, полный lifecycle (9 валидаций), working hours, partner management, user booking flow
+- **Notifications**: 15 типов, 30-сек polling, группировка по времени
+- **Push Notifications**: FCM multicast, device tokens (UPSERT), preference categories, stale token cleanup
+- **Partner Analytics**: Overview с period comparison, gap-filled time-series, ratings distribution, call tracking
+- **Admin**: Login, moderation (full lifecycle), analytics (4 endpoints), audit log, review management, claiming
 
-### Реализованные экраны Mobile (Phase 5)
+### Реализованные экраны Mobile
 
-- Search Home с NIRIVIO branding и city selector (7 городов)
+- Search Home с Nirivio branding и city selector (7 городов)
+- Smart Search Bar (animated placeholder, AI intent parsing, suggestion chips, preview cards)
 - Results List с infinite scroll и 4 опциями сортировки
 - Filter Panel (6 секций: расстояние, чек, время, категория, кухня, доп.)
-- Establishment Detail (hero gallery, info, menu, reviews, map)
+- Establishment Detail (hero gallery, info, menu, reviews, map, бронирование, акции)
 - Favorites Tab (5 states, optimistic UI)
 - Write Review и Reviews List (star rating, pagination, reactions)
 - Map Tab (Yandex MapKit, clustering, info panel)
-- Profile + Edit Profile (avatar, user reviews, settings)
+- Booking (выбор даты/времени/гостей, активные/история бронирований, cancel/retry)
+- Notifications (15 типов, push + in-app, deep link navigation, preferences)
+- Profile + Edit Profile (avatar, user reviews, settings, мои бронирования)
 - Partner Registration (7-step wizard, ~4,800 lines)
-- Partner Dashboard (statistics, reviews, edit establishment)
+- Partner Dashboard (statistics с fl_chart, reviews, edit, акции, бронирования)
 
 ## Roadmap
 
@@ -147,29 +154,38 @@ flutter run -d chrome --web-port=8080   # Порт 8080 для CORS
 | 3. Quality Assurance | Завершена | 400+ тестов, 64% coverage |
 | 4. Establishments | Завершена | CRUD, media, moderation |
 | 5. Mobile MVP | Завершена | Foundation, auth, search, extended features, partner |
-| 6. User Features Integration | Запланировано | Auth flow integration, push notifications |
-| 7. Partner Mobile Features | Запланировано | Dashboard, analytics, notifications |
-| 8. Admin Web Panel | В работе | Segments A-E done, MVP deployed, Segment F planned |
+| 8. Admin Web Panel | Завершена | Segments A-E, модерация, аналитика, аудит-лог, отзывы |
+| Horizon 2: Monetization | Завершён | Акции (Component 4), бронирование (Component 5) |
+| Horizon 3: UX & Engagement | Завершён | Push-уведомления (Component 6), Smart Search (Component 7) |
+| Component 8: Organic Growth | Запланировано | QR-коды заведений, deep links (nirivio.app/r/{id}) |
+| Horizon 4: Public Web | Запланировано | Next.js SSR-сайт, SEO, partner cabinet, 500 seed-карточек |
 | 9. Testing & Polish | Запланировано | E2E, performance, UX |
-| 10. Launch Preparation | Запланировано | Deploy, monitoring, beta |
+| 10. Launch | Запланировано | App Store + Google Play + сайт — одновременный запуск |
 
-Подробный roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
+Подробный roadmap хранится в внутренней документации проекта.
 
 ## Тестирование
 
-**Backend** (626 тестов, 61.52% overall coverage):
+**Backend** (~1100 тестов, 48 test suites):
 
-| Модуль | Coverage | Тесты |
-|--------|----------|-------|
-| Auth | 87% statements | Registration, login, token rotation, rate limiting |
-| Search | 83.9% statements | Geospatial, filters, pagination, ranking |
-| Reviews | 97.46% service / 100% controller | CRUD, quota, partner responses, aggregates |
-| Favorites | 100% | Idempotent ops, batch, concurrent handling |
-| Establishments | 91.67% service / 100% controller | Workflow, validation, media, authorization |
+| Модуль | Тесты | Описание |
+|--------|-------|----------|
+| Auth | unit + integration + E2E | Registration, login, token rotation, OAuth, rate limiting |
+| Search | unit + integration | Geospatial, filters, pagination, ranking, buildOrderByClause |
+| Smart Search | 28 integration | Validation, fallback, filter building, caching |
+| Reviews | unit + integration | CRUD, quota, partner responses, aggregates, validation (62 tests) |
+| Favorites | unit + integration | Idempotent ops, batch, concurrent handling |
+| Establishments | unit + integration | Workflow, validation, media, authorization |
+| Promotions | 24 integration | CRUD, limits, search enrichment, ownership, lazy expiry |
+| Bookings | unit (56 tests) | Model, service, settings — lifecycle, validations |
+| Notifications | unit (63+26+8) | Service, model, preferences — 15 типов |
+| Push | 19 unit | FCM multicast, token cleanup, category mapping |
+| Partner Analytics | 27 unit | Model, service — overview, trends, ratings |
+| Admin | 211 integration | Auth, moderation, analytics, audit log, reviews, claiming |
 
 ```bash
 cd backend
-npm test                   # Полный тестовый набор (<5 минут)
+npm test                   # Полный тестовый набор
 npm run test:coverage      # С отчётом покрытия
 ```
 
@@ -179,43 +195,41 @@ npm run test:coverage      # С отчётом покрытия
 
 | Документ | Описание |
 |----------|----------|
-| [docs/00_methodology/Methodology_v9.md](docs/00_methodology/Methodology_v9.md) | Методология разработки (Distributed Intelligence v9) |
-| [docs/01_specifications/functional_spec_v3.md](docs/01_specifications/functional_spec_v3.md) | Функциональная спецификация |
-| [docs/02_architecture/api_endpoints_overview.md](docs/02_architecture/api_endpoints_overview.md) | Обзор API endpoints |
-| [docs/01_specifications/api_architecture_review_v1.1.md](docs/01_specifications/api_architecture_review_v1.1.md) | Архитектурный обзор API |
 | [backend/ARCHITECTURE.md](backend/ARCHITECTURE.md) | Архитектура backend |
 | [backend/SETUP.md](backend/SETUP.md) | Руководство по настройке backend |
 | [backend/IMPLEMENTATION_SUMMARY.md](backend/IMPLEMENTATION_SUMMARY.md) | Сводка реализации backend |
-| [backend/migrations/MIGRATION_GUIDE.md](backend/migrations/MIGRATION_GUIDE.md) | Руководство по миграции PostGIS |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Подробная дорожная карта |
+| [backend/migrations/MIGRATION_GUIDE.md](backend/migrations/MIGRATION_GUIDE.md) | Руководство по миграции PostGIS (22 миграции) |
+| [PROJECT_MAP.md](PROJECT_MAP.md) | Навигация по кодовой базе |
 | [CHANGELOG.md](CHANGELOG.md) | Полная история обновлений |
 
 ## Методология разработки
 
-Проект использует **Distributed Intelligence Methodology v9.0**, реализующую двухуровневую модель координации:
+Проект использует **Distributed Intelligence Methodology v9.4**, реализующую модульную систему протоколов:
 
-- **Strategic Trunk** (Web Interface): архитектурное планирование, анализ session reports, формулирование директив
-- **Autonomous Leaf** (CLI/VSCode): автономное выполнение — discovery, planning, implementation, delivery через Git
+- **Protocol Unified (Mode C)**: основной рабочий режим — Discovery → Planning → Implementation → Delivery в одной сессии
+- **Protocol Autonomous (Mode B)**: полностью автономное выполнение по директивам
+- **Protocol Informed (Mode A)**: пошаговое выполнение с подтверждениями
 - **Human Coordinator**: мост между Trunk и Leaf, safety gate, scope authority
 
 Execution cycle: Discovery (read-only) -> Planning -> Implementation -> Delivery (commit + report)
 
 Context management: Green (<70%) -> Yellow (70-85%) -> Orange (85-90%) -> Red (>90%, emergency stop)
 
-Полная методология: [docs/00_methodology/Methodology_v9.md](docs/00_methodology/Methodology_v9.md)
+Методология хранится в внутренней документации проекта (docs/, не включена в публичный репозиторий).
 
 ## Последнее обновление
 
-**Апрель 2026** — MVP функционально завершён, приложение в TestFlight
+**Апрель 2026** — MVP функционально завершён, приложение в TestFlight, security audit пройден
 
-- Акции партнёров (Component 4): backend CRUD, Cloudinary upload, бейдж в поиске, карусель на карточке
-- Ранжирование: байесовский средний рейтинг (m=5, C=3.5), completeness score, GPS-aware сортировка
-- Аналитика партнёра: графики, тренды, просмотры акций
-- Уведомления: 7 типов, 30-сек polling, группировка по времени
-- OAuth: Google + Yandex
-- Admin Panel MVP (модерация, аналитика, отзывы, claiming, аудит-лог)
-- 973 backend теста (41 suite)
-- Функциональная спецификация v3.4: полный аудит + двухслойная структура
+- **Smart Search** (Component 7): AI intent parsing через OpenRouter, animated search bar, preview cards
+- **Push Notifications** (Component 6): FCM multicast, 15 типов событий, deep link navigation, preferences
+- **Bookings** (Component 5): полный lifecycle бронирования — partner wizard, user booking flow, 9 валидаций
+- **Promotions** (Component 4): CRUD, Cloudinary images, search enrichment, карусель на карточке
+- **Security Audit**: секреты вынесены из кода, git-history очищена, 5 ключей ротированы, аудит 8.5/10
+- **Ranking**: байесовский рейтинг (m=5, C=3.5), completeness score, GPS-aware сортировка
+- **Partner Analytics**: графики (fl_chart), тренды, просмотры акций, call tracking
+- **Admin Panel**: модерация (full lifecycle), аналитика, аудит-лог, отзывы, claiming
+- **~1100 backend тестов** (48 suites), функциональная спецификация v3.4
 
 Полная история обновлений: [CHANGELOG.md](CHANGELOG.md)
 
@@ -227,8 +241,8 @@ Proprietary — все права защищены.
 
 **Основатель проекта**: Всеволод
 **Архитектурный координатор**: Claude (Anthropic AI)
-**Методология**: Distributed Intelligence v9.0
+**Методология**: Distributed Intelligence v9.4
 
 ---
 
-*Последнее обновление: Апрель 2, 2026*
+*Последнее обновление: Апрель 16, 2026*
