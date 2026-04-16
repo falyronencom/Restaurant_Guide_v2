@@ -176,7 +176,7 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 15,
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withValues(alpha: 0.7),
                 ),
               ),
 
@@ -284,7 +284,7 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
                     'Уже есть профиль? ',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontSize: 13,
-                      color: const Color(0xFF5F5F5F).withOpacity(0.7),
+                      color: const Color(0xFF5F5F5F).withValues(alpha: 0.7),
                     ),
                   ),
                   GestureDetector(

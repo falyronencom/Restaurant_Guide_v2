@@ -626,8 +626,26 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         // Address
         GestureDetector(
-          onTap: () {
-            // TODO: Open in maps
+          onTap: () async {
+            final lat = _establishment!.latitude;
+            final lng = _establishment!.longitude;
+            if (lat == null || lng == null) return;
+
+            // Try Yandex Maps first, then Google Maps, then browser
+            final yandexUrl = Uri.parse(
+                'yandexmaps://maps.yandex.ru/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(_establishment!.address)}');
+            final geoUrl = Uri.parse(
+                'geo:$lat,$lng?q=${Uri.encodeComponent(_establishment!.address)}');
+            final webUrl = Uri.parse(
+                'https://yandex.by/maps/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(_establishment!.address)}');
+
+            if (await canLaunchUrl(yandexUrl)) {
+              await launchUrl(yandexUrl);
+            } else if (await canLaunchUrl(geoUrl)) {
+              await launchUrl(geoUrl);
+            } else {
+              await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+            }
           },
           child: Text(
             _establishment!.address,

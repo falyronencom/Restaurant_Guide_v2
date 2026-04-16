@@ -677,11 +677,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     );
 
     // Refresh details on return so edit menu shows fresh data
-    if (mounted) {
-      context
-          .read<PartnerDashboardProvider>()
-          .loadEstablishmentDetails(widget.establishmentId);
-    }
+    if (!mounted) return;
+    this.context
+        .read<PartnerDashboardProvider>()
+        .loadEstablishmentDetails(widget.establishmentId);
   }
 
   /// Edit working hours: open screen, capture result, save via PUT
