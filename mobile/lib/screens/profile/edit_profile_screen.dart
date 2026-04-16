@@ -381,16 +381,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
         const SizedBox(height: 8),
 
-        // Location field (placeholder)
-        _buildTextField(
-          label: 'Местоположение',
-          value: '', // TODO: Add location support
-          isEditable: false,
-          hint: 'Не указано',
-        ),
-
-        const SizedBox(height: 8),
-
         // Email field (read-only)
         _buildTextField(
           label: 'Почта',
