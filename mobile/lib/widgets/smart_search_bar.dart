@@ -105,32 +105,29 @@ class _SmartSearchBarState extends State<SmartSearchBar> {
                 bottomLeft: Radius.circular(9),
               ),
             ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: TextField(
-                key: ValueKey<String>(_isFocused ? 'focused' : hintText),
-                controller: widget.controller,
-                focusNode: _focusNode,
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: AppTheme.textPrimary,
-                ),
-                decoration: InputDecoration(
-                  hintText: hintText,
-                  hintStyle: const TextStyle(
-                    fontSize: 18,
-                    color: _greyText,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 20,
-                  ),
-                ),
-                onSubmitted: (_) => _handleSubmit(),
-                onChanged: (_) => setState(() {}),
+            child: TextField(
+              controller: widget.controller,
+              focusNode: _focusNode,
+              style: const TextStyle(
+                fontSize: 18,
+                color: AppTheme.textPrimary,
               ),
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: const TextStyle(
+                  fontSize: 18,
+                  color: _greyText,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
+              ),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _focusNode.unfocus(),
+              onChanged: (_) => setState(() {}),
             ),
           ),
         ),

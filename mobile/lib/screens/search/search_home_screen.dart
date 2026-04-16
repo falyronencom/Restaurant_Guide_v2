@@ -22,6 +22,7 @@ class SearchHomeScreen extends StatefulWidget {
 class _SearchHomeScreenState extends State<SearchHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearchFocused = false;
+  bool _hasResults = false;
 
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
@@ -317,6 +318,9 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
 
+    // Dismiss keyboard so results/empty message are immediately visible
+    FocusScope.of(context).unfocus();
+
     final estProvider = context.read<EstablishmentsProvider>();
     final smartProvider = context.read<SmartSearchProvider>();
 
@@ -362,20 +366,23 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Consumer<EstablishmentsProvider>(
+        body: Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) => Stack(
           fit: StackFit.expand,
           children: [
             // Background image with dark overlay
             _buildBackground(),
 
-            // Dark overlay when search focused (BEFORE content so it doesn't block taps)
+            // Dark overlay when search focused — tap to dismiss keyboard
             if (_isSearchFocused)
               Positioned.fill(
-                child: AnimatedOpacity(
-                  opacity: _isSearchFocused ? 0.3 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(color: Colors.black),
+                child: GestureDetector(
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: AnimatedOpacity(
+                    opacity: _isSearchFocused ? 0.3 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Container(color: Colors.black),
+                  ),
                 ),
               ),
 
@@ -385,53 +392,102 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppDimensions.paddingM,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 120),
+                child: Consumer<SmartSearchProvider>(
+                  builder: (context, smartProvider, _) {
+                    final showCompact = smartProvider.state ==
+                            SmartSearchState.results &&
+                        smartProvider.smartResults.isNotEmpty;
 
-                    // Logo
-                    _buildLogo(),
-                    const SizedBox(height: 16),
+                    // Track results state for other widgets
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_hasResults != showCompact) {
+                        setState(() => _hasResults = showCompact);
+                      }
+                    });
 
-                    // Tagline
-                    _buildTagline(),
-                    const SizedBox(height: 80),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Animated top spacing
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          height: showCompact ? 40 : 120,
+                        ),
 
-                    // City and Filter buttons row
-                    _buildCityFilterRow(provider),
-                    const SizedBox(height: 16),
+                        // Logo with animated size
+                        AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          style: GoogleFonts.josefinSans(
+                            fontSize: showCompact ? 32 : 48,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textOnPrimary,
+                            letterSpacing: (showCompact ? 32 : 48) * 0.3,
+                          ),
+                          child: const Text('NIRIVIO'),
+                        ),
 
-                    // Smart Search bar (refactored from inline)
-                    SmartSearchBar(
-                      controller: _searchController,
-                      onSubmit: _executeSmartSearch,
-                      onChevronTap: _executeSearch,
-                      onFocusChanged: (focused) {
-                        setState(() => _isSearchFocused = focused);
-                        if (!focused) return;
-                        // Clear previous smart results when re-focusing
-                        context.read<SmartSearchProvider>().clear();
-                      },
-                    ),
-                    const SizedBox(height: 12),
+                        // Tagline — animated hide
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 300),
+                          crossFadeState: showCompact
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          firstChild: Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: _buildTagline(),
+                          ),
+                          secondChild: const SizedBox.shrink(),
+                        ),
 
-                    // Suggestion chips (visible when focused, hidden when results shown)
-                    SmartSearchSuggestions(
-                      visible: _isSearchFocused &&
-                          context.watch<SmartSearchProvider>().state !=
-                              SmartSearchState.results,
-                      onChipTap: _onChipTap,
-                    ),
+                        // Animated spacing before city row
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          height: showCompact ? 20 : 80,
+                        ),
 
-                    // Smart Search preview (results from AI)
-                    SmartSearchPreview(
-                      onShowAll: _onShowAll,
-                      onEstablishmentTap: _onEstablishmentTap,
-                    ),
+                        // City and Filter buttons row
+                        _buildCityFilterRow(provider),
+                        const SizedBox(height: 16),
 
-                    const Spacer(),
-                  ],
+                        // Smart Search bar
+                        SmartSearchBar(
+                          controller: _searchController,
+                          onSubmit: _executeSmartSearch,
+                          onChevronTap: _executeSearch,
+                          onFocusChanged: (focused) {
+                            setState(() => _isSearchFocused = focused);
+                            if (!focused) return;
+                            context.read<SmartSearchProvider>().clear();
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Scrollable area for suggestions + preview
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SmartSearchSuggestions(
+                                  visible: _isSearchFocused &&
+                                      smartProvider.state !=
+                                          SmartSearchState.results,
+                                  onChipTap: _onChipTap,
+                                ),
+                                SmartSearchPreview(
+                                  onShowAll: _onShowAll,
+                                  onEstablishmentTap: _onEstablishmentTap,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -491,19 +547,6 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  /// Build logo text
-  Widget _buildLogo() {
-    return Text(
-      'NIRIVIO',
-      style: GoogleFonts.josefinSans(
-        fontSize: 48,
-        fontWeight: FontWeight.w600,
-        color: AppTheme.textOnPrimary,
-        letterSpacing: 48 * 0.3,
-      ),
     );
   }
 
