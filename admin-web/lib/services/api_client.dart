@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_admin_web/config/environment.dart';
 
@@ -40,7 +41,7 @@ class ApiClient {
         responseHeader: false,
         responseBody: true,
         error: true,
-        logPrint: (obj) => print('[API] $obj'),
+        logPrint: (obj) => debugPrint('[API] $obj'),
       ));
     }
   }

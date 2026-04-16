@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
 
@@ -50,7 +51,7 @@ class ApiClient {
         responseHeader: false,
         responseBody: true,
         error: true,
-        logPrint: (obj) => print('[API] $obj'),
+        logPrint: (obj) => debugPrint('[API] $obj'),
       ));
     }
   }
@@ -73,7 +74,7 @@ class ApiClient {
 
         // Log request in development (without token)
         if (Environment.enableApiLogging) {
-          print('[API Request] ${options.method} ${options.path}');
+          debugPrint('[API Request] ${options.method} ${options.path}');
         }
 
         handler.next(options);
@@ -120,7 +121,7 @@ class ApiClient {
     return InterceptorsWrapper(
       onError: (error, handler) async {
         if (Environment.enableApiLogging) {
-          print('[API Error] ${error.requestOptions.path}: ${error.message}');
+          debugPrint('[API Error] ${error.requestOptions.path}: ${error.message}');
         }
 
         // Handle 401 Unauthorized - try to refresh token
@@ -242,7 +243,7 @@ class ApiClient {
       return false;
     } catch (e) {
       if (Environment.enableApiLogging) {
-        print('[API] Token refresh failed: $e');
+        debugPrint('[API] Token refresh failed: $e');
       }
       return false;
     }

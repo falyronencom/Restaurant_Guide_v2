@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Service for handling device GPS location
@@ -12,32 +13,32 @@ class LocationService {
 
   /// Check and request location permission
   Future<bool> checkPermission() async {
-    print('LocationService: checkPermission() called');
+    debugPrint('LocationService: checkPermission() called');
 
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    print('LocationService: isLocationServiceEnabled = $serviceEnabled');
+    debugPrint('LocationService: isLocationServiceEnabled = $serviceEnabled');
     if (!serviceEnabled) {
       return false;
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
-    print('LocationService: current permission = $permission');
+    debugPrint('LocationService: current permission = $permission');
 
     if (permission == LocationPermission.denied) {
-      print('LocationService: requesting permission...');
+      debugPrint('LocationService: requesting permission...');
       permission = await Geolocator.requestPermission();
-      print('LocationService: permission after request = $permission');
+      debugPrint('LocationService: permission after request = $permission');
       if (permission == LocationPermission.denied) {
         return false;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      print('LocationService: permission denied forever');
+      debugPrint('LocationService: permission denied forever');
       return false;
     }
 
-    print('LocationService: permission granted');
+    debugPrint('LocationService: permission granted');
     return true;
   }
 
@@ -45,35 +46,35 @@ class LocationService {
   /// Uses getLastKnownPosition() first (instant, cached) with getCurrentPosition() fallback
   Future<Position?> getCurrentPosition() async {
     try {
-      print('LocationService: getCurrentPosition() starting...');
+      debugPrint('LocationService: getCurrentPosition() starting...');
 
       bool hasPermission = await checkPermission();
       if (!hasPermission) {
-        print('LocationService: no permission, returning null');
+        debugPrint('LocationService: no permission, returning null');
         return null;
       }
 
       // Try cached position first (instant on emulator)
-      print('LocationService: trying getLastKnownPosition()...');
+      debugPrint('LocationService: trying getLastKnownPosition()...');
       Position? position = await Geolocator.getLastKnownPosition();
 
       if (position != null) {
-        print('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
+        debugPrint('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
         _lastKnownPosition = position;
         return position;
       }
 
       // Fallback to fresh GPS (may timeout on emulator)
-      print('LocationService: no cache, trying getCurrentPosition()...');
+      debugPrint('LocationService: no cache, trying getCurrentPosition()...');
       _lastKnownPosition = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
         timeLimit: const Duration(seconds: 5),
       );
 
-      print('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
+      debugPrint('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
       return _lastKnownPosition;
     } catch (e) {
-      print('LocationService: Error getting position: $e');
+      debugPrint('LocationService: Error getting position: $e');
       return null;
     }
   }

@@ -811,11 +811,12 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                 onPressed: isSubmitting
                     ? null
                     : () async {
+                        final navigator = Navigator.of(context);
                         setDialogState(() => isSubmitting = true);
                         final success = await _reviewsService
                             .deletePartnerResponse(review.id);
                         if (success && mounted) {
-                          Navigator.pop(context);
+                          navigator.pop();
                           _loadReviews();
                           ScaffoldMessenger.of(this.context).showSnackBar(
                             const SnackBar(
@@ -859,6 +860,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                   : () async {
                       if (!formKey.currentState!.validate()) return;
 
+                      final navigator = Navigator.of(context);
                       setDialogState(() => isSubmitting = true);
 
                       try {
@@ -868,7 +870,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                         );
 
                         if (result != null && mounted) {
-                          Navigator.pop(context);
+                          navigator.pop();
                           _loadReviews();
                           ScaffoldMessenger.of(this.context).showSnackBar(
                             SnackBar(

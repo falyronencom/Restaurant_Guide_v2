@@ -233,14 +233,6 @@ class PartnerRegistrationProvider with ChangeNotifier {
         _validateLegalInfoStep();
   }
 
-  /// Validate phone number format
-  bool _isValidPhone(String phone) {
-    if (phone.isEmpty) return false;
-    // Basic validation: starts with + and has digits
-    final phoneRegex = RegExp(r'^\+?[0-9]{10,15}$');
-    return phoneRegex.hasMatch(phone.replaceAll(RegExp(r'[\s\-()]'), ''));
-  }
-
   /// Validate UNP (9 digits)
   bool _isValidUNP(String unp) {
     final unpRegex = RegExp(r'^\d{9}$');
