@@ -87,18 +87,19 @@ class PartnerEstablishmentCard extends StatelessWidget {
                   ),
                 ),
 
-                // Content section
+                // Content section (name + stats below)
                 Positioned(
                   left: 18,
                   top: 125,
-                  child: _buildEstablishmentInfo(isPremium),
-                ),
-
-                // Stats section (top right)
-                Positioned(
-                  top: 128,
                   right: 10,
-                  child: _buildStats(isPremium),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildEstablishmentInfo(isPremium),
+                      const SizedBox(height: 6),
+                      _buildStats(isPremium),
+                    ],
+                  ),
                 ),
 
                 // Address (bottom left)

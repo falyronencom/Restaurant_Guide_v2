@@ -101,7 +101,7 @@ export const createBooking = async (userId, data) => {
   // 1. Validate required fields
   if (!establishmentId || !bookingDate || !bookingTime || !guestCount || !contactPhone) {
     throw new AppError(
-      'establishmentId, date, time, guestCount, and contactPhone are required',
+      'Необходимо заполнить все обязательные поля',
       400,
       'VALIDATION_ERROR',
     );
@@ -110,22 +110,22 @@ export const createBooking = async (userId, data) => {
   // 2. Get establishment and verify booking is enabled
   const establishment = await EstablishmentModel.findEstablishmentById(establishmentId);
   if (!establishment) {
-    throw new AppError('Establishment not found', 404, 'NOT_FOUND');
+    throw new AppError('Заведение не найдено', 404, 'NOT_FOUND');
   }
   if (establishment.status !== 'active') {
-    throw new AppError('Establishment is not active', 400, 'ESTABLISHMENT_NOT_ACTIVE');
+    throw new AppError('Заведение неактивно', 400, 'ESTABLISHMENT_NOT_ACTIVE');
   }
 
   // 3. Get booking settings
   const settings = await BookingSettingsModel.getByEstablishmentId(establishmentId);
   if (!settings || !settings.is_enabled) {
-    throw new AppError('Booking is not enabled for this establishment', 400, 'BOOKING_NOT_ENABLED');
+    throw new AppError('Бронирование недоступно для этого заведения', 400, 'BOOKING_NOT_ENABLED');
   }
 
   // 4. Validate guest count
   if (guestCount < 1 || guestCount > settings.max_guests_per_booking) {
     throw new AppError(
-      `Guest count must be between 1 and ${settings.max_guests_per_booking}`,
+      `Количество гостей должно быть от 1 до ${settings.max_guests_per_booking}`,
       400,
       'INVALID_GUEST_COUNT',
     );
@@ -138,14 +138,14 @@ export const createBooking = async (userId, data) => {
   bDate.setHours(0, 0, 0, 0);
 
   if (bDate < today) {
-    throw new AppError('Booking date cannot be in the past', 400, 'INVALID_DATE');
+    throw new AppError('Дата бронирования не может быть в прошлом', 400, 'INVALID_DATE');
   }
 
   const maxDate = new Date(today);
   maxDate.setDate(maxDate.getDate() + settings.max_days_ahead);
   if (bDate > maxDate) {
     throw new AppError(
-      `Booking date cannot be more than ${settings.max_days_ahead} days ahead`,
+      `Бронирование возможно не более чем на ${settings.max_days_ahead} дней вперёд`,
       400,
       'DATE_TOO_FAR',
     );
@@ -157,12 +157,12 @@ export const createBooking = async (userId, data) => {
   const dayHours = parseDayHours(establishment.working_hours, dayKey);
 
   if (!dayHours.isOpen) {
-    throw new AppError('Establishment is closed on the selected day', 400, 'CLOSED_DAY');
+    throw new AppError('Заведение не работает в выбранный день', 400, 'CLOSED_DAY');
   }
 
   if (!isTimeWithinRange(bookingTime, dayHours.open, dayHours.close)) {
     throw new AppError(
-      `Booking time must be within working hours (${dayHours.open}-${dayHours.close})`,
+      `Время бронирования должно быть в рабочие часы (${dayHours.open}-${dayHours.close})`,
       400,
       'TIME_OUTSIDE_HOURS',
     );
@@ -175,7 +175,7 @@ export const createBooking = async (userId, data) => {
 
   if (hoursUntilBooking < settings.min_hours_before) {
     throw new AppError(
-      `Booking must be made at least ${settings.min_hours_before} hours in advance`,
+      `Бронирование должно быть сделано минимум за ${settings.min_hours_before} ч.`,
       400,
       'TOO_LATE',
     );
@@ -185,7 +185,7 @@ export const createBooking = async (userId, data) => {
   const activeCount = await BookingModel.getActiveCountForUser(userId);
   if (activeCount >= 2) {
     throw new AppError(
-      'You already have 2 active bookings. Cancel or wait for existing bookings to complete.',
+      'У вас уже 2 активных бронирования. Отмените существующее или дождитесь его завершения.',
       400,
       'MAX_BOOKINGS_REACHED',
     );
@@ -197,7 +197,7 @@ export const createBooking = async (userId, data) => {
   );
   if (existingAtEstablishment) {
     throw new AppError(
-      'You already have an active booking at this establishment',
+      'У вас уже есть активное бронирование в этом заведении',
       400,
       'DUPLICATE_BOOKING',
     );
