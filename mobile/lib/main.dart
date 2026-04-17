@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -111,6 +112,20 @@ class RestaurantGuideApp extends StatelessWidget {
 
         // Application theme from Phase B
         theme: AppTheme.lightTheme,
+
+        // Localization: forces Russian locale for all Material widgets
+        // (TimePicker, DatePicker, etc.). Fixes EN labels, keyboard input
+        // in TimePickerEntryMode.input, and dial layout glitch on first open.
+        locale: const Locale('ru'),
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('ru'),
+          Locale('en'),
+        ],
 
         // Main navigation with bottom tabs from Phase E
         home: const SplashScreen(),

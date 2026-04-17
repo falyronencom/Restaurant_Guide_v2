@@ -372,7 +372,11 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: initialTime,
-      initialEntryMode: TimePickerEntryMode.input,
+      // inputOnly: hides the dial view entirely. Rationale: Flutter's 24-hour
+      // dial has a known rendering issue where the two concentric rings
+      // (0-11 outer, 12-23 inner) visually overlap (flutter/flutter#141501).
+      // For restaurant hours, keyboard input is also faster than rotating a dial.
+      initialEntryMode: TimePickerEntryMode.inputOnly,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
