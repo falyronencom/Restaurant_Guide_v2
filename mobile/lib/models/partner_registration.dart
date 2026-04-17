@@ -254,6 +254,39 @@ class EstablishmentAddress {
   }
 }
 
+/// PDF menu file uploaded during registration
+///
+/// Stores Cloudinary URLs (original + first-page transformations) plus the
+/// original filename. Filename doubles as the tile label and is persisted
+/// to establishment_media.caption on final submission.
+class MenuPdf {
+  final String url;
+  final String thumbnailUrl;
+  final String previewUrl;
+  final String fileName;
+
+  const MenuPdf({
+    required this.url,
+    required this.thumbnailUrl,
+    required this.previewUrl,
+    required this.fileName,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'url': url,
+        'thumbnail_url': thumbnailUrl,
+        'preview_url': previewUrl,
+        'file_name': fileName,
+      };
+
+  factory MenuPdf.fromJson(Map<String, dynamic> json) => MenuPdf(
+        url: json['url'] as String,
+        thumbnailUrl: json['thumbnail_url'] as String,
+        previewUrl: json['preview_url'] as String,
+        fileName: json['file_name'] as String? ?? 'menu.pdf',
+      );
+}
+
 /// Partner Registration data model
 /// Collects data across 6 wizard steps
 class PartnerRegistration {
@@ -277,6 +310,7 @@ class PartnerRegistration {
   // Step 4: Media
   final List<String> interiorPhotos;
   final List<String> menuPhotos;
+  final List<MenuPdf> menuPdfs;
   final String? primaryPhotoUrl;
 
   // Step 5: Address
@@ -307,6 +341,7 @@ class PartnerRegistration {
     this.attributes = const [],
     this.interiorPhotos = const [],
     this.menuPhotos = const [],
+    this.menuPdfs = const [],
     this.primaryPhotoUrl,
     this.city,
     this.street,
@@ -386,6 +421,8 @@ class PartnerRegistration {
       // Photos - send separately by type for proper categorization in establishment_media
       if (interiorPhotos.isNotEmpty) 'interior_photos': interiorPhotos,
       if (menuPhotos.isNotEmpty) 'menu_photos': menuPhotos,
+      if (menuPdfs.isNotEmpty)
+        'menu_pdfs': menuPdfs.map((pdf) => pdf.toJson()).toList(),
       if (primaryPhotoUrl != null) 'primary_photo': primaryPhotoUrl,
     };
   }
@@ -488,6 +525,7 @@ class PartnerRegistration {
     List<String>? attributes,
     List<String>? interiorPhotos,
     List<String>? menuPhotos,
+    List<MenuPdf>? menuPdfs,
     String? primaryPhotoUrl,
     String? city,
     String? street,
@@ -514,6 +552,7 @@ class PartnerRegistration {
       attributes: attributes ?? this.attributes,
       interiorPhotos: interiorPhotos ?? this.interiorPhotos,
       menuPhotos: menuPhotos ?? this.menuPhotos,
+      menuPdfs: menuPdfs ?? this.menuPdfs,
       primaryPhotoUrl: primaryPhotoUrl ?? this.primaryPhotoUrl,
       city: city ?? this.city,
       street: street ?? this.street,

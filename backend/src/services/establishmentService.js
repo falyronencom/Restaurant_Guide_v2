@@ -159,6 +159,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     primary_photo,
     interior_photos,
     menu_photos,
+    menu_pdfs,
     legal_name,
     unp,
     contact_person,
@@ -302,6 +303,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         MediaModel.createMedia({
           establishment_id: establishment.id,
           type: photo.type,
+          file_type: 'image',
           url: photo.url,
           thumbnail_url: photo.url, // Same URL for now, Cloudinary handles resizing via URL params
           preview_url: photo.url,
@@ -316,6 +318,31 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         establishmentId: establishment.id,
         interiorCount: interior_photos?.length || 0,
         menuCount: menu_photos?.length || 0,
+      });
+    }
+
+    // Persist PDF menu files separately — they carry thumbnail_url/preview_url
+    // generated from Cloudinary pg_1 transformations, not plain duplicates of url.
+    if (Array.isArray(menu_pdfs) && menu_pdfs.length > 0) {
+      const pdfPromises = menu_pdfs.slice(0, 2).map((pdf, index) =>
+        MediaModel.createMedia({
+          establishment_id: establishment.id,
+          type: 'menu',
+          file_type: 'pdf',
+          url: pdf.url,
+          thumbnail_url: pdf.thumbnail_url,
+          preview_url: pdf.preview_url,
+          caption: pdf.file_name || null,
+          position: index,
+          is_primary: false,
+        })
+      );
+
+      await Promise.all(pdfPromises);
+
+      logger.info('PDF menus saved to establishment_media', {
+        establishmentId: establishment.id,
+        pdfCount: Math.min(menu_pdfs.length, 2),
       });
     }
 

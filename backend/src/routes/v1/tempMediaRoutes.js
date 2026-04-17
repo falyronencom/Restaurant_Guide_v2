@@ -49,26 +49,29 @@ const storage = multer.diskStorage({
 });
 
 /**
- * File filter to accept only image types
+ * File filter to accept image types and PDF
  */
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+  const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+  const allowedPdfTypes = ['application/pdf'];
 
-  if (allowedTypes.includes(file.mimetype)) {
+  if (allowedImageTypes.includes(file.mimetype) || allowedPdfTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, WebP, and HEIC images are allowed.'), false);
+    cb(new Error('Invalid file type. Only JPEG, PNG, WebP, HEIC images and PDF files are allowed.'), false);
   }
 };
 
 /**
  * Create multer upload instance
+ *
+ * 60MB ceiling covers PDF menu uploads; images capped to 10MB in request handler.
  */
 const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB maximum file size
+    fileSize: 60 * 1024 * 1024, // 60MB ceiling (PDF); images further capped to 10MB in handler
   },
 });
 
@@ -138,22 +141,76 @@ router.post(
         });
       }
 
-      // Validate file type
+      const isPdfUpload = req.file.mimetype === 'application/pdf';
+
+      if (isPdfUpload) {
+        // PDF path — only allowed with type='menu'
+        if (type !== 'menu') {
+          fs.unlink(req.file.path, () => {});
+          return res.status(422).json({
+            success: false,
+            message: 'PDF uploads are only allowed for menu type',
+            error: { code: 'PDF_TYPE_MISMATCH' },
+          });
+        }
+
+        if (!CloudinaryUtil.isValidPdfSize(req.file.size)) {
+          fs.unlink(req.file.path, () => {});
+          return res.status(422).json({
+            success: false,
+            message: 'PDF file size exceeds 60MB limit',
+            error: { code: 'FILE_TOO_LARGE' },
+          });
+        }
+
+        const pdfUploadResult = await CloudinaryUtil.uploadPdf(
+          req.file.path,
+          `temp/${userId}`,
+        );
+
+        const urlValue = pdfUploadResult.secure_url;
+        const thumbnailUrl = CloudinaryUtil.generatePdfThumbnailUrl(pdfUploadResult.public_id);
+        const previewUrl = CloudinaryUtil.generatePdfPreviewUrl(pdfUploadResult.public_id);
+
+        fs.unlink(req.file.path, (err) => {
+          if (err) {
+            logger.warn('Failed to clean up temp PDF file', { path: req.file.path, error: err.message });
+          }
+        });
+
+        logger.info('Temporary PDF uploaded', {
+          userId,
+          publicId: pdfUploadResult.public_id,
+          pages: pdfUploadResult.pages,
+          bytes: pdfUploadResult.bytes,
+          endpoint: 'POST /api/v1/partner/media/upload',
+        });
+
+        return res.status(201).json({
+          success: true,
+          data: {
+            url: urlValue,
+            thumbnail_url: thumbnailUrl,
+            preview_url: previewUrl,
+            public_id: pdfUploadResult.public_id,
+            file_type: 'pdf',
+          },
+        });
+      }
+
+      // Image path (unchanged behavior, validators/uploader scoped to images)
       if (!CloudinaryUtil.isValidImageType(req.file.mimetype)) {
-        // Clean up uploaded file
         fs.unlink(req.file.path, () => {});
         return res.status(422).json({
           success: false,
-          message: 'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC',
+          message: 'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
           error: {
             code: 'INVALID_FILE_TYPE',
           },
         });
       }
 
-      // Validate file size
       if (!CloudinaryUtil.isValidImageSize(req.file.size)) {
-        // Clean up uploaded file
         fs.unlink(req.file.path, () => {});
         return res.status(422).json({
           success: false,
@@ -164,18 +221,14 @@ router.post(
         });
       }
 
-      // Upload to Cloudinary with temporary folder structure
-      // Using user ID to organize temporary uploads
       const uploadResult = await CloudinaryUtil.uploadImage(
         req.file.path,
         `temp/${userId}`,
         type,
       );
 
-      // Generate URLs for all three resolutions
       const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
 
-      // Clean up temporary file
       fs.unlink(req.file.path, (err) => {
         if (err) {
           logger.warn('Failed to clean up temp file', { path: req.file.path, error: err.message });
@@ -189,7 +242,6 @@ router.post(
         endpoint: 'POST /api/v1/partner/media/upload',
       });
 
-      // Return success response with all URLs
       res.status(201).json({
         success: true,
         data: {
@@ -197,6 +249,7 @@ router.post(
           thumbnail_url: urls.thumbnail_url,
           preview_url: urls.preview_url,
           public_id: uploadResult.public_id,
+          file_type: 'image',
         },
       });
     } catch (error) {

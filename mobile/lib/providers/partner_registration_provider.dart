@@ -421,6 +421,23 @@ class PartnerRegistrationProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Add a PDF menu file (max 2 per establishment)
+  void addMenuPdf(MenuPdf pdf) {
+    if (_data.menuPdfs.length < 2) {
+      final pdfs = List<MenuPdf>.from(_data.menuPdfs)..add(pdf);
+      _data = _data.copyWith(menuPdfs: pdfs);
+      notifyListeners();
+    }
+  }
+
+  /// Remove a PDF menu file by its url
+  void removeMenuPdf(String url) {
+    final pdfs = List<MenuPdf>.from(_data.menuPdfs)
+      ..removeWhere((pdf) => pdf.url == url);
+    _data = _data.copyWith(menuPdfs: pdfs);
+    notifyListeners();
+  }
+
   /// Set primary photo
   void setPrimaryPhoto(String url) {
     _data = _data.copyWith(primaryPhotoUrl: url);
