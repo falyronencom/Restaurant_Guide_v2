@@ -36,16 +36,26 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
     public_id: 'avatars/test-user-id/test-avatar',
     secure_url: 'https://res.cloudinary.com/test/image/upload/w_256,h_256,c_fill/avatars/test-user-id/test-avatar.jpg',
   })),
+  uploadPdf: jest.fn(async () => ({
+    public_id: 'test-pdf-public-id',
+    secure_url: 'https://res.cloudinary.com/test/image/upload/v1/establishments/test/menu_pdf/test.pdf',
+    bytes: 1024,
+    pages: 1,
+  })),
   generateAllResolutions: jest.fn(() => ({
     url: 'https://res.cloudinary.com/test/image/upload/w_1920,h_1080,c_limit/test-public-id.jpg',
     thumbnail_url: 'https://res.cloudinary.com/test/image/upload/w_200,h_150,c_fill/test-public-id.jpg',
     preview_url: 'https://res.cloudinary.com/test/image/upload/w_800,h_600,c_fit/test-public-id.jpg',
   })),
   generateImageUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/test-public-id.jpg'),
+  generatePdfThumbnailUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/pg_1,w_200,h_150,c_fill,f_jpg/test-pdf-public-id.jpg'),
+  generatePdfPreviewUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/pg_1,w_800,h_600,c_fit,f_jpg/test-pdf-public-id.jpg'),
   deleteImage: jest.fn(async () => ({ result: 'ok' })),
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
   isValidImageType: jest.fn(() => true),
   isValidImageSize: jest.fn(() => true),
+  isValidPdfType: jest.fn(() => true),
+  isValidPdfSize: jest.fn(() => true),
   default: {},
 }));
 
@@ -82,6 +92,16 @@ beforeEach(async () => {
     cloudinary.extractPublicIdFromUrl.mockReturnValue('test-public-id');
     cloudinary.isValidImageType.mockReturnValue(true);
     cloudinary.isValidImageSize.mockReturnValue(true);
+    cloudinary.isValidPdfType.mockReturnValue(true);
+    cloudinary.isValidPdfSize.mockReturnValue(true);
+    cloudinary.uploadPdf.mockResolvedValue({
+      public_id: 'test-pdf-public-id',
+      secure_url: 'https://res.cloudinary.com/test/image/upload/v1/establishments/test/menu_pdf/test.pdf',
+      bytes: 1024,
+      pages: 1,
+    });
+    cloudinary.generatePdfThumbnailUrl.mockReturnValue('https://res.cloudinary.com/test/image/upload/pg_1,w_200,h_150,c_fill,f_jpg/test-pdf-public-id.jpg');
+    cloudinary.generatePdfPreviewUrl.mockReturnValue('https://res.cloudinary.com/test/image/upload/pg_1,w_800,h_600,c_fit,f_jpg/test-pdf-public-id.jpg');
   }
 });
 
@@ -190,15 +210,62 @@ describe('Media System - Upload Operations', () => {
     });
 
     test('should reject invalid file type', async () => {
-      // Multer fileFilter rejects non-image MIME types (detected from extension)
+      // Multer fileFilter rejects non-image, non-PDF MIME types
       const response = await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
         .field('type', 'interior')
-        .attach('file', Buffer.from('fake pdf'), 'document.pdf')
+        .attach('file', Buffer.from('fake video'), 'clip.mp4')
         .expect(422);
 
       expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    test('should reject PDF upload with non-menu type', async () => {
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'interior')
+        .attach('file', Buffer.from('%PDF-1.4 fake'), 'menu.pdf')
+        .expect(422);
+
+      expect(response.body.error.code).toBe('PDF_TYPE_MISMATCH');
+    });
+
+    test('should upload PDF menu successfully with type=menu', async () => {
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 fake'), { filename: 'menu.pdf', contentType: 'application/pdf' })
+        .expect(201);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.file_type).toBe('pdf');
+      expect(response.body.data.type).toBe('menu');
+      expect(response.body.data.is_primary).toBe(false);
+    });
+
+    test('should reject 3rd PDF upload (max 2 per establishment)', async () => {
+      // Upload first 2 PDFs successfully
+      for (let i = 0; i < 2; i++) {
+        await request(app)
+          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .field('type', 'menu')
+          .attach('file', Buffer.from(`%PDF-1.4 fake ${i}`), `menu-${i}.pdf`)
+          .expect(201);
+      }
+
+      // 3rd should fail
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 fake 3'), 'menu-3.pdf')
+        .expect(403);
+
+      expect(response.body.error.code).toBe('PDF_LIMIT_EXCEEDED');
     });
 
     test('should reject file exceeding size limit', async () => {

@@ -74,23 +74,31 @@ const storage = multer.diskStorage({
  * - image/heic
  */
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
-  
-  if (allowedTypes.includes(file.mimetype)) {
+  const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+  const allowedPdfTypes = ['application/pdf'];
+
+  if (allowedImageTypes.includes(file.mimetype) || allowedPdfTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, WebP, and HEIC images are allowed.'), false);
+    cb(new Error('Invalid file type. Only JPEG, PNG, WebP, HEIC images and PDF files are allowed.'), false);
   }
 };
 
 /**
  * Create multer upload instance with configuration
+ *
+ * Size limit of 60MB accommodates both image uploads (further validated to
+ * 10MB in the service layer) and PDF menu uploads (60MB ceiling). Enforcing
+ * the per-type limit in the service keeps multer simple while still rejecting
+ * oversized files early — though images up to 60MB reach the service before
+ * being rejected. This is an acceptable trade-off: image size validation is
+ * cheap and centralizing the check in the service keeps the pipeline uniform.
  */
 const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB maximum file size
+    fileSize: 60 * 1024 * 1024, // 60MB ceiling (PDF limit; images further capped to 10MB in service)
   },
 });
 
@@ -247,7 +255,7 @@ router.use((error, req, res, next) => {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
         success: false,
-        message: 'File size exceeds 10MB limit',
+        message: 'File size exceeds 60MB limit',
         error: {
           code: 'FILE_TOO_LARGE',
         },

@@ -90,6 +90,36 @@ const RESOLUTION_CONFIG = {
 };
 
 /**
+ * PDF menu configuration
+ *
+ * Cloudinary treats PDFs as multi-page images when uploaded with
+ * resource_type: 'image'. This enables page-level transformations via
+ * pg_N (select page) + f_jpg (convert to JPG) URL parameters, while the
+ * original PDF remains fully downloadable via the upload URL.
+ *
+ * We expose two derived URLs from the first page:
+ * - thumbnail: 200x150 fill crop for gallery tiles
+ * - preview:   800x600 fit for larger detail display
+ *
+ * Size limit is 60MB (vs 10MB for images) to accommodate scanned menus.
+ */
+const PDF_MAX_SIZE = 60 * 1024 * 1024; // 60MB in bytes
+
+const PDF_THUMBNAIL_CONFIG = {
+  page: 1,
+  width: 200,
+  height: 150,
+  crop: 'fill',
+};
+
+const PDF_PREVIEW_CONFIG = {
+  page: 1,
+  width: 800,
+  height: 600,
+  crop: 'fit',
+};
+
+/**
  * Upload an image to Cloudinary
  * 
  * This function handles the complete upload workflow:
@@ -369,6 +399,125 @@ export const isValidImageSize = (sizeInBytes) => {
  * @returns {Promise<Object>} Upload result with public_id and secure_url
  * @throws {Error} If upload fails
  */
+/**
+ * Validate PDF file type
+ *
+ * @param {string} mimetype - MIME type from uploaded file
+ * @returns {boolean} True if valid PDF type
+ */
+export const isValidPdfType = (mimetype) => {
+  return mimetype === 'application/pdf';
+};
+
+/**
+ * Validate PDF file size (60MB limit for scanned menus)
+ *
+ * @param {number} sizeInBytes - File size in bytes
+ * @returns {boolean} True if size is acceptable
+ */
+export const isValidPdfSize = (sizeInBytes) => {
+  return sizeInBytes <= PDF_MAX_SIZE;
+};
+
+/**
+ * Upload a PDF menu to Cloudinary
+ *
+ * Stored under resource_type: 'image' — Cloudinary accepts PDF files in the
+ * image pipeline and enables page-level transformations (pg_N, f_jpg) while
+ * preserving the full PDF for download/viewing. folder structure matches
+ * establishment media convention: establishments/{id}/menu_pdf/{filename}
+ *
+ * @param {string} filePath - Local file path of the PDF to upload
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<Object>} Upload result with public_id, secure_url, bytes, pages
+ * @throws {Error} If upload fails
+ */
+export const uploadPdf = async (filePath, establishmentId) => {
+  try {
+    const uploadResult = await cloudinary.uploader.upload(filePath, {
+      folder: `establishments/${establishmentId}/menu_pdf`,
+      resource_type: 'image', // required for PDF page transformations
+    });
+
+    logger.info('PDF uploaded to Cloudinary', {
+      publicId: uploadResult.public_id,
+      establishmentId,
+      bytes: uploadResult.bytes,
+      pages: uploadResult.pages,
+    });
+
+    return {
+      public_id: uploadResult.public_id,
+      secure_url: uploadResult.secure_url,
+      bytes: uploadResult.bytes,
+      pages: uploadResult.pages,
+    };
+  } catch (error) {
+    logger.error('Error uploading PDF to Cloudinary', {
+      error: error.message,
+      establishmentId,
+    });
+    throw new Error(`Failed to upload PDF: ${error.message}`);
+  }
+};
+
+/**
+ * Generate thumbnail URL for PDF first page (200x150 fill crop)
+ *
+ * Uses pg_1 (first page) + f_jpg (convert to JPG) transformations.
+ * Result is a static JPG image URL suitable for gallery tiles.
+ *
+ * @param {string} publicId - Cloudinary public_id from PDF upload
+ * @returns {string} Thumbnail URL
+ */
+export const generatePdfThumbnailUrl = (publicId) => {
+  return cloudinary.url(publicId, {
+    resource_type: 'image',
+    transformation: [
+      {
+        page: PDF_THUMBNAIL_CONFIG.page,
+        width: PDF_THUMBNAIL_CONFIG.width,
+        height: PDF_THUMBNAIL_CONFIG.height,
+        crop: PDF_THUMBNAIL_CONFIG.crop,
+      },
+      {
+        fetch_format: 'jpg',
+        quality: 'auto',
+      },
+    ],
+    secure: true,
+    format: 'jpg',
+  });
+};
+
+/**
+ * Generate preview URL for PDF first page (800x600 fit)
+ *
+ * Used for larger preview in detail card before user opens full viewer.
+ *
+ * @param {string} publicId - Cloudinary public_id from PDF upload
+ * @returns {string} Preview URL
+ */
+export const generatePdfPreviewUrl = (publicId) => {
+  return cloudinary.url(publicId, {
+    resource_type: 'image',
+    transformation: [
+      {
+        page: PDF_PREVIEW_CONFIG.page,
+        width: PDF_PREVIEW_CONFIG.width,
+        height: PDF_PREVIEW_CONFIG.height,
+        crop: PDF_PREVIEW_CONFIG.crop,
+      },
+      {
+        fetch_format: 'jpg',
+        quality: 'auto',
+      },
+    ],
+    secure: true,
+    format: 'jpg',
+  });
+};
+
 export const uploadAvatar = async (filePath, userId) => {
   try {
     const uploadResult = await cloudinary.uploader.upload(filePath, {
