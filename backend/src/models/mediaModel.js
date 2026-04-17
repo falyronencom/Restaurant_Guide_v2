@@ -39,6 +39,7 @@ export const createMedia = async (mediaData) => {
   const {
     establishment_id,
     type,
+    file_type = 'image',
     url,
     thumbnail_url,
     preview_url,
@@ -51,6 +52,7 @@ export const createMedia = async (mediaData) => {
     INSERT INTO establishment_media (
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,
@@ -58,11 +60,12 @@ export const createMedia = async (mediaData) => {
       position,
       is_primary
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    RETURNING 
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING
       id,
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,
@@ -75,6 +78,7 @@ export const createMedia = async (mediaData) => {
   const values = [
     establishment_id,
     type,
+    file_type,
     url,
     thumbnail_url,
     preview_url,
@@ -129,10 +133,11 @@ export const getEstablishmentMedia = async (establishmentId, filters = {}) => {
   }
 
   const query = `
-    SELECT 
+    SELECT
       id,
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,
@@ -172,10 +177,11 @@ export const getEstablishmentMedia = async (establishmentId, filters = {}) => {
  */
 export const findMediaById = async (mediaId) => {
   const query = `
-    SELECT 
+    SELECT
       id,
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,
@@ -250,10 +256,11 @@ export const updateMedia = async (mediaId, updates) => {
     UPDATE establishment_media
     SET ${fields.join(', ')}
     WHERE id = $${paramCount}
-    RETURNING 
+    RETURNING
       id,
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,
@@ -365,6 +372,7 @@ export const setPrimaryPhoto = async (establishmentId, mediaId) => {
         id,
         establishment_id,
         type,
+        file_type,
         url,
         thumbnail_url,
         preview_url,
@@ -457,11 +465,11 @@ export const getNextPosition = async (establishmentId, type) => {
  */
 export const getMediaCountByType = async (establishmentId) => {
   const query = `
-    SELECT 
+    SELECT
       type,
       COUNT(*) as count
     FROM establishment_media
-    WHERE establishment_id = $1
+    WHERE establishment_id = $1 AND file_type = 'image'
     GROUP BY type
   `;
 
@@ -482,6 +490,35 @@ export const getMediaCountByType = async (establishmentId) => {
     return counts;
   } catch (error) {
     logger.error('Error counting media by type', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Count PDF menu files for an establishment
+ *
+ * PDFs are stored with type='menu' and file_type='pdf'. The contract caps
+ * PDFs at 2 per establishment (1 primary + 1 supplementary, e.g. main menu
+ * and wine list). This counter enforces that ceiling.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<number>} Count of PDF menu files
+ */
+export const countPdfMedia = async (establishmentId) => {
+  const query = `
+    SELECT COUNT(*) as count
+    FROM establishment_media
+    WHERE establishment_id = $1 AND file_type = 'pdf'
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+    return parseInt(result.rows[0].count, 10);
+  } catch (error) {
+    logger.error('Error counting PDF media', {
       error: error.message,
       establishmentId,
     });
@@ -530,10 +567,11 @@ export const hasPrimaryPhoto = async (establishmentId) => {
  */
 export const getPrimaryPhoto = async (establishmentId) => {
   const query = `
-    SELECT 
+    SELECT
       id,
       establishment_id,
       type,
+      file_type,
       url,
       thumbnail_url,
       preview_url,

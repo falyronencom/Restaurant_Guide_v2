@@ -41,6 +41,12 @@ const MEDIA_LIMITS = {
 const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
 
 /**
+ * Maximum PDF menu files per establishment (1 primary + 1 supplementary,
+ * e.g. main menu + wine list). Enforced before Cloudinary upload.
+ */
+const MAX_PDFS_PER_ESTABLISHMENT = 2;
+
+/**
  * Upload a new media file for an establishment
  * 
  * This is the core operation that orchestrates the complete media upload workflow:
@@ -102,9 +108,67 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       );
     }
 
-    // Check current media count against tier limits
+    // Branch: PDF uploads (menu only) vs image uploads
+    const isPdfUpload = file.mimetype === 'application/pdf';
+
+    if (isPdfUpload) {
+      // PDF upload path — only allowed for type='menu'
+      if (type !== 'menu') {
+        throw new AppError(
+          'PDF uploads are only allowed for menu type',
+          422,
+          'PDF_TYPE_MISMATCH',
+        );
+      }
+
+      if (!CloudinaryUtil.isValidPdfSize(file.size)) {
+        throw new AppError(
+          'PDF file size exceeds 60MB limit',
+          422,
+          'FILE_TOO_LARGE',
+        );
+      }
+
+      const pdfCount = await MediaModel.countPdfMedia(establishmentId);
+      if (pdfCount >= MAX_PDFS_PER_ESTABLISHMENT) {
+        throw new AppError(
+          `Maximum ${MAX_PDFS_PER_ESTABLISHMENT} PDF menu files allowed per establishment`,
+          403,
+          'PDF_LIMIT_EXCEEDED',
+        );
+      }
+
+      const pdfUploadResult = await CloudinaryUtil.uploadPdf(file.path, establishmentId);
+
+      const position = await MediaModel.getNextPosition(establishmentId, 'menu');
+
+      const pdfRecord = await MediaModel.createMedia({
+        establishment_id: establishmentId,
+        type: 'menu',
+        file_type: 'pdf',
+        url: pdfUploadResult.secure_url,
+        thumbnail_url: CloudinaryUtil.generatePdfThumbnailUrl(pdfUploadResult.public_id),
+        preview_url: CloudinaryUtil.generatePdfPreviewUrl(pdfUploadResult.public_id),
+        caption,
+        position,
+        is_primary: false, // PDFs never serve as establishment's primary photo
+      });
+
+      logger.info('PDF menu uploaded successfully', {
+        mediaId: pdfRecord.id,
+        establishmentId,
+        partnerId,
+        cloudinaryPublicId: pdfUploadResult.public_id,
+        pages: pdfUploadResult.pages,
+        bytes: pdfUploadResult.bytes,
+      });
+
+      return pdfRecord;
+    }
+
+    // Image upload path (unchanged)
     const mediaCounts = await MediaModel.getMediaCountByType(establishmentId);
-    
+
     // Determine which limit to check (menu uses menu limit, all others use interior limit)
     const limitType = type === 'menu' ? 'menu' : 'interior';
     const currentCount = mediaCounts[type] || 0;
@@ -122,7 +186,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Validate file type
     if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
       throw new AppError(
-        'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC',
+        'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
         422,
         'INVALID_FILE_TYPE',
       );
@@ -154,6 +218,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     const mediaRecord = await MediaModel.createMedia({
       establishment_id: establishmentId,
       type,
+      file_type: 'image',
       url: urls.url,
       thumbnail_url: urls.thumbnail_url,
       preview_url: urls.preview_url,
