@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/services/media_service.dart';
 
@@ -22,6 +24,7 @@ class _MediaStepState extends State<MediaStep> {
   final MediaService _mediaService = MediaService();
   bool _isUploadingPhoto = false;
   bool _isUploadingMenu = false;
+  bool _isUploadingPdf = false;
 
   // Figma colors
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
@@ -31,6 +34,7 @@ class _MediaStepState extends State<MediaStep> {
 
   static const int _maxPhotos = 50;
   static const int _maxMenuPhotos = 20;
+  static const int _maxMenuPdfs = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +185,7 @@ class _MediaStepState extends State<MediaStep> {
   /// Build menu section
   Widget _buildMenuSection(PartnerRegistrationProvider provider) {
     final menuPhotos = provider.data.menuPhotos;
+    final menuPdfs = provider.data.menuPdfs;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,7 +233,7 @@ class _MediaStepState extends State<MediaStep> {
         // PDF option hint
         const Center(
           child: Text(
-            'Формат PDF, до 60 мб',
+            'Формат PDF, до 60 мб, максимум 2 файла',
             style: TextStyle(
               fontSize: 13,
               color: _greyText,
@@ -238,11 +243,24 @@ class _MediaStepState extends State<MediaStep> {
 
         const SizedBox(height: 8),
 
-        // Add PDF button (placeholder - PDF upload will be implemented later)
+        // PDF list (if any uploaded)
+        if (menuPdfs.isNotEmpty) ...[
+          ...menuPdfs.map(
+            (pdf) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _PdfTile(
+                pdf: pdf,
+                onRemove: () => provider.removeMenuPdf(pdf.url),
+              ),
+            ),
+          ),
+        ],
+
+        // Add PDF button
         _buildAddButton(
-          label: '+ Добавить меню',
-          isLoading: false,
-          onTap: () => _showPdfPlaceholder(),
+          label: '+ Добавить PDF меню',
+          isLoading: _isUploadingPdf,
+          onTap: menuPdfs.length < _maxMenuPdfs ? () => _pickPdf(provider) : null,
         ),
 
         const SizedBox(height: 16),
@@ -271,7 +289,7 @@ class _MediaStepState extends State<MediaStep> {
 
         // Add menu photo button
         _buildAddButton(
-          label: '+ Добавить меню',
+          label: '+ Добавить фото меню',
           isLoading: _isUploadingMenu,
           onTap: menuPhotos.length < _maxMenuPhotos
               ? () => _pickMenuPhoto(provider)
@@ -481,12 +499,62 @@ class _MediaStepState extends State<MediaStep> {
     }
   }
 
-  /// Show PDF upload placeholder
-  void _showPdfPlaceholder() {
+  /// Pick a PDF file and upload it as a menu document
+  Future<void> _pickPdf(PartnerRegistrationProvider provider) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: false,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+      final picked = result.files.first;
+      final path = picked.path;
+
+      if (path == null) {
+        _showSnackBar('Не удалось получить путь к файлу', isError: true);
+        return;
+      }
+
+      // Client-side guard against oversized file before hitting backend
+      if (picked.size > 60 * 1024 * 1024) {
+        _showSnackBar('Размер PDF превышает 60 МБ', isError: true);
+        return;
+      }
+
+      setState(() => _isUploadingPdf = true);
+
+      final uploaded = await _mediaService.uploadPdf(filePath: path);
+
+      final pdf = MenuPdf(
+        url: uploaded.url,
+        thumbnailUrl: uploaded.thumbnailUrl,
+        previewUrl: uploaded.previewUrl,
+        fileName: picked.name,
+      );
+
+      provider.addMenuPdf(pdf);
+
+      _showSnackBar('PDF меню загружено', isError: false);
+    } catch (e) {
+      _showSnackBar('Ошибка при загрузке PDF: $e', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPdf = false);
+      }
+    }
+  }
+
+  /// Convenience snackbar helper for PDF upload feedback
+  void _showSnackBar(String message, {required bool isError}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Загрузка PDF будет доступна в следующей версии'),
+      SnackBar(
+        content: Text(message),
         behavior: SnackBarBehavior.floating,
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -606,6 +674,93 @@ class _PhotoTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// PDF menu tile: first-page thumbnail + filename + delete button
+class _PdfTile extends StatelessWidget {
+  final MenuPdf pdf;
+  final VoidCallback onRemove;
+
+  const _PdfTile({
+    required this.pdf,
+    required this.onRemove,
+  });
+
+  static const Color _greyStroke = AppTheme.strokeGrey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 72,
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundPrimary,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(color: _greyStroke),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          // Thumbnail (first page of PDF rendered by Cloudinary pg_1)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+            child: Image.network(
+              pdf.thumbnailUrl,
+              width: 56,
+              height: 56,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 56,
+                  height: 56,
+                  color: _greyStroke,
+                  child: const Icon(
+                    Icons.picture_as_pdf,
+                    color: AppTheme.backgroundPrimary,
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Filename + PDF label
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  pdf.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'PDF документ',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF9D9D9D),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Delete button
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(
+              Icons.delete_outline,
+              color: Color(0xFF9D9D9D),
+            ),
+          ),
+        ],
       ),
     );
   }
