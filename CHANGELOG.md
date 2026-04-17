@@ -8,6 +8,15 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 3: User Experience & Engagement
 
+#### Апрель 17, 2026 — Time Picker Localization & Dial Fix (Partner Wizard)
+- **Проблема**: На шаге «Время работы» партнёра все подписи TimePicker были на английском, клавиатурный ввод не работал, циферблат в 24-часовом режиме показывал перекрывающиеся цифры
+- **Корни**: (1) в `MaterialApp` не было подключено `flutter_localizations` → отсутствие `MaterialLocalizations.ru`; (2) известный баг Flutter 3.35.2 в 24-часовом dial ([flutter#141501](https://github.com/flutter/flutter/issues/141501))
+- **Fix локализации**: `flutter_localizations` (SDK) добавлен в `pubspec.yaml`, `intl` поднят `^0.18.1 → ^0.20.2`, в `MaterialApp` добавлены `locale: ru`, `localizationsDelegates` и `supportedLocales: [ru, en]`
+- **Fix циферблата**: `working_hours_screen.dart` — `TimePickerEntryMode.input → inputOnly` (циферблат полностью отключён; для ввода рабочих часов клавиатура удобнее)
+- **Verification**: собрано `flutter build apk --debug`, установлено на Samsung A72 через ADB, визуально подтверждено пользователем
+- **Побочный эффект (позитивный)**: русская локаль теперь применяется ко всем Material-виджетам приложения, не только к TimePicker
+- **Отчёт**: [mobile/session_reports/time_picker_localization_2026_04_17_report.md](mobile/session_reports/time_picker_localization_2026_04_17_report.md)
+
 #### Апрель 10, 2026 — Security Audit & Hardening (Pre-App Store)
 - **Блок A — Секреты**: Yandex MapKit API key вынесен из хардкода в `local.properties` (Android) и `Secrets.xcconfig` (iOS), инжектируется при сборке через `manifestPlaceholders` / `Info.plist` переменные
 - **Блок A — Пароли**: Удалены захардкоженные пароли из seed-скриптов — теперь обязательные env vars с валидацией
