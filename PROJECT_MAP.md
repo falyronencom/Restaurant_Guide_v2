@@ -157,6 +157,8 @@ Bug hints:
 - Image not showing → `config/cloudinary.js` `generateAllResolutions()` — 3 sizes: original 1920x1080, preview 800x600, thumbnail 200x150
 - Primary photo missing → `mediaModel.setPrimaryPhoto()` / `hasPrimaryPhoto()`
 - Upload fails → `middleware/upload.js` — multer config, 5MB max, UUID filenames
+- PDF upload → `mediaService.uploadMedia` branches on mimetype. PDF path: type must be 'menu', max 60MB, max 2 PDFs/establishment, `resource_type: 'image'` in Cloudinary (NOT 'raw' — pg_1 transformations require image type), thumbnail/preview URLs generated via `generatePdfThumbnailUrl`/`generatePdfPreviewUrl` using pg_1/f_jpg
+- PDF distinguished in DB via `file_type` column ('image' | 'pdf'). Menu gallery filters on file_type in detail screen (PDFs separate block above photo carousel)
 
 ### Admin Moderation
 ```
@@ -462,7 +464,7 @@ Same pattern as Mobile, with differences:
 |-------|-------------|
 | `users` | UUID PK, email/phone/password_hash, role (user/partner/admin), avatar_url |
 | `establishments` | UUID PK, partner_id→users, name/city/address/lat/lng, location (GEOGRAPHY), status, moderation_notes (TEXT!) |
-| `establishment_media` | Photos: url + thumbnail_url + preview_url, is_primary, position ordering |
+| `establishment_media` | Photos + PDF menus: url + thumbnail_url + preview_url, is_primary, position, file_type ('image'\|'pdf', mig 023) |
 | `reviews` | rating 1-5, content, is_visible, is_deleted, partner_response |
 | `favorites` | UNIQUE(user_id, establishment_id), hard delete |
 | `refresh_tokens` | Token rotation chain: token (unique), expires_at, replaced_by→self |
@@ -499,7 +501,7 @@ users
   └─→ audit_log (admin user_id)
 ```
 
-### Migrations (21 total)
+### Migrations (23 total)
 | # | Purpose |
 |---|---------|
 | 001 | Token rotation: used_at, replaced_by |
@@ -523,7 +525,9 @@ users
 | 019 | Claiming infrastructure: is_seed, claimed_by, claimed_at |
 | 020 | Modify promotions: +image URLs, is_active→status, nullable valid_until |
 | 021 | Booking system: booking_settings + bookings tables, booking_enabled on establishments, booking analytics columns |
+| 022 | Push notifications: device_tokens + notification_preferences tables |
+| 023 | PDF menu upload: file_type column on establishment_media ('image'\|'pdf'), composite index (establishment_id, type, file_type) |
 
 ---
 
-*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-04.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-18.*

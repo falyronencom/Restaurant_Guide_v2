@@ -8,6 +8,17 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 3: User Experience & Engagement
 
+#### Апрель 17-18, 2026 — Task 1: PDF Menu Upload (Phases A-D)
+- **Контракт**: PDF-меню как first-class документ (не просто фото) — основа для Smart Search OCR Phase 2, где `pdf-parse` на векторных PDF даёт 100% точность текста против 90-95% OCR на фото
+- **Phase A — Migration 023**: `file_type VARCHAR(10)` на `establishment_media` (CHECK 'image'|'pdf', DEFAULT 'image'), композитный индекс `(establishment_id, type, file_type)`. Применена локально на pg-test
+- **Phase B — Backend pipeline**: `uploadPdf` в `cloudinary.js` с `resource_type: 'image'` (коррекция контракта — `'raw'` несовместимо с `pg_1`-трансформациями), thumbnail/preview URLs через `pg_1/f_jpg`, лимит 60MB. `mediaService.uploadMedia` ветвится по mimetype: PDF-путь требует type=menu, максимум 2 PDF/заведение. 3 новых теста, 41/41 media тестов проходят
+- **Phase C — Mobile registration**: `file_picker` + `pdfx` + `path_provider`. `tempMediaRoutes.js` принимает PDF. `PartnerRegistration` модель получила класс `MenuPdf` + поле `menuPdfs`. `establishmentService.createEstablishment` обрабатывает `menu_pdfs` массив → создаёт media-записи с `file_type='pdf'`, caption=filename. `media_step.dart`: `_showPdfPlaceholder` заменён на реальный `_pickPdf` flow с тайлом (thumbnail + имя файла + delete)
+- **Phase D — Detail screen + viewer**: `pdf_viewer_screen.dart` — `PdfControllerPinch` + `PdfViewPinch`, кэш в `getTemporaryDirectory/pdf_cache/{hash(url)}_{filename}`, page counter, pinch-to-zoom. Detail screen: PDF-карточки **отдельным блоком над** фото-каруселью меню (UX-решение — PDF это официальный документ, фото супплементарны; разное tap-поведение в одной ленте путает пользователей). `_PdfMenuCard` с Cloudinary превью первой страницы + filename + «Открыть PDF →»
+- **Deviations (documented)**: Cloudinary `resource_type='image'` вместо `'raw'`, размер файла не персистируется (только имя), edit-flow PDF не затронут (использует direct endpoint из Phase B)
+- **Production deploy**: миграция 023 пока только локально, не на Railway
+- **Коммиты**: `bccd9a6`, `a440515`, `4df3693`, `fb167db`
+- **Отчёт**: [mobile/session_reports/pdf_menu_upload_2026_04_18_report.md](mobile/session_reports/pdf_menu_upload_2026_04_18_report.md)
+
 #### Апрель 17, 2026 — Time Picker Localization & Dial Fix (Partner Wizard)
 - **Проблема**: На шаге «Время работы» партнёра все подписи TimePicker были на английском, клавиатурный ввод не работал, циферблат в 24-часовом режиме показывал перекрывающиеся цифры
 - **Корни**: (1) в `MaterialApp` не было подключено `flutter_localizations` → отсутствие `MaterialLocalizations.ru`; (2) известный баг Flutter 3.35.2 в 24-часовом dial ([flutter#141501](https://github.com/flutter/flutter/issues/141501))
