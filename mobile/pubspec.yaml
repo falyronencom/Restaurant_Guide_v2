@@ -33,6 +33,7 @@ dependencies:
   firebase_messaging: ^15.2.3
   file_picker: ^8.1.7
   pdfx: ^2.7.0
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:

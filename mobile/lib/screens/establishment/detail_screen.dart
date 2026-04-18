@@ -19,6 +19,7 @@ import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
+import 'package:restaurant_guide_mobile/screens/establishment/pdf_viewer_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
@@ -913,6 +914,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build menu section
   Widget _buildMenuSection() {
+    final media = _establishment!.media ?? [];
+    final menuPdfs =
+        media.where((m) => m.type == 'menu' && m.isPdf).toList()
+          ..sort((a, b) => a.position.compareTo(b.position));
+    final menuImages =
+        media.where((m) => m.type == 'menu' && !m.isPdf).toList();
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -935,11 +943,44 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           const SizedBox(height: 30),
 
-          // Menu photo carousel
-          if (_establishment!.media != null &&
-              _establishment!.media!.length > 1)
-            _buildMenuCarousel(),
+          // PDF menu block (separate from photo carousel — UX decision
+          // from session 2026-04-17: PDFs are first-class menu documents,
+          // photos are supplementary)
+          if (menuPdfs.isNotEmpty) ...[
+            ...menuPdfs.map(
+              (pdf) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _PdfMenuCard(
+                  pdf: pdf,
+                  onTap: () => _openPdf(pdf),
+                ),
+              ),
+            ),
+            if (menuImages.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const _MenuSubsectionLabel(label: 'Фото меню'),
+              const SizedBox(height: 16),
+            ],
+          ],
+
+          // Menu photo carousel (photos only — PDFs handled above)
+          if (menuImages.isNotEmpty) _buildMenuCarousel(),
         ],
+      ),
+    );
+  }
+
+  /// Open PDF in embedded viewer
+  void _openPdf(EstablishmentMedia pdf) {
+    final url = pdf.url;
+    if (url == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PdfViewerScreen(
+          pdfUrl: url,
+          title: pdf.caption ?? 'Меню',
+        ),
       ),
     );
   }
@@ -1034,9 +1075,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build menu carousel
   Widget _buildMenuCarousel() {
-    // Filter only menu photos
+    // Filter only menu photos (exclude PDFs — they're rendered in a
+    // dedicated block above this carousel).
     final menuPhotos =
-        _establishment!.media!.where((m) => m.type == 'menu').toList();
+        _establishment!.media!.where((m) => m.type == 'menu' && !m.isPdf).toList();
 
     if (menuPhotos.isEmpty) {
       return const SizedBox.shrink();
@@ -1854,10 +1896,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Open fullscreen gallery for menu photos
+  /// Open fullscreen gallery for menu photos (images only — PDFs use viewer)
   void _openMenuGallery(int initialIndex) {
-    final menuPhotos =
-        (_establishment!.media ?? []).where((m) => m.type == 'menu').toList();
+    final menuPhotos = (_establishment!.media ?? [])
+        .where((m) => m.type == 'menu' && !m.isPdf)
+        .toList();
     if (menuPhotos.isEmpty) return;
 
     Navigator.of(context).push(
@@ -2426,6 +2469,149 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// PDF menu card on establishment detail screen
+///
+/// Shows Cloudinary first-page thumbnail + filename/caption + "Открыть PDF →"
+/// affordance. Tap opens embedded pdfx viewer.
+class _PdfMenuCard extends StatelessWidget {
+  final EstablishmentMedia pdf;
+  final VoidCallback onTap;
+
+  const _PdfMenuCard({required this.pdf, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = pdf.caption ?? 'Меню';
+    final thumbUrl = pdf.thumbnailUrl ?? pdf.previewUrl ?? pdf.url;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 100,
+        decoration: BoxDecoration(
+          color: AppTheme.backgroundPrimary,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          border: Border.all(color: AppTheme.strokeGrey),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.04),
+              blurRadius: 12,
+              spreadRadius: 1,
+              offset: const Offset(2, 2),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            // First page thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              child: thumbUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: thumbUrl,
+                      width: 76,
+                      height: 76,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        width: 76,
+                        height: 76,
+                        color: Colors.grey[200],
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 76,
+                        height: 76,
+                        color: Colors.grey[200],
+                        child: const Icon(
+                          Icons.picture_as_pdf,
+                          color: AppTheme.primaryOrange,
+                        ),
+                      ),
+                    )
+                  : Container(
+                      width: 76,
+                      height: 76,
+                      color: Colors.grey[200],
+                      child: const Icon(
+                        Icons.picture_as_pdf,
+                        color: AppTheme.primaryOrange,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Row(
+                    children: [
+                      Text(
+                        'Открыть PDF',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.primaryOrange,
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward,
+                        size: 16,
+                        color: AppTheme.primaryOrange,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small label separating "Фото меню" subsection when both PDFs and
+/// photos are present in the menu block.
+class _MenuSubsectionLabel extends StatelessWidget {
+  final String label;
+
+  const _MenuSubsectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Divider(color: AppTheme.strokeGrey, height: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.textGrey,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider(color: AppTheme.strokeGrey, height: 1)),
+      ],
     );
   }
 }

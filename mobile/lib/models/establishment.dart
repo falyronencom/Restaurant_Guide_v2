@@ -332,9 +332,11 @@ class EstablishmentMedia {
   final String id;  // UUID from backend
   final String establishmentId;
   final String type;
+  final String fileType; // 'image' | 'pdf' — defaults to 'image' for legacy rows
   final String? thumbnailUrl;
   final String? previewUrl;
   final String? url;
+  final String? caption;
   final int position;
   final DateTime createdAt;
 
@@ -342,21 +344,27 @@ class EstablishmentMedia {
     required this.id,
     required this.establishmentId,
     required this.type,
+    this.fileType = 'image',
     this.thumbnailUrl,
     this.previewUrl,
     this.url,
+    this.caption,
     required this.position,
     required this.createdAt,
   });
+
+  bool get isPdf => fileType == 'pdf';
 
   factory EstablishmentMedia.fromJson(Map<String, dynamic> json) {
     return EstablishmentMedia(
       id: json['id'].toString(),  // UUID as String
       establishmentId: json['establishment_id'].toString(),
       type: json['type'] as String,
+      fileType: json['file_type'] as String? ?? 'image',
       thumbnailUrl: json['thumbnail_url'] as String?,
       previewUrl: json['preview_url'] as String?,
       url: json['url'] as String?,
+      caption: json['caption'] as String?,
       position: json['position'] as int,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -367,9 +375,11 @@ class EstablishmentMedia {
       'id': id,
       'establishment_id': establishmentId,
       'type': type,
+      'file_type': fileType,
       'thumbnail_url': thumbnailUrl,
       'preview_url': previewUrl,
       'url': url,
+      'caption': caption,
       'position': position,
       'created_at': createdAt.toIso8601String(),
     };
