@@ -518,6 +518,25 @@ export const generatePdfPreviewUrl = (publicId) => {
   });
 };
 
+/**
+ * Generate full-resolution image URL for a specific PDF page.
+ *
+ * Used by the OCR pipeline when a PDF has no text layer and needs vision-based
+ * extraction: each page is fetched as an image via pg_N transformation.
+ *
+ * Unlike thumbnail/preview helpers, this produces the page at its native
+ * resolution (no width/height crop) — Vision models need readable text.
+ *
+ * @param {string} pdfUrl - Original PDF secure_url from establishment_media
+ * @param {number} pageNum - 1-based page number
+ * @returns {string} Cloudinary URL rendering the given page as JPG
+ */
+export const generatePdfPageImageUrl = (pdfUrl, pageNum) => {
+  return pdfUrl
+    .replace('/upload/', `/upload/pg_${pageNum}/`)
+    .replace(/\.pdf$/i, '.jpg');
+};
+
 export const uploadAvatar = async (filePath, userId) => {
   try {
     const uploadResult = await cloudinary.uploader.upload(filePath, {

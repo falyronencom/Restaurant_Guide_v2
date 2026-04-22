@@ -10,6 +10,7 @@ import routes from './routes/index.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
+import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -128,6 +129,9 @@ const gracefulShutdown = async (signal) => {
     logger.info('HTTP server closed, closing external connections');
 
     try {
+      // Stop OCR poller — waits for in-flight job to finish before closing DB
+      await ocrJobPoller.stop();
+
       // Close database connection pool
       await closePool();
 
@@ -179,6 +183,9 @@ const startServer = async () => {
       logger.error('Failed to connect to Redis. Exiting.');
       process.exit(1);
     }
+
+    // Start OCR background poller (processes pending menu OCR jobs)
+    ocrJobPoller.start();
 
     // Start HTTP server
     server.listen(PORT, () => {

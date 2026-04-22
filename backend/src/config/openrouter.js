@@ -28,7 +28,7 @@ export const isAvailable = () => {
 };
 
 /**
- * Get OpenRouter configuration.
+ * Get OpenRouter configuration for Smart Search intent parsing.
  * Reads env vars lazily to ensure dotenv has loaded.
  * @returns {{ apiKey: string, baseUrl: string, model: string }}
  */
@@ -36,4 +36,19 @@ export const getConfig = () => ({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   model: process.env.AI_MODEL || 'google/gemini-2.5-flash-lite',
+});
+
+/**
+ * Get OpenRouter configuration for OCR menu pipeline (Этап 2).
+ *
+ * Shares apiKey and baseUrl with intent parsing — different model tuned for
+ * vision + structured extraction tasks. Falls back to the intent default if
+ * AI_OCR_MODEL is not set (Gemini Flash Lite supports vision input).
+ *
+ * @returns {{ apiKey: string, baseUrl: string, model: string }}
+ */
+export const getOcrConfig = () => ({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  model: process.env.AI_OCR_MODEL || 'google/gemini-2.5-flash-lite',
 });
