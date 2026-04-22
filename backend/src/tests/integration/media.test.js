@@ -50,6 +50,7 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   generateImageUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/test-public-id.jpg'),
   generatePdfThumbnailUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/pg_1,w_200,h_150,c_fill,f_jpg/test-pdf-public-id.jpg'),
   generatePdfPreviewUrl: jest.fn(() => 'https://res.cloudinary.com/test/image/upload/pg_1,w_800,h_600,c_fit,f_jpg/test-pdf-public-id.jpg'),
+  generatePdfPageImageUrl: jest.fn((url, page) => url.replace('/upload/', `/upload/pg_${page}/`).replace(/\.pdf$/i, '.jpg')),
   deleteImage: jest.fn(async () => ({ result: 'ok' })),
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
   isValidImageType: jest.fn(() => true),

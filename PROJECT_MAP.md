@@ -476,6 +476,8 @@ Same pattern as Mobile, with differences:
 | `subscriptions` | Future: tier, duration_type, started_at, expires_at |
 | `notifications` | User/partner notifications: type, title, message, is_read, category (establishments/reviews) |
 | `establishment_analytics` | Partner analytics: view_count, review_count, call_count — activated by migration 017 |
+| `ocr_jobs` | OCR pipeline queue (mig 024): status (pending/processing/done/failed), attempts/max_attempts, result_summary JSONB, polled with FOR UPDATE SKIP LOCKED |
+| `menu_items` | Parsed menu positions (mig 024): item_name + price_byn + confidence + sanity_flag JSONB, denorm establishment_id, GIN trigram on item_name for ILIKE |
 
 ### Critical Constraints
 - **City CHECK**: includes BOTH `Могилев` AND `Могилёв` (ё/е fix)
@@ -489,9 +491,11 @@ Same pattern as Mobile, with differences:
 users
   ├─→ establishments (partner_id)
   │     ├─→ establishment_media
+  │     │     ├─→ menu_items (mig 024, CASCADE)
+  │     │     └─→ ocr_jobs (mig 024, CASCADE)
   │     ├─→ reviews (+ user_id → users)
   │     ├─→ favorites (+ user_id → users)
-  │     ├─→ promotions
+  │     ├─→ promotions (+ optional menu_item_id → menu_items, ON DELETE SET NULL, mig 024)
   │     ├─→ booking_settings (UNIQUE establishment_id)
   │     ├─→ bookings (+ user_id → users)
   │     ├─→ subscriptions
@@ -501,7 +505,7 @@ users
   └─→ audit_log (admin user_id)
 ```
 
-### Migrations (23 total)
+### Migrations (24 total)
 | # | Purpose |
 |---|---------|
 | 001 | Token rotation: used_at, replaced_by |
@@ -527,7 +531,8 @@ users
 | 021 | Booking system: booking_settings + bookings tables, booking_enabled on establishments, booking analytics columns |
 | 022 | Push notifications: device_tokens + notification_preferences tables |
 | 023 | PDF menu upload: file_type column on establishment_media ('image'\|'pdf'), composite index (establishment_id, type, file_type) |
+| 024 | OCR menu pipeline: ocr_jobs + menu_items tables, pg_trgm extension + GIN trigram index on item_name, promotions extension (valid_from_time, valid_until_time, menu_item_id FK, discount_price_byn) |
 
 ---
 
-*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-18.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-22.*

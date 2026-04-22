@@ -8,6 +8,21 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 
 ### Апрель 2026 — Horizon 3: User Experience & Engagement
 
+#### Апрель 22, 2026 — Smart Search Этап 2: Segment A (OCR Core / Backend Foundation)
+- **Скоуп сегмента**: backend-фундамент OCR pipeline — таблицы, модели, сервисы, config, тесты. Без интеграции со Smart Search, без admin/partner endpoints, без UI (Segment B/C)
+- **Миграция 024 `ocr_menu_pipeline`**: таблицы `ocr_jobs` (persistent PostgreSQL-based job queue, CHECK на status, индекс `(status, created_at)` для `FOR UPDATE SKIP LOCKED` polling), `menu_items` (денормализованный `establishment_id` для прямого JOIN в Smart Search; trigram GIN индекс на `item_name` для ILIKE-поиска в Segment B; CHECK на confidence 0.00-1.00). Расширение `promotions`: `valid_from_time`, `valid_until_time`, `menu_item_id` (FK ON DELETE SET NULL), `discount_price_byn`. Включена extension `pg_trgm`. Применена локально с rollback-проверкой
+- **PostgreSQL job queue, не BullMQ**: сознательное решение — не вводить новую infrastructure-зависимость. `FOR UPDATE SKIP LOCKED` обеспечивает concurrency-safe polling
+- **Модели**: `ocrJobModel` (enqueue с идемпотентностью для активного media, `pickNextPending` с атомарным status transition + attempts increment, `markFailed` с retry-логикой CASE когда attempts < max_attempts), `menuItemModel` (bulk INSERT через dynamic VALUES fragment, `replaceForMedia` в транзакции `BEGIN/COMMIT/ROLLBACK` для атомарного sanity-delta)
+- **OCR services (`src/services/ocr/`)**: `pdfTextExtractor` (pdf-parse через deep import `lib/pdf-parse.js` для bypass debug-mode quirk; эвристика hasTextLayer: avg chars/page ≥ 50, digits ≥ 3, printable ratio ≥ 0.7), `visionOcrAdapter` (inline fetch к OpenRouter vision, массив image_url, 60s timeout), `llmStructurer` (fetch к OpenRouter + Zod-валидация структурированного JSON), `sanityChecker` (4 правила: price_below/above_threshold, low_confidence, price_delta_anomaly ratio > 3.00; первое совпадение побеждает), `ocrService` оркестратор (fetch media → PDF try/fallback на vision → structure → sanity с previousItems из replaceForMedia → markDone/markFailed), `ocrJobPoller` (setInterval 10с, serial processing, graceful start/stop)
+- **Config**: `openrouter.js` расширен `getOcrConfig()` (отдельный от `getConfig()` для intent parser — нулевой риск регрессии); новые env `AI_OCR_MODEL` (fallback на AI_MODEL default), `POLLER_INTERVAL_MS`. Общий `OPENROUTER_API_KEY`
+- **Cloudinary helper**: добавлен `generatePdfPageImageUrl(pdfUrl, pageNum)` для генерации pg_N image URL (нужен Vision pipeline для scanned PDFs)
+- **Server integration**: poller стартует в `startServer` после connectRedis, останавливается в graceful shutdown ДО `closePool` (дожидается in-flight job). Охраняется `NODE_ENV !== 'test'` — тесты вызывают `processJob` напрямую
+- **CASCADE цепочка**: `establishments → establishment_media → menu_items / ocr_jobs` (ON DELETE CASCADE) + `promotions.menu_item_id` с ON DELETE SET NULL (promotion переживает удаление элемента меню)
+- **Scope discipline (не входит в Segment A)**: не триггерит OCR автоматически, не создаёт admin/partner endpoints, не модифицирует searchService, не добавляет notification types, не трогает mobile/admin-web
+- **Тесты**: 4 unit (70 новых тестов: `pdfTextExtractor`, `sanityChecker`, `llmStructurer`, `ocrJobModel`) + 1 integration (`ocr-pipeline.test.js`, 6 сценариев: happy path PDF text layer, vision fallback, retry при 500, permanent failure при max_attempts, enqueue идемпотентность, replaceForMedia delta detection). Pre-existing failures в `smart-search` (2) и `bookingService` (10) не относятся к этому сегменту (проверено git stash baseline)
+- **Production deploy**: миграция 024 пока только локально, не на Railway
+- **Dependency**: `pdf-parse@^1.1.1` (реально установлена 1.1.4 по semver)
+
 #### Апрель 17-18, 2026 — Task 1: PDF Menu Upload (Phases A-D)
 - **Контракт**: PDF-меню как first-class документ (не просто фото) — основа для Smart Search OCR Phase 2, где `pdf-parse` на векторных PDF даёт 100% точность текста против 90-95% OCR на фото
 - **Phase A — Migration 023**: `file_type VARCHAR(10)` на `establishment_media` (CHECK 'image'|'pdf', DEFAULT 'image'), композитный индекс `(establishment_id, type, file_type)`. Применена локально на pg-test
