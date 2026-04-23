@@ -1076,8 +1076,8 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 
 /**
  * Hide a parsed menu item from user-facing search.
- * Paraller to suspendEstablishment: validate reason, guard state, update,
- * write audit log non-blocking, notify partner non-blocking.
+ * Parallel to suspendEstablishment: validate reason, guard state, update,
+ * write audit log non-blocking. Phase 1: no partner notification.
  *
  * @param {string} menuItemId - UUID
  * @param {Object} params
@@ -1131,28 +1131,11 @@ export const hideMenuItem = async (menuItemId, params) => {
     user_agent: userAgent,
   });
 
-  // Notify partner (non-blocking). partner_id is fetched via establishment
-  // inside notifyMenuItemHidden, so we just pass IDs.
-  (async () => {
-    try {
-      const establishment = await EstablishmentModel.findEstablishmentById(
-        existing.establishment_id,
-        true,
-      );
-      if (establishment && establishment.partner_id) {
-        await NotificationService.notifyMenuItemHidden(
-          menuItemId,
-          establishment.partner_id,
-          reason,
-        );
-      }
-    } catch (err) {
-      logger.error('Failed to send notifyMenuItemHidden', {
-        error: err.message,
-        menuItemId,
-      });
-    }
-  })();
+  // Phase 1 decision (Segment C): no partner notification on hide.
+  // Partners do not see hidden items in their cabinet, so a push pointing to
+  // an invisible item would be a cognitive dead-end. The notifyMenuItemHidden
+  // helper in notificationService is retained for potential Phase 2 reuse
+  // when the partner's responsibility model may change.
 
   logger.info('Menu item hidden by admin', {
     menuItemId,

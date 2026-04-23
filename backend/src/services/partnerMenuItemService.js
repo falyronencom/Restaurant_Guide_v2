@@ -19,11 +19,14 @@ import logger from '../utils/logger.js';
 
 /**
  * List parsed menu items for an establishment owned by the partner.
- * Includes admin-hidden items (flagged visually in UI) and sanity_flag values.
+ *
+ * Phase 1 policy: admin-hidden items are filtered out at the service layer.
+ * Partners see only non-hidden items; no UI indication of hidden state.
+ * Rationale: platform owns content quality; hiding is not the partner's concern.
  *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
- * @returns {Promise<Object[]>} Menu items ordered by position
+ * @returns {Promise<Object[]>} Non-hidden menu items ordered by position
  */
 export const listMenuItems = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -35,7 +38,7 @@ export const listMenuItems = async (partnerId, establishmentId) => {
     );
   }
 
-  return MenuItemModel.getByEstablishmentId(establishmentId, { includeHidden: true });
+  return MenuItemModel.getByEstablishmentId(establishmentId, { includeHidden: false });
 };
 
 /**

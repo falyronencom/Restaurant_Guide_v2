@@ -129,6 +129,31 @@ describe('POST /api/v1/admin/menu-items/:id/hide', () => {
 
     expect(res.body.error.code).toBe('MENU_ITEM_NOT_FOUND');
   });
+
+  // Phase 1 defensive guard (Segment C): partners do not see hidden items in
+  // their cabinet, so sending menu_item_hidden_by_admin notification would
+  // create a cognitive dead-end. This test prevents accidental restoration
+  // of the notification side-effect.
+  test('does NOT create menu_item_hidden_by_admin notification (Phase 1)', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const { menuItemId } = await seedMenuItem(establishment.id);
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${menuItemId}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Ошибочная цена' })
+      .expect(200);
+
+    // Give any accidentally-scheduled fire-and-forget IIFE a tick to run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const notifRes = await query(
+      `SELECT id FROM notifications
+        WHERE user_id = $1 AND type = 'menu_item_hidden_by_admin'`,
+      [establishment.partner_id],
+    );
+    expect(notifRes.rows.length).toBe(0);
+  });
 });
 
 describe('POST /api/v1/admin/menu-items/:id/unhide', () => {

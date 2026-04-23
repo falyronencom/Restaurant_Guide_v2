@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_menu_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/working_hours_screen.dart';
 
@@ -540,6 +541,13 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                 : null,
           ),
           _buildMenuItem(
+            icon: Icons.menu_book_outlined,
+            title: 'Меню',
+            onTap: canEdit
+                ? () => _navigateToEditStep(context, 'menu', establishment)
+                : null,
+          ),
+          _buildMenuItem(
             icon: Icons.access_time,
             title: 'Время работы',
             onTap: canEdit
@@ -651,6 +659,14 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
       case 'media':
         stepIndex = 3;
         break;
+      case 'menu':
+        // Parsed menu items live in their own screen, not a wizard step.
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PartnerMenuScreen(establishmentId: establishment.id),
+          ),
+        );
+        return;
       case 'hours':
         // Navigate to working hours screen and save result via PUT
         _editWorkingHours(context, establishment);

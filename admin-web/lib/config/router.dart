@@ -5,6 +5,7 @@ import 'package:restaurant_guide_admin_web/screens/auth/login_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/approved_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/pending_moderation_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/rejected_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/menu_items/menu_items_moderation_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/suspended_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_container_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
@@ -69,6 +70,11 @@ GoRouter createRouter(AuthProvider authProvider) {
             path: '/moderation/suspended',
             builder: (context, state) =>
                 const SuspendedScreen(),
+          ),
+          GoRoute(
+            path: '/moderation/menu-items',
+            builder: (context, state) =>
+                const MenuItemsModerationScreen(),
           ),
           GoRoute(
             path: '/settings/analytics',

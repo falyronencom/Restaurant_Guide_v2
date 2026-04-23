@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_menu_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
 
 /// Screen displaying a grouped list of notifications
@@ -383,6 +384,17 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => EstablishmentDetailScreen(
+                establishmentId: notification.establishmentId!,
+              ),
+            ),
+          );
+        }
+      case NotificationType.menuParsed:
+        // Component 8, Segment C: open partner menu section.
+        if (notification.establishmentId != null) {
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => PartnerMenuScreen(
                 establishmentId: notification.establishmentId!,
               ),
             ),
