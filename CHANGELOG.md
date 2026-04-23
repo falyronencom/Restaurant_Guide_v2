@@ -18,7 +18,7 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 - **Группа 5 — Notifications**: `TITLES` +2 типа (`menu_parsed`, `menu_item_hidden_by_admin`), `CATEGORY_TYPES.establishments` extended. 2 trigger helper: `notifyMenuParsed(establishmentId, count)` без push (не-срочно), `notifyMenuItemHidden(menuItemId, partnerId, reason)` с push (требует внимания партнёра). Инъекция `notifyMenuParsed` в `ocrService.processJob` после successful markDone — единственная допустимая модификация Segment A, как предусмотрено директивой
 - **Тесты**: **36 новых** (цель ≥20) — 7 unit `smartSearchFilters`, +7 unit `notificationService`, 11 integration `admin-menu-items`, 8 integration `partner-menu-items`, 3 integration `ocr-end-to-end` (multi-step full flow: approve → seed item → dish-search match → hide → dish-search exclude + promotion time-window + price routing). Regression: **12 failures идентичны Segment A baseline** (2 smart-search fallback + 10 bookingService localization), подтверждено `git stash`-сравнением. ESLint чист на всех 8 новых файлах
 - **Scope discipline (не входит в Segment B)**: admin-web UI и mobile UI — Segment C. `menu_item_edited_by_partner` notification тип НЕ вводится (отложен до Segment C при реальной потребности). Единственная модификация Segment A файлов — notifyMenuParsed injection в ocrService
-- **Production deploy**: миграции 024 и 025 пока только локально, не на Railway
+- **Production deploy**: миграции 024 и 025 применены на Railway 23 апреля 2026 через `scripts/apply-migration-production.js`
 - **Коммит**: `abeb086`
 - **Отчёт**: [backend/session_reports/smart_search_etap_2_segment_b_report.md](backend/session_reports/smart_search_etap_2_segment_b_report.md)
 
@@ -34,7 +34,7 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 - **CASCADE цепочка**: `establishments → establishment_media → menu_items / ocr_jobs` (ON DELETE CASCADE) + `promotions.menu_item_id` с ON DELETE SET NULL (promotion переживает удаление элемента меню)
 - **Scope discipline (не входит в Segment A)**: не триггерит OCR автоматически, не создаёт admin/partner endpoints, не модифицирует searchService, не добавляет notification types, не трогает mobile/admin-web
 - **Тесты**: 4 unit (70 новых тестов: `pdfTextExtractor`, `sanityChecker`, `llmStructurer`, `ocrJobModel`) + 1 integration (`ocr-pipeline.test.js`, 6 сценариев: happy path PDF text layer, vision fallback, retry при 500, permanent failure при max_attempts, enqueue идемпотентность, replaceForMedia delta detection). Pre-existing failures в `smart-search` (2) и `bookingService` (10) не относятся к этому сегменту (проверено git stash baseline)
-- **Production deploy**: миграция 024 пока только локально, не на Railway
+- **Production deploy**: миграция 024 применена на Railway 23 апреля 2026 (вместе с 025 в рамках Segment B deployment)
 - **Dependency**: `pdf-parse@^1.1.1` (реально установлена 1.1.4 по semver)
 
 #### Апрель 17-18, 2026 — Task 1: PDF Menu Upload (Phases A-D)
