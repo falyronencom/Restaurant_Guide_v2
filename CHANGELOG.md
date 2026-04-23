@@ -19,7 +19,7 @@ Full development history of Restaurant Guide Belarus. For project overview, see 
 - **Тесты**: **36 новых** (цель ≥20) — 7 unit `smartSearchFilters`, +7 unit `notificationService`, 11 integration `admin-menu-items`, 8 integration `partner-menu-items`, 3 integration `ocr-end-to-end` (multi-step full flow: approve → seed item → dish-search match → hide → dish-search exclude + promotion time-window + price routing). Regression: **12 failures идентичны Segment A baseline** (2 smart-search fallback + 10 bookingService localization), подтверждено `git stash`-сравнением. ESLint чист на всех 8 новых файлах
 - **Scope discipline (не входит в Segment B)**: admin-web UI и mobile UI — Segment C. `menu_item_edited_by_partner` notification тип НЕ вводится (отложен до Segment C при реальной потребности). Единственная модификация Segment A файлов — notifyMenuParsed injection в ocrService
 - **Production deploy**: миграции 024 и 025 пока только локально, не на Railway
-- **Коммиты**: _TBD_
+- **Коммит**: `abeb086`
 - **Отчёт**: [backend/session_reports/smart_search_etap_2_segment_b_report.md](backend/session_reports/smart_search_etap_2_segment_b_report.md)
 
 #### Апрель 22, 2026 — Smart Search Этап 2: Segment A (OCR Core / Backend Foundation)
