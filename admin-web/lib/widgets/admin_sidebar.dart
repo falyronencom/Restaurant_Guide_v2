@@ -70,6 +70,11 @@ class AdminSidebar extends StatelessWidget {
                     path: '/moderation/suspended',
                     currentPath: location,
                   ),
+                  _NavItem(
+                    title: 'Позиции меню',
+                    path: '/moderation/menu-items',
+                    currentPath: location,
+                  ),
 
                   const SizedBox(height: 16),
 

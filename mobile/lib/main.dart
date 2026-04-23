@@ -24,6 +24,7 @@ import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.d
 import 'package:restaurant_guide_mobile/screens/partner/edit_establishment_screen.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
@@ -84,6 +85,11 @@ class RestaurantGuideApp extends StatelessWidget {
         // Promotion provider (partner promotion management)
         ChangeNotifierProvider(
           create: (_) => PromotionProvider(),
+        ),
+
+        // Partner menu provider (parsed menu items — Component 8, Segment C)
+        ChangeNotifierProvider(
+          create: (_) => PartnerMenuProvider(),
         ),
 
         // Booking settings provider (partner booking configuration)

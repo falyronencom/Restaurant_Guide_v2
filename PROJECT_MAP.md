@@ -536,4 +536,30 @@ users
 
 ---
 
-*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-22.*
+*Navigation document. Updated on task completion per Protocol Documentation Updates table. Last updated: 2026-04-23 (Smart Search Этап 2 — Segment C: UI Surface complete).*
+
+## Component 8 UI surface (Segment C, 2026-04-23)
+
+### Mobile partner «Меню» раздел
+- `mobile/lib/screens/partner/partner_menu_screen.dart` — экран раздела «Меню» в редактировании заведения, состояния EMPTY/SUCCESS, inline edit via bottom sheet, retry OCR button с rate-limit handling
+- `mobile/lib/providers/partner_menu_provider.dart` — state + 30s polling + optimistic update/rollback + itemsByCategory grouping
+- `mobile/lib/services/partner_menu_service.dart` — API + `RetryOcrResult` tagged union (success / rateLimited with Retry-After parsing / failure)
+- `mobile/lib/models/partner_menu_item.dart`
+- Entry point: `edit_establishment_screen.dart` → пункт «Меню» в `_buildEditMenu` + case `'menu'` в `_navigateToEditStep` (push PartnerMenuScreen напрямую)
+
+### Admin-web «Позиции меню» dashboard
+- `admin-web/lib/screens/menu_items/menu_items_moderation_screen.dart` — двухпанельный layout (list | detail)
+- `admin-web/lib/widgets/menu_items/flagged_menu_items_list_panel.dart` — filters (city/status/search) + scrollable cards
+- `admin-web/lib/widgets/menu_items/menu_item_detail_panel.dart` — 3 actions (Hide с обязательным reason ≥10, Unhide, Dismiss flag)
+- `admin-web/lib/providers/menu_items_moderation_provider.dart` — server-side `reason` filter + client-side city/status/search
+- `admin-web/lib/services/admin_menu_item_service.dart`
+- `admin-web/lib/models/flagged_menu_item.dart`
+- Entry point: sidebar item «Позиции меню» под «Модерация» → route `/moderation/menu-items`
+
+### Phase 1 policy для flagged items
+- Partner `listMenuItems` исключает `is_hidden_by_admin = TRUE` (service layer)
+- Admin hide action НЕ создаёт notification партнёру (notifyMenuItemHidden helper оставлен для Phase 2, вызов в adminService.hideMenuItem закомментирован)
+- Defensive test в `admin-menu-items.test.js`: `'does NOT create menu_item_hidden_by_admin notification (Phase 1)'`
+
+### Notification deep links
+- `menu_parsed` → in-app list tap → `PartnerMenuScreen(establishmentId)` via rootNavigator. НЕ обрабатывается в `main_navigation.dart` FCM handler (тип не отправляет push per Segment B decision)

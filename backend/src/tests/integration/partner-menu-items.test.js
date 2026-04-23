@@ -89,7 +89,9 @@ afterAll(async () => {
 });
 
 describe('GET /api/v1/partner/establishments/:id/menu-items', () => {
-  test('returns all items including hidden ones', async () => {
+  // Phase 1 (Segment C): partner does NOT see admin-hidden items.
+  // Platform owns content quality; hidden items are filtered at service layer.
+  test('returns only non-hidden items (admin-hidden excluded)', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     const mediaId = await seedPdfMedia(estId);
@@ -105,9 +107,9 @@ describe('GET /api/v1/partner/establishments/:id/menu-items', () => {
       .set('Authorization', `Bearer ${partner.accessToken}`)
       .expect(200);
 
-    expect(res.body.data).toHaveLength(2);
-    const names = res.body.data.map((i) => i.item_name).sort();
-    expect(names).toEqual(['Кофе', 'Скрытая позиция']);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].item_name).toBe('Кофе');
+    expect(res.body.data[0].is_hidden_by_admin).toBe(false);
   });
 
   test('returns 404 when partner does not own the establishment', async () => {

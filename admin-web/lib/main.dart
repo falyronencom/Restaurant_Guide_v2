@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
@@ -60,6 +61,7 @@ class _AdminAppState extends State<AdminApp> {
         ChangeNotifierProvider(create: (_) => ReviewsAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => AuditLogProvider()),
         ChangeNotifierProvider(create: (_) => AdminReviewsProvider()),
+        ChangeNotifierProvider(create: (_) => MenuItemsModerationProvider()),
       ],
       child: MaterialApp.router(
         title: '{N}YAMA Admin',
