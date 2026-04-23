@@ -16,6 +16,8 @@ const CATEGORY_TYPES = {
     'establishment_suspended',
     'establishment_unsuspended',
     'establishment_claimed',
+    'menu_parsed',
+    'menu_item_hidden_by_admin',
   ],
   reviews: [
     'new_review',

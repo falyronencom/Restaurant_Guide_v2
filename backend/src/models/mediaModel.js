@@ -527,6 +527,35 @@ export const countPdfMedia = async (establishmentId) => {
 };
 
 /**
+ * Fetch all PDF menu media rows for an establishment.
+ *
+ * Used by OCR trigger paths (admin approve backfill, partner retry-ocr endpoint)
+ * that need the actual media_ids to enqueue jobs.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<Object[]>} PDF media rows ordered by position
+ */
+export const getPdfMediaByEstablishment = async (establishmentId) => {
+  const query = `
+    SELECT *
+    FROM establishment_media
+    WHERE establishment_id = $1 AND file_type = 'pdf'
+    ORDER BY position ASC, created_at ASC
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching PDF media', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Check if an establishment has a primary photo
  * 
  * Used during submission validation to ensure at least one primary photo

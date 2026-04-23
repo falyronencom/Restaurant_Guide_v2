@@ -165,6 +165,7 @@ export const updateById = async (id, updates) => {
     'confidence',
     'sanity_flag',
     'is_hidden_by_admin',
+    'hidden_reason',
     'position',
   ];
 
@@ -273,6 +274,59 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
   } finally {
     client.release();
   }
+};
+
+/**
+ * List items with a non-null sanity_flag, JOINed with parent establishment
+ * (name, city, status) for the admin "Подозрительные позиции меню" dashboard.
+ *
+ * @param {Object} params
+ * @param {number} [params.limit=20]
+ * @param {number} [params.offset=0]
+ * @param {string} [params.reason] - Optional filter on sanity_flag.reason
+ * @returns {Promise<{items: Object[], total: number}>}
+ */
+export const getFlaggedItems = async ({ limit = 20, offset = 0, reason } = {}) => {
+  const conditions = ['mi.sanity_flag IS NOT NULL'];
+  const values = [];
+  let paramIndex = 1;
+
+  if (reason) {
+    conditions.push(`mi.sanity_flag->>'reason' = $${paramIndex++}`);
+    values.push(reason);
+  }
+
+  const whereClause = conditions.join(' AND ');
+
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM menu_items mi
+    WHERE ${whereClause}
+  `;
+
+  const dataQuery = `
+    SELECT
+      mi.*,
+      e.name         AS establishment_name,
+      e.city         AS establishment_city,
+      e.status       AS establishment_status,
+      e.partner_id   AS establishment_partner_id
+    FROM menu_items mi
+    JOIN establishments e ON e.id = mi.establishment_id
+    WHERE ${whereClause}
+    ORDER BY mi.created_at DESC
+    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+  `;
+
+  const [countResult, dataResult] = await Promise.all([
+    pool.query(countQuery, values),
+    pool.query(dataQuery, [...values, limit, offset]),
+  ]);
+
+  return {
+    items: dataResult.rows,
+    total: parseInt(countResult.rows[0].total, 10),
+  };
 };
 
 export { WRITABLE_FIELDS };

@@ -173,3 +173,21 @@ export const getJobsByEstablishment = async (establishmentId) => {
   );
   return result.rows;
 };
+
+/**
+ * Check whether a media file has any completed (done) OCR job.
+ * Used by the admin-approve backfill trigger — if establishment is being approved
+ * and has PDF menus without a 'done' job, enqueue fresh ones.
+ *
+ * @param {string} mediaId - UUID
+ * @returns {Promise<boolean>}
+ */
+export const hasCompletedJobForMedia = async (mediaId) => {
+  const result = await pool.query(
+    `SELECT 1 FROM ocr_jobs
+     WHERE media_id = $1 AND status = 'done'
+     LIMIT 1`,
+    [mediaId],
+  );
+  return result.rowCount > 0;
+};
