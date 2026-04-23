@@ -36,10 +36,18 @@ const VALID_CUISINES = [
 /**
  * Zod schema for AI response validation.
  * Invalid responses trigger fallback to ILIKE search.
+ *
+ * `dish` (Segment B): specific dish/drink the user is looking for. Distinct
+ * from `category` (establishment type). Empty string is coerced to null to
+ * tolerate LLMs that return "" instead of null.
  */
 const intentSchema = z.object({
   cuisine: z.array(z.enum(VALID_CUISINES)).nullable(),
   category: z.enum(VALID_CATEGORIES).nullable(),
+  dish: z
+    .string()
+    .nullable()
+    .transform((v) => (v == null || v.trim() === '' ? null : v.trim())),
   meal_type: z.string().nullable(),
   price_max: z.number().positive().nullable(),
   location: z.string().nullable(),
@@ -60,9 +68,19 @@ const API_TIMEOUT_MS = 20000;
  */
 const SYSTEM_PROMPT = [
   'Parse restaurant search query into JSON.',
-  'Categories: ' + VALID_CATEGORIES.join(', '),
+  'Categories (establishment types): ' + VALID_CATEGORIES.join(', '),
   'Cuisines: ' + VALID_CUISINES.join(', '),
-  'Output JSON: {"category":"one or null","cuisine":["array or null"],"meal_type":"breakfast/lunch/dinner/snack or null","price_max":number_or_null,"location":"city or null","sort":"distance/rating/price_asc or null","tags":["keywords"],"error":null}',
+  '',
+  'IMPORTANT — distinguish ESTABLISHMENT TYPE from DISH NAME:',
+  '- "кофейня рядом" → category="Кофейня", dish=null (user wants a coffee shop)',
+  '- "кофе рядом" → category=null, dish="кофе" (user wants coffee as a drink)',
+  '- "пиццерия на Немиге" → category="Пиццерия", dish=null',
+  '- "пицца до 15 рублей" → category=null, dish="пицца"',
+  '- "бар с дешёвым виски" → category="Бар", dish="виски"',
+  '- "кафе с завтраками" → category="Кафе", dish=null, meal_type="breakfast"',
+  'If the query contains BOTH a type and a dish, fill both fields.',
+  '',
+  'Output JSON: {"category":"one or null","cuisine":["array or null"],"dish":"specific dish or null","meal_type":"breakfast/lunch/dinner/snack or null","price_max":number_or_null,"location":"city or null","sort":"distance/rating/price_asc or null","tags":["keywords"],"error":null}',
   'Use EXACT category/cuisine names from lists above. Respond with JSON only.',
 ].join('\n');
 
@@ -231,9 +249,20 @@ export function buildSmartSearchFilters(intent, context = {}) {
     filters.cuisines = intent.cuisine;
   }
 
-  // Price mapping: price_max BYN → price_range symbols
+  // Dish (Segment B): routes the query to menu_items JOIN in searchService.
+  if (intent.dish) {
+    filters.dish = intent.dish;
+  }
+
+  // Price mapping:
+  //  - If dish is present, price_max is a literal BYN ceiling on menu_items.price_byn
+  //    (routed through searchService as `priceMaxByn`). price_range is NOT applied,
+  //    because the user stated an actual money budget for a specific dish.
+  //  - If no dish, fall back to the legacy subjective tier mapping to price_range.
   if (intent.price_max != null) {
-    if (intent.price_max <= 15) {
+    if (intent.dish) {
+      filters.priceMaxByn = intent.price_max;
+    } else if (intent.price_max <= 15) {
       filters.priceRange = ['$'];
     } else if (intent.price_max <= 30) {
       filters.priceRange = ['$', '$$'];

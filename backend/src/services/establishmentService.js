@@ -12,6 +12,7 @@
 
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
+import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -338,12 +339,26 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         })
       );
 
-      await Promise.all(pdfPromises);
+      const pdfRecords = await Promise.all(pdfPromises);
 
       logger.info('PDF menus saved to establishment_media', {
         establishmentId: establishment.id,
         pdfCount: Math.min(menu_pdfs.length, 2),
       });
+
+      // Fire-and-forget: enqueue OCR jobs for newly persisted PDF menus.
+      // Temp uploads do not create establishment_media rows; they are materialised here
+      // at registration finalization, so this is the earliest valid enqueue point.
+      for (const record of pdfRecords) {
+        OcrJobModel.enqueue({
+          establishmentId: establishment.id,
+          mediaId: record.id,
+        }).catch((err) => logger.error('Failed to enqueue OCR job on registration finalize', {
+          error: err.message,
+          mediaId: record.id,
+          establishmentId: establishment.id,
+        }));
+      }
     }
 
     // Save legal fields to partner_documents if provided

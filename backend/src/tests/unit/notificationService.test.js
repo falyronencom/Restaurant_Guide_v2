@@ -33,6 +33,10 @@ jest.unstable_mockModule('../../models/favoriteModel.js', () => ({
   getUserIdsByEstablishment: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
+  findById: jest.fn(),
+}));
+
 jest.unstable_mockModule('../../services/pushService.js', () => ({
   sendPush: jest.fn().mockResolvedValue(undefined),
 }));
@@ -51,6 +55,7 @@ const NotificationModel = await import('../../models/notificationModel.js');
 const EstablishmentModel = await import('../../models/establishmentModel.js');
 const ReviewModel = await import('../../models/reviewModel.js');
 const FavoriteModel = await import('../../models/favoriteModel.js');
+const MenuItemModel = await import('../../models/menuItemModel.js');
 const PushService = await import('../../services/pushService.js');
 const logger = (await import('../../utils/logger.js')).default;
 
@@ -71,6 +76,8 @@ const {
   notifyBookingExpired,
   notifyBookingCancelled,
   notifyPromotionNew,
+  notifyMenuParsed,
+  notifyMenuItemHidden,
 } = await import('../../services/notificationService.js');
 
 import { createMockEstablishment, createMockReview } from '../mocks/helpers.js';
@@ -996,6 +1003,123 @@ describe('notificationService', () => {
         'Failed to create promotion notifications',
         expect.objectContaining({ establishmentId })
       );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Segment B: menu-related helpers
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('notifyMenuParsed', () => {
+    const establishmentId = uuidv4();
+    const partnerId = uuidv4();
+
+    test('creates in-app notification with item count in message', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        partner_id: partnerId,
+        name: 'Кофе Плюс',
+      });
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+
+      await notifyMenuParsed(establishmentId, 42);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith({
+        userId: partnerId,
+        type: 'menu_parsed',
+        title: 'Меню распознано',
+        message: expect.stringContaining('42'),
+        establishmentId,
+      });
+    });
+
+    test('does NOT send push (per directive: non-urgent)', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        partner_id: partnerId,
+        name: 'Кофе Плюс',
+      });
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+
+      await notifyMenuParsed(establishmentId, 5);
+
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('skips when establishment has no partner_id', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        partner_id: null,
+        name: 'Тест',
+      });
+
+      await notifyMenuParsed(establishmentId, 10);
+
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+    });
+
+    test('does NOT throw on DB error (non-blocking)', async () => {
+      EstablishmentModel.findEstablishmentById.mockRejectedValue(new Error('DB down'));
+
+      await expect(notifyMenuParsed(establishmentId, 5)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('notifyMenuItemHidden', () => {
+    const menuItemId = uuidv4();
+    const partnerId = uuidv4();
+    const establishmentId = uuidv4();
+
+    test('creates in-app notification and sends push', async () => {
+      MenuItemModel.findById.mockResolvedValue({
+        id: menuItemId,
+        establishment_id: establishmentId,
+        item_name: 'Эспрессо',
+      });
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        name: 'Кофе Плюс',
+        partner_id: partnerId,
+      });
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+
+      await notifyMenuItemHidden(menuItemId, partnerId, 'нецензурное название');
+
+      expect(NotificationModel.create).toHaveBeenCalledWith({
+        userId: partnerId,
+        type: 'menu_item_hidden_by_admin',
+        title: 'Позиция меню скрыта модератором',
+        message: expect.stringContaining('Эспрессо'),
+        establishmentId,
+      });
+
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          title: 'Позиция меню скрыта модератором',
+          data: expect.objectContaining({
+            type: 'menu_item_hidden_by_admin',
+            menuItemId,
+          }),
+        })
+      );
+    });
+
+    test('skips when menu item not found', async () => {
+      MenuItemModel.findById.mockResolvedValue(null);
+
+      await notifyMenuItemHidden(menuItemId, partnerId, 'reason');
+
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('does NOT throw on error (non-blocking)', async () => {
+      MenuItemModel.findById.mockRejectedValue(new Error('DB failure'));
+
+      await expect(
+        notifyMenuItemHidden(menuItemId, partnerId, 'reason')
+      ).resolves.toBeUndefined();
     });
   });
 });

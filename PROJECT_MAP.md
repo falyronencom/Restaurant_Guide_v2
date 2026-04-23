@@ -477,7 +477,7 @@ Same pattern as Mobile, with differences:
 | `notifications` | User/partner notifications: type, title, message, is_read, category (establishments/reviews) |
 | `establishment_analytics` | Partner analytics: view_count, review_count, call_count — activated by migration 017 |
 | `ocr_jobs` | OCR pipeline queue (mig 024): status (pending/processing/done/failed), attempts/max_attempts, result_summary JSONB, polled with FOR UPDATE SKIP LOCKED |
-| `menu_items` | Parsed menu positions (mig 024): item_name + price_byn + confidence + sanity_flag JSONB, denorm establishment_id, GIN trigram on item_name for ILIKE |
+| `menu_items` | Parsed menu positions (mig 024): item_name + price_byn + confidence + sanity_flag JSONB, is_hidden_by_admin BOOL, hidden_reason TEXT (mig 025), denorm establishment_id, GIN trigram on item_name for ILIKE |
 
 ### Critical Constraints
 - **City CHECK**: includes BOTH `Могилев` AND `Могилёв` (ё/е fix)
@@ -532,6 +532,7 @@ users
 | 022 | Push notifications: device_tokens + notification_preferences tables |
 | 023 | PDF menu upload: file_type column on establishment_media ('image'\|'pdf'), composite index (establishment_id, type, file_type) |
 | 024 | OCR menu pipeline: ocr_jobs + menu_items tables, pg_trgm extension + GIN trigram index on item_name, promotions extension (valid_from_time, valid_until_time, menu_item_id FK, discount_price_byn) |
+| 025 | hidden_reason TEXT nullable on menu_items — stores moderator motivation for admin hide action, decoupled from sanity_flag lifecycle |
 
 ---
 

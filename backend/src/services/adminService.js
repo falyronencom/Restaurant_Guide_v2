@@ -10,6 +10,8 @@
 
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
+import * as MenuItemModel from '../models/menuItemModel.js';
+import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
@@ -270,6 +272,30 @@ export const moderateEstablishment = async (establishmentId, params) => {
       newStatus,
       action === 'reject' ? (moderation_notes || null) : null,
     ).catch(() => {});
+
+    // Backfill OCR jobs on approve — covers establishments created before the
+    // OCR pipeline existed, or PDFs whose earlier job permanently failed.
+    // Idempotency in OcrJobModel.enqueue protects against duplicates for
+    // already-pending/processing jobs; hasCompletedJobForMedia filters out
+    // finished ones so we never re-process done PDFs on repeated approvals.
+    if (action === 'approve') {
+      (async () => {
+        try {
+          const pdfs = await MediaModel.getPdfMediaByEstablishment(establishmentId);
+          for (const pdf of pdfs) {
+            const alreadyDone = await OcrJobModel.hasCompletedJobForMedia(pdf.id);
+            if (!alreadyDone) {
+              await OcrJobModel.enqueue({ establishmentId, mediaId: pdf.id });
+            }
+          }
+        } catch (err) {
+          logger.error('Failed to backfill OCR jobs on approve', {
+            error: err.message,
+            establishmentId,
+          });
+        }
+      })();
+    }
 
     logger.info('Establishment moderation completed', {
       establishmentId,
@@ -1042,4 +1068,238 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
   });
 
   return updatedUser;
+};
+
+// ============================================================================
+// Menu-item moderation (Segment B)
+// ============================================================================
+
+/**
+ * Hide a parsed menu item from user-facing search.
+ * Paraller to suspendEstablishment: validate reason, guard state, update,
+ * write audit log non-blocking, notify partner non-blocking.
+ *
+ * @param {string} menuItemId - UUID
+ * @param {Object} params
+ * @param {string} params.reason - Admin-provided reason (required, non-empty)
+ * @param {string} params.adminUserId
+ * @param {string} params.ipAddress
+ * @param {string} params.userAgent
+ * @returns {Promise<Object>} Updated menu_items row
+ */
+export const hideMenuItem = async (menuItemId, params) => {
+  const { reason, adminUserId, ipAddress, userAgent } = params;
+
+  if (!reason || !reason.trim()) {
+    throw new AppError('Hide reason is required', 400, 'REASON_REQUIRED');
+  }
+
+  const existing = await MenuItemModel.findById(menuItemId);
+  if (!existing) {
+    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+  }
+
+  if (existing.is_hidden_by_admin === true) {
+    throw new AppError(
+      'Menu item is already hidden',
+      400,
+      'MENU_ITEM_ALREADY_HIDDEN',
+    );
+  }
+
+  const updated = await MenuItemModel.updateById(menuItemId, {
+    is_hidden_by_admin: true,
+    hidden_reason: reason,
+  });
+
+  if (!updated) {
+    throw new AppError(
+      'Hide failed — menu item may have been removed concurrently',
+      409,
+      'MENU_ITEM_HIDE_CONFLICT',
+    );
+  }
+
+  AuditLogModel.createAuditLog({
+    user_id: adminUserId,
+    action: 'hide_menu_item',
+    entity_type: 'menu_item',
+    entity_id: menuItemId,
+    old_data: { is_hidden_by_admin: false },
+    new_data: { is_hidden_by_admin: true, reason },
+    ip_address: ipAddress,
+    user_agent: userAgent,
+  });
+
+  // Notify partner (non-blocking). partner_id is fetched via establishment
+  // inside notifyMenuItemHidden, so we just pass IDs.
+  (async () => {
+    try {
+      const establishment = await EstablishmentModel.findEstablishmentById(
+        existing.establishment_id,
+        true,
+      );
+      if (establishment && establishment.partner_id) {
+        await NotificationService.notifyMenuItemHidden(
+          menuItemId,
+          establishment.partner_id,
+          reason,
+        );
+      }
+    } catch (err) {
+      logger.error('Failed to send notifyMenuItemHidden', {
+        error: err.message,
+        menuItemId,
+      });
+    }
+  })();
+
+  logger.info('Menu item hidden by admin', {
+    menuItemId,
+    adminUserId,
+    reason,
+  });
+
+  return updated;
+};
+
+/**
+ * Unhide a previously hidden menu item — restores it to search results.
+ *
+ * Per directive: no partner notification on unhide (opposite direction of hide,
+ * partner can see state change in cabinet without extra push).
+ *
+ * @param {string} menuItemId - UUID
+ * @param {Object} params
+ * @param {string} params.adminUserId
+ * @param {string} params.ipAddress
+ * @param {string} params.userAgent
+ * @returns {Promise<Object>} Updated menu_items row
+ */
+export const unhideMenuItem = async (menuItemId, params) => {
+  const { adminUserId, ipAddress, userAgent } = params;
+
+  const existing = await MenuItemModel.findById(menuItemId);
+  if (!existing) {
+    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+  }
+
+  if (existing.is_hidden_by_admin !== true) {
+    throw new AppError(
+      'Menu item is not hidden',
+      400,
+      'MENU_ITEM_NOT_HIDDEN',
+    );
+  }
+
+  const updated = await MenuItemModel.updateById(menuItemId, {
+    is_hidden_by_admin: false,
+    hidden_reason: null,
+  });
+
+  if (!updated) {
+    throw new AppError(
+      'Unhide failed — menu item may have been removed concurrently',
+      409,
+      'MENU_ITEM_UNHIDE_CONFLICT',
+    );
+  }
+
+  AuditLogModel.createAuditLog({
+    user_id: adminUserId,
+    action: 'unhide_menu_item',
+    entity_type: 'menu_item',
+    entity_id: menuItemId,
+    old_data: { is_hidden_by_admin: true },
+    new_data: { is_hidden_by_admin: false },
+    ip_address: ipAddress,
+    user_agent: userAgent,
+  });
+
+  logger.info('Menu item unhidden by admin', {
+    menuItemId,
+    adminUserId,
+  });
+
+  return updated;
+};
+
+/**
+ * Dismiss a sanity_flag on a menu item (false positive).
+ * Does NOT change is_hidden_by_admin — that is a separate action.
+ *
+ * @param {string} menuItemId - UUID
+ * @param {Object} params
+ * @param {string} params.adminUserId
+ * @param {string} params.ipAddress
+ * @param {string} params.userAgent
+ * @returns {Promise<Object>} Updated menu_items row
+ */
+export const dismissMenuItemFlag = async (menuItemId, params) => {
+  const { adminUserId, ipAddress, userAgent } = params;
+
+  const existing = await MenuItemModel.findById(menuItemId);
+  if (!existing) {
+    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+  }
+
+  if (existing.sanity_flag === null || existing.sanity_flag === undefined) {
+    throw new AppError(
+      'Menu item has no sanity flag to dismiss',
+      400,
+      'MENU_ITEM_NO_FLAG',
+    );
+  }
+
+  const updated = await MenuItemModel.updateById(menuItemId, {
+    sanity_flag: null,
+  });
+
+  AuditLogModel.createAuditLog({
+    user_id: adminUserId,
+    action: 'dismiss_sanity_flag',
+    entity_type: 'menu_item',
+    entity_id: menuItemId,
+    old_data: { sanity_flag: existing.sanity_flag },
+    new_data: { sanity_flag: null },
+    ip_address: ipAddress,
+    user_agent: userAgent,
+  });
+
+  logger.info('Menu item sanity flag dismissed', {
+    menuItemId,
+    adminUserId,
+  });
+
+  return updated;
+};
+
+/**
+ * List flagged menu items with establishment context for admin dashboard.
+ *
+ * @param {Object} params
+ * @param {number} [params.page=1]
+ * @param {number} [params.perPage=20]
+ * @param {string} [params.reason] - Optional filter on sanity_flag.reason
+ * @returns {Promise<{items: Object[], meta: Object}>}
+ */
+export const getFlaggedMenuItems = async ({ page = 1, perPage = 20, reason } = {}) => {
+  const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
+  const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+
+  const { items, total } = await MenuItemModel.getFlaggedItems({
+    limit: effectivePerPage,
+    offset,
+    reason,
+  });
+
+  return {
+    items,
+    meta: {
+      total,
+      page,
+      per_page: effectivePerPage,
+      pages: Math.ceil(total / effectivePerPage),
+    },
+  };
 };

@@ -38,6 +38,7 @@ import notificationRoutes from './notificationRoutes.js';
 import partnerAnalyticsRoutes from './partnerAnalyticsRoutes.js';
 import promotionRoutes from './promotionRoutes.js';
 import bookingSettingsRoutes from './bookingSettingsRoutes.js';
+import partnerMenuItemRoutes from './partnerMenuItemRoutes.js';
 import { partnerBookingRouter, userBookingRouter } from './bookingRoutes.js';
 import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
 
@@ -272,6 +273,14 @@ router.use('/partner/analytics', partnerAnalyticsRoutes);
  * - DELETE /partner/promotions/:id — deactivate promotion
  */
 router.use('/partner/promotions', promotionRoutes);
+
+/**
+ * /api/v1/partner/menu-items/*
+ *
+ * Partner operations on parsed menu items (Segment B):
+ * - PATCH /partner/menu-items/:id — inline edit (item_name, price_byn, category_raw)
+ */
+router.use('/partner/menu-items', partnerMenuItemRoutes);
 
 /**
  * /api/v1/partner/booking-settings/*

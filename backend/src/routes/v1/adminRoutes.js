@@ -14,6 +14,7 @@ import * as adminModerationController from '../../controllers/adminModerationCon
 import * as analyticsController from '../../controllers/analyticsController.js';
 import * as auditLogController from '../../controllers/auditLogController.js';
 import * as adminReviewController from '../../controllers/adminReviewController.js';
+import * as adminMenuItemController from '../../controllers/adminMenuItemController.js';
 import { validateLogin } from '../../validators/authValidation.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
@@ -334,6 +335,61 @@ router.post(
   authenticate,
   authorize(['admin']),
   adminReviewController.deleteReview,
+);
+
+// ============================================================================
+// Segment B: Menu-item moderation (Smart Search Этап 2)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/menu-items/flagged
+ *
+ * List parsed menu items flagged by the OCR sanity checker.
+ * Query: ?page=1&per_page=20&reason=price_below_threshold
+ */
+router.get(
+  '/menu-items/flagged',
+  authenticate,
+  authorize(['admin']),
+  adminMenuItemController.listFlaggedMenuItems,
+);
+
+/**
+ * POST /api/v1/admin/menu-items/:id/hide
+ *
+ * Hide a menu item from user-facing search (moderator action).
+ * Body: { reason: string }
+ */
+router.post(
+  '/menu-items/:id/hide',
+  authenticate,
+  authorize(['admin']),
+  adminMenuItemController.hideMenuItem,
+);
+
+/**
+ * POST /api/v1/admin/menu-items/:id/unhide
+ *
+ * Reverse a prior hide action — menu item reappears in search.
+ */
+router.post(
+  '/menu-items/:id/unhide',
+  authenticate,
+  authorize(['admin']),
+  adminMenuItemController.unhideMenuItem,
+);
+
+/**
+ * POST /api/v1/admin/menu-items/:id/dismiss-flag
+ *
+ * Clear sanity_flag on a menu item (mark as false positive).
+ * Does NOT affect is_hidden_by_admin.
+ */
+router.post(
+  '/menu-items/:id/dismiss-flag',
+  authenticate,
+  authorize(['admin']),
+  adminMenuItemController.dismissMenuItemFlag,
 );
 
 // ============================================================================

@@ -251,6 +251,8 @@ export async function searchByRadius({
   hoursFilter = null,
   features = null,
   search = null,
+  dish = null,
+  priceMaxByn = null,
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -398,6 +400,38 @@ export async function searchByRadius({
     paramIndex = addSearchConditions(search, conditions, params, paramIndex);
   }
 
+  // Segment B: dish-level filter via menu_items. EXISTS excludes establishments
+  // that have no matching, non-hidden menu_item. When priceMaxByn is provided,
+  // either the regular price or an active, in-time-window promotion's discount
+  // price must satisfy the budget.
+  if (dish) {
+    const dishParam = paramIndex++;
+    const priceParam = paramIndex++;
+    conditions.push(`EXISTS (
+      SELECT 1 FROM menu_items mi
+      WHERE mi.establishment_id = e.id
+        AND mi.is_hidden_by_admin = FALSE
+        AND mi.item_name ILIKE '%' || $${dishParam} || '%'
+        AND (
+          $${priceParam}::numeric IS NULL
+          OR mi.price_byn <= $${priceParam}::numeric
+          OR EXISTS (
+            SELECT 1 FROM promotions p
+            WHERE p.menu_item_id = mi.id
+              AND p.status = 'active'
+              AND p.valid_from <= CURRENT_DATE
+              AND (p.valid_until IS NULL OR p.valid_until >= CURRENT_DATE)
+              AND (p.valid_from_time IS NULL OR CURRENT_TIME >= p.valid_from_time)
+              AND (p.valid_until_time IS NULL OR CURRENT_TIME <= p.valid_until_time)
+              AND p.discount_price_byn IS NOT NULL
+              AND p.discount_price_byn <= $${priceParam}::numeric
+          )
+        )
+    )`);
+    params.push(dish);
+    params.push(priceMaxByn);
+  }
+
   const whereClause = conditions.join(' AND ');
 
   // Determine if we should filter by distance:
@@ -543,6 +577,8 @@ export async function searchWithoutLocation({
   hoursFilter = null,
   features = null,
   search = null,
+  dish = null,
+  priceMaxByn = null,
 }) {
   // Validate pagination
   if (limit < 1 || limit > 100) {
@@ -665,6 +701,36 @@ export async function searchWithoutLocation({
   // Add text search filter (ILIKE + synonyms)
   if (search) {
     paramIndex = addSearchConditions(search, conditions, params, paramIndex);
+  }
+
+  // Segment B: dish-level filter via menu_items. Same semantics as in
+  // searchByRadius — see that function for a full explanation.
+  if (dish) {
+    const dishParam = paramIndex++;
+    const priceParam = paramIndex++;
+    conditions.push(`EXISTS (
+      SELECT 1 FROM menu_items mi
+      WHERE mi.establishment_id = e.id
+        AND mi.is_hidden_by_admin = FALSE
+        AND mi.item_name ILIKE '%' || $${dishParam} || '%'
+        AND (
+          $${priceParam}::numeric IS NULL
+          OR mi.price_byn <= $${priceParam}::numeric
+          OR EXISTS (
+            SELECT 1 FROM promotions p
+            WHERE p.menu_item_id = mi.id
+              AND p.status = 'active'
+              AND p.valid_from <= CURRENT_DATE
+              AND (p.valid_until IS NULL OR p.valid_until >= CURRENT_DATE)
+              AND (p.valid_from_time IS NULL OR CURRENT_TIME >= p.valid_from_time)
+              AND (p.valid_until_time IS NULL OR CURRENT_TIME <= p.valid_until_time)
+              AND p.discount_price_byn IS NOT NULL
+              AND p.discount_price_byn <= $${priceParam}::numeric
+          )
+        )
+    )`);
+    params.push(dish);
+    params.push(priceMaxByn);
   }
 
   const whereClause = conditions.join(' AND ');

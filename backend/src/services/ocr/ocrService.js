@@ -10,14 +10,14 @@
  *   5. Run sanity checker with previous items as context (delta comparison)
  *   6. Transactionally replace menu_items for this media
  *   7. Mark job done (with result_summary) or failed (with retry logic)
- *
- * Does NOT trigger notifications — that's Segment B scope.
+ *   8. Notify partner via notifyMenuParsed (fire-and-forget, Segment B)
  */
 
 import logger from '../../utils/logger.js';
 import * as ocrJobModel from '../../models/ocrJobModel.js';
 import * as menuItemModel from '../../models/menuItemModel.js';
 import * as MediaModel from '../../models/mediaModel.js';
+import * as NotificationService from '../notificationService.js';
 import * as pdfTextExtractor from './pdfTextExtractor.js';
 import * as visionOcrAdapter from './visionOcrAdapter.js';
 import * as llmStructurer from './llmStructurer.js';
@@ -185,6 +185,14 @@ export const processJob = async (jobId) => {
       mediaId: media.id,
       ...summary,
     });
+
+    // Segment B: notify partner that menu has been parsed. Fire-and-forget —
+    // notification failure must never cause OCR job to be marked failed.
+    NotificationService.notifyMenuParsed(job.establishment_id, flaggedItems.length)
+      .catch((err) => logger.error('notifyMenuParsed failed', {
+        error: err.message,
+        establishmentId: job.establishment_id,
+      }));
 
     return { success: true, jobId, itemCount: flaggedItems.length };
   } catch (error) {

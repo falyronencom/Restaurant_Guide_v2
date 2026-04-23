@@ -16,9 +16,18 @@
 import express from 'express';
 import * as EstablishmentController from '../../controllers/establishmentController.js';
 import * as EstablishmentValidation from '../../validators/establishmentValidation.js';
+import * as partnerMenuItemController from '../../controllers/partnerMenuItemController.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
+import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import mediaRoutes from './mediaRoutes.js';
+
+// 5 OCR retries per partner per day — protects OpenRouter quota against abuse.
+const ocrRestartLimiter = createRateLimiter({
+  limit: 5,
+  windowSeconds: 86400,
+  keyPrefix: 'ocr_restart',
+});
 
 const router = express.Router();
 
@@ -205,6 +214,32 @@ router.delete(
   '/:id',
   authorize(['partner']),
   EstablishmentController.deleteEstablishment,
+);
+
+/**
+ * GET /api/v1/partner/establishments/:id/menu-items
+ *
+ * Return all parsed menu items (Segment B) for this establishment,
+ * including admin-hidden items and sanity_flag values so the partner UI
+ * can display status markers.
+ */
+router.get(
+  '/:id/menu-items',
+  authorize(['partner']),
+  partnerMenuItemController.listMenuItems,
+);
+
+/**
+ * POST /api/v1/partner/establishments/:id/retry-ocr
+ *
+ * Re-queue OCR for every PDF menu attached to this establishment.
+ * Rate limited to 5 requests per 24h per partner.
+ */
+router.post(
+  '/:id/retry-ocr',
+  authorize(['partner']),
+  ocrRestartLimiter,
+  partnerMenuItemController.retryOcr,
 );
 
 /**

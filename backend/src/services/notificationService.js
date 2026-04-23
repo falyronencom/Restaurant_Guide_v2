@@ -10,6 +10,7 @@ import * as NotificationModel from '../models/notificationModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import * as FavoriteModel from '../models/favoriteModel.js';
+import * as MenuItemModel from '../models/menuItemModel.js';
 import * as PushService from './pushService.js';
 import logger from '../utils/logger.js';
 
@@ -33,6 +34,8 @@ const TITLES = {
   booking_expired: 'Бронь истекла',
   booking_cancelled: 'Бронь отменена',
   promotion_new: 'Новая акция',
+  menu_parsed: 'Меню распознано',
+  menu_item_hidden_by_admin: 'Позиция меню скрыта модератором',
 };
 
 const VALID_TYPES = Object.keys(TITLES);
@@ -629,6 +632,94 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
     logger.error('Failed to create promotion notifications', {
       error: error.message,
       establishmentId,
+    });
+  }
+};
+
+// ============================================================================
+// Menu / OCR notification helpers (NON-BLOCKING)
+// ============================================================================
+
+/**
+ * Notify partner that OCR has parsed their establishment's menu.
+ * Called from ocrService.processJob on successful completion.
+ *
+ * Per directive: no push (non-urgent event, partner will see on next cabinet open).
+ *
+ * @param {string} establishmentId
+ * @param {number} menuItemsCount - Number of items parsed
+ */
+export const notifyMenuParsed = async (establishmentId, menuItemsCount) => {
+  try {
+    const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+    if (!establishment || !establishment.partner_id) return;
+
+    const name = establishment.name || 'Заведение';
+    const count = Number.isFinite(menuItemsCount) ? menuItemsCount : 0;
+    const message = `Меню «${name}» распознано — ${count} позиций`;
+
+    await NotificationModel.create({
+      userId: establishment.partner_id,
+      type: 'menu_parsed',
+      title: TITLES.menu_parsed,
+      message,
+      establishmentId,
+    });
+  } catch (error) {
+    logger.error('Failed to create menu_parsed notification', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * Notify partner that admin hid one of their menu items.
+ * Called from adminService.hideMenuItem.
+ *
+ * Per directive: with push — admin action requires partner attention.
+ *
+ * @param {string} menuItemId
+ * @param {string} partnerId - Recipient (partner_id of parent establishment)
+ * @param {string} [reason] - Admin-provided reason
+ */
+export const notifyMenuItemHidden = async (menuItemId, partnerId, reason) => {
+  try {
+    const menuItem = await MenuItemModel.findById(menuItemId);
+    if (!menuItem) return;
+
+    const establishment = await EstablishmentModel.findEstablishmentById(
+      menuItem.establishment_id,
+      true,
+    );
+    const estName = establishment ? (establishment.name || 'Заведение') : 'Заведение';
+    const itemName = menuItem.item_name || 'позиция меню';
+    const message = reason
+      ? `Позиция «${itemName}» в «${estName}» скрыта модератором: ${reason}`
+      : `Позиция «${itemName}» в «${estName}» скрыта модератором`;
+
+    await NotificationModel.create({
+      userId: partnerId,
+      type: 'menu_item_hidden_by_admin',
+      title: TITLES.menu_item_hidden_by_admin,
+      message,
+      establishmentId: menuItem.establishment_id,
+    });
+
+    PushService.sendPush(partnerId, {
+      title: TITLES.menu_item_hidden_by_admin,
+      message,
+      data: {
+        type: 'menu_item_hidden_by_admin',
+        establishmentId: menuItem.establishment_id,
+        menuItemId,
+      },
+    }).catch((err) => logger.error('Push failed for menu item hidden', { error: err.message }));
+  } catch (error) {
+    logger.error('Failed to create menu_item_hidden notification', {
+      error: error.message,
+      menuItemId,
+      partnerId,
     });
   }
 };

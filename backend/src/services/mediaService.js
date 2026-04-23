@@ -13,6 +13,7 @@
 
 import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
+import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -162,6 +163,15 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         pages: pdfUploadResult.pages,
         bytes: pdfUploadResult.bytes,
       });
+
+      // Fire-and-forget OCR job enqueue. Idempotency in OcrJobModel.enqueue
+      // ensures a retry on the same media does not create duplicates.
+      OcrJobModel.enqueue({ establishmentId, mediaId: pdfRecord.id })
+        .catch((err) => logger.error('Failed to enqueue OCR job after PDF upload', {
+          error: err.message,
+          mediaId: pdfRecord.id,
+          establishmentId,
+        }));
 
       return pdfRecord;
     }

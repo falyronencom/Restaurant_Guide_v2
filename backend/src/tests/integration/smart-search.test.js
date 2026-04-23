@@ -161,12 +161,38 @@ describe('Smart Search - Fallback Mode', () => {
   });
 
   test('should find establishments via SEARCH_SYNONYMS fallback', async () => {
+    // Segment B: AI may now return dish="бургер" (category=null) per the
+    // dish-vs-category distinction in the new prompt. When that happens,
+    // search filters on menu_items, so we seed one so that Бургер Хаус is
+    // reachable via either the category path (legacy) or the dish path (new).
+    const burgerEst = await query(
+      `SELECT id FROM establishments WHERE name = $1 LIMIT 1`,
+      ['Бургер Хаус'],
+    );
+    if (burgerEst.rows.length > 0) {
+      const estId = burgerEst.rows[0].id;
+      const mediaRes = await query(
+        `INSERT INTO establishment_media
+           (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+         VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png')
+         RETURNING id`,
+        [estId],
+      );
+      const mediaId = mediaRes.rows[0].id;
+      await query(
+        `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, position)
+         VALUES ($1, $2, 'Классический бургер', 12.00, 0)`,
+        [estId, mediaId],
+      );
+    }
+
     const response = await request(app)
       .post('/api/v1/search/smart')
       .send({ query: 'бургер' });
 
     expect(response.status).toBe(200);
-    // Should find via synonym: бургер → Фаст-фуд category + Американская cuisine
+    // Should find via either: (a) synonym: бургер → Фаст-фуд category + Американская cuisine
+    // or (b) dish="бургер" → menu_items.item_name ILIKE '%бургер%'
     expect(response.body.data.establishments.length).toBeGreaterThanOrEqual(1);
   });
 
