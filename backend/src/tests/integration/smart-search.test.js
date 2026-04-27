@@ -23,6 +23,11 @@ import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
 
 let partnerId;
 
+// Unique-per-file fixture to prevent collision with other test files
+// that use testUsers.partner (email='partner@test.com').
+const PARTNER_EMAIL = `partner-smartsearch-${Date.now()}@test.com`;
+const PARTNER_PHONE = `+37529${Math.floor(1000000 + Math.random() * 9000000)}`;
+
 const defaultWorkingHours = JSON.stringify({
   monday: { open: '10:00', close: '22:00' },
   tuesday: { open: '10:00', close: '22:00' },
@@ -34,7 +39,11 @@ const defaultWorkingHours = JSON.stringify({
 });
 
 beforeAll(async () => {
-  const partner = await createUserAndGetTokens(testUsers.partner);
+  const partner = await createUserAndGetTokens({
+    ...testUsers.partner,
+    email: PARTNER_EMAIL,
+    phone: PARTNER_PHONE,
+  });
   partnerId = partner.user.id;
 });
 
@@ -42,7 +51,7 @@ beforeEach(async () => {
   await clearAllData();
   await query(
     'INSERT INTO users (id, email, password_hash, name, role, auth_method) VALUES ($1, $2, $3, $4, $5, $6)',
-    [partnerId, 'partner@test.com', 'hash', 'Partner', 'partner', 'email']
+    [partnerId, PARTNER_EMAIL, 'hash', 'Partner', 'partner', 'email']
   );
 
   // Seed test establishments

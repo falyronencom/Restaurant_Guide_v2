@@ -180,7 +180,7 @@ describe('createBooking', () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
 
     await expect(createBooking(USER_ID, validBookingData()))
-      .rejects.toThrow('Establishment not found');
+      .rejects.toThrow('Заведение не найдено');
   });
 
   it('rejects when booking not enabled', async () => {
@@ -188,7 +188,7 @@ describe('createBooking', () => {
     BookingSettingsModel.getByEstablishmentId.mockResolvedValue({ ...mockSettings, is_enabled: false });
 
     await expect(createBooking(USER_ID, validBookingData()))
-      .rejects.toThrow('Booking is not enabled');
+      .rejects.toThrow('Бронирование недоступно');
   });
 
   it('rejects when guest count exceeds max', async () => {
@@ -197,7 +197,7 @@ describe('createBooking', () => {
 
     const data = { ...validBookingData(), guestCount: 20 };
     await expect(createBooking(USER_ID, data))
-      .rejects.toThrow('Guest count must be between');
+      .rejects.toThrow('Количество гостей должно быть');
   });
 
   it('rejects when date is in the past', async () => {
@@ -206,7 +206,7 @@ describe('createBooking', () => {
 
     const data = { ...validBookingData(), date: '2020-01-01' };
     await expect(createBooking(USER_ID, data))
-      .rejects.toThrow('in the past');
+      .rejects.toThrow('в прошлом');
   });
 
   it('rejects when date exceeds max_days_ahead', async () => {
@@ -217,7 +217,7 @@ describe('createBooking', () => {
     farDate.setDate(farDate.getDate() + 30);
     const data = { ...validBookingData(), date: farDate.toISOString().split('T')[0] };
     await expect(createBooking(USER_ID, data))
-      .rejects.toThrow('more than 7 days ahead');
+      .rejects.toThrow('дней вперёд');
   });
 
   it('rejects when establishment closed on selected day (object format)', async () => {
@@ -228,7 +228,7 @@ describe('createBooking', () => {
     const nextSunday = getNextWeekday(0);
     const data = { ...validBookingData(), date: nextSunday };
     await expect(createBooking(USER_ID, data))
-      .rejects.toThrow('closed on the selected day');
+      .rejects.toThrow('не работает в выбранный день');
   });
 
   it('rejects when time outside working hours', async () => {
@@ -237,7 +237,7 @@ describe('createBooking', () => {
 
     const data = { ...validBookingData(), time: '23:30' };
     await expect(createBooking(USER_ID, data))
-      .rejects.toThrow('within working hours');
+      .rejects.toThrow('в рабочие часы');
   });
 
   it('rejects when user has 2 active bookings', async () => {
@@ -246,7 +246,7 @@ describe('createBooking', () => {
     BookingModel.getActiveCountForUser.mockResolvedValue(2);
 
     await expect(createBooking(USER_ID, validBookingData()))
-      .rejects.toThrow('2 active bookings');
+      .rejects.toThrow('2 активных бронирования');
   });
 
   it('rejects duplicate booking at same establishment', async () => {
@@ -256,12 +256,12 @@ describe('createBooking', () => {
     BookingModel.getActiveForEstablishmentAndUser.mockResolvedValue({ id: 'existing' });
 
     await expect(createBooking(USER_ID, validBookingData()))
-      .rejects.toThrow('active booking at this establishment');
+      .rejects.toThrow('активное бронирование в этом заведении');
   });
 
   it('rejects when required fields missing', async () => {
     await expect(createBooking(USER_ID, { establishmentId: EST_ID }))
-      .rejects.toThrow('required');
+      .rejects.toThrow('обязательные поля');
   });
 });
 
