@@ -15,6 +15,17 @@ if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
 }
 
+// Read release signing config from key.properties (gitignored).
+// See android/key.properties.example for the expected schema and the
+// keystore generation command. If the file is absent (e.g. on CI without
+// signing secrets), release builds fall back to debug signing so that
+// `flutter run --release` keeps working locally.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.nirivio.app"
     compileSdk = flutter.compileSdkVersion
@@ -44,11 +55,26 @@ android {
             localProperties.getProperty("YANDEX_MAPKIT_API_KEY", "")
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Use release signing if key.properties is present and complete.
+            // Otherwise fall back to debug signing so local `flutter run --release`
+            // works without secrets — Play Store uploads must use a real keystore.
+            signingConfig = if (keystorePropertiesFile.exists()
+                && keystoreProperties["storeFile"] != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

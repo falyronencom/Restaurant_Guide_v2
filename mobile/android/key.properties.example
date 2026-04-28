@@ -1,0 +1,36 @@
+# =====================================================
+# Android release signing — TEMPLATE
+# Copy this file to mobile/android/key.properties and fill in real values.
+# The real key.properties is gitignored (see android/.gitignore: key.properties).
+# Never commit the real file or the .jks keystore to Git.
+# =====================================================
+
+# Alias used when the keystore was generated (keytool -alias)
+keyAlias=upload
+
+# Password for the key alias inside the keystore
+keyPassword=your_key_password_here
+
+# Absolute or relative path to the .jks/.keystore file.
+# If relative, it is resolved against mobile/android/ (rootProject) by build.gradle.kts.
+# Recommended location: mobile/android/app/upload-keystore.jks (also gitignored via *.jks).
+storeFile=app/upload-keystore.jks
+
+# Password for the keystore itself (set when keytool -genkey was run)
+storePassword=your_keystore_password_here
+
+# -----------------------------------------------------
+# Generating the keystore (one-time, Coordinator action):
+# -----------------------------------------------------
+# From mobile/android/, run:
+#
+#   keytool -genkey -v -keystore app/upload-keystore.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 \
+#           -alias upload
+#
+# keytool will prompt for store password, key password, and identity fields
+# (CN, OU, O, L, ST, C). Use the same passwords here in key.properties.
+#
+# IMPORTANT: store the resulting .jks file and passwords in a password
+# manager. Losing the upload key blocks future Play Store updates.
+# Optionally enroll in Play App Signing so Google manages the app signing key.
