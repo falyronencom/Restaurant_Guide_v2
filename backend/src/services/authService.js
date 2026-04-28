@@ -18,6 +18,15 @@ import { pool } from '../config/database.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
 import { randomUUID, randomBytes } from 'crypto';
+import {
+  createCode as createVerificationCode,
+  findActiveCodeForUser,
+  countRecentSends,
+  invalidateActiveCodesForUser,
+  incrementAttempts,
+  markAsUsed,
+} from '../models/emailVerificationModel.js';
+import { sendVerificationCodeEmail } from './emailService.js';
 
 /**
  * Argon2id Parameters
@@ -731,5 +740,135 @@ export async function upgradeUserToPartner(userId) {
     });
     throw error;
   }
+}
+
+/**
+ * Generate a cryptographically random 6-digit numeric verification code.
+ * Returns string with leading zeros preserved (e.g., "042193").
+ */
+function generateSixDigitCode() {
+  // 4 random bytes interpreted as uint32 mod 10^6 — uniform distribution
+  // bias is negligible (2^32 / 10^6 ≈ 4294.97, max bias < 0.0001%)
+  const buf = randomBytes(4);
+  const num = buf.readUInt32BE(0) % 1000000;
+  return String(num).padStart(6, '0');
+}
+
+/**
+ * Issue (or re-issue) an email verification code for a user.
+ *
+ * Flow:
+ *   1. Validate user exists, is active, has email, not already verified.
+ *   2. Enforce rate limit: max 5 sends per hour per user.
+ *   3. Invalidate any prior active codes (only latest is valid).
+ *   4. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
+ *   5. Persist code in email_verification_codes.
+ *   6. Send email via SendGrid (degrades gracefully if not configured).
+ *
+ * @param {string} userId
+ * @returns {Promise<{sent: boolean, expiresAt: Date}>}
+ * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
+ */
+export async function sendEmailVerificationCode(userId) {
+  const userQuery = `
+    SELECT id, email, name, email_verified
+    FROM users
+    WHERE id = $1 AND is_active = true
+  `;
+  const userResult = await pool.query(userQuery, [userId]);
+
+  if (userResult.rows.length === 0) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  const user = userResult.rows[0];
+
+  if (user.email_verified) {
+    throw new Error('EMAIL_ALREADY_VERIFIED');
+  }
+
+  if (!user.email) {
+    throw new Error('NO_EMAIL');
+  }
+
+  // Rate limit: max 5 sends in last hour
+  const recentCount = await countRecentSends(userId, 60);
+  if (recentCount >= 5) {
+    logger.warn('Email verification send rate-limited', { userId, recentCount });
+    throw new Error('RATE_LIMITED');
+  }
+
+  // Invalidate prior active codes — only the latest one is valid
+  await invalidateActiveCodesForUser(userId);
+
+  const code = generateSixDigitCode();
+  const expiryMinutes = parseInt(process.env.EMAIL_VERIFICATION_EXPIRY_MINUTES, 10) || 15;
+  const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+  await createVerificationCode(userId, code, expiresAt);
+
+  // Send email — failure here does not roll back code creation, user can resend
+  const result = await sendVerificationCodeEmail(user.email, code, user.name);
+
+  logger.info('Email verification code issued', {
+    userId,
+    expiresAt,
+    sent: result.sent,
+  });
+
+  return { sent: result.sent, expiresAt };
+}
+
+/**
+ * Verify a 6-digit email verification code submitted by the user.
+ *
+ * On success: marks code as used, sets users.email_verified=true, returns user.
+ * On wrong code: increments attempts; after 5 failed attempts the code is
+ * invalidated and TOO_MANY_ATTEMPTS is returned on subsequent calls.
+ *
+ * @param {string} userId
+ * @param {string} code - 6-digit string
+ * @returns {Promise<Object>} Updated user record
+ * @throws {Error} 'INVALID_OR_EXPIRED_CODE' | 'TOO_MANY_ATTEMPTS' | 'INVALID_CODE' | 'USER_NOT_FOUND'
+ */
+export async function verifyEmailCode(userId, code) {
+  const activeCode = await findActiveCodeForUser(userId);
+
+  if (!activeCode) {
+    throw new Error('INVALID_OR_EXPIRED_CODE');
+  }
+
+  if (activeCode.attempts >= 5) {
+    await markAsUsed(activeCode.id);
+    throw new Error('TOO_MANY_ATTEMPTS');
+  }
+
+  if (activeCode.code !== code) {
+    const newAttempts = await incrementAttempts(activeCode.id);
+    if (newAttempts >= 5) {
+      await markAsUsed(activeCode.id);
+    }
+    throw new Error('INVALID_CODE');
+  }
+
+  // Code matches — finalize verification
+  await markAsUsed(activeCode.id);
+
+  const updateResult = await pool.query(
+    `UPDATE users
+     SET email_verified = true, updated_at = $1
+     WHERE id = $2 AND is_active = true
+     RETURNING id, email, phone, name, role, auth_method, avatar_url,
+               email_verified, phone_verified, is_active, created_at`,
+    [new Date(), userId],
+  );
+
+  if (updateResult.rows.length === 0) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  logger.info('Email verified successfully', { userId });
+
+  return updateResult.rows[0];
 }
 

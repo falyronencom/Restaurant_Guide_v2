@@ -31,6 +31,7 @@
   "author": "Restaurant Guide Belarus Team",
   "license": "PROPRIETARY",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "argon2": "^0.31.1",
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",

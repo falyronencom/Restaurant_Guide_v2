@@ -101,7 +101,18 @@ export async function register(req, res, next) {
     
     // Generate token pair for immediate login
     const tokens = await authService.generateTokenPair(user);
-    
+
+    // Fire-and-forget: send email verification code for email-based registrations.
+    // Failure here must not block registration — user can request resend later.
+    if (user.email && authMethod === 'email') {
+      authService.sendEmailVerificationCode(user.id).catch((err) => {
+        logger.warn('Failed to send verification code after registration', {
+          userId: user.id,
+          error: err.message,
+        });
+      });
+    }
+
     // Return user data with tokens
     // Note: We return full user object so frontend can store user profile
     return res.status(201).json({
@@ -740,6 +751,140 @@ export async function oauthLogin(req, res, next) {
       });
     }
 
+    next(error);
+  }
+}
+
+/**
+ * Issue (or re-issue) a 6-digit email verification code
+ *
+ * POST /api/v1/auth/send-verification-code
+ *
+ * Protected endpoint. Sends a verification code to the authenticated user's
+ * email. Service layer enforces a per-user limit of 5 sends per hour.
+ *
+ * Response:
+ *  - 200 OK: Code issued (sent flag indicates SendGrid delivery status)
+ *  - 400 NO_EMAIL: Account has no email address (phone-only or OAuth user)
+ *  - 404 USER_NOT_FOUND
+ *  - 409 EMAIL_ALREADY_VERIFIED
+ *  - 429 RATE_LIMITED
+ */
+export async function sendVerificationCode(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const result = await authService.sendEmailVerificationCode(userId);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        sent: result.sent,
+        expiresAt: result.expiresAt,
+      },
+    });
+  } catch (error) {
+    if (error.message === 'EMAIL_ALREADY_VERIFIED') {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'EMAIL_ALREADY_VERIFIED', message: 'Email is already verified' },
+      });
+    }
+    if (error.message === 'NO_EMAIL') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'NO_EMAIL', message: 'Account has no email address' },
+      });
+    }
+    if (error.message === 'RATE_LIMITED') {
+      return res.status(429).json({
+        success: false,
+        error: { code: 'RATE_LIMITED', message: 'Too many verification requests. Please try again later.' },
+      });
+    }
+    if (error.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+      });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Verify a 6-digit email verification code
+ *
+ * POST /api/v1/auth/verify-email-code
+ *
+ * Protected endpoint. Validates the submitted code against the latest active
+ * verification code for the user. On success, sets users.email_verified=true.
+ *
+ * Body:
+ *  - code: 6-digit string
+ *
+ * Response:
+ *  - 200 OK: Verified, returns updated user
+ *  - 400 INVALID_REQUEST: Code missing or wrong format
+ *  - 401 INVALID_CODE: Code does not match (attempts incremented)
+ *  - 410 INVALID_OR_EXPIRED_CODE: No active code or it has expired
+ *  - 429 TOO_MANY_ATTEMPTS: Code invalidated after 5 failed attempts
+ */
+export async function verifyEmailCode(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_REQUEST', message: 'Code must be a 6-digit string' },
+      });
+    }
+
+    const user = await authService.verifyEmailCode(userId, code);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          name: user.name,
+          role: user.role,
+          authMethod: user.auth_method,
+          avatarUrl: user.avatar_url,
+          emailVerified: user.email_verified,
+          phoneVerified: user.phone_verified,
+          createdAt: user.created_at,
+        },
+      },
+    });
+  } catch (error) {
+    if (error.message === 'INVALID_OR_EXPIRED_CODE') {
+      return res.status(410).json({
+        success: false,
+        error: { code: 'INVALID_OR_EXPIRED_CODE', message: 'No active code or it has expired' },
+      });
+    }
+    if (error.message === 'TOO_MANY_ATTEMPTS') {
+      return res.status(429).json({
+        success: false,
+        error: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many failed attempts. Request a new code.' },
+      });
+    }
+    if (error.message === 'INVALID_CODE') {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'INVALID_CODE', message: 'Verification code is incorrect' },
+      });
+    }
+    if (error.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+      });
+    }
     next(error);
   }
 }

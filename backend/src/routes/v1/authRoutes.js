@@ -217,5 +217,51 @@ router.post(
   authController.uploadAvatar,
 );
 
+/**
+ * POST /api/v1/auth/send-verification-code
+ *
+ * Protected endpoint. Issues a fresh 6-digit email verification code for the
+ * authenticated user (also called automatically once after registration).
+ *
+ * Middleware chain:
+ *   1. Authentication: verify access token
+ *   2. Rate limiter: 10 per hour per IP (defense-in-depth; service layer also
+ *      enforces 5/hour per user via DB count)
+ *   3. Controller: orchestrate code generation + email send
+ */
+router.post(
+  '/send-verification-code',
+  authenticate,
+  createRateLimiter({
+    limit: 10,
+    windowSeconds: 3600,
+    keyPrefix: 'verify-send',
+  }),
+  authController.sendVerificationCode,
+);
+
+/**
+ * POST /api/v1/auth/verify-email-code
+ *
+ * Protected endpoint. Validates submitted 6-digit code; on success sets
+ * users.email_verified=true.
+ *
+ * Middleware chain:
+ *   1. Authentication: verify access token
+ *   2. Rate limiter: 30 per hour per IP (each code allows 5 attempts; user
+ *      may resend up to ~5 codes/hour, so 30 covers normal flows)
+ *   3. Controller: validate format then call service
+ */
+router.post(
+  '/verify-email-code',
+  authenticate,
+  createRateLimiter({
+    limit: 30,
+    windowSeconds: 3600,
+    keyPrefix: 'verify-code',
+  }),
+  authController.verifyEmailCode,
+);
+
 export default router;
 
