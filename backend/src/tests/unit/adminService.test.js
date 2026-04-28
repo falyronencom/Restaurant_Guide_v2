@@ -127,6 +127,8 @@ const {
   moderateEstablishment,
   suspendEstablishment,
   unsuspendEstablishment,
+  claimEstablishment,
+  adminUpgradeUserToPartner,
 } = await import('../../services/adminService.js');
 
 // ============================================================================
@@ -136,10 +138,21 @@ const {
 const ADMIN_ID = uuidv4();
 const EST_ID = uuidv4();
 const PARTNER_ID = uuidv4();
+const TARGET_USER_ID = uuidv4();
 
 // Drains pending microtasks/macrotasks — needed for fire-and-forget IIFE
 // (e.g. the OCR backfill block in moderateEstablishment is not awaited)
 const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
+
+const buildMockClient = () => ({
+  query: jest.fn().mockResolvedValue({ rows: [] }),
+  release: jest.fn(),
+});
+
+const buildReq = () => ({
+  ip: '127.0.0.1',
+  get: jest.fn((header) => (header === 'User-Agent' ? 'TestAgent/1.0' : null)),
+});
 
 const baseEstablishment = (overrides = {}) => ({
   id: EST_ID,
@@ -645,6 +658,268 @@ describe('unsuspendEstablishment', () => {
     expect(NotificationService.notifyEstablishmentStatusChange).toHaveBeenCalledWith(
       EST_ID,
       'unsuspended',
+    );
+  });
+});
+
+// ============================================================================
+// claimEstablishment — Tier 1 (transactional)
+// ============================================================================
+
+describe('claimEstablishment', () => {
+  const activeUser = { id: TARGET_USER_ID, role: 'user', is_active: true };
+
+  test('throws ESTABLISHMENT_NOT_FOUND when establishment is missing', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'ESTABLISHMENT_NOT_FOUND', statusCode: 404 });
+    expect(DB.getClient).not.toHaveBeenCalled();
+  });
+
+  test('throws ESTABLISHMENT_ARCHIVED for archived establishment', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ status: 'archived' }),
+    );
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'ESTABLISHMENT_ARCHIVED', statusCode: 400 });
+  });
+
+  test('throws ALREADY_OWNED when target user already owns the establishment', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ partner_id: TARGET_USER_ID }),
+    );
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'ALREADY_OWNED', statusCode: 400 });
+  });
+
+  test('throws USER_NOT_FOUND when target user does not exist', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [] });
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
+    expect(DB.getClient).not.toHaveBeenCalled();
+  });
+
+  test('throws USER_INACTIVE when target user account is deactivated', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [{ ...activeUser, is_active: false }] });
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'USER_INACTIVE', statusCode: 400 });
+  });
+
+  test('completes transaction on user→partner upgrade: BEGIN, claim, UPDATE role, COMMIT', async () => {
+    const updated = baseEstablishment({ partner_id: TARGET_USER_ID });
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [activeUser] });
+    EstablishmentModel.claimEstablishment.mockResolvedValue(updated);
+    const client = buildMockClient();
+    DB.getClient.mockResolvedValue(client);
+
+    const result = await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    expect(result).toEqual(updated);
+    const queries = client.query.mock.calls.map((c) => c[0]);
+    expect(queries).toContain('BEGIN');
+    expect(queries).toContain('COMMIT');
+    expect(queries).not.toContain('ROLLBACK');
+    expect(EstablishmentModel.claimEstablishment).toHaveBeenCalledWith(
+      EST_ID,
+      TARGET_USER_ID,
+      ADMIN_ID,
+      client,
+    );
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE users SET role = 'partner'"),
+      [expect.any(Date), TARGET_USER_ID],
+    );
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  test('skips role UPDATE for user already in partner role (idempotent)', async () => {
+    const partnerUser = { id: TARGET_USER_ID, role: 'partner', is_active: true };
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [partnerUser] });
+    EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
+    const client = buildMockClient();
+    DB.getClient.mockResolvedValue(client);
+
+    await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    const updateUserCalls = client.query.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('UPDATE users'),
+    );
+    expect(updateUserCalls).toHaveLength(0);
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  test('rolls back transaction and throws CLAIM_FAILED when claim model errors', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [activeUser] });
+    EstablishmentModel.claimEstablishment.mockRejectedValue(new Error('FK violation'));
+    const client = buildMockClient();
+    DB.getClient.mockResolvedValue(client);
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'CLAIM_FAILED', statusCode: 500 });
+
+    const queries = client.query.mock.calls.map((c) => c[0]);
+    expect(queries).toContain('ROLLBACK');
+    expect(queries).not.toContain('COMMIT');
+    expect(client.release).toHaveBeenCalled();
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+    expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+  });
+
+  test('always releases client even when transaction fails', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [activeUser] });
+    EstablishmentModel.claimEstablishment.mockRejectedValue(new Error('boom'));
+    const client = buildMockClient();
+    DB.getClient.mockResolvedValue(client);
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'CLAIM_FAILED' });
+
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('writes audit_log with previous and new partner_id', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [activeUser] });
+    EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
+    DB.getClient.mockResolvedValue(buildMockClient());
+
+    await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: ADMIN_ID,
+        action: 'claim_establishment',
+        entity_type: 'establishment',
+        entity_id: EST_ID,
+        old_data: { partner_id: PARTNER_ID },
+        new_data: { partner_id: TARGET_USER_ID },
+        ip_address: '127.0.0.1',
+        user_agent: 'TestAgent/1.0',
+      }),
+    );
+  });
+
+  test('triggers claimed notification for the new partner', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    DB.query.mockResolvedValue({ rows: [activeUser] });
+    EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
+    DB.getClient.mockResolvedValue(buildMockClient());
+
+    await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    expect(NotificationService.notifyEstablishmentClaimed).toHaveBeenCalledWith(
+      EST_ID,
+      TARGET_USER_ID,
+    );
+  });
+});
+
+// ============================================================================
+// adminUpgradeUserToPartner — Tier 1
+// ============================================================================
+
+describe('adminUpgradeUserToPartner', () => {
+  test('throws USER_NOT_FOUND when target user does not exist', async () => {
+    DB.query.mockResolvedValue({ rows: [] });
+
+    await expect(
+      adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
+    expect(AuthService.upgradeUserToPartner).not.toHaveBeenCalled();
+  });
+
+  test('throws USER_INACTIVE when target user is deactivated', async () => {
+    DB.query.mockResolvedValue({
+      rows: [{ id: TARGET_USER_ID, role: 'user', is_active: false }],
+    });
+
+    await expect(
+      adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'USER_INACTIVE', statusCode: 400 });
+    expect(AuthService.upgradeUserToPartner).not.toHaveBeenCalled();
+  });
+
+  test('upgrades user role and writes audit_log with old_role=user', async () => {
+    DB.query.mockResolvedValue({
+      rows: [{ id: TARGET_USER_ID, role: 'user', is_active: true }],
+    });
+    AuthService.upgradeUserToPartner.mockResolvedValue({
+      id: TARGET_USER_ID,
+      role: 'partner',
+    });
+
+    const result = await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    expect(result.role).toBe('partner');
+    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID);
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: ADMIN_ID,
+        action: 'upgrade_user_to_partner',
+        entity_type: 'user',
+        entity_id: TARGET_USER_ID,
+        old_data: { role: 'user' },
+        new_data: { role: 'partner' },
+      }),
+    );
+  });
+
+  test('still calls upgradeUserToPartner for already-partner user (idempotent)', async () => {
+    DB.query.mockResolvedValue({
+      rows: [{ id: TARGET_USER_ID, role: 'partner', is_active: true }],
+    });
+    AuthService.upgradeUserToPartner.mockResolvedValue({
+      id: TARGET_USER_ID,
+      role: 'partner',
+    });
+
+    await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID);
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        old_data: { role: 'partner' },
+        new_data: { role: 'partner' },
+      }),
+    );
+  });
+
+  test('passes req.ip and User-Agent into audit log', async () => {
+    DB.query.mockResolvedValue({
+      rows: [{ id: TARGET_USER_ID, role: 'user', is_active: true }],
+    });
+    AuthService.upgradeUserToPartner.mockResolvedValue({
+      id: TARGET_USER_ID,
+      role: 'partner',
+    });
+    const req = buildReq();
+
+    await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, req);
+
+    expect(req.get).toHaveBeenCalledWith('User-Agent');
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ip_address: '127.0.0.1',
+        user_agent: 'TestAgent/1.0',
+      }),
     );
   });
 });
