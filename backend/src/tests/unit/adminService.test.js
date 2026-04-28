@@ -131,6 +131,9 @@ const {
   adminUpgradeUserToPartner,
   updateEstablishmentCoordinates,
   searchUsers,
+  hideMenuItem,
+  unhideMenuItem,
+  dismissMenuItemFlag,
 } = await import('../../services/adminService.js');
 
 // ============================================================================
@@ -141,6 +144,7 @@ const ADMIN_ID = uuidv4();
 const EST_ID = uuidv4();
 const PARTNER_ID = uuidv4();
 const TARGET_USER_ID = uuidv4();
+const MENU_ITEM_ID = uuidv4();
 
 // Drains pending microtasks/macrotasks — needed for fire-and-forget IIFE
 // (e.g. the OCR backfill block in moderateEstablishment is not awaited)
@@ -1056,6 +1060,227 @@ describe('searchUsers', () => {
     expect(DB.query).toHaveBeenCalledWith(
       expect.any(String),
       ['%test%', 10],
+    );
+  });
+});
+
+// ============================================================================
+// hideMenuItem — Tier 1 (Component 8)
+// ============================================================================
+
+const baseMenuItem = (overrides = {}) => ({
+  id: MENU_ITEM_ID,
+  establishment_id: EST_ID,
+  item_name: 'Бургер',
+  price_byn: 15.50,
+  is_hidden_by_admin: false,
+  hidden_reason: null,
+  sanity_flag: null,
+  ...overrides,
+});
+
+describe('hideMenuItem', () => {
+  const baseParams = {
+    reason: 'Inappropriate content',
+    adminUserId: ADMIN_ID,
+    ipAddress: '127.0.0.1',
+    userAgent: 'TestAgent/1.0',
+  };
+
+  test('rejects when reason is undefined', async () => {
+    await expect(
+      hideMenuItem(MENU_ITEM_ID, { ...baseParams, reason: undefined }),
+    ).rejects.toMatchObject({ code: 'REASON_REQUIRED', statusCode: 400 });
+    expect(MenuItemModel.findById).not.toHaveBeenCalled();
+  });
+
+  test('rejects when reason is whitespace only', async () => {
+    await expect(
+      hideMenuItem(MENU_ITEM_ID, { ...baseParams, reason: '   ' }),
+    ).rejects.toMatchObject({ code: 'REASON_REQUIRED', statusCode: 400 });
+  });
+
+  test('throws MENU_ITEM_NOT_FOUND when item is missing', async () => {
+    MenuItemModel.findById.mockResolvedValue(null);
+
+    await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_FOUND', statusCode: 404 });
+  });
+
+  test('throws MENU_ITEM_ALREADY_HIDDEN when item is already hidden', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ is_hidden_by_admin: true }),
+    );
+
+    await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_ALREADY_HIDDEN', statusCode: 400 });
+    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+  });
+
+  test('throws MENU_ITEM_HIDE_CONFLICT when updateById returns null', async () => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem());
+    MenuItemModel.updateById.mockResolvedValue(null);
+
+    await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_HIDE_CONFLICT', statusCode: 409 });
+  });
+
+  test('hides item with reason, writes audit log, and does NOT trigger notification (Phase 1 policy)', async () => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem());
+    const updated = baseMenuItem({ is_hidden_by_admin: true, hidden_reason: baseParams.reason });
+    MenuItemModel.updateById.mockResolvedValue(updated);
+
+    const result = await hideMenuItem(MENU_ITEM_ID, baseParams);
+
+    expect(result).toEqual(updated);
+    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
+      is_hidden_by_admin: true,
+      hidden_reason: baseParams.reason,
+    });
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: ADMIN_ID,
+        action: 'hide_menu_item',
+        entity_type: 'menu_item',
+        entity_id: MENU_ITEM_ID,
+        old_data: { is_hidden_by_admin: false },
+        new_data: { is_hidden_by_admin: true, reason: baseParams.reason },
+      }),
+    );
+    // Phase 1 decision: no partner notification on hide
+    expect(NotificationService.notifyEstablishmentStatusChange).not.toHaveBeenCalled();
+    expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// unhideMenuItem — Tier 1 (Component 8)
+// ============================================================================
+
+describe('unhideMenuItem', () => {
+  const baseParams = {
+    adminUserId: ADMIN_ID,
+    ipAddress: '127.0.0.1',
+    userAgent: 'TestAgent/1.0',
+  };
+
+  test('throws MENU_ITEM_NOT_FOUND when item is missing', async () => {
+    MenuItemModel.findById.mockResolvedValue(null);
+
+    await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_FOUND', statusCode: 404 });
+  });
+
+  test('throws MENU_ITEM_NOT_HIDDEN when item is not currently hidden', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ is_hidden_by_admin: false }),
+    );
+
+    await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_HIDDEN', statusCode: 400 });
+    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+  });
+
+  test('throws MENU_ITEM_UNHIDE_CONFLICT when updateById returns null', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ is_hidden_by_admin: true }),
+    );
+    MenuItemModel.updateById.mockResolvedValue(null);
+
+    await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_UNHIDE_CONFLICT', statusCode: 409 });
+  });
+
+  test('unhides item, clears hidden_reason, and writes audit log', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ is_hidden_by_admin: true, hidden_reason: 'old reason' }),
+    );
+    const updated = baseMenuItem({ is_hidden_by_admin: false, hidden_reason: null });
+    MenuItemModel.updateById.mockResolvedValue(updated);
+
+    const result = await unhideMenuItem(MENU_ITEM_ID, baseParams);
+
+    expect(result).toEqual(updated);
+    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
+      is_hidden_by_admin: false,
+      hidden_reason: null,
+    });
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'unhide_menu_item',
+        entity_type: 'menu_item',
+        entity_id: MENU_ITEM_ID,
+        old_data: { is_hidden_by_admin: true },
+        new_data: { is_hidden_by_admin: false },
+      }),
+    );
+  });
+});
+
+// ============================================================================
+// dismissMenuItemFlag — Tier 1 (Component 8)
+// ============================================================================
+
+describe('dismissMenuItemFlag', () => {
+  const baseParams = {
+    adminUserId: ADMIN_ID,
+    ipAddress: '127.0.0.1',
+    userAgent: 'TestAgent/1.0',
+  };
+
+  test('throws MENU_ITEM_NOT_FOUND when item is missing', async () => {
+    MenuItemModel.findById.mockResolvedValue(null);
+
+    await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_FOUND', statusCode: 404 });
+  });
+
+  test('throws MENU_ITEM_NO_FLAG when sanity_flag is null', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ sanity_flag: null }),
+    );
+
+    await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NO_FLAG', statusCode: 400 });
+    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+  });
+
+  test('throws MENU_ITEM_NO_FLAG when sanity_flag is undefined', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ sanity_flag: undefined }),
+    );
+
+    await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NO_FLAG', statusCode: 400 });
+  });
+
+  test('clears sanity_flag, writes audit log, and does NOT touch is_hidden_by_admin', async () => {
+    const flag = { reason: 'price_too_high', confidence: 0.9 };
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ sanity_flag: flag, is_hidden_by_admin: false }),
+    );
+    const updated = baseMenuItem({ sanity_flag: null, is_hidden_by_admin: false });
+    MenuItemModel.updateById.mockResolvedValue(updated);
+
+    const result = await dismissMenuItemFlag(MENU_ITEM_ID, baseParams);
+
+    expect(result).toEqual(updated);
+    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
+      sanity_flag: null,
+    });
+    // Critical: dismissing a flag must NOT change visibility — those are
+    // separate admin actions per Component 8 design.
+    expect(MenuItemModel.updateById).not.toHaveBeenCalledWith(
+      MENU_ITEM_ID,
+      expect.objectContaining({ is_hidden_by_admin: expect.anything() }),
+    );
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'dismiss_sanity_flag',
+        entity_type: 'menu_item',
+        old_data: { sanity_flag: flag },
+        new_data: { sanity_flag: null },
+      }),
     );
   });
 });
