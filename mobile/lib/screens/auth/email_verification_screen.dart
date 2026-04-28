@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
-import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
 
 /// Email Verification Screen
@@ -27,7 +26,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   int _resendTimer = 12;
   Timer? _timer;
 
-  String? _email;
   String? _name;
 
   @override
@@ -39,11 +37,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Get arguments passed from registration screen
+    // Get arguments passed from registration screen.
+    // 'email' key is accepted for backwards-compat but not used directly —
+    // the resend endpoint operates on the authenticated session.
     final args =
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
-      _email = args['email'] as String?;
       _name = args['name'] as String?;
     }
   }
@@ -99,42 +98,36 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       _errorMessage = null;
     });
 
-    try {
-      final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.verifyEmailCode(code: code);
 
-      // Verify the code
-      await authProvider.verifyCode(code: code);
+    if (!mounted) return;
 
-      // If name was collected during registration, update profile
-      if (_name != null && _name!.isNotEmpty && mounted) {
-        try {
-          await authProvider.updateProfile(name: _name);
-        } catch (e) {
-          // Profile update failed but verification succeeded
-          // Log error but continue with navigation
-          debugPrint('Profile update failed: $e');
-        }
-      }
-
-      // Navigate to home screen
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/home',
-          (route) => false,
-        );
-      }
-    } catch (e) {
+    if (!success) {
       setState(() {
-        _errorMessage = getHumanErrorMessage(e);
+        _errorMessage =
+            authProvider.errorMessage ?? 'Не удалось подтвердить email';
+        _isLoading = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+      return;
+    }
+
+    // If name was collected during registration, update profile (best-effort)
+    if (_name != null && _name!.isNotEmpty) {
+      try {
+        await authProvider.updateProfile(name: _name);
+      } catch (e) {
+        debugPrint('Profile update failed: $e');
       }
     }
+
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home',
+      (route) => false,
+    );
   }
 
   /// Handle resend verification code
@@ -146,36 +139,31 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       _errorMessage = null;
     });
 
-    try {
-      final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.sendEmailVerificationCode();
 
-      // Re-register to get new verification code
-      await authProvider.registerWithEmail(
-        email: _email ?? '',
-        password: '', // Password not needed for resend
-      );
+    if (!mounted) return;
 
-      _startResendTimer();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Код отправлен повторно'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
+    if (!success) {
       setState(() {
-        _errorMessage = getHumanErrorMessage(e);
+        _errorMessage =
+            authProvider.errorMessage ?? 'Не удалось отправить код';
+        _isLoading = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      return;
     }
+
+    _startResendTimer();
+    setState(() {
+      _isLoading = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Код отправлен повторно'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override

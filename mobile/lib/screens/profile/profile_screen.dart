@@ -829,6 +829,47 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                           color: AppTheme.textPrimary,
                         ),
                       ),
+                      if (user?.email != null &&
+                          (user.email as String).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        user.emailVerified == true
+                            ? const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.verified,
+                                      size: 14, color: Color(0xFF2E7D32)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Email подтверждён',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF2E7D32),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : InkWell(
+                                onTap: () => _onVerifyEmailTap(
+                                    context, user.email as String),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        size: 14,
+                                        color: AppTheme.primaryOrangeDark),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Подтвердить email',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.primaryOrangeDark,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                      ],
                     ],
                   ),
                 ),
@@ -1209,6 +1250,35 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Issue a verification code and navigate to the verification screen.
+  /// Shows a snackbar with provider error message on failure (e.g. rate limit).
+  Future<void> _onVerifyEmailTap(BuildContext context, String email) async {
+    final authProvider = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    final success = await authProvider.sendEmailVerificationCode();
+
+    if (!mounted) return;
+
+    if (!success) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            authProvider.errorMessage ?? 'Не удалось отправить код',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    navigator.pushNamed(
+      '/auth/email-verification',
+      arguments: {'email': email},
     );
   }
 

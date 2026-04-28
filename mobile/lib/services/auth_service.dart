@@ -138,6 +138,47 @@ class AuthService {
     }
   }
 
+  /// Send (or re-send) a 6-digit email verification code to the
+  /// authenticated user's email.
+  ///
+  /// Throws on rate limit, missing email, etc. — caller handles via provider.
+  /// Returns the absolute expiration time of the issued code (informational).
+  Future<DateTime?> sendEmailVerificationCode() async {
+    final response = await _apiClient.post(
+      '/api/v1/auth/send-verification-code',
+    );
+
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      final responseData = data['data'] as Map<String, dynamic>? ?? data;
+      final expiresAtStr = responseData['expiresAt'] as String?;
+      return expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null;
+    }
+
+    throw Exception('Failed to send verification code');
+  }
+
+  /// Verify a 6-digit email verification code.
+  ///
+  /// Backend updates users.email_verified=true on success and returns the
+  /// updated user object. Caller should refresh stored user state.
+  Future<User> verifyEmailCode({required String code}) async {
+    final response = await _apiClient.post(
+      '/api/v1/auth/verify-email-code',
+      data: {'code': code},
+    );
+
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      final userJson = data['data']?['user'] as Map<String, dynamic>? ??
+          data['user'] as Map<String, dynamic>? ??
+          data;
+      return User.fromJson(userJson);
+    }
+
+    throw Exception('Email verification failed');
+  }
+
   /// Resend verification code (for SMS or email)
   ///
   /// Returns new verification token

@@ -10,6 +10,8 @@ class User {
   final String? avatarUrl;
   final String role;
   final bool isVerified;
+  final bool emailVerified;
+  final bool phoneVerified;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -21,12 +23,20 @@ class User {
     this.avatarUrl,
     this.role = 'user',
     this.isVerified = false,
+    this.emailVerified = false,
+    this.phoneVerified = false,
     this.createdAt,
     this.updatedAt,
   });
 
   /// Create User from JSON response
   factory User.fromJson(Map<String, dynamic> json) {
+    final emailVerified = json['email_verified'] as bool? ??
+        json['emailVerified'] as bool? ??
+        false;
+    final phoneVerified = json['phone_verified'] as bool? ??
+        json['phoneVerified'] as bool? ??
+        false;
     return User(
       id: json['id'] as String? ?? json['_id'] as String? ?? '',
       email: json['email'] as String?,
@@ -34,7 +44,13 @@ class User {
       name: json['name'] as String?,
       avatarUrl: json['avatar_url'] as String? ?? json['avatarUrl'] as String?,
       role: json['role'] as String? ?? 'user',
-      isVerified: json['is_verified'] as bool? ?? json['isVerified'] as bool? ?? false,
+      // is_verified is a derived/legacy flag; if backend sent it, honor it,
+      // otherwise treat user as "verified" if either channel is verified
+      isVerified: json['is_verified'] as bool? ??
+          json['isVerified'] as bool? ??
+          (emailVerified || phoneVerified),
+      emailVerified: emailVerified,
+      phoneVerified: phoneVerified,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
           : json['createdAt'] != null
@@ -58,6 +74,8 @@ class User {
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       'role': role,
       'is_verified': isVerified,
+      'email_verified': emailVerified,
+      'phone_verified': phoneVerified,
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
@@ -72,6 +90,8 @@ class User {
     String? avatarUrl,
     String? role,
     bool? isVerified,
+    bool? emailVerified,
+    bool? phoneVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -83,6 +103,8 @@ class User {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       role: role ?? this.role,
       isVerified: isVerified ?? this.isVerified,
+      emailVerified: emailVerified ?? this.emailVerified,
+      phoneVerified: phoneVerified ?? this.phoneVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

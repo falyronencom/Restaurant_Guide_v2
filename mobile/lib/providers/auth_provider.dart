@@ -279,6 +279,45 @@ class AuthProvider with ChangeNotifier {
     return false;
   }
 
+  /// Send (or re-send) an email verification code to the authenticated user.
+  /// Returns true on success, false if rate-limited or other server error.
+  /// Sets [errorMessage] with a localized message when false.
+  Future<bool> sendEmailVerificationCode() async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _authService.sendEmailVerificationCode();
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Verify a 6-digit email verification code submitted by the user.
+  /// On success, refreshes the stored user (email_verified=true) and returns true.
+  Future<bool> verifyEmailCode({required String code}) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final user = await _authService.verifyEmailCode(code: code);
+      _currentUser = user;
+      _status = AuthenticationStatus.authenticated;
+      _clearVerificationState();
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(_extractErrorMessage(e));
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Resend verification code
   Future<bool> resendVerification() async {
     if (_authMethod == null) {
@@ -603,6 +642,18 @@ class AuthProvider with ChangeNotifier {
     if (errorStr.contains('Invalid verification code') ||
         errorStr.contains('INVALID_CODE')) {
       return 'Неверный код подтверждения. Проверьте и попробуйте снова.';
+    }
+    if (errorStr.contains('INVALID_OR_EXPIRED_CODE')) {
+      return 'Код истёк или недействителен. Запросите новый.';
+    }
+    if (errorStr.contains('TOO_MANY_ATTEMPTS')) {
+      return 'Слишком много неверных попыток. Запросите новый код.';
+    }
+    if (errorStr.contains('EMAIL_ALREADY_VERIFIED')) {
+      return 'Email уже подтверждён.';
+    }
+    if (errorStr.contains('NO_EMAIL')) {
+      return 'На аккаунте нет email-адреса.';
     }
     if (errorStr.contains('Code expired') || errorStr.contains('CODE_EXPIRED')) {
       return 'Код подтверждения истёк. Запросите новый код.';
