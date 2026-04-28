@@ -134,6 +134,9 @@ const {
   hideMenuItem,
   unhideMenuItem,
   dismissMenuItemFlag,
+  getEstablishmentForModeration,
+  getRejectedEstablishments,
+  getSuspendedEstablishments,
 } = await import('../../services/adminService.js');
 
 // ============================================================================
@@ -1282,5 +1285,122 @@ describe('dismissMenuItemFlag', () => {
         new_data: { sanity_flag: null },
       }),
     );
+  });
+});
+
+// ============================================================================
+// getEstablishmentForModeration — Tier 2 (JSON-parse normalization, type conversion)
+// ============================================================================
+
+describe('getEstablishmentForModeration', () => {
+  test('throws ESTABLISHMENT_NOT_FOUND when establishment is missing', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
+
+    await expect(getEstablishmentForModeration(EST_ID))
+      .rejects.toMatchObject({ code: 'ESTABLISHMENT_NOT_FOUND', statusCode: 404 });
+  });
+
+  test('parses string-encoded moderation_notes into object', async () => {
+    const notes = { name: 'unclear', description: 'misleading' };
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ moderation_notes: JSON.stringify(notes) }),
+    );
+
+    const result = await getEstablishmentForModeration(EST_ID);
+
+    expect(result.moderation_notes).toEqual(notes);
+  });
+
+  test('falls back to null moderation_notes on malformed JSON', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ moderation_notes: '{invalid json' }),
+    );
+
+    const result = await getEstablishmentForModeration(EST_ID);
+
+    expect(result.moderation_notes).toBeNull();
+  });
+
+  test('converts string latitude/longitude to numbers via parseFloat (and handles null)', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ latitude: '53.9', longitude: '27.5667' }),
+    );
+
+    const result = await getEstablishmentForModeration(EST_ID);
+    expect(result.latitude).toBe(53.9);
+    expect(result.longitude).toBe(27.5667);
+
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ latitude: null, longitude: null }),
+    );
+
+    const nullResult = await getEstablishmentForModeration(EST_ID);
+    expect(nullResult.latitude).toBeNull();
+    expect(nullResult.longitude).toBeNull();
+  });
+});
+
+// ============================================================================
+// getRejectedEstablishments — Tier 2 (per-row JSON normalization)
+// ============================================================================
+
+describe('getRejectedEstablishments', () => {
+  test('parses string-encoded moderation_notes for each rejection row', async () => {
+    AuditLogModel.getRejectionHistory.mockResolvedValue([
+      { id: 'r1', moderation_notes: JSON.stringify({ name: 'a' }) },
+      { id: 'r2', moderation_notes: JSON.stringify({ description: 'b' }) },
+    ]);
+    AuditLogModel.countRejections.mockResolvedValue(2);
+
+    const result = await getRejectedEstablishments({ page: 1, perPage: 10 });
+
+    expect(result.rejections).toHaveLength(2);
+    expect(result.rejections[0].moderation_notes).toEqual({ name: 'a' });
+    expect(result.rejections[1].moderation_notes).toEqual({ description: 'b' });
+    expect(result.meta.total).toBe(2);
+  });
+
+  test('falls back to null for rows with malformed JSON moderation_notes', async () => {
+    AuditLogModel.getRejectionHistory.mockResolvedValue([
+      { id: 'r1', moderation_notes: '{invalid' },
+      { id: 'r2', moderation_notes: null },
+    ]);
+    AuditLogModel.countRejections.mockResolvedValue(2);
+
+    const result = await getRejectedEstablishments({});
+
+    expect(result.rejections[0].moderation_notes).toBeNull();
+    expect(result.rejections[1].moderation_notes).toBeNull();
+  });
+});
+
+// ============================================================================
+// getSuspendedEstablishments — Tier 2 (per-row JSON normalization)
+// ============================================================================
+
+describe('getSuspendedEstablishments', () => {
+  test('parses string-encoded moderation_notes per suspended row', async () => {
+    EstablishmentModel.getSuspendedEstablishments.mockResolvedValue([
+      { id: EST_ID, moderation_notes: JSON.stringify({ suspend_reason: 'violations' }) },
+    ]);
+    EstablishmentModel.countSuspendedEstablishments.mockResolvedValue(1);
+
+    const result = await getSuspendedEstablishments({ page: 1, perPage: 20 });
+
+    expect(result.establishments[0].moderation_notes).toEqual({
+      suspend_reason: 'violations',
+    });
+    expect(result.meta.total).toBe(1);
+  });
+
+  test('falls back to null for malformed JSON in suspended row', async () => {
+    EstablishmentModel.getSuspendedEstablishments.mockResolvedValue([
+      { id: EST_ID, moderation_notes: 'not valid json' },
+    ]);
+    EstablishmentModel.countSuspendedEstablishments.mockResolvedValue(1);
+
+    const result = await getSuspendedEstablishments({});
+
+    expect(result.establishments[0].moderation_notes).toBeNull();
   });
 });
