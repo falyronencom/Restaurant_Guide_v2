@@ -31,7 +31,6 @@
   "author": "Restaurant Guide Belarus Team",
   "license": "PROPRIETARY",
   "dependencies": {
-    "@sendgrid/mail": "^8.1.6",
     "argon2": "^0.31.1",
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
@@ -47,6 +46,7 @@
     "pdf-parse": "^1.1.4",
     "pg": "^8.11.3",
     "redis": "^4.6.10",
+    "resend": "^6.12.2",
     "uuid": "^13.0.0",
     "winston": "^3.11.0",
     "zod": "^4.3.6"

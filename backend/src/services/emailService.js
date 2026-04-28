@@ -1,34 +1,37 @@
 /**
  * Email Service
  *
- * Wrapper around SendGrid for transactional email delivery.
+ * Wrapper around Resend (https://resend.com) for transactional email
+ * delivery. Chosen over SendGrid because Resend does not require Twilio
+ * account creation (SendGrid registration uses Twilio SMS verification,
+ * which fails for Belarus phone numbers).
  *
- * Graceful fallback: if SENDGRID_API_KEY is unset (local dev without
- * SendGrid setup), sendVerificationCodeEmail logs a warning and returns
- * { sent: false } instead of throwing. This lets the verification flow
- * proceed in development — code is created in DB and visible in logs,
- * just not actually emailed.
+ * Graceful fallback: if RESEND_API_KEY is unset, sendVerificationCodeEmail
+ * logs a warning and returns { sent: false } instead of throwing. The
+ * verification flow proceeds — code is created in DB and visible in logs,
+ * just not actually emailed. This lets the backend run in dev / staging
+ * without Resend setup.
  *
  * Production setup (Coordinator action):
- *   1. Create SendGrid account
- *   2. Verify sender (Single Sender or domain DNS)
- *   3. Generate API key, set SENDGRID_API_KEY in Railway env
- *   4. Set EMAIL_FROM_ADDRESS to verified sender
+ *   1. Create Resend account (https://resend.com/signup — no SMS required)
+ *   2. Verify domain (DNS records: TXT for DKIM, TXT for SPF) OR
+ *      verify Single Sender (your own email)
+ *   3. Generate API key, set RESEND_API_KEY in Railway env
+ *   4. Set EMAIL_FROM_ADDRESS to verified sender (e.g. noreply@niriveo.by)
  */
 
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 import logger from '../utils/logger.js';
 
-let isConfigured = false;
+let resendClient = null;
 
 const ensureConfigured = () => {
-  if (isConfigured) return true;
-  const apiKey = process.env.SENDGRID_API_KEY;
+  if (resendClient) return true;
+  const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return false;
   }
-  sgMail.setApiKey(apiKey);
-  isConfigured = true;
+  resendClient = new Resend(apiKey);
   return true;
 };
 
@@ -72,7 +75,12 @@ const buildTextBody = (code, userName, expiryMinutes) =>
   `— Restaurant Guide Belarus`;
 
 /**
- * Send a verification code email.
+ * Send a verification code email via Resend.
+ *
+ * Resend API can surface failures two ways:
+ *   - response.error populated (no throw)
+ *   - thrown exception (network / SDK bug)
+ * Both are handled, returning { sent: false, reason: 'RESEND_ERROR' }.
  *
  * @param {string} toEmail
  * @param {string} code - 6-digit numeric
@@ -81,35 +89,41 @@ const buildTextBody = (code, userName, expiryMinutes) =>
  */
 export const sendVerificationCodeEmail = async (toEmail, code, userName) => {
   if (!ensureConfigured()) {
-    logger.warn('SendGrid not configured — email verification code not sent', {
+    logger.warn('Resend not configured — email verification code not sent', {
       toEmail,
-      hint: 'Set SENDGRID_API_KEY env var to enable email delivery',
+      hint: 'Set RESEND_API_KEY env var to enable email delivery',
     });
-    return { sent: false, reason: 'SENDGRID_NOT_CONFIGURED' };
+    return { sent: false, reason: 'RESEND_NOT_CONFIGURED' };
   }
 
-  const fromAddress = process.env.EMAIL_FROM_ADDRESS || 'noreply@restaurantguide.by';
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS || 'noreply@niriveo.by';
   const expiryMinutes = parseInt(process.env.EMAIL_VERIFICATION_EXPIRY_MINUTES, 10) || 15;
 
   const msg = {
-    to: toEmail,
     from: fromAddress,
+    to: toEmail,
     subject: 'Подтверждение email — Restaurant Guide Belarus',
     text: buildTextBody(code, userName, expiryMinutes),
     html: buildHtmlBody(code, userName, expiryMinutes),
   };
 
   try {
-    await sgMail.send(msg);
-    logger.info('Verification email sent', { toEmail });
+    const result = await resendClient.emails.send(msg);
+    if (result?.error) {
+      logger.error('Resend returned error in response', {
+        error: result.error,
+        toEmail,
+      });
+      return { sent: false, reason: 'RESEND_ERROR' };
+    }
+    logger.info('Verification email sent', { toEmail, id: result?.data?.id });
     return { sent: true };
   } catch (error) {
-    logger.error('Failed to send verification email via SendGrid', {
+    logger.error('Failed to send verification email via Resend', {
       error: error.message,
-      code: error.code,
       toEmail,
     });
-    return { sent: false, reason: 'SENDGRID_ERROR' };
+    return { sent: false, reason: 'RESEND_ERROR' };
   }
 };
 
@@ -118,5 +132,5 @@ export const sendVerificationCodeEmail = async (toEmail, code, userName) => {
  * re-initialize between cases. Not used in production code paths.
  */
 export const _resetForTests = () => {
-  isConfigured = false;
+  resendClient = null;
 };

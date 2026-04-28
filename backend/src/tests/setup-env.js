@@ -25,8 +25,8 @@ dotenv.config({ path: testEnvPath });
 if (process.env.OPENROUTER_API_KEY === undefined) {
   process.env.OPENROUTER_API_KEY = '';
 }
-if (process.env.SENDGRID_API_KEY === undefined) {
-  process.env.SENDGRID_API_KEY = '';
+if (process.env.RESEND_API_KEY === undefined) {
+  process.env.RESEND_API_KEY = '';
 }
 
 // Verify we're in test environment
