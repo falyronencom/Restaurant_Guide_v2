@@ -26,9 +26,17 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greenRating = AppTheme.statusGreen;
 
-  // Date filter
+  // Period filter (preset chips: '7d' / '30d' / '90d' / 'custom')
+  String _presetPeriod = '30d';
   DateTime _dateFrom = DateTime.now().subtract(const Duration(days: 30));
   DateTime _dateTo = DateTime.now();
+
+  static const _periodOptions = [
+    ('7d', '7 дней'),
+    ('30d', '30 дней'),
+    ('90d', '90 дней'),
+    ('custom', 'Произвольный'),
+  ];
 
   // Sort option
   String _sortOption = 'По дате (новые)';
@@ -179,8 +187,8 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             // Header
             _buildHeader(context),
 
-            // Date filter
-            _buildDateFilter(),
+            // Period filter (preset chips)
+            _buildPeriodChips(),
 
             const SizedBox(height: 8),
 
@@ -236,83 +244,82 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     );
   }
 
-  /// Build date filter row
-  Widget _buildDateFilter() {
+  /// Build period filter row (preset chips)
+  Widget _buildPeriodChips() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          // From date
-          const Text(
-            'от',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildDateButton(_dateFrom, true),
-
-          const SizedBox(width: 16),
-
-          // To date
-          const Text(
-            'до',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildDateButton(_dateTo, false),
-        ],
-      ),
-    );
-  }
-
-  /// Build date picker button
-  Widget _buildDateButton(DateTime date, bool isFrom) {
-    return GestureDetector(
-      onTap: () => _showDatePicker(isFrom),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: _greyStroke),
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              _formatDate(date),
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppTheme.textPrimary,
+            for (final (code, label) in _periodOptions) ...[
+              _buildPeriodChip(code, label),
+              const SizedBox(width: 8),
+            ],
+            if (_presetPeriod == 'custom')
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  '${_formatDate(_dateFrom)} — ${_formatDate(_dateTo)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _greyText,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.calendar_today_outlined,
-              size: 20,
-              color: Colors.black54,
-            ),
           ],
         ),
       ),
     );
   }
 
-  /// Show date picker
-  Future<void> _showDatePicker(bool isFrom) async {
-    final initialDate = isFrom ? _dateFrom : _dateTo;
-    final firstDate = DateTime(2020);
-    final lastDate = DateTime.now();
+  /// Build single period chip
+  Widget _buildPeriodChip(String code, String label) {
+    final selected = _presetPeriod == code;
+    return Material(
+      color: selected ? _primaryOrange : Colors.grey[200],
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _onPeriodChipTap(code),
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? _backgroundColor : Colors.grey[700],
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-    final picked = await showDatePicker(
+  /// Handle period chip tap
+  Future<void> _onPeriodChipTap(String code) async {
+    if (code == 'custom') {
+      await _showCustomDateRangePicker();
+      return;
+    }
+    final days = code == '7d' ? 7 : (code == '90d' ? 90 : 30);
+    setState(() {
+      _presetPeriod = code;
+      _dateTo = DateTime.now();
+      _dateFrom = _dateTo.subtract(Duration(days: days));
+    });
+    _applyDateFilter();
+  }
+
+  /// Show custom date range picker (Material showDateRangePicker)
+  Future<void> _showCustomDateRangePicker() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: initialDate,
-      firstDate: firstDate,
-      lastDate: lastDate,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: DateTimeRange(start: _dateFrom, end: _dateTo),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -329,11 +336,9 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
 
     if (picked != null) {
       setState(() {
-        if (isFrom) {
-          _dateFrom = picked;
-        } else {
-          _dateTo = picked;
-        }
+        _presetPeriod = 'custom';
+        _dateFrom = picked.start;
+        _dateTo = picked.end;
       });
       _applyDateFilter();
     }
