@@ -129,6 +129,8 @@ const {
   unsuspendEstablishment,
   claimEstablishment,
   adminUpgradeUserToPartner,
+  updateEstablishmentCoordinates,
+  searchUsers,
 } = await import('../../services/adminService.js');
 
 // ============================================================================
@@ -920,6 +922,140 @@ describe('adminUpgradeUserToPartner', () => {
         ip_address: '127.0.0.1',
         user_agent: 'TestAgent/1.0',
       }),
+    );
+  });
+});
+
+// ============================================================================
+// updateEstablishmentCoordinates — Tier 1
+// ============================================================================
+
+describe('updateEstablishmentCoordinates', () => {
+  // Within mocked BELARUS_BOUNDS (LAT 51..56.5, LON 23..33)
+  const validParams = {
+    latitude: 53.9,
+    longitude: 27.5667,
+    adminUserId: ADMIN_ID,
+    ipAddress: '127.0.0.1',
+    userAgent: 'TestAgent/1.0',
+  };
+
+  test('throws ESTABLISHMENT_NOT_FOUND when establishment is missing', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(null);
+
+    await expect(
+      updateEstablishmentCoordinates(EST_ID, validParams),
+    ).rejects.toMatchObject({ code: 'ESTABLISHMENT_NOT_FOUND', statusCode: 404 });
+  });
+
+  test('throws INVALID_LATITUDE when latitude below Belarus bounds', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+
+    await expect(
+      updateEstablishmentCoordinates(EST_ID, { ...validParams, latitude: 50.0 }),
+    ).rejects.toMatchObject({ code: 'INVALID_LATITUDE', statusCode: 422 });
+  });
+
+  test('throws INVALID_LATITUDE when latitude above Belarus bounds', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+
+    await expect(
+      updateEstablishmentCoordinates(EST_ID, { ...validParams, latitude: 57.0 }),
+    ).rejects.toMatchObject({ code: 'INVALID_LATITUDE', statusCode: 422 });
+  });
+
+  test('throws INVALID_LONGITUDE when longitude is out of Belarus bounds', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+
+    await expect(
+      updateEstablishmentCoordinates(EST_ID, { ...validParams, longitude: 22.0 }),
+    ).rejects.toMatchObject({ code: 'INVALID_LONGITUDE', statusCode: 422 });
+  });
+
+  test('throws COORDINATES_CITY_MISMATCH when validateCityCoordinates rejects', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    EstablishmentService.validateCityCoordinates.mockReturnValue({
+      valid: false,
+      message: 'Coordinates do not match city',
+    });
+
+    await expect(
+      updateEstablishmentCoordinates(EST_ID, validParams),
+    ).rejects.toMatchObject({ code: 'COORDINATES_CITY_MISMATCH', statusCode: 422 });
+    expect(EstablishmentModel.updateEstablishment).not.toHaveBeenCalled();
+  });
+
+  test('updates coordinates on valid input', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    const updated = baseEstablishment({ latitude: validParams.latitude, longitude: validParams.longitude });
+    EstablishmentModel.updateEstablishment.mockResolvedValue(updated);
+
+    const result = await updateEstablishmentCoordinates(EST_ID, validParams);
+
+    expect(result).toEqual(updated);
+    expect(EstablishmentModel.updateEstablishment).toHaveBeenCalledWith(
+      EST_ID,
+      { latitude: validParams.latitude, longitude: validParams.longitude },
+    );
+  });
+
+  test('writes audit_log with parsed old coords and new coords', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(
+      baseEstablishment({ latitude: '53.5', longitude: '27.0' }),
+    );
+    EstablishmentModel.updateEstablishment.mockResolvedValue(baseEstablishment());
+
+    await updateEstablishmentCoordinates(EST_ID, validParams);
+
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: ADMIN_ID,
+        action: 'admin_update_coordinates',
+        entity_type: 'establishment',
+        entity_id: EST_ID,
+        old_data: { latitude: 53.5, longitude: 27.0 },
+        new_data: { latitude: validParams.latitude, longitude: validParams.longitude },
+      }),
+    );
+  });
+});
+
+// ============================================================================
+// searchUsers — Tier 2 (raw SQL, no model layer)
+// ============================================================================
+
+describe('searchUsers', () => {
+  test('returns empty array for queries shorter than 2 chars', async () => {
+    expect(await searchUsers(null)).toEqual([]);
+    expect(await searchUsers('')).toEqual([]);
+    expect(await searchUsers(' ')).toEqual([]);
+    expect(await searchUsers('a')).toEqual([]);
+    expect(DB.query).not.toHaveBeenCalled();
+  });
+
+  test('queries users with ILIKE wildcards around trimmed query and provided limit', async () => {
+    const rows = [
+      { id: uuidv4(), email: 'user@example.com', name: 'Иван', role: 'user' },
+    ];
+    DB.query.mockResolvedValue({ rows });
+
+    const result = await searchUsers('  Иван  ', 5);
+
+    expect(result).toEqual(rows);
+    expect(DB.query).toHaveBeenCalledWith(
+      expect.stringMatching(/email ILIKE \$1.*name ILIKE \$1/s),
+      ['%Иван%', 5],
+    );
+  });
+
+  test('uses default limit of 10 when not provided', async () => {
+    DB.query.mockResolvedValue({ rows: [] });
+
+    await searchUsers('test');
+
+    expect(DB.query).toHaveBeenCalledWith(
+      expect.any(String),
+      ['%test%', 10],
     );
   });
 });
