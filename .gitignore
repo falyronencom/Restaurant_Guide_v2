@@ -55,6 +55,7 @@ backend/scripts/seed-images/
 
 # Claude Code local settings (machine-specific permissions)
 .claude/*.local.json
+.claude/**/settings.local.json
 
 # Flutter DevTools
 devtools_options.yaml
