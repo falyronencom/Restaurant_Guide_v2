@@ -1,7 +1,7 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Includes migrations 001-025 (last update: April 2026).
+-- Includes migrations 001-026 (last update: May 2026 — Inter-Horizon Audit P3 Cat C Brief #4).
 -- Generated via pg_dump --schema-only against a fresh DB to which all
 -- migrations were applied sequentially. This file is the authoritative
 -- snapshot used to bootstrap fresh databases (e.g. Railway initial deploy
@@ -21,16 +21,20 @@
 --   010 audit_log table                   023 file_type on media
 --   011 sync test DB columns              024 OCR menu pipeline (pg_trgm)
 --   012 rejected status                   025 hidden_reason on menu_items
---   013 analytics indexes
+--   013 analytics indexes                 026 email_verification_codes
 --
--- Regeneration recipe (Option B from Audit Phase 3 Brief #2):
+-- Regeneration recipe (Option B from Audit Phase 3 Brief #2, refreshed in Brief #4):
 --   1. docker exec pg-test psql -U postgres -c "DROP DATABASE IF EXISTS schema_rebuild;"
 --   2. docker exec pg-test psql -U postgres -c "CREATE DATABASE schema_rebuild;"
---   3. for f in 001..020 (existing snapshot) THEN 021..025 (sequential): apply via psql
+--   3. Load existing snapshot (covers all currently-snapshotted migrations):
+--        docker exec -i pg-test psql -U postgres -d schema_rebuild < production_schema.sql
+--      Then apply newer migrations sequentially:
+--        docker exec -i pg-test psql -U postgres -d schema_rebuild < <NNN_migration>.sql
 --   4. docker exec pg-test pg_dump -U postgres --schema-only --no-owner \
---        --no-privileges --no-comments -d schema_rebuild > production_schema.sql
+--        --no-privileges --no-comments -d schema_rebuild > <new_schema_body>.sql
 --   5. Replace this header block, keep the body.
 -- =====================================================
+
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -159,7 +163,7 @@ CREATE TABLE public.bookings (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT bookings_guest_count_check CHECK ((guest_count >= 1)),
-    CONSTRAINT bookings_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'confirmed'::character varying, 'declined'::character varying, 'cancelled'::character varying, 'expired'::character varying, 'no_show'::character varying, 'completed'::character varying])::text[])))
+    CONSTRAINT bookings_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('confirmed'::character varying)::text, ('declined'::character varying)::text, ('cancelled'::character varying)::text, ('expired'::character varying)::text, ('no_show'::character varying)::text, ('completed'::character varying)::text])))
 );
 
 
@@ -176,7 +180,22 @@ CREATE TABLE public.device_tokens (
     is_active boolean DEFAULT true,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT device_tokens_platform_check CHECK (((platform)::text = ANY ((ARRAY['ios'::character varying, 'android'::character varying])::text[])))
+    CONSTRAINT device_tokens_platform_check CHECK (((platform)::text = ANY (ARRAY[('ios'::character varying)::text, ('android'::character varying)::text])))
+);
+
+
+--
+-- Name: email_verification_codes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_verification_codes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    code character varying(6) NOT NULL,
+    expires_at timestamp without time zone NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    used_at timestamp without time zone,
+    attempts smallint DEFAULT 0 NOT NULL
 );
 
 
@@ -216,8 +235,8 @@ CREATE TABLE public.establishment_media (
     is_primary boolean DEFAULT false,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     file_type character varying(10) DEFAULT 'image'::character varying NOT NULL,
-    CONSTRAINT establishment_media_file_type_check CHECK (((file_type)::text = ANY ((ARRAY['image'::character varying, 'pdf'::character varying])::text[]))),
-    CONSTRAINT establishment_media_type_check CHECK (((type)::text = ANY ((ARRAY['interior'::character varying, 'exterior'::character varying, 'menu'::character varying, 'dishes'::character varying])::text[])))
+    CONSTRAINT establishment_media_file_type_check CHECK (((file_type)::text = ANY (ARRAY[('image'::character varying)::text, ('pdf'::character varying)::text]))),
+    CONSTRAINT establishment_media_type_check CHECK (((type)::text = ANY (ARRAY[('interior'::character varying)::text, ('exterior'::character varying)::text, ('menu'::character varying)::text, ('dishes'::character varying)::text])))
 );
 
 
@@ -267,10 +286,10 @@ CREATE TABLE public.establishments (
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
-    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY ((ARRAY['Минск'::character varying, 'Гродно'::character varying, 'Брест'::character varying, 'Гомель'::character varying, 'Витебск'::character varying, 'Могилев'::character varying, 'Бобруйск'::character varying])::text[]))),
-    CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY ((ARRAY['$'::character varying, '$$'::character varying, '$$$'::character varying, '$$$$'::character varying])::text[]))),
-    CONSTRAINT establishments_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending'::character varying, 'active'::character varying, 'rejected'::character varying, 'suspended'::character varying, 'archived'::character varying])::text[]))),
-    CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY ((ARRAY['free'::character varying, 'basic'::character varying, 'standard'::character varying, 'premium'::character varying])::text[])))
+    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Бобруйск'::character varying)::text]))),
+    CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
+    CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
+    CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY (ARRAY[('free'::character varying)::text, ('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
 );
 
 
@@ -356,7 +375,7 @@ CREATE TABLE public.ocr_jobs (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     started_at timestamp without time zone,
     completed_at timestamp without time zone,
-    CONSTRAINT chk_ocr_jobs_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'processing'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
+    CONSTRAINT chk_ocr_jobs_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('done'::character varying)::text, ('failed'::character varying)::text])))
 );
 
 
@@ -404,7 +423,7 @@ CREATE TABLE public.promotions (
     valid_until_time time without time zone,
     menu_item_id uuid,
     discount_price_byn numeric(10,2),
-    CONSTRAINT promotions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'expired'::character varying, 'hidden_by_admin'::character varying])::text[])))
+    CONSTRAINT promotions_status_check CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('expired'::character varying)::text, ('hidden_by_admin'::character varying)::text])))
 );
 
 
@@ -460,8 +479,8 @@ CREATE TABLE public.subscriptions (
     is_active boolean DEFAULT true,
     auto_renew boolean DEFAULT false,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT subscriptions_duration_type_check CHECK (((duration_type)::text = ANY ((ARRAY['day'::character varying, 'three_days'::character varying, 'week'::character varying, 'month'::character varying])::text[]))),
-    CONSTRAINT subscriptions_tier_check CHECK (((tier)::text = ANY ((ARRAY['basic'::character varying, 'standard'::character varying, 'premium'::character varying])::text[])))
+    CONSTRAINT subscriptions_duration_type_check CHECK (((duration_type)::text = ANY (ARRAY[('day'::character varying)::text, ('three_days'::character varying)::text, ('week'::character varying)::text, ('month'::character varying)::text]))),
+    CONSTRAINT subscriptions_tier_check CHECK (((tier)::text = ANY (ARRAY[('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
 );
 
 
@@ -485,8 +504,8 @@ CREATE TABLE public.users (
     last_login_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY ((ARRAY['email'::character varying, 'phone'::character varying, 'google'::character varying, 'yandex'::character varying])::text[]))),
-    CONSTRAINT users_role_check CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'partner'::character varying, 'admin'::character varying])::text[])))
+    CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY (ARRAY[('email'::character varying)::text, ('phone'::character varying)::text, ('google'::character varying)::text, ('yandex'::character varying)::text]))),
+    CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY[('user'::character varying)::text, ('partner'::character varying)::text, ('admin'::character varying)::text])))
 );
 
 
@@ -536,6 +555,14 @@ ALTER TABLE ONLY public.device_tokens
 
 ALTER TABLE ONLY public.device_tokens
     ADD CONSTRAINT device_tokens_user_id_fcm_token_key UNIQUE (user_id, fcm_token);
+
+
+--
+-- Name: email_verification_codes email_verification_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_codes
+    ADD CONSTRAINT email_verification_codes_pkey PRIMARY KEY (id);
 
 
 --
@@ -766,6 +793,20 @@ CREATE INDEX idx_bookings_user_status ON public.bookings USING btree (user_id, s
 --
 
 CREATE INDEX idx_device_tokens_user_id ON public.device_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_email_verification_codes_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_verification_codes_expires_at ON public.email_verification_codes USING btree (expires_at);
+
+
+--
+-- Name: idx_email_verification_codes_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_verification_codes_user_id ON public.email_verification_codes USING btree (user_id);
 
 
 --
@@ -1135,6 +1176,14 @@ ALTER TABLE ONLY public.bookings
 
 ALTER TABLE ONLY public.device_tokens
     ADD CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_verification_codes email_verification_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_codes
+    ADD CONSTRAINT email_verification_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
