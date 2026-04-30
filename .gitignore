@@ -79,8 +79,6 @@ nul
 # Internal documentation (local only, not for public repo)
 docs/
 
-# All .md documentation gitignored — internal-use only
-# Sole tracked exception: root README.md (project identity card)
+# All .md documentation gitignored — no exceptions
 **/*.md
-!/README.md
 
