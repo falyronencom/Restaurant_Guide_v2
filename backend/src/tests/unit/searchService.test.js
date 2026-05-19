@@ -405,9 +405,14 @@ describe('searchService', () => {
         maxLon: 27.55,
       });
 
-      // Each establishment should contain the original mock data plus promotion enrichment fields
+      // Each establishment is now passed through toPublicEstablishmentListing
+      // (Brief 1 fix-in-place). Verify identity + public fields preserved; full
+      // sensitivity exclusion is asserted in projections.test.js + search.test.js.
       expect(result.establishments.length).toBe(mockEstablishments.length);
-      expect(result.establishments[0]).toMatchObject(mockEstablishments[0]);
+      expect(result.establishments[0].id).toBe(mockEstablishments[0].id);
+      expect(result.establishments[0].name).toBe(mockEstablishments[0].name);
+      expect(result.establishments[0].city).toBe(mockEstablishments[0].city);
+      expect(result.establishments[0].categories).toEqual(mockEstablishments[0].categories);
       expect(result.establishments[0]).toHaveProperty('has_promotion');
       expect(result.establishments[0]).toHaveProperty('promotion_count');
 

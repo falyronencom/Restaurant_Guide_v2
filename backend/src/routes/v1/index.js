@@ -28,6 +28,7 @@ import express from 'express';
 import { healthCheck } from '../../controllers/healthController.js';
 import authRoutes from './authRoutes.js';
 import searchRoutes from './searchRoutes.js';
+import publicRoutes from './publicRoutes.js';
 import reviewRoutes from './reviewRoutes.js';
 import { getEstablishmentReviews, getUserReviews } from './reviewRoutes.js';
 import favoriteRoutes from './favoriteRoutes.js';
@@ -110,6 +111,31 @@ router.use('/auth', authRoutes);
  * for fast results even with large establishment datasets.
  */
 router.use('/search', searchRoutes);
+
+/**
+ * /api/v1/public/*
+ *
+ * Public read-only API surface (Brief 1) for the upcoming web platform.
+ * Fully open endpoints — no authentication required. Inherit global
+ * unauthenticated rate limit (300/hr per IP) from server.js.
+ *
+ * Endpoints:
+ *   GET /public/metadata
+ *   GET /public/establishments
+ *   GET /public/establishments/map
+ *   GET /public/establishments/by-slug/:slug
+ *   GET /public/establishments/by-slug/:slug/menu-items
+ *   GET /public/establishments/by-slug/:slug/reviews
+ *   GET /public/establishments/by-id/:id  (deprecated, prefer by-slug)
+ *
+ * Sensitivity: response shapes go through projection layer
+ * (backend/src/projections/) — partner_email, subscription_tier,
+ * base_score, moderation_notes etc. are never exposed.
+ *
+ * Mounted directly after /search so a future migration could fold one
+ * into the other; both are catalog-facing read surfaces.
+ */
+router.use('/public', publicRoutes);
 
 /**
  * /api/v1/reviews/*

@@ -11,6 +11,10 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as PromotionModel from '../models/promotionModel.js';
 import logger from '../utils/logger.js';
+import {
+  toPublicEstablishment,
+  toPublicEstablishmentListing,
+} from '../projections/establishmentProjections.js';
 
 /**
  * Synonym map: common search terms → related categories and cuisines.
@@ -286,10 +290,16 @@ export async function searchByRadius({
   const params = ['active']; // Only search active establishments
   let paramIndex = 2;
 
-  // Add city filter
+  // Add city filter (supports single string or array — array used by public
+  // catalog for Mogilev ё/е expansion, where two Cyrillic variants must match)
   if (city) {
-    conditions.push(`e.city = $${paramIndex}`);
-    params.push(city);
+    if (Array.isArray(city)) {
+      conditions.push(`e.city = ANY($${paramIndex}::varchar[])`);
+      params.push(city);
+    } else {
+      conditions.push(`e.city = $${paramIndex}`);
+      params.push(city);
+    }
     paramIndex++;
   }
 
@@ -525,7 +535,6 @@ export async function searchByRadius({
   // Transform results with type conversions and distance field
   const rawEstablishments = result.rows.map(row => ({
     ...row,
-    distance: row.distance_km, // Add 'distance' field that tests expect
     distance_km: parseFloat(row.distance_km),
     latitude: parseFloat(row.latitude),
     longitude: parseFloat(row.longitude),
@@ -534,7 +543,13 @@ export async function searchByRadius({
   }));
 
   // Post-query enrichment: add promotion flags without touching ORDER BY
-  const establishments = await enrichWithPromotions(rawEstablishments);
+  const enriched = await enrichWithPromotions(rawEstablishments);
+
+  // Public projection — excludes partner_email/subscription_*/base_score/
+  // moderation_*/is_seed/claimed_* even from mobile responses. Mobile Dart
+  // fromJson is tolerant of removed fields (those fields were not actively
+  // used in public mobile models per verification grep).
+  const establishments = enriched.map(toPublicEstablishmentListing);
 
   return {
     establishments,
@@ -580,9 +595,11 @@ export async function searchWithoutLocation({
   dish = null,
   priceMaxByn = null,
 }) {
-  // Validate pagination
-  if (limit < 1 || limit > 100) {
-    throw new AppError('Limit must be between 1 and 100', 422, 'VALIDATION_ERROR');
+  // Validate pagination. Max 500 to support /api/v1/public/establishments/map
+  // (Brief 1 default 200, max 500). Mobile clients use ≤100 in practice — no
+  // regression. Bounds-based maps go through searchByBounds (separate limit cap).
+  if (limit < 1 || limit > 500) {
+    throw new AppError('Limit must be between 1 and 500', 422, 'VALIDATION_ERROR');
   }
 
   if (offset < 0) {
@@ -594,10 +611,15 @@ export async function searchWithoutLocation({
   const params = ['active'];
   let paramIndex = 2;
 
-  // Add city filter
+  // Add city filter (supports single string or array — see searchByRadius note)
   if (city) {
-    conditions.push(`e.city = $${paramIndex}`);
-    params.push(city);
+    if (Array.isArray(city)) {
+      conditions.push(`e.city = ANY($${paramIndex}::varchar[])`);
+      params.push(city);
+    } else {
+      conditions.push(`e.city = $${paramIndex}`);
+      params.push(city);
+    }
     paramIndex++;
   }
 
@@ -772,8 +794,6 @@ export async function searchWithoutLocation({
   // Transform results (no distance field)
   const rawEstablishments = result.rows.map(row => ({
     ...row,
-    distance: null, // No distance without coordinates
-    distance_km: null,
     latitude: parseFloat(row.latitude),
     longitude: parseFloat(row.longitude),
     average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
@@ -781,7 +801,11 @@ export async function searchWithoutLocation({
   }));
 
   // Post-query enrichment: add promotion flags without touching ORDER BY
-  const establishments = await enrichWithPromotions(rawEstablishments);
+  const enriched = await enrichWithPromotions(rawEstablishments);
+
+  // Public projection — same exclusion list as searchByRadius. No distance_km
+  // because no coordinates were supplied; projection omits distance fields.
+  const establishments = enriched.map(toPublicEstablishmentListing);
 
   return {
     establishments,
@@ -975,7 +999,13 @@ export async function searchByBounds({
   }));
 
   // Post-query enrichment: add promotion flags without touching ORDER BY
-  const establishments = await enrichWithPromotions(rawEstablishments);
+  const enriched = await enrichWithPromotions(rawEstablishments);
+
+  // Public projection — same exclusion list. Mobile /search/map preserves
+  // the richer listing projection (not the minimum map marker shape used
+  // for the new /api/v1/public/establishments/map endpoint) so existing
+  // mobile map-view UI continues working without code changes.
+  const establishments = enriched.map(toPublicEstablishmentListing);
 
   return {
     establishments,
@@ -1025,15 +1055,15 @@ export async function getEstablishmentById(id) {
     }),
   ]);
 
-  return {
+  // Public projection — excludes partner_email/subscription_*/base_score/
+  // moderation_*/is_seed/claimed_* from the response shape. Media and
+  // promotions are attached and preserved via the projection's media[]/
+  // promotions[] handling.
+  return toPublicEstablishment({
     ...row,
-    latitude: parseFloat(row.latitude),
-    longitude: parseFloat(row.longitude),
-    average_rating: row.average_rating ? parseFloat(row.average_rating) : null,
-    review_count: parseInt(row.review_count) || 0,
-    media, // Include all photos (interior, menu, etc.)
-    promotions, // Active promotions for this establishment
-  };
+    media,
+    promotions,
+  });
 }
 
 /**

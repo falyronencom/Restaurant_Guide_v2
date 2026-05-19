@@ -454,3 +454,116 @@ describe('Search System - Performance', () => {
   test.todo('should perform well with 1000+ establishments');
   test.todo('should use PostGIS indexes efficiently');
 });
+
+// Brief 1 fix-in-place — searchService now applies public projection. These
+// assertions verify that partner-sensitive / admin-only fields previously
+// leaked through e.* SELECT + LEFT JOIN users no longer reach mobile responses.
+describe('Search System - Public Projection (fix-in-place, Brief 1)', () => {
+  const SENSITIVE_FIELDS = [
+    'partner_id',
+    'partner_name',
+    'partner_email',
+    'subscription_tier',
+    'subscription_started_at',
+    'subscription_expires_at',
+    'base_score',
+    'boost_score',
+    'is_seed',
+    'claimed_at',
+    'claimed_by',
+    'moderation_notes',
+    'moderated_by',
+    'moderated_at',
+  ];
+
+  beforeEach(async () => {
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, base_score, boost_score, subscription_tier, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Проекционный тест', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', 75, 5, 'premium', NOW(), NOW())
+    `, [partnerId, defaultWorkingHours]);
+  });
+
+  test('/search/establishments (radius mode) — list excludes sensitive fields', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 5 })
+      .expect(200);
+
+    expect(response.body.data.establishments.length).toBeGreaterThan(0);
+    for (const est of response.body.data.establishments) {
+      for (const field of SENSITIVE_FIELDS) {
+        expect(est).not.toHaveProperty(field);
+      }
+    }
+  });
+
+  test('/search/establishments (no-location mode) — list excludes sensitive fields', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ city: 'Минск' })
+      .expect(200);
+
+    expect(response.body.data.establishments.length).toBeGreaterThan(0);
+    for (const est of response.body.data.establishments) {
+      for (const field of SENSITIVE_FIELDS) {
+        expect(est).not.toHaveProperty(field);
+      }
+    }
+  });
+
+  test('/search/establishments/:id — detail excludes sensitive fields', async () => {
+    const list = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 5 });
+
+    const id = list.body.data.establishments[0].id;
+
+    const response = await request(app)
+      .get(`/api/v1/search/establishments/${id}`)
+      .expect(200);
+
+    for (const field of SENSITIVE_FIELDS) {
+      expect(response.body.data).not.toHaveProperty(field);
+    }
+  });
+
+  test('/search/map — markers exclude sensitive fields', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/map')
+      .query({ neLat: 53.95, neLon: 27.6, swLat: 53.85, swLon: 27.4 })
+      .expect(200);
+
+    expect(response.body.data.establishments.length).toBeGreaterThan(0);
+    for (const est of response.body.data.establishments) {
+      for (const field of SENSITIVE_FIELDS) {
+        expect(est).not.toHaveProperty(field);
+      }
+    }
+  });
+
+  test('projection preserves all public fields that mobile UI consumes', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 5 })
+      .expect(200);
+
+    const est = response.body.data.establishments[0];
+    // Core fields mobile relies on
+    expect(est).toHaveProperty('id');
+    expect(est).toHaveProperty('name');
+    expect(est).toHaveProperty('city');
+    expect(est).toHaveProperty('address');
+    expect(est).toHaveProperty('latitude');
+    expect(est).toHaveProperty('longitude');
+    expect(est).toHaveProperty('categories');
+    expect(est).toHaveProperty('cuisines');
+    expect(est).toHaveProperty('price_range');
+    expect(est).toHaveProperty('average_rating');
+    expect(est).toHaveProperty('review_count');
+    expect(est).toHaveProperty('distance_km');
+    // Derived public fields added by projection
+    expect(est).toHaveProperty('city_slug');
+    expect(est).toHaveProperty('category_slug');
+    expect(est).toHaveProperty('has_promotion');
+  });
+});
