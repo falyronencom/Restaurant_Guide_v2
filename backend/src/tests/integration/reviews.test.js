@@ -78,12 +78,12 @@ beforeEach(async () => {
 
   const result = await query(`
     INSERT INTO establishments (
-      id, partner_id, name, description, city, address,
+      id, partner_id, name, slug, description, city, address,
       latitude, longitude, categories, cuisines, status,
       average_rating, review_count, working_hours, price_range, created_at, updated_at
     )
     VALUES (
-      gen_random_uuid(), $1, 'Test Restaurant', 'Great food',
+      gen_random_uuid(), $1, 'Test Restaurant', gen_random_uuid()::text, 'Great food',
       'Минск', 'Test Address', 53.9, 27.5,
       ARRAY['Ресторан'], ARRAY['Европейская'], 'active',
       NULL, 0, $2::jsonb, '$$', NOW(), NOW()
@@ -321,8 +321,8 @@ describe('Reviews System - One Review Per User Per Establishment', () => {
   test('should allow same user to review different establishments', async () => {
     // Create second establishment
     const result = await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, average_rating, review_count, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Second Restaurant', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NULL, 0, NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, average_rating, review_count, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Second Restaurant', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NULL, 0, NOW(), NOW())
       RETURNING id
     `, [partnerId, defaultWorkingHours]);
     const establishment2Id = result.rows[0].id;

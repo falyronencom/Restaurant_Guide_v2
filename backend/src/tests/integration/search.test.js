@@ -57,20 +57,20 @@ describe('Search System - Radius-Based Search', () => {
 
     // Establishment 1: At Minsk center (0km)
     await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Центр Минска', 'В центре', 'Минск', 'Центр', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Центр Минска', gen_random_uuid()::text, 'В центре', 'Минск', 'Центр', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
     `, [partnerId, defaultWorkingHours]);
 
     // Establishment 2: 3km from center
     await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Близко', 'Рядом', 'Минск', 'Рядом', 53.92, 27.48, ARRAY['Кофейня'], ARRAY['Европейская'], 'active', $2::jsonb, '$', NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Близко', gen_random_uuid()::text, 'Рядом', 'Минск', 'Рядом', 53.92, 27.48, ARRAY['Кофейня'], ARRAY['Европейская'], 'active', $2::jsonb, '$', NOW(), NOW())
     `, [partnerId, defaultWorkingHours]);
 
     // Establishment 3: 300km away (Gomel)
     await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Далеко', 'Гомель', 'Гомель', 'Далеко', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Народная'], 'active', $2::jsonb, '$$', NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Далеко', gen_random_uuid()::text, 'Гомель', 'Гомель', 'Далеко', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Народная'], 'active', $2::jsonb, '$$', NOW(), NOW())
     `, [partnerId, defaultWorkingHours]);
   });
 
@@ -180,8 +180,8 @@ describe('Search System - Filtering', () => {
 
     for (const est of establishments) {
       await query(`
-        INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, 'Test', 'Минск', 'Test', 53.9, 27.5, $3, $4, $5, 'active', $6::jsonb, NOW(), NOW())
+        INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, $3, $4, $5, 'active', $6::jsonb, NOW(), NOW())
       `, [partnerId, est.name, est.categories, est.cuisines, est.price, defaultWorkingHours]);
     }
   });
@@ -286,8 +286,8 @@ describe('Search System - Pagination', () => {
     // Create 25 establishments for pagination testing
     for (let i = 1; i <= 25; i++) {
       await query(`
-        INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $3::jsonb, '$$', NOW(), NOW())
+        INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $3::jsonb, '$$', NOW(), NOW())
       `, [partnerId, `Establishment ${i}`, defaultWorkingHours]);
     }
   });
@@ -363,8 +363,8 @@ describe('Search System - Bounds-Based Search (Map View)', () => {
   test('should search within geographic bounds', async () => {
     // Create establishment in Minsk
     await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Minsk Center', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Minsk Center', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
     `, [partnerId, defaultWorkingHours]);
 
     const response = await request(app)
@@ -383,8 +383,8 @@ describe('Search System - Bounds-Based Search (Map View)', () => {
 
   test('should exclude establishments outside bounds', async () => {
     await query(`
-      INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, 'Outside Bounds', 'Test', 'Гомель', 'Test', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Outside Bounds', gen_random_uuid()::text, 'Test', 'Гомель', 'Test', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
     `, [partnerId, defaultWorkingHours]);
 
     const response = await request(app)

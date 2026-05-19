@@ -190,6 +190,19 @@ router.patch(
 );
 
 /**
+ * PATCH /api/v1/admin/establishments/:id/slug
+ *
+ * Update establishment slug (admin correction).
+ * Body: { slug: string }
+ */
+router.patch(
+  '/establishments/:id/slug',
+  authenticate,
+  authorize(['admin']),
+  adminModerationController.updateSlug,
+);
+
+/**
  * POST /api/v1/admin/establishments/:id/claim
  *
  * Transfer establishment ownership to a target user.

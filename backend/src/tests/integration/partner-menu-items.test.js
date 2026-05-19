@@ -32,9 +32,9 @@ async function createEstablishmentFor(partnerId) {
   const id = randomUUID();
   await query(
     `INSERT INTO establishments
-       (id, partner_id, name, description, city, address, latitude, longitude,
+       (id, partner_id, name, slug, description, city, address, latitude, longitude,
         categories, cuisines, price_range, working_hours, status, created_at, updated_at)
-     VALUES ($1, $2, 'Partner Test Estab', 'desc', 'Минск', 'ул. Тестовая 1',
+     VALUES ($1, $2, 'Partner Test Estab', gen_random_uuid()::text, 'desc', 'Минск', 'ул. Тестовая 1',
              53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$',
              '{}'::jsonb, 'active', NOW(), NOW())`,
     [id, partnerId],

@@ -198,13 +198,15 @@ export async function seedMinimalData() {
     sunday: { open: '11:00', close: '22:00' }
   });
 
+  const slug = `test-seed-${Date.now()}`;
+
   const establishmentQuery = `
     INSERT INTO establishments (
-      id, partner_id, name, description, city, address, latitude, longitude,
+      id, partner_id, name, slug, description, city, address, latitude, longitude,
       categories, cuisines, price_range, working_hours, status, created_at, updated_at
     )
     VALUES (
-      gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), NOW()
+      gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, NOW(), NOW()
     )
     RETURNING *
   `;
@@ -212,6 +214,7 @@ export async function seedMinimalData() {
   const establishmentValues = [
     partner.user.id,
     'Тестовый Ресторан',
+    slug,
     'Описание тестового ресторана',
     'Минск',
     'ул. Тестовая 1',

@@ -27,6 +27,7 @@ import {
 let partnerToken;
 let partner2Token;
 let userToken;
+let adminToken;
 let partnerId;
 
 // Setup and teardown
@@ -35,10 +36,12 @@ beforeAll(async () => {
   const partner1 = await createUserAndGetTokens(testUsers.partner);
   const partner2 = await createUserAndGetTokens(testUsers.partner2);
   const user = await createUserAndGetTokens(testUsers.regularUser);
+  const admin = await createUserAndGetTokens(testUsers.admin);
 
   partnerToken = partner1.accessToken;
   partner2Token = partner2.accessToken;
   userToken = user.accessToken;
+  adminToken = admin.accessToken;
   partnerId = partner1.user.id;
 });
 
@@ -862,5 +865,134 @@ describe('Establishments System - Status Workflow', () => {
       .expect(400);
 
     expect(second.body.error.code).toBe('INVALID_STATUS_FOR_SUBMISSION');
+  });
+});
+
+describe('Establishments System - Slug Lifecycle', () => {
+  describe('Auto-generation on create', () => {
+    test('should auto-generate slug from name', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Кафе Весна' })
+        .expect(201);
+
+      expect(response.body.data.establishment.slug).toBeDefined();
+      expect(response.body.data.establishment.slug).toBe('kafe-vesna');
+    });
+
+    test('two establishments with the same name get different slugs via auto-suffix', async () => {
+      // Same name allowed across different partners (name uniqueness is partner-scoped),
+      // but slug uniqueness is global — auto-suffix resolves the collision.
+      const first = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Кафе Весна' })
+        .expect(201);
+
+      const second = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partner2Token}`)
+        .send({ ...testEstablishments[0], name: 'Кафе Весна' })
+        .expect(201);
+
+      expect(first.body.data.establishment.slug).toBe('kafe-vesna');
+      expect(second.body.data.establishment.slug).toBe('kafe-vesna-2');
+      expect(first.body.data.establishment.slug)
+        .not.toBe(second.body.data.establishment.slug);
+    });
+  });
+
+  describe('Slug lifecycle on update', () => {
+    test('renaming a draft regenerates the slug (mutable status)', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Старое название' })
+        .expect(201);
+
+      const id = created.body.data.establishment.id;
+      const originalSlug = created.body.data.establishment.slug;
+      expect(originalSlug).toBe('staroe-nazvanie');
+
+      const updated = await request(app)
+        .put(`/api/v1/partner/establishments/${id}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ name: 'Новое название' })
+        .expect(200);
+
+      expect(updated.body.data.establishment.slug).toBe('novoe-nazvanie');
+      expect(updated.body.data.establishment.slug).not.toBe(originalSlug);
+    });
+
+    test('renaming an active establishment does NOT change slug (frozen)', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Активный ресторан' })
+        .expect(201);
+
+      const id = created.body.data.establishment.id;
+      const originalSlug = created.body.data.establishment.slug;
+
+      // Promote to active manually (skip full moderation flow for test brevity)
+      await query('UPDATE establishments SET status = $1 WHERE id = $2', ['active', id]);
+
+      const updated = await request(app)
+        .put(`/api/v1/partner/establishments/${id}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ name: 'Переименованный ресторан' })
+        .expect(200);
+
+      // Display name changes, slug stays frozen for URL stability post-approve
+      expect(updated.body.data.establishment.name).toBe('Переименованный ресторан');
+      expect(updated.body.data.establishment.slug).toBe(originalSlug);
+    });
+  });
+
+  describe('Admin slug correction (PATCH /admin/:id/slug)', () => {
+    test('admin can override slug on an active establishment', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Заведение для admin' })
+        .expect(201);
+
+      const id = created.body.data.establishment.id;
+      await query('UPDATE establishments SET status = $1 WHERE id = $2', ['active', id]);
+
+      const updated = await request(app)
+        .patch(`/api/v1/admin/establishments/${id}/slug`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ slug: 'custom-admin-slug' })
+        .expect(200);
+
+      expect(updated.body.data.slug).toBe('custom-admin-slug');
+    });
+
+    test('admin PATCH with already-taken slug returns 409', async () => {
+      const first = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Первое заведение' })
+        .expect(201);
+
+      const second = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], name: 'Второе заведение' })
+        .expect(201);
+
+      const secondId = second.body.data.establishment.id;
+      const firstSlug = first.body.data.establishment.slug;
+
+      const response = await request(app)
+        .patch(`/api/v1/admin/establishments/${secondId}/slug`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ slug: firstSlug })
+        .expect(409);
+
+      expect(response.body.error.code).toBe('SLUG_ALREADY_TAKEN');
+    });
   });
 });

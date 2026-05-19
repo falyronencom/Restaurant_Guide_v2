@@ -22,6 +22,7 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
   findEstablishmentById: jest.fn(),
   checkOwnership: jest.fn(),
   checkDuplicateName: jest.fn(),
+  checkDuplicateSlug: jest.fn(),
   updateEstablishment: jest.fn(),
   deleteEstablishment: jest.fn(),
   submitForModeration: jest.fn(),

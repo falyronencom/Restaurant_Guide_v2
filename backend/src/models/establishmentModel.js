@@ -98,6 +98,7 @@ export const createEstablishment = async (establishmentData) => {
   const {
     partner_id,
     name,
+    slug,
     description,
     city,
     address,
@@ -119,6 +120,7 @@ export const createEstablishment = async (establishmentData) => {
     INSERT INTO establishments (
       partner_id,
       name,
+      slug,
       description,
       city,
       address,
@@ -143,11 +145,12 @@ export const createEstablishment = async (establishmentData) => {
       review_count,
       average_rating
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', 'free', 0, 0, 0, 0, 0, 0.0)
-    RETURNING 
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', 'free', 0, 0, 0, 0, 0, 0.0)
+    RETURNING
       id,
       partner_id,
       name,
+      slug,
       description,
       city,
       address,
@@ -181,6 +184,7 @@ export const createEstablishment = async (establishmentData) => {
   const values = [
     partner_id,
     name,
+    slug,
     description,
     city,
     address,
@@ -228,10 +232,11 @@ export const createEstablishment = async (establishmentData) => {
  */
 export const findEstablishmentById = async (establishmentId, includeAll = false) => {
   const query = `
-    SELECT 
+    SELECT
       id,
       partner_id,
       name,
+      slug,
       description,
       city,
       address,
@@ -448,6 +453,12 @@ export const updateEstablishment = async (establishmentId, updates) => {
     paramCount++;
   }
 
+  if (updates.slug !== undefined) {
+    fields.push(`slug = $${paramCount}`);
+    values.push(updates.slug);
+    paramCount++;
+  }
+
   if (updates.description !== undefined) {
     fields.push(`description = $${paramCount}`);
     values.push(updates.description);
@@ -548,10 +559,11 @@ export const updateEstablishment = async (establishmentId, updates) => {
     UPDATE establishments
     SET ${fields.join(', ')}
     WHERE id = $${paramCount}
-    RETURNING 
+    RETURNING
       id,
       partner_id,
       name,
+      slug,
       description,
       city,
       address,
@@ -1449,6 +1461,127 @@ export const claimEstablishment = async (establishmentId, newPartnerId, adminId,
       error: error.message,
       establishmentId,
       newPartnerId,
+    });
+    throw error;
+  }
+};
+
+// =============================================================================
+// Slug operations (migration 027)
+// =============================================================================
+
+/**
+ * Check if a slug is already in use.
+ *
+ * Case-sensitive equality check — slugs are always lowercase-normalized
+ * by slugGenerator, so case-insensitive compare is unnecessary.
+ * Mirrors checkDuplicateName pattern (partner-scoped name uniqueness),
+ * but slug uniqueness is global (single UNIQUE constraint, not per-partner).
+ *
+ * @param {string} slug - Slug to check
+ * @param {string} [excludeId] - Optional establishment ID to exclude (for updates)
+ * @returns {Promise<boolean>} True if slug is already in use by another row
+ */
+export const checkDuplicateSlug = async (slug, excludeId = null) => {
+  const conditions = ['slug = $1'];
+  const values = [slug];
+
+  if (excludeId) {
+    conditions.push('id != $2');
+    values.push(excludeId);
+  }
+
+  const query = `
+    SELECT EXISTS(
+      SELECT 1
+      FROM establishments
+      WHERE ${conditions.join(' AND ')}
+    ) as is_duplicate
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    return result.rows[0].is_duplicate;
+  } catch (error) {
+    logger.error('Error checking duplicate slug', {
+      error: error.message,
+      slug,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Find an establishment by its slug.
+ *
+ * Mirrors findEstablishmentById but with slug as the lookup key.
+ * Intended for Phase A web platform routing (/city/category/slug).
+ *
+ * @param {string} slug - Slug to look up
+ * @param {boolean} [includeAll=false] - If false, excludes 'archived' status
+ * @returns {Promise<Object|null>} Establishment row or null if not found
+ */
+export const findEstablishmentBySlug = async (slug, includeAll = false) => {
+  const query = `
+    SELECT
+      id,
+      partner_id,
+      name,
+      slug,
+      description,
+      city,
+      address,
+      latitude,
+      longitude,
+      phone,
+      email,
+      website,
+      categories,
+      cuisines,
+      price_range,
+      working_hours,
+      special_hours,
+      attributes,
+      status,
+      moderation_notes,
+      moderated_by,
+      moderated_at,
+      subscription_tier,
+      subscription_started_at,
+      subscription_expires_at,
+      base_score,
+      boost_score,
+      view_count,
+      favorite_count,
+      review_count,
+      average_rating,
+      primary_image_url,
+      created_at,
+      updated_at,
+      published_at
+    FROM establishments
+    WHERE slug = $1
+    ${includeAll ? '' : "AND status NOT IN ('archived')"}
+  `;
+
+  try {
+    const result = await pool.query(query, [slug]);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    logger.debug('Establishment found by slug', {
+      slug,
+      establishmentId: result.rows[0].id,
+      status: result.rows[0].status,
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error finding establishment by slug', {
+      error: error.message,
+      slug,
     });
     throw error;
   }

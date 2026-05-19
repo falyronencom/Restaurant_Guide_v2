@@ -38,6 +38,7 @@ import {
   generateCoordinates,
   generatePhone,
 } from './seed-data/content-templates.js';
+import { generateUniqueSlug } from '../src/utils/slugGenerator.js';
 
 // Load environment variables
 dotenv.config();
@@ -233,11 +234,24 @@ async function createEstablishment(client, partnerId, config, index) {
   const hoursGenerator = WORKING_HOURS_PATTERNS[workingHoursPattern] || WORKING_HOURS_PATTERNS.restaurant;
   const working_hours = hoursGenerator();
 
+  // Generate unique slug — same path as production service (slugGenerator).
+  // checkDuplicate sees uncommitted slugs from earlier rows in this transaction
+  // (READ COMMITTED), so within-batch collisions resolve via auto-suffix.
+  const checkDuplicate = async (candidate) => {
+    const dup = await client.query(
+      'SELECT 1 FROM establishments WHERE slug = $1 LIMIT 1',
+      [candidate],
+    );
+    return dup.rows.length > 0;
+  };
+  const slug = await generateUniqueSlug(name, checkDuplicate);
+
   // Insert establishment
   const query = `
     INSERT INTO establishments (
       partner_id,
       name,
+      slug,
       description,
       city,
       address,
@@ -260,13 +274,14 @@ async function createEstablishment(client, partnerId, config, index) {
       review_count,
       average_rating
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
     RETURNING id, name, city, status
   `;
 
   const values = [
     partnerId,
     name,
+    slug,
     description,
     city,
     address,

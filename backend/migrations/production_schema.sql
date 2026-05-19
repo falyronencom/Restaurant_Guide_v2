@@ -1,7 +1,7 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Includes migrations 001-026 (last update: May 2026 — Inter-Horizon Audit P3 Cat C Brief #4).
+-- Includes migrations 001-027 (last update: May 2026 — Brief 0 slug infrastructure).
 -- Generated via pg_dump --schema-only against a fresh DB to which all
 -- migrations were applied sequentially. This file is the authoritative
 -- snapshot used to bootstrap fresh databases (e.g. Railway initial deploy
@@ -22,14 +22,25 @@
 --   011 sync test DB columns              024 OCR menu pipeline (pg_trgm)
 --   012 rejected status                   025 hidden_reason on menu_items
 --   013 analytics indexes                 026 email_verification_codes
+--                                         027 establishment slug (BGN/PCGN
+--                                             transliteration, auto-suffix on
+--                                             collision, mutable in pre-approve
+--                                             status only — see Brief 0)
+--
+-- Note on migration 027: applied as three artifacts on the source DB
+-- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
+-- because slug generation requires JavaScript transliteration shared with the
+-- production service layer. For fresh DB clones this consolidated snapshot
+-- already includes the resulting slug column with NOT NULL + UNIQUE
+-- constraints, so single-file restore is sufficient.
 --
 -- Regeneration recipe (Option B from Audit Phase 3 Brief #2, refreshed in Brief #4):
 --   1. docker exec pg-test psql -U postgres -c "DROP DATABASE IF EXISTS schema_rebuild;"
 --   2. docker exec pg-test psql -U postgres -c "CREATE DATABASE schema_rebuild;"
 --   3. Load existing snapshot (covers all currently-snapshotted migrations):
 --        docker exec -i pg-test psql -U postgres -d schema_rebuild < production_schema.sql
---      Then apply newer migrations sequentially:
---        docker exec -i pg-test psql -U postgres -d schema_rebuild < <NNN_migration>.sql
+--      For migrations newer than the snapshot, apply pre-data SQL, run backfill
+--      script if applicable, then apply post-data SQL (e.g. 027a → backfill → 027b).
 --   4. docker exec pg-test pg_dump -U postgres --schema-only --no-owner \
 --        --no-privileges --no-comments -d schema_rebuild > <new_schema_body>.sql
 --   5. Replace this header block, keep the body.
@@ -286,6 +297,7 @@ CREATE TABLE public.establishments (
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
+    slug character varying(150) NOT NULL,
     CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Бобруйск'::character varying)::text]))),
     CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
     CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
@@ -598,6 +610,14 @@ ALTER TABLE ONLY public.establishments
 
 
 --
+-- Name: establishments establishments_slug_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.establishments
+    ADD CONSTRAINT establishments_slug_unique UNIQUE (slug);
+
+
+--
 -- Name: favorites favorites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -863,6 +883,13 @@ CREATE INDEX idx_establishments_ranking ON public.establishments USING btree (((
 --
 
 CREATE INDEX idx_establishments_rating ON public.establishments USING btree (average_rating DESC);
+
+
+--
+-- Name: idx_establishments_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_establishments_slug ON public.establishments USING btree (slug);
 
 
 --

@@ -57,26 +57,26 @@ beforeEach(async () => {
   // Seed test establishments
   // 1: Coffee shop in Minsk center
   await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Кофе Тайм', 'Уютная кофейня в центре', 'Минск', 'ул. Ленина 1', 53.9, 27.5, ARRAY['Кофейня'], ARRAY['Европейская'], 'active', $2::jsonb, '$', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Кофе Тайм', gen_random_uuid()::text, 'Уютная кофейня в центре', 'Минск', 'ул. Ленина 1', 53.9, 27.5, ARRAY['Кофейня'], ARRAY['Европейская'], 'active', $2::jsonb, '$', NOW(), NOW())
   `, [partnerId, defaultWorkingHours]);
 
   // 2: Italian restaurant
   await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Итальяно', 'Итальянская кухня', 'Минск', 'пр. Независимости 50', 53.91, 27.55, ARRAY['Ресторан'], ARRAY['Итальянская'], 'active', $2::jsonb, '$$$', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Итальяно', gen_random_uuid()::text, 'Итальянская кухня', 'Минск', 'пр. Независимости 50', 53.91, 27.55, ARRAY['Ресторан'], ARRAY['Итальянская'], 'active', $2::jsonb, '$$$', NOW(), NOW())
   `, [partnerId, defaultWorkingHours]);
 
   // 3: Budget fast food
   await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Бургер Хаус', 'Быстро и вкусно', 'Минск', 'ул. Сурганова 10', 53.92, 27.58, ARRAY['Фаст-фуд'], ARRAY['Американская'], 'active', $2::jsonb, '$', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Бургер Хаус', gen_random_uuid()::text, 'Быстро и вкусно', 'Минск', 'ул. Сурганова 10', 53.92, 27.58, ARRAY['Фаст-фуд'], ARRAY['Американская'], 'active', $2::jsonb, '$', NOW(), NOW())
   `, [partnerId, defaultWorkingHours]);
 
   // 4: Georgian restaurant in Gomel
   await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Хинкальная', 'Грузинская кухня', 'Гомель', 'ул. Советская 5', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Грузинская'], 'active', $2::jsonb, '$$', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Хинкальная', gen_random_uuid()::text, 'Грузинская кухня', 'Гомель', 'ул. Советская 5', 52.4, 31.0, ARRAY['Ресторан'], ARRAY['Грузинская'], 'active', $2::jsonb, '$$', NOW(), NOW())
   `, [partnerId, defaultWorkingHours]);
 });
 

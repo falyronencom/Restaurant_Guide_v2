@@ -75,19 +75,21 @@ export async function createPartnerWithEstablishment(status = 'pending') {
   });
 
   const establishmentId = randomUUID();
+  const slug = `test-${establishmentId.slice(0, 8)}`;
 
   const result = await query(
     `INSERT INTO establishments (
-      id, partner_id, name, description, city, address,
+      id, partner_id, name, slug, description, city, address,
       latitude, longitude, categories, cuisines, price_range,
       working_hours, status, created_at, updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
     RETURNING *`,
     [
       establishmentId,
       partner.user.id,
       'Test Establishment',
+      slug,
       'Test description for moderation',
       'Минск',
       'ул. Тестовая 1',

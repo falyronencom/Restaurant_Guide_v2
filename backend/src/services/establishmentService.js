@@ -17,7 +17,15 @@ import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
+
+/**
+ * Statuses in which a partner-driven name change triggers slug regeneration.
+ * Post-approve (active, suspended, archived) slug is frozen — display name
+ * can change but URL remains stable for SEO and existing links.
+ */
+const SLUG_MUTABLE_STATUSES = ['draft', 'pending', 'rejected'];
 
 /**
  * Valid city values for Belarus
@@ -250,10 +258,17 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       );
     }
 
+    // Generate unique slug from name (auto-suffix on collision)
+    const slug = await generateUniqueSlug(
+      name,
+      (candidate) => EstablishmentModel.checkDuplicateSlug(candidate),
+    );
+
     // Create establishment in database
     const establishment = await EstablishmentModel.createEstablishment({
       partner_id: partnerId,
       name,
+      slug,
       description,
       city,
       address,
@@ -423,7 +438,14 @@ export const createEstablishment = async (partnerId, establishmentData) => {
 
     // Handle database-specific errors
     if (error.code === '23505') {
-      // Unique constraint violation
+      // Unique constraint violation — disambiguate by constraint name
+      if (error.constraint === 'establishments_slug_unique') {
+        throw new AppError(
+          'Slug collision could not be resolved',
+          409,
+          'SLUG_COLLISION',
+        );
+      }
       throw new AppError(
         'An establishment with this information already exists',
         409,
@@ -795,6 +817,34 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       }
     }
 
+    // Strip partner-supplied slug — slug is system-controlled.
+    // Admin slug correction goes through a separate endpoint.
+    if (updates.slug !== undefined) {
+      delete updates.slug;
+    }
+
+    // Slug regeneration gate:
+    //   mutable statuses (draft, pending, rejected) → regenerate when name changes
+    //   frozen statuses (active, suspended, archived) → slug stays stable
+    //   even on rename, so existing URLs do not break.
+    if (
+      SLUG_MUTABLE_STATUSES.includes(currentEstablishment.status) &&
+      updates.name !== undefined &&
+      updates.name !== currentEstablishment.name
+    ) {
+      updates.slug = await generateUniqueSlug(
+        updates.name,
+        (candidate) => EstablishmentModel.checkDuplicateSlug(candidate, establishmentId),
+      );
+      logger.info('Slug regenerated due to name change in mutable status', {
+        establishmentId,
+        oldName: currentEstablishment.name,
+        newName: updates.name,
+        newSlug: updates.slug,
+        status: currentEstablishment.status,
+      });
+    }
+
     // Prevent partners from changing status directly
     // Status changes should only come from admin moderation or submission workflow
     if (updates.status !== undefined) {
@@ -962,6 +1012,21 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     }
 
     // Handle database-specific errors
+    if (error.code === '23505') {
+      if (error.constraint === 'establishments_slug_unique') {
+        throw new AppError(
+          'Slug collision could not be resolved on update',
+          409,
+          'SLUG_COLLISION',
+        );
+      }
+      throw new AppError(
+        'An establishment with this information already exists',
+        409,
+        'DUPLICATE_ESTABLISHMENT',
+      );
+    }
+
     if (error.code === '23514') {
       throw new AppError(
         'Establishment data violates database constraints',

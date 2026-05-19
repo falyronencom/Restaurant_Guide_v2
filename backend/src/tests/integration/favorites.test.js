@@ -55,22 +55,22 @@ beforeEach(async () => {
   });
 
   const est1 = await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Restaurant 1', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], $2::jsonb, 'active', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Restaurant 1', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], $2::jsonb, 'active', NOW(), NOW())
     RETURNING id
   `, [partnerId, defaultWorkingHours]);
   establishment1Id = est1.rows[0].id;
 
   const est2 = await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Restaurant 2', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Кофейня'], ARRAY['Европейская'], $2::jsonb, 'active', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Restaurant 2', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Кофейня'], ARRAY['Европейская'], $2::jsonb, 'active', NOW(), NOW())
     RETURNING id
   `, [partnerId, defaultWorkingHours]);
   establishment2Id = est2.rows[0].id;
 
   const est3 = await query(`
-    INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
-    VALUES (gen_random_uuid(), $1, 'Restaurant 3', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Бар'], ARRAY['Американская'], $2::jsonb, 'active', NOW(), NOW())
+    INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
+    VALUES (gen_random_uuid(), $1, 'Restaurant 3', gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Бар'], ARRAY['Американская'], $2::jsonb, 'active', NOW(), NOW())
     RETURNING id
   `, [partnerId, defaultWorkingHours]);
   establishment3Id = est3.rows[0].id;
@@ -248,8 +248,8 @@ describe('Favorites System - List Favorites', () => {
     const workingHours = getDefaultWorkingHours();
     for (let i = 0; i < 15; i++) {
       const est = await query(`
-        INSERT INTO establishments (id, partner_id, name, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], $3::jsonb, 'active', NOW(), NOW())
+        INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, working_hours, status, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], $3::jsonb, 'active', NOW(), NOW())
         RETURNING id
       `, [partnerId, `Restaurant ${i}`, workingHours]);
 

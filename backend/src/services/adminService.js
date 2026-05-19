@@ -785,6 +785,130 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
 };
 
 /**
+ * Update establishment slug (admin correction).
+ *
+ * Allows admin to override the auto-generated slug — typically for SEO
+ * refinement or partner-requested URL adjustments. Partner-side slug is
+ * frozen post-approve (immutability gate in establishmentService); this
+ * endpoint is the only way to change a slug on an active establishment.
+ *
+ * Slug format requirements:
+ *   - lowercase, [a-z0-9-] only
+ *   - no leading/trailing/consecutive dashes
+ *   - length 1-150
+ *
+ * @param {string} establishmentId - UUID
+ * @param {Object} params
+ * @param {string} params.slug - New slug
+ * @param {string} params.adminUserId
+ * @param {string} params.ipAddress
+ * @param {string} params.userAgent
+ * @returns {Promise<Object>} Updated establishment
+ */
+export const updateEstablishmentSlug = async (establishmentId, params) => {
+  const { slug, adminUserId, ipAddress, userAgent } = params;
+
+  // Format validation
+  if (typeof slug !== 'string') {
+    throw new AppError(
+      'Slug must be a string',
+      422,
+      'INVALID_SLUG_TYPE',
+    );
+  }
+
+  const trimmed = slug.trim();
+
+  if (trimmed.length === 0 || trimmed.length > 150) {
+    throw new AppError(
+      'Slug length must be 1-150 characters',
+      422,
+      'INVALID_SLUG_LENGTH',
+    );
+  }
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) {
+    throw new AppError(
+      'Slug must be lowercase alphanumeric with single dashes between groups (no leading/trailing/consecutive dashes)',
+      422,
+      'INVALID_SLUG_FORMAT',
+    );
+  }
+
+  try {
+    const existing = await EstablishmentModel.findEstablishmentById(
+      establishmentId,
+      true,
+    );
+
+    if (!existing) {
+      throw new AppError(
+        'Establishment not found',
+        404,
+        'ESTABLISHMENT_NOT_FOUND',
+      );
+    }
+
+    // Uniqueness check (excluding self — admin can re-submit current slug as no-op)
+    const isDuplicate = await EstablishmentModel.checkDuplicateSlug(trimmed, establishmentId);
+    if (isDuplicate) {
+      throw new AppError(
+        'Slug is already in use by another establishment',
+        409,
+        'SLUG_ALREADY_TAKEN',
+      );
+    }
+
+    const updated = await EstablishmentModel.updateEstablishment(
+      establishmentId,
+      { slug: trimmed },
+    );
+
+    AuditLogModel.createAuditLog({
+      user_id: adminUserId,
+      action: 'admin_update_slug',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { slug: existing.slug },
+      new_data: { slug: trimmed },
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
+    logger.info('Admin updated establishment slug', {
+      establishmentId,
+      adminUserId,
+      oldSlug: existing.slug,
+      newSlug: trimmed,
+    });
+
+    return updated;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    // Race condition: another transaction took the slug between our check and update
+    if (error.code === '23505' && error.constraint === 'establishments_slug_unique') {
+      throw new AppError(
+        'Slug is already in use by another establishment',
+        409,
+        'SLUG_ALREADY_TAKEN',
+      );
+    }
+
+    logger.error('Unexpected error updating slug', {
+      error: error.message,
+      establishmentId,
+    });
+
+    throw new AppError(
+      'Failed to update establishment slug',
+      500,
+      'SLUG_UPDATE_FAILED',
+    );
+  }
+};
+
+/**
  * Search establishments across all statuses
  *
  * @param {Object} params

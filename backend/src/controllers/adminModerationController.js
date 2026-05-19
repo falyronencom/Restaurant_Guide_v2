@@ -318,6 +318,52 @@ export const updateCoordinates = asyncHandler(async (req, res) => {
 });
 
 /**
+ * PATCH /api/v1/admin/establishments/:id/slug
+ *
+ * Update establishment slug (admin correction).
+ * Body: { slug: string }
+ *
+ * Admin overrides slug directly — auto-generation does not run here because
+ * admin intentionally picks the final string. Service layer validates format
+ * and uniqueness.
+ */
+export const updateSlug = asyncHandler(async (req, res) => {
+  const establishmentId = req.params.id;
+  const { slug } = req.body;
+
+  if (slug === undefined) {
+    throw new AppError(
+      'slug is required in request body',
+      422,
+      'MISSING_SLUG',
+    );
+  }
+
+  const result = await adminService.updateEstablishmentSlug(
+    establishmentId,
+    {
+      slug,
+      adminUserId: req.user.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  );
+
+  logger.info('Admin updated establishment slug', {
+    adminId: req.user.userId,
+    establishmentId,
+    newSlug: slug,
+    endpoint: 'PATCH /api/v1/admin/establishments/:id/slug',
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: 'Slug updated',
+  });
+});
+
+/**
  * GET /api/v1/admin/establishments/search
  *
  * Search establishments across all statuses.
