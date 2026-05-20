@@ -132,13 +132,8 @@ describe('Public API — GET /api/v1/public/metadata', () => {
 
 describe('Public API — GET /api/v1/public/establishments', () => {
   beforeEach(async () => {
-    // Seed varied test data
-    // NOTE: production_schema.sql currently has the city CHECK constraint
-    // missing the 'Могилёв' (ё) variant — fix_city_constraint.sql carried
-    // that addition but was lost in the recent schema regen. Both Mogilev
-    // rows use 'Могилев' (без ё) until that's restored (spawned as a
-    // separate fix task). The slug-expansion behaviour is still covered
-    // by urlSlugs unit tests (expandCityForQuery).
+    // Seed varied test data. Both Mogilev rows use 'Могилев' (без ё) here;
+    // ё-variant resolution covered by urlSlugs.test.js (expandCityForQuery).
     await query(`
       INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, base_score, boost_score, subscription_tier, created_at, updated_at)
       VALUES
@@ -196,9 +191,8 @@ describe('Public API — GET /api/v1/public/establishments', () => {
       .query({ city: 'mogilev' })
       .expect(200);
 
-    // Test DB constraint currently only permits 'Могилев' (без ё) — both rows
-    // were seeded with that variant. expand-to-ё behaviour is covered by
-    // urlSlugs.test.js (expandCityForQuery returns ['Могилев', 'Могилёв']).
+    // Both rows seeded with 'Могилев' (без ё); ё-variant resolution covered
+    // by urlSlugs.test.js (expandCityForQuery returns both spellings).
     expect(response.body.data.establishments.length).toBe(2);
     for (const est of response.body.data.establishments) {
       expect(est.city).toBe('Могилев');
