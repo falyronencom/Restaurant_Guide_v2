@@ -25,6 +25,9 @@ const MAX_COLLISION_ATTEMPTS = 10000;
  * Cyrillic → Latin transliteration map.
  * Multi-character results (yo, zh, kh, ts, ch, sh, shch, yu, ya) are
  * handled by string concatenation in transliterate().
+ *
+ * Belarusian-specific letters (ў, і) follow BGN/PCGN: ў→u, і→i.
+ * Uppercase Ў/І are handled via toLowerCase() in transliterate().
  */
 const TRANSLITERATION_MAP = {
   'а': 'a',  'б': 'b',  'в': 'v',  'г': 'g',  'д': 'd',
@@ -34,6 +37,7 @@ const TRANSLITERATION_MAP = {
   'у': 'u',  'ф': 'f',  'х': 'kh', 'ц': 'ts', 'ч': 'ch',
   'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y',  'ь': '',
   'э': 'e',  'ю': 'yu', 'я': 'ya',
+  'і': 'i',  'ў': 'u',
 };
 
 /**

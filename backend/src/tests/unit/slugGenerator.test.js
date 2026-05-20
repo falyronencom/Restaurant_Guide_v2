@@ -78,6 +78,27 @@ describe('slugGenerator', () => {
       expect(transliterate('Крыша')).toBe('krysha');
       expect(transliterate('Веранда')).toBe('veranda');
     });
+
+    test('Belarusian letters ў and і (lowercase, BGN/PCGN)', () => {
+      expect(transliterate('ў')).toBe('u');
+      expect(transliterate('і')).toBe('i');
+      expect(transliterate('мінск')).toBe('minsk');
+      expect(transliterate('кавярня ў')).toBe('kavyarnya u');
+    });
+
+    test('Belarusian letters Ў and І (uppercase normalized to lowercase Latin)', () => {
+      expect(transliterate('Ў')).toBe('u');
+      expect(transliterate('І')).toBe('i');
+      expect(transliterate('Ўнікум')).toBe('unikum');
+      expect(transliterate('Іслянд')).toBe('islyand');
+    });
+
+    test('mixed Belarusian + Russian Cyrillic in single name', () => {
+      // 'Кафэ' uses Russian-style 'э'; 'Мінск' uses Belarusian 'і'
+      expect(transliterate('Кафэ Мінск')).toBe('kafe minsk');
+      // 'Спадчынная' uses Russian-shared letters; 'Ў' is Belarusian
+      expect(transliterate('Спадчынная Ў')).toBe('spadchynnaya u');
+    });
   });
 
   describe('normalizeSlug', () => {
@@ -208,6 +229,13 @@ describe('slugGenerator', () => {
       expect(generateSlug('Тбилиси')).toBe('tbilisi');
       expect(generateSlug('Burger Brothers')).toBe('burger-brothers');
       expect(generateSlug('Сож')).toBe('sozh');
+    });
+
+    test('Belarusian establishment names produce expected slugs', () => {
+      expect(generateSlug('Кавярня Ў')).toBe('kavyarnya-u');
+      expect(generateSlug('Мінск')).toBe('minsk');
+      expect(generateSlug('Кафэ "Спадчынная Ў"')).toBe('kafe-spadchynnaya-u');
+      expect(generateSlug('Ўнікум')).toBe('unikum');
     });
   });
 
