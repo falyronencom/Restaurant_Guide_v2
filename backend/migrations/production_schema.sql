@@ -298,7 +298,7 @@ CREATE TABLE public.establishments (
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
     slug character varying(150) NOT NULL,
-    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Бобруйск'::character varying)::text]))),
+    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Могилёв'::character varying)::text, ('Бобруйск'::character varying)::text]))),
     CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
     CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
     CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY (ARRAY[('free'::character varying)::text, ('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
