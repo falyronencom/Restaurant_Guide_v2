@@ -107,6 +107,18 @@ describe('toPublicEstablishment — full detail projection', () => {
     expect(result.booking_enabled).toBe(true);
   });
 
+  test('preserves status (mobile non-nullable cast guard)', () => {
+    // Mobile establishment.dart:149 does `status: json['status'] as String`
+    // (non-nullable). Removing status would crash mobile Dart parsing.
+    const result = toPublicEstablishment(rawEstablishmentRow);
+    expect(result.status).toBe('active');
+  });
+
+  test('listing projection also preserves status', () => {
+    const result = toPublicEstablishmentListing(rawEstablishmentRow);
+    expect(result.status).toBe('active');
+  });
+
   test('parses numeric strings to numbers', () => {
     const result = toPublicEstablishment(rawEstablishmentRow);
     expect(result.latitude).toBe(53.9);

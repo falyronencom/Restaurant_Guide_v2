@@ -596,8 +596,12 @@ export async function searchWithoutLocation({
   priceMaxByn = null,
 }) {
   // Validate pagination. Max 500 to support /api/v1/public/establishments/map
-  // (Brief 1 default 200, max 500). Mobile clients use ≤100 in practice — no
-  // regression. Bounds-based maps go through searchByBounds (separate limit cap).
+  // (Brief 1 default 200, max 500). Mobile clients historically used max 100
+  // and continue to do so in practice — the higher service cap is reachable
+  // from /api/v1/search/establishments by any caller, capped by the global
+  // 300/hr unauth rate limit. Monitor connection-pool pressure post-deploy;
+  // if abuse appears, introduce a controller-level cap on /search/* or move
+  // map endpoint to a dedicated model query.
   if (limit < 1 || limit > 500) {
     throw new AppError('Limit must be between 1 and 500', 422, 'VALIDATION_ERROR');
   }
@@ -1042,8 +1046,10 @@ export async function getEstablishmentById(id) {
 
   const row = result.rows[0];
 
-  // Track view (non-blocking, fire-and-forget)
-  EstablishmentModel.incrementViewCount(id);
+  // Track view (non-blocking, fire-and-forget). Defensive .catch so a future
+  // refactor that removes the inner try/catch in incrementViewCount cannot
+  // produce unhandled promise rejection here.
+  EstablishmentModel.incrementViewCount(id).catch(() => {});
 
   // Load media and active promotions in parallel
   // Promotions fetch is non-blocking: if it fails, detail still returns without promotions

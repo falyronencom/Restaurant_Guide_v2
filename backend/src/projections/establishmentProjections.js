@@ -67,6 +67,13 @@ export const toPublicEstablishment = (row) => {
     working_hours: row.working_hours,
     special_hours: row.special_hours,
     attributes: row.attributes,
+    // status preserved — mobile establishment.dart casts json['status'] as
+    // non-nullable String and uses it in isOpenNow() fallback logic. NOT
+    // in directive exclusion list (only partner/admin/internal-scoring
+    // fields are excluded). Public endpoints filter status='active'
+    // upstream, so this value is essentially constant for clients, but
+    // removing the key crashes Dart parsing.
+    status: row.status,
     primary_image_url: row.primary_image_url,
     review_count: parseInt(row.review_count) || 0,
     average_rating: row.average_rating !== null && row.average_rating !== undefined
@@ -131,6 +138,9 @@ export const toPublicEstablishmentListing = (row) => {
     price_range: row.price_range,
     working_hours: row.working_hours,
     attributes: row.attributes,
+    // status preserved — see note in toPublicEstablishment. Mobile Dart
+    // model casts non-nullably and uses for isOpenNow() fallback.
+    status: row.status,
     primary_image_url: row.primary_image_url,
     review_count: parseInt(row.review_count) || 0,
     average_rating: row.average_rating !== null && row.average_rating !== undefined

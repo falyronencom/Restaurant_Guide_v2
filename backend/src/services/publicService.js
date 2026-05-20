@@ -197,7 +197,9 @@ const assembleEstablishmentDetail = async (row) => {
   // Fire-and-forget view tracking — preserves behaviour of legacy
   // /search/establishments/:id endpoint. Public web bot crawls will inflate
   // view_count; bot filtering is deferred to a future Brief per directive.
-  EstablishmentModel.incrementViewCount(row.id);
+  // Defensive .catch keeps the detail request safe even if the inner
+  // try/catch is ever removed.
+  EstablishmentModel.incrementViewCount(row.id).catch(() => {});
 
   const [media, promotions] = await Promise.all([
     MediaModel.getEstablishmentMedia(row.id),

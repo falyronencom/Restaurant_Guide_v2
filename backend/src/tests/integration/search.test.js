@@ -561,9 +561,29 @@ describe('Search System - Public Projection (fix-in-place, Brief 1)', () => {
     expect(est).toHaveProperty('average_rating');
     expect(est).toHaveProperty('review_count');
     expect(est).toHaveProperty('distance_km');
+    // Mobile Dart model casts json['status'] as non-nullable String —
+    // projection MUST preserve this neutral field even though the value
+    // is always 'active' for public endpoints. Regression guard.
+    expect(est).toHaveProperty('status');
+    expect(est.status).toBe('active');
     // Derived public fields added by projection
     expect(est).toHaveProperty('city_slug');
     expect(est).toHaveProperty('category_slug');
     expect(est).toHaveProperty('has_promotion');
+  });
+
+  test('GET /search/establishments/:id detail preserves status field for mobile', async () => {
+    const list = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 5 });
+
+    const id = list.body.data.establishments[0].id;
+
+    const response = await request(app)
+      .get(`/api/v1/search/establishments/${id}`)
+      .expect(200);
+
+    expect(response.body.data).toHaveProperty('status');
+    expect(response.body.data.status).toBe('active');
   });
 });
