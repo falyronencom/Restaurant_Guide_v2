@@ -16,28 +16,49 @@
  * uncommitted writes via PostgreSQL's READ COMMITTED isolation default —
  * so collisions inside the batch resolve correctly via auto-suffix.
  *
- * Usage:
+ * Usage (local DB — reads .env):
  *   node scripts/backfill-slugs.js
  *
- * Environment:
+ * Usage (production — reads .env.production via DATABASE_URL):
+ *   DATABASE_URL_FILE=.env.production node scripts/backfill-slugs.js
+ *   or set DATABASE_URL directly in the environment
+ *
+ * Environment (local mode):
  *   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD from .env
+ *
+ * Environment (production mode):
+ *   DATABASE_URL — full postgres connection URL. SSL is enforced for Railway.
  */
 
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { existsSync } from 'fs';
 import { generateUniqueSlug } from '../src/utils/slugGenerator.js';
 
-dotenv.config();
+// Production mode: load DATABASE_URL from explicit .env file if requested.
+// Falls back to the normal .env-driven local mode otherwise.
+const envFile = process.env.DATABASE_URL_FILE;
+if (envFile && existsSync(envFile)) {
+  dotenv.config({ path: envFile });
+} else {
+  dotenv.config();
+}
 
 const { Pool } = pg;
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'restaurant_guide_belarus',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-});
+const usingDatabaseUrl = !!process.env.DATABASE_URL;
+const pool = usingDatabaseUrl
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }, // Railway requires SSL
+    })
+  : new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      database: process.env.DB_NAME || 'restaurant_guide_belarus',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD,
+    });
 
 async function backfillSlugs() {
   let client;
@@ -45,7 +66,20 @@ async function backfillSlugs() {
   try {
     client = await pool.connect();
 
-    console.log('🌱 Slug Backfill — Migration 027 Phase B\n');
+    console.log('🌱 Slug Backfill — Migration 027 Phase B');
+
+    // Display target DB for operator eyeball check (matches apply-migration-production.js pattern)
+    if (usingDatabaseUrl) {
+      try {
+        const u = new URL(process.env.DATABASE_URL);
+        console.log(`   Target: ${u.hostname}:${u.port}${u.pathname} (production mode, SSL)`);
+      } catch {
+        console.log('   Target: (DATABASE_URL set but unparseable — proceeding)');
+      }
+    } else {
+      console.log(`   Target: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'restaurant_guide_belarus'} (local mode)`);
+    }
+    console.log('');
 
     // Verify column exists before proceeding
     const columnCheck = await client.query(`
