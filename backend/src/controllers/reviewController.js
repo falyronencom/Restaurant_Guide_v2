@@ -12,6 +12,7 @@
 
 import * as ReviewService from '../services/reviewService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { toPublicReview, toPublicUserReview } from '../projections/reviewProjections.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -134,10 +135,14 @@ export const getEstablishmentReviews = asyncHandler(async (req, res) => {
     dateTo,
   });
 
-  // Return 200 OK with reviews and pagination metadata
+  // Apply public projection: strips partner_responder_id (leaks partner UUID)
+  // and any other admin/moderation flags. Endpoint is unauthenticated.
   res.status(200).json({
     success: true,
-    data: result,
+    data: {
+      reviews: result.reviews.map(toPublicReview),
+      pagination: result.pagination,
+    },
   });
 });
 
@@ -178,10 +183,15 @@ export const getUserReviews = asyncHandler(async (req, res) => {
     limit,
   });
 
-  // Return 200 OK with reviews and pagination metadata
+  // Apply public projection: same hiding rules as toPublicReview but
+  // preserves the establishment wrapper (no author wrapper since the
+  // user is implicit in the path param).
   res.status(200).json({
     success: true,
-    data: result,
+    data: {
+      reviews: result.reviews.map(toPublicUserReview),
+      pagination: result.pagination,
+    },
   });
 });
 

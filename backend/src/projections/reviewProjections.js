@@ -57,3 +57,33 @@ export const toPublicReview = (review) => {
     author,
   };
 };
+
+/**
+ * Convert a user-review row (from reviewService.getUserReviews shape) to
+ * public projection. Mirrors toPublicReview but preserves the establishment
+ * wrapper (rather than author) — the consumer already knows the user since
+ * userId is the path parameter.
+ *
+ * Excludes the same sensitive fields as toPublicReview:
+ *   - partner_responder_id (leaks partner user UUID)
+ *   - is_visible, is_deleted (filtering flags)
+ *
+ * @param {Object} review - Pre-formatted review with `establishment` wrapper
+ * @returns {Object} Public projection
+ */
+export const toPublicUserReview = (review) => {
+  if (!review) return null;
+
+  return {
+    id: review.id,
+    establishment_id: review.establishment_id,
+    rating: review.rating,
+    content: review.content,
+    partner_response: review.partner_response || null,
+    partner_response_at: review.partner_response_at || null,
+    is_edited: !!review.is_edited,
+    created_at: review.created_at,
+    updated_at: review.updated_at,
+    establishment: review.establishment || null,
+  };
+};

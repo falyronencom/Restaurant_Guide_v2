@@ -16,7 +16,7 @@ import {
   toPublicEstablishmentListing,
   toPublicEstablishmentMapMarker,
 } from '../../projections/establishmentProjections.js';
-import { toPublicReview } from '../../projections/reviewProjections.js';
+import { toPublicReview, toPublicUserReview } from '../../projections/reviewProjections.js';
 import { toPublicMenuItem } from '../../projections/menuItemProjections.js';
 
 const SENSITIVE_FIELDS = [
@@ -335,6 +335,71 @@ describe('toPublicReview — review projection', () => {
 
   test('returns null for null input', () => {
     expect(toPublicReview(null)).toBeNull();
+  });
+});
+
+describe('toPublicUserReview — user review projection', () => {
+  const formattedUserReview = {
+    id: 'rev-3',
+    establishment_id: 'est-1',
+    rating: 4,
+    content: 'Хорошее место',
+    partner_response: 'Спасибо за визит!',
+    partner_response_at: '2025-02-01',
+    partner_responder_id: 'partner-uuid-LEAK',
+    is_visible: true,
+    is_deleted: false,
+    is_edited: true,
+    created_at: '2025-01-30',
+    updated_at: '2025-01-30',
+    establishment: { id: 'est-1', name: 'Test Restaurant', city: 'Минск', category: 'Ресторан' },
+  };
+
+  test('excludes partner_responder_id', () => {
+    const result = toPublicUserReview(formattedUserReview);
+    expect(result).not.toHaveProperty('partner_responder_id');
+  });
+
+  test('excludes is_visible and is_deleted', () => {
+    const result = toPublicUserReview(formattedUserReview);
+    expect(result).not.toHaveProperty('is_visible');
+    expect(result).not.toHaveProperty('is_deleted');
+  });
+
+  test('preserves establishment wrapper', () => {
+    const result = toPublicUserReview(formattedUserReview);
+    expect(result.establishment).toEqual({
+      id: 'est-1',
+      name: 'Test Restaurant',
+      city: 'Минск',
+      category: 'Ресторан',
+    });
+  });
+
+  test('includes core public fields', () => {
+    const result = toPublicUserReview(formattedUserReview);
+    expect(result.id).toBe('rev-3');
+    expect(result.rating).toBe(4);
+    expect(result.content).toBe('Хорошее место');
+    expect(result.partner_response).toBe('Спасибо за визит!');
+    expect(result.is_edited).toBe(true);
+  });
+
+  test('does not surface author wrapper (user is implicit in path param)', () => {
+    const result = toPublicUserReview(formattedUserReview);
+    expect(result).not.toHaveProperty('author');
+  });
+
+  test('null-fallback for missing partner_response (preserves field, sets null)', () => {
+    const reviewNoResponse = { ...formattedUserReview, partner_response: undefined, partner_response_at: undefined };
+    const result = toPublicUserReview(reviewNoResponse);
+    expect(result).toHaveProperty('partner_response');
+    expect(result.partner_response).toBeNull();
+    expect(result.partner_response_at).toBeNull();
+  });
+
+  test('returns null for null input', () => {
+    expect(toPublicUserReview(null)).toBeNull();
   });
 });
 

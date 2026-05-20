@@ -927,3 +927,127 @@ describe('Reviews System - Partner Responses', () => {
     expect(detail.body.data.review.partner_response_at).toBeTruthy();
   });
 });
+
+describe('Reviews System - Public Projection on Legacy Listing Endpoints', () => {
+  // Regression coverage for the cleanup that applied toPublicReview /
+  // toPublicUserReview to /api/v1/establishments/:id/reviews and
+  // /api/v1/users/:id/reviews. Both endpoints are unauthenticated and
+  // previously exposed partner_responder_id (leaks partner user UUID).
+
+  const responseText = 'Спасибо за ваш отзыв.';
+
+  beforeEach(async () => {
+    // Seed one review with a partner response so all sensitive fields are populated
+    await query(
+      `INSERT INTO reviews (
+         id, user_id, establishment_id, rating, content, text,
+         partner_response, partner_response_at, partner_responder_id,
+         is_visible, is_deleted, created_at, updated_at
+       )
+       VALUES (
+         gen_random_uuid(), $1, $2, 5, $3, $3,
+         $4, NOW(), $5,
+         true, false, NOW(), NOW()
+       )`,
+      [userId, establishmentId, `${longContent} projection-test`, responseText, partnerId]
+    );
+  });
+
+  describe('GET /api/v1/establishments/:id/reviews', () => {
+    test('excludes partner_responder_id from each review', async () => {
+      const response = await request(app)
+        .get(`/api/v1/establishments/${establishmentId}/reviews`)
+        .expect(200);
+
+      expect(response.body.data.reviews.length).toBeGreaterThan(0);
+      for (const r of response.body.data.reviews) {
+        expect(r).not.toHaveProperty('partner_responder_id');
+        expect(r).not.toHaveProperty('user_id');
+        expect(r).not.toHaveProperty('is_visible');
+        expect(r).not.toHaveProperty('is_deleted');
+      }
+    });
+
+    test('preserves author wrapper with id, name, avatar_url', async () => {
+      const response = await request(app)
+        .get(`/api/v1/establishments/${establishmentId}/reviews`)
+        .expect(200);
+
+      const r = response.body.data.reviews[0];
+      expect(r).toHaveProperty('author');
+      expect(r.author).toHaveProperty('id');
+      expect(r.author).toHaveProperty('name');
+      expect(r.author).toHaveProperty('avatar_url');
+    });
+
+    test('preserves public fields (rating, content, partner_response text)', async () => {
+      const response = await request(app)
+        .get(`/api/v1/establishments/${establishmentId}/reviews`)
+        .expect(200);
+
+      const r = response.body.data.reviews[0];
+      expect(r.rating).toBe(5);
+      expect(r.content).toContain('projection-test');
+      expect(r.partner_response).toBe(responseText);
+      expect(r.partner_response_at).toBeTruthy();
+    });
+
+    test('preserves pagination metadata', async () => {
+      const response = await request(app)
+        .get(`/api/v1/establishments/${establishmentId}/reviews`)
+        .expect(200);
+
+      expect(response.body.data.pagination).toHaveProperty('page');
+      expect(response.body.data.pagination).toHaveProperty('limit');
+      expect(response.body.data.pagination).toHaveProperty('total');
+    });
+  });
+
+  describe('GET /api/v1/users/:id/reviews', () => {
+    test('excludes partner_responder_id from each review', async () => {
+      const response = await request(app)
+        .get(`/api/v1/users/${userId}/reviews`)
+        .expect(200);
+
+      expect(response.body.data.reviews.length).toBeGreaterThan(0);
+      for (const r of response.body.data.reviews) {
+        expect(r).not.toHaveProperty('partner_responder_id');
+        expect(r).not.toHaveProperty('is_visible');
+        expect(r).not.toHaveProperty('is_deleted');
+      }
+    });
+
+    test('preserves establishment wrapper', async () => {
+      const response = await request(app)
+        .get(`/api/v1/users/${userId}/reviews`)
+        .expect(200);
+
+      const r = response.body.data.reviews[0];
+      expect(r).toHaveProperty('establishment');
+      expect(r.establishment).toHaveProperty('id');
+      expect(r.establishment).toHaveProperty('name');
+    });
+
+    test('preserves public fields (rating, content, partner_response text)', async () => {
+      const response = await request(app)
+        .get(`/api/v1/users/${userId}/reviews`)
+        .expect(200);
+
+      const r = response.body.data.reviews[0];
+      expect(r.rating).toBe(5);
+      expect(r.content).toContain('projection-test');
+      expect(r.partner_response).toBe(responseText);
+      expect(r.partner_response_at).toBeTruthy();
+    });
+
+    test('preserves pagination metadata', async () => {
+      const response = await request(app)
+        .get(`/api/v1/users/${userId}/reviews`)
+        .expect(200);
+
+      expect(response.body.data.pagination).toHaveProperty('page');
+      expect(response.body.data.pagination).toHaveProperty('limit');
+      expect(response.body.data.pagination).toHaveProperty('total');
+    });
+  });
+});
