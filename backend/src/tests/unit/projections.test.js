@@ -205,7 +205,23 @@ describe('toPublicEstablishmentListing — lightweight projection', () => {
     expect(result).not.toHaveProperty('email');
     expect(result).not.toHaveProperty('special_hours');
     expect(result).not.toHaveProperty('view_count');
-    expect(result).not.toHaveProperty('updated_at');
+  });
+
+  test('includes all fields mobile Establishment.fromJson parses non-nullably', () => {
+    // mobile/lib/models/establishment.dart fromJson casts these fields as
+    // non-nullable Strings (some then DateTime.parse'd). Any missing field
+    // throws TypeError, the exception bubbles up to the UI provider, and
+    // the user sees "Не удалось загрузить данные" with no list rendered.
+    // Map endpoint uses the same projection — per-item try/catch silently
+    // skips failures, so the map shows zero markers instead of throwing.
+    // This test asserts the consumer contract on Brief 1's listing shape.
+    const result = toPublicEstablishmentListing(rawEstablishmentRow);
+    expect(typeof result.name).toBe('string');
+    expect(typeof result.address).toBe('string');
+    expect(typeof result.city).toBe('string');
+    expect(typeof result.status).toBe('string');
+    expect(typeof result.created_at).toBe('string');
+    expect(typeof result.updated_at).toBe('string');
   });
 
   test('includes derived city_slug and category_slug', () => {

@@ -152,6 +152,12 @@ export const toPublicEstablishmentListing = (row) => {
     promotion_count: parseInt(row.promotion_count) || 0,
     published_at: row.published_at,
     created_at: row.created_at,
+    // updated_at required — mobile establishment.dart parses non-nullably
+    // (DateTime.parse(json['updated_at'] as String)). Omitting it crashes
+    // the entire list with a generic "Не удалось загрузить" overlay; the
+    // map endpoint, which uses the same projection, silently shows zero
+    // markers because per-item try/catch skips parse failures.
+    updated_at: row.updated_at,
   };
 
   // distance_km / distance — only when radius search produced them.
