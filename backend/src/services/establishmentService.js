@@ -848,12 +848,13 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Prevent partners from changing status directly
     // Status changes should only come from admin moderation or submission workflow
     if (updates.status !== undefined) {
+      const attemptedStatus = updates.status;
       delete updates.status;
 
       logger.warn('Partner attempted to change status directly', {
         establishmentId,
         partnerId,
-        attemptedStatus: updates.status,
+        attemptedStatus,
       });
     }
 

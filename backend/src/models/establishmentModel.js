@@ -670,7 +670,7 @@ export const submitForModeration = async (establishmentId) => {
     const result = await pool.query(query, [establishmentId]);
 
     if (result.rows.length === 0) {
-      throw new Error('Establishment not found or not in draft/rejected status');
+      throw new Error('Establishment not found or not in draft, rejected, or suspended status');
     }
 
     logger.info('Establishment submitted for moderation', {
