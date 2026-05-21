@@ -1,0 +1,331 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+/* Dark variant — declared by shadcn init, retained for primitive compatibility */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design Token Layer — Source mirror of src/lib/tokens.ts.
+ *
+ * Triple-sync policy: update mobile/lib/config/theme.dart first (canonical),
+ * then src/lib/tokens.ts, then this file.
+ *
+ * shadcn primitives consume semantic tokens (--primary, --background,
+ * --foreground, --destructive, --border, --ring, etc.). Those semantic
+ * tokens are mapped here to the D1 brand tokens so primitive theming
+ * resolves to Restaurant Guide branding, not shadcn default neutral.
+ */
+
+:root {
+  /* === D1 raw tokens (canonical from mobile) ============================ */
+
+  /* Brand orange (mobile primaryOrange triplet + shadow) */
+  --color-brand: #F06B32;
+  --color-brand-dark: #DB4F13;
+  --color-brand-light: #EC723D;
+  --color-brand-shadow: #D35620;
+
+  /* Success */
+  --color-success: #4CAF50;
+  --color-success-dark: #388E3C;
+  --color-success-light: #66BB6A;
+  --color-success-status: #34C759;
+
+  /* Error */
+  --color-error: #F44336;
+  --color-error-dark: #D32F2F;
+  --color-error-light: #E57373;
+
+  /* Gray scale */
+  --color-gray-50: #FAFAFA;
+  --color-gray-100: #F5F5F5;
+  --color-gray-200: #EEEEEE;
+  --color-gray-300: #E0E0E0;
+  --color-gray-400: #BDBDBD;
+  --color-gray-500: #9E9E9E;
+  --color-gray-600: #757575;
+  --color-gray-700: #616161;
+  --color-gray-800: #424242;
+  --color-gray-900: #212121;
+
+  /* Figma-named tokens */
+  --color-figma-bg-warm: #F4F1EC;
+  --color-figma-stroke: #D2D2D2;
+  --color-figma-text-grey: #ABABAB;
+  --color-figma-text-dark: #3E3E3E;
+  --color-figma-navy: #3631C0;
+
+  /* Semantic — text */
+  --color-text-primary: #000000;
+  --color-text-secondary: #757575;
+  --color-text-tertiary: #9E9E9E;
+  --color-text-on-primary: #FFFFFF;
+
+  /* Semantic — background */
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #FAFAFA;
+  --color-bg-tertiary: #F5F5F5;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Spacing — xs/s/m/l/xl/xxl */
+  --spacing-xs: 4px;
+  --spacing-s: 8px;
+  --spacing-m: 16px;
+  --spacing-l: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  /* Animation durations */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+
+  /* === shadcn semantic mapping → D1 brand tokens ======================== */
+  /* Each --foo here drives a Tailwind utility class via @theme inline below. */
+
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-primary);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-primary);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-brand);
+  --primary-foreground: var(--color-text-on-primary);
+  --secondary: var(--color-gray-100);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-gray-100);
+  --muted-foreground: var(--color-text-secondary);
+  --accent: var(--color-brand-light);
+  --accent-foreground: var(--color-text-on-primary);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-on-primary);
+  --border: var(--color-figma-stroke);
+  --input: var(--color-figma-stroke);
+  --ring: var(--color-brand);
+
+  /* shadcn radius scale — bind primitive base to my radius-m */
+  --radius: var(--radius-m);
+
+  /* Charts — preserve shadcn defaults (no chart primitives in Brief 2 scope) */
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /* Sidebar — preserve shadcn defaults (no sidebar primitive in Brief 2) */
+  --sidebar: var(--color-bg-secondary);
+  --sidebar-foreground: var(--color-text-primary);
+  --sidebar-primary: var(--color-brand);
+  --sidebar-primary-foreground: var(--color-text-on-primary);
+  --sidebar-accent: var(--color-bg-tertiary);
+  --sidebar-accent-foreground: var(--color-text-primary);
+  --sidebar-border: var(--color-figma-stroke);
+  --sidebar-ring: var(--color-brand);
+}
+
+.dark {
+  /* Dark mode — placeholder, mirrors shadcn neutral defaults.
+   * Brief 2 does not implement dark mode UX; structure is here so
+   * primitives don't crash if .dark class lands later. */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: var(--color-brand-light);
+  --primary-foreground: var(--color-text-on-primary);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: var(--color-error-light);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: var(--color-brand-light);
+}
+
+/*
+ * Tailwind v4 @theme inline — register tokens as utility class namespaces.
+ *
+ * Namespaces:
+ *   --color-* → bg-*, text-*, border-*, ring-*, etc.
+ *   --font-*  → font-* classes
+ *   --radius-* → rounded-* classes
+ *   --text-*  → text-* typography (size + weight + tracking pair)
+ *   --spacing-* → p-*, m-*, gap-*, etc.
+ *
+ * `inline` keyword: resolve at build time for static values.
+ */
+@theme inline {
+  /* === D1 brand tokens (Tailwind utility exposure) ===================== */
+
+  /* Brand */
+  --color-brand: var(--color-brand);
+  --color-brand-dark: var(--color-brand-dark);
+  --color-brand-light: var(--color-brand-light);
+  --color-brand-shadow: var(--color-brand-shadow);
+
+  /* Success / Error */
+  --color-success: var(--color-success);
+  --color-success-dark: var(--color-success-dark);
+  --color-success-light: var(--color-success-light);
+  --color-success-status: var(--color-success-status);
+  --color-error: var(--color-error);
+  --color-error-dark: var(--color-error-dark);
+  --color-error-light: var(--color-error-light);
+
+  /* Gray scale */
+  --color-gray-50: var(--color-gray-50);
+  --color-gray-100: var(--color-gray-100);
+  --color-gray-200: var(--color-gray-200);
+  --color-gray-300: var(--color-gray-300);
+  --color-gray-400: var(--color-gray-400);
+  --color-gray-500: var(--color-gray-500);
+  --color-gray-600: var(--color-gray-600);
+  --color-gray-700: var(--color-gray-700);
+  --color-gray-800: var(--color-gray-800);
+  --color-gray-900: var(--color-gray-900);
+
+  /* Figma-named */
+  --color-figma-bg-warm: var(--color-figma-bg-warm);
+  --color-figma-stroke: var(--color-figma-stroke);
+  --color-figma-text-grey: var(--color-figma-text-grey);
+  --color-figma-text-dark: var(--color-figma-text-dark);
+  --color-figma-navy: var(--color-figma-navy);
+
+  /* Semantic D1 (in addition to shadcn semantic below) */
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-on-primary: var(--color-text-on-primary);
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-bg-tertiary: var(--color-bg-tertiary);
+
+  /* === Fonts ============================================================ */
+  /* Tailwind font-sans (and body default) → Nunito Sans;
+   * font-display → Unbounded. Both variables declared by next/font in
+   * src/app/layout.tsx. */
+  --font-sans: var(--font-nunito-sans);
+  --font-display: var(--font-unbounded);
+  --font-heading: var(--font-unbounded);
+
+  /* === Radii =========================================================== */
+  --radius-xs: var(--radius-xs);
+  --radius-s: var(--radius-s);
+  --radius-m: var(--radius-m);
+  --radius-l: var(--radius-l);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  /* shadcn radius aliases — primitives use these names internally */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+
+  /* === Spacing ========================================================== */
+  --spacing-xs: var(--spacing-xs);
+  --spacing-s: var(--spacing-s);
+  --spacing-m: var(--spacing-m);
+  --spacing-l: var(--spacing-l);
+  --spacing-xl: var(--spacing-xl);
+  --spacing-xxl: var(--spacing-xxl);
+
+  /* === Typography ======================================================= */
+  --text-display-l: 32px;
+  --text-display-l--font-weight: 700;
+  --text-display-l--letter-spacing: -0.5px;
+  --text-display-m: 28px;
+  --text-display-m--font-weight: 700;
+  --text-display-m--letter-spacing: -0.5px;
+  --text-display-s: 24px;
+  --text-display-s--font-weight: 700;
+  --text-display-s--letter-spacing: -0.3px;
+
+  --text-headline-l: 22px;
+  --text-headline-l--font-weight: 700;
+  --text-headline-l--letter-spacing: -0.2px;
+  --text-headline-m: 18px;
+  --text-headline-m--font-weight: 600;
+  --text-headline-m--letter-spacing: -0.1px;
+  --text-headline-s: 16px;
+  --text-headline-s--font-weight: 600;
+
+  --text-body-l: 16px;
+  --text-body-l--letter-spacing: 0.1px;
+  --text-body-m: 14px;
+  --text-body-m--letter-spacing: 0.1px;
+  --text-body-s: 12px;
+  --text-body-s--letter-spacing: 0.2px;
+
+  --text-label-l: 16px;
+  --text-label-l--font-weight: 500;
+  --text-label-l--letter-spacing: 0.1px;
+  --text-label-m: 14px;
+  --text-label-m--font-weight: 500;
+  --text-label-m--letter-spacing: 0.1px;
+  --text-label-s: 12px;
+  --text-label-s--font-weight: 500;
+  --text-label-s--letter-spacing: 0.2px;
+
+  --text-caption-l: 14px;
+  --text-caption-l--letter-spacing: 0.2px;
+  --text-caption-m: 12px;
+  --text-caption-m--letter-spacing: 0.2px;
+  --text-caption-s: 10px;
+  --text-caption-s--letter-spacing: 0.3px;
+
+  /* === shadcn semantic exposure ========================================= */
+  /* Allow Tailwind utilities like bg-primary, text-foreground to resolve. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

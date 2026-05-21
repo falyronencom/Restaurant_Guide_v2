@@ -82,3 +82,13 @@ docs/
 # All .md documentation gitignored — no exceptions
 **/*.md
 
+# Next.js web/ — build artifacts and runtime caches (Brief 2 foundation)
+# Note: web/package-lock.json is INTENTIONALLY tracked (D5 — divergence
+# from backend's lockfile-ignore convention; web wants deterministic deploys).
+web/.next/
+web/.vercel/
+web/next-env.d.ts
+web/out/
+web/node_modules/
+**/*.tsbuildinfo
+

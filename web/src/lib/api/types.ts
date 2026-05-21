@@ -1,0 +1,188 @@
+/**
+ * Public API — TypeScript Contracts
+ *
+ * Types mirror backend public projections (Brief 1):
+ *   backend/src/projections/establishmentProjections.js
+ *   backend/src/projections/reviewProjections.js
+ *   backend/src/projections/menuItemProjections.js
+ *
+ * Source of truth: backend projections. On contract change, update backend
+ * first, then re-derive here MANUALLY. (No code generation in Brief 2 scope.)
+ *
+ * Pagination convention: `totalPages` (public surface normalises from
+ * reviewService's internal `pages` — see Discovery Report F4).
+ */
+
+// ============================================================================
+// Pagination
+// ============================================================================
+
+export type PaginationMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+};
+
+// ============================================================================
+// Establishment projections
+// ============================================================================
+
+/** Catalog list row — backend `toPublicEstablishmentListing`. */
+export type PublicEstablishmentListing = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  city: string;
+  city_slug: string | null;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  website: string | null;
+  categories: string[];
+  category_slug: string | null;
+  cuisines: string[];
+  price_range: string | null;
+  /** JSONB — backend stores either string range or per-day object map */
+  working_hours: unknown;
+  attributes: unknown;
+  status: string;
+  primary_image_url: string | null;
+  review_count: number;
+  average_rating: number | null;
+  favorite_count: number;
+  booking_enabled: boolean;
+  has_promotion: boolean;
+  promotion_count: number;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Present only on radius searches (mobile/search), absent on /public catalog */
+  distance_km?: number;
+  distance?: number;
+};
+
+/** Full detail — backend `toPublicEstablishment`. Listing + media[] + promotions[] + email + special_hours + view_count. */
+export type PublicEstablishmentDetail = PublicEstablishmentListing & {
+  email: string | null;
+  special_hours: unknown;
+  view_count: number;
+  media: PublicMedia[];
+  promotions: PublicPromotion[];
+};
+
+/** Map marker — backend `toPublicEstablishmentMapMarker`. Minimum payload. */
+export type PublicEstablishmentMapMarker = {
+  id: string;
+  slug: string;
+  name: string;
+  city: string;
+  city_slug: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  primary_image_url: string | null;
+  average_rating: number | null;
+  has_promotion: boolean;
+};
+
+// ============================================================================
+// Sub-types (Media / Promotion / Review / MenuItem)
+// ============================================================================
+
+/** Media row attached to detail projection. Backend `establishment_media`. */
+export type PublicMedia = {
+  id: string;
+  url: string;
+  thumbnail_url?: string | null;
+  preview_url?: string | null;
+  is_primary?: boolean;
+  position?: number;
+  file_type?: 'image' | 'pdf';
+};
+
+/** Promotion row attached to detail projection. */
+export type PublicPromotion = {
+  id: string;
+  title: string;
+  description?: string | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
+  preview_url?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  status: string;
+};
+
+/** Review — backend `toPublicReview`. Author wrapper hides user_id leak. */
+export type PublicReview = {
+  id: string;
+  establishment_id: string;
+  rating: number;
+  content: string;
+  partner_response: string | null;
+  partner_response_at: string | null;
+  is_edited: boolean;
+  created_at: string;
+  updated_at: string;
+  author: {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+  };
+};
+
+/** Menu item — backend `toPublicMenuItem`. Excludes is_hidden_by_admin/sanity_flag/confidence. */
+export type PublicMenuItem = {
+  id: string;
+  establishment_id: string;
+  item_name: string;
+  price_byn: number | null;
+  category_raw: string | null;
+  position: number;
+};
+
+// ============================================================================
+// Metadata
+// ============================================================================
+
+export type MetadataSlug = {
+  slug: string;
+  name: string;
+};
+
+export type PublicMetadata = {
+  cities: MetadataSlug[];
+  categories: MetadataSlug[];
+  cuisines: MetadataSlug[];
+};
+
+// ============================================================================
+// API envelope
+// ============================================================================
+
+export type ApiSuccessResponse<T> = { success: true; data: T };
+export type ApiErrorResponse = {
+  success: false;
+  error: { message: string; statusCode: number };
+};
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+
+/**
+ * Typed error thrown by serverFetch when backend returns {success:false} OR
+ * the response is non-conformant. Consumers should `instanceof ApiError`
+ * to discriminate.
+ */
+export class ApiError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string,
+    public errorCode?: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
