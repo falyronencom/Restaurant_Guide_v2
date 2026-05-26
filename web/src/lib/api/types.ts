@@ -102,6 +102,11 @@ export type PublicMedia = {
   is_primary?: boolean;
   position?: number;
   file_type?: 'image' | 'pdf';
+  /** Backend mediaService.VALID_MEDIA_TYPES = interior | exterior | menu | dishes
+   *  Legacy rows may also carry 'photo'. Brief 4 filters: 'menu' → MenuBlock
+   *  PDF fallback; others → gallery. */
+  type?: string;
+  caption?: string | null;
 };
 
 /** Promotion row attached to detail projection. */
@@ -143,6 +148,16 @@ export type PublicMenuItem = {
   price_byn: number | null;
   category_raw: string | null;
   position: number;
+  /**
+   * Two-tier OCR quality signal (Brief 4 / CAT-C-2.7 augmentation).
+   * Derived from `sanity_flag` presence at the projection layer:
+   *   'clean' = sanity_flag IS NULL (passed all rules)
+   *   'needs_caution' = sanity_flag IS NOT NULL (at least one rule failed)
+   * Consumers render a caution indicator on 'needs_caution' items; JSON-LD
+   * emitters should include ONLY 'clean' items (avoid propagating
+   * potentially-incorrect prices/names to search engines).
+   */
+  quality_tier: 'clean' | 'needs_caution';
 };
 
 // ============================================================================

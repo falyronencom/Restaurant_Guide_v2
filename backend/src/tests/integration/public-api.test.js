@@ -515,6 +515,47 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug/menu-it
     }
   });
 
+  // -- quality_tier derivation (CAT-C-2.7 augmentation, Brief 4) ----------
+  // Verifies positive-direction consumer contract: every public item carries
+  // a quality_tier signal, correctly derived from sanity_flag presence at the
+  // service→projection boundary. The exclusion test above is the guard that
+  // sanity_flag itself never leaks; these tests ensure the derived signal IS
+  // emitted (CAT-D-1.10 pattern — verify what consumer needs, not only what
+  // it must not see).
+
+  test('every public menu item carries a quality_tier field', async () => {
+    const response = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${activeSlug}/menu-items`)
+      .expect(200);
+
+    for (const item of response.body.data.menu_items) {
+      expect(item).toHaveProperty('quality_tier');
+      expect(['clean', 'needs_caution']).toContain(item.quality_tier);
+    }
+  });
+
+  test('items with sanity_flag NULL get quality_tier=clean', async () => {
+    // Fixture seeds 'Драники' with sanity_flag NULL.
+    const response = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${activeSlug}/menu-items`)
+      .expect(200);
+
+    const drainiki = response.body.data.menu_items.find(i => i.item_name === 'Драники');
+    expect(drainiki).toBeDefined();
+    expect(drainiki.quality_tier).toBe('clean');
+  });
+
+  test('items with sanity_flag populated get quality_tier=needs_caution', async () => {
+    // Fixture seeds 'Борщ' with sanity_flag = {"reason":"low_confidence"}.
+    const response = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${activeSlug}/menu-items`)
+      .expect(200);
+
+    const borshch = response.body.data.menu_items.find(i => i.item_name === 'Борщ');
+    expect(borshch).toBeDefined();
+    expect(borshch.quality_tier).toBe('needs_caution');
+  });
+
   test('404 for non-existent establishment slug on menu-items', async () => {
     await request(app)
       .get('/api/v1/public/establishments/by-slug/does-not-exist/menu-items')

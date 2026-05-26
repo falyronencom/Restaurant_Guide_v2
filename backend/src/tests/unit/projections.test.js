@@ -453,4 +453,43 @@ describe('toPublicMenuItem — menu item projection', () => {
   test('returns null for null input', () => {
     expect(toPublicMenuItem(null)).toBeNull();
   });
+
+  // -- quality_tier derivation (CAT-C-2.7 augmentation, Brief 4) -----------
+  // Two-tier signal derived from sanity_flag presence:
+  //   sanity_flag IS NULL → 'clean'
+  //   sanity_flag IS NOT NULL → 'needs_caution' (independent of reason)
+  // sanity_flag itself MUST remain excluded — the existing exclusion test
+  // above (l.423-430) is the guard against accidental leak.
+
+  test('derives quality_tier=needs_caution when sanity_flag present (low_confidence)', () => {
+    // Uses default rawItem fixture which has sanity_flag: { reason: 'low_confidence', ... }
+    const result = toPublicMenuItem(rawItem);
+    expect(result.quality_tier).toBe('needs_caution');
+  });
+
+  test('derives quality_tier=clean when sanity_flag is null', () => {
+    const cleanItem = { ...rawItem, sanity_flag: null };
+    const result = toPublicMenuItem(cleanItem);
+    expect(result.quality_tier).toBe('clean');
+  });
+
+  test('derives quality_tier=needs_caution regardless of sanity_flag reason (price_above_threshold)', () => {
+    // Verifies the logic is a null-check on sanity_flag, not reason-specific.
+    // sanityChecker.js emits four possible reasons; all must yield same tier.
+    const priceFlagged = {
+      ...rawItem,
+      sanity_flag: { reason: 'price_above_threshold', details: { price: 5000, threshold: 1000 } },
+    };
+    const result = toPublicMenuItem(priceFlagged);
+    expect(result.quality_tier).toBe('needs_caution');
+  });
+
+  test('derives quality_tier=clean when sanity_flag undefined (defensive)', () => {
+    // Belt-and-suspenders: if DB query somehow omits the column (shouldn't
+    // happen — getByEstablishmentId does SELECT *), undefined behaves the
+    // same as null per the `!= null` loose comparison.
+    const { sanity_flag, ...withoutFlag } = rawItem; // eslint-disable-line no-unused-vars
+    const result = toPublicMenuItem(withoutFlag);
+    expect(result.quality_tier).toBe('clean');
+  });
 });

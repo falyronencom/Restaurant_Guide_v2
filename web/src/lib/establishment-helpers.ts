@@ -1,0 +1,232 @@
+/**
+ * Establishment detail-page shared helpers (Brief 4).
+ *
+ * Pure functions used across multiple `components/establishment/*` files.
+ * No DOM, no I/O — safe in both Server and Client components.
+ */
+
+import {
+  Bike,
+  Wifi,
+  TreePine,
+  CarFront,
+  Music,
+  Baby,
+  PartyPopper,
+  PawPrint,
+  Cigarette,
+  type LucideIcon,
+} from 'lucide-react';
+
+/**
+ * Format rating as Russian-locale string with comma decimal separator.
+ * Mirrors mobile and Brief 3 EstablishmentCard: `4.8 → '4,8'`.
+ * Returns '—' when rating is null/undefined.
+ */
+export function formatRating(rating: number | null | undefined): string {
+  if (rating == null) return '—';
+  return rating.toFixed(1).replace('.', ',');
+}
+
+/**
+ * Booking-style verbal rating label by score.
+ * Score range 1-5 (Russian rating convention, not Booking's 1-10).
+ * Mapping inspired by Booking «Превосходно/Очень хорошо/Хорошо/Средне».
+ */
+export function ratingLabel(rating: number | null | undefined): string | null {
+  if (rating == null) return null;
+  if (rating >= 4.5) return 'Превосходно';
+  if (rating >= 4.0) return 'Очень хорошо';
+  if (rating >= 3.5) return 'Хорошо';
+  if (rating >= 3.0) return 'Средне';
+  return 'Слабо';
+}
+
+/**
+ * Map attribute boolean key → display label.
+ * Mirrors mobile `_buildAttributesSection` labels exactly (note: mobile has
+ * 'Терасса' typo; preserved for cross-platform consistency).
+ */
+export const ATTRIBUTE_LABELS: Record<string, string> = {
+  delivery: 'Доставка еды',
+  wifi: 'Wi-Fi',
+  terrace: 'Терасса',
+  parking: 'Парковка',
+  live_music: 'Живая музыка',
+  kids_zone: 'Детская зона',
+  banquet: 'Банкет',
+  pets_allowed: 'Животные',
+  smoking: 'Курение',
+};
+
+/**
+ * Map attribute boolean key → lucide icon component.
+ * Per Coordinator decision (2026-05-26): lucide equivalents, not mobile SVG port.
+ */
+export const ATTRIBUTE_ICONS: Record<string, LucideIcon> = {
+  delivery: Bike,
+  wifi: Wifi,
+  terrace: TreePine,
+  parking: CarFront,
+  live_music: Music,
+  kids_zone: Baby,
+  banquet: PartyPopper,
+  pets_allowed: PawPrint,
+  smoking: Cigarette,
+};
+
+/** Stable order matching mobile rendering. */
+export const ATTRIBUTE_ORDER: ReadonlyArray<string> = [
+  'delivery',
+  'wifi',
+  'terrace',
+  'parking',
+  'live_music',
+  'kids_zone',
+  'banquet',
+  'pets_allowed',
+  'smoking',
+];
+
+/**
+ * Extract truthy attribute keys from the raw JSONB attributes object.
+ * Returns them in the canonical ATTRIBUTE_ORDER (consistency across renders).
+ */
+export function extractActiveAttributes(
+  attributes: unknown,
+): ReadonlyArray<string> {
+  if (attributes == null || typeof attributes !== 'object') return [];
+  const obj = attributes as Record<string, unknown>;
+  return ATTRIBUTE_ORDER.filter((key) => obj[key] === true);
+}
+
+/**
+ * Build a Yandex Maps deep-link URL for the given coordinates and address.
+ * The `pt=lng,lat` order is Yandex convention (longitude first). The address
+ * is included in the `text` param so the marker shows the place name.
+ */
+export function yandexMapUrl(
+  latitude: number,
+  longitude: number,
+  address: string,
+): string {
+  const text = encodeURIComponent(address);
+  return `https://yandex.by/maps/?pt=${longitude},${latitude}&z=17&text=${text}`;
+}
+
+/**
+ * Parse social/website URL → (display label, icon hint).
+ * Port from mobile `_parseSocialLink`. Returns icon NAME (string) so the
+ * caller can map it to a lucide component — keeps this helper UI-framework-
+ * agnostic.
+ */
+export function parseSocialLink(url: string): { label: string; kind: SocialKind } {
+  const lower = url.toLowerCase();
+  if (lower.includes('instagram')) return { label: 'Instagram', kind: 'instagram' };
+  if (lower.includes('facebook.com') || lower.includes('fb.com')) {
+    return { label: 'Facebook', kind: 'facebook' };
+  }
+  if (lower.includes('t.me') || lower.includes('telegram')) {
+    return { label: 'Telegram', kind: 'telegram' };
+  }
+  if (lower.includes('vk.com') || lower.includes('vkontakte')) {
+    return { label: 'VK', kind: 'vk' };
+  }
+  return { label: 'Сайт', kind: 'website' };
+}
+
+export type SocialKind = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'website';
+
+/**
+ * Ensure a URL has a scheme. Backend stores website strings users typed —
+ * may lack protocol. Port from mobile `_launchSocialUrl` first-line fix.
+ */
+export function ensureUrlScheme(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  return `https://${url}`;
+}
+
+/**
+ * Format an ISO date string as Russian short date — mirrors mobile
+ * `_formatDate` in detail_screen.dart (e.g. '12 мая').
+ */
+const MONTH_NAMES_RU = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+] as const;
+
+export function formatDateRu(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getDate()} ${MONTH_NAMES_RU[d.getMonth()]}`;
+}
+
+/**
+ * Russian noun pluralisation for review count: 1 отзыв, 2-4 отзыва, 5+ отзывов.
+ * Handles 11-14 special case (uses genitive plural).
+ */
+export function pluralizeReviews(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 14) return `${count} отзывов`;
+  if (mod10 === 1) return `${count} отзыв`;
+  if (mod10 >= 2 && mod10 <= 4) return `${count} отзыва`;
+  return `${count} отзывов`;
+}
+
+/**
+ * Normalize raw working_hours JSONB into a per-day map of structured records.
+ *
+ * Backend stores working_hours in two possible per-day shapes:
+ *   - String: '10:00-22:00'
+ *   - Object: { is_open: true, open: '10:00', close: '22:00' }
+ *   - Object closed: { is_open: false }
+ *
+ * Returns null when the input is malformed (defensive — caller renders
+ * a 'график не указан' fallback). Mirrors `Establishment.parseDayHours`
+ * from mobile/lib/models/establishment.dart:214.
+ */
+export type ParsedDayHours = {
+  is_open: boolean;
+  open?: string;
+  close?: string;
+};
+
+const DAY_KEYS = [
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+] as const;
+
+export function normalizeWorkingHours(
+  raw: unknown,
+): Record<string, ParsedDayHours | null> | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const wh = raw as Record<string, unknown>;
+  const result: Record<string, ParsedDayHours | null> = {};
+  let anyParsed = false;
+  for (const dayKey of DAY_KEYS) {
+    const value = wh[dayKey];
+    const parsed = parseDay(value);
+    result[dayKey] = parsed;
+    if (parsed != null) anyParsed = true;
+  }
+  return anyParsed ? result : null;
+}
+
+function parseDay(value: unknown): ParsedDayHours | null {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const parts = value.split('-');
+    if (parts.length === 2) {
+      return { is_open: true, open: parts[0].trim(), close: parts[1].trim() };
+    }
+    return null;
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (obj.is_open === false) return { is_open: false };
+    const open = typeof obj.open === 'string' ? obj.open : undefined;
+    const close = typeof obj.close === 'string' ? obj.close : undefined;
+    if (open && close) return { is_open: true, open, close };
+  }
+  return null;
+}
