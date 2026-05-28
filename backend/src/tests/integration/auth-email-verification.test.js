@@ -13,7 +13,7 @@
  *   - Verify when no active code → INVALID_OR_EXPIRED_CODE
  *   - Already verified → EMAIL_ALREADY_VERIFIED
  *
- * Note: SendGrid is not configured in test env, so emailService logs a
+ * Note: Resend is not configured in test env, so emailService logs a
  * warning and returns sent:false — the DB row is still created and the
  * verification flow can be tested without real email delivery.
  */
@@ -75,7 +75,7 @@ describe('POST /api/v1/auth/send-verification-code', () => {
 
     expect(response.body.success).toBe(true);
     expect(response.body.data).toHaveProperty('expiresAt');
-    // sent:false is expected because SENDGRID_API_KEY is not set in test env;
+    // sent:false is expected because RESEND_API_KEY is not set in test env;
     // the code row should still exist in DB
     expect(typeof response.body.data.sent).toBe('boolean');
 

@@ -764,7 +764,7 @@ export async function oauthLogin(req, res, next) {
  * email. Service layer enforces a per-user limit of 5 sends per hour.
  *
  * Response:
- *  - 200 OK: Code issued (sent flag indicates SendGrid delivery status)
+ *  - 200 OK: Code issued (sent flag indicates Resend delivery status)
  *  - 400 NO_EMAIL: Account has no email address (phone-only or OAuth user)
  *  - 404 USER_NOT_FOUND
  *  - 409 EMAIL_ALREADY_VERIFIED

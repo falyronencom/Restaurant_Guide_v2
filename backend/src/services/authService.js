@@ -763,7 +763,7 @@ function generateSixDigitCode() {
  *   3. Invalidate any prior active codes (only latest is valid).
  *   4. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
  *   5. Persist code in email_verification_codes.
- *   6. Send email via SendGrid (degrades gracefully if not configured).
+ *   6. Send email via Resend (degrades gracefully if not configured).
  *
  * @param {string} userId
  * @returns {Promise<{sent: boolean, expiresAt: Date}>}
