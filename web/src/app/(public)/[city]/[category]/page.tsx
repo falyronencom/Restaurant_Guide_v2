@@ -64,14 +64,30 @@ export async function generateMetadata({
 
   const hasFilters = hasAnyFilter(sp);
   const lowerCat = categoryName.toLowerCase();
+  const title = `${capitalize(lowerCat)} в городе ${cityName}`;
+  const description = `Каталог: ${lowerCat} в городе ${cityName}. Рейтинги, актуальные акции, контакты.`;
 
   return {
-    title: `${capitalize(lowerCat)} в городе ${cityName}`,
-    description: `Каталог: ${lowerCat} в городе ${cityName}. Рейтинги, актуальные акции, контакты.`,
+    title,
+    description,
+    // CAT-C-2.3 filter-aware noindex preserved. Canonical is now always set
+    // (not just on filter URLs) — for filter permutations it consolidates
+    // the noindex'd variant onto the clean URL (CAT-C-2.3 core); for the
+    // clean URL itself it explicitly anchors the canonical signal.
+    // metadataBase in root layout auto-promotes the relative path → absolute.
     robots: hasFilters ? { index: false, follow: true } : undefined,
-    alternates: hasFilters
-      ? { canonical: `/${city}/${category}` }
-      : undefined,
+    alternates: {
+      canonical: `/${city}/${category}`,
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+    },
+    twitter: {
+      title,
+      description,
+    },
   };
 }
 

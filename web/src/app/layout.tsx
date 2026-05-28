@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Unbounded, Nunito_Sans } from 'next/font/google';
 import './globals.css';
+import { getSiteUrl, isNoIndexMode } from '@/lib/seo-gate';
 
 /*
  * Fonts — derived from mobile theme.dart:
@@ -23,12 +24,39 @@ const nunitoSans = Nunito_Sans({
   display: 'swap',
 });
 
+/*
+ * Brief 5 — SEO Core. Env vars read once at module load:
+ *   - SITE_URL     → metadataBase (absolute canonical/OG promotion)
+ *   - NOINDEX_MODE → gate layer 3 (defense-in-depth meta robots tag)
+ * Gate is fail-safe ON; explicit 'false' opens. See web/src/lib/seo-gate.ts.
+ */
+const SITE_URL = getSiteUrl();
+const NOINDEX = isNoIndexMode();
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Restaurant Guide Belarus',
-    template: '%s | Restaurant Guide Belarus',
+    default: 'Nirivio',
+    template: '%s | Nirivio',
   },
   description: 'Гид по ресторанам и кафе Беларуси',
+  openGraph: {
+    siteName: 'Nirivio',
+    locale: 'ru_BY',
+    type: 'website',
+    // og:image inherited from `app/opengraph-image.tsx` file convention.
+    // Detail page overrides via its own generateMetadata return with
+    // per-establishment absolute primary_image_url.
+  },
+  twitter: {
+    card: 'summary_large_image',
+    // twitter:image inherits og:image when absent (X spec) — no separate
+    // twitter-image.tsx needed at root for the (b) strategy.
+  },
+  // Gate layer 3 (defense-in-depth). CAT-C-2.3 page-level filter-aware
+  // robots overrides on /[city]/[category] remain compatible — child
+  // metadata wins.
+  robots: NOINDEX ? { index: false, follow: false } : undefined,
 };
 
 export default function RootLayout({

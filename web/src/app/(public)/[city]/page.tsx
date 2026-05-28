@@ -36,9 +36,37 @@ export async function generateMetadata({
   params: Promise<Params>;
 }): Promise<Metadata> {
   const { city } = await params;
+
+  // Resolve city slug to display name via getMetadata (React.cache shared
+  // with validateCitySlug below). Discovery Q1: previous version used the
+  // raw slug ('minsk') in the title — display name ('Минск') is correct.
+  let cityName = city;
+  try {
+    const meta = await getMetadata();
+    cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+  } catch {
+    // Metadata fetch failed — fall back to raw slug. validateCitySlug in
+    // the page body will 404 cleanly if the slug truly doesn't exist.
+  }
+
+  const title = `Заведения в городе ${cityName}`;
+  const description = `Каталог ресторанов, кафе и баров — ${cityName}. Рейтинги, акции, контакты.`;
+
   return {
-    title: `Заведения в городе ${city}`,
-    description: `Каталог ресторанов, кафе и баров — ${city}`,
+    title,
+    description,
+    alternates: {
+      canonical: `/${city}`,
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+    },
+    twitter: {
+      title,
+      description,
+    },
   };
 }
 

@@ -24,6 +24,7 @@ import { InfoCard } from '@/components/establishment/InfoCard';
 import { Location as LocationSection } from '@/components/establishment/Location';
 import { MenuBlock } from '@/components/establishment/MenuBlock';
 import { PromotionBanner } from '@/components/establishment/PromotionBanner';
+import { RestaurantSchema } from '@/components/establishment/RestaurantSchema';
 import { ReviewCarousel } from '@/components/establishment/ReviewCarousel';
 
 /*
@@ -66,6 +67,7 @@ export async function generateMetadata({
 
   let title = `${slug} — ${city}`;
   let description = `Заведение в городе ${city}`;
+  let ogImageUrl: string | null = null;
 
   try {
     const [detail, meta] = await Promise.all([
@@ -80,12 +82,36 @@ export async function generateMetadata({
     description = detail.establishment.description
       ? truncate(detail.establishment.description, 160)
       : `${detail.establishment.name} — ${lowerCategory} в городе ${cityName}. Меню, отзывы, контакты.`;
+    ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings. Page render
-    // path will call notFound() cleanly if the slug truly doesn't exist.
+    // Slug invalid / backend hiccup — fall back to slug strings + skip OG
+    // image override. Page render path will call notFound() cleanly if the
+    // slug truly doesn't exist.
   }
 
-  return { title, description };
+  // openGraph.title does NOT inherit title.template (Discovery F5) — set
+  // explicitly. canonical uses relative path; metadataBase in root layout
+  // auto-promotes it to absolute. Per-establishment OG image overrides root
+  // layout's opengraph-image.tsx file convention; if image fetch failed
+  // above we fall back to the brand default by omitting `images`.
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `/${city}/${category}/${slug}`,
+    },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      ...(ogImageUrl ? { images: [{ url: ogImageUrl, alt: title }] } : {}),
+    },
+    twitter: {
+      title,
+      description,
+      // twitter:image inherits openGraph.images when absent (X spec)
+    },
+  };
 }
 
 export default async function EstablishmentPage({
@@ -162,6 +188,16 @@ export default async function EstablishmentPage({
 
   return (
     <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
+      {/* JSON-LD place-level schema (Brief 5) — invisible script tag, Server
+          Component, MenuBlock injection pattern. citySlug/categorySlug use
+          URL params (authoritative for the URL the user navigated through;
+          establishment.city_slug/category_slug may be null for legacy seed). */}
+      <RestaurantSchema
+        establishment={establishment}
+        citySlug={city}
+        categorySlug={category}
+      />
+
       {/* Breadcrumbs */}
       <nav
         aria-label='Хлебные крошки'
