@@ -825,7 +825,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(detail.body.data.review.partner_response).toBe(responseText);
-    expect(detail.body.data.review.partner_responder_id).toBe(partnerId);
+    expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
   test('should reject partner responding to review on other establishment', async () => {
@@ -845,6 +845,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(detail.body.data.review.partner_response).toBeNull();
+    expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
   test('should reject regular user adding partner response', async () => {
@@ -863,6 +864,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(detail.body.data.review.partner_response).toBeNull();
+    expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
   test('should update existing response when partner responds again', async () => {
@@ -907,6 +909,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(detail.body.data.review.partner_response).toBeNull();
+    expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
   test('should include partner_response in review details', async () => {
@@ -923,7 +926,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(detail.body.data.review.partner_response).toBe(responseText);
-    expect(detail.body.data.review.partner_responder_id).toBe(partnerId);
+    expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
     expect(detail.body.data.review.partner_response_at).toBeTruthy();
   });
 });
@@ -1049,5 +1052,69 @@ describe('Reviews System - Public Projection on Legacy Listing Endpoints', () =>
       expect(response.body.data.pagination).toHaveProperty('limit');
       expect(response.body.data.pagination).toHaveProperty('total');
     });
+  });
+});
+
+describe('Reviews System - Public Projection on Single-Review Detail Endpoint', () => {
+  // Regression coverage for the cleanup that applied toPublicReview to
+  // GET /api/v1/reviews/:id. Endpoint is unauthenticated and previously
+  // exposed partner_responder_id (leaks partner user UUID), plus the
+  // internal flags is_visible / is_deleted.
+
+  const responseText = 'Спасибо за ваш отзыв.';
+  let seededReviewId;
+
+  beforeEach(async () => {
+    // Seed one review with a partner response so all sensitive fields are populated
+    const result = await query(
+      `INSERT INTO reviews (
+         id, user_id, establishment_id, rating, content, text,
+         partner_response, partner_response_at, partner_responder_id,
+         is_visible, is_deleted, created_at, updated_at
+       )
+       VALUES (
+         gen_random_uuid(), $1, $2, 5, $3, $3,
+         $4, NOW(), $5,
+         true, false, NOW(), NOW()
+       )
+       RETURNING id`,
+      [userId, establishmentId, `${longContent} detail-projection-test`, responseText, partnerId]
+    );
+    seededReviewId = result.rows[0].id;
+  });
+
+  test('excludes partner_responder_id, user_id, is_visible, is_deleted from review response', async () => {
+    const response = await request(app)
+      .get(`/api/v1/reviews/${seededReviewId}`)
+      .expect(200);
+
+    expect(response.body.data.review).not.toHaveProperty('partner_responder_id');
+    expect(response.body.data.review).not.toHaveProperty('user_id');
+    expect(response.body.data.review).not.toHaveProperty('is_visible');
+    expect(response.body.data.review).not.toHaveProperty('is_deleted');
+  });
+
+  test('preserves author wrapper with id, name, avatar_url', async () => {
+    const response = await request(app)
+      .get(`/api/v1/reviews/${seededReviewId}`)
+      .expect(200);
+
+    const r = response.body.data.review;
+    expect(r).toHaveProperty('author');
+    expect(r.author).toHaveProperty('id');
+    expect(r.author).toHaveProperty('name');
+    expect(r.author).toHaveProperty('avatar_url');
+  });
+
+  test('preserves public fields (rating, content, partner_response text)', async () => {
+    const response = await request(app)
+      .get(`/api/v1/reviews/${seededReviewId}`)
+      .expect(200);
+
+    const r = response.body.data.review;
+    expect(r.rating).toBe(5);
+    expect(r.content).toContain('detail-projection-test');
+    expect(r.partner_response).toBe(responseText);
+    expect(r.partner_response_at).toBeTruthy();
   });
 });

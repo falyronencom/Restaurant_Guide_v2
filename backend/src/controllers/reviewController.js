@@ -82,11 +82,12 @@ export const getReview = asyncHandler(async (req, res) => {
   // Service will throw 404 error if review not found, which asyncHandler catches
   const review = await ReviewService.getReviewById(id);
 
-  // Return 200 OK with the review object
+  // Apply public projection: strips partner_responder_id (leaks partner UUID),
+  // author_email, is_visible, is_deleted. Endpoint is unauthenticated.
   res.status(200).json({
     success: true,
     data: {
-      review,
+      review: toPublicReview(review),
     },
   });
 });
