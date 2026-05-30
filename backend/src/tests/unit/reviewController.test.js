@@ -75,7 +75,28 @@ describe('reviewController', () => {
     });
     const res = createMockResponse();
     const next = jest.fn();
-    ReviewService.getReviewById.mockResolvedValue({ id: 'review-123', rating: 4 });
+    // Service returns the enriched review (Brief 4/5 contract). The controller
+    // passes it through toPublicReview, which exposes the public fields and
+    // strips internal/sensitive ones (user_id, author_email, is_visible,
+    // is_deleted, partner_responder_id).
+    ReviewService.getReviewById.mockResolvedValue({
+      id: 'review-123',
+      establishment_id: 'estab-1',
+      rating: 4,
+      content: 'Great place',
+      partner_response: null,
+      partner_response_at: null,
+      is_edited: false,
+      created_at: '2026-05-01T10:00:00.000Z',
+      updated_at: '2026-05-01T10:00:00.000Z',
+      author: { id: 'user-1', name: 'Иван', avatar_url: null },
+      // fields the public projection must NOT leak:
+      user_id: 'user-1',
+      author_email: 'secret@example.com',
+      is_visible: true,
+      is_deleted: false,
+      partner_responder_id: 'partner-9',
+    });
 
     await ReviewController.getReview(req, res, next);
 
@@ -83,7 +104,20 @@ describe('reviewController', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
-      data: { review: { id: 'review-123', rating: 4 } },
+      data: {
+        review: {
+          id: 'review-123',
+          establishment_id: 'estab-1',
+          rating: 4,
+          content: 'Great place',
+          partner_response: null,
+          partner_response_at: null,
+          is_edited: false,
+          created_at: '2026-05-01T10:00:00.000Z',
+          updated_at: '2026-05-01T10:00:00.000Z',
+          author: { id: 'user-1', name: 'Иван', avatar_url: null },
+        },
+      },
     });
   });
 
