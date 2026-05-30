@@ -1,7 +1,8 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Includes migrations 001-027 (last update: May 2026 — Brief 0 slug infrastructure).
+-- Includes migrations 001-029 (last update: May 2026 — migrations 028
+-- redundant-slug-index drop + 029 Могилёв city CHECK restore).
 -- Generated via pg_dump --schema-only against a fresh DB to which all
 -- migrations were applied sequentially. This file is the authoritative
 -- snapshot used to bootstrap fresh databases (e.g. Railway initial deploy
@@ -26,6 +27,8 @@
 --                                             transliteration, auto-suffix on
 --                                             collision, mutable in pre-approve
 --                                             status only — see Brief 0)
+--   028 drop redundant explicit slug index (UNIQUE-backed index suffices)
+--   029 restore Могилёв (ё) variant in establishments_city_check
 --
 -- Note on migration 027: applied as three artifacts on the source DB
 -- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
@@ -34,7 +37,8 @@
 -- already includes the resulting slug column with NOT NULL + UNIQUE
 -- constraints, so single-file restore is sufficient.
 --
--- Regeneration recipe (Option B from Audit Phase 3 Brief #2, refreshed in Brief #4):
+-- Regeneration recipe (Option B from Audit Phase 3 Brief #2; refreshed in
+-- Brief #4; re-applied for 028/029):
 --   1. docker exec pg-test psql -U postgres -c "DROP DATABASE IF EXISTS schema_rebuild;"
 --   2. docker exec pg-test psql -U postgres -c "CREATE DATABASE schema_rebuild;"
 --   3. Load existing snapshot (covers all currently-snapshotted migrations):
@@ -298,7 +302,7 @@ CREATE TABLE public.establishments (
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
     slug character varying(150) NOT NULL,
-    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Могилёв'::character varying)::text, ('Бобруйск'::character varying)::text]))),
+    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY ((ARRAY['Минск'::character varying, 'Гродно'::character varying, 'Брест'::character varying, 'Гомель'::character varying, 'Витебск'::character varying, 'Могилев'::character varying, 'Могилёв'::character varying, 'Бобруйск'::character varying])::text[]))),
     CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
     CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
     CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY (ARRAY[('free'::character varying)::text, ('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
@@ -883,13 +887,6 @@ CREATE INDEX idx_establishments_ranking ON public.establishments USING btree (((
 --
 
 CREATE INDEX idx_establishments_rating ON public.establishments USING btree (average_rating DESC);
-
-
---
--- Name: idx_establishments_slug; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_establishments_slug ON public.establishments USING btree (slug);
 
 
 --
