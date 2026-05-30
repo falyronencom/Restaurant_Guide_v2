@@ -491,8 +491,10 @@ export const suspendEstablishment = async (establishmentId, params) => {
       );
     }
 
-    // Audit log (non-blocking)
-    AuditLogModel.createAuditLog({
+    // Audit log — awaited for parity with moderateEstablishment and to avoid a
+    // race when tests assert the row right after the response. createAuditLog
+    // swallows its own errors, so awaiting cannot fail the suspension.
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'suspend',
       entity_type: 'establishment',
@@ -587,8 +589,10 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       );
     }
 
-    // Audit log (non-blocking)
-    AuditLogModel.createAuditLog({
+    // Audit log — awaited for parity with moderateEstablishment and to avoid a
+    // race when tests assert the row right after the response. createAuditLog
+    // swallows its own errors, so awaiting cannot fail the reactivation.
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'unsuspend',
       entity_type: 'establishment',
