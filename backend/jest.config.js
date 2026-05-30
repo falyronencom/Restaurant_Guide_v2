@@ -19,6 +19,9 @@ export default {
   // Setup file runs after test framework initialized
   setupFilesAfterEnv: ['<rootDir>/src/tests/setup.js'],
 
+  // One-time global baseline before the whole run (separate context, own DB connection)
+  globalSetup: '<rootDir>/src/tests/globalSetup.js',
+
   // Teardown runs after all tests complete
   globalTeardown: '<rootDir>/src/tests/teardown.js',
 

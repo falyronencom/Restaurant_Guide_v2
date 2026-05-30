@@ -10,6 +10,7 @@
 
 import { pool } from '../../config/database.js';
 import logger from '../../utils/logger.js';
+import { TEST_STATE_TABLES } from '../testTables.js';
 
 /**
  * Clear all test data from database
@@ -23,17 +24,13 @@ export async function clearAllData() {
   }
 
   try {
-    // Disable triggers temporarily for faster truncation
+    // Disable FK triggers so truncation order is not load-bearing.
     await pool.query('SET session_replication_role = replica;');
 
-    // Truncate all tables in correct order (respecting foreign keys)
-    await pool.query('TRUNCATE TABLE audit_log CASCADE');
-    await pool.query('TRUNCATE TABLE establishment_media CASCADE');
-    await pool.query('TRUNCATE TABLE favorites CASCADE');
-    await pool.query('TRUNCATE TABLE reviews CASCADE');
-    await pool.query('TRUNCATE TABLE establishments CASCADE');
-    await pool.query('TRUNCATE TABLE refresh_tokens CASCADE');
-    await pool.query('TRUNCATE TABLE users CASCADE');
+    // Truncate every state-bearing table (shared list — see testTables.js).
+    for (const table of TEST_STATE_TABLES) {
+      await pool.query(`TRUNCATE TABLE ${table} CASCADE`);
+    }
 
     // Re-enable triggers
     await pool.query('SET session_replication_role = DEFAULT;');
