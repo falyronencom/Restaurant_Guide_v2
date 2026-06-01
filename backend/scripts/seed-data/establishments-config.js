@@ -7,14 +7,14 @@
  * Distribution Strategy:
  * - Total: 75 establishments (target range 70-80)
  * - Geographic: Минск (35), other cities (~7 each)
- * - Categories: All 13 types with realistic distribution
+ * - Categories: All 14 types with realistic distribution
  * - Cuisines: All 10 types with 1-3 per establishment
  * - Price range: ~30% '$', ~50% '$$', ~20% '$$$'
  * - Edge cases: 7 explicit scenarios for mobile UI testing
  */
 
 /**
- * Valid category values (13 types)
+ * Valid category values (14 types)
  */
 export const CATEGORIES = [
   'restaurant',
