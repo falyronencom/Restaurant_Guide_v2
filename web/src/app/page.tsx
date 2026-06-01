@@ -14,7 +14,7 @@ export default async function HomePage() {
 
   return (
     <main className='flex flex-1 flex-col items-center justify-center p-l gap-l'>
-      <h1 className='text-display-s font-display'>Restaurant Guide Belarus</h1>
+      <h1 className='text-display-s font-display'>Nirivio</h1>
       <p className='text-body-m text-text-secondary'>
         Foundation placeholder — Brief 2 scaffolding.
       </p>

@@ -3,7 +3,7 @@ import 'server-only';
 import { ApiError, type ApiResponse } from './types';
 
 /*
- * Server-only fetch wrapper for the Restaurant Guide Belarus public API.
+ * Server-only fetch wrapper for the Nirivio public API.
  *
  * Why server-only:
  *   The API_URL env var has NO NEXT_PUBLIC_ prefix on purpose (D4 + directive

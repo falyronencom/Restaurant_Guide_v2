@@ -18,7 +18,7 @@ export default function PublicLayout({
             href='/'
             className='font-display text-headline-m text-foreground hover:text-brand-dark transition-colors'
           >
-            Restaurant Guide Belarus
+            Nirivio
           </Link>
         </div>
       </header>
