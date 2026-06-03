@@ -387,7 +387,7 @@ export async function searchByRadius({
                   WHEN 'string' THEN val #>> '{}'
                   WHEN 'object' THEN val->>'open'
                   ELSE NULL
-                END, ':', 1) = '0'
+                END, ':', 1) IN ('0', '00') -- midnight open as 1- or 2-digit hour; string-match (not CAST) → safe on closed/malformed day values
             )
             OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
           )
@@ -706,7 +706,7 @@ export async function searchWithoutLocation({
                   WHEN 'string' THEN val #>> '{}'
                   WHEN 'object' THEN val->>'open'
                   ELSE NULL
-                END, ':', 1) = '0'
+                END, ':', 1) IN ('0', '00') -- midnight open as 1- or 2-digit hour; string-match (not CAST) → safe on closed/malformed day values
             )
             OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
           )
@@ -965,7 +965,7 @@ export async function searchByBounds({
                   WHEN 'string' THEN val #>> '{}'
                   WHEN 'object' THEN val->>'open'
                   ELSE NULL
-                END, ':', 1) = '0'
+                END, ':', 1) IN ('0', '00') -- midnight open as 1- or 2-digit hour; string-match (not CAST) → safe on closed/malformed day values
             )
             OR (jsonb_typeof(val) = 'string' AND val #>> '{}' ILIKE '%24%')
           )
