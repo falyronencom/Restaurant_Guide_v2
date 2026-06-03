@@ -10,6 +10,8 @@ import {
 } from '@/lib/api/endpoints/metadata';
 import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { EstablishmentCard } from '@/components/catalog/EstablishmentCard';
+import { FilterShelf } from '@/components/catalog/FilterShelf';
+import { HOURS_VALUES } from '@/lib/facets';
 
 /*
  * /[city]/[category] — canonical catalog page (Brief 3).
@@ -19,11 +21,13 @@ import { EstablishmentCard } from '@/components/catalog/EstablishmentCard';
  * call across this file's three consumers: generateMetadata + page render
  * + validate{City,Category}Slug).
  *
- * Filter query-string handling: reads cuisine / priceRange / minRating /
- * search / sort_by / page from `searchParams`, passes through to backend.
- * Filtered URLs get noindex robots meta + canonical to the clean variant
- * (CAT-C-2.3 — prevent indexing of every filter permutation while still
- * allowing crawlers to follow links).
+ * Filter query-string handling: reads cuisine / priceRange (multi-value,
+ * comma-joined) / hours (single bucket) / minRating / search / sort_by / page
+ * from `searchParams`, passes through to backend. The interactive shelf
+ * (FilterShelf, a 'use client' island) only mutates the URL — the server
+ * re-fetch applies the filtering. Filtered URLs get noindex robots meta +
+ * canonical to the clean variant (CAT-C-2.3 — prevent indexing of every filter
+ * permutation while still allowing crawlers to follow links).
  *
  * Pagination: ISR-friendly (revalidate=3600). Each page-N variant caches
  * separately under the same TTL. EmptyState rendered when zero matches.
@@ -109,12 +113,14 @@ export default async function CategoryPage({
   ]);
   if (!cityValid || !categoryValid) notFound();
 
-  // Parse filter / pagination params from query-string
+  // Parse filter / pagination params from query-string. cuisine & priceRange
+  // are multi-value (comma-joined, OR-within-group); hours is a single bucket.
   const page = parsePage(sp.page);
   const sortBy = asString(sp.sort_by);
   const search = asString(sp.search);
-  const cuisine = asString(sp.cuisine);
-  const priceRange = asString(sp.priceRange);
+  const cuisines = asList(sp.cuisine);
+  const priceRange = asList(sp.priceRange);
+  const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
   // Parallel fetches — metadata is cached after validate calls above, so
@@ -126,8 +132,9 @@ export default async function CategoryPage({
       category,
       page,
       sort_by: sortBy,
-      cuisines: cuisine ? [cuisine] : undefined,
-      priceRange: priceRange ? [priceRange] : undefined,
+      cuisines: cuisines.length > 0 ? cuisines : undefined,
+      priceRange: priceRange.length > 0 ? priceRange : undefined,
+      hours_filter: hours,
       minRating,
       search,
     }),
@@ -137,6 +144,10 @@ export default async function CategoryPage({
     meta.cities.find((c) => c.slug === city)?.name ?? city;
   const categoryName =
     meta.categories.find((c) => c.slug === category)?.name ?? category;
+  const cuisineOptions = meta.cuisines.map((c) => ({
+    value: c.slug,
+    label: c.name,
+  }));
 
   return (
     <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
@@ -158,6 +169,12 @@ export default async function CategoryPage({
         <h1 className='text-display-s font-display'>
           {categoryName} в городе {cityName}
         </h1>
+        <FilterShelf
+          basePath={`/${city}/${category}`}
+          searchParams={sp}
+          cuisineOptions={cuisineOptions}
+          selected={{ cuisines, priceRange, hours }}
+        />
         <p className='text-body-m text-muted-foreground'>
           {catalog.pagination.total > 0
             ? `Найдено заведений: ${catalog.pagination.total}`
@@ -221,17 +238,48 @@ function asFloat(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+type HoursBucket = 'until_22' | 'until_morning' | '24_hours';
+
+// Parse a multi-value facet param. Accepts comma-joined ('a,b') — the shelf's
+// URL contract — and is robust to array-form (?k=a&k=b) too; returns trimmed
+// non-empty values.
+function asList(raw: unknown): string[] {
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .flatMap((v) => (typeof v === 'string' ? v.split(',') : []))
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+// Narrow the single working-hours param to a known bucket; unknown → undefined
+// (mirrors the backend's soft-ignore of an unrecognized hours value).
+function asHours(raw: unknown): HoursBucket | undefined {
+  return typeof raw === 'string' && HOURS_VALUES.includes(raw)
+    ? (raw as HoursBucket)
+    : undefined;
+}
+
 function hasAnyFilter(sp: SearchParams): boolean {
-  // Reuse asString to drop empty-string params and ignore array-form params
-  // (catalog URL contract is single-value-per-key; array forms aren't yet
-  // supported and shouldn't trip noindex). Symmetric with how the page body
-  // parses filters into getCatalog args.
-  return Boolean(
-    asString(sp.cuisine) ||
-      asString(sp.priceRange) ||
-      asString(sp.minRating) ||
-      asString(sp.search) ||
-      asString(sp.sort_by),
+  // Any active facet/sort/search param → noindex this permutation (CAT-C-2.3),
+  // consolidated onto the clean category URL via canonical. cuisine & priceRange
+  // are multi-value (comma-joined or array-form) → detect via asList; hours is
+  // the single working-hours bucket. `page` is deliberately excluded — paginated
+  // URLs stay indexable. Symmetric with how the page body parses filters.
+  return (
+    asList(sp.cuisine).length > 0 ||
+    asList(sp.priceRange).length > 0 ||
+    Boolean(asHours(sp.hours)) ||
+    Boolean(asString(sp.minRating)) ||
+    Boolean(asString(sp.search)) ||
+    Boolean(asString(sp.sort_by))
   );
 }
 

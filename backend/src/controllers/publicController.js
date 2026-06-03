@@ -56,8 +56,9 @@ const translateSlugList = (slugs, translator, label) => {
  *
  * Public catalog listing. No coordinates accepted — uses searchWithoutLocation
  * internally. Query params (all optional):
- *   city, category, cuisines[], priceRange[], minRating, search, sort_by,
- *   limit (default 20, max 100), page (default 1)
+ *   city, category, cuisines[], priceRange[], minRating,
+ *   hours_filter (until_22 | until_morning | 24_hours — unknown soft-ignored),
+ *   search, sort_by, limit (default 20, max 100), page (default 1)
  */
 export const listPublicEstablishments = asyncHandler(async (req, res) => {
   const {
@@ -66,6 +67,7 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
     cuisines: cuisinesRaw,
     priceRange: priceRangeRaw,
     minRating: minRatingRaw,
+    hours_filter: hoursFilterRaw,
     search,
     sort_by: sortBy,
     limit: limitRaw,
@@ -94,6 +96,15 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
   // Numeric params
   const priceRange = parseListParam(priceRangeRaw);
 
+  // hours_filter: accept known buckets, soft-ignore unknown. Unlike /map
+  // (which 422s on a bad value), the indexable catalog LIST surface treats an
+  // unknown bucket as "no filter" — a malformed facet URL must still render the
+  // unfiltered catalog rather than error. Single-valued (one bucket).
+  const VALID_HOURS_FILTERS = ['until_22', 'until_morning', '24_hours'];
+  const hoursFilter = VALID_HOURS_FILTERS.includes(hoursFilterRaw)
+    ? hoursFilterRaw
+    : undefined;
+
   const minRating = minRatingRaw ? parseFloat(minRatingRaw) : null;
   if (minRating !== null && (isNaN(minRating) || minRating < 1 || minRating > 5)) {
     throw new AppError('minRating must be between 1 and 5', 422, 'VALIDATION_ERROR');
@@ -108,6 +119,7 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
     cuisines,
     priceRange,
     minRating,
+    hoursFilter,
     sortBy,
     search: search ? String(search).trim() : null,
     limit,

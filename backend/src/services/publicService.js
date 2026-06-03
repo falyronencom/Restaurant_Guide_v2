@@ -55,6 +55,7 @@ import logger from '../utils/logger.js';
  * @param {string[]} [filters.cuisines] - Cyrillic cuisines
  * @param {string[]} [filters.priceRange]
  * @param {number} [filters.minRating]
+ * @param {string} [filters.hoursFilter] - working-hours bucket (until_22 | until_morning | 24_hours)
  * @param {string} [filters.search]
  * @param {string} [filters.sortBy]
  * @param {number} [filters.limit=20]
@@ -68,6 +69,7 @@ export const getPublicEstablishmentsCatalog = async (filters = {}) => {
     cuisines,
     priceRange,
     minRating,
+    hoursFilter,
     search,
     sortBy,
     limit = 20,
@@ -80,12 +82,15 @@ export const getPublicEstablishmentsCatalog = async (filters = {}) => {
   // searchWithoutLocation already applies toPublicEstablishmentListing
   // projection in its return statement (fix-in-place). Pass city as array
   // to engage the array branch in the city filter (covers Mogilev variants).
+  // hoursFilter is forwarded straight to the existing engine bucket logic —
+  // no new SQL; the working-hours WHERE branch already lives in searchWithoutLocation.
   const result = await searchService.searchWithoutLocation({
     city: cityForQuery,
     categories,
     cuisines,
     priceRange,
     minRating,
+    hoursFilter,
     sortBy,
     search,
     limit,

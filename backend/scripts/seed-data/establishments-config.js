@@ -8,7 +8,7 @@
  * - Total: 75 establishments (target range 70-80)
  * - Geographic: Минск (35), other cities (~7 each)
  * - Categories: All 14 types with realistic distribution
- * - Cuisines: All 10 types with 1-3 per establishment
+ * - Cuisines: All 12 types with 1-3 per establishment
  * - Price range: ~30% '$', ~50% '$$', ~20% '$$$'
  * - Edge cases: 7 explicit scenarios for mobile UI testing
  */
@@ -34,7 +34,7 @@ export const CATEGORIES = [
 ];
 
 /**
- * Valid cuisine values (10 types)
+ * Valid cuisine values (12 types)
  */
 export const CUISINES = [
   'belarusian',
@@ -396,7 +396,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Минск',
     categories: ['restaurant'],
-    cuisines: ['asian'],
+    cuisines: ['asian', 'japanese'], // assign 'japanese' (declared in CUISINES but previously unassigned in seed data)
     price_range: '$$$',
     nameIndex: 31,
     descriptionLength: 'long',
@@ -456,7 +456,7 @@ export const ESTABLISHMENT_CONFIGS = [
   {
     city: 'Минск',
     categories: ['restaurant'],
-    cuisines: ['european', 'international'],
+    cuisines: ['european', 'international', 'fusion'], // assign 'fusion' (declared in CUISINES but previously unassigned in seed data)
     price_range: '$$$',
     nameIndex: 8,
     descriptionLength: 'long',
@@ -658,7 +658,7 @@ export const ESTABLISHMENT_CONFIGS = [
     price_range: '$',
     nameIndex: 23,
     descriptionLength: 'short',
-    workingHoursPattern: 'fast_food',
+    workingHoursPattern: 'always_open', // 24/7 fast food — deterministic coverage of the 24_hours working-hours bucket (was zero)
     photoCount: 'normal',
     attributes: randomAttributes(2),
     status: 'active',

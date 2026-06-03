@@ -287,6 +287,95 @@ describe('Public API — GET /api/v1/public/establishments', () => {
 });
 
 // ============================================================================
+// /public/establishments — hours_filter (Phase A working-hours wire-through)
+// ============================================================================
+
+describe('Public API — GET /api/v1/public/establishments?hours_filter', () => {
+  // Buckets are absolute/static — derived from stored working_hours, not the
+  // current clock. String format ('open-close') mirrors the seed always_open
+  // pattern and the engine's CLOSE_TIME_SQL extractor.
+  const allDays = (h) =>
+    JSON.stringify({
+      monday: h, tuesday: h, wednesday: h, thursday: h,
+      friday: h, saturday: h, sunday: h,
+    });
+
+  beforeEach(async () => {
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
+      VALUES
+        (gen_random_uuid(), $1, 'Closes By 22', 'closes-by-22', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, NOW(), NOW()),
+        (gen_random_uuid(), $1, 'Open Til Morning', 'open-til-morning', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $3::jsonb, NOW(), NOW()),
+        (gen_random_uuid(), $1, 'Round The Clock', 'round-the-clock', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $4::jsonb, NOW(), NOW())
+    `, [
+      partnerId,
+      allDays('10:00-20:00'), // closes by 22:00 every day → until_22
+      allDays('18:00-03:00'), // a day closing after midnight → until_morning
+      allDays('00:00-23:59'), // round-the-clock → 24_hours
+    ]);
+  });
+
+  const names = (res) => res.body.data.establishments.map((e) => e.name);
+
+  test('until_22 returns only the early-closing establishment', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ hours_filter: 'until_22' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Closes By 22');
+    expect(n).not.toContain('Open Til Morning');
+    expect(n).not.toContain('Round The Clock');
+  });
+
+  test('until_morning returns only the late-night establishment', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ hours_filter: 'until_morning' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Open Til Morning');
+    expect(n).not.toContain('Closes By 22');
+    expect(n).not.toContain('Round The Clock');
+  });
+
+  // Canonical 2-digit '00:00-23:59' (the seed always_open format). Matches after
+  // the engine fix that compares the midnight open-hour as IN ('0','00') rather
+  // than a single-digit '= 0' — see the separate searchService 24_hours fix.
+  test('24_hours returns only the round-the-clock establishment', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ hours_filter: '24_hours' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Round The Clock');
+    expect(n).not.toContain('Closes By 22');
+    expect(n).not.toContain('Open Til Morning');
+  });
+
+  test('no hours_filter returns all three', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Closes By 22');
+    expect(n).toContain('Open Til Morning');
+    expect(n).toContain('Round The Clock');
+  });
+
+  test('unknown hours_filter is soft-ignored — 200, returns all (no 422, unlike /map)', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ hours_filter: 'nonsense' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Closes By 22');
+    expect(n).toContain('Open Til Morning');
+    expect(n).toContain('Round The Clock');
+  });
+});
+
+// ============================================================================
 // /public/establishments/map
 // ============================================================================
 
