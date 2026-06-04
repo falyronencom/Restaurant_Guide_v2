@@ -39,6 +39,11 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // shadcn/ui primitives are CLI-generated ("do not hand-edit" — regenerate
+    // via `shadcn add`); they ship with their own formatting (double quotes,
+    // semicolons) that intentionally diverges from the project style rules
+    // above. Linting them produces noise on every run, not actionable signal.
+    'src/components/ui/**',
   ]),
 ]);
 
