@@ -27,6 +27,11 @@ import type { PublicEstablishmentDetail } from '@/lib/api/types';
 import { toAbsoluteUrl } from '@/lib/seo-gate';
 import { normalizeCuisine } from '@/lib/working-hours';
 import { normalizeWorkingHours } from '@/lib/establishment-helpers';
+import {
+  buildAggregateRating,
+  mapCategoryToSchemaSubtype,
+  type AggregateRatingSchema,
+} from '@/lib/schema-org';
 
 type Props = {
   establishment: PublicEstablishmentDetail;
@@ -45,63 +50,9 @@ export function RestaurantSchema({ establishment, citySlug, categorySlug }: Prop
 }
 
 // -- internals --------------------------------------------------------------
-
-/**
- * Map establishment category (Cyrillic canonical OR legacy English seed) to
- * a Schema.org subtype. Targets per Brief 5 directive:
- *   Restaurant / CafeOrCoffeeShop / BarOrPub / Bakery / FastFoodRestaurant
- * Unknown values → FoodEstablishment (most generic).
- *
- * Both vocabularies must be supported (Discovery Q5): backend seeds may
- * contain English category strings that predate the Cyrillic canonical set;
- * without legacy mapping, those rows would always degrade to FoodEstablishment.
- */
-const CATEGORY_TO_SCHEMA_SUBTYPE: Record<string, string> = {
-  // Cyrillic canonical (backend constants/urlSlugs.js)
-  'Ресторан': 'Restaurant',
-  'Кафе': 'Restaurant',
-  'Кофейня': 'CafeOrCoffeeShop',
-  'Бар': 'BarOrPub',
-  'Паб': 'BarOrPub',
-  'Пиццерия': 'Restaurant',
-  'Пекарня': 'Bakery',
-  'Кондитерская': 'Bakery',
-  'Фаст-фуд': 'FastFoodRestaurant',
-  'Столовая': 'Restaurant',
-  'Кальянная': 'BarOrPub',
-  'Боулинг': 'Restaurant',
-  'Караоке': 'BarOrPub',
-  'Бильярд': 'Restaurant',
-  'Клуб': 'BarOrPub',
-  // Legacy English seed (mirrors working-hours.ts CATEGORY_LEGACY_TO_RU)
-  'restaurant': 'Restaurant',
-  'cafe': 'CafeOrCoffeeShop',
-  'cafe_dining': 'Restaurant',
-  'fast_food': 'FastFoodRestaurant',
-  'pizzeria': 'Restaurant',
-  'bar': 'BarOrPub',
-  'pub': 'BarOrPub',
-  'bakery': 'Bakery',
-  'confectionery': 'Bakery',
-  'karaoke': 'BarOrPub',
-  'canteen': 'Restaurant',
-  'hookah_bar': 'BarOrPub',
-  'hookah_lounge': 'BarOrPub',
-  'bowling': 'Restaurant',
-  'billiards': 'Restaurant',
-  'nightclub': 'BarOrPub',
-};
-
-function mapCategoryToSchemaSubtype(categoryRaw: string | undefined): string {
-  if (!categoryRaw) return 'FoodEstablishment';
-  // Exact match handles Cyrillic (backend uses specific case). Lowercase
-  // match handles legacy English (case-insensitive).
-  return (
-    CATEGORY_TO_SCHEMA_SUBTYPE[categoryRaw] ??
-    CATEGORY_TO_SCHEMA_SUBTYPE[categoryRaw.toLowerCase()] ??
-    'FoodEstablishment'
-  );
-}
+//
+// Category→subtype mapping and the aggregateRating gate live in
+// @/lib/schema-org so the /reviews route reuses them without duplication.
 
 const DAY_KEYS = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
@@ -157,13 +108,7 @@ type RestaurantSchemaShape = {
   };
   openingHoursSpecification?: OpeningHoursSpec[];
   acceptsReservations?: boolean;
-  aggregateRating?: {
-    '@type': 'AggregateRating';
-    ratingValue: number;
-    reviewCount: number;
-    bestRating: 5;
-    worstRating: 1;
-  };
+  aggregateRating?: AggregateRatingSchema;
 };
 
 function buildRestaurantSchema(
@@ -232,19 +177,11 @@ function buildRestaurantSchema(
     schema.acceptsReservations = true;
   }
 
-  // aggregateRating — locked gate: review_count >= 3 AND average_rating != null.
-  // Small samples produce misleading ratings; honest abstention is default.
-  if (
-    establishment.review_count >= 3 &&
-    establishment.average_rating != null
-  ) {
-    schema.aggregateRating = {
-      '@type': 'AggregateRating',
-      ratingValue: establishment.average_rating,
-      reviewCount: establishment.review_count,
-      bestRating: 5,
-      worstRating: 1,
-    };
+  // aggregateRating — locked gate (review_count >= 3 AND average_rating != null),
+  // shared with the /reviews route via buildAggregateRating. Output unchanged.
+  const aggregateRating = buildAggregateRating(establishment);
+  if (aggregateRating) {
+    schema.aggregateRating = aggregateRating;
   }
 
   return schema;

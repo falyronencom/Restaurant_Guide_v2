@@ -1,38 +1,38 @@
+import Link from 'next/link';
+
+import type { PublicReview } from '@/lib/api/types';
+import {
+  formatRating,
+  pluralizeReviews,
+  ratingLabel,
+} from '@/lib/establishment-helpers';
+import { ReviewCard } from './ReviewCard';
+
 /**
  * ReviewCarousel — Server Component (Brief 4).
  *
  * Booking-style review block:
  *   - Header: overall rating square + total count + verbal label
- *     («Превосходно/Очень хорошо/...»)
+ *     («Превосходно/Очень хорошо/...») + optional "Все N отзывов →" link to the
+ *     dedicated /reviews route (Phase A) when more reviews exist than shown.
  *   - 3-card row на desktop, horizontal scroll-snap на mobile (CSS-only)
- *   - Each card: avatar + author name + 5-star rating + content excerpt +
- *     date + optional partner-response line
- *   - Initial limit ≈5 reviews (per directive). No «show all» link in Brief 4
- *     — dedicated reviews route deferred.
+ *   - Each card (ReviewCard, shared with the /reviews route): avatar + author
+ *     name + 5-star rating + content excerpt + date + optional partner-response.
+ *   - Initial limit ≈5 reviews (per directive); the full list lives at /reviews.
  *
  * Author name: full name preserved (QP4 confirmed contract — no truncation).
- * Date rendered Russian-locale via formatDateRu.
  */
-
-import Image from 'next/image';
-import { Star, MessageSquareReply } from 'lucide-react';
-
-import type { PublicReview } from '@/lib/api/types';
-import {
-  formatRating,
-  formatDateRu,
-  pluralizeReviews,
-  ratingLabel,
-} from '@/lib/establishment-helpers';
 
 export function ReviewCarousel({
   reviews,
   totalCount,
   averageRating,
+  reviewsHref,
 }: {
   reviews: PublicReview[];
   totalCount: number;
   averageRating: number | null;
+  reviewsHref?: string;
 }) {
   const label = ratingLabel(averageRating);
 
@@ -53,6 +53,14 @@ export function ReviewCarousel({
         ) : (
           <span className='text-body-m text-muted-foreground'>{pluralizeReviews(totalCount)}</span>
         )}
+        {reviewsHref != null && totalCount > reviews.length ? (
+          <Link
+            href={reviewsHref}
+            className='ml-auto text-body-m font-medium text-primary underline-offset-4 hover:underline'
+          >
+            Все {pluralizeReviews(totalCount)} →
+          </Link>
+        ) : null}
       </div>
 
       {reviews.length === 0 ? (
@@ -65,81 +73,14 @@ export function ReviewCarousel({
           style={{ scrollbarWidth: 'none' }}
         >
           {reviews.map((review) => (
-            <ReviewCard key={review.id} review={review} />
+            <ReviewCard
+              key={review.id}
+              review={review}
+              className='min-w-[85%] snap-center lg:min-w-0'
+            />
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function ReviewCard({ review }: { review: PublicReview }) {
-  return (
-    <article className='flex min-w-[85%] snap-center flex-col gap-s rounded-l border border-border bg-background p-m lg:min-w-0'>
-      <header className='flex items-start gap-s'>
-        <div className='relative size-10 shrink-0 overflow-hidden rounded-full bg-figma-navy'>
-          {review.author.avatar_url ? (
-            <Image
-              src={review.author.avatar_url}
-              alt={review.author.name}
-              fill
-              sizes='40px'
-              className='object-cover'
-            />
-          ) : (
-            <span className='flex size-full items-center justify-center font-display text-headline-m text-text-on-primary'>
-              {review.author.name.charAt(0).toUpperCase()}
-            </span>
-          )}
-        </div>
-        <div className='flex flex-1 flex-col gap-1'>
-          <span className='text-body-m font-medium text-foreground'>
-            {review.author.name}
-          </span>
-          <StarRating rating={review.rating} />
-        </div>
-        <time
-          dateTime={review.created_at}
-          className='text-caption-m text-muted-foreground'
-        >
-          {formatDateRu(review.created_at)}
-        </time>
-      </header>
-
-      {review.content ? (
-        <p className='line-clamp-6 text-body-m text-foreground'>{review.content}</p>
-      ) : null}
-
-      {review.partner_response ? (
-        <div className='inline-flex items-start gap-s rounded-m bg-brand/10 p-s text-body-s'>
-          <MessageSquareReply
-            className='mt-0.5 size-4 shrink-0 text-brand'
-            aria-hidden='true'
-          />
-          <span className='line-clamp-3 text-foreground'>
-            <span className='font-medium'>Ответ заведения: </span>
-            {review.partner_response}
-          </span>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function StarRating({ rating }: { rating: number }) {
-  return (
-    <div className='flex items-center gap-0.5' aria-label={`Оценка: ${rating} из 5`}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Star
-          key={n}
-          className={
-            n <= rating
-              ? 'size-4 fill-brand text-brand'
-              : 'size-4 text-muted-foreground'
-          }
-          aria-hidden='true'
-        />
-      ))}
     </div>
   );
 }

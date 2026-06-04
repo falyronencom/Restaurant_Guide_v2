@@ -280,6 +280,7 @@ export default async function EstablishmentPage({
               reviews={reviewsResult.reviews}
               totalCount={reviewsResult.pagination.total}
               averageRating={establishment.average_rating}
+              reviewsHref={`/${city}/${category}/${establishment.slug}/reviews`}
             />
           </section>
         </div>
