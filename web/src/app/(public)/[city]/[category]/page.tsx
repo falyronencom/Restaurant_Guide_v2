@@ -11,6 +11,7 @@ import {
 import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { EstablishmentCard } from '@/components/catalog/EstablishmentCard';
 import { FilterShelf } from '@/components/catalog/FilterShelf';
+import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
 import { HOURS_VALUES } from '@/lib/facets';
 
 /*
@@ -197,16 +198,20 @@ export default async function CategoryPage({
           </Link>
         </section>
       ) : (
-        <section className='grid grid-cols-1 gap-l sm:grid-cols-2 lg:grid-cols-3'>
-          {catalog.establishments.map((establishment) => (
-            <EstablishmentCard
-              key={establishment.id}
-              establishment={establishment}
-              fallbackCitySlug={city}
-              fallbackCategorySlug={category}
-            />
-          ))}
-        </section>
+        <FavoritesProvider
+          establishmentIds={catalog.establishments.map((e) => e.id)}
+        >
+          <section className='grid grid-cols-1 gap-l sm:grid-cols-2 lg:grid-cols-3'>
+            {catalog.establishments.map((establishment) => (
+              <EstablishmentCard
+                key={establishment.id}
+                establishment={establishment}
+                fallbackCitySlug={city}
+                fallbackCategorySlug={category}
+              />
+            ))}
+          </section>
+        </FavoritesProvider>
       )}
 
       <CatalogPagination

@@ -88,6 +88,7 @@ export async function serverFetch<T>(
     throw new ApiError(
       body.error.statusCode ?? response.status,
       body.error.message,
+      body.error.code,
     );
   }
 

@@ -182,7 +182,13 @@ export type PublicMetadata = {
 export type ApiSuccessResponse<T> = { success: true; data: T };
 export type ApiErrorResponse = {
   success: false;
-  error: { message: string; statusCode: number };
+  /**
+   * Backend error object. `code` is the machine-readable error code
+   * (e.g. 'OAUTH_EMAIL_NOT_VERIFIED', 'INVALID_TOKEN') the web tier maps to
+   * user-facing messages. `statusCode` is often absent from the body — the
+   * HTTP response status is the source of truth (serverFetch falls back to it).
+   */
+  error: { message: string; statusCode?: number; code?: string };
 };
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
@@ -201,3 +207,61 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+// ============================================================================
+// Auth — Phase B Slice 1 (web OAuth + session)
+// ============================================================================
+
+/**
+ * Display-safe user summary surfaced to the client (AuthProvider / AuthMenu).
+ * Derived server-side from the backend user object. NEVER carries tokens.
+ */
+export type SessionUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  avatarUrl: string | null;
+};
+
+/**
+ * Backend `POST /api/v1/auth/oauth` success `data` payload (camelCase under
+ * `data.*`). The request field is literally `token` (Google id_token). See
+ * backend authController.oauthLogin.
+ */
+export type OAuthLoginData = {
+  user: {
+    id: string;
+    email: string;
+    phone: string | null;
+    name: string;
+    role: string;
+    authMethod: string;
+    avatarUrl: string | null;
+    lastLoginAt: string | null;
+  };
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+};
+
+/**
+ * Backend `POST /api/v1/auth/refresh` success `data` payload. Single-use
+ * rotation: each call mints a NEW access+refresh pair and invalidates the old
+ * refresh token. The `user` object omits avatarUrl (display fields are sourced
+ * from the rg_user cookie set at login, not re-derived on refresh).
+ */
+export type RefreshData = {
+  user: {
+    id: string;
+    email: string;
+    phone: string | null;
+    name: string;
+    role: string;
+  };
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+};
