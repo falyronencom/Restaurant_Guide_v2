@@ -92,18 +92,13 @@ export async function establishGoogleSession(
  * refresh token remains. Returns null when there is no recoverable session.
  */
 export async function getSessionSummary(): Promise<SessionUser | null> {
-  const user = await getSessionUser();
-  if (!user) return null;
-
-  const access = await getAccessToken();
-  if (!access) {
-    const restored = await refreshSession();
-    if (!restored) {
-      await clearSession();
-      return null;
-    }
-  }
-  return user;
+  // Pure read of the display-user cookie — NO token refresh here. Refreshing on
+  // every (possibly passive) page load would rotate the single-use refresh
+  // token needlessly and widen the cross-instance reuse race. Refresh is lazy:
+  // it happens in authedFetch when an authenticated action actually runs.
+  // rg_user and rg_rt share a 30-day window (re-stamped together on refresh),
+  // so rg_user presence reliably reflects a live session.
+  return getSessionUser();
 }
 
 /**

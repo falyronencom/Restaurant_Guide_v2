@@ -19,8 +19,9 @@ import { OpenStatusBadge } from './OpenStatusBadge';
  * Web adaptations per directive:
  *   - Image scales proportionally (responsive aspect-ratio), not fixed 172px
  *   - Card height flows from content, not hard-coded 291px
- *   - Distance/favorite/booking-indicator dropped (no geo SSR / no auth /
- *     no booking action on Phase A web)
+ *   - Distance/booking-indicator dropped (no geo SSR / no booking action on
+ *     web yet). The favorite affordance was RESTORED in Phase B Slice 1
+ *     (Google auth) as a FavoriteButton island overlaid on the image column.
  *   - href uses establishment's own city_slug/category_slug for canonical
  *     URL (primary category); falls back to page params when projection
  *     returned null (production seed has English category values that

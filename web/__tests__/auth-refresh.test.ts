@@ -97,6 +97,13 @@ describe('refreshSession', () => {
     expect(mockStore.delete).toHaveBeenCalledWith('rg_user');
   });
 
+  it('does NOT clear the session on a transient failure (transport / 5xx)', async () => {
+    mockFetch.mockRejectedValue(new ApiError(0, 'network down')); // not an auth verdict
+    const accessToken = await refreshSession();
+    expect(accessToken).toBeNull();
+    expect(mockStore.delete).not.toHaveBeenCalled(); // session preserved for retry
+  });
+
   it('returns null without a backend call when no refresh token exists', async () => {
     mockStore.get.mockReturnValue(undefined);
     const accessToken = await refreshSession();

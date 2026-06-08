@@ -91,6 +91,26 @@ describe('authedFetch', () => {
     expect(mockFetch).toHaveBeenCalledTimes(3); // no second refresh — no loop
   });
 
+  it('refreshes at most once on the missing-access path (no double refresh on a follow-up 401)', async () => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_rt' ? { value: 'rt' } : undefined,
+    ); // rg_at absent
+    mockFetch
+      .mockResolvedValueOnce({
+        user: {},
+        accessToken: 'fresh',
+        refreshToken: 'rt2',
+        tokenType: 'Bearer',
+        expiresIn: 14400,
+      }) // upfront refresh
+      .mockRejectedValueOnce(new ApiError(401, 'still 401', 'INVALID_TOKEN')); // authed call 401
+
+    await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+      statusCode: 401,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2); // refresh + call; NO second refresh
+  });
+
   it('throws NO_SESSION (no backend call) when there are no tokens', async () => {
     mockStore.get.mockReturnValue(undefined);
     await expect(authedFetch('/x')).rejects.toMatchObject({

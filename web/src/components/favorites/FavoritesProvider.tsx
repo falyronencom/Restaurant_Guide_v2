@@ -5,6 +5,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -25,6 +27,10 @@ import {
  * check (getFavoritesForIds) and shares the per-id state with the nested
  * FavoriteButton islands. Anonymous visitors trigger no batch call and every
  * heart renders empty.
+ *
+ * State is mirrored to a ref (the authoritative copy) so rapid same-card taps
+ * compose correctly — toggle reads/writes mapRef synchronously rather than a
+ * stale render closure, avoiding double-add desync.
  */
 
 type FavoritesContextValue = {
@@ -51,17 +57,24 @@ export function FavoritesProvider({
 }) {
   const { status, isAuthenticated, requestLogin } = useAuth();
   const [map, setMap] = useState<Record<string, boolean>>({});
+  const mapRef = useRef<Record<string, boolean>>({});
+
+  // Single writer for both the authoritative ref and the render state.
+  const commit = useCallback((nextMap: Record<string, boolean>) => {
+    mapRef.current = nextMap;
+    setMap(nextMap);
+  }, []);
 
   const idsKey = establishmentIds.join(',');
 
-  // Batch-load favorite state once authenticated. Optimistic local edits (in
-  // `prev`) win over the server batch to avoid clobbering an in-flight toggle.
+  // Batch-load favorite state once authenticated. Optimistic local edits (held
+  // in mapRef) win over the server batch to avoid clobbering an in-flight toggle.
   useEffect(() => {
     if (status !== 'authenticated' || establishmentIds.length === 0) return;
     let cancelled = false;
     getFavoritesForIds(establishmentIds)
       .then((favorites) => {
-        if (!cancelled) setMap((prev) => ({ ...favorites, ...prev }));
+        if (!cancelled) commit({ ...favorites, ...mapRef.current });
       })
       .catch(() => {
         /* favorites read must never break the page */
@@ -71,12 +84,12 @@ export function FavoritesProvider({
     };
     // establishmentIds tracked via idsKey to avoid re-runs on array identity churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, idsKey]);
+  }, [status, idsKey, commit]);
 
   // Reset hearts when the user logs out (avoid stale-filled state).
   useEffect(() => {
-    if (status === 'anonymous') setMap({});
-  }, [status]);
+    if (status === 'anonymous') commit({});
+  }, [status, commit]);
 
   const isFavorite = useCallback((id: string) => map[id] ?? false, [map]);
 
@@ -86,21 +99,25 @@ export function FavoritesProvider({
         requestLogin();
         return;
       }
-      const previous = map[id] ?? false;
+      // Read/write the authoritative ref synchronously so rapid same-card taps
+      // compose correctly (no stale-closure double-add).
+      const previous = mapRef.current[id] ?? false;
       const next = !previous;
-      setMap((prev) => ({ ...prev, [id]: next })); // optimistic
+      commit({ ...mapRef.current, [id]: next }); // optimistic
       const result = next
         ? await addFavoriteAction(id)
         : await removeFavoriteAction(id);
       if (!result.ok) {
-        setMap((prev) => ({ ...prev, [id]: previous })); // rollback
+        commit({ ...mapRef.current, [id]: previous }); // rollback
       }
     },
-    [isAuthenticated, requestLogin, map],
+    [isAuthenticated, requestLogin, commit],
   );
 
+  const value = useMemo(() => ({ isFavorite, toggle }), [isFavorite, toggle]);
+
   return (
-    <FavoritesContext.Provider value={{ isFavorite, toggle }}>
+    <FavoritesContext.Provider value={value}>
       {children}
     </FavoritesContext.Provider>
   );

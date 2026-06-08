@@ -159,10 +159,23 @@ async function doRefresh(refreshToken: string): Promise<string | null> {
       body: JSON.stringify({ refreshToken }),
     });
     await writeTokens(data.accessToken, data.refreshToken, data.expiresIn);
+    // Re-stamp the display-user cookie so its 30-day window tracks activity in
+    // lockstep with rg_rt — otherwise rg_user would die at 30d-from-login while
+    // rg_rt keeps rolling forward, showing a logged-out header over a live
+    // session. RefreshData omits avatarUrl, so re-stamp the EXISTING value.
+    const existingUser = await getSessionUser();
+    if (existingUser) await writeUser(existingUser);
     return data.accessToken;
-  } catch {
-    // INVALID_TOKEN / TOKEN_EXPIRED / TOKEN_REUSE_DETECTED → the session is dead.
-    await clearSession();
+  } catch (err) {
+    // Only a definitive auth verdict (401 INVALID_TOKEN/TOKEN_EXPIRED, 403
+    // TOKEN_REUSE_DETECTED) means the session is dead → clear. Transient
+    // failures (transport/timeout = ApiError(0), 5xx, 429) must NOT discard a
+    // still-valid refresh token — return null without clearing so a later
+    // attempt can recover.
+    const status = err instanceof ApiError ? err.statusCode : 0;
+    if (status === 401 || status === 403) {
+      await clearSession();
+    }
     return null;
   }
 }
@@ -196,8 +209,10 @@ export async function authedFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   let accessToken = await getAccessToken();
+  let didRefresh = false;
   if (!accessToken) {
     accessToken = await refreshSession();
+    didRefresh = true;
     if (!accessToken) {
       throw new ApiError(401, 'Not authenticated', 'NO_SESSION');
     }
@@ -206,7 +221,10 @@ export async function authedFetch<T>(
   try {
     return await fetchWithBearer<T>(path, init, accessToken);
   } catch (err) {
-    if (err instanceof ApiError && err.statusCode === 401) {
+    // Refresh AT MOST ONCE per call: if we already refreshed for a missing
+    // access token, a follow-up 401 is not retried — avoids burning a second
+    // single-use rotation on one logical request.
+    if (err instanceof ApiError && err.statusCode === 401 && !didRefresh) {
       const refreshed = await refreshSession();
       if (refreshed) {
         return fetchWithBearer<T>(path, init, refreshed);

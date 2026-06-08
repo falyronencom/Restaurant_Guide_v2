@@ -134,7 +134,7 @@ describe('establishGoogleSession', () => {
 });
 
 describe('getSessionSummary', () => {
-  it('returns the display user when rg_user + access cookie are present', async () => {
+  it('returns the display user from rg_user (read-only — no proactive refresh)', async () => {
     const user = {
       id: 'u1',
       email: 'a@b.co',
@@ -142,61 +142,19 @@ describe('getSessionSummary', () => {
       role: 'user',
       avatarUrl: null,
     };
-    mockStore.get.mockImplementation((name: string) => {
-      if (name === 'rg_user') return { value: JSON.stringify(user) };
-      if (name === 'rg_at') return { value: 'access-1' };
-      return undefined;
-    });
+    // Access cookie absent: getSessionSummary must NOT refresh (refresh is lazy,
+    // in authedFetch). It returns the display user from rg_user.
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_user' ? { value: JSON.stringify(user) } : undefined,
+    );
 
     await expect(getSessionSummary()).resolves.toEqual(user);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('returns null when there is no session', async () => {
     mockStore.get.mockReturnValue(undefined);
     await expect(getSessionSummary()).resolves.toBeNull();
-  });
-
-  it('silently restores via refresh when access expired but refresh remains', async () => {
-    const user = {
-      id: 'u1',
-      email: 'a@b.co',
-      name: 'Аня',
-      role: 'user',
-      avatarUrl: null,
-    };
-    mockStore.get.mockImplementation((name: string) => {
-      if (name === 'rg_user') return { value: JSON.stringify(user) };
-      if (name === 'rg_rt') return { value: 'rt' };
-      return undefined; // rg_at expired
-    });
-    mockFetch.mockResolvedValue({
-      user: { id: 'u1', email: 'a', phone: null, name: 'n', role: 'user' },
-      accessToken: 'at2',
-      refreshToken: 'rt2',
-      tokenType: 'Bearer',
-      expiresIn: 14400,
-    });
-
-    await expect(getSessionSummary()).resolves.toEqual(user);
-    expect(mockStore.set).toHaveBeenCalledWith('rg_at', 'at2', expect.anything());
-  });
-
-  it('clears a stale session when access expired and the refresh fails', async () => {
-    const user = {
-      id: 'u1',
-      email: 'a@b.co',
-      name: 'Аня',
-      role: 'user',
-      avatarUrl: null,
-    };
-    mockStore.get.mockImplementation((name: string) => {
-      if (name === 'rg_user') return { value: JSON.stringify(user) };
-      if (name === 'rg_rt') return { value: 'rt' };
-      return undefined;
-    });
-    mockFetch.mockRejectedValue(new ApiError(401, 'expired', 'INVALID_TOKEN'));
-
-    await expect(getSessionSummary()).resolves.toBeNull();
-    expect(mockStore.delete).toHaveBeenCalledWith('rg_at');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
