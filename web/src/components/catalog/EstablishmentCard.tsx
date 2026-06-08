@@ -4,6 +4,8 @@ import Link from 'next/link';
 import type { PublicEstablishmentListing } from '@/lib/api/types';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 
+import { FavoriteButton } from '@/components/favorites/FavoriteButton';
+
 import { OpenStatusBadge } from './OpenStatusBadge';
 
 /**
@@ -47,10 +49,11 @@ export function EstablishmentCard({
     : null;
 
   return (
-    <Link
-      href={href}
-      className='group block transition-transform hover:-translate-y-0.5'
-    >
+    <div className='group relative'>
+      <Link
+        href={href}
+        className='block transition-transform hover:-translate-y-0.5'
+      >
       <article
         className={
           // Dual brand-shadow drop @ ~4% alpha (mobile #0AD35620).
@@ -141,7 +144,14 @@ export function EstablishmentCard({
           </div>
         </div>
       </article>
-    </Link>
+      </Link>
+      {/* Favorites proving-action — sibling of the Link (valid markup; tap
+          never navigates). Overlays the image column (left 2/5 of the card). */}
+      <FavoriteButton
+        establishmentId={establishment.id}
+        className='absolute left-2 top-2 z-10'
+      />
+    </div>
   );
 }
 

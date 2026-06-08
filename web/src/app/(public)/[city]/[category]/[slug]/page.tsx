@@ -18,6 +18,8 @@ import { normalizeCategory } from '@/lib/working-hours';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
 import { Attributes } from '@/components/establishment/Attributes';
 import { ContactSidebar } from '@/components/establishment/ContactSidebar';
+import { FavoriteButton } from '@/components/favorites/FavoriteButton';
+import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
 import { Description } from '@/components/establishment/Description';
 import { Gallery } from '@/components/establishment/Gallery';
 import { InfoCard } from '@/components/establishment/InfoCard';
@@ -230,13 +232,24 @@ export default async function EstablishmentPage({
         establishmentName={establishment.name}
       />
 
-      {/* Title block */}
-      <header className='flex flex-col gap-s'>
-        <p className='text-caption-l text-muted-foreground'>
-          {displayCategory.toLowerCase()} в городе {cityName}
-        </p>
-        <h1 className='text-display-l font-display'>{establishment.name}</h1>
-      </header>
+      {/* Title block — favorites proving-action lives in the header (always
+          visible; ContactSidebar is hidden on mobile). */}
+      <FavoritesProvider establishmentIds={[establishment.id]}>
+        <header className='flex flex-col gap-s'>
+          <p className='text-caption-l text-muted-foreground'>
+            {displayCategory.toLowerCase()} в городе {cityName}
+          </p>
+          <div className='flex items-start justify-between gap-m'>
+            <h1 className='text-display-l font-display'>
+              {establishment.name}
+            </h1>
+            <FavoriteButton
+              establishmentId={establishment.id}
+              className='shrink-0'
+            />
+          </div>
+        </header>
+      </FavoritesProvider>
 
       {/* Sticky anchor nav */}
       <AnchorNav items={anchorItems} />

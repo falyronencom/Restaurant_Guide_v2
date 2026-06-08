@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { AuthMenu } from '@/components/auth/AuthMenu';
+
 /*
  * Public route group layout — shared chrome for the geographic route
  * subtree (/[city], /[city]/[category], /[city]/[category]/[slug]).
@@ -20,6 +22,7 @@ export default function PublicLayout({
           >
             Nirivio
           </Link>
+          <AuthMenu />
         </div>
       </header>
       <div className='flex flex-1 flex-col'>{children}</div>
