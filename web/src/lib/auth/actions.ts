@@ -1,5 +1,7 @@
 'use server';
 
+import { redirect } from 'next/navigation';
+
 import { serverFetch } from '@/lib/api/client';
 import { ApiError, type OAuthLoginData, type SessionUser } from '@/lib/api/types';
 import {
@@ -8,11 +10,12 @@ import {
   getAccessToken,
   getRefreshToken,
   getSessionUser,
+  persistOAuthSession,
   refreshSession,
   setNonce,
-  writeTokens,
-  writeUser,
+  setYState,
 } from '@/lib/auth/session';
+import { buildAuthorizeUrl, guardReturnTo } from '@/lib/auth/yandex';
 
 /*
  * Auth Server Actions (Phase B Slice 1). All state-changing operations are
@@ -22,6 +25,15 @@ import {
  *
  * The backend is FROZEN for Google (zero changes). The web tier is the cookie
  * issuer: the backend returns tokens in the JSON body, never as Set-Cookie.
+ *
+ * DECISION #6 (Phase B — Yandex web flow): Yandex login is redirect-based, so
+ * its *callback* must be a Route Handler — the one surface OUTSIDE the
+ * DECISION #5 CSRF model. We keep that exposure minimal: only the callback is a
+ * Route Handler (its CSRF is the OAuth `state` round-trip via the y_state
+ * cookie); *initiation* stays a Server Action (startYandexLogin below), inside
+ * the POST-only + Origin/Host model. The frozen backend is untouched — the
+ * callback exchanges the code for a Yandex access_token web-side and calls the
+ * SAME POST /auth/oauth {provider:'yandex', token} contract mobile uses.
  */
 
 export type LoginResult =
@@ -73,17 +85,27 @@ export async function establishGoogleSession(
     return mapAuthError(err);
   }
 
-  // 3. Persist the session (web is the cookie issuer).
-  const user: SessionUser = {
-    id: data.user.id,
-    email: data.user.email,
-    name: data.user.name,
-    role: data.user.role,
-    avatarUrl: data.user.avatarUrl,
-  };
-  await writeTokens(data.accessToken, data.refreshToken, data.expiresIn);
-  await writeUser(user);
+  // 3. Persist the session (web is the cookie issuer) — shared with the Yandex
+  //    callback via persistOAuthSession (single source of session-write logic).
+  const user = await persistOAuthSession(data);
   return { ok: true, user };
+}
+
+/**
+ * Initiate the Yandex authorization-code flow (DECISION #6). A Server Action —
+ * NOT a Route Handler — so initiation stays inside Next 16's POST-only +
+ * Origin/Host CSRF model. Mints a single-use `state` nonce, stores {n, r} in the
+ * httpOnly y_state cookie, then redirects the browser to Yandex.
+ *
+ * `redirect()` throws NEXT_REDIRECT, so it is called on the straight-line path
+ * (never inside try/catch). Invoked via <form action> from AuthMenu; `returnTo`
+ * arrives as form data and is guarded to a same-origin relative path.
+ */
+export async function startYandexLogin(formData: FormData): Promise<void> {
+  const returnTo = guardReturnTo(formData.get('returnTo')?.toString());
+  const nonce = crypto.randomUUID();
+  await setYState({ n: nonce, r: returnTo });
+  redirect(buildAuthorizeUrl(nonce));
 }
 
 /**

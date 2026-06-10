@@ -1,5 +1,9 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
+
+import { startYandexLogin } from '@/lib/auth/actions';
+
 import { useAuth } from './AuthProvider';
 
 /*
@@ -8,6 +12,9 @@ import { useAuth } from './AuthProvider';
  */
 export function AuthMenu() {
   const { status, user, requestLogin, logout, loginError } = useAuth();
+  // returnTo for the Yandex flow: the current path, captured client-side and
+  // carried through the y_state cookie so the callback lands the user back here.
+  const pathname = usePathname();
 
   // Reserve space while the session hydrates to avoid a layout shift.
   if (status === 'loading') {
@@ -40,6 +47,15 @@ export function AuthMenu() {
       >
         Войти
       </button>
+      <form action={startYandexLogin}>
+        <input type="hidden" name="returnTo" value={pathname} />
+        <button
+          type="submit"
+          className="text-body-m text-figma-text-grey transition-colors hover:text-brand-dark"
+        >
+          Войти через Яндекс
+        </button>
+      </form>
       {loginError ? (
         <span className="text-caption-l text-destructive">{loginError}</span>
       ) : null}

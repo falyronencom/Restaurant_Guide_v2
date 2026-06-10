@@ -156,8 +156,33 @@ export const edgeCaseUsers = {
   }
 };
 
+/**
+ * OAuth provider responses — the raw upstream payloads that verifyGoogleToken /
+ * verifyYandexToken normalize. Used to drive the OAuth integration tests'
+ * provider-boundary mocks (the google-auth-library ticket payload + the
+ * login.yandex.ru/info body). QP4: the suite previously had no OAuth users.
+ */
+export const oauthProviderResponses = {
+  // login.yandex.ru/info?format=json body (verifyYandexToken upstream)
+  yandex: {
+    id: 90210,
+    default_email: 'yandex-user@yandex.ru',
+    display_name: 'Яндекс Пользователь',
+    default_avatar_id: 'av-yandex-1'
+  },
+  // Google id_token payload (verifyGoogleToken's ticket.getPayload())
+  google: {
+    sub: 'google-sub-42',
+    email: 'google-user@gmail.com',
+    name: 'Google Пользователь',
+    picture: 'https://lh3.googleusercontent.com/a/pic',
+    email_verified: true
+  }
+};
+
 export default {
   testUsers,
   invalidUsers,
-  edgeCaseUsers
+  edgeCaseUsers,
+  oauthProviderResponses
 };

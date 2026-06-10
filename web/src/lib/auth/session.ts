@@ -3,7 +3,12 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 import { serverFetch } from '@/lib/api/client';
-import { ApiError, type RefreshData, type SessionUser } from '@/lib/api/types';
+import {
+  ApiError,
+  type OAuthLoginData,
+  type RefreshData,
+  type SessionUser,
+} from '@/lib/api/types';
 
 /*
  * Server-only session layer for the web auth foundation (Phase B Slice 1).
@@ -31,9 +36,11 @@ export const COOKIE_ACCESS = 'rg_at';
 export const COOKIE_REFRESH = 'rg_rt';
 export const COOKIE_USER = 'rg_user';
 export const COOKIE_NONCE = 'g_nonce';
+export const COOKIE_YSTATE = 'y_state';
 
 const REFRESH_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 days — matches backend refresh TTL
 const NONCE_MAX_AGE_S = 60 * 5; // 5 minutes — login round-trip window
+const YSTATE_MAX_AGE_S = 60 * 10; // 10 minutes — Yandex authorize round-trip window
 
 /**
  * Secure is env-gated: an unconditional `Secure` cookie is dropped by browsers
@@ -121,6 +128,56 @@ export async function consumeNonce(): Promise<string | null> {
   const value = store.get(COOKIE_NONCE)?.value ?? null;
   if (value) store.delete(COOKIE_NONCE);
   return value;
+}
+
+// Yandex authorization-code `state` round-trip (Phase B — Yandex web flow).
+// {n} is the single-use CSRF nonce compared against the ?state= query in the
+// callback; {r} is the guarded same-origin returnTo. Mirrors g_nonce: httpOnly,
+// SameSite=Lax (NOT Strict — Strict drops the cookie on the cross-site
+// redirect-back from Yandex), Secure env-gated, single-use consume.
+export type YState = { n: string; r: string };
+
+export async function setYState(state: YState): Promise<void> {
+  const store = await cookies();
+  store.set(COOKIE_YSTATE, JSON.stringify(state), cookieOptions(YSTATE_MAX_AGE_S));
+}
+
+/** Reads and immediately clears the Yandex state cookie (single-use). */
+export async function consumeYState(): Promise<YState | null> {
+  const store = await cookies();
+  const raw = store.get(COOKIE_YSTATE)?.value;
+  if (!raw) return null;
+  store.delete(COOKIE_YSTATE);
+  try {
+    const parsed = JSON.parse(raw) as Partial<YState>;
+    if (typeof parsed.n === 'string' && typeof parsed.r === 'string') {
+      return { n: parsed.n, r: parsed.r };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist a backend OAuth login response into the session — web is the cookie
+ * issuer (backend returns tokens in the JSON body, never as Set-Cookie). Shared
+ * by establishGoogleSession (Server Action) and the Yandex callback Route
+ * Handler so there is ONE source of session-write mechanics.
+ */
+export async function persistOAuthSession(
+  data: OAuthLoginData,
+): Promise<SessionUser> {
+  const user: SessionUser = {
+    id: data.user.id,
+    email: data.user.email,
+    name: data.user.name,
+    role: data.user.role,
+    avatarUrl: data.user.avatarUrl,
+  };
+  await writeTokens(data.accessToken, data.refreshToken, data.expiresIn);
+  await writeUser(user);
+  return user;
 }
 
 // ---------------------------------------------------------------------------
