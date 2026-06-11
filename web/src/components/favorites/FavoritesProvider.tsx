@@ -86,10 +86,23 @@ export function FavoritesProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, idsKey, commit]);
 
-  // Reset hearts when the user logs out (avoid stale-filled state).
+  // Reset hearts when the user logs out (avoid stale-filled state). Guarded
+  // adjustment during render (react.dev "adjusting state when a prop changes")
+  // instead of setState-in-effect — React re-renders immediately, so the
+  // logged-out frame never paints stale-filled hearts.
+  const [prevStatus, setPrevStatus] = useState(status);
+  if (prevStatus !== status) {
+    setPrevStatus(status);
+    if (status === 'anonymous') setMap({});
+  }
+
+  // The authoritative ref clears post-commit (render-phase ref writes are
+  // off-limits). The brief map/ref divergence is unobservable: by then status
+  // is committed as anonymous, and both mapRef readers — toggle and the
+  // batch-load effect — are auth-gated.
   useEffect(() => {
-    if (status === 'anonymous') commit({});
-  }, [status, commit]);
+    if (status === 'anonymous') mapRef.current = {};
+  }, [status]);
 
   const isFavorite = useCallback((id: string) => map[id] ?? false, [map]);
 
