@@ -117,11 +117,17 @@ const mockSettings = {
   min_hours_before: 2,
 };
 
-// Get next valid weekday date (Monday=1 ... Friday=5 to match working_hours)
+// Get next valid weekday date (Monday=1 ... Friday=5 to match working_hours).
+// Serialize the LOCAL calendar date — NOT toISOString(), which converts to UTC and
+// rolls the date back a day in ahead-of-UTC zones at early-morning local times
+// (e.g. Europe/Minsk UTC+3 at 01:00 → previous day in UTC), shifting the weekday.
 const getNextWeekday = (targetDay) => {
   const d = new Date();
   d.setDate(d.getDate() + ((targetDay + 7 - d.getDay()) % 7 || 7));
-  return d.toISOString().split('T')[0];
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 const validBookingData = () => ({
