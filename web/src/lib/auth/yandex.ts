@@ -123,12 +123,13 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
 }
 
 /**
- * Open-redirect guard (D4). Accept only a same-origin RELATIVE path beginning
- * with a single slash — rejects protocol-relative `//evil.com` and absolute
- * URLs. Anything else collapses to '/'.
+ * Open-redirect guard (D4). Accept only a same-origin RELATIVE path: a leading
+ * slash followed by neither `/` nor `\`. Rejects protocol-relative `//evil.com`,
+ * the backslash variant `/\evil.com` (browsers normalize `\`→`/`, resolving it
+ * off-origin), and absolute URLs. Anything else collapses to '/'.
  */
 export function guardReturnTo(returnTo: string | null | undefined): string {
-  if (typeof returnTo === 'string' && /^\/(?!\/)/.test(returnTo)) {
+  if (typeof returnTo === 'string' && /^\/(?![/\\])/.test(returnTo)) {
     return returnTo;
   }
   return '/';

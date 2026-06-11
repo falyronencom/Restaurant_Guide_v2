@@ -74,7 +74,7 @@ describe('guardReturnTo', () => {
     expect(guardReturnTo('/minsk/restorany')).toBe('/minsk/restorany');
   });
 
-  it.each(['//evil.com', 'https://evil.com', 'http://evil.com', 'evil', '', null, undefined])(
+  it.each(['//evil.com', '/\\evil.com', '/\\/evil.com', 'https://evil.com', 'http://evil.com', 'evil', '', null, undefined])(
     'collapses %p to /',
     (input) => {
       expect(guardReturnTo(input as string | null | undefined)).toBe('/');
