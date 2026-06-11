@@ -3,7 +3,13 @@
 import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
-import { ApiError, type OAuthLoginData, type SessionUser } from '@/lib/api/types';
+import {
+  ApiError,
+  type LoginData,
+  type OAuthLoginData,
+  type RegisterData,
+  type SessionUser,
+} from '@/lib/api/types';
 import {
   clearSession,
   consumeNonce,
@@ -39,6 +45,37 @@ import { buildAuthorizeUrl, guardReturnTo } from '@/lib/auth/yandex';
 export type LoginResult =
   | { ok: true; user: SessionUser }
   | { ok: false; code: string; message: string };
+
+/**
+ * useActionState shape for the email/password forms (Slice 2). `null` is the
+ * initial state (no submission yet). On success the form island applies `user`
+ * into the AuthProvider context; navigation to `returnTo` is client-side
+ * (AuthRedirect) because a server redirect() would leave the root-layout
+ * AuthProvider stale — it never remounts on soft navigation.
+ */
+export type AuthFormState =
+  // `returnTo` in the ok-branch is the action's own guard verdict — pinned by
+  // tests as the observable output of guardReturnTo(formData). Navigation
+  // intentionally does NOT consume it: AuthRedirect navigates with the
+  // page-level guarded prop, the single path shared with the Google flow
+  // (which has no form state). Keep the hidden inputs sourced from the page
+  // prop so the two stay the same value.
+  | { ok: true; user: SessionUser; returnTo: string }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      /** Per-field Russian texts keyed by input name (email/password/name). */
+      fieldErrors?: Record<string, string>;
+      /**
+       * Entered values echoed back so the form can repopulate after React 19's
+       * post-action uncontrolled-form reset (inputs re-read defaultValue on the
+       * error re-render). The password is deliberately NEVER echoed — this
+       * state travels through the RSC payload.
+       */
+      values?: { name?: string; email?: string };
+    }
+  | null;
 
 /**
  * Mint a single-use login nonce, store it in a short-lived httpOnly cookie, and
@@ -106,6 +143,107 @@ export async function startYandexLogin(formData: FormData): Promise<void> {
   const nonce = crypto.randomUUID();
   await setYState({ n: nonce, r: returnTo });
   redirect(buildAuthorizeUrl(nonce));
+}
+
+/**
+ * Email/password registration (Slice 2, useActionState signature). Pre-checks
+ * mirror the backend rules for instant feedback, but the backend 422 remains
+ * the canon — anything passing here and failing there maps per-field via
+ * mapFormError. Web registration is email-only: no `phone`, authMethod fixed.
+ * The register response omits avatarUrl/lastLoginAt, so it is widened to the
+ * OAuthLoginData shape to reuse the single session-persist path.
+ */
+export async function registerAction(
+  _prevState: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const name = (formData.get('name')?.toString() ?? '').trim();
+  const email = (formData.get('email')?.toString() ?? '').trim();
+  const password = formData.get('password')?.toString() ?? '';
+  const returnTo = guardReturnTo(formData.get('returnTo')?.toString());
+
+  const fieldErrors: Record<string, string> = {};
+  if (name.length < 2 || name.length > 100) {
+    fieldErrors.name = FIELD_TEXTS_RU.name;
+  }
+  if (!EMAIL_RE.test(email)) {
+    fieldErrors.email = FIELD_TEXTS_RU.email;
+  }
+  if (!isCompliantPassword(password)) {
+    fieldErrors.password = FIELD_TEXTS_RU.password;
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return {
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: VALIDATION_SUMMARY_RU,
+      fieldErrors,
+      values: { name, email },
+    };
+  }
+
+  let data: RegisterData;
+  try {
+    data = await serverFetch<RegisterData>('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name, authMethod: 'email' }),
+    });
+  } catch (err) {
+    return mapFormError(err, { name, email });
+  }
+
+  const user = await persistOAuthSession({
+    ...data,
+    user: { ...data.user, avatarUrl: null, lastLoginAt: null },
+  });
+  return { ok: true, user, returnTo };
+}
+
+/**
+ * Email/password login (Slice 2, useActionState signature). No complexity
+ * pre-check on the password (it is an existing credential, mirroring the
+ * backend's validateLogin); the 401 INVALID_CREDENTIALS mapping stays generic —
+ * the backend deliberately does not reveal whether the email exists.
+ */
+export async function loginAction(
+  _prevState: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const email = (formData.get('email')?.toString() ?? '').trim();
+  const password = formData.get('password')?.toString() ?? '';
+  const returnTo = guardReturnTo(formData.get('returnTo')?.toString());
+
+  const fieldErrors: Record<string, string> = {};
+  if (!EMAIL_RE.test(email)) {
+    fieldErrors.email = FIELD_TEXTS_RU.email;
+  }
+  if (password.length === 0) {
+    fieldErrors.password = 'Введите пароль.';
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return {
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: VALIDATION_SUMMARY_RU,
+      fieldErrors,
+      values: { email },
+    };
+  }
+
+  let data: LoginData;
+  try {
+    data = await serverFetch<LoginData>('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (err) {
+    return mapFormError(err, { email });
+  }
+
+  const user = await persistOAuthSession(data);
+  return { ok: true, user, returnTo };
 }
 
 /**
@@ -194,6 +332,84 @@ function mapAuthError(err: unknown): LoginResult {
   };
 }
 
+// --- Email/password form helpers (Slice 2) ---------------------------------
+
+/**
+ * Russian per-field texts. One text per field stating its full requirements —
+ * shown both by the pre-check and by the backend-422 mapping, so the user sees
+ * identical wording regardless of which layer rejected the value (backend
+ * validator texts are English and never surface in the UI).
+ */
+const FIELD_TEXTS_RU = {
+  name: 'Имя: от 2 до 100 символов — буквы, пробелы, дефисы, апострофы.',
+  email: 'Введите корректный email.',
+  password: 'Пароль: минимум 8 символов, заглавная и строчная буквы, цифра.',
+} as const;
+
+const VALIDATION_SUMMARY_RU = 'Проверьте правильность заполнения полей.';
+
+/** Light-touch shape check; the backend's isEmail stays the canon. */
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+
+/** Mirrors backend validateRegister: ≥8 chars + uppercase + lowercase + digit. */
+function isCompliantPassword(password: string): boolean {
+  return (
+    password.length >= 8 &&
+    /[A-Z]/.test(password) &&
+    /[a-z]/.test(password) &&
+    /[0-9]/.test(password)
+  );
+}
+
+/**
+ * Map a register/login failure into AuthFormState. 422 VALIDATION_ERROR maps
+ * per-field through FIELD_TEXTS_RU (fields outside the dictionary fall back to
+ * the summary message only); everything else routes through messageForCode.
+ * `values` (never the password) is echoed for the post-reset repopulation.
+ */
+function mapFormError(
+  err: unknown,
+  values: { name?: string; email?: string },
+): AuthFormState {
+  if (err instanceof ApiError) {
+    if (err.errorCode === 'VALIDATION_ERROR') {
+      return {
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        message: VALIDATION_SUMMARY_RU,
+        fieldErrors: mapValidationDetails(err.details),
+        values,
+      };
+    }
+    return {
+      ok: false,
+      code: err.errorCode ?? `HTTP_${err.statusCode}`,
+      message: messageForCode(err.errorCode, err.statusCode),
+      values,
+    };
+  }
+  return {
+    ok: false,
+    code: 'NETWORK',
+    message: 'Сеть недоступна. Попробуйте позже.',
+    values,
+  };
+}
+
+/** `details` is `{field: [English messages]}` — only the keys are trusted. */
+function mapValidationDetails(
+  details: unknown,
+): Record<string, string> | undefined {
+  if (typeof details !== 'object' || details === null) return undefined;
+  const fieldErrors: Record<string, string> = {};
+  for (const field of Object.keys(details)) {
+    if (field in FIELD_TEXTS_RU) {
+      fieldErrors[field] = FIELD_TEXTS_RU[field as keyof typeof FIELD_TEXTS_RU];
+    }
+  }
+  return Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined;
+}
+
 function messageForCode(code: string | undefined, status: number): string {
   switch (code) {
     case 'INVALID_TOKEN':
@@ -206,8 +422,17 @@ function messageForCode(code: string | undefined, status: number): string {
       return 'Этот аккаунт деактивирован.';
     case 'ACCOUNT_CONFLICT':
       return 'Аккаунт с этим провайдером уже существует.';
+    case 'EMAIL_EXISTS':
+      return 'Аккаунт с таким email уже существует. Попробуйте войти.';
+    case 'INVALID_CREDENTIALS':
+      // Deliberately generic — mirrors the backend's anti-enumeration stance.
+      return 'Неверный email или пароль.';
+    case 'RATE_LIMIT_EXCEEDED':
+      return 'Слишком много попыток. Попробуйте позже.';
     default:
       if (status === 429) return 'Слишком много попыток входа. Попробуйте позже.';
-      return 'Не удалось войти. Попробуйте позже.';
+      // Neutral: this default also surfaces on the register form (e.g. 500),
+      // so it must not say «войти».
+      return 'Не удалось выполнить запрос. Попробуйте позже.';
   }
 }

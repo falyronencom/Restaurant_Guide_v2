@@ -65,6 +65,13 @@ type AuthContextValue = {
   logout: () => Promise<void>;
   /** Last login error message, if any. */
   loginError: string | null;
+  /**
+   * Apply a session established outside this provider (email/password form
+   * actions on /login and /register). The Server Action has already set the
+   * httpOnly cookies; this syncs the client context, which never remounts on
+   * soft navigation.
+   */
+  applySession: (user: SessionUser) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -175,6 +182,12 @@ export function AuthProvider({
     router.refresh();
   }, [router]);
 
+  const applySession = useCallback((nextUser: SessionUser) => {
+    setUser(nextUser);
+    setStatus('authenticated');
+    setLoginError(null);
+  }, []);
+
   const value: AuthContextValue = {
     status,
     user,
@@ -182,6 +195,7 @@ export function AuthProvider({
     requestLogin,
     logout,
     loginError,
+    applySession,
   };
 
   return (

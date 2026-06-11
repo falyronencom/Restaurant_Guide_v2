@@ -89,6 +89,7 @@ export async function serverFetch<T>(
       body.error.statusCode ?? response.status,
       body.error.message,
       body.error.code,
+      body.error.details,
     );
   }
 

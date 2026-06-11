@@ -187,8 +187,16 @@ export type ApiErrorResponse = {
    * (e.g. 'OAUTH_EMAIL_NOT_VERIFIED', 'INVALID_TOKEN') the web tier maps to
    * user-facing messages. `statusCode` is often absent from the body — the
    * HTTP response status is the source of truth (serverFetch falls back to it).
+   * `details` carries field-level validation errors on 422 VALIDATION_ERROR
+   * (`{field: [messages]}` from express-validator) — backend texts are English,
+   * so the web tier maps them to Russian per-field (Slice 2).
    */
-  error: { message: string; statusCode?: number; code?: string };
+  error: {
+    message: string;
+    statusCode?: number;
+    code?: string;
+    details?: unknown;
+  };
 };
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
@@ -202,6 +210,7 @@ export class ApiError extends Error {
     public statusCode: number,
     message: string,
     public errorCode?: string,
+    public details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -265,3 +274,34 @@ export type RefreshData = {
   tokenType: 'Bearer';
   expiresIn: number;
 };
+
+/**
+ * Backend `POST /api/v1/auth/register` success `data` payload (201). Differs
+ * from OAuthLoginData in the user object only: carries `createdAt`, omits
+ * `avatarUrl` / `lastLoginAt` (fresh account — verified Slice 2 Discovery,
+ * backend authController.register). registerAction widens it to the
+ * OAuthLoginData shape (`avatarUrl: null, lastLoginAt: null`) before the
+ * shared persistOAuthSession.
+ */
+export type RegisterData = {
+  user: {
+    id: string;
+    email: string;
+    phone: string | null;
+    name: string;
+    role: string;
+    authMethod: string;
+    createdAt: string;
+  };
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+};
+
+/**
+ * Backend `POST /api/v1/auth/login` success `data` payload — field-for-field
+ * identical to the OAuth response (verified Slice 2 Discovery), so login
+ * persists through the unchanged persistOAuthSession.
+ */
+export type LoginData = OAuthLoginData;
