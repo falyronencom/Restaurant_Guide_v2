@@ -9,13 +9,16 @@
  * media image/PDF separation it needs.
  */
 
+import { normalizeWorkingHours } from '@/lib/establishment-helpers';
 import type {
   CreateEstablishmentPayload,
   DayHours,
+  PartnerEstablishmentDetail,
   UpdateEstablishmentPayload,
   WorkingHoursPayload,
 } from '@/lib/api/types';
 import {
+  ATTRIBUTE_KEYS,
   CITY_CENTER,
   DAY_KEYS,
   DEFAULT_CITY_CENTER,
@@ -183,6 +186,84 @@ export function toUpdatePayload(
   return {
     ...create,
     interior_photos: form.interiorPhotos.map((p) => p.url),
-    menu_photos: form.menuPhotos.map((p) => p.url),
+    // menu_photos MUST include the menu PDF urls: the PUT media-sync deletes any
+    // existing type='menu' url absent from this array, and PDFs are type='menu'
+    // too — omitting them would delete the establishment's PDFs (data loss).
+    menu_photos: [
+      ...form.menuPhotos.map((p) => p.url),
+      ...form.menuPdfs.map((p) => p.url),
+    ],
+  };
+}
+
+function isPdfUrl(url: string): boolean {
+  return url.toLowerCase().split('?')[0].endsWith('.pdf');
+}
+
+function pdfFileName(url: string): string {
+  try {
+    const base = decodeURIComponent((url.split('?')[0].split('/').pop() ?? ''));
+    return base || 'menu.pdf';
+  } catch {
+    return 'menu.pdf';
+  }
+}
+
+/**
+ * Hydrate the wizard from an existing establishment (edit mode). The detail's
+ * menu_photos mixes images and PDFs (both type='menu'); they are separated by a
+ * '.pdf' url heuristic — sufficient because PDFs render as icons (no thumbnail
+ * needed). The combined `address` is placed in `street` (the form rebuilds
+ * address from street+building; building is left empty — a lossy but reversible
+ * split). Attributes are filtered to the canon (legacy non-canon keys dropped).
+ */
+export function fromDetail(d: PartnerEstablishmentDetail): WizardFormState {
+  const normalized = normalizeWorkingHours(d.working_hours);
+  const workingHours = {} as Record<DayKey, DayHoursForm>;
+  for (const day of DAY_KEYS) {
+    const parsed = normalized?.[day] ?? null;
+    workingHours[day] =
+      parsed && parsed.is_open
+        ? { isOpen: true, open: parsed.open ?? '', close: parsed.close ?? '' }
+        : { isOpen: false, open: '', close: '' };
+  }
+
+  const attrs = d.attributes ?? {};
+  const attributes = ATTRIBUTE_KEYS.filter((k) => attrs[k] === true);
+
+  const interiorPhotos: WizardPhoto[] = (d.interior_photos ?? []).map((url) => ({
+    url,
+  }));
+  const menuUrls = d.menu_photos ?? [];
+  const menuPhotos: WizardPhoto[] = menuUrls
+    .filter((u) => !isPdfUrl(u))
+    .map((url) => ({ url }));
+  const menuPdfs: WizardPdf[] = menuUrls.filter(isPdfUrl).map((url) => ({
+    url,
+    thumbnail_url: url,
+    preview_url: url,
+    file_name: pdfFileName(url),
+  }));
+
+  return {
+    categories: d.categories ?? [],
+    cuisines: d.cuisines ?? [],
+    name: d.name ?? '',
+    description: d.description ?? '',
+    phone: d.phone ?? '',
+    email: d.email ?? '',
+    website: d.website ?? '',
+    priceRange: d.price_range ?? '',
+    attributes,
+    interiorPhotos,
+    menuPhotos,
+    menuPdfs,
+    primaryPhotoUrl: d.primary_photo?.url ?? interiorPhotos[0]?.url ?? null,
+    city: d.city ?? '',
+    street: d.address ?? '',
+    building: '',
+    latitude: d.latitude,
+    longitude: d.longitude,
+    workingHours,
   };
 }

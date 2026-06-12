@@ -72,3 +72,14 @@ export async function submitEstablishment(
     { method: 'POST' },
   );
 }
+
+/**
+ * Re-enqueue OCR for the establishment's menu media — the recovery for the
+ * PUT-media-sync asymmetry (menu photos added via PUT do not auto-enqueue OCR;
+ * see Segment A Completion Report). POST /:id/retry-ocr.
+ */
+export async function retryOcr(id: string): Promise<unknown> {
+  return authedFetch(`${BASE}/${encodeURIComponent(id)}/retry-ocr`, {
+    method: 'POST',
+  });
+}

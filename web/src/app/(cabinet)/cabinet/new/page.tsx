@@ -5,5 +5,5 @@ import { EstablishmentWizard } from '@/components/cabinet/wizard/EstablishmentWi
  * (cabinet) layout. The wizard is a client island (controlled state + autosave).
  */
 export default function NewEstablishmentPage() {
-  return <EstablishmentWizard />;
+  return <EstablishmentWizard mode="create" />;
 }

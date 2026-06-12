@@ -26,19 +26,23 @@ export function StickySidebar({
   completeness,
   serverScore,
   canSubmit,
+  showSubmit,
   submitting,
   onSubmit,
   saveLabel,
   error,
+  notice,
 }: {
   e1: E1Checklist;
   completeness: number;
   serverScore: number | null;
   canSubmit: boolean;
+  showSubmit: boolean;
   submitting: boolean;
   onSubmit: () => void;
   saveLabel: string;
   error: string | null;
+  notice: string | null;
 }) {
   const score = serverScore ?? completeness;
   const clamped = Math.max(0, Math.min(100, score));
@@ -85,14 +89,23 @@ export function StickySidebar({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Button type="button" disabled={!canSubmit || submitting} onClick={onSubmit}>
-          {submitting ? 'Отправка…' : 'Отправить на модерацию'}
-        </Button>
+        {showSubmit && (
+          <Button
+            type="button"
+            disabled={!canSubmit || submitting}
+            onClick={onSubmit}
+          >
+            {submitting ? 'Отправка…' : 'Отправить на модерацию'}
+          </Button>
+        )}
         <p className="text-center text-caption-m text-figma-text-grey">
           {saveLabel}
         </p>
         {error && (
           <p className="text-center text-caption-m text-error-dark">{error}</p>
+        )}
+        {notice && (
+          <p className="text-center text-caption-m text-success-dark">{notice}</p>
         )}
       </div>
     </aside>

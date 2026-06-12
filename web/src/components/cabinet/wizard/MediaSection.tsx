@@ -11,11 +11,17 @@ import {
   MEDIA_LIMITS,
 } from '@/lib/partner/constants';
 import type { WizardPdf, WizardPhoto } from '@/lib/partner/form';
-import { uploadMedia } from '@/lib/partner/upload';
+import { uploadMedia, uploadMediaToEstablishment } from '@/lib/partner/upload';
 import { cn } from '@/lib/utils';
 
 import { Field, SectionCard } from './primitives';
 import type { SectionProps } from './types';
+
+/** Edit mode passes the establishment id (PDF-add routing) + the OCR-retry handler. */
+type MediaSectionProps = SectionProps & {
+  establishmentId?: string;
+  onRetryOcr?: () => void;
+};
 
 /*
  * Media — two buckets (Decision: photos[type=interior] / menu[photo + PDF≤2]).
@@ -24,7 +30,13 @@ import type { SectionProps } from './types';
  * photos. All uploads in one picker batch are awaited, THEN the form is patched
  * once (a per-file patch would read stale state across the loop).
  */
-export function MediaSection({ form, patch, disabled }: SectionProps) {
+export function MediaSection({
+  form,
+  patch,
+  disabled,
+  establishmentId,
+  onRetryOcr,
+}: MediaSectionProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const interiorRef = useRef<HTMLInputElement>(null);
@@ -82,7 +94,11 @@ export function MediaSection({ form, patch, disabled }: SectionProps) {
         setError(`Максимум ${MAX_MENU_PDFS} PDF меню.`);
         break;
       }
-      const r = await uploadMedia(file, 'menu');
+      // In edit mode a PDF must attach to the establishment (POST /:id/media —
+      // the only path that attaches + OCRs it); in create it goes to temp upload.
+      const r = establishmentId
+        ? await uploadMediaToEstablishment(file, establishmentId, 'menu')
+        : await uploadMedia(file, 'menu');
       if (!r.ok) {
         setError(r.message);
         break;
@@ -243,6 +259,19 @@ export function MediaSection({ form, patch, disabled }: SectionProps) {
         <p className="text-caption-m text-figma-text-grey">Загрузка…</p>
       )}
       {error && <p className="text-caption-m text-error-dark">{error}</p>}
+
+      {establishmentId &&
+        onRetryOcr &&
+        (form.menuPhotos.length > 0 || form.menuPdfs.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onRetryOcr}>
+              Обновить распознавание меню
+            </Button>
+            <span className="text-caption-m text-figma-text-grey">
+              если новые фото меню не распознались
+            </span>
+          </div>
+        )}
     </SectionCard>
   );
 }

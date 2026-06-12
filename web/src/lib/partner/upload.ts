@@ -42,3 +42,54 @@ export async function uploadMedia(
     };
   }
 }
+
+/**
+ * Attach media to an EXISTING establishment (edit mode) — POST /:id/media, the
+ * only path that attaches a PDF post-create AND enqueues its OCR (Q1). Returns a
+ * TempMediaResponse-shaped result; the backend media record fields are mapped
+ * defensively (url is the contract; the rest fall back to it).
+ */
+export async function uploadMediaToEstablishment(
+  file: File,
+  establishmentId: string,
+  type: 'interior' | 'menu',
+): Promise<UploadResult> {
+  const fd = new FormData();
+  fd.append('type', type);
+  fd.append('file', file);
+
+  try {
+    const res = await fetch(
+      `/api/partner/establishments/${encodeURIComponent(establishmentId)}/media`,
+      { method: 'POST', body: fd },
+    );
+    const json = (await res.json().catch(() => null)) as {
+      success?: boolean;
+      data?: Partial<TempMediaResponse>;
+      error?: { message?: string };
+    } | null;
+
+    if (!res.ok || !json?.success || !json.data?.url) {
+      return {
+        ok: false,
+        message: json?.error?.message ?? `Ошибка загрузки (${res.status}).`,
+      };
+    }
+    // Accessed directly (not via an alias) so json.data.url stays narrowed to string.
+    return {
+      ok: true,
+      media: {
+        url: json.data.url,
+        thumbnail_url: json.data.thumbnail_url ?? json.data.url,
+        preview_url: json.data.preview_url ?? json.data.url,
+        public_id: json.data.public_id ?? '',
+        file_type: json.data.file_type ?? 'pdf',
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      message: 'Не удалось загрузить файл. Проверьте подключение.',
+    };
+  }
+}

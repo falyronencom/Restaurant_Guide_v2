@@ -2,7 +2,9 @@
 
 import {
   createEstablishment,
+  getEstablishment,
   listEstablishments,
+  retryOcr,
   submitEstablishment,
   updateEstablishment,
 } from '@/lib/api/endpoints/partner';
@@ -10,6 +12,7 @@ import {
   ApiError,
   type CreateEstablishmentPayload,
   type EstablishmentStatus,
+  type PartnerEstablishmentDetail,
   type PartnerEstablishmentListing,
   type SessionUser,
   type UpdateEstablishmentPayload,
@@ -112,6 +115,32 @@ export async function submitEstablishmentAction(
   try {
     const result = await submitEstablishment(id);
     return { ok: true, status: result.status, base_score: result.base_score };
+  } catch (err) {
+    return { ok: false, code: codeFromError(err) };
+  }
+}
+
+export type LoadDetailResult =
+  | { ok: true; establishment: PartnerEstablishmentDetail }
+  | { ok: false; code: string };
+
+/** Load a single establishment for the edit wizard. */
+export async function loadEstablishmentForEdit(
+  id: string,
+): Promise<LoadDetailResult> {
+  try {
+    const establishment = await getEstablishment(id);
+    return { ok: true, establishment };
+  } catch (err) {
+    return { ok: false, code: codeFromError(err) };
+  }
+}
+
+/** Re-enqueue menu OCR (recovery for the PUT-media-sync OCR asymmetry). */
+export async function retryOcrAction(id: string): Promise<WriteResult> {
+  try {
+    await retryOcr(id);
+    return { ok: true };
   } catch (err) {
     return { ok: false, code: codeFromError(err) };
   }
