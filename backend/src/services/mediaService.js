@@ -20,21 +20,14 @@ import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
 /**
- * Subscription tier upload limits
- * 
- * These limits control how many photos partners can upload based on their
- * subscription tier. The limits are enforced at the service layer before
- * allowing uploads to Cloudinary.
- * 
- * Limits are per media type (interior and menu are tracked separately).
- * Other types (exterior, dishes) share the interior limit for simplicity.
+ * Photo upload limits, unified across all subscription tiers (Phase C Slice 1).
+ *
+ * Limits are per media type bucket: 'menu' photos are tracked against the menu
+ * limit; all other types (interior, exterior, dishes) are each tracked against
+ * the interior limit value. Enforced at the service layer before Cloudinary
+ * upload, and at establishment create/update media materialization paths.
  */
-const MEDIA_LIMITS = {
-  free: { interior: 10, menu: 10 },
-  basic: { interior: 15, menu: 15 },
-  standard: { interior: 20, menu: 20 },
-  premium: { interior: 30, menu: 30 },
-};
+export const MEDIA_LIMITS = { interior: 30, menu: 30 };
 
 /**
  * Valid media type values
@@ -182,12 +175,11 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Determine which limit to check (menu uses menu limit, all others use interior limit)
     const limitType = type === 'menu' ? 'menu' : 'interior';
     const currentCount = mediaCounts[type] || 0;
-    const tierLimits = MEDIA_LIMITS[establishment.subscription_tier] || MEDIA_LIMITS.free;
-    const limit = tierLimits[limitType];
+    const limit = MEDIA_LIMITS[limitType];
 
     if (currentCount >= limit) {
       throw new AppError(
-        `Upload limit reached for ${type} photos. Your ${establishment.subscription_tier} tier allows ${limit} ${limitType} photos. Upgrade subscription to upload more.`,
+        `Upload limit reached for ${type} photos. Maximum ${limit} ${limitType} photos per establishment.`,
         403,
         'MEDIA_LIMIT_EXCEEDED',
       );
@@ -240,6 +232,18 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // If this is marked as primary, ensure other photos are not primary
     if (is_primary) {
       await MediaModel.setPrimaryPhoto(establishmentId, mediaRecord.id);
+    }
+
+    // Menu photos feed the same OCR pipeline as PDF menus (vision_image
+    // strategy). Fire-and-forget; idempotency in OcrJobModel.enqueue protects
+    // against duplicates.
+    if (type === 'menu') {
+      OcrJobModel.enqueue({ establishmentId, mediaId: mediaRecord.id })
+        .catch((err) => logger.error('Failed to enqueue OCR job after menu photo upload', {
+          error: err.message,
+          mediaId: mediaRecord.id,
+          establishmentId,
+        }));
     }
 
     logger.info('Media uploaded successfully', {

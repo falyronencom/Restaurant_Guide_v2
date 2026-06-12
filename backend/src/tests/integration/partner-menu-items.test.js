@@ -53,6 +53,17 @@ async function seedPdfMedia(establishmentId) {
   return res.rows[0].id;
 }
 
+async function seedPhotoMedia(establishmentId, type) {
+  const res = await query(
+    `INSERT INTO establishment_media
+       (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+     VALUES ($1, $2, 'image', 'http://test/photo.jpg', 'http://test/photo-t.jpg', 'http://test/photo-p.jpg')
+     RETURNING id`,
+    [establishmentId, type],
+  );
+  return res.rows[0].id;
+}
+
 async function seedMenuItem(establishmentId, mediaId, overrides = {}) {
   const {
     itemName = 'Капучино',
@@ -219,9 +230,54 @@ describe('POST /api/v1/partner/establishments/:id/retry-ocr', () => {
     expect(jobs.rows).toHaveLength(2);
   });
 
-  test('returns 400 when establishment has no PDF menus', async () => {
+  test('enqueues OCR job for menu photo when no PDFs exist (vision_image parity)', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
+    await seedPhotoMedia(estId, 'menu');
+
+    const res = await request(app)
+      .post(`/api/v1/partner/establishments/${estId}/retry-ocr`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(202);
+
+    expect(res.body.data.totalPdfs).toBe(1);
+    expect(res.body.data.enqueuedJobs).toBe(1);
+
+    const jobs = await query(
+      'SELECT id FROM ocr_jobs WHERE establishment_id = $1',
+      [estId],
+    );
+    expect(jobs.rows).toHaveLength(1);
+  });
+
+  test('mixed media: PDFs and menu photos enqueued, interior photos excluded', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const pdfId = await seedPdfMedia(estId);
+    const menuPhotoId = await seedPhotoMedia(estId, 'menu');
+    await seedPhotoMedia(estId, 'interior');
+
+    const res = await request(app)
+      .post(`/api/v1/partner/establishments/${estId}/retry-ocr`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(202);
+
+    expect(res.body.data.totalPdfs).toBe(2);
+    expect(res.body.data.enqueuedJobs).toBe(2);
+
+    const jobs = await query(
+      'SELECT media_id FROM ocr_jobs WHERE establishment_id = $1',
+      [estId],
+    );
+    const jobMediaIds = jobs.rows.map((r) => r.media_id).sort();
+    expect(jobMediaIds).toEqual([pdfId, menuPhotoId].sort());
+  });
+
+  test('returns 400 when establishment has no PDF menus or menu photos', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    // interior photo present — still not OCR-eligible
+    await seedPhotoMedia(estId, 'interior');
 
     const res = await request(app)
       .post(`/api/v1/partner/establishments/${estId}/retry-ocr`)

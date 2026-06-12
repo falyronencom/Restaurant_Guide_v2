@@ -134,6 +134,131 @@ describe('Establishments System - Create Establishment', () => {
     });
   });
 
+  describe('POST/PUT - Media Materialization Limits & OCR enqueue', () => {
+    const photoUrls = (count, prefix) => Array.from(
+      { length: count },
+      (_, i) => `https://res.cloudinary.com/test/image/upload/${prefix}-${i}.jpg`,
+    );
+
+    const pollOcrJobs = async (establishmentId, expected, timeoutMs = 2000) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const jobs = await query(
+          'SELECT media_id FROM ocr_jobs WHERE establishment_id = $1',
+          [establishmentId],
+        );
+        if (jobs.rows.length >= expected || Date.now() > deadline) {
+          return jobs.rows;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    };
+
+    test('create accepts 30 interior photos at the bucket limit', async () => {
+      const data = { ...testEstablishments[0], interior_photos: photoUrls(30, 'interior') };
+
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(data)
+        .expect(201);
+
+      const media = await query(
+        "SELECT id FROM establishment_media WHERE establishment_id = $1 AND type = 'interior'",
+        [response.body.data.establishment.id],
+      );
+      expect(media.rows).toHaveLength(30);
+    });
+
+    test('create rejects 31 interior photos with MEDIA_LIMIT_EXCEEDED, no orphan row', async () => {
+      const data = { ...testEstablishments[0], interior_photos: photoUrls(31, 'interior') };
+
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(data)
+        .expect(403);
+
+      expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+
+      // Validation fires before the INSERT — no orphan establishment row.
+      const rows = await query('SELECT id FROM establishments', []);
+      expect(rows.rows).toHaveLength(0);
+    });
+
+    test('create rejects 31 menu photos with MEDIA_LIMIT_EXCEEDED', async () => {
+      const data = { ...testEstablishments[0], menu_photos: photoUrls(31, 'menu') };
+
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(data)
+        .expect(403);
+
+      expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+    });
+
+    test('create with menu photos enqueues OCR jobs for them only (vision_image parity)', async () => {
+      const data = {
+        ...testEstablishments[0],
+        interior_photos: photoUrls(2, 'interior'),
+        menu_photos: photoUrls(2, 'menu'),
+      };
+
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(data)
+        .expect(201);
+
+      const estId = response.body.data.establishment.id;
+      const jobs = await pollOcrJobs(estId, 2);
+      expect(jobs).toHaveLength(2);
+
+      const menuMedia = await query(
+        "SELECT id FROM establishment_media WHERE establishment_id = $1 AND type = 'menu'",
+        [estId],
+      );
+      expect(jobs.map((j) => j.media_id).sort())
+        .toEqual(menuMedia.rows.map((r) => r.id).sort());
+    });
+
+    test('PUT media-sync rejects 31 photos per bucket, accepts 30', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const over = await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: photoUrls(31, 'interior') })
+        .expect(403);
+      expect(over.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+
+      const overMenu = await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: photoUrls(31, 'menu') })
+        .expect(403);
+      expect(overMenu.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: photoUrls(30, 'interior') })
+        .expect(200);
+
+      const media = await query(
+        "SELECT id FROM establishment_media WHERE establishment_id = $1 AND type = 'interior'",
+        [estId],
+      );
+      expect(media.rows).toHaveLength(30);
+    });
+  });
+
   describe('POST /api/v1/partner/establishments - Belarus City Validation', () => {
     test('should accept Минск', async () => {
       const data = { ...testEstablishments[0], city: 'Минск' };

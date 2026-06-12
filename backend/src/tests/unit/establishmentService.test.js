@@ -141,6 +141,32 @@ describe('establishmentService', () => {
       });
     });
 
+    test('rejects 31 interior photos with MEDIA_LIMIT_EXCEEDED before any DB write', async () => {
+      const data = {
+        ...validEstablishmentData,
+        interior_photos: Array.from({ length: 31 }, (_, i) => `https://cdn.test/interior-${i}.jpg`),
+      };
+
+      await expect(createEstablishment(partnerId, data)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'MEDIA_LIMIT_EXCEEDED',
+      });
+      expect(EstablishmentModel.createEstablishment).not.toHaveBeenCalled();
+    });
+
+    test('rejects 31 menu photos with MEDIA_LIMIT_EXCEEDED before any DB write', async () => {
+      const data = {
+        ...validEstablishmentData,
+        menu_photos: Array.from({ length: 31 }, (_, i) => `https://cdn.test/menu-${i}.jpg`),
+      };
+
+      await expect(createEstablishment(partnerId, data)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'MEDIA_LIMIT_EXCEEDED',
+      });
+      expect(EstablishmentModel.createEstablishment).not.toHaveBeenCalled();
+    });
+
     test('should accept all valid Belarus cities', async () => {
       // Each city needs coordinates within its CITY_BOUNDS
       const citiesWithCoords = [

@@ -236,6 +236,65 @@ describe('OCR pipeline integration', () => {
     expect(chatCallCount).toBe(2);
   });
 
+  test('menu photo (file_type=image) → vision_image strategy, items persisted', async () => {
+    const { mediaId } = await insertTestMedia(establishment.id, 'image');
+
+    const structuredItems = [
+      { item_name: 'Фото-блюдо', price_byn: 9, category_raw: null, confidence: 0.9 },
+    ];
+
+    // Two OpenRouter calls: vision extract (photo URL directly, no pg_N pages),
+    // then structurer.
+    let chatCallCount = 0;
+    global.fetch = jest.fn(async (url) => {
+      if (url.includes('/chat/completions')) {
+        chatCallCount++;
+        if (chatCallCount === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              choices: [{ message: { content: 'Фото-блюдо — 9 руб' } }],
+            }),
+            text: async () => '',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              { message: { content: JSON.stringify({ items: structuredItems }) } },
+            ],
+          }),
+          text: async () => '',
+        };
+      }
+      return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(64) };
+    });
+
+    await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+    const picked = await ocrJobModel.pickNextPending();
+    const result = await ocrService.processJob(picked.id);
+
+    expect(result.success).toBe(true);
+    expect(result.itemCount).toBe(1);
+
+    const finalJob = await ocrJobModel.getJobStatus(picked.id);
+    expect(finalJob.status).toBe('done');
+    expect(finalJob.result_summary.strategy).toBe('vision_image');
+    expect(chatCallCount).toBe(2);
+    // Photos never touch the pdf-parse path.
+    expect(pdfParseModule.default).not.toHaveBeenCalled();
+
+    const persistedItems = await menuItemModel.getByEstablishmentId(establishment.id, {
+      includeHidden: true,
+    });
+    expect(persistedItems).toHaveLength(1);
+    expect(persistedItems[0].item_name).toBe('Фото-блюдо');
+    expect(persistedItems[0].media_id).toBe(mediaId);
+  });
+
   test('structurer throws → markFailed returns job to pending (retry)', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
 

@@ -114,9 +114,15 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
 };
 
 /**
- * Re-run OCR for all PDF menus of an establishment owned by the partner.
+ * Re-run OCR for all OCR-eligible menu media of an establishment owned by the
+ * partner: PDF menus plus menu photos (vision_image strategy).
  * Idempotency in OcrJobModel.enqueue ensures existing pending/processing jobs
  * are not duplicated.
+ *
+ * Contract note: the error code NO_PDF_MENUS and the response key totalPdfs
+ * predate menu-photo support and are kept verbatim — mobile matches on the
+ * code (partner_menu_screen) and renaming would widen the blast radius of
+ * this backend-only slice. totalPdfs now carries the eligible-media count.
  *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
@@ -132,24 +138,24 @@ export const retryOcr = async (partnerId, establishmentId) => {
     );
   }
 
-  const pdfs = await MediaModel.getPdfMediaByEstablishment(establishmentId);
-  if (pdfs.length === 0) {
+  const eligibleMedia = await MediaModel.getOcrEligibleMedia(establishmentId);
+  if (eligibleMedia.length === 0) {
     throw new AppError(
-      'No PDF menus to re-process for this establishment',
+      'No menu media (PDF or menu photos) to re-process for this establishment',
       400,
       'NO_PDF_MENUS',
     );
   }
 
   let enqueuedJobs = 0;
-  for (const pdf of pdfs) {
+  for (const media of eligibleMedia) {
     try {
-      await OcrJobModel.enqueue({ establishmentId, mediaId: pdf.id });
+      await OcrJobModel.enqueue({ establishmentId, mediaId: media.id });
       enqueuedJobs += 1;
     } catch (err) {
       logger.error('Failed to enqueue OCR job during retry', {
         error: err.message,
-        mediaId: pdf.id,
+        mediaId: media.id,
         establishmentId,
       });
     }
@@ -158,9 +164,9 @@ export const retryOcr = async (partnerId, establishmentId) => {
   logger.info('Partner requested OCR retry', {
     partnerId,
     establishmentId,
-    totalPdfs: pdfs.length,
+    totalEligibleMedia: eligibleMedia.length,
     enqueuedJobs,
   });
 
-  return { enqueuedJobs, totalPdfs: pdfs.length };
+  return { enqueuedJobs, totalPdfs: eligibleMedia.length };
 };

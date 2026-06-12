@@ -151,27 +151,29 @@ router.put(
 
 /**
  * Submit establishment for moderation
- * 
+ *
  * POST /api/v1/partner/establishments/:id/submit
- * 
- * Changes establishment status from 'draft' to 'pending' after validating
- * that all required information is complete and required media is uploaded.
- * 
+ *
+ * Changes establishment status to 'pending' after validating that all
+ * required content fields are complete.
+ *
  * Path parameters:
  * - id: UUID of the establishment
- * 
+ *
  * Flow: Authentication → Authorization → Validation → Controller → Service → Pre-submission Checks
- * 
+ *
  * Returns: Updated establishment with 'pending' status
- * 
+ *
  * Protected: Yes (partner role required, ownership verified)
- * 
+ *
  * Pre-submission requirements (enforced by service layer):
- * - Establishment must be in 'draft' status
- * - All required fields must be complete
- * - At least 1 interior photo uploaded
- * - At least 1 menu photo uploaded
- * - Primary photo must be set
+ * - Establishment must be in 'draft', 'rejected', or 'suspended' status
+ * - Required content fields complete: name, city, address, coordinates,
+ *   categories, cuisines, working_hours
+ *
+ * Note: media completeness (photo minimums, primary photo) is NOT enforced
+ * server-side — it is a procedural gate applied by clients (E1 checklist)
+ * and by moderation.
  */
 router.post(
   '/:id/submit',

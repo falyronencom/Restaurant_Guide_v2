@@ -19,6 +19,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
+import { MEDIA_LIMITS } from './mediaService.js';
 
 /**
  * Statuses in which a partner-driven name change triggers slug regeneration.
@@ -248,6 +249,25 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       );
     }
 
+    // Enforce photo bucket limits at materialization — the wizard path carries
+    // temp-upload URLs in the payload and bypasses the per-upload check in
+    // mediaService, so the count must be validated here.
+    if (Array.isArray(interior_photos) && interior_photos.length > MEDIA_LIMITS.interior) {
+      throw new AppError(
+        `Upload limit reached for interior photos. Maximum ${MEDIA_LIMITS.interior} interior photos per establishment.`,
+        403,
+        'MEDIA_LIMIT_EXCEEDED',
+      );
+    }
+
+    if (Array.isArray(menu_photos) && menu_photos.length > MEDIA_LIMITS.menu) {
+      throw new AppError(
+        `Upload limit reached for menu photos. Maximum ${MEDIA_LIMITS.menu} menu photos per establishment.`,
+        403,
+        'MEDIA_LIMIT_EXCEEDED',
+      );
+    }
+
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
     if (isDuplicate) {
@@ -328,12 +348,29 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         })
       );
 
-      await Promise.all(mediaPromises);
+      const mediaRecords = await Promise.all(mediaPromises);
 
       logger.info('Media saved to establishment_media', {
         establishmentId: establishment.id,
         interiorCount: interior_photos?.length || 0,
         menuCount: menu_photos?.length || 0,
+      });
+
+      // Menu photos enter the OCR pipeline in parity with PDF menus below
+      // (vision_image strategy). Fire-and-forget — enqueue failure must not
+      // fail registration finalization. allPhotos[i] corresponds to
+      // mediaRecords[i] (Promise.all preserves order).
+      mediaRecords.forEach((record, index) => {
+        if (allPhotos[index].type === 'menu') {
+          OcrJobModel.enqueue({
+            establishmentId: establishment.id,
+            mediaId: record.id,
+          }).catch((err) => logger.error('Failed to enqueue OCR job for menu photo on registration finalize', {
+            error: err.message,
+            mediaId: record.id,
+            establishmentId: establishment.id,
+          }));
+        }
       });
     }
 
@@ -876,6 +913,20 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Sync media if interior_photos or menu_photos are provided
     const hasMediaUpdates = updates.interior_photos !== undefined || updates.menu_photos !== undefined;
     if (hasMediaUpdates) {
+      // Enforce photo bucket limits on the sync path — it replaces the bucket
+      // state wholesale (final count = incoming array length) and otherwise
+      // bypasses the per-upload check in mediaService.
+      for (const [field, bucket] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
+        const incoming = updates[field];
+        if (Array.isArray(incoming) && incoming.length > MEDIA_LIMITS[bucket]) {
+          throw new AppError(
+            `Upload limit reached for ${bucket} photos. Maximum ${MEDIA_LIMITS[bucket]} ${bucket} photos per establishment.`,
+            403,
+            'MEDIA_LIMIT_EXCEEDED',
+          );
+        }
+      }
+
       const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const primaryPhotoUrl = updates.primary_photo || null;
 
@@ -1053,16 +1104,16 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
 
 /**
  * Submit establishment for moderation
- * 
+ *
  * Pre-submission validation ensures establishment is ready for review:
- * - Must be in 'draft' status
- * - All required fields complete
- * - At least 1 interior photo uploaded (checked by service)
- * - At least 1 menu photo uploaded (checked by service)
- * - Primary photo is set (checked by service)
- * 
- * Note: Media validation will be implemented in Phase Two when media service exists
- * 
+ * - Must be in 'draft', 'rejected', or 'suspended' status
+ * - Required content fields complete: name, city, address, coordinates,
+ *   categories, cuisines, working_hours
+ *
+ * Note: media completeness (photo minimums, primary photo) is NOT enforced
+ * server-side — it is a procedural gate applied by clients (E1 checklist)
+ * and by moderation.
+ *
  * @param {string} establishmentId - UUID of the establishment
  * @param {string} partnerId - UUID of the authenticated partner
  * @returns {Promise<Object>} Updated establishment with 'pending' status

@@ -214,7 +214,7 @@ export async function verifyCredentials(credentials) {
 /**
  * Generates a new pair of access and refresh tokens for a user
  * 
- * Access tokens are short-lived (15 minutes) JWT tokens that authenticate API requests.
+ * Access tokens are short-lived (4 hours, JWT_ACCESS_EXPIRY) JWT tokens that authenticate API requests.
  * Refresh tokens are long-lived (30 days) and stored in database for validation.
  * 
  * The token pair allows secure, stateless authentication while maintaining the ability

@@ -529,8 +529,9 @@ export const countPdfMedia = async (establishmentId) => {
 /**
  * Fetch all PDF menu media rows for an establishment.
  *
- * Used by OCR trigger paths (admin approve backfill, partner retry-ocr endpoint)
- * that need the actual media_ids to enqueue jobs.
+ * NOTE: no longer used by the OCR trigger paths — they switched to
+ * getOcrEligibleMedia (PDFs + menu photos) in Phase C Slice 1. Kept as a
+ * general-purpose PDF fetcher.
  *
  * @param {string} establishmentId - UUID
  * @returns {Promise<Object[]>} PDF media rows ordered by position
@@ -548,6 +549,38 @@ export const getPdfMediaByEstablishment = async (establishmentId) => {
     return result.rows;
   } catch (error) {
     logger.error('Error fetching PDF media', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Fetch all OCR-eligible media rows for an establishment: PDF menus plus
+ * menu photos (file_type='image' AND type='menu').
+ *
+ * Used by OCR trigger paths (admin approve backfill, partner retry-ocr
+ * endpoint) — menu photos feed the same pipeline as PDFs via the
+ * vision_image strategy.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<Object[]>} Array of establishment_media rows
+ */
+export const getOcrEligibleMedia = async (establishmentId) => {
+  const query = `
+    SELECT *
+    FROM establishment_media
+    WHERE establishment_id = $1
+      AND (file_type = 'pdf' OR (file_type = 'image' AND type = 'menu'))
+    ORDER BY position ASC, created_at ASC
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId]);
+    return result.rows;
+  } catch (error) {
+    logger.error('Error fetching OCR-eligible media', {
       error: error.message,
       establishmentId,
     });

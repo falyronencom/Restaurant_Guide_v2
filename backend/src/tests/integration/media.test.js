@@ -5,7 +5,7 @@
  *
  * Tests all media management endpoints and business logic:
  * - Upload media with Cloudinary integration (mocked)
- * - Tier-based upload limits (free, basic, standard, premium)
+ * - Unified upload limits (30 photos per bucket, tier-independent)
  * - Media listing and filtering
  * - Primary photo management
  * - Media update and deletion
@@ -284,78 +284,9 @@ describe('Media System - Upload Operations', () => {
     });
   });
 
-  describe('Tier-Based Upload Limits', () => {
-    test('FREE tier: should allow 10 interior photos', async () => {
-      for (let i = 0; i < 10; i++) {
-        await request(app)
-          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-          .set('Authorization', `Bearer ${partnerToken}`)
-          .field('type', 'interior')
-          .attach('file', Buffer.from(`fake image ${i}`), `test-${i}.jpg`)
-          .expect(201);
-      }
-
-      const mediaList = await request(app)
-        .get(`/api/v1/partner/establishments/${establishment.id}/media`)
-        .set('Authorization', `Bearer ${partnerToken}`)
-        .expect(200);
-
-      expect(mediaList.body.data).toHaveLength(10);
-    });
-
-    test('FREE tier: should reject 11th interior photo', async () => {
-      for (let i = 0; i < 10; i++) {
-        await request(app)
-          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-          .set('Authorization', `Bearer ${partnerToken}`)
-          .field('type', 'interior')
-          .attach('file', Buffer.from(`fake image ${i}`), `test-${i}.jpg`)
-          .expect(201);
-      }
-
-      const response = await request(app)
-        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-        .set('Authorization', `Bearer ${partnerToken}`)
-        .field('type', 'interior')
-        .attach('file', Buffer.from('fake image 11'), 'test-11.jpg')
-        .expect(403);
-
-      expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
-    });
-
-    test('FREE tier: should allow 10 menu photos separately from interior', async () => {
-      for (let i = 0; i < 10; i++) {
-        await request(app)
-          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-          .set('Authorization', `Bearer ${partnerToken}`)
-          .field('type', 'interior')
-          .attach('file', Buffer.from(`interior ${i}`), `interior-${i}.jpg`)
-          .expect(201);
-      }
-
-      for (let i = 0; i < 10; i++) {
-        await request(app)
-          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-          .set('Authorization', `Bearer ${partnerToken}`)
-          .field('type', 'menu')
-          .attach('file', Buffer.from(`menu ${i}`), `menu-${i}.jpg`)
-          .expect(201);
-      }
-
-      const mediaList = await request(app)
-        .get(`/api/v1/partner/establishments/${establishment.id}/media`)
-        .set('Authorization', `Bearer ${partnerToken}`)
-        .expect(200);
-
-      expect(mediaList.body.data).toHaveLength(20);
-    });
-
-    test('PREMIUM tier: should allow 30 interior photos', async () => {
-      await pool.query(
-        'UPDATE establishments SET subscription_tier = $1 WHERE id = $2',
-        ['premium', establishment.id]
-      );
-
+  describe('Upload Limits (unified, tier-independent)', () => {
+    test('allows 30 interior photos on default (free) tier', async () => {
+      // No subscription_tier update — limits no longer depend on tier.
       for (let i = 0; i < 30; i++) {
         await request(app)
           .post(`/api/v1/partner/establishments/${establishment.id}/media`)
@@ -373,12 +304,7 @@ describe('Media System - Upload Operations', () => {
       expect(mediaList.body.data).toHaveLength(30);
     });
 
-    test('PREMIUM tier: should reject 31st interior photo', async () => {
-      await pool.query(
-        'UPDATE establishments SET subscription_tier = $1 WHERE id = $2',
-        ['premium', establishment.id]
-      );
-
+    test('rejects 31st interior photo; exterior and dishes counters unaffected', async () => {
       for (let i = 0; i < 30; i++) {
         await request(app)
           .post(`/api/v1/partner/establishments/${establishment.id}/media`)
@@ -396,37 +322,105 @@ describe('Media System - Upload Operations', () => {
         .expect(403);
 
       expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
-    });
 
-    test('exterior and dishes types use interior limit independently', async () => {
-      // Per-type counting: each type gets its own count against the interior limit (10).
-      // Upload 10 exterior (at limit)
-      for (let i = 0; i < 10; i++) {
-        await request(app)
-          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-          .set('Authorization', `Bearer ${partnerToken}`)
-          .field('type', 'exterior')
-          .attach('file', Buffer.from(`exterior ${i}`), `exterior-${i}.jpg`)
-          .expect(201);
-      }
-
-      // 11th exterior should fail
-      const response = await request(app)
+      // Per-type counters: exterior and dishes have their own counts against
+      // the interior limit value, so they are still accepted.
+      await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
         .field('type', 'exterior')
-        .attach('file', Buffer.from('exterior extra'), 'exterior-extra.jpg')
-        .expect(403);
+        .attach('file', Buffer.from('exterior 1'), 'exterior-1.jpg')
+        .expect(201);
 
-      expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
-
-      // But dishes should still be allowed (separate count)
       await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
         .field('type', 'dishes')
         .attach('file', Buffer.from('dishes 1'), 'dishes-1.jpg')
         .expect(201);
+    });
+
+    test('rejects 31st menu photo; interior bucket unaffected', async () => {
+      for (let i = 0; i < 30; i++) {
+        await request(app)
+          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .field('type', 'menu')
+          .attach('file', Buffer.from(`menu ${i}`), `menu-${i}.jpg`)
+          .expect(201);
+      }
+
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('menu 31'), 'menu-31.jpg')
+        .expect(403);
+
+      expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+
+      // Menu bucket is independent from the interior bucket.
+      await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'interior')
+        .attach('file', Buffer.from('interior 1'), 'interior-1.jpg')
+        .expect(201);
+    });
+  });
+
+  describe('Menu photo OCR enqueue (vision_image parity)', () => {
+    // Enqueue is fire-and-forget after the upload response — poll briefly
+    // instead of asserting immediately (avoids missing-await flakiness).
+    async function pollJobs(establishmentId, expected, timeoutMs = 2000) {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const res = await pool.query(
+          'SELECT media_id, status FROM ocr_jobs WHERE establishment_id = $1',
+          [establishmentId],
+        );
+        if (res.rows.length >= expected || Date.now() > deadline) {
+          return res.rows;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+
+    test('menu photo upload enqueues a pending OCR job for that media', async () => {
+      await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('menu photo'), 'menu-photo.jpg')
+        .expect(201);
+
+      const jobs = await pollJobs(establishment.id, 1);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].status).toBe('pending');
+
+      const media = await pool.query(
+        "SELECT id FROM establishment_media WHERE establishment_id = $1 AND type = 'menu' AND file_type = 'image'",
+        [establishment.id],
+      );
+      expect(jobs[0].media_id).toBe(media.rows[0].id);
+    });
+
+    test('interior photo upload does NOT enqueue an OCR job', async () => {
+      await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'interior')
+        .attach('file', Buffer.from('interior photo'), 'interior-photo.jpg')
+        .expect(201);
+
+      // Fixed grace period — polling for absence is not possible.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const jobs = await pool.query(
+        'SELECT id FROM ocr_jobs WHERE establishment_id = $1',
+        [establishment.id],
+      );
+      expect(jobs.rows).toHaveLength(0);
     });
   });
 

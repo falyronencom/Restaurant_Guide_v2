@@ -39,7 +39,7 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
 
 jest.unstable_mockModule('../../models/mediaModel.js', () => ({
   getEstablishmentMedia: jest.fn(),
-  getPdfMediaByEstablishment: jest.fn(),
+  getOcrEligibleMedia: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
@@ -184,7 +184,7 @@ beforeEach(() => {
   AuditLogModel.createAuditLog.mockResolvedValue(undefined);
   NotificationService.notifyEstablishmentStatusChange.mockResolvedValue(undefined);
   NotificationService.notifyEstablishmentClaimed.mockResolvedValue(undefined);
-  MediaModel.getPdfMediaByEstablishment.mockResolvedValue([]);
+  MediaModel.getOcrEligibleMedia.mockResolvedValue([]);
   MediaModel.getEstablishmentMedia.mockResolvedValue([]);
   PartnerDocumentsModel.findByEstablishmentId.mockResolvedValue(null);
   OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
@@ -367,19 +367,20 @@ describe('moderateEstablishment', () => {
     });
   });
 
-  test('approve enqueues OCR jobs for PDFs without completed job', async () => {
+  test('approve enqueues OCR jobs for eligible media (PDFs + menu photos) without completed job', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
     EstablishmentModel.moderateEstablishment.mockResolvedValue(
       baseEstablishment({ status: 'active' }),
     );
     const pdf1 = { id: uuidv4() };
-    const pdf2 = { id: uuidv4() };
-    MediaModel.getPdfMediaByEstablishment.mockResolvedValue([pdf1, pdf2]);
+    const menuPhoto = { id: uuidv4() };
+    MediaModel.getOcrEligibleMedia.mockResolvedValue([pdf1, menuPhoto]);
     OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
 
     await moderateEstablishment(EST_ID, { ...baseParams, action: 'approve' });
     await flushPromises();
 
+    expect(MediaModel.getOcrEligibleMedia).toHaveBeenCalledWith(EST_ID);
     expect(OcrJobModel.enqueue).toHaveBeenCalledTimes(2);
     expect(OcrJobModel.enqueue).toHaveBeenCalledWith({
       establishmentId: EST_ID,
@@ -387,18 +388,18 @@ describe('moderateEstablishment', () => {
     });
     expect(OcrJobModel.enqueue).toHaveBeenCalledWith({
       establishmentId: EST_ID,
-      mediaId: pdf2.id,
+      mediaId: menuPhoto.id,
     });
   });
 
-  test('approve skips OCR enqueue for PDFs with completed job (idempotency)', async () => {
+  test('approve skips OCR enqueue for eligible media with completed job (idempotency)', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
     EstablishmentModel.moderateEstablishment.mockResolvedValue(
       baseEstablishment({ status: 'active' }),
     );
-    const pdfDone = { id: uuidv4() };
-    const pdfPending = { id: uuidv4() };
-    MediaModel.getPdfMediaByEstablishment.mockResolvedValue([pdfDone, pdfPending]);
+    const mediaDone = { id: uuidv4() };
+    const mediaPending = { id: uuidv4() };
+    MediaModel.getOcrEligibleMedia.mockResolvedValue([mediaDone, mediaPending]);
     OcrJobModel.hasCompletedJobForMedia
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
@@ -409,7 +410,7 @@ describe('moderateEstablishment', () => {
     expect(OcrJobModel.enqueue).toHaveBeenCalledTimes(1);
     expect(OcrJobModel.enqueue).toHaveBeenCalledWith({
       establishmentId: EST_ID,
-      mediaId: pdfPending.id,
+      mediaId: mediaPending.id,
     });
   });
 

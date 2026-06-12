@@ -274,18 +274,19 @@ export const moderateEstablishment = async (establishmentId, params) => {
     ).catch(() => {});
 
     // Backfill OCR jobs on approve — covers establishments created before the
-    // OCR pipeline existed, or PDFs whose earlier job permanently failed.
+    // OCR pipeline existed, or media whose earlier job permanently failed.
+    // Eligible media = PDF menus + menu photos (vision_image strategy).
     // Idempotency in OcrJobModel.enqueue protects against duplicates for
     // already-pending/processing jobs; hasCompletedJobForMedia filters out
-    // finished ones so we never re-process done PDFs on repeated approvals.
+    // finished ones so we never re-process done media on repeated approvals.
     if (action === 'approve') {
       (async () => {
         try {
-          const pdfs = await MediaModel.getPdfMediaByEstablishment(establishmentId);
-          for (const pdf of pdfs) {
-            const alreadyDone = await OcrJobModel.hasCompletedJobForMedia(pdf.id);
+          const eligibleMedia = await MediaModel.getOcrEligibleMedia(establishmentId);
+          for (const media of eligibleMedia) {
+            const alreadyDone = await OcrJobModel.hasCompletedJobForMedia(media.id);
             if (!alreadyDone) {
-              await OcrJobModel.enqueue({ establishmentId, mediaId: pdf.id });
+              await OcrJobModel.enqueue({ establishmentId, mediaId: media.id });
             }
           }
         } catch (err) {
