@@ -1,4 +1,18 @@
 import type { TempMediaResponse } from '@/lib/api/types';
+import { messageForEstablishmentError } from '@/lib/partner/errors';
+
+/** Russify an upload failure by backend code; a raw 413 is the Railway edge cap. */
+function uploadFailure(
+  code: string | undefined,
+  status: number,
+): { ok: false; message: string } {
+  return {
+    ok: false,
+    message: messageForEstablishmentError(
+      code ?? (status === 413 ? 'HTTP_413' : undefined),
+    ),
+  };
+}
 
 /*
  * Client-side media upload helper (Phase C Slice 1, Segment B). Posts a single
@@ -25,14 +39,15 @@ export async function uploadMedia(
   try {
     const res = await fetch('/api/partner/media', { method: 'POST', body: fd });
     const json = (await res.json().catch(() => null)) as
-      | { success?: boolean; data?: TempMediaResponse; error?: { message?: string } }
+      | {
+          success?: boolean;
+          data?: TempMediaResponse;
+          error?: { message?: string; code?: string };
+        }
       | null;
 
     if (!res.ok || !json?.success || !json.data) {
-      return {
-        ok: false,
-        message: json?.error?.message ?? `Ошибка загрузки (${res.status}).`,
-      };
+      return uploadFailure(json?.error?.code, res.status);
     }
     return { ok: true, media: json.data };
   } catch {
@@ -66,14 +81,11 @@ export async function uploadMediaToEstablishment(
     const json = (await res.json().catch(() => null)) as {
       success?: boolean;
       data?: Partial<TempMediaResponse>;
-      error?: { message?: string };
+      error?: { message?: string; code?: string };
     } | null;
 
     if (!res.ok || !json?.success || !json.data?.url) {
-      return {
-        ok: false,
-        message: json?.error?.message ?? `Ошибка загрузки (${res.status}).`,
-      };
+      return uploadFailure(json?.error?.code, res.status);
     }
     // Accessed directly (not via an alias) so json.data.url stays narrowed to string.
     return {

@@ -84,6 +84,7 @@ export function EstablishmentWizard(props: Props) {
   const draftIdRef = useRef<string | null>(establishmentId ?? null);
   const inFlight = useRef(false);
   const submittingRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const persistLocal = useCallback(
     (f: WizardFormState, id: string | null) => {
@@ -168,6 +169,7 @@ export function EstablishmentWizard(props: Props) {
         inFlight.current = false;
       })();
     }, AUTOSAVE_MS);
+    debounceRef.current = timer;
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, hydrated, readOnly]);
@@ -180,6 +182,9 @@ export function EstablishmentWizard(props: Props) {
   const onSubmit = useCallback(async () => {
     const id = draftIdRef.current;
     if (!id || !e1.passed || submittingRef.current) return;
+    // Cancel any armed autosave so a debounced PUT cannot fire mid-submit (it
+    // would race the status transition and flash a spurious save error).
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
