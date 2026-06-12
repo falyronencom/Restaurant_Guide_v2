@@ -175,9 +175,13 @@ export function toCreatePayload(
 export function toUpdatePayload(
   form: WizardFormState,
 ): UpdateEstablishmentPayload {
-  const { menu_pdfs: _omitPdfs, ...rest } = toCreatePayload(form);
+  const create = toCreatePayload(form);
+  // PUT does not process menu_pdfs (asymmetry Q1) — drop it. Image arrays are
+  // ALWAYS sent (even empty) so the backend's delete-missing sync can remove
+  // media the partner deleted.
+  delete create.menu_pdfs;
   return {
-    ...rest,
+    ...create,
     interior_photos: form.interiorPhotos.map((p) => p.url),
     menu_photos: form.menuPhotos.map((p) => p.url),
   };
