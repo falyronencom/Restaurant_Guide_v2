@@ -32,7 +32,7 @@ class _MediaStepState extends State<MediaStep> {
   static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF9D9D9D);
 
-  static const int _maxPhotos = 50;
+  static const int _maxPhotos = 30;
   static const int _maxMenuPhotos = 20;
   static const int _maxMenuPdfs = 2;
 
@@ -148,7 +148,7 @@ class _MediaStepState extends State<MediaStep> {
         // Photo count hint
         const Center(
           child: Text(
-            'До 50 фото формата PNG/JPG, до 150 мб',
+            'До 30 фото формата PNG/JPG, до 150 мб',
             style: TextStyle(
               fontSize: 13,
               color: _greyText,
