@@ -305,3 +305,166 @@ export type RegisterData = {
  * persists through the unchanged persistOAuthSession.
  */
 export type LoginData = OAuthLoginData;
+
+// ============================================================================
+// Partner cabinet — Phase C Slice 1 (Segment B)
+//
+// Mirrors backend partner surface (manual mirror, no codegen — keep in sync):
+//   list row   → establishmentModel.getPartnerEstablishments projection
+//   edit detail→ establishmentService getEstablishmentById projection
+//   write echo → establishment create/update/submit controllers
+//   temp media → tempMediaRoutes POST /partner/media/upload
+// Source of truth: backend. On contract change, re-derive here MANUALLY.
+// ============================================================================
+
+/**
+ * Establishment lifecycle status. The DB column also yields 'rejected' (the
+ * submit-gate accepts {draft, rejected, suspended} — Discovery Q2), even though
+ * the list query's `?status=` enum omits it; the cabinet groups by the returned
+ * value, so all five are surfaced.
+ */
+export type EstablishmentStatus =
+  | 'draft'
+  | 'pending'
+  | 'active'
+  | 'rejected'
+  | 'suspended';
+
+/**
+ * Parsed moderation notes — backend stores the column as TEXT holding a JSON
+ * string and parses it to an object before returning (`{field: comment}`). A
+ * `suspend_reason` key marks an ADMIN suspension; its absence on a suspended row
+ * marks a self-suspension (read-only vs editable — see backend updateEstablishment
+ * and feedback_admin_vs_self_suspend). Null when never moderated.
+ */
+export type ModerationNotes = Record<string, string> | null;
+
+/** Partner list row — getPartnerEstablishments projection (+ primary_photo subselect). */
+export type PartnerEstablishmentListing = {
+  id: string;
+  partner_id: string;
+  name: string;
+  description: string | null;
+  city: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  categories: string[];
+  cuisines: string[];
+  price_range: string | null;
+  status: EstablishmentStatus;
+  subscription_tier: string | null;
+  view_count: number;
+  favorite_count: number;
+  review_count: number;
+  average_rating: number | null;
+  base_score: number | null;
+  moderation_notes: ModerationNotes;
+  primary_photo: { url: string; thumbnail_url: string | null } | null;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+};
+
+/** GET /partner/establishments envelope `data`. */
+export type PartnerEstablishmentListResponse = {
+  establishments: PartnerEstablishmentListing[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages?: number;
+  };
+};
+
+/**
+ * GET /partner/establishments/:id — full edit projection. Listing fields plus the
+ * canonical write fields and parsed media URL arrays. `menu_photos` mixes menu
+ * IMAGE and PDF urls (both stored type='menu') — Segment B Commit 4 separates
+ * them for edit hydration. Legal fields are read-only here (no step 6 in slice).
+ */
+export type PartnerEstablishmentDetail = PartnerEstablishmentListing & {
+  slug: string | null;
+  working_hours: unknown;
+  special_hours: unknown;
+  attributes: Record<string, boolean> | null;
+  interior_photos: string[];
+  menu_photos: string[];
+  legal_name: string | null;
+  unp: string | null;
+  contact_person: string | null;
+  contact_email: string | null;
+};
+
+/** Minimal write echo we consume from create/update/submit (backend returns more). */
+export type EstablishmentWriteResult = {
+  id: string;
+  status?: EstablishmentStatus;
+  base_score?: number | null;
+  slug?: string | null;
+};
+
+/** Temp-upload response — tempMediaRoutes (uniform for image & PDF paths). */
+export type TempMediaResponse = {
+  url: string;
+  thumbnail_url: string;
+  preview_url: string;
+  public_id: string;
+  file_type: 'image' | 'pdf';
+};
+
+/**
+ * menu_pdfs[] entry in the create payload — temp-upload fields + file_name. The
+ * temp response omits file_name, so the web supplies it from the uploaded File.
+ */
+export type MenuPdfPayload = {
+  url: string;
+  thumbnail_url: string;
+  preview_url: string;
+  file_name: string;
+};
+
+/** Canonical per-day working hours (Q10). Midnight = '00:00' (2-digit). */
+export type DayHours =
+  | { is_open: false }
+  | { is_open: true; open: string; close: string };
+
+export type WorkingHoursPayload = Record<string, DayHours>;
+
+/**
+ * POST /partner/establishments body — mirrors partner_registration.dart toJson
+ * (the эталон) MINUS the legal step-6 fields (D1 zero — no legal data in this
+ * slice). categories/cuisines/city are Cyrillic canon strings (Decision 2).
+ */
+export type CreateEstablishmentPayload = {
+  name: string;
+  description?: string;
+  categories: string[];
+  cuisines: string[];
+  city: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  working_hours: WorkingHoursPayload;
+  phone?: string;
+  email?: string;
+  website?: string;
+  price_range?: string;
+  attributes?: Record<string, boolean>;
+  interior_photos?: string[];
+  menu_photos?: string[];
+  menu_pdfs?: MenuPdfPayload[];
+  primary_photo?: string;
+};
+
+/**
+ * PUT /partner/establishments/:id body — all optional; image media-sync via
+ * interior_photos/menu_photos arrays (delete-missing/insert-new). menu_pdfs are
+ * NOT processed by PUT (asymmetry Q1 — PDFs post-create go via POST /:id/media).
+ */
+export type UpdateEstablishmentPayload = Partial<
+  Omit<CreateEstablishmentPayload, 'menu_pdfs'>
+>;

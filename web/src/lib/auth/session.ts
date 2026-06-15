@@ -219,9 +219,20 @@ async function doRefresh(refreshToken: string): Promise<string | null> {
     // Re-stamp the display-user cookie so its 30-day window tracks activity in
     // lockstep with rg_rt — otherwise rg_user would die at 30d-from-login while
     // rg_rt keeps rolling forward, showing a logged-out header over a live
-    // session. RefreshData omits avatarUrl, so re-stamp the EXISTING value.
+    // session. RefreshData carries fresh identity (role/name/email) but omits
+    // avatarUrl, so MERGE the fresh fields over the existing cookie: a server-side
+    // role change (user → partner after the first establishment create, Phase C
+    // Slice 1, which forces a refreshSession) then propagates to rg_user, while
+    // avatarUrl is preserved from the existing value.
     const existingUser = await getSessionUser();
-    if (existingUser) await writeUser(existingUser);
+    if (existingUser) {
+      await writeUser({
+        ...existingUser,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+      });
+    }
     return data.accessToken;
   } catch (err) {
     // Only a definitive auth verdict (401 INVALID_TOKEN/TOKEN_EXPIRED, 403
