@@ -60,8 +60,10 @@ describe('CityPage — async Server Component', () => {
     const ui = await CityPage({ params: Promise.resolve({ city: 'minsk' }) });
     render(ui);
 
+    // h1 shows the Russian display name resolved from metadata, NOT the raw
+    // slug ('minsk') — mirrors generateMetadata's title resolution.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'minsk',
+      'Минск',
     );
     expect(screen.getByRole('link', { name: 'Рестораны' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Бары' })).toBeInTheDocument();

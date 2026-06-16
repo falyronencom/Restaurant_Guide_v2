@@ -84,11 +84,15 @@ export default async function CityPage({
 
   const meta = await getMetadata();
 
+  // Resolve slug → display name, mirroring generateMetadata above (React.cache
+  // shares the fetch). Without this the <h1> showed the raw slug ('minsk').
+  const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+
   return (
     <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
       <header className='flex flex-col gap-s'>
         <p className='text-caption-l text-muted-foreground'>Город</p>
-        <h1 className='text-display-s font-display'>{city}</h1>
+        <h1 className='text-display-s font-display'>{cityName}</h1>
         <p className='text-body-m text-muted-foreground'>
           Foundation placeholder — Brief 2 scaffold. Catalog rendering arrives in Brief 3.
         </p>
