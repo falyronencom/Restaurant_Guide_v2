@@ -52,7 +52,7 @@ const buildHtmlBody = (code, userName, expiryMinutes) => `
     <title>Подтверждение email</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
-    <h1 style="color: #F06B32; font-size: 24px; margin-bottom: 16px;">Restaurant Guide Belarus</h1>
+    <h1 style="color: #F06B32; font-size: 24px; margin-bottom: 16px; letter-spacing: 2px;">NIRIVIO</h1>
     <p style="font-size: 16px; line-height: 1.5;">Здравствуйте${userName ? `, ${userName}` : ''}!</p>
     <p style="font-size: 16px; line-height: 1.5;">Подтвердите свой email-адрес, введя код в приложении:</p>
     <div style="background: #F5F5F5; border-radius: 8px; padding: 24px; text-align: center; margin: 24px 0;">
@@ -72,7 +72,7 @@ const buildTextBody = (code, userName, expiryMinutes) =>
   `Подтвердите свой email-адрес, введя код в приложении:\n\n` +
   `${code}\n\n` +
   `Код действителен ${expiryMinutes} минут. Если вы не запрашивали подтверждение, проигнорируйте это письмо.\n\n` +
-  `— Restaurant Guide Belarus`;
+  `— Nirivio`;
 
 /**
  * Send a verification code email via Resend.
@@ -102,7 +102,7 @@ export const sendVerificationCodeEmail = async (toEmail, code, userName) => {
   const msg = {
     from: fromAddress,
     to: toEmail,
-    subject: 'Подтверждение email — Restaurant Guide Belarus',
+    subject: 'Подтверждение email — Nirivio',
     text: buildTextBody(code, userName, expiryMinutes),
     html: buildHtmlBody(code, userName, expiryMinutes),
   };
