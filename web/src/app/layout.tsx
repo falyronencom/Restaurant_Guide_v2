@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Unbounded, Nunito_Sans } from 'next/font/google';
+import { Unbounded, Nunito_Sans, Josefin_Sans } from 'next/font/google';
 import './globals.css';
 import { getSiteUrl, isNoIndexMode } from '@/lib/seo-gate';
 import { AuthProvider } from '@/components/auth/AuthProvider';
@@ -22,6 +22,19 @@ const unbounded = Unbounded({
 const nunitoSans = Nunito_Sans({
   variable: '--font-nunito-sans',
   subsets: ['latin', 'cyrillic'],
+  display: 'swap',
+});
+
+/*
+ * Josefin Sans — web-LOCAL wordmark font for «NIRIVIO» only. Latin-only: this
+ * family has no Cyrillic subset, so it must NEVER render Cyrillic text (the
+ * slogan «Вкусное рядом» stays on Unbounded). Not part of the mobile
+ * triple-sync — mobile has no wordmark. Exposed as --font-wordmark in
+ * globals.css.
+ */
+const josefin = Josefin_Sans({
+  variable: '--font-josefin',
+  subsets: ['latin'],
   display: 'swap',
 });
 
@@ -72,7 +85,7 @@ export default function RootLayout({
   return (
     <html
       lang='ru'
-      className={`${unbounded.variable} ${nunitoSans.variable} h-full antialiased`}
+      className={`${unbounded.variable} ${nunitoSans.variable} ${josefin.variable} h-full antialiased`}
     >
       <body className='min-h-full flex flex-col'>
         <AuthProvider googleClientId={googleClientId}>{children}</AuthProvider>

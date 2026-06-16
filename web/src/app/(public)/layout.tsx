@@ -1,31 +1,28 @@
-import Link from 'next/link';
-
-import { AuthMenu } from '@/components/auth/AuthMenu';
+import { SiteFooter } from '@/components/layout/SiteFooter';
+import { SiteHeader } from '@/components/layout/SiteHeader';
+import { getMetadata } from '@/lib/api/endpoints/metadata';
 
 /*
- * Public route group layout — shared chrome for the geographic route
- * subtree (/[city], /[city]/[category], /[city]/[category]/[slug]).
+ * Public route group layout — the unified site shell for the home, city and
+ * catalog routes (and, per D-A, /login + /register, which also live here).
  *
- * Brief 2: minimal header + content slot. No real navigation yet — Brief 3
- * adds breadcrumbs, search input, filter shelf.
+ * Stays a Server Component and reads NO cookies/headers, so the public subtree
+ * remains statically rendered with ISR (revalidate below). City metadata is
+ * fetched once here (memoized via React.cache in getMetadata, shared with the
+ * child pages) and passed to the header/footer.
  */
-export default function PublicLayout({
+export const revalidate = 3600;
+
+export default async function PublicLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const { cities } = await getMetadata();
+
   return (
     <>
-      <header className='border-b border-border bg-background'>
-        <div className='mx-auto flex max-w-6xl items-center justify-between gap-l px-l py-m'>
-          <Link
-            href='/'
-            className='font-display text-headline-m text-foreground hover:text-brand-dark transition-colors'
-          >
-            Nirivio
-          </Link>
-          <AuthMenu />
-        </div>
-      </header>
+      <SiteHeader cities={cities} />
       <div className='flex flex-1 flex-col'>{children}</div>
+      <SiteFooter cities={cities} />
     </>
   );
 }

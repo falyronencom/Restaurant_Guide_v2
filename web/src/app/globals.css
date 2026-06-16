@@ -222,6 +222,10 @@
   --font-sans: var(--font-nunito-sans);
   --font-display: var(--font-unbounded);
   --font-heading: var(--font-unbounded);
+  /* Wordmark «NIRIVIO» only — Josefin Sans (web-local, latin-only; NO Cyrillic
+   * subset, so never apply to Cyrillic text). Exposes the `font-wordmark`
+   * utility. Not part of the mobile triple-sync (mobile has no wordmark). */
+  --font-wordmark: var(--font-josefin);
 
   /* === Radii =========================================================== */
   --radius-xs: var(--radius-xs);

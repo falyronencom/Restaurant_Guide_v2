@@ -148,12 +148,16 @@ export const typography = {
 /**
  * Font families — actual font loading happens via next/font/google in
  * src/app/layout.tsx. These are the CSS variable names exposed to the
- * document; reference them via Tailwind classes (font-sans, font-display).
+ * document; reference them via Tailwind classes (font-sans, font-display,
+ * font-wordmark).
  *
  * - Unbounded: display/accent (headings)
  * - Nunito Sans: body/default
+ * - Josefin Sans: wordmark «NIRIVIO» only (web-local, latin-only — NO Cyrillic
+ *   subset; not mirrored in mobile theme.dart, which has no wordmark)
  */
 export const fonts = {
   display: 'var(--font-unbounded)',
   sans: 'var(--font-nunito-sans)',
+  wordmark: 'var(--font-josefin)',
 } as const;
