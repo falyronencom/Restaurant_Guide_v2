@@ -8,11 +8,16 @@ import {
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
-import { CatalogPagination } from '@/components/catalog/CatalogPagination';
-import { EstablishmentCard } from '@/components/catalog/EstablishmentCard';
-import { FilterShelf } from '@/components/catalog/FilterShelf';
-import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
-import { HOURS_VALUES } from '@/lib/facets';
+import { ResultsView } from '@/components/catalog/ResultsView';
+import {
+  asFloat,
+  asHours,
+  asList,
+  asString,
+  hasAnyFilter,
+  parsePage,
+  type SearchParams,
+} from '@/lib/catalog-params';
 
 /*
  * /[city]/[category] — canonical catalog page (Brief 3).
@@ -36,7 +41,6 @@ import { HOURS_VALUES } from '@/lib/facets';
 export const revalidate = 3600;
 
 type Params = { city: string; category: string };
-type SearchParams = { [key: string]: string | string[] | undefined };
 
 export async function generateStaticParams(): Promise<Params[]> {
   // Defer to runtime — city × category combinatorial explosion. Brief 3
@@ -170,123 +174,25 @@ export default async function CategoryPage({
         <h1 className='text-display-s font-display'>
           {categoryName} в городе {cityName}
         </h1>
-        <FilterShelf
-          basePath={`/${city}/${category}`}
-          searchParams={sp}
-          cuisineOptions={cuisineOptions}
-          selected={{ cuisines, priceRange, hours }}
-        />
-        <p className='text-body-m text-muted-foreground'>
-          {catalog.pagination.total > 0
-            ? `Найдено заведений: ${catalog.pagination.total}`
-            : 'Заведений по этим параметрам не найдено'}
-        </p>
       </header>
 
-      {catalog.establishments.length === 0 ? (
-        <section className='flex flex-1 flex-col items-center justify-center gap-m py-xl text-center'>
-          <h2 className='text-headline-m font-display'>Ничего не найдено</h2>
-          <p className='max-w-md text-body-m text-muted-foreground'>
-            Попробуйте изменить параметры поиска или вернитесь к каталогу
-            города.
-          </p>
-          <Link
-            href={`/${city}`}
-            className='text-primary underline-offset-4 hover:underline'
-          >
-            ← Все категории города {cityName}
-          </Link>
-        </section>
-      ) : (
-        <FavoritesProvider
-          establishmentIds={catalog.establishments.map((e) => e.id)}
-        >
-          <section className='grid grid-cols-1 gap-l sm:grid-cols-2 lg:grid-cols-3'>
-            {catalog.establishments.map((establishment) => (
-              <EstablishmentCard
-                key={establishment.id}
-                establishment={establishment}
-                fallbackCitySlug={city}
-                fallbackCategorySlug={category}
-              />
-            ))}
-          </section>
-        </FavoritesProvider>
-      )}
-
-      <CatalogPagination
-        currentPage={catalog.pagination.page}
-        totalPages={catalog.pagination.totalPages}
+      <ResultsView
+        citySlug={city}
+        categories={meta.categories}
+        activeCategorySlug={category}
+        establishments={catalog.establishments}
+        pagination={catalog.pagination}
         basePath={`/${city}/${category}`}
         searchParams={sp}
+        cuisineOptions={cuisineOptions}
+        selected={{ cuisines, priceRange, hours }}
+        fallbackCategorySlug={category}
       />
     </main>
   );
 }
 
 // ----- helpers -------------------------------------------------------------
-
-function parsePage(raw: unknown): number {
-  if (typeof raw !== 'string') return 1;
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 1) return 1;
-  return n;
-}
-
-function asString(raw: unknown): string | undefined {
-  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-}
-
-function asFloat(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.length === 0) return undefined;
-  const n = parseFloat(raw);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-type HoursBucket = 'until_22' | 'until_morning' | '24_hours';
-
-// Parse a multi-value facet param. Accepts comma-joined ('a,b') — the shelf's
-// URL contract — and is robust to array-form (?k=a&k=b) too; returns trimmed
-// non-empty values.
-function asList(raw: unknown): string[] {
-  if (typeof raw === 'string') {
-    return raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  if (Array.isArray(raw)) {
-    return raw
-      .flatMap((v) => (typeof v === 'string' ? v.split(',') : []))
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-// Narrow the single working-hours param to a known bucket; unknown → undefined
-// (mirrors the backend's soft-ignore of an unrecognized hours value).
-function asHours(raw: unknown): HoursBucket | undefined {
-  return typeof raw === 'string' && HOURS_VALUES.includes(raw)
-    ? (raw as HoursBucket)
-    : undefined;
-}
-
-function hasAnyFilter(sp: SearchParams): boolean {
-  // Any active facet/sort/search param → noindex this permutation (CAT-C-2.3),
-  // consolidated onto the clean category URL via canonical. cuisine & priceRange
-  // are multi-value (comma-joined or array-form) → detect via asList; hours is
-  // the single working-hours bucket. `page` is deliberately excluded — paginated
-  // URLs stay indexable. Symmetric with how the page body parses filters.
-  return (
-    asList(sp.cuisine).length > 0 ||
-    asList(sp.priceRange).length > 0 ||
-    Boolean(asHours(sp.hours)) ||
-    Boolean(asString(sp.minRating)) ||
-    Boolean(asString(sp.search)) ||
-    Boolean(asString(sp.sort_by))
-  );
-}
 
 function capitalize(s: string): string {
   if (s.length === 0) return s;

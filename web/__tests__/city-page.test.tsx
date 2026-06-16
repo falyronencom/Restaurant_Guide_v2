@@ -1,84 +1,131 @@
 /**
- * FOUNDATIONAL PATTERN — testing an async React Server Component.
+ * CityPage — city-wide results view (web-vitrine Segment B).
  *
- * Per the installed Next's own guide (node_modules/next/dist/docs/01-app/
- * 02-guides/testing/jest.md): "async Server Components ... Jest currently does
- * not support them" inside the React render tree. The working, non-hacky unit
- * pattern — used here — is:
- *
- *   1. Mock the data layer at the API-CLIENT boundary (@/lib/api/endpoints/*),
- *      NOT the network. The Server Component then runs its REAL logic.
- *   2. Invoke the async component as a function and `await` its returned
- *      element:  const ui = await CityPage({ params: Promise.resolve({...}) })
- *   3. render(ui) with React Testing Library and assert on the DOM.
- *
- * `params` is a Promise in Next 16 (Discovery Q4c) — we pass Promise.resolve.
- * This pattern transfers 1:1 to richer pages (e.g. the [slug] detail page);
- * CityPage is the foundational target because its children are synchronous,
- * so the awaited element tree renders cleanly under RTL.
+ * Same async-RSC unit pattern as catalog-filters.test.tsx: mock the API-client
+ * boundary (@/lib/api/endpoints/*) and invoke the async component /
+ * generateMetadata AS A FUNCTION. We deliberately do NOT render the Booking
+ * tree here (FilterShelf accordion + base-ui sheet + favorites need providers /
+ * polyfills) — the layout is verified via live preview; these tests lock the
+ * data + SEO logic that changed in Segment B:
+ *   1. searchParam → getCatalog mapping — city-wide (NO category), facets parsed.
+ *   2. SEO — hasAnyFilter → noindex+follow + clean /[city] canonical (CAT-C-2.3).
+ *   3. Unknown city slug → notFound() before any data fetch.
  */
-import { render, screen } from '@testing-library/react';
 import { notFound } from 'next/navigation';
 
-import CityPage from '@/app/(public)/[city]/page';
+import CityPage, { generateMetadata } from '@/app/(public)/[city]/page';
+import { getCatalog } from '@/lib/api/endpoints/establishments';
 import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
 
-// notFound() throws in real Next to halt rendering — mirror that so the
-// invalid-slug branch is observable as a rejection.
 jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
     throw new Error('NEXT_NOT_FOUND');
   }),
 }));
 
-// The mock boundary: the typed API client. Bare jest.fn()s (return values set
-// per test) — avoids the resetMocks factory-wipe trap (Foxtrot-1).
+// Mock boundary: the typed API client. Bare jest.fn()s, return values set per
+// test (avoids the resetMocks factory-wipe trap — feedback_jest_resetmocks).
+jest.mock('@/lib/api/endpoints/establishments', () => ({
+  getCatalog: jest.fn(),
+}));
 jest.mock('@/lib/api/endpoints/metadata', () => ({
   getMetadata: jest.fn(),
   validateCitySlug: jest.fn(),
   validateCategorySlug: jest.fn(),
 }));
 
-const mockMetadata = {
+const META = {
   cities: [{ slug: 'minsk', name: 'Минск' }],
-  categories: [
-    { slug: 'restorany', name: 'Рестораны' },
-    { slug: 'bary', name: 'Бары' },
+  categories: [{ slug: 'restaurants', name: 'Рестораны' }],
+  cuisines: [
+    { slug: 'italian', name: 'Итальянская' },
+    { slug: 'asian', name: 'Азиатская' },
   ],
-  cuisines: [],
 };
 
-describe('CityPage — async Server Component', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+const EMPTY_CATALOG = {
+  establishments: [],
+  pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+};
+
+const P = () => Promise.resolve({ city: 'minsk' });
+const SP = (o: Record<string, string | string[] | undefined>) =>
+  Promise.resolve(o);
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  (getMetadata as jest.Mock).mockResolvedValue(META);
+  (validateCitySlug as jest.Mock).mockResolvedValue(true);
+  (getCatalog as jest.Mock).mockResolvedValue(EMPTY_CATALOG);
+});
+
+describe('CityPage — city-wide getCatalog mapping', () => {
+  it('fetches the whole city (no category) with parsed facets', async () => {
+    await CityPage({
+      params: P(),
+      searchParams: SP({
+        cuisine: 'italian,asian',
+        priceRange: '$,$$',
+        hours: 'until_22',
+      }),
+    });
+
+    const arg = (getCatalog as jest.Mock).mock.calls[0][0];
+    expect(arg.city).toBe('minsk');
+    expect(arg.category).toBeUndefined();
+    expect(arg.cuisines).toEqual(['italian', 'asian']);
+    expect(arg.priceRange).toEqual(['$', '$$']);
+    expect(arg.hours_filter).toBe('until_22');
   });
 
-  it('renders the city heading and a link per known category', async () => {
-    (validateCitySlug as jest.Mock).mockResolvedValue(true);
-    (getMetadata as jest.Mock).mockResolvedValue(mockMetadata);
+  it('passes undefined (not empty arrays) when no facets are selected', async () => {
+    await CityPage({ params: P(), searchParams: SP({}) });
 
-    const ui = await CityPage({ params: Promise.resolve({ city: 'minsk' }) });
-    render(ui);
+    const arg = (getCatalog as jest.Mock).mock.calls[0][0];
+    expect(arg.cuisines).toBeUndefined();
+    expect(arg.priceRange).toBeUndefined();
+    expect(arg.hours_filter).toBeUndefined();
+  });
+});
 
-    // h1 shows the Russian display name resolved from metadata, NOT the raw
-    // slug ('minsk') — mirrors generateMetadata's title resolution.
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Минск',
-    );
-    expect(screen.getByRole('link', { name: 'Рестораны' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Бары' })).toBeInTheDocument();
-    expect(validateCitySlug).toHaveBeenCalledWith('minsk');
+describe('CityPage generateMetadata — filter-aware noindex + canonical', () => {
+  it('noindex+follow with clean /[city] canonical when a facet is active', async () => {
+    const meta = await generateMetadata({
+      params: P(),
+      searchParams: SP({ cuisine: 'italian' }),
+    });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates?.canonical).toBe('/minsk');
   });
 
-  it('calls notFound() for an unknown city slug', async () => {
+  it('does NOT noindex the clean city URL', async () => {
+    const meta = await generateMetadata({ params: P(), searchParams: SP({}) });
+    expect(meta.robots).toBeUndefined();
+    expect(meta.alternates?.canonical).toBe('/minsk');
+  });
+
+  it('does NOT noindex a paginated-only URL — pages stay indexable', async () => {
+    const meta = await generateMetadata({
+      params: P(),
+      searchParams: SP({ page: '2' }),
+    });
+    expect(meta.robots).toBeUndefined();
+  });
+});
+
+describe('CityPage — invalid slug', () => {
+  it('calls notFound() for an unknown city before any data fetch', async () => {
     (validateCitySlug as jest.Mock).mockResolvedValue(false);
 
     await expect(
-      CityPage({ params: Promise.resolve({ city: 'atlantis' }) }),
+      CityPage({
+        params: Promise.resolve({ city: 'atlantis' }),
+        searchParams: SP({}),
+      }),
     ).rejects.toThrow('NEXT_NOT_FOUND');
 
     expect(notFound).toHaveBeenCalledTimes(1);
-    // Short-circuits before fetching page data.
-    expect(getMetadata).not.toHaveBeenCalled();
+    // Short-circuits before fetching the catalog.
+    expect(getCatalog).not.toHaveBeenCalled();
   });
 });
