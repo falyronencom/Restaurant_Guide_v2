@@ -1,34 +1,22 @@
-import Link from 'next/link';
+import { CitySelector } from '@/components/home/CitySelector';
+import { Hero } from '@/components/home/Hero';
 import { getMetadata } from '@/lib/api/endpoints/metadata';
 
 /*
- * Root / — placeholder home page (Brief 2 foundation scope).
- *
- * Lists available city slugs as navigation entry points. No catalog or
- * marketing content yet — Brief 3 will build out the real home experience.
+ * Home / — hero + city selector. Server Component reading no cookies/headers,
+ * so the route stays statically rendered with ISR (revalidate below). The
+ * header's transparent overlay variant is client-side (SiteHeader), which keeps
+ * this page static.
  */
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const metadata = await getMetadata();
+  const { cities } = await getMetadata();
 
   return (
-    <main className='flex flex-1 flex-col items-center justify-center p-l gap-l'>
-      <h1 className='text-display-s font-display'>Nirivio</h1>
-      <p className='text-body-m text-text-secondary'>
-        Foundation placeholder — Brief 2 scaffolding.
-      </p>
-      <nav className='flex flex-wrap gap-s'>
-        {metadata.cities.map((city) => (
-          <Link
-            key={city.slug}
-            href={`/${city.slug}`}
-            className='rounded-m bg-brand px-l py-s text-text-on-primary hover:bg-brand-dark transition-colors'
-          >
-            {city.name}
-          </Link>
-        ))}
-      </nav>
+    <main className="flex flex-1 flex-col">
+      <Hero cities={cities} />
+      <CitySelector cities={cities} />
     </main>
   );
 }
