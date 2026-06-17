@@ -56,6 +56,7 @@ import logger from '../utils/logger.js';
  * @param {string[]} [filters.priceRange]
  * @param {number} [filters.minRating]
  * @param {string} [filters.hoursFilter] - working-hours bucket (until_22 | until_morning | 24_hours)
+ * @param {string[]} [filters.features] - attribute keys (delivery | wifi | terrace | parking | live_music | kids_zone | banquet | pets_allowed | smoking)
  * @param {string} [filters.search]
  * @param {string} [filters.sortBy]
  * @param {number} [filters.limit=20]
@@ -70,6 +71,7 @@ export const getPublicEstablishmentsCatalog = async (filters = {}) => {
     priceRange,
     minRating,
     hoursFilter,
+    features,
     search,
     sortBy,
     limit = 20,
@@ -91,6 +93,7 @@ export const getPublicEstablishmentsCatalog = async (filters = {}) => {
     priceRange,
     minRating,
     hoursFilter,
+    features,
     sortBy,
     search,
     limit,

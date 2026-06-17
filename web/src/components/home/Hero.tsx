@@ -6,6 +6,7 @@ import { HeroSearch } from './HeroSearch';
 
 type Props = {
   cities: MetadataSlug[];
+  categories: MetadataSlug[];
   cuisines: MetadataSlug[];
 };
 
@@ -25,7 +26,7 @@ type Props = {
  * on the already-loaded Unbounded (font-display) and the wordmark on Josefin
  * (font-wordmark, latin-only — never Cyrillic). The slogan stays on Unbounded.
  */
-export function Hero({ cities, cuisines }: Props) {
+export function Hero({ cities, categories, cuisines }: Props) {
   return (
     <section className="relative -mt-[72px] min-h-[88vh] w-full overflow-hidden">
       <Image
@@ -56,7 +57,7 @@ export function Hero({ cities, cuisines }: Props) {
           Вкусное рядом
         </p>
 
-        <HeroSearch cities={cities} cuisines={cuisines} />
+        <HeroSearch cities={cities} categories={categories} cuisines={cuisines} />
       </div>
     </section>
   );

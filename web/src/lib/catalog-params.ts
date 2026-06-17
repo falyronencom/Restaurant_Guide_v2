@@ -64,6 +64,7 @@ export function hasAnyFilter(sp: SearchParams): boolean {
   return (
     asList(sp.cuisine).length > 0 ||
     asList(sp.priceRange).length > 0 ||
+    asList(sp.features).length > 0 ||
     Boolean(asHours(sp.hours)) ||
     Boolean(asString(sp.minRating)) ||
     Boolean(asString(sp.search)) ||

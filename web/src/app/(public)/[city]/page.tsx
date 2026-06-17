@@ -103,6 +103,7 @@ export default async function CityPage({
   const search = asString(sp.search);
   const cuisines = asList(sp.cuisine);
   const priceRange = asList(sp.priceRange);
+  const features = asList(sp.features);
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
@@ -114,6 +115,7 @@ export default async function CityPage({
       sort_by: sortBy,
       cuisines: cuisines.length > 0 ? cuisines : undefined,
       priceRange: priceRange.length > 0 ? priceRange : undefined,
+      features: features.length > 0 ? features : undefined,
       hours_filter: hours,
       minRating,
       search,
@@ -141,7 +143,7 @@ export default async function CityPage({
         basePath={`/${city}`}
         searchParams={sp}
         cuisineOptions={cuisineOptions}
-        selected={{ cuisines, priceRange, hours }}
+        selected={{ cuisines, priceRange, features, hours }}
         fallbackCategorySlug='restaurants'
       />
     </main>

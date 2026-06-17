@@ -13,6 +13,8 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
+  ATTRIBUTE_OPTIONS,
+  ATTRIBUTE_VALUES,
   HOURS_OPTIONS,
   PRICE_OPTIONS,
   PRICE_VALUES,
@@ -28,9 +30,9 @@ import { cn } from '@/lib/utils';
  * the URL query-string and the Server Component re-fetches with the new params
  * (mirrors mobile — collect selection → params → backend applies OR/AND).
  *
- * Facets (Phase A): price (multi, OR-within), cuisine (multi, OR-within),
- * working-hours (single-select bucket). Group AND-between is applied by the
- * backend. Distance and attributes are out of Phase A scope.
+ * Facets: price (multi, OR-within), cuisine (multi, OR-within), working-hours
+ * (single-select bucket), and attributes/«Дополнительно» (multi). Group
+ * AND-between is applied by the backend. Distance stays out of v1 scope.
  *
  * URL contract mirrors CatalogPagination.buildHref: preserve all sibling params,
  * reset `page` to 1 on every facet change, and keep multi-value facets as a
@@ -40,6 +42,7 @@ import { cn } from '@/lib/utils';
 type Selected = {
   cuisines: string[];
   priceRange: string[];
+  features: string[];
   hours: string | undefined;
 };
 
@@ -87,11 +90,17 @@ export function FilterShelf({
       current: string[],
       value: string,
       allValues: readonly string[],
+      omitWhenAll = true,
     ) => {
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
         : [...current, value];
-      const omit = next.length === 0 || next.length === allValues.length;
+      // OR-within-group facets (cuisine/price): "all selected" == "no
+      // constraint" → omit the param. AND-between facets (features): "all
+      // selected" is a real, maximally-restrictive filter → keep it; omit only
+      // when empty.
+      const omit =
+        next.length === 0 || (omitWhenAll && next.length === allValues.length);
       navigate(key, omit ? undefined : next.join(','));
     },
     [navigate],
@@ -109,7 +118,7 @@ export function FilterShelf({
 
   return (
     <Accordion
-      defaultValue={['price', 'cuisine', 'hours']}
+      defaultValue={['price', 'cuisine', 'hours', 'features']}
       className='rounded-m border border-border bg-background px-m'
       aria-label='Фильтры'
     >
@@ -167,6 +176,30 @@ export function FilterShelf({
             );
           })}
         </div>
+      </FacetGroup>
+
+      <FacetGroup
+        id='features'
+        title='Дополнительно'
+        contentClassName='grid grid-cols-1 gap-x-m gap-y-s pt-s sm:grid-cols-2'
+      >
+        {ATTRIBUTE_OPTIONS.map((opt) => (
+          <CheckRow
+            key={opt.value}
+            id={`feature-${opt.value}`}
+            label={opt.label}
+            checked={selected.features.includes(opt.value)}
+            onToggle={() =>
+              toggleMulti(
+                'features',
+                selected.features,
+                opt.value,
+                ATTRIBUTE_VALUES,
+                false,
+              )
+            }
+          />
+        ))}
       </FacetGroup>
     </Accordion>
   );

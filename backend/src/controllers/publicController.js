@@ -58,6 +58,8 @@ const translateSlugList = (slugs, translator, label) => {
  * internally. Query params (all optional):
  *   city, category, cuisines[], priceRange[], minRating,
  *   hours_filter (until_22 | until_morning | 24_hours — unknown soft-ignored),
+ *   features[] (9 attribute keys: delivery|wifi|terrace|parking|live_music|
+ *     kids_zone|banquet|pets_allowed|smoking — unknown soft-ignored),
  *   search, sort_by, limit (default 20, max 100), page (default 1)
  */
 export const listPublicEstablishments = asyncHandler(async (req, res) => {
@@ -68,6 +70,7 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
     priceRange: priceRangeRaw,
     minRating: minRatingRaw,
     hours_filter: hoursFilterRaw,
+    features: featuresRaw,
     search,
     sort_by: sortBy,
     limit: limitRaw,
@@ -110,6 +113,27 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
     throw new AppError('minRating must be between 1 and 5', 422, 'VALIDATION_ERROR');
   }
 
+  // features: the public-catalog attribute facet keys. ALIGNED TO THE REAL DATA
+  // CANON — the 9 reader/writer keys (establishment-helpers ATTRIBUTE_ORDER +
+  // partner/constants ATTRIBUTES) — NOT the geo-search validator. The geo path
+  // uses 'smoking_area'/'pet_friendly', which NO current data row carries (the
+  // data uses 'smoking'/'pets_allowed'), and omits 'live_music'; validating
+  // against the real keys keeps every facet option a live filter, not a dead
+  // one. (The geo-validator key drift is a separate pre-existing backend item.)
+  // Like hours_filter on this indexable LIST surface, unknown keys are
+  // soft-ignored — a stale/malformed facet URL must still render the catalog,
+  // not 422. The attribute WHERE branch already lives in searchWithoutLocation;
+  // this only forwards the validated keys (publicService → searchService).
+  const VALID_FEATURES = [
+    'delivery', 'wifi', 'terrace', 'parking', 'live_music',
+    'kids_zone', 'banquet', 'pets_allowed', 'smoking',
+  ];
+  const featuresList = parseListParam(featuresRaw);
+  const validFeatures = featuresList
+    ? featuresList.filter((f) => VALID_FEATURES.includes(f))
+    : [];
+  const features = validFeatures.length > 0 ? validFeatures : null;
+
   const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 20, 1), 100);
   const page = Math.max(parseInt(pageRaw, 10) || 1, 1);
 
@@ -120,6 +144,7 @@ export const listPublicEstablishments = asyncHandler(async (req, res) => {
     priceRange,
     minRating,
     hoursFilter,
+    features,
     sortBy,
     search: search ? String(search).trim() : null,
     limit,

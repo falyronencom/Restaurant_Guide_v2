@@ -125,6 +125,7 @@ export default async function CategoryPage({
   const search = asString(sp.search);
   const cuisines = asList(sp.cuisine);
   const priceRange = asList(sp.priceRange);
+  const features = asList(sp.features);
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
@@ -139,6 +140,7 @@ export default async function CategoryPage({
       sort_by: sortBy,
       cuisines: cuisines.length > 0 ? cuisines : undefined,
       priceRange: priceRange.length > 0 ? priceRange : undefined,
+      features: features.length > 0 ? features : undefined,
       hours_filter: hours,
       minRating,
       search,
@@ -185,7 +187,7 @@ export default async function CategoryPage({
         basePath={`/${city}/${category}`}
         searchParams={sp}
         cuisineOptions={cuisineOptions}
-        selected={{ cuisines, priceRange, hours }}
+        selected={{ cuisines, priceRange, features, hours }}
         fallbackCategorySlug={category}
       />
     </main>

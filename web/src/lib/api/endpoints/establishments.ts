@@ -35,6 +35,7 @@ export type CatalogParams = {
   category?: string;
   cuisines?: string[];
   priceRange?: string[];
+  features?: string[];
   minRating?: number;
   hours_filter?: 'until_22' | 'until_morning' | '24_hours';
   search?: string;

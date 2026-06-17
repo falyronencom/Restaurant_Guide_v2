@@ -11,11 +11,11 @@ import { getMetadata } from '@/lib/api/endpoints/metadata';
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const { cities, cuisines } = await getMetadata();
+  const { cities, categories, cuisines } = await getMetadata();
 
   return (
     <main className="flex flex-1 flex-col">
-      <Hero cities={cities} cuisines={cuisines} />
+      <Hero cities={cities} categories={categories} cuisines={cuisines} />
     </main>
   );
 }

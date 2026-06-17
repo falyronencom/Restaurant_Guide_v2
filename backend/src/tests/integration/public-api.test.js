@@ -376,6 +376,100 @@ describe('Public API — GET /api/v1/public/establishments?hours_filter', () => 
 });
 
 // ============================================================================
+// /public/establishments — features (attribute wire-through, Segment D)
+// ============================================================================
+
+describe('Public API — GET /api/v1/public/establishments?features', () => {
+  // Attribute filtering reuses searchWithoutLocation's existing WHERE branch
+  // ((e.attributes->>key)::boolean = true), now forwarded through the public
+  // catalog path (publicController → publicService → searchWithoutLocation).
+  // Multiple keys are AND-ed (each adds its own condition). The valid keys are
+  // the REAL data canon (9 reader/writer keys), NOT the geo-search validator —
+  // 'smoking'/'pets_allowed'/'live_music' are real data keys the geo path's
+  // 'smoking_area'/'pet_friendly' 8-key list would miss. Unknown keys are
+  // soft-ignored like hours_filter.
+  beforeEach(async () => {
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, attributes, created_at, updated_at)
+      VALUES
+        (gen_random_uuid(), $1, 'Wifi And Parking', 'wifi-and-parking', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, '{"wifi": true, "parking": true}'::jsonb, NOW(), NOW()),
+        (gen_random_uuid(), $1, 'Wifi Only', 'wifi-only', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, '{"wifi": true}'::jsonb, NOW(), NOW()),
+        (gen_random_uuid(), $1, 'Smoking Live', 'smoking-live', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, '{"smoking": true, "live_music": true}'::jsonb, NOW(), NOW()),
+        (gen_random_uuid(), $1, 'No Attributes', 'no-attributes', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, '{}'::jsonb, NOW(), NOW())
+    `, [partnerId, defaultWorkingHours]);
+  });
+
+  const names = (res) => res.body.data.establishments.map((e) => e.name);
+
+  test('features=wifi returns both wifi establishments, excludes the others', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'wifi' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Wifi And Parking');
+    expect(n).toContain('Wifi Only');
+    expect(n).not.toContain('Smoking Live');
+    expect(n).not.toContain('No Attributes');
+  });
+
+  test('features=wifi,parking is AND — only the establishment with BOTH', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'wifi,parking' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Wifi And Parking');
+    expect(n).not.toContain('Wifi Only');
+    expect(n).not.toContain('No Attributes');
+  });
+
+  test('features=smoking (a data-canon key the geo validator lacks) filters correctly', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'smoking' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Smoking Live');
+    expect(n).not.toContain('Wifi And Parking');
+    expect(n).not.toContain('No Attributes');
+  });
+
+  test('no features param returns all seeded establishments', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Wifi And Parking');
+    expect(n).toContain('Wifi Only');
+    expect(n).toContain('Smoking Live');
+    expect(n).toContain('No Attributes');
+  });
+
+  test('unknown feature key is soft-ignored — 200, returns all (mirrors hours_filter)', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'nonsense' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Wifi And Parking');
+    expect(n).toContain('Smoking Live');
+    expect(n).toContain('No Attributes');
+  });
+
+  test('mixed known+unknown applies only the valid key (wifi), drops nonsense', async () => {
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'wifi,nonsense' })
+      .expect(200);
+    const n = names(res);
+    expect(n).toContain('Wifi And Parking');
+    expect(n).toContain('Wifi Only');
+    expect(n).not.toContain('No Attributes');
+  });
+});
+
+// ============================================================================
 // /public/establishments/map
 // ============================================================================
 

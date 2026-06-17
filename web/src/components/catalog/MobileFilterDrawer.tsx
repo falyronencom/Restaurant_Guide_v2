@@ -13,7 +13,12 @@ type Props = {
   basePath: string;
   searchParams: Record<string, string | string[] | undefined>;
   cuisineOptions: readonly FacetOption[];
-  selected: { cuisines: string[]; priceRange: string[]; hours: string | undefined };
+  selected: {
+    cuisines: string[];
+    priceRange: string[];
+    features: string[];
+    hours: string | undefined;
+  };
 };
 
 /*

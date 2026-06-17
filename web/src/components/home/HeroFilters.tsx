@@ -10,40 +10,61 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import type { MetadataSlug } from '@/lib/api/types';
-import { HOURS_OPTIONS, PRICE_OPTIONS } from '@/lib/facets';
+import { ATTRIBUTE_OPTIONS, HOURS_OPTIONS, PRICE_OPTIONS } from '@/lib/facets';
 import { cn } from '@/lib/utils';
 
 export type HeroFilterValue = {
   cuisines: string[];
   priceRange: string[];
+  features: string[];
   hours: string | undefined;
 };
 
 type Props = {
+  categories: MetadataSlug[];
   cuisines: MetadataSlug[];
   value: HeroFilterValue;
   onChange: (next: HeroFilterValue) => void;
+  selectedCategory: string | null;
+  onCategoryChange: (slug: string | null) => void;
 };
 
 /*
- * Hero filter panel — the «Фильтры» pill opens a sheet of the three facets the
- * results page actually understands: cuisine (multi), price (multi), hours
- * (single). It does NOT navigate: selections live in HeroSearch state and are
- * appended to the URL only when the orange Search runs (city is context, filters
- * are refinement — mirrors mobile/Booking, where only «Найти» loads results).
+ * Hero filter panel — the «Фильтры» pill opens a sheet of:
+ *   • establishment category (single-select → becomes the SEO path segment on
+ *     submit; the other facets are query params),
+ *   • cuisine (multi), price (multi), working-hours (single), and
+ *   • attributes / «Дополнительно» (multi).
  *
- * Distance and attributes (the other mobile-filter sections) are out of web v1
- * scope — deferred to later phases (no client geo / no attribute facet on the
- * catalog path). Category is a SEO route segment, picked via chips on the
- * results page, not a query facet.
+ * It does NOT navigate: selections live in HeroSearch state and are applied to
+ * the URL only when the orange Search runs (city is context, the panel is
+ * refinement — mirrors mobile/Booking, where only «Найти» loads results).
  *
- * Controlled: value + onChange come from HeroSearch; the sheet's own open state
- * stays uncontrolled (base-ui Dialog).
+ * Category is single-select because on the web a category is a route segment
+ * (/[city]/[category]) — one per route. Attributes use the REAL data-canon keys
+ * (lib/facets ATTRIBUTE_OPTIONS) and are AND-ed by the backend, so — unlike
+ * cuisine/price — selecting "all" is meaningful and is NOT collapsed away.
+ *
+ * Controlled: value/onChange + selectedCategory/onCategoryChange come from
+ * HeroSearch; the sheet's own open state stays uncontrolled (base-ui Dialog).
  */
-export function HeroFilters({ cuisines, value, onChange }: Props) {
+export function HeroFilters({
+  categories,
+  cuisines,
+  value,
+  onChange,
+  selectedCategory,
+  onCategoryChange,
+}: Props) {
   const activeCount =
-    value.cuisines.length + value.priceRange.length + (value.hours ? 1 : 0);
+    value.cuisines.length +
+    value.priceRange.length +
+    value.features.length +
+    (value.hours ? 1 : 0) +
+    (selectedCategory ? 1 : 0);
 
+  const toggleCategory = (slug: string) =>
+    onCategoryChange(selectedCategory === slug ? null : slug);
   const toggleCuisine = (slug: string) =>
     onChange({
       ...value,
@@ -58,10 +79,19 @@ export function HeroFilters({ cuisines, value, onChange }: Props) {
         ? value.priceRange.filter((v) => v !== p)
         : [...value.priceRange, p],
     });
+  const toggleFeature = (f: string) =>
+    onChange({
+      ...value,
+      features: value.features.includes(f)
+        ? value.features.filter((v) => v !== f)
+        : [...value.features, f],
+    });
   const toggleHours = (h: string) =>
     onChange({ ...value, hours: value.hours === h ? undefined : h });
-  const reset = () =>
-    onChange({ cuisines: [], priceRange: [], hours: undefined });
+  const reset = () => {
+    onChange({ cuisines: [], priceRange: [], features: [], hours: undefined });
+    onCategoryChange(null);
+  };
 
   return (
     <Sheet>
@@ -105,6 +135,34 @@ export function HeroFilters({ cuisines, value, onChange }: Props) {
         </SheetHeader>
 
         <section className="pb-l">
+          <h3 className="mb-m text-label-l text-foreground">
+            Категория заведения
+          </h3>
+          <div className="grid grid-cols-3 gap-s">
+            {categories.map((c) => {
+              const active = selectedCategory === c.slug;
+              return (
+                <button
+                  key={c.slug}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleCategory(c.slug)}
+                  className={cn(
+                    'flex flex-col items-center gap-s rounded-2xl border p-m text-center text-caption-m transition-colors',
+                    active
+                      ? 'border-brand bg-brand/10 text-foreground'
+                      : 'border-border bg-background text-text-secondary hover:bg-muted',
+                  )}
+                >
+                  <CategoryIcon slug={c.slug} size={28} />
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="border-t border-border py-l">
           <h3 className="mb-m text-label-l text-foreground">Категория кухни</h3>
           <div className="grid grid-cols-3 gap-s">
             {cuisines.map((c) => {
@@ -172,6 +230,31 @@ export function HeroFilters({ cuisines, value, onChange }: Props) {
                   type="button"
                   aria-pressed={active}
                   onClick={() => toggleHours(opt.value)}
+                  className={cn(
+                    'rounded-full border px-l py-s text-body-m transition-colors',
+                    active
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-border bg-background text-foreground hover:bg-muted',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="border-t border-border py-l">
+          <h3 className="mb-m text-label-l text-foreground">Дополнительно</h3>
+          <div className="flex flex-wrap gap-s">
+            {ATTRIBUTE_OPTIONS.map((opt) => {
+              const active = value.features.includes(opt.value);
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleFeature(opt.value)}
                   className={cn(
                     'rounded-full border px-l py-s text-body-m transition-colors',
                     active

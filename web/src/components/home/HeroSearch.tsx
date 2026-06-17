@@ -11,32 +11,39 @@ import { HeroFilters, type HeroFilterValue } from './HeroFilters';
 
 type Props = {
   cities: MetadataSlug[];
+  categories: MetadataSlug[];
   cuisines: MetadataSlug[];
 };
 
 const EMPTY_FILTERS: HeroFilterValue = {
   cuisines: [],
   priceRange: [],
+  features: [],
   hours: undefined,
 };
 
 /*
  * Hero search cluster — the interactive island of the home hero. Owns the
  * selected city (shared via useSelectedCity with persistence), the search term,
- * and the refinement filters.
+ * the selected establishment category, and the refinement filters.
  *
  * Single navigation point: ONLY the orange Search button loads results (city is
  * context, the «Фильтры» panel is refinement — neither navigates on its own).
  * serverFetch is server-only, so this NAVIGATES (router.push) rather than
  * calling the API. The target mirrors the results-page URL contract exactly:
- *   /{city}?search=<term>&cuisine=<slugs>&priceRange=<$,$$>&hours=<bucket>
- * Multi facets are comma-joined and omitted when none OR all are selected
- * ("all" == no constraint), matching FilterShelf.
+ *   - category chosen → /{city}/{category}?<facets>   (category = SEO path)
+ *   - no category     → /{city}?<facets>
+ * where <facets> = search / cuisine / priceRange / hours / features. Multi
+ * facets are comma-joined. cuisine/price are omitted when none OR all are
+ * selected ("all" == no constraint for OR-within-group). features are AND-ed by
+ * the backend, so they are omitted only when none is selected (all-selected is a
+ * meaningful, maximally-restrictive filter — NOT "no constraint").
  */
-export function HeroSearch({ cities, cuisines }: Props) {
+export function HeroSearch({ cities, categories, cuisines }: Props) {
   const router = useRouter();
   const { city, setCity } = useSelectedCity(cities);
   const [term, setTerm] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
   const [filters, setFilters] = useState<HeroFilterValue>(EMPTY_FILTERS);
 
   function onSubmit(e: React.FormEvent) {
@@ -56,9 +63,13 @@ export function HeroSearch({ cities, cuisines }: Props) {
     ) {
       params.set('priceRange', filters.priceRange.join(','));
     }
+    if (filters.features.length > 0) {
+      params.set('features', filters.features.join(','));
+    }
     if (filters.hours) params.set('hours', filters.hours);
     const qs = params.toString();
-    router.push(qs ? `/${city}?${qs}` : `/${city}`);
+    const base = category ? `/${city}/${category}` : `/${city}`;
+    router.push(qs ? `${base}?${qs}` : base);
   }
 
   return (
@@ -86,7 +97,14 @@ export function HeroSearch({ cities, cuisines }: Props) {
           </span>
         </span>
 
-        <HeroFilters cuisines={cuisines} value={filters} onChange={setFilters} />
+        <HeroFilters
+          categories={categories}
+          cuisines={cuisines}
+          value={filters}
+          onChange={setFilters}
+          selectedCategory={category}
+          onCategoryChange={setCategory}
+        />
       </div>
 
       {/* Search — orange button = the single action that loads results */}
