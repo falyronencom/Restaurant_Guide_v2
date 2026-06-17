@@ -20,7 +20,7 @@ export default async function PublicLayout({
 
   return (
     <>
-      <SiteHeader cities={cities} />
+      <SiteHeader />
       <div className='flex flex-1 flex-col'>{children}</div>
       <SiteFooter cities={cities} />
     </>

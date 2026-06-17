@@ -5,14 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AuthMenu } from '@/components/auth/AuthMenu';
-import type { MetadataSlug } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
-
-import { CitySwitcher } from './CitySwitcher';
-
-type Props = {
-  cities: MetadataSlug[];
-};
 
 /*
  * Unified site header — one chrome for the home, city and catalog routes (and,
@@ -25,13 +18,18 @@ type Props = {
  *    text; the wordmark is hidden because the hero carries the large wordmark.
  *    It turns solid once the user scrolls past a small threshold.
  *
+ * Controls: «Стать партнёром» (the vitrine's partner-acquisition CTA → the
+ * cabinet create flow; logged-out users pass through /login) + «Войти». City
+ * switching lives in the home hero chip and the footer, not the header
+ * (Coordinator review 2026-06-17 — removes a redundant city picker and makes the
+ * header partner-forward).
+ *
  * Client Component: the variant depends on usePathname + a scroll listener,
  * both client-only. It reads NO cookies/headers, so the (public) layout stays a
- * Server Component and the public subtree keeps its ISR posture. The other
- * interactive parts (CitySwitcher, AuthMenu) are already client islands; cities
- * arrive as a serializable prop from the server layout.
+ * Server Component and the public subtree keeps its ISR posture. AuthMenu is the
+ * other client island.
  */
-export function SiteHeader({ cities }: Props) {
+export function SiteHeader() {
   const pathname = usePathname();
   const isHome = pathname === '/';
   const [scrolled, setScrolled] = useState(false);
@@ -75,15 +73,17 @@ export function SiteHeader({ cities }: Props) {
         </Link>
 
         <div className="flex items-center gap-m">
-          <CitySwitcher
-            cities={cities}
+          <Link
+            href="/login?returnTo=/cabinet/new"
             className={cn(
-              'rounded-[8px] border px-s py-1 text-body-m transition-colors',
+              'rounded-s border px-m py-1.5 text-body-m font-medium transition-colors',
               overlay
-                ? 'border-white/70 bg-transparent text-white'
-                : 'border-border bg-background text-foreground',
+                ? 'border-white/70 text-white hover:bg-white/10'
+                : 'border-border text-foreground hover:bg-muted',
             )}
-          />
+          >
+            Стать партнёром
+          </Link>
           <AuthMenu overlay={overlay} />
         </div>
       </div>

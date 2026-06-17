@@ -1,37 +1,64 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { MetadataSlug } from '@/lib/api/types';
 import { useSelectedCity } from '@/lib/city/selected-city';
+import { PRICE_VALUES } from '@/lib/facets';
+
+import { HeroFilters, type HeroFilterValue } from './HeroFilters';
 
 type Props = {
   cities: MetadataSlug[];
+  cuisines: MetadataSlug[];
+};
+
+const EMPTY_FILTERS: HeroFilterValue = {
+  cuisines: [],
+  priceRange: [],
+  hours: undefined,
 };
 
 /*
- * Hero search cluster — the interactive island of the home hero (the rest of
- * the hero is static, server-rendered). Owns the selected-city choice (shared
- * via useSelectedCity with the header switcher) and the search term.
+ * Hero search cluster — the interactive island of the home hero. Owns the
+ * selected city (shared via useSelectedCity with persistence), the search term,
+ * and the refinement filters.
  *
- * City is CONTEXT, not a gate: search navigates immediately to the city's
- * results, defaulting to Минск, with no forced city/filter step. serverFetch is
- * server-only, so this NAVIGATES (router.push) rather than calling the API.
- *   - city chip → retargets the search (stays on `/`, no navigation)
- *   - «Фильтры» → the city overview page, which carries the full filter rail
- *   - submit    → /{city}?search=<term>  (or /{city} when the term is empty)
+ * Single navigation point: ONLY the orange Search button loads results (city is
+ * context, the «Фильтры» panel is refinement — neither navigates on its own).
+ * serverFetch is server-only, so this NAVIGATES (router.push) rather than
+ * calling the API. The target mirrors the results-page URL contract exactly:
+ *   /{city}?search=<term>&cuisine=<slugs>&priceRange=<$,$$>&hours=<bucket>
+ * Multi facets are comma-joined and omitted when none OR all are selected
+ * ("all" == no constraint), matching FilterShelf.
  */
-export function HeroSearch({ cities }: Props) {
+export function HeroSearch({ cities, cuisines }: Props) {
   const router = useRouter();
   const { city, setCity } = useSelectedCity(cities);
   const [term, setTerm] = useState('');
+  const [filters, setFilters] = useState<HeroFilterValue>(EMPTY_FILTERS);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const params = new URLSearchParams();
     const q = term.trim();
-    router.push(q ? `/${city}?search=${encodeURIComponent(q)}` : `/${city}`);
+    if (q) params.set('search', q);
+    if (
+      filters.cuisines.length > 0 &&
+      filters.cuisines.length < cuisines.length
+    ) {
+      params.set('cuisine', filters.cuisines.join(','));
+    }
+    if (
+      filters.priceRange.length > 0 &&
+      filters.priceRange.length < PRICE_VALUES.length
+    ) {
+      params.set('priceRange', filters.priceRange.join(','));
+    }
+    if (filters.hours) params.set('hours', filters.hours);
+    const qs = params.toString();
+    router.push(qs ? `/${city}?${qs}` : `/${city}`);
   }
 
   return (
@@ -59,28 +86,10 @@ export function HeroSearch({ cities }: Props) {
           </span>
         </span>
 
-        <Link
-          href={`/${city}`}
-          className="flex items-center gap-s rounded-full border border-white/70 px-l py-s text-label-l text-white transition-colors hover:bg-white/10"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
-            <circle cx="15" cy="7" r="2" />
-            <circle cx="9" cy="17" r="2" />
-          </svg>
-          Фильтры
-        </Link>
+        <HeroFilters cuisines={cuisines} value={filters} onChange={setFilters} />
       </div>
 
-      {/* Search — orange button = primary action (Booking «Найти») */}
+      {/* Search — orange button = the single action that loads results */}
       <form
         onSubmit={onSubmit}
         className="mt-m flex w-full max-w-[34rem] items-stretch overflow-hidden rounded-full bg-white shadow-xl"
