@@ -72,7 +72,7 @@ export function AuthMenu({ overlay = false }: Props) {
   return (
     <Link
       href={loginHref}
-      className="rounded-s bg-brand px-m py-1.5 text-body-m font-medium text-text-on-primary transition-colors hover:bg-brand-dark"
+      className="rounded-[10px] border border-transparent bg-brand px-m py-2 text-body-m font-medium text-text-on-primary transition-colors hover:bg-brand-dark"
     >
       Войти
     </Link>

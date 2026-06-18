@@ -183,7 +183,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{ page: '3' }}
-        selected={{ cuisines: [], priceRange: [], hours: undefined }}
+        selected={{ cuisines: [], priceRange: [], features: [], hours: undefined }}
       />,
     );
 
@@ -202,7 +202,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{ priceRange: '$' }}
-        selected={{ cuisines: [], priceRange: ['$'], hours: undefined }}
+        selected={{ cuisines: [], priceRange: ['$'], features: [], hours: undefined }}
       />,
     );
 
@@ -218,7 +218,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{ priceRange: '$,$$' }}
-        selected={{ cuisines: [], priceRange: ['$', '$$'], hours: undefined }}
+        selected={{ cuisines: [], priceRange: ['$', '$$'], features: [], hours: undefined }}
       />,
     );
 
@@ -235,7 +235,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{}}
-        selected={{ cuisines: [], priceRange: [], hours: undefined }}
+        selected={{ cuisines: [], priceRange: [], features: [], hours: undefined }}
       />,
     );
 
@@ -247,7 +247,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{ hours: 'until_22' }}
-        selected={{ cuisines: [], priceRange: [], hours: 'until_22' }}
+        selected={{ cuisines: [], priceRange: [], features: [], hours: 'until_22' }}
       />,
     );
 
@@ -260,7 +260,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       <FilterShelf
         {...baseProps}
         searchParams={{}}
-        selected={{ cuisines: [], priceRange: [], hours: undefined }}
+        selected={{ cuisines: [], priceRange: [], features: [], hours: undefined }}
       />,
     );
 

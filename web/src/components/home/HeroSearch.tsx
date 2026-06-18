@@ -7,6 +7,7 @@ import type { MetadataSlug } from '@/lib/api/types';
 import { useSelectedCity } from '@/lib/city/selected-city';
 import { PRICE_VALUES } from '@/lib/facets';
 
+import { CitySheet } from './CitySheet';
 import { HeroFilters, type HeroFilterValue } from './HeroFilters';
 
 type Props = {
@@ -76,26 +77,7 @@ export function HeroSearch({ cities, categories, cuisines }: Props) {
     <>
       {/* City + Filters pills — mobile-faithful binding */}
       <div className="mt-xl flex items-center gap-m">
-        <span className="relative inline-flex items-center">
-          <select
-            aria-label="Выбрать город"
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            className="cursor-pointer appearance-none rounded-full border border-white/70 bg-transparent py-s pl-l pr-9 text-label-l text-white outline-none"
-          >
-            {cities.map((c) => (
-              <option key={c.slug} value={c.slug} className="text-text-primary">
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-white/70"
-          >
-            ▾
-          </span>
-        </span>
+        <CitySheet cities={cities} value={city} onChange={setCity} />
 
         <HeroFilters
           categories={categories}
@@ -110,7 +92,7 @@ export function HeroSearch({ cities, categories, cuisines }: Props) {
       {/* Search — orange button = the single action that loads results */}
       <form
         onSubmit={onSubmit}
-        className="mt-m flex w-full max-w-[34rem] items-stretch overflow-hidden rounded-full bg-white shadow-xl"
+        className="mt-m flex w-full max-w-[34rem] items-stretch overflow-hidden rounded-2xl bg-white shadow-xl"
       >
         <input
           type="search"

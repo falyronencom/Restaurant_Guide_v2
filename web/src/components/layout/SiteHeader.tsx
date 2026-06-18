@@ -72,11 +72,11 @@ export function SiteHeader() {
           NIRIVIO
         </Link>
 
-        <div className="flex items-center gap-m">
+        <div className="flex items-center gap-m text-body-m">
           <Link
             href="/login?returnTo=/cabinet/new"
             className={cn(
-              'rounded-s border px-m py-1.5 text-body-m font-medium transition-colors',
+              'rounded-[10px] border px-m py-2 font-medium transition-colors',
               overlay
                 ? 'border-white/70 text-white hover:bg-white/10'
                 : 'border-border text-foreground hover:bg-muted',

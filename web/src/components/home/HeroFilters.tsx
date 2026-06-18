@@ -95,7 +95,7 @@ export function HeroFilters({
 
   return (
     <Sheet>
-      <SheetTrigger className="flex items-center gap-s rounded-full border border-white/70 px-l py-s text-label-l text-white transition-colors hover:bg-white/10">
+      <SheetTrigger className="flex items-center gap-s rounded-2xl border border-white/70 px-l py-s text-label-l text-white transition-colors hover:bg-white/10">
         <svg
           viewBox="0 0 24 24"
           fill="none"

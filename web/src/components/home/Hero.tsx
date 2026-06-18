@@ -28,7 +28,7 @@ type Props = {
  */
 export function Hero({ cities, categories, cuisines }: Props) {
   return (
-    <section className="relative -mt-[72px] min-h-[88vh] w-full overflow-hidden">
+    <section className="relative -mt-[72px] min-h-[80vh] w-full overflow-hidden">
       <Image
         src="/search_background.jpg"
         alt=""
@@ -37,7 +37,7 @@ export function Hero({ cities, categories, cuisines }: Props) {
         sizes="100vw"
         className="object-cover"
       />
-      <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
+      <div className="absolute inset-0 bg-black/55" aria-hidden="true" />
       <div
         className="absolute inset-x-0 bottom-0 h-48"
         style={{
@@ -47,13 +47,13 @@ export function Hero({ cities, categories, cuisines }: Props) {
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto flex min-h-[88vh] max-w-3xl flex-col items-center justify-center px-l text-center">
+      <div className="relative z-10 mx-auto flex min-h-[80vh] max-w-3xl flex-col items-center justify-center px-l text-center">
         {/* Wordmark — Josefin (latin), letter-spaced */}
         <h1 className="font-wordmark text-[60px] leading-none font-semibold tracking-[0.3em] text-white sm:text-[80px] md:text-[96px]">
           NIRIVIO
         </h1>
         {/* Slogan — Cyrillic → Unbounded (font-display) */}
-        <p className="mt-l font-display text-[18px] font-light tracking-[0.3em] text-white/85 md:text-[22px]">
+        <p className="mt-l font-display text-[18px] font-light tracking-[0.2em] text-white/85 md:text-[22px]">
           Вкусное рядом
         </p>
 
