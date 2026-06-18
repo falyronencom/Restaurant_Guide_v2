@@ -25,7 +25,7 @@ export function PartnerCtaSection() {
         </p>
         <Link
           href="/login?returnTo=/cabinet/new"
-          className="mt-s rounded-full bg-brand px-xl py-m text-label-l text-text-on-primary transition-colors hover:bg-brand-dark"
+          className="mt-s rounded-[10px] bg-brand px-xl py-m text-label-l text-text-on-primary transition-colors hover:bg-brand-dark"
         >
           Добавить заведение
         </Link>

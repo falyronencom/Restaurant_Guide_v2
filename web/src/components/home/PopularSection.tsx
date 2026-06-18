@@ -1,8 +1,9 @@
 import Link from 'next/link';
 
-import { EstablishmentCard } from '@/components/catalog/EstablishmentCard';
 import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
 import { getCatalog } from '@/lib/api/endpoints/establishments';
+
+import { PopularCard } from './PopularCard';
 
 /*
  * "Популярное" — the home body's first audience hook (users). Top-rated
@@ -21,7 +22,7 @@ import { getCatalog } from '@/lib/api/endpoints/establishments';
 
 const POPULAR_CITY = 'minsk';
 const POPULAR_CITY_NAME = 'Минске';
-const POPULAR_LIMIT = 8;
+const POPULAR_LIMIT = 6;
 
 export async function PopularSection() {
   const { establishments } = await getCatalog({
@@ -49,9 +50,9 @@ export async function PopularSection() {
       </div>
 
       <FavoritesProvider establishmentIds={establishments.map((e) => e.id)}>
-        <div className="grid grid-cols-1 gap-l sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-l sm:grid-cols-2 lg:grid-cols-3">
           {establishments.map((establishment) => (
-            <EstablishmentCard
+            <PopularCard
               key={establishment.id}
               establishment={establishment}
               fallbackCitySlug={POPULAR_CITY}
