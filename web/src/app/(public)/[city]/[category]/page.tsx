@@ -35,18 +35,16 @@ import {
  * canonical to the clean variant (CAT-C-2.3 — prevent indexing of every filter
  * permutation while still allowing crawlers to follow links).
  *
- * Pagination: ISR-friendly (revalidate=3600). Each page-N variant caches
- * separately under the same TTL. EmptyState rendered when zero matches.
+ * Rendering: force-dynamic — the page reads searchParams (filters/pagination),
+ * which Next 16 cannot statically generate (ISR keys by pathname, not query →
+ * DYNAMIC_SERVER_USAGE 500 in prod `next start`; `next dev` masks it). Per-request
+ * SSR keeps the results list in HTML — SEO-critical for this primary indexed
+ * surface. Real caching returns later via CDN keyed by the FULL URL incl. query
+ * (CAT-C-4.3). EmptyState rendered when zero matches. (Trunk decision 2026-06-19.)
  */
-export const revalidate = 3600;
+export const dynamic = 'force-dynamic';
 
 type Params = { city: string; category: string };
-
-export async function generateStaticParams(): Promise<Params[]> {
-  // Defer to runtime — city × category combinatorial explosion. Brief 3
-  // does not pre-warm. Future optimization may pre-render popular pairs.
-  return [];
-}
 
 export async function generateMetadata({
   params,

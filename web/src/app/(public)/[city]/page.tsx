@@ -27,18 +27,17 @@ import {
  * validateCitySlug → notFound() protects it. Declare real top-level segments
  * BEFORE introducing them.
  */
-export const revalidate = 3600;
+// Reads searchParams (facets) → must render per-request. Next 16 cannot
+// statically generate a searchParams-reading page (ISR keys by pathname, not
+// query → DYNAMIC_SERVER_USAGE 500 in prod `next start`; `next dev` masks it).
+// Per-request SSR keeps the results list in HTML — SEO-critical for this primary
+// indexed surface. Real caching returns later via CDN keyed by the FULL URL incl.
+// query (CAT-C-4.3) — the exact pathname-only limit that made ISR incoherent
+// here. The prior `revalidate` + `generateStaticParams ⇒ []` were misleading
+// (the route was never actually statically cached). (Trunk decision 2026-06-19.)
+export const dynamic = 'force-dynamic';
 
 type Params = { city: string };
-
-export async function generateStaticParams(): Promise<Params[]> {
-  // Return [] — the page reads searchParams (facets), which conflicts with
-  // build-time pre-rendering of concrete city params (it would fall back to
-  // fully dynamic). Deferring to runtime keeps the route SSG/ISR (statically
-  // generated on first request per URL incl. filters, cached for revalidate),
-  // mirroring the catalog page /[city]/[category].
-  return [];
-}
 
 export async function generateMetadata({
   params,

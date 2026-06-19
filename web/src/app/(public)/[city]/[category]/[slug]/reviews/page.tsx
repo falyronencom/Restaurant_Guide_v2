@@ -37,7 +37,12 @@ import {
  *     masquerading as "no reviews" (reviews ARE this page's content).
  */
 
-export const revalidate = 3600;
+// force-dynamic: reads searchParams (?page) → Next 16 cannot statically generate
+// a searchParams-reading page (ISR keys by pathname, not query →
+// DYNAMIC_SERVER_USAGE 500 in prod `next start`; `next dev` masks it). Per-request
+// SSR keeps reviews in HTML — this page's indexed content. (Trunk decision
+// 2026-06-19.)
+export const dynamic = 'force-dynamic';
 
 const REVIEWS_PER_PAGE = 10;
 
@@ -45,11 +50,6 @@ type Params = { city: string; category: string; slug: string };
 type SearchParams = { [key: string]: string | string[] | undefined };
 
 const getCachedBySlug = cache((slug: string) => getBySlug(slug));
-
-export async function generateStaticParams(): Promise<Params[]> {
-  // Defer to runtime — combinatorial explosion (cities × categories × slugs).
-  return [];
-}
 
 export async function generateMetadata({
   params,

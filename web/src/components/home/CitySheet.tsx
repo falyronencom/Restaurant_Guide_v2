@@ -26,9 +26,12 @@ type Props = {
  * CONTEXT on the home hero — it does not navigate; only the orange Search does —
  * so onChange merely updates the shared selected-city state.
  *
- * Note: the option size token (text-body-m) lives on the grid container, NOT in
- * the per-button cn() — twMerge would drop a size token sitting next to a color
- * token in the same cn() (feedback_tailwind_merge_text_token).
+ * Note: the option size token (text-body-m) lives on the grid container so the
+ * whole option grid shares one size declaration; the per-button cn() carries
+ * only color/border tokens. (Historically this also dodged a tailwind-merge bug
+ * that dropped a size token sitting next to a color token in one cn(); cn() now
+ * extends tailwind-merge to prevent that — see lib/utils.ts and
+ * feedback_tailwind_merge_text_token — so an inline size token would work too.)
  */
 export function CitySheet({ cities, value, onChange }: Props) {
   const current = cities.find((c) => c.slug === value);
