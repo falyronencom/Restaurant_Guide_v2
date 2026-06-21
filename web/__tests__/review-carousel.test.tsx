@@ -77,7 +77,13 @@ describe('ReviewCarousel — "Все N отзывов →" link', () => {
       />,
     );
 
-    // reviewsHref is truthy, but `totalCount > reviews.length` is false → no link.
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // reviewsHref is truthy but totalCount == shown → no «Все N» link; the
+    // «Оставить отзыв» CTA still renders (it links to the reviews route).
+    expect(
+      screen.queryByRole('link', { name: /^Все/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Оставить отзыв' }),
+    ).toBeInTheDocument();
   });
 });

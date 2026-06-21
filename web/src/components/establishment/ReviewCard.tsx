@@ -1,23 +1,33 @@
 import Image from 'next/image';
-import { Star, MessageSquareReply } from 'lucide-react';
+import { Star } from 'lucide-react';
 
 import type { PublicReview } from '@/lib/api/types';
 import { formatDateRu } from '@/lib/establishment-helpers';
 import { cn } from '@/lib/utils';
 
 /**
- * ReviewCard — Server Component.
- *
- * A single review card shared between the detail-page ReviewCarousel
- * (horizontal scroll-snap row, content truncated) and the dedicated /reviews
- * route (vertical list, full content). The card owns only its content and the
- * common card chrome; layout-specific sizing (min-width, snap) is injected by
- * the caller via `className`.
- *
- * @param clamp - When true (carousel default) the body and partner response are
- *   line-clamped to keep cards compact in the grid. The /reviews page passes
- *   `false` to show reviews in full.
+ * ReviewCard — Server Component. Shared by the detail-page ReviewCarousel
+ * (compact, clamped) and the /reviews route (full). Warm-beige card: colored
+ * initial avatar + author + date, star rating on the right, body, and an
+ * optional partner response with a brand left-rule.
  */
+
+// Stable avatar tint by author name (design uses a small varied palette).
+const AVATAR_COLORS = [
+  'bg-brand',
+  'bg-success-status',
+  'bg-figma-navy',
+  'bg-[#A07A52]',
+] as const;
+
+function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
 export function ReviewCard({
   review,
   className,
@@ -30,56 +40,69 @@ export function ReviewCard({
   return (
     <article
       className={cn(
-        'flex flex-col gap-s rounded-l border border-border bg-background p-m',
+        'flex flex-col gap-2.5 rounded-[18px] bg-figma-bg-warm p-[18px]',
         className,
       )}
     >
-      <header className='flex items-start gap-s'>
-        <div className='relative size-10 shrink-0 overflow-hidden rounded-full bg-figma-navy'>
+      <header className='flex items-center gap-3'>
+        <div
+          className={cn(
+            'relative flex size-[42px] shrink-0 items-center justify-center overflow-hidden rounded-full font-display text-[16px] font-bold text-text-on-primary',
+            avatarColor(review.author.name),
+          )}
+        >
           {review.author.avatar_url ? (
             <Image
               src={review.author.avatar_url}
               alt={review.author.name}
               fill
-              sizes='40px'
+              sizes='42px'
               className='object-cover'
             />
           ) : (
-            <span className='flex size-full items-center justify-center font-display text-headline-m text-text-on-primary'>
-              {review.author.name.charAt(0).toUpperCase()}
-            </span>
+            review.author.name.charAt(0).toUpperCase()
           )}
         </div>
-        <div className='flex flex-1 flex-col gap-1'>
-          <span className='text-body-m font-medium text-foreground'>
+        <div className='min-w-0'>
+          <div className='text-[15px] font-semibold text-foreground'>
             {review.author.name}
-          </span>
+          </div>
+          <time
+            dateTime={review.created_at}
+            className='text-caption-m text-[#9a9a9a]'
+          >
+            {formatDateRu(review.created_at)}
+          </time>
+        </div>
+        <div className='ml-auto'>
           <StarRating rating={review.rating} />
         </div>
-        <time
-          dateTime={review.created_at}
-          className='text-caption-m text-muted-foreground'
-        >
-          {formatDateRu(review.created_at)}
-        </time>
       </header>
 
       {review.content ? (
-        <p className={cn('text-body-m text-foreground', clamp && 'line-clamp-6')}>
+        <p
+          className={cn(
+            'text-body-m leading-[1.55] text-[#3A3A3A]',
+            clamp && 'line-clamp-6',
+          )}
+        >
           {review.content}
         </p>
       ) : null}
 
       {review.partner_response ? (
-        <div className='inline-flex items-start gap-s rounded-m bg-brand/10 p-s text-body-s'>
-          <MessageSquareReply
-            className='mt-0.5 size-4 shrink-0 text-brand'
-            aria-hidden='true'
-          />
-          <span className={cn('text-foreground', clamp && 'line-clamp-3')}>
-            <span className='font-medium'>Ответ заведения: </span>
+        <div className='flex flex-col gap-1 rounded-r-[10px] border-l-2 border-brand bg-background p-3'>
+          <div className='text-caption-m font-semibold text-brand'>
+            Ответ заведения
+          </div>
+          <p
+            className={cn(
+              'text-body-s leading-[1.5] text-[#3A3A3A]',
+              clamp && 'line-clamp-3',
+            )}
+          >
             {review.partner_response}
-          </span>
+          </p>
         </div>
       ) : null}
     </article>
@@ -88,14 +111,17 @@ export function ReviewCard({
 
 function StarRating({ rating }: { rating: number }) {
   return (
-    <div className='flex items-center gap-0.5' aria-label={`Оценка: ${rating} из 5`}>
+    <div
+      className='flex items-center gap-0.5'
+      aria-label={`Оценка: ${rating} из 5`}
+    >
       {[1, 2, 3, 4, 5].map((n) => (
         <Star
           key={n}
           className={
             n <= rating
-              ? 'size-4 fill-brand text-brand'
-              : 'size-4 text-muted-foreground'
+              ? 'size-3.5 fill-brand text-brand'
+              : 'size-3.5 text-muted-foreground'
           }
           aria-hidden='true'
         />

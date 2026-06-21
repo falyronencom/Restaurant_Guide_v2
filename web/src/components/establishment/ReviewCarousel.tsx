@@ -4,23 +4,19 @@ import type { PublicReview } from '@/lib/api/types';
 import {
   formatRating,
   pluralizeReviews,
+  ratingColorClass,
   ratingLabel,
 } from '@/lib/establishment-helpers';
+
 import { ReviewCard } from './ReviewCard';
 
 /**
- * ReviewCarousel — Server Component (Brief 4).
+ * ReviewCarousel — Server Component.
  *
- * Booking-style review block:
- *   - Header: overall rating square + total count + verbal label
- *     («Превосходно/Очень хорошо/...») + optional "Все N отзывов →" link to the
- *     dedicated /reviews route (Phase A) when more reviews exist than shown.
- *   - 3-card row на desktop, horizontal scroll-snap на mobile (CSS-only)
- *   - Each card (ReviewCard, shared with the /reviews route): avatar + author
- *     name + 5-star rating + content excerpt + date + optional partner-response.
- *   - Initial limit ≈5 reviews (per directive); the full list lives at /reviews.
- *
- * Author name: full name preserved (QP4 confirmed contract — no truncation).
+ * Header: overall rating badge + verbal label + total count + «Все N отзывов →»
+ * link to the dedicated /reviews route. Body: a 2-column grid on desktop, a
+ * horizontal scroll-snap row on mobile (CSS-only). Footer: «Оставить отзыв»
+ * outline CTA (→ the reviews route, where the submit flow will live).
  */
 
 export function ReviewCarousel({
@@ -37,26 +33,36 @@ export function ReviewCarousel({
   const label = ratingLabel(averageRating);
 
   return (
-    <div className='flex flex-col gap-m'>
-      <div className='flex flex-wrap items-center gap-m'>
-        <h2 className='text-display-s font-display'>Отзывы</h2>
+    <div className='flex flex-col gap-4'>
+      <div className='flex flex-wrap items-center gap-3'>
+        <h2 className='font-display text-[20px] font-semibold'>Отзывы</h2>
         {averageRating != null ? (
-          <span className='inline-flex items-center gap-s'>
-            <span className='inline-flex size-10 items-center justify-center rounded-s bg-success-status text-headline-m font-medium text-text-on-primary'>
+          <span className='inline-flex items-center gap-2'>
+            <span
+              className={`flex size-[34px] items-center justify-center rounded-s text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
+                averageRating,
+              )}`}
+            >
               {formatRating(averageRating)}
             </span>
-            {label ? <span className='text-body-l text-foreground'>{label}</span> : null}
+            {label ? (
+              <span className='text-body-l font-semibold text-foreground'>
+                {label}
+              </span>
+            ) : null}
             <span className='text-body-m text-muted-foreground'>
               · {pluralizeReviews(totalCount)}
             </span>
           </span>
         ) : (
-          <span className='text-body-m text-muted-foreground'>{pluralizeReviews(totalCount)}</span>
+          <span className='text-body-m text-muted-foreground'>
+            {pluralizeReviews(totalCount)}
+          </span>
         )}
         {reviewsHref != null && totalCount > reviews.length ? (
           <Link
             href={reviewsHref}
-            className='ml-auto text-body-m font-medium text-primary underline-offset-4 hover:underline'
+            className='ml-auto text-body-m font-medium text-brand underline-offset-4 hover:underline'
           >
             Все {pluralizeReviews(totalCount)} →
           </Link>
@@ -64,12 +70,12 @@ export function ReviewCarousel({
       </div>
 
       {reviews.length === 0 ? (
-        <p className='rounded-l border border-border bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
+        <p className='rounded-card bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
           Пока нет отзывов. Будьте первым, кто оставит отзыв!
         </p>
       ) : (
         <div
-          className='-mx-l flex snap-x snap-mandatory gap-m overflow-x-auto px-l lg:mx-0 lg:grid lg:grid-cols-3 lg:overflow-visible lg:px-0'
+          className='-mx-l flex snap-x snap-mandatory gap-3.5 overflow-x-auto px-l lg:mx-0 lg:grid lg:grid-cols-2 lg:overflow-visible lg:px-0'
           style={{ scrollbarWidth: 'none' }}
         >
           {reviews.map((review) => (
@@ -81,6 +87,15 @@ export function ReviewCarousel({
           ))}
         </div>
       )}
+
+      {reviewsHref != null ? (
+        <Link
+          href={reviewsHref}
+          className='inline-flex w-fit items-center gap-2 rounded-[14px] border border-brand px-5 py-3 text-body-l font-semibold text-brand transition-colors hover:bg-brand/5'
+        >
+          Оставить отзыв
+        </Link>
+      ) : null}
     </div>
   );
 }
