@@ -11,10 +11,16 @@ import {
 import type { MetadataSlug } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_TRIGGER_CLASS =
+  'flex items-center gap-s rounded-2xl border border-white/70 px-l py-s text-label-l text-white transition-colors hover:bg-white/10';
+
 type Props = {
   cities: MetadataSlug[];
   value: string;
   onChange: (slug: string) => void;
+  /** Override the trigger pill styling — e.g. the catalog banner's glass
+   *  variant. Defaults to the home-hero white-outline pill. */
+  triggerClassName?: string;
 };
 
 /*
@@ -33,12 +39,17 @@ type Props = {
  * extends tailwind-merge to prevent that — see lib/utils.ts and
  * feedback_tailwind_merge_text_token — so an inline size token would work too.)
  */
-export function CitySheet({ cities, value, onChange }: Props) {
+export function CitySheet({
+  cities,
+  value,
+  onChange,
+  triggerClassName = DEFAULT_TRIGGER_CLASS,
+}: Props) {
   const current = cities.find((c) => c.slug === value);
 
   return (
     <Sheet>
-      <SheetTrigger className="flex items-center gap-s rounded-2xl border border-white/70 px-l py-s text-label-l text-white transition-colors hover:bg-white/10">
+      <SheetTrigger className={triggerClassName}>
         <svg
           viewBox="0 0 24 24"
           fill="none"

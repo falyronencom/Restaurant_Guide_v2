@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { getCatalog } from '@/lib/api/endpoints/establishments';
@@ -8,6 +7,7 @@ import {
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
+import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import {
   asFloat,
@@ -155,40 +155,31 @@ export default async function CategoryPage({
   }));
 
   return (
-    <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
-      <header className='flex flex-col gap-s'>
-        <nav
-          aria-label='Хлебные крошки'
-          className='flex items-center gap-s text-caption-l text-muted-foreground'
-        >
-          <Link href='/' className='hover:text-foreground'>
-            Главная
-          </Link>
-          <span aria-hidden='true'>/</span>
-          <Link href={`/${city}`} className='hover:text-foreground'>
-            {cityName}
-          </Link>
-          <span aria-hidden='true'>/</span>
-          <span aria-current='page'>{categoryName.toLowerCase()}</span>
-        </nav>
-        <h1 className='text-display-s font-display'>
-          {categoryName} в городе {cityName}
-        </h1>
-      </header>
-
-      <ResultsView
+    <>
+      <CatalogHero
         citySlug={city}
-        categories={meta.categories}
-        activeCategorySlug={category}
-        establishments={catalog.establishments}
-        pagination={catalog.pagination}
-        basePath={`/${city}/${category}`}
+        cityName={cityName}
+        categorySlug={category}
+        categoryName={categoryName}
+        cities={meta.cities}
         searchParams={sp}
-        cuisineOptions={cuisineOptions}
-        selected={{ cuisines, priceRange, features, hours }}
-        fallbackCategorySlug={category}
       />
-    </main>
+
+      <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
+        <ResultsView
+          citySlug={city}
+          categories={meta.categories}
+          activeCategorySlug={category}
+          establishments={catalog.establishments}
+          pagination={catalog.pagination}
+          basePath={`/${city}/${category}`}
+          searchParams={sp}
+          cuisineOptions={cuisineOptions}
+          selected={{ cuisines, priceRange, features, hours }}
+          fallbackCategorySlug={category}
+        />
+      </main>
+    </>
   );
 }
 

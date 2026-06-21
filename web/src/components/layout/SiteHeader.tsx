@@ -32,10 +32,16 @@ import { cn } from '@/lib/utils';
 export function SiteHeader() {
   const pathname = usePathname();
   const isHome = pathname === '/';
+  // Catalog route /{city}/{category} — exactly two path segments — renders a
+  // photo banner the header overlays (like the home hero). The city page (1
+  // segment) and the establishment detail page (3 segments) keep the solid
+  // header, so this stays specific to the catalog surface.
+  const isCatalog = pathname.split('/').filter(Boolean).length === 2;
+  const hasOverlayHero = isHome || isCatalog;
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    if (!isHome) return undefined;
+    if (!hasOverlayHero) return undefined;
     const onScroll = () => setScrolled(window.scrollY > 24);
     window.addEventListener('scroll', onScroll, { passive: true });
     // Initial sync (e.g. a back-nav that restores scroll position); deferred a
@@ -45,9 +51,13 @@ export function SiteHeader() {
       clearTimeout(timer);
       window.removeEventListener('scroll', onScroll);
     };
-  }, [isHome]);
+  }, [hasOverlayHero]);
 
-  const overlay = isHome && !scrolled;
+  const overlay = hasOverlayHero && !scrolled;
+  // The home hero carries its own large wordmark, so the header wordmark is
+  // hidden while overlaying there; the catalog banner has none, so it stays
+  // visible (white over the photo).
+  const hideWordmark = overlay && isHome;
 
   return (
     <header
@@ -62,11 +72,15 @@ export function SiteHeader() {
         <Link
           href="/"
           aria-label="Nirivio — на главную"
-          aria-hidden={overlay || undefined}
-          tabIndex={overlay ? -1 : undefined}
+          aria-hidden={hideWordmark || undefined}
+          tabIndex={hideWordmark ? -1 : undefined}
           className={cn(
             'font-wordmark text-headline-l font-bold tracking-tight transition-opacity',
-            overlay ? 'pointer-events-none opacity-0' : 'text-foreground',
+            hideWordmark
+              ? 'pointer-events-none opacity-0'
+              : overlay
+                ? 'text-white'
+                : 'text-foreground',
           )}
         >
           NIRIVIO
