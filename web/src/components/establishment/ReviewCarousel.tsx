@@ -36,7 +36,7 @@ export function ReviewCarousel({
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center gap-3'>
         <h2 className='font-display text-[20px] font-semibold'>Отзывы</h2>
-        {averageRating != null ? (
+        {averageRating != null && totalCount > 0 ? (
           <span className='inline-flex items-center gap-2'>
             <span
               className={`flex size-[34px] items-center justify-center rounded-s text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(

@@ -30,7 +30,8 @@ export function ContactSidebar({
   return (
     <div className='flex flex-col gap-3.5'>
       <div className='flex flex-col gap-3.5 rounded-card bg-figma-bg-warm p-5'>
-        {establishment.average_rating != null ? (
+        {establishment.average_rating != null &&
+        establishment.review_count > 0 ? (
           <div className='flex items-center gap-3'>
             <span
               className={`flex size-12 shrink-0 items-center justify-center rounded-m text-[20px] leading-none font-semibold text-text-on-primary ${ratingColorClass(

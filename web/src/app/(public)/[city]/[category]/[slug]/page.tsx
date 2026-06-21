@@ -259,7 +259,8 @@ export default async function EstablishmentPage({
               {establishment.name}
             </h1>
             <div className='mt-1 flex flex-wrap items-center gap-3 text-body-m text-muted-foreground'>
-              {establishment.average_rating != null ? (
+              {establishment.average_rating != null &&
+              establishment.review_count > 0 ? (
                 <span
                   className={`inline-flex items-center rounded-s px-2.5 py-1 text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
                     establishment.average_rating,
