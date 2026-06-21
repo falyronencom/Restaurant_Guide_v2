@@ -166,6 +166,8 @@ describe('generateMetadata — filter-aware noindex + canonical', () => {
 
 describe('FilterShelf — toggle → URL round-trip', () => {
   const baseProps = {
+    citySlug: 'minsk',
+    categories: [{ slug: 'restorany', name: 'Рестораны' }],
     basePath: '/minsk/restorany',
     cuisineOptions: [
       { value: 'italian', label: 'Итальянская' },
@@ -187,9 +189,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       />,
     );
 
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: '$ · до 20 руб' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /до 20 руб/ }));
 
     expect(mockPush).toHaveBeenCalledTimes(1);
     const q = pushedQuery();
@@ -206,9 +206,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       />,
     );
 
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: '$$ · до 50 руб' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /до 50 руб/ }));
 
     expect(pushedQuery().get('priceRange')).toBe('$,$$');
   });
@@ -222,9 +220,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
       />,
     );
 
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: '$$$ · более 50 руб' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /более 50 руб/ }));
 
     // All three selected → no priceRange param at all (clean URL).
     expect(mockPush.mock.calls[0][0]).toBe('/minsk/restorany');
@@ -255,7 +251,7 @@ describe('FilterShelf — toggle → URL round-trip', () => {
     expect(mockPush.mock.calls[0][0]).toBe('/minsk/restorany');
   });
 
-  it('renders a checkbox per cuisine option supplied from metadata', () => {
+  it('renders a tile per cuisine option supplied from metadata', () => {
     render(
       <FilterShelf
         {...baseProps}
@@ -265,10 +261,10 @@ describe('FilterShelf — toggle → URL round-trip', () => {
     );
 
     expect(
-      screen.getByRole('checkbox', { name: 'Итальянская' }),
+      screen.getByRole('button', { name: 'Итальянская' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('checkbox', { name: 'Азиатская' }),
+      screen.getByRole('button', { name: 'Азиатская' }),
     ).toBeInTheDocument();
   });
 });

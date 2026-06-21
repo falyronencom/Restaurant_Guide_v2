@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 
 import {
   Accordion,
@@ -10,8 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
+import type { MetadataSlug } from '@/lib/api/types';
 import {
   ATTRIBUTE_OPTIONS,
   ATTRIBUTE_VALUES,
@@ -22,21 +22,26 @@ import {
 } from '@/lib/facets';
 import { cn } from '@/lib/utils';
 
+import { CategoryIcon } from './CategoryIcon';
+
 /*
- * FilterShelf — searchParams-driven facet shelf for the catalog page.
+ * FilterShelf — searchParams-driven facet shelf for the catalog page (and the
+ * shared city page via ResultsView). Tile/pill UI mirrors the home HeroFilters
+ * panel; the design moved the category selector into this shelf.
  *
  * Client island (the only interactive part of the otherwise-Server catalog
- * page). It performs NO client-side filtering of results: every toggle mutates
- * the URL query-string and the Server Component re-fetches with the new params
- * (mirrors mobile — collect selection → params → backend applies OR/AND).
+ * page). It does NO client-side filtering: every facet toggle mutates the URL
+ * query-string and the Server Component re-fetches (mirrors mobile — collect
+ * selection → params → backend applies OR/AND).
  *
- * Facets: price (multi, OR-within), cuisine (multi, OR-within), working-hours
- * (single-select bucket), and attributes/«Дополнительно» (multi). Group
- * AND-between is applied by the backend. Distance stays out of v1 scope.
+ * Category is single-select AND rendered as <Link>s, not buttons: a category is
+ * the SEO route segment /{city}/{category}, so the cross-category links stay
+ * crawlable <a> tags pointing at the clean (facet-free) category URL. The other
+ * facets — cuisine (multi), price (multi), working-hours (single), attributes
+ * (multi) — are buttons that mutate the query (those URLs are noindex anyway).
  *
- * URL contract mirrors CatalogPagination.buildHref: preserve all sibling params,
- * reset `page` to 1 on every facet change, and keep multi-value facets as a
- * single comma-joined key (not repeated keys).
+ * URL contract mirrors CatalogPagination.buildHref: preserve sibling params,
+ * reset `page` on every facet change, multi-value facets stay comma-joined.
  */
 
 type Selected = {
@@ -46,17 +51,39 @@ type Selected = {
   hours: string | undefined;
 };
 
-export function FilterShelf({
-  basePath,
-  searchParams,
-  cuisineOptions,
-  selected,
-}: {
+type Props = {
+  citySlug: string;
+  categories: MetadataSlug[];
+  activeCategorySlug?: string;
   basePath: string;
   searchParams: Record<string, string | string[] | undefined>;
   cuisineOptions: readonly FacetOption[];
   selected: Selected;
-}) {
+};
+
+// Tile + pill style tokens (mirror of the home HeroFilters panel).
+const TILE_BASE =
+  'flex flex-col items-center gap-1.5 rounded-m border px-1 py-3 text-center transition-colors';
+const PRICE_TILE_BASE =
+  'flex flex-col items-center gap-0.5 rounded-m border px-1 py-2.5 transition-colors';
+const TILE_ACTIVE = 'border-brand bg-brand/10';
+const TILE_INACTIVE = 'border-border bg-background hover:bg-muted';
+const TILE_LABEL = 'text-[11px] leading-tight text-foreground';
+
+const PILL_BASE =
+  'inline-flex items-center gap-1.5 rounded-full border px-3 py-[7px] text-[13px] transition-colors';
+const PILL_ACTIVE = 'border-brand bg-brand text-white';
+const PILL_INACTIVE = 'border-border bg-background text-foreground hover:bg-muted';
+
+export function FilterShelf({
+  citySlug,
+  categories,
+  activeCategorySlug,
+  basePath,
+  searchParams,
+  cuisineOptions,
+  selected,
+}: Props) {
   const router = useRouter();
 
   // Clone current params, replace `key` with `value` (or drop it when value is
@@ -81,9 +108,9 @@ export function FilterShelf({
   );
 
   // Multi-select (OR-within-group): add/remove a value in a comma-joined param.
-  // If the toggle ends up selecting EVERY option, omit the param — "all selected"
-  // equals "no constraint" on the backend, so the full value list is never shipped
-  // to the URL (Informed Directive: «выбрать все» → опустить param).
+  // For OR-within facets (cuisine/price) "all selected" == "no constraint" → omit
+  // the param. For AND-between facets (features) "all" is a real filter → keep it,
+  // omit only when empty (omitWhenAll=false).
   const toggleMulti = useCallback(
     (
       key: string,
@@ -95,10 +122,6 @@ export function FilterShelf({
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
         : [...current, value];
-      // OR-within-group facets (cuisine/price): "all selected" == "no
-      // constraint" → omit the param. AND-between facets (features): "all
-      // selected" is a real, maximally-restrictive filter → keep it; omit only
-      // when empty.
       const omit =
         next.length === 0 || (omitWhenAll && next.length === allValues.length);
       navigate(key, omit ? undefined : next.join(','));
@@ -118,40 +141,82 @@ export function FilterShelf({
 
   return (
     <Accordion
-      defaultValue={['price', 'cuisine', 'hours', 'features']}
-      className='rounded-m border border-border bg-background px-m'
+      defaultValue={['category', 'cuisine', 'price', 'hours', 'features']}
+      className='rounded-l border border-border bg-background px-m'
       aria-label='Фильтры'
     >
-      <FacetGroup id='price' title='Средний чек'>
-        {PRICE_OPTIONS.map((opt) => (
-          <CheckRow
-            key={opt.value}
-            id={`price-${opt.value}`}
-            label={opt.label}
-            checked={selected.priceRange.includes(opt.value)}
-            onToggle={() =>
-              toggleMulti('priceRange', selected.priceRange, opt.value, PRICE_VALUES)
-            }
-          />
-        ))}
+      <FacetGroup id='category' title='Категория'>
+        <div className='grid grid-cols-3 gap-s'>
+          {categories.map((cat) => {
+            const active = cat.slug === activeCategorySlug;
+            return (
+              <Link
+                key={cat.slug}
+                href={`/${citySlug}/${cat.slug}`}
+                aria-current={active ? 'page' : undefined}
+                className={cn(TILE_BASE, active ? TILE_ACTIVE : TILE_INACTIVE)}
+              >
+                <CategoryIcon slug={cat.slug} size={28} />
+                <span className={TILE_LABEL}>{cat.name}</span>
+              </Link>
+            );
+          })}
+        </div>
       </FacetGroup>
 
-      <FacetGroup
-        id='cuisine'
-        title='Кухня'
-        contentClassName='grid grid-cols-1 gap-x-m gap-y-s pt-s sm:grid-cols-2'
-      >
-        {cuisineOptions.map((opt) => (
-          <CheckRow
-            key={opt.value}
-            id={`cuisine-${opt.value}`}
-            label={opt.label}
-            checked={selected.cuisines.includes(opt.value)}
-            onToggle={() =>
-              toggleMulti('cuisine', selected.cuisines, opt.value, cuisineValues)
-            }
-          />
-        ))}
+      <FacetGroup id='cuisine' title='Кухня'>
+        <div className='grid grid-cols-3 gap-s'>
+          {cuisineOptions.map((opt) => {
+            const active = selected.cuisines.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type='button'
+                aria-pressed={active}
+                onClick={() =>
+                  toggleMulti('cuisine', selected.cuisines, opt.value, cuisineValues)
+                }
+                className={cn(TILE_BASE, active ? TILE_ACTIVE : TILE_INACTIVE)}
+              >
+                <CategoryIcon slug={opt.value} size={28} />
+                <span className={TILE_LABEL}>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </FacetGroup>
+
+      <FacetGroup id='price' title='Средний чек'>
+        <div className='grid grid-cols-3 gap-s'>
+          {PRICE_OPTIONS.map((opt) => {
+            const active = selected.priceRange.includes(opt.value);
+            const sub = opt.label.split(' · ')[1] ?? opt.label;
+            return (
+              <button
+                key={opt.value}
+                type='button'
+                aria-pressed={active}
+                onClick={() =>
+                  toggleMulti(
+                    'priceRange',
+                    selected.priceRange,
+                    opt.value,
+                    PRICE_VALUES,
+                  )
+                }
+                className={cn(
+                  PRICE_TILE_BASE,
+                  active ? TILE_ACTIVE : TILE_INACTIVE,
+                )}
+              >
+                <span className='text-[15px] leading-none font-bold text-brand'>
+                  {'₽'.repeat(opt.value.length)}
+                </span>
+                <span className='text-[10px] text-text-secondary'>{sub}</span>
+              </button>
+            );
+          })}
+        </div>
       </FacetGroup>
 
       <FacetGroup id='hours' title='Время работы'>
@@ -164,12 +229,7 @@ export function FilterShelf({
                 type='button'
                 aria-pressed={active}
                 onClick={() => toggleSingle('hours', selected.hours, opt.value)}
-                className={cn(
-                  'rounded-s border px-m py-s text-body-m transition-colors',
-                  active
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-background text-foreground hover:bg-muted',
-                )}
+                className={cn(PILL_BASE, active ? PILL_ACTIVE : PILL_INACTIVE)}
               >
                 {opt.label}
               </button>
@@ -178,28 +238,32 @@ export function FilterShelf({
         </div>
       </FacetGroup>
 
-      <FacetGroup
-        id='features'
-        title='Дополнительно'
-        contentClassName='grid grid-cols-1 gap-x-m gap-y-s pt-s sm:grid-cols-2'
-      >
-        {ATTRIBUTE_OPTIONS.map((opt) => (
-          <CheckRow
-            key={opt.value}
-            id={`feature-${opt.value}`}
-            label={opt.label}
-            checked={selected.features.includes(opt.value)}
-            onToggle={() =>
-              toggleMulti(
-                'features',
-                selected.features,
-                opt.value,
-                ATTRIBUTE_VALUES,
-                false,
-              )
-            }
-          />
-        ))}
+      <FacetGroup id='features' title='Дополнительно'>
+        <div className='flex flex-wrap gap-s'>
+          {ATTRIBUTE_OPTIONS.map((opt) => {
+            const active = selected.features.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type='button'
+                aria-pressed={active}
+                onClick={() =>
+                  toggleMulti(
+                    'features',
+                    selected.features,
+                    opt.value,
+                    ATTRIBUTE_VALUES,
+                    false,
+                  )
+                }
+                className={cn(PILL_BASE, active ? PILL_ACTIVE : PILL_INACTIVE)}
+              >
+                <CategoryIcon slug={opt.value} size={16} />
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </FacetGroup>
     </Accordion>
   );
@@ -208,41 +272,18 @@ export function FilterShelf({
 function FacetGroup({
   id,
   title,
-  contentClassName = 'flex flex-col gap-s pt-s',
   children,
 }: {
   id: string;
   title: string;
-  contentClassName?: string;
   children: ReactNode;
 }) {
   return (
-    <AccordionItem value={id}>
-      <AccordionTrigger className='text-label-m'>{title}</AccordionTrigger>
-      <AccordionContent>
-        <div className={contentClassName}>{children}</div>
-      </AccordionContent>
+    <AccordionItem value={id} className='border-figma-divider'>
+      <AccordionTrigger className='py-3.5 font-semibold'>
+        {title}
+      </AccordionTrigger>
+      <AccordionContent className='pb-4'>{children}</AccordionContent>
     </AccordionItem>
-  );
-}
-
-function CheckRow({
-  id,
-  label,
-  checked,
-  onToggle,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className='flex items-center gap-s py-1'>
-      <Checkbox id={id} checked={checked} onCheckedChange={onToggle} />
-      <Label htmlFor={id} className='cursor-pointer font-normal text-body-m'>
-        {label}
-      </Label>
-    </div>
   );
 }

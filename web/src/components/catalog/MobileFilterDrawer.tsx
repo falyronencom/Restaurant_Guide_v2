@@ -5,11 +5,15 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import type { MetadataSlug } from '@/lib/api/types';
 import type { FacetOption } from '@/lib/facets';
 
 import { FilterShelf } from './FilterShelf';
 
 type Props = {
+  citySlug: string;
+  categories: MetadataSlug[];
+  activeCategorySlug?: string;
   basePath: string;
   searchParams: Record<string, string | string[] | undefined>;
   cuisineOptions: readonly FacetOption[];

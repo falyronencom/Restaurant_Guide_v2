@@ -193,7 +193,7 @@ export function HeroFilters({
           <div className="grid grid-cols-3 gap-s">
             {PRICE_OPTIONS.map((opt) => {
               const active = value.priceRange.includes(opt.value);
-              const [symbol, sub] = opt.label.split(' · ');
+              const sub = opt.label.split(' · ')[1] ?? opt.label;
               return (
                 <button
                   key={opt.value}
@@ -208,7 +208,7 @@ export function HeroFilters({
                   )}
                 >
                   <span className="text-headline-m font-bold text-brand">
-                    {symbol}
+                    {'₽'.repeat(opt.value.length)}
                   </span>
                   <span className="text-caption-m text-text-secondary">
                     {sub}
