@@ -14,7 +14,13 @@ import {
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
-import { normalizeCategory } from '@/lib/working-hours';
+import {
+  formatRating,
+  pluralizeReviews,
+  ratingColorClass,
+} from '@/lib/establishment-helpers';
+import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
+import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
 import { Attributes } from '@/components/establishment/Attributes';
 import { ContactSidebar } from '@/components/establishment/ContactSidebar';
@@ -166,6 +172,9 @@ export default async function EstablishmentPage({
   const displayCategory = establishment.categories[0]
     ? normalizeCategory(establishment.categories[0])
     : categoryName;
+  const primaryCuisine = establishment.cuisines[0]
+    ? normalizeCuisine(establishment.cuisines[0])
+    : null;
 
   // Split media: PDF menus → MenuBlock fallback; gallery photos → Gallery.
   const pdfMenus = establishment.media.filter(
@@ -235,19 +244,47 @@ export default async function EstablishmentPage({
       {/* Title block — favorites proving-action lives in the header (always
           visible; ContactSidebar is hidden on mobile). */}
       <FavoritesProvider establishmentIds={[establishment.id]}>
-        <header className='flex flex-col gap-s'>
-          <p className='text-caption-l text-muted-foreground'>
-            {displayCategory.toLowerCase()} в городе {cityName}
-          </p>
-          <div className='flex items-start justify-between gap-m'>
-            <h1 className='text-display-l font-display'>
+        <header className='flex flex-wrap items-end justify-between gap-m'>
+          <div className='flex flex-col gap-1.5'>
+            <p className='text-body-m text-muted-foreground'>
+              {displayCategory.toLowerCase()}
+              {primaryCuisine ? ` · ${primaryCuisine.toLowerCase()} кухня` : ''}
+              {' · '}
+              {cityName}
+            </p>
+            <h1 className='font-display text-[38px] leading-[1.05] font-bold tracking-[-0.5px]'>
               {establishment.name}
             </h1>
-            <FavoriteButton
-              establishmentId={establishment.id}
-              className='shrink-0'
-            />
+            <div className='mt-1 flex flex-wrap items-center gap-3 text-body-m text-muted-foreground'>
+              {establishment.average_rating != null ? (
+                <span
+                  className={`inline-flex items-center rounded-s px-2.5 py-1 text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
+                    establishment.average_rating,
+                  )}`}
+                >
+                  {formatRating(establishment.average_rating)}
+                </span>
+              ) : null}
+              {establishment.review_count > 0 ? (
+                <>
+                  <span>{pluralizeReviews(establishment.review_count)}</span>
+                  <span
+                    className='size-1 rounded-full bg-border'
+                    aria-hidden='true'
+                  />
+                </>
+              ) : null}
+              <OpenStatusBadge
+                workingHours={establishment.working_hours}
+                status={establishment.status}
+              />
+            </div>
           </div>
+          <FavoriteButton
+            establishmentId={establishment.id}
+            variant='labeled'
+            className='shrink-0'
+          />
         </header>
       </FavoritesProvider>
 

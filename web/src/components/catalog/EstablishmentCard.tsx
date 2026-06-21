@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import type { PublicEstablishmentListing } from '@/lib/api/types';
+import { formatRating, ratingColorClass } from '@/lib/establishment-helpers';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 
 import { FavoriteButton } from '@/components/favorites/FavoriteButton';
@@ -23,10 +24,6 @@ import { OpenStatusBadge } from './OpenStatusBadge';
  * islands. href uses the establishment's own city/category slug for the
  * canonical URL, falling back to the page params when the projection is null.
  */
-
-// Rating badge goes green at/above this average; below it uses the milder
-// figma-rating-mid (#8BC34A) — mirrors the design's two-tier rating color.
-const RATING_GREEN_THRESHOLD = 4.5;
 
 export function EstablishmentCard({
   establishment,
@@ -135,19 +132,4 @@ export function EstablishmentCard({
       />
     </div>
   );
-}
-
-/** Rating badge background class — two-tier per the design. */
-function ratingColorClass(rating: number): string {
-  return rating >= RATING_GREEN_THRESHOLD
-    ? 'bg-success-status'
-    : 'bg-figma-rating-mid';
-}
-
-/**
- * Format rating as Russian-locale string with comma decimal separator.
- * Example: 4.8 → "4,8".
- */
-function formatRating(rating: number): string {
-  return rating.toFixed(1).replace('.', ',');
 }

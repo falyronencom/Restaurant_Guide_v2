@@ -1,23 +1,16 @@
 /**
- * Gallery — Server Component (Brief 4).
+ * Gallery — Server Component.
  *
- * Booking-style photo composition:
- *   - Desktop (≥768px): 1 крупное фото слева (≈60% ширины) + 2 средних
- *     stacked справа. Если фото ≤3 — занимают полную сетку.
- *   - Mobile (<768px): horizontal scroll-snap carousel (CSS-only, без JS) —
- *     одна фотография на viewport, swipe для листания.
- *   - При 4+ фото показываем thumbnail-row под основной композицией с
- *     overlay '+N фотографий' на последнем thumbnail (clickable as link to
- *     fullscreen carousel — deferred lightbox, для Brief 4 каждый thumbnail
- *     открывает оригинал в новой вкладке).
+ * Hero mosaic (design revision):
+ *   - Desktop (≥768px): a fixed-height (420px) CSS grid — one large photo left
+ *     (1.7fr, spans both rows) + two stacked photos right (1fr). The bottom-right
+ *     photo carries a «+N фотографий» overlay when there are more than 3.
+ *   - Mobile (<768px): horizontal scroll-snap carousel (CSS-only, no JS).
  *
- * Photo filter: takes media[] с file_type='image' и type ∉ {'menu'}. Menu
- * photos обрабатываются отдельно в MenuBlock. Primary photo (is_primary=true
- * or matches primary_image_url) ставится первой.
+ * Photo filter: media[] with file_type='image' and type ∉ {'menu'} (menu photos
+ * live in MenuBlock). Primary photo (is_primary / primary_image_url) goes first.
  *
- * No client island for Brief 4 (lightbox deferred): clicks open photo in new
- * tab via native anchor. Future Brief может добавить fullscreen lightbox с
- * carousel controls; здесь — статическая server-rendered композиция.
+ * Lightbox deferred: clicks open the original in a new tab via native anchors.
  */
 
 import Image from 'next/image';
@@ -30,28 +23,29 @@ type GalleryProps = {
   establishmentName: string;
 };
 
-export function Gallery({ media, primaryImageUrl, establishmentName }: GalleryProps) {
+export function Gallery({
+  media,
+  primaryImageUrl,
+  establishmentName,
+}: GalleryProps) {
   const photos = sortPhotos(filterGalleryPhotos(media), primaryImageUrl);
 
   if (photos.length === 0) {
     return (
-      <div className='flex aspect-[16/9] w-full items-center justify-center rounded-l bg-muted text-muted-foreground'>
+      <div className='flex aspect-[16/9] w-full items-center justify-center rounded-card bg-muted text-muted-foreground'>
         <span className='text-body-m'>Фотографий пока нет</span>
       </div>
     );
   }
 
-  const [main, ...rest] = photos;
-  const sideTwo = rest.slice(0, 2);
-  const thumbnails = rest.slice(2, 6);
-  const remainingCount = Math.max(0, photos.length - 1 - sideTwo.length - thumbnails.length);
+  const [main, second, third] = photos;
+  const remaining = Math.max(0, photos.length - 3);
 
   return (
-    <div className='flex flex-col gap-s'>
+    <>
       {/* Mobile: scroll-snap horizontal carousel */}
       <div
-        className='-mx-l flex snap-x snap-mandatory overflow-x-auto px-l md:hidden'
-        // Hide scrollbar visually — pure CSS, no JS
+        className='-mx-l flex snap-x snap-mandatory gap-s overflow-x-auto px-l md:hidden'
         style={{ scrollbarWidth: 'none' }}
       >
         {photos.map((photo, idx) => (
@@ -60,7 +54,7 @@ export function Gallery({ media, primaryImageUrl, establishmentName }: GalleryPr
             href={photo.url}
             target='_blank'
             rel='noopener noreferrer'
-            className='relative mr-s aspect-[4/3] min-w-[85%] snap-center overflow-hidden rounded-l bg-muted last:mr-0'
+            className='relative aspect-[4/3] min-w-[85%] shrink-0 snap-center overflow-hidden rounded-card bg-muted'
           >
             <Image
               src={photo.preview_url ?? photo.url}
@@ -74,14 +68,13 @@ export function Gallery({ media, primaryImageUrl, establishmentName }: GalleryPr
         ))}
       </div>
 
-      {/* Desktop: 1+2 main composition */}
-      <div className='hidden gap-s md:grid md:grid-cols-[1.6fr_1fr] md:grid-rows-2'>
-        {/* Main photo — left column, full height (spans 2 rows) */}
+      {/* Desktop: hero mosaic — 1 large left + 2 stacked right */}
+      <div className='hidden h-[420px] grid-cols-[1.7fr_1fr] grid-rows-2 gap-[10px] md:grid'>
         <a
           href={main.url}
           target='_blank'
           rel='noopener noreferrer'
-          className='relative col-start-1 row-span-2 aspect-[4/3] overflow-hidden rounded-l bg-muted md:aspect-auto'
+          className='relative col-start-1 row-span-2 overflow-hidden rounded-[20px_0_0_20px] bg-muted'
         >
           <Image
             src={main.preview_url ?? main.url}
@@ -92,77 +85,57 @@ export function Gallery({ media, primaryImageUrl, establishmentName }: GalleryPr
             priority
           />
         </a>
-        {/* Right column — up to 2 side photos */}
-        {sideTwo[0] ? (
+
+        {second ? (
           <a
-            href={sideTwo[0].url}
+            href={second.url}
             target='_blank'
             rel='noopener noreferrer'
-            className='relative col-start-2 row-start-1 overflow-hidden rounded-l bg-muted'
+            className='relative col-start-2 row-start-1 overflow-hidden rounded-[0_20px_0_0] bg-muted'
           >
             <Image
-              src={sideTwo[0].preview_url ?? sideTwo[0].url}
-              alt={sideTwo[0].caption ?? `${establishmentName} — фото`}
+              src={second.preview_url ?? second.url}
+              alt={second.caption ?? `${establishmentName} — фото`}
               fill
               sizes='(max-width: 1024px) 40vw, 25vw'
               className='object-cover'
             />
           </a>
         ) : (
-          <div className='col-start-2 row-start-1 rounded-l bg-muted' aria-hidden='true' />
+          <div
+            className='col-start-2 row-start-1 rounded-[0_20px_0_0] bg-muted'
+            aria-hidden='true'
+          />
         )}
-        {sideTwo[1] ? (
+
+        {third ? (
           <a
-            href={sideTwo[1].url}
+            href={third.url}
             target='_blank'
             rel='noopener noreferrer'
-            className='relative col-start-2 row-start-2 overflow-hidden rounded-l bg-muted'
+            className='relative col-start-2 row-start-2 overflow-hidden rounded-[0_0_20px_0] bg-muted'
           >
             <Image
-              src={sideTwo[1].preview_url ?? sideTwo[1].url}
-              alt={sideTwo[1].caption ?? `${establishmentName} — фото`}
+              src={third.preview_url ?? third.url}
+              alt={third.caption ?? `${establishmentName} — фото`}
               fill
               sizes='(max-width: 1024px) 40vw, 25vw'
               className='object-cover'
             />
+            {remaining > 0 ? (
+              <span className='absolute inset-0 flex items-center justify-center bg-black/50 text-body-l font-medium text-text-on-primary'>
+                +{remaining} фотографий
+              </span>
+            ) : null}
           </a>
         ) : (
-          <div className='col-start-2 row-start-2 rounded-l bg-muted' aria-hidden='true' />
+          <div
+            className='col-start-2 row-start-2 rounded-[0_0_20px_0] bg-muted'
+            aria-hidden='true'
+          />
         )}
       </div>
-
-      {/* Desktop: thumbnail row (4 thumbnails max, last with +N overlay) */}
-      {thumbnails.length > 0 ? (
-        <div className='hidden grid-cols-4 gap-s md:grid'>
-          {thumbnails.map((thumb, idx) => {
-            const isLast = idx === thumbnails.length - 1;
-            const showOverlay = isLast && remainingCount > 0;
-            return (
-              <a
-                key={thumb.id}
-                href={thumb.url}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='relative aspect-[4/3] overflow-hidden rounded-m bg-muted'
-              >
-                <Image
-                  src={thumb.thumbnail_url ?? thumb.preview_url ?? thumb.url}
-                  alt={thumb.caption ?? `${establishmentName} — фото ${idx + 4}`}
-                  fill
-                  sizes='(max-width: 1024px) 20vw, 12vw'
-                  className='object-cover'
-                />
-                {showOverlay ? (
-                  <span className='absolute inset-0 flex items-center justify-center bg-black/55 text-body-l font-medium text-text-on-primary'>
-                    +{remainingCount} фотографий
-                  </span>
-                ) : null}
-              </a>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+    </>
   );
 }
 
@@ -187,12 +160,16 @@ function filterGalleryPhotos(media: PublicMedia[]): PublicMedia[] {
  * Sort photos so the primary one comes first.
  * Primary detection: is_primary flag OR url matches primary_image_url.
  */
-function sortPhotos(photos: PublicMedia[], primaryUrl: string | null): PublicMedia[] {
+function sortPhotos(
+  photos: PublicMedia[],
+  primaryUrl: string | null,
+): PublicMedia[] {
   if (photos.length <= 1) return photos;
   const primaryIdx = photos.findIndex(
     (p) =>
       p.is_primary === true ||
-      (primaryUrl != null && (p.url === primaryUrl || p.thumbnail_url === primaryUrl)),
+      (primaryUrl != null &&
+        (p.url === primaryUrl || p.thumbnail_url === primaryUrl)),
   );
   if (primaryIdx <= 0) return photos;
   const reordered = photos.slice();

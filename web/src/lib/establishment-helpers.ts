@@ -29,6 +29,16 @@ export function formatRating(rating: number | null | undefined): string {
 }
 
 /**
+ * Rating badge background class — two-tier per the design: green
+ * (success-status, #34C759) at/above 4.5, the milder figma-rating-mid
+ * (#8BC34A) below. Shared by the catalog card, the detail title, the reviews
+ * header and the contact sidebar.
+ */
+export function ratingColorClass(rating: number): string {
+  return rating >= 4.5 ? 'bg-success-status' : 'bg-figma-rating-mid';
+}
+
+/**
  * Booking-style verbal rating label by score.
  * Score range 1-5 (Russian rating convention, not Booking's 1-10).
  * Mapping inspired by Booking «Превосходно/Очень хорошо/Хорошо/Средне».

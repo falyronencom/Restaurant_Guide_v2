@@ -18,68 +18,15 @@
 import { MapPin, Phone, Mail, Globe } from 'lucide-react';
 
 import type { PublicEstablishmentDetail } from '@/lib/api/types';
-import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
-import {
-  formatRating,
-  normalizeWorkingHours,
-} from '@/lib/establishment-helpers';
-import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
+import { normalizeWorkingHours } from '@/lib/establishment-helpers';
 
 export function InfoCard({
   establishment,
 }: {
   establishment: PublicEstablishmentDetail;
 }) {
-  const primaryCategory = establishment.categories[0]
-    ? normalizeCategory(establishment.categories[0])
-    : null;
-  const primaryCuisine = establishment.cuisines[0]
-    ? normalizeCuisine(establishment.cuisines[0])
-    : null;
-
   return (
     <div className='flex flex-col gap-l rounded-l border border-border bg-background p-l'>
-      {/* Meta row: category · cuisine · price */}
-      <div className='flex flex-wrap items-center gap-s text-body-m text-muted-foreground'>
-        {primaryCategory ? (
-          <span className='text-foreground'>{primaryCategory}</span>
-        ) : null}
-        {primaryCuisine ? (
-          <>
-            <span aria-hidden='true'>·</span>
-            <span>{`{${primaryCuisine.toLowerCase()}}`}</span>
-          </>
-        ) : null}
-        {establishment.price_range ? (
-          <>
-            <span aria-hidden='true'>·</span>
-            <span className='font-medium text-foreground'>{establishment.price_range}</span>
-          </>
-        ) : null}
-      </div>
-
-      {/* Rating + status row */}
-      <div className='flex flex-wrap items-center gap-m'>
-        {establishment.average_rating != null ? (
-          <span className='inline-flex items-center gap-s'>
-            <span className='inline-flex size-10 items-center justify-center rounded-s bg-success-status text-headline-m font-medium text-text-on-primary'>
-              {formatRating(establishment.average_rating)}
-            </span>
-            <span className='text-body-m text-muted-foreground'>
-              {establishment.review_count > 0
-                ? `${establishment.review_count} ${reviewsWord(establishment.review_count)}`
-                : 'Нет отзывов'}
-            </span>
-          </span>
-        ) : null}
-        <div className='ml-auto'>
-          <OpenStatusBadge
-            workingHours={establishment.working_hours}
-            status={establishment.status}
-          />
-        </div>
-      </div>
-
       {/* Address row */}
       <p className='flex items-start gap-s text-body-l text-foreground'>
         <MapPin className='mt-1 size-5 shrink-0 text-brand' aria-hidden='true' />
@@ -185,15 +132,6 @@ function formatDayHours(hours: DayHours): string {
   if (hours.is_open === false) return 'Выходной';
   if (!hours.open || !hours.close) return 'Выходной';
   return `${hours.open} – ${hours.close}`;
-}
-
-function reviewsWord(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 14) return 'отзывов';
-  if (mod10 === 1) return 'отзыв';
-  if (mod10 >= 2 && mod10 <= 4) return 'отзыва';
-  return 'отзывов';
 }
 
 function ensureUrlScheme(url: string): string {
