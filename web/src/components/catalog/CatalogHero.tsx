@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import type { MetadataSlug } from '@/lib/api/types';
+import { catalogHeading, categoryPlural } from '@/lib/catalog-labels';
 import type { SearchParams } from '@/lib/catalog-params';
 
 import { CatalogSearch } from './CatalogSearch';
@@ -71,12 +72,12 @@ export function CatalogHero({
           </Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page" className="text-white">
-            {categoryName.toLowerCase()}
+            {categoryPlural(categorySlug, categoryName).toLowerCase()}
           </span>
         </nav>
 
         <h1 className="font-display text-[26px] font-bold tracking-[-0.3px] text-white">
-          {categoryName} в городе {cityName}
+          {catalogHeading(categorySlug, categoryName, citySlug, cityName)}
         </h1>
 
         <div className="mt-1">

@@ -10,6 +10,11 @@ import {
 import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import {
+  catalogHeading,
+  categoryPlural,
+  cityGenitive,
+} from '@/lib/catalog-labels';
+import {
   asFloat,
   asHours,
   asList,
@@ -70,9 +75,9 @@ export async function generateMetadata({
   }
 
   const hasFilters = hasAnyFilter(sp);
-  const lowerCat = categoryName.toLowerCase();
-  const title = `${capitalize(lowerCat)} в городе ${cityName}`;
-  const description = `Каталог: ${lowerCat} в городе ${cityName}. Рейтинги, актуальные акции, контакты.`;
+  const title = catalogHeading(category, categoryName, city, cityName);
+  const lowerPlural = categoryPlural(category, categoryName).toLowerCase();
+  const description = `Каталог: ${lowerPlural} ${cityGenitive(city, cityName)}. Рейтинги, актуальные акции, контакты.`;
 
   return {
     title,
@@ -181,11 +186,4 @@ export default async function CategoryPage({
       </main>
     </>
   );
-}
-
-// ----- helpers -------------------------------------------------------------
-
-function capitalize(s: string): string {
-  if (s.length === 0) return s;
-  return s[0].toLocaleUpperCase('ru-RU') + s.slice(1);
 }
