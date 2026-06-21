@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
 
+import { AmenityIcon } from '@/components/AmenityIcon';
 import {
   Accordion,
   AccordionContent,
@@ -141,6 +142,7 @@ export function FilterShelf({
 
   return (
     <Accordion
+      multiple
       defaultValue={['category', 'cuisine', 'price', 'hours', 'features']}
       className='rounded-l border border-border bg-background px-m'
       aria-label='Фильтры'
@@ -258,7 +260,11 @@ export function FilterShelf({
                 }
                 className={cn(PILL_BASE, active ? PILL_ACTIVE : PILL_INACTIVE)}
               >
-                <CategoryIcon slug={opt.value} size={16} />
+                <AmenityIcon
+                  slug={opt.value}
+                  size={16}
+                  className={active ? undefined : 'text-brand'}
+                />
                 {opt.label}
               </button>
             );
