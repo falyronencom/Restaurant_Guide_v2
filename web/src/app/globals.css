@@ -56,6 +56,13 @@
   --color-figma-text-dark: #3E3E3E;
   --color-figma-navy: #3631C0;
 
+  /* Web-local (vitrine revision, 2026-06-21) — NOT in the mobile triple-sync.
+   * Warm divider inside beige surfaces, light warm header/anchor border, and
+   * the mid-tier rating color (ratings just below the green threshold). */
+  --color-figma-divider: #E4DFD6;
+  --color-figma-border-light: #ECE8E1;
+  --color-figma-rating-mid: #8BC34A;
+
   /* Semantic — text */
   --color-text-primary: #000000;
   --color-text-secondary: #757575;
@@ -74,6 +81,8 @@
   --radius-l: 16px;
   --radius-xl: 24px;
   --radius-full: 9999px;
+  /* Web-local card radius (vitrine revision) — sits between l (16) and xl (24). */
+  --radius-card: 20px;
 
   /* Spacing — xs/s/m/l/xl/xxl */
   --spacing-xs: 4px;
@@ -205,6 +214,9 @@
   --color-figma-text-grey: var(--color-figma-text-grey);
   --color-figma-text-dark: var(--color-figma-text-dark);
   --color-figma-navy: var(--color-figma-navy);
+  --color-figma-divider: var(--color-figma-divider);
+  --color-figma-border-light: var(--color-figma-border-light);
+  --color-figma-rating-mid: var(--color-figma-rating-mid);
 
   /* Semantic D1 (in addition to shadcn semantic below) */
   --color-text-primary: var(--color-text-primary);
@@ -234,6 +246,7 @@
   --radius-l: var(--radius-l);
   --radius-xl: var(--radius-xl);
   --radius-full: var(--radius-full);
+  --radius-card: var(--radius-card);
 
   /* shadcn radius aliases — primitives use these names internally */
   --radius-sm: calc(var(--radius) - 4px);

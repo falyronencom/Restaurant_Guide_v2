@@ -161,3 +161,23 @@ export const fonts = {
   sans: 'var(--font-nunito-sans)',
   wordmark: 'var(--font-josefin)',
 } as const;
+
+/**
+ * Web-local design tokens — NOT part of the mobile triple-sync.
+ *
+ * Introduced for the vitrine revision (2026-06-21); mirror of the web-local
+ * block in src/app/globals.css. Mobile has no equivalent — these are
+ * web-surface specifics (warm divider inside beige cards, light warm header
+ * border, mid-tier rating color, and the 20px card radius the revision uses
+ * pervasively). Do NOT propagate these to mobile/lib/config/*.
+ */
+export const webLocal = {
+  colors: {
+    figmaDivider: '#E4DFD6',     // → border-figma-divider / bg-figma-divider
+    figmaBorderLight: '#ECE8E1', // → border-figma-border-light
+    figmaRatingMid: '#8BC34A',   // → bg-figma-rating-mid (rating just below green)
+  },
+  radii: {
+    card: '20px', // → rounded-card
+  },
+} as const;
