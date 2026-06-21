@@ -57,6 +57,7 @@ describe('MenuBlock — quality-tier presentation', () => {
     const { container } = render(
       <MenuBlock
         menuItems={[item({ id: 'c1', item_name: 'Цезарь', quality_tier: 'clean' })]}
+        menuPhotos={[]}
         pdfFallbacks={[]}
         establishmentName='Васильки'
       />,
@@ -85,6 +86,7 @@ describe('MenuBlock — quality-tier presentation', () => {
             quality_tier: 'needs_caution',
           }),
         ]}
+        menuPhotos={[]}
         pdfFallbacks={[]}
         establishmentName='Васильки'
       />,
@@ -107,6 +109,7 @@ describe('MenuBlock — empty-state / PDF fallback', () => {
     const { container } = render(
       <MenuBlock
         menuItems={[]}
+        menuPhotos={[]}
         pdfFallbacks={[
           pdf({ url: 'https://cdn.example.com/vasilki-menu.pdf', caption: null }),
         ]}
@@ -114,11 +117,10 @@ describe('MenuBlock — empty-state / PDF fallback', () => {
       />,
     );
 
-    // PDF fallback block: a link pointing at the PDF url.
+    // PDF download: a «Скачать PDF» button linking to the PDF url.
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', 'https://cdn.example.com/vasilki-menu.pdf');
-    // Default label uses establishment name when caption is empty.
-    expect(link).toHaveTextContent('Меню — Васильки (PDF)');
+    expect(link).toHaveTextContent('Скачать PDF');
 
     // No parsed items → no Menu JSON-LD emitted.
     expect(parseJsonLd(container)).toBeNull();
@@ -126,7 +128,12 @@ describe('MenuBlock — empty-state / PDF fallback', () => {
 
   it('empty items + no PDF: renders the graceful empty-state, no link, no JSON-LD', () => {
     const { container } = render(
-      <MenuBlock menuItems={[]} pdfFallbacks={[]} establishmentName='Васильки' />,
+      <MenuBlock
+        menuItems={[]}
+        menuPhotos={[]}
+        pdfFallbacks={[]}
+        establishmentName='Васильки'
+      />,
     );
 
     expect(screen.getByText('Меню пока не загружено.')).toBeInTheDocument();

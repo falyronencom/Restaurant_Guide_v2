@@ -180,6 +180,9 @@ export default async function EstablishmentPage({
   const pdfMenus = establishment.media.filter(
     (m) => m.file_type === 'pdf' && m.type === 'menu',
   );
+  const menuPhotos = establishment.media.filter(
+    (m) => m.type === 'menu' && m.file_type !== 'pdf' && m.url,
+  );
 
   // Anchor nav items — Reviews count appears in label suffix.
   const anchorItems = [
@@ -307,6 +310,7 @@ export default async function EstablishmentPage({
           <section id='menu' className='scroll-mt-16'>
             <MenuBlock
               menuItems={menuItemsResult.menu_items}
+              menuPhotos={menuPhotos}
               pdfFallbacks={pdfMenus}
               establishmentName={establishment.name}
             />
