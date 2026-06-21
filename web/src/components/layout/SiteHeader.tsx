@@ -32,12 +32,15 @@ import { cn } from '@/lib/utils';
 export function SiteHeader() {
   const pathname = usePathname();
   const isHome = pathname === '/';
-  // Catalog route /{city}/{category} — exactly two path segments — renders a
-  // photo banner the header overlays (like the home hero). The city page (1
-  // segment) and the establishment detail page (3 segments) keep the solid
-  // header, so this stays specific to the catalog surface.
-  const isCatalog = pathname.split('/').filter(Boolean).length === 2;
-  const hasOverlayHero = isHome || isCatalog;
+  // Routes with a photo banner the header overlays: home, the city page
+  // (/{city}) and the catalog (/{city}/{category}). Auth pages (/login,
+  // /register) are also 1-segment but have NO banner — exclude them. The detail
+  // page (3 segments) and reviews (4) keep the solid header.
+  const segments = pathname.split('/').filter(Boolean);
+  const isCity =
+    segments.length === 1 && !['login', 'register'].includes(segments[0]);
+  const isCatalog = segments.length === 2;
+  const hasOverlayHero = isHome || isCity || isCatalog;
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {

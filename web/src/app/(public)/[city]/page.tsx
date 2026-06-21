@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 
 import { getCatalog } from '@/lib/api/endpoints/establishments';
 import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
+import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
+import { cityHeading } from '@/lib/catalog-labels';
 import {
   asFloat,
   asHours,
@@ -58,7 +60,7 @@ export async function generateMetadata({
     // 404s a bogus slug cleanly.
   }
 
-  const title = `Заведения в городе ${cityName}`;
+  const title = cityHeading(city, cityName);
   const description = `Каталог ресторанов, кафе и баров — ${cityName}. Рейтинги, акции, контакты.`;
 
   return {
@@ -128,23 +130,27 @@ export default async function CityPage({
   }));
 
   return (
-    <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
-      <header className='flex flex-col gap-s'>
-        <p className='text-caption-l text-muted-foreground'>Город</p>
-        <h1 className='text-display-s font-display'>{cityName}</h1>
-      </header>
-
-      <ResultsView
+    <>
+      <CatalogHero
         citySlug={city}
-        categories={meta.categories}
-        establishments={catalog.establishments}
-        pagination={catalog.pagination}
-        basePath={`/${city}`}
+        cityName={cityName}
+        cities={meta.cities}
         searchParams={sp}
-        cuisineOptions={cuisineOptions}
-        selected={{ cuisines, priceRange, features, hours }}
-        fallbackCategorySlug='restaurants'
       />
-    </main>
+
+      <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
+        <ResultsView
+          citySlug={city}
+          categories={meta.categories}
+          establishments={catalog.establishments}
+          pagination={catalog.pagination}
+          basePath={`/${city}`}
+          searchParams={sp}
+          cuisineOptions={cuisineOptions}
+          selected={{ cuisines, priceRange, features, hours }}
+          fallbackCategorySlug='restaurants'
+        />
+      </main>
+    </>
   );
 }

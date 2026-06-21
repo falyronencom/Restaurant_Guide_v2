@@ -9,7 +9,9 @@ import type { SearchParams } from '@/lib/catalog-params';
 
 type Props = {
   citySlug: string;
-  categorySlug: string;
+  /** Catalog route segment. Omitted on the city page (/{city}), where search
+   *  and city changes stay category-less. */
+  categorySlug?: string;
   cities: MetadataSlug[];
   searchParams: SearchParams;
 };
@@ -50,7 +52,7 @@ export function CatalogSearch({
     else params.delete('search');
     params.delete('page'); // a new search / city always returns to page 1
     const qs = params.toString();
-    const base = `/${city}/${categorySlug}`;
+    const base = categorySlug ? `/${city}/${categorySlug}` : `/${city}`;
     router.push(qs ? `${base}?${qs}` : base);
   }
 

@@ -68,3 +68,8 @@ export function catalogHeading(
 ): string {
   return `${categoryPlural(categorySlug, categoryName)} ${cityGenitive(citySlug, cityName)}`;
 }
+
+/** City heading «Заведения {city-genitive}», e.g. «Заведения Минска». */
+export function cityHeading(citySlug: string, cityName: string): string {
+  return `Заведения ${cityGenitive(citySlug, cityName)}`;
+}

@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import type { MetadataSlug } from '@/lib/api/types';
-import { catalogHeading, categoryPlural } from '@/lib/catalog-labels';
+import { catalogHeading, categoryPlural, cityHeading } from '@/lib/catalog-labels';
 import type { SearchParams } from '@/lib/catalog-params';
 
 import { CatalogSearch } from './CatalogSearch';
@@ -10,8 +10,11 @@ import { CatalogSearch } from './CatalogSearch';
 type Props = {
   citySlug: string;
   cityName: string;
-  categorySlug: string;
-  categoryName: string;
+  /** Category route segment + display name. Omitted on the city page (/{city}),
+   *  where the banner shows «Заведения {city}» and the breadcrumb has no
+   *  category leaf. */
+  categorySlug?: string;
+  categoryName?: string;
   cities: MetadataSlug[];
   searchParams: SearchParams;
 };
@@ -67,17 +70,30 @@ export function CatalogHero({
             Главная
           </Link>
           <span aria-hidden="true">/</span>
-          <Link href={`/${citySlug}`} className="transition-colors hover:text-white">
-            {cityName}
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page" className="text-white">
-            {categoryPlural(categorySlug, categoryName).toLowerCase()}
-          </span>
+          {categorySlug && categoryName ? (
+            <>
+              <Link
+                href={`/${citySlug}`}
+                className="transition-colors hover:text-white"
+              >
+                {cityName}
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page" className="text-white">
+                {categoryPlural(categorySlug, categoryName).toLowerCase()}
+              </span>
+            </>
+          ) : (
+            <span aria-current="page" className="text-white">
+              {cityName}
+            </span>
+          )}
         </nav>
 
         <h1 className="font-display text-[26px] font-bold tracking-[-0.3px] text-white">
-          {catalogHeading(categorySlug, categoryName, citySlug, cityName)}
+          {categorySlug && categoryName
+            ? catalogHeading(categorySlug, categoryName, citySlug, cityName)
+            : cityHeading(citySlug, cityName)}
         </h1>
 
         <div className="mt-1">
