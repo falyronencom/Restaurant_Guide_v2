@@ -5,19 +5,6 @@
  * No DOM, no I/O — safe in both Server and Client components.
  */
 
-import {
-  Bike,
-  Wifi,
-  TreePine,
-  CarFront,
-  Music,
-  Baby,
-  PartyPopper,
-  PawPrint,
-  Cigarette,
-  type LucideIcon,
-} from 'lucide-react';
-
 /**
  * Format rating as Russian-locale string with comma decimal separator.
  * Mirrors mobile and Brief 3 EstablishmentCard: `4.8 → '4,8'`.
@@ -67,22 +54,6 @@ export const ATTRIBUTE_LABELS: Record<string, string> = {
   banquet: 'Банкет',
   pets_allowed: 'Животные',
   smoking: 'Курение',
-};
-
-/**
- * Map attribute boolean key → lucide icon component.
- * Per Coordinator decision (2026-05-26): lucide equivalents, not mobile SVG port.
- */
-export const ATTRIBUTE_ICONS: Record<string, LucideIcon> = {
-  delivery: Bike,
-  wifi: Wifi,
-  terrace: TreePine,
-  parking: CarFront,
-  live_music: Music,
-  kids_zone: Baby,
-  banquet: PartyPopper,
-  pets_allowed: PawPrint,
-  smoking: Cigarette,
 };
 
 /** Stable order matching mobile rendering. */

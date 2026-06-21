@@ -1,18 +1,14 @@
 /**
- * Attributes — Server Component (Brief 4).
+ * Attributes — Server Component.
  *
- * Renders boolean attribute keys (delivery/wifi/terrace/parking/live_music/
- * kids_zone/banquet/pets_allowed/smoking) as an icon-pill grid. Booking-style:
- * outlined rectangles, icon left + label right, responsive wrapping grid.
+ * Renders active boolean attribute keys as warm-beige pills with a brand line
+ * icon (the shared AmenityIcon — same lucide set as the catalog filter pills).
  *
- * Empty-state — if attributes object is null/empty/all-false, the section
- * renders nothing (caller may choose to omit the wrapper section entirely).
- * Mobile fallback (showing default amenities when none present) is NOT ported
- * — that's a mobile UX accommodation; on the web we prefer honest absence.
+ * Empty-state — if attributes is null/empty/all-false, renders nothing.
  */
 
+import { AmenityIcon } from '@/components/AmenityIcon';
 import {
-  ATTRIBUTE_ICONS,
   ATTRIBUTE_LABELS,
   extractActiveAttributes,
 } from '@/lib/establishment-helpers';
@@ -23,23 +19,19 @@ export function Attributes({ attributes }: { attributes: unknown }) {
   if (active.length === 0) return null;
 
   return (
-    <div className='flex flex-col gap-m'>
-      <h2 className='text-display-s font-display'>Атрибуты</h2>
-      <ul className='grid grid-cols-2 gap-s sm:grid-cols-3 lg:grid-cols-4'>
+    <div className='flex flex-col gap-3.5'>
+      <h2 className='font-display text-[20px] font-semibold'>Атрибуты</h2>
+      <ul className='flex flex-wrap gap-2.5'>
         {active.map((key) => {
-          const Icon = ATTRIBUTE_ICONS[key];
           const label = ATTRIBUTE_LABELS[key];
-          if (!Icon || !label) return null;
+          if (!label) return null;
           return (
             <li
               key={key}
-              className='flex items-center gap-s rounded-m border border-border bg-background px-m py-s'
+              className='inline-flex items-center gap-2 rounded-m bg-figma-bg-warm px-4 py-3 text-body-m font-medium text-foreground'
             >
-              <Icon
-                className='size-5 shrink-0 text-foreground'
-                aria-hidden='true'
-              />
-              <span className='text-body-m text-foreground'>{label}</span>
+              <AmenityIcon slug={key} size={18} className='text-brand' />
+              {label}
             </li>
           );
         })}
