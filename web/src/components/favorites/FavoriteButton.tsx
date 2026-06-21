@@ -31,11 +31,11 @@ export function FavoriteButton({
         event.stopPropagation();
         void toggle(establishmentId);
       }}
-      className={`flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-background ${className}`}
+      className={`flex size-8 items-center justify-center rounded-full bg-background text-brand shadow-sm backdrop-blur-sm transition-colors hover:bg-background ${className}`}
     >
       <Heart
-        size={18}
-        className={active ? 'fill-current text-brand' : 'text-foreground'}
+        size={16}
+        className={active ? 'fill-current text-brand' : 'text-brand'}
       />
     </button>
   );

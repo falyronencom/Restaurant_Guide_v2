@@ -25,7 +25,7 @@ import { computeOpenStatus, type OpenStatus } from '@/lib/working-hours';
  * Color mapping (mirrors mobile establishment_card.dart status block):
  *   "Открыто"   → success-status (#34C759, Figma open green)
  *   "Закрыто"   → destructive (mobile uses Colors.red; mapped to shadcn destructive)
- *   "/ до HH:MM" → foreground (neutral suffix)
+ *   "· до HH:MM" → muted-foreground (neutral suffix)
  */
 export function OpenStatusBadge({
   workingHours,
@@ -57,8 +57,8 @@ export function OpenStatusBadge({
         {openStatus.isOpen ? 'Открыто' : 'Закрыто'}
       </span>
       {openStatus.isOpen && openStatus.closingTime && (
-        <span className='font-normal text-foreground'>
-          {' / до '}
+        <span className='font-normal text-muted-foreground'>
+          {' · до '}
           {openStatus.closingTime}
         </span>
       )}

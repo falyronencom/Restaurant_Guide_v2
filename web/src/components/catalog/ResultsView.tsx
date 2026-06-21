@@ -8,6 +8,7 @@ import { CatalogPagination } from './CatalogPagination';
 import { EstablishmentCard } from './EstablishmentCard';
 import { FilterShelf } from './FilterShelf';
 import { MobileFilterDrawer } from './MobileFilterDrawer';
+import { SortSelect } from './SortSelect';
 
 type Category = { slug: string; name: string };
 
@@ -84,11 +85,16 @@ export function ResultsView({
 
       {/* min-w-0 lets the flex child shrink so the inner grid never overflows */}
       <div className="lg:min-w-0 lg:flex-1">
-        <p className="mb-m text-body-m text-muted-foreground">
-          {pagination.total > 0
-            ? `Найдено заведений: ${pagination.total}`
-            : 'Заведений по этим параметрам не найдено'}
-        </p>
+        <div className="mb-m flex items-center justify-between gap-m">
+          <p className="text-body-m text-muted-foreground">
+            {pagination.total > 0
+              ? `Найдено заведений: ${pagination.total}`
+              : 'Заведений по этим параметрам не найдено'}
+          </p>
+          {pagination.total > 0 && (
+            <SortSelect basePath={basePath} searchParams={searchParams} />
+          )}
+        </div>
 
         {hasResults ? (
           <>

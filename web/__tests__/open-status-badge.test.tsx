@@ -35,7 +35,7 @@ describe('OpenStatusBadge — client island', () => {
     );
 
     expect(screen.getByText('Открыто')).toBeInTheDocument();
-    expect(container).toHaveTextContent('Открыто / до 22:00');
+    expect(container).toHaveTextContent('Открыто · до 22:00');
   });
 
   it('renders the closed state without a closing time', () => {
