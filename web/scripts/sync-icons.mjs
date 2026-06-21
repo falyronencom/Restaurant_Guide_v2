@@ -11,11 +11,11 @@
  *
  *     node scripts/sync-icons.mjs        (from the web/ directory)
  *
- * Attribute (amenity) icons ARE copied as of 2026-06-21 (vitrine revision) —
- * this supersedes the 2026-05-26 "web keeps lucide-react for amenities"
- * decision; the design handoff uses the brand SVG set on both surfaces.
- *
  * Intentionally NOT copied:
+ *   - amenity icons (Wifi, Парковка, Терасса, …) — the web renders amenities
+ *     as recolorable lucide line glyphs (src/components/AmenityIcon.tsx), not
+ *     the brand SVG set. The 2026-06-21 vitrine revision briefly copied them
+ *     in; that was reverted, restoring the 2026-05-26 lucide-for-amenities call.
  *   - Континентальная.svg — legacy "continental" folds into european
  *
  * Filename note: category `fast-food` (Cyrillic display «Фаст-фуд») ships as
@@ -42,9 +42,6 @@ const ICON_FILES = [
   // cuisines (12)
   'Народная', 'Авторская', 'Азиатская', 'Американская', 'Вегетарианская', 'Японская',
   'Грузинская', 'Итальянская', 'Смешанная', 'Европейская', 'Китайская', 'Восточная',
-  // attributes / amenities (9) — mirror ATTRIBUTE_ICON_BY_SLUG in src/lib/category-icons.ts
-  'Wifi', 'Парковка', 'Терасса', 'Животные', 'Доставка еды', 'Детская зона',
-  'Банкет', 'Курение', 'Живая музыка',
 ];
 
 async function main() {
