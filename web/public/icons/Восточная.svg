@@ -1,19 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px"
-	 viewBox="0 0 62 67" xml:space="preserve">
-<style type="text/css">
-	.st0{fill:#D24F16;}
-</style>
-<g>
-	<!-- Tagine/dome lid -->
-	<path class="st0" d="M31,8 Q31,8 31,8 C31,8 20,22 14,36 L48,36 C42,22 31,8 31,8 Z"/>
-	<!-- Plate/base -->
-	<ellipse class="st0" cx="31" cy="40" rx="24" ry="6"/>
-	<!-- Decorative dot on top -->
-	<circle class="st0" cx="31" cy="8" r="2.5"/>
-	<!-- Steam lines -->
-	<path class="st0" d="M22,48 Q24,52 22,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
-	<path class="st0" d="M31,48 Q33,52 31,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
-	<path class="st0" d="M40,48 Q42,52 40,56" style="fill:none;stroke:#D24F16;stroke-width:1.8;stroke-linecap:round"/>
-</g>
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 62 67" width="62" height="67">
+  <g fill="none" stroke="#D24F16" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13,35 C13,49 22,55 31,55 C40,55 49,49 49,35"></path>
+    <line x1="11" y1="35" x2="51" y2="35"></line>
+    <path d="M13,37 C8,37 8,44 13,44" stroke-width="2.2"></path>
+    <path d="M49,37 C54,37 54,44 49,44" stroke-width="2.2"></path>
+    <path d="M27,33 C24,29 30,27 27,22 C24,18 30,16 28,12" stroke-width="1.9"></path>
+    <path d="M35,33 C32,29 38,27 35,22 C32,18 38,16 36,12" stroke-width="1.9"></path>
+  </g>
 </svg>
