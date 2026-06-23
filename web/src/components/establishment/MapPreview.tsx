@@ -1,17 +1,21 @@
 /**
  * MapPreview — Server Component. Compact location card linking to Yandex Maps.
  *
- * Shared by the main-column Location section and the contact sidebar. A real
- * static Yandex map is deferred until the Static API key is provisioned
- * (Coordinator decision) — for now this is a styled placeholder: a brand pin on
- * a neutral field with a bottom gradient carrying the address + open-in-maps
- * link. Swapping `bg-muted` for the static-map <Image> is the only change when
- * the key lands. Returns null when coordinates are absent.
+ * Shared by the main-column Location section and the contact sidebar. Renders a
+ * real Yandex Static API map when YANDEX_MAPS_API_KEY is set (read server-side
+ * here, baked into the image URL) with the brand pin + address overlaid; falls
+ * back to a styled bg-muted placeholder when the key is absent (local dev, or a
+ * deploy without the env var). Returns null when coordinates are absent.
+ *
+ * The static map is a plain <img>, not next/image, on purpose: the key is
+ * HTTP-Referer-locked to our domains in the Yandex cabinet, so the request must
+ * come from the browser (carrying the page Referer). next/image would proxy it
+ * server-side and trip the lock. See yandexStaticMapUrl.
  */
 
 import { MapPin } from 'lucide-react';
 
-import { yandexMapUrl } from '@/lib/establishment-helpers';
+import { yandexMapUrl, yandexStaticMapUrl } from '@/lib/establishment-helpers';
 
 export function MapPreview({
   latitude,
@@ -26,6 +30,11 @@ export function MapPreview({
 }) {
   if (latitude == null || longitude == null) return null;
   const href = yandexMapUrl(latitude, longitude, `${address}, ${city}`);
+  const mapSrc = yandexStaticMapUrl(
+    latitude,
+    longitude,
+    process.env.YANDEX_MAPS_API_KEY,
+  );
 
   return (
     <a
@@ -34,6 +43,17 @@ export function MapPreview({
       rel='noopener noreferrer'
       className='relative block h-[180px] overflow-hidden rounded-card bg-muted'
     >
+      {mapSrc && (
+        // eslint-disable-next-line @next/next/no-img-element -- external Referer-locked static map; must load client-side, so not next/image (see doc comment)
+        <img
+          src={mapSrc}
+          alt=''
+          aria-hidden='true'
+          className='absolute inset-0 size-full object-cover'
+          loading='lazy'
+          decoding='async'
+        />
+      )}
       <div
         className='absolute inset-0 bg-gradient-to-t from-black/60 to-transparent'
         aria-hidden='true'

@@ -96,6 +96,41 @@ export function yandexMapUrl(
 }
 
 /**
+ * Build a Yandex Static API image URL centered on the given coordinates, or
+ * null when no API key is configured — so MapPreview falls back to its
+ * placeholder (local dev without the key, or a deploy missing the env var).
+ *
+ * `ll` is longitude,latitude (Yandex convention, longitude first — same as
+ * yandexMapUrl). No `pt` placemark: MapPreview overlays its own brand pin on the
+ * centered point. `size` is within the API max (650×450); we request a wide
+ * frame and let the card crop via object-cover. Built as a raw string (not
+ * URLSearchParams) so the commas in `ll`/`size` stay unescaped, matching the
+ * format in Yandex's own examples.
+ *
+ * The key rides in the image URL, so it reaches the browser — expected for the
+ * Static API, and mitigated by the HTTP-Referer domain lock set on the key in
+ * the Yandex developer cabinet (see YANDEX_MAPS_API_KEY in .env.example). That
+ * lock is also why the <img> must load client-side (browser sends the page
+ * Referer); do NOT route it through next/image, which fetches server-side and
+ * would fail the Referer check.
+ */
+export function yandexStaticMapUrl(
+  latitude: number,
+  longitude: number,
+  apiKey: string | undefined,
+): string | null {
+  if (!apiKey) return null;
+  return (
+    'https://static-maps.yandex.ru/v1' +
+    `?ll=${longitude},${latitude}` +
+    '&z=16' +
+    '&size=650,360' +
+    '&lang=ru_RU' +
+    `&apikey=${apiKey}`
+  );
+}
+
+/**
  * Parse social/website URL → (display label, icon hint).
  * Port from mobile `_parseSocialLink`. Returns icon NAME (string) so the
  * caller can map it to a lucide component — keeps this helper UI-framework-
