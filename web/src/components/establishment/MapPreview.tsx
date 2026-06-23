@@ -13,9 +13,9 @@
  * server-side and trip the lock. See yandexStaticMapUrl.
  */
 
-import { MapPin } from 'lucide-react';
-
 import { yandexMapUrl, yandexStaticMapUrl } from '@/lib/establishment-helpers';
+
+import { MapBrandPin } from './MapBrandPin';
 
 export function MapPreview({
   latitude,
@@ -58,10 +58,7 @@ export function MapPreview({
         className='absolute inset-0 bg-gradient-to-t from-black/60 to-transparent'
         aria-hidden='true'
       />
-      <MapPin
-        className='absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-full fill-brand text-brand'
-        aria-hidden='true'
-      />
+      <MapBrandPin className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full' />
       <div className='absolute inset-x-0 bottom-0 p-4'>
         <div className='text-body-m font-semibold text-white'>{address}</div>
         <div className='text-caption-l text-white/85'>
