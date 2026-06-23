@@ -3,6 +3,8 @@
 import dynamic from 'next/dynamic';
 import { useState, type ReactNode } from 'react';
 
+import type { SearchParams } from '@/lib/catalog-params';
+
 /*
  * List ↔ map toggle for the catalog/city results (Этап 2 entry point, mirroring
  * mobile's results-list map icon).
@@ -17,9 +19,13 @@ const MapView = dynamic(() => import('@/components/map/MapView'), {
 
 export function ResultsSwitcher({
   citySlug,
+  categorySlug,
+  searchParams,
   children,
 }: {
   citySlug: string;
+  categorySlug?: string;
+  searchParams: SearchParams;
   children: ReactNode;
 }) {
   const [view, setView] = useState<'list' | 'map'>('list');
@@ -47,7 +53,15 @@ export function ResultsSwitcher({
         </div>
       </div>
 
-      {view === 'list' ? children : <MapView citySlug={citySlug} />}
+      {view === 'list' ? (
+        children
+      ) : (
+        <MapView
+          citySlug={citySlug}
+          categorySlug={categorySlug}
+          searchParams={searchParams}
+        />
+      )}
     </div>
   );
 }

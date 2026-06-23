@@ -97,7 +97,11 @@ export function ResultsView({
           )}
         </div>
 
-        <ResultsSwitcher citySlug={citySlug}>
+        <ResultsSwitcher
+          citySlug={citySlug}
+          categorySlug={activeCategorySlug}
+          searchParams={searchParams}
+        >
         {hasResults ? (
           <>
             <FavoritesProvider
