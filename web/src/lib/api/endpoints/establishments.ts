@@ -70,6 +70,15 @@ export type MapParams = {
   hours_filter?: 'until_22' | 'until_morning' | '24_hours';
   search?: string;
   limit?: number;
+  /**
+   * Viewport rectangle (camera-driven map). All four together, or none —
+   * present → backend filters to the visible box via searchByBounds; partial
+   * → backend 422. City is implied by the box, so omit it when sending bounds.
+   */
+  neLat?: number;
+  neLon?: number;
+  swLat?: number;
+  swLon?: number;
 };
 
 export type MapResponse = {

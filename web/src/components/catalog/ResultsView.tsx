@@ -8,6 +8,7 @@ import { CatalogPagination } from './CatalogPagination';
 import { EstablishmentCard } from './EstablishmentCard';
 import { FilterShelf } from './FilterShelf';
 import { MobileFilterDrawer } from './MobileFilterDrawer';
+import { ResultsSwitcher } from './ResultsSwitcher';
 import { SortSelect } from './SortSelect';
 
 type Category = { slug: string; name: string };
@@ -96,6 +97,7 @@ export function ResultsView({
           )}
         </div>
 
+        <ResultsSwitcher citySlug={citySlug}>
         {hasResults ? (
           <>
             <FavoritesProvider
@@ -137,6 +139,7 @@ export function ResultsView({
             </Link>
           </section>
         )}
+        </ResultsSwitcher>
       </div>
     </div>
   );

@@ -75,16 +75,26 @@ export type PublicEstablishmentDetail = PublicEstablishmentListing & {
   promotions: PublicPromotion[];
 };
 
-/** Map marker — backend `toPublicEstablishmentMapMarker`. Minimum payload. */
+/**
+ * Map marker — backend `toPublicEstablishmentMapMarker`. Lean payload plus the
+ * few preview-card fields (address, categories, category_slug, price_range,
+ * review_count) the map's tap-to-preview card renders from, without a second
+ * fetch. `category_slug` is null when the primary category is outside the canon.
+ */
 export type PublicEstablishmentMapMarker = {
   id: string;
   slug: string;
   name: string;
   city: string;
   city_slug: string | null;
+  address: string;
+  categories: string[];
+  category_slug: string | null;
+  price_range: string | null;
   latitude: number | null;
   longitude: number | null;
   primary_image_url: string | null;
+  review_count: number;
   average_rating: number | null;
   has_promotion: boolean;
 };
