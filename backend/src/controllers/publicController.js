@@ -17,7 +17,6 @@ import {
   categorySlugToCyrillic,
   cuisineSlugToCyrillic,
 } from '../constants/urlSlugs.js';
-import logger from '../utils/logger.js';
 
 /**
  * Parse a comma-separated or array query parameter into a trimmed string array,
@@ -174,6 +173,10 @@ export const mapPublicEstablishments = asyncHandler(async (req, res) => {
     hours_filter: hoursFilter,
     search,
     limit: limitRaw,
+    neLat,
+    neLon,
+    swLat,
+    swLon,
   } = req.query;
 
   let cityCyrillic = null;
@@ -215,6 +218,31 @@ export const mapPublicEstablishments = asyncHandler(async (req, res) => {
 
   const limit = parseInt(limitRaw, 10) || 200;
 
+  // Optional geographic bounds — all four corners together, or none. Present →
+  // map filters to the viewport rectangle (camera-driven web map); absent →
+  // filter-scope set (legacy Brief 1). min/max ordering is validated downstream
+  // by searchByBounds.
+  let bounds = null;
+  const boundsCorners = [neLat, neLon, swLat, swLon];
+  if (boundsCorners.some((c) => c !== undefined)) {
+    if (boundsCorners.some((c) => c === undefined)) {
+      throw new AppError(
+        'All four bounds corners (neLat, neLon, swLat, swLon) are required together',
+        422,
+        'VALIDATION_ERROR',
+      );
+    }
+    bounds = {
+      minLat: parseFloat(swLat),
+      maxLat: parseFloat(neLat),
+      minLon: parseFloat(swLon),
+      maxLon: parseFloat(neLon),
+    };
+    if (Object.values(bounds).some(Number.isNaN)) {
+      throw new AppError('Invalid bounds coordinates', 422, 'VALIDATION_ERROR');
+    }
+  }
+
   const result = await publicService.getPublicEstablishmentsMap({
     city: cityCyrillic,
     categories,
@@ -224,6 +252,7 @@ export const mapPublicEstablishments = asyncHandler(async (req, res) => {
     hoursFilter,
     search: search ? String(search).trim() : null,
     limit,
+    bounds,
   });
 
   res.status(200).json({

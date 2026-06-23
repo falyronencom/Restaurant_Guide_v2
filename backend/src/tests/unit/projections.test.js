@@ -248,7 +248,7 @@ describe('toPublicEstablishmentListing — lightweight projection', () => {
   });
 });
 
-describe('toPublicEstablishmentMapMarker — minimum projection', () => {
+describe('toPublicEstablishmentMapMarker — marker + preview-card projection', () => {
   test('excludes all sensitive fields', () => {
     const result = toPublicEstablishmentMapMarker(rawEstablishmentRow);
     for (const field of SENSITIVE_FIELDS) {
@@ -256,14 +256,25 @@ describe('toPublicEstablishmentMapMarker — minimum projection', () => {
     }
   });
 
-  test('contains only minimum marker fields', () => {
+  test('contains exactly the marker + preview-card fields', () => {
     const result = toPublicEstablishmentMapMarker(rawEstablishmentRow);
     const allowedKeys = [
       'id', 'slug', 'name', 'city', 'city_slug',
+      'address', 'categories', 'category_slug', 'price_range',
       'latitude', 'longitude', 'primary_image_url',
-      'average_rating', 'has_promotion',
+      'review_count', 'average_rating', 'has_promotion',
     ];
     expect(Object.keys(result).sort()).toEqual(allowedKeys.sort());
+  });
+
+  test('derives preview-card fields (address, primary category slug, price, review_count)', () => {
+    const result = toPublicEstablishmentMapMarker(rawEstablishmentRow);
+    expect(result.address).toBe('ул. Ленина 1');
+    expect(result.categories).toEqual(['Кафе', 'Ресторан']);
+    expect(typeof result.category_slug).toBe('string');
+    expect(result.category_slug.length).toBeGreaterThan(0);
+    expect(result.price_range).toBe('$$');
+    expect(result.review_count).toBe(8);
   });
 
   test('parses lat/lng to numbers', () => {

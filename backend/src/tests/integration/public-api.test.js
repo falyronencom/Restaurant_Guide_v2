@@ -530,6 +530,59 @@ describe('Public API — GET /api/v1/public/establishments/map', () => {
       .query({ city: 'moscow' })
       .expect(400);
   });
+
+  test('bounds enclosing the pin returns it', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ swLat: 53, neLat: 54, swLon: 27, neLon: 28 })
+      .expect(200);
+
+    const names = response.body.data.establishments.map((e) => e.name);
+    expect(names).toContain('Map Pin Minsk');
+  });
+
+  test('bounds excluding the pin omits it', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ swLat: 50, neLat: 51, swLon: 27, neLon: 28 })
+      .expect(200);
+
+    const names = response.body.data.establishments.map((e) => e.name);
+    expect(names).not.toContain('Map Pin Minsk');
+  });
+
+  test('partial bounds (missing corners) → 422', async () => {
+    await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ neLat: 54 })
+      .expect(422);
+  });
+
+  test('bounds search still excludes non-active establishments', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ swLat: 53, neLat: 54, swLon: 27, neLon: 28 })
+      .expect(200);
+
+    const names = response.body.data.establishments.map((e) => e.name);
+    expect(names).not.toContain('Map Draft');
+  });
+
+  test('bounds marker carries preview-card fields', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ swLat: 53, neLat: 54, swLon: 27, neLon: 28 })
+      .expect(200);
+
+    const pin = response.body.data.establishments.find(
+      (e) => e.name === 'Map Pin Minsk',
+    );
+    expect(pin).toBeDefined();
+    expect(pin).toHaveProperty('address');
+    expect(pin).toHaveProperty('category_slug');
+    expect(pin).toHaveProperty('price_range');
+    expect(pin).toHaveProperty('review_count');
+  });
 });
 
 // ============================================================================

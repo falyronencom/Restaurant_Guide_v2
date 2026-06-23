@@ -172,21 +172,27 @@ export const toPublicEstablishmentListing = (row) => {
 };
 
 /**
- * Convert raw establishment row to minimum map marker projection.
+ * Convert raw establishment row to map marker projection.
  *
  * Used by:
- *   - GET /api/v1/public/establishments/map (new public endpoint only)
+ *   - GET /api/v1/public/establishments/map (public endpoint only)
  *
- * Minimum payload designed for high-volume map view rendering: only
- * fields the marker UI needs (position, label, image, rating, promo flag).
- * Mobile /search/map preserves richer listing projection — see
- * toPublicEstablishmentListing.
+ * Lean payload for map view rendering: marker position/label/image/rating/
+ * promo flag, plus the few fields the web tap-to-preview card needs
+ * (address, primary category + slug, price_range, review_count) so the card
+ * renders instantly from loaded markers without a per-tap detail fetch —
+ * which would also inflate view_count. Still far leaner than the full listing
+ * projection — see toPublicEstablishmentListing.
  *
  * @param {Object} row - Raw establishment row
- * @returns {Object} Minimum public map marker projection
+ * @returns {Object} Public map marker projection
  */
 export const toPublicEstablishmentMapMarker = (row) => {
   if (!row) return null;
+
+  const primaryCategory = Array.isArray(row.categories) && row.categories.length > 0
+    ? row.categories[0]
+    : null;
 
   return {
     id: row.id,
@@ -194,6 +200,10 @@ export const toPublicEstablishmentMapMarker = (row) => {
     name: row.name,
     city: row.city,
     city_slug: cityCyrillicToSlug(row.city),
+    address: row.address,
+    categories: row.categories || [],
+    category_slug: categoryCyrillicToSlug(primaryCategory),
+    price_range: row.price_range,
     latitude: row.latitude !== null && row.latitude !== undefined
       ? parseFloat(row.latitude)
       : null,
@@ -201,6 +211,7 @@ export const toPublicEstablishmentMapMarker = (row) => {
       ? parseFloat(row.longitude)
       : null,
     primary_image_url: row.primary_image_url,
+    review_count: parseInt(row.review_count) || 0,
     average_rating: row.average_rating !== null && row.average_rating !== undefined
       ? parseFloat(row.average_rating)
       : null,

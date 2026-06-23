@@ -107,12 +107,14 @@ export const getPublicEstablishmentsCatalog = async (filters = {}) => {
 /**
  * Map view of public establishments. Used by GET /api/v1/public/establishments/map.
  *
- * Brief 1 does not accept bounds parameters — returns up to `limit` (default 200,
- * max 500) establishments matching the filter scope, projected to minimum
- * map-marker shape. Bounds support is deferred to Brief 3+ once web map UX
- * is settled.
+ * Accepts optional geographic bounds. When `filters.bounds` is present the map
+ * filters to that viewport rectangle (camera-driven web map) via the tested
+ * searchByBounds; when absent it returns up to `limit` (default 200, max 500)
+ * establishments matching the filter scope (legacy behaviour). Either way rows
+ * are projected to the map-marker shape.
  *
  * @param {Object} filters - Cyrillic values, already validated
+ * @param {Object} [filters.bounds] - { minLat, maxLat, minLon, maxLon } viewport rectangle
  * @returns {Promise<Object>} { establishments: [mapMarker projection] }
  */
 export const getPublicEstablishmentsMap = async (filters = {}) => {
@@ -125,27 +127,41 @@ export const getPublicEstablishmentsMap = async (filters = {}) => {
     hoursFilter,
     search,
     limit = 200,
+    bounds = null,
   } = filters;
 
   const cityForQuery = city ? expandCityForQuery(city) : null;
   const safeLimit = Math.min(Math.max(limit, 1), 500);
 
-  // searchWithoutLocation applies listing projection in its return. Map endpoint
-  // wants the minimum marker projection — re-project listing → mapMarker by
-  // selecting subset fields (toPublicEstablishmentMapMarker accepts listing-
-  // shaped input because all the marker fields are a subset of listing fields).
-  const result = await searchService.searchWithoutLocation({
-    city: cityForQuery,
-    categories,
-    cuisines,
-    priceRange,
-    minRating,
-    hoursFilter,
-    search,
-    limit: safeLimit,
-    offset: 0,
-    page: 1,
-  });
+  // Two modes, one marker projection:
+  //   bounds present → viewport rectangle search (camera-driven web map) via the
+  //     tested searchByBounds; city is implied by the rectangle, so not passed.
+  //   bounds absent  → filter-scope set (legacy Brief 1 behaviour).
+  // Both return listing-shaped rows; toPublicEstablishmentMapMarker accepts
+  // listing-shaped input because all marker fields are a subset of listing fields.
+  const result = bounds
+    ? await searchService.searchByBounds({
+        ...bounds,
+        categories,
+        cuisines,
+        priceRange,
+        minRating,
+        hoursFilter,
+        search,
+        limit: safeLimit,
+      })
+    : await searchService.searchWithoutLocation({
+        city: cityForQuery,
+        categories,
+        cuisines,
+        priceRange,
+        minRating,
+        hoursFilter,
+        search,
+        limit: safeLimit,
+        offset: 0,
+        page: 1,
+      });
 
   const markers = result.establishments.map(toPublicEstablishmentMapMarker);
 
