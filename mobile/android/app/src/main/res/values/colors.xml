@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NIRIVIO splash background — matches the Flutter «Ornament Bloom» beige
+         so the system launch screen blends seamlessly into the animation. -->
+    <color name="nirivio_splash_bg">#F1E7D2</color>
+</resources>

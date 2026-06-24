@@ -1,24 +1,32 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
-import 'package:restaurant_guide_mobile/screens/splash/painters/pin_painter.dart';
-import 'package:restaurant_guide_mobile/screens/splash/painters/halo_painter.dart';
-import 'package:restaurant_guide_mobile/screens/splash/widgets/cloud_field.dart';
+import 'package:restaurant_guide_mobile/screens/splash/painters/ornament_painter.dart';
 import 'package:restaurant_guide_mobile/screens/splash/widgets/wordmark_widget.dart';
+
+double _lerp(double a, double b, double t) => a + (b - a) * t;
 
 /// Splash animation phases.
 enum SplashPhase { intro, loop, outro }
 
-/// Animated splash screen with three phases:
-/// - Intro (2.2s): wordmark slides in, pin drops with bounce, loading fades in
-/// - Loop (indefinite): pin hovers, halo pulses, shimmer on wordmark
-/// - Outro (0.85s): everything fades out, white flash, navigate to next screen
+/// Animated splash screen — NIRIVIO «Ornament Bloom».
 ///
-/// Listens to [AuthProvider.isLoading] to determine when data is ready.
-/// Minimum duration = intro length. Maximum = 10s timeout.
+/// A procedural folk ornament blooms layer-by-layer from the center while a
+/// ring of dots rotates continuously around the perimeter; the NIRIVIO wordmark
+/// then reveals with expanding letter-tracking and the «Вкусное рядом» tagline.
+/// Visuals follow the hi-fi design handoff — see [OrnamentPainter].
+///
+/// The screen also doubles as the app's load gate (behaviour unchanged from the
+/// previous splash): it watches [AuthProvider.isLoading] to learn when the
+/// session has been restored.
+/// - Intro: the full bloom plays once (~4.3s) — the minimum on-screen time.
+/// - Loop: if data is not ready when the bloom finishes, the ornament holds and
+///   the ring keeps spinning until auth is ready (or the 10s timeout fires).
+/// - Outro: everything fades out, then we navigate to `/home` (authenticated)
+///   or `/auth/method-selection` (guest).
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -28,47 +36,45 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  // ── State ──────────────────────────────────────────────────────────────────
+  // ── OPEN EDIT (agreed with client) ─────────────────────────────────────────
+  // Eyelet colour. Currently the brand orange accent; the client may switch it
+  // to the cornflower petal blue after on-device review. Changing this one line
+  // to AppTheme.ornamentCornflower (or .ornamentCornLite for a softer blue) is
+  // the only edit required.
+  static const Color _eyeletColor = AppTheme.ornamentAccent;
+
+  // Reference cycle = 6s ("Динамично" speed); the bloom-in finishes at 72% of
+  // it. The remaining 28% (hold + out) is handled by the phase machine, not the
+  // intro controller, so the controller runs exactly the bloom span.
+  static const int _bloomMs = 4320; // 0.72 * 6000
+  static const int _ringSpinMs = 14000; // one revolution, linear, continuous
+  static const int _outroMs = 700;
+  static const Duration _timeout = Duration(seconds: 10);
+
+  // ── State ───────────────────────────────────────────────────────────────────
   SplashPhase _phase = SplashPhase.intro;
   bool _authReady = false;
   bool _introComplete = false;
   bool _navigated = false;
 
-  // ── Animation Controllers ──────────────────────────────────────────────────
-  late final AnimationController _introCtrl;
-  late final AnimationController _loopCtrl;
-  late final AnimationController _outroCtrl;
-  late final AnimationController _cloudCtrl;
+  // ── Controllers ───────────────────────────────────────────────────────────────
+  late final AnimationController _introCtrl; // drives the layered bloom
+  late final AnimationController _spinCtrl; // ring rotation, always running
+  late final AnimationController _outroCtrl; // fade-out before navigation
 
-  // ── Intro Animations ───────────────────────────────────────────────────────
-  late final Animation<double> _wordmarkFade;
-  late final Animation<double> _wordmarkSlideY;
-  late final Animation<double> _pinDropY;
-  late final Animation<double> _pinScaleIntro;
-  late final Animation<double> _pinFadeIntro;
-  late final Animation<double> _loadingFade;
+  // ── Per-layer reveals (sub-intervals of the bloom) ──────────────────────────
+  // Interval bounds = design-cycle % ÷ 0.72 (the bloom span end). Each reveal
+  // animates a layer's opacity together with its scale / rotation / tracking.
+  late final Animation<double> _ringReveal; //   6%→22%  ease-in-out
+  late final Animation<double> _outerReveal; //  6%→27%  cubic(.3,.8,.3,1)
+  late final Animation<double> _innerReveal; // 14%→36%  cubic(.3,.8,.3,1)
+  late final Animation<double> _centerReveal; // 24%→42% cubic(.2,1.3,.4,1) overshoot
+  late final Animation<double> _wordReveal; //  46%→62%  cubic(.2,.7,.2,1)
+  late final Animation<double> _lineReveal; //  54%→68%  cubic(.2,.7,.2,1)
+  late final Animation<double> _tagReveal; //   58%→72%  ease-in-out
+  late final Animation<double> _outroFade; //   1→0
 
-  // ── Loop Animations ────────────────────────────────────────────────────────
-  late final Animation<double> _pinHoverY;
-  late final Animation<double> _haloScaleX;
-  late final Animation<double> _haloOpacity;
-  late final Animation<double> _shimmerGlow;
-
-  // ── Outro Animations ───────────────────────────────────────────────────────
-  late final Animation<double> _outroFade;
-  late final Animation<double> _outroWordmarkSlideY;
-  late final Animation<double> _outroPinSlideY;
-  late final Animation<double> _outroPinScale;
-  late final Animation<double> _flashOpacity;
-
-  // ── Loading Dots ───────────────────────────────────────────────────────────
-  Timer? _dotsTimer;
-  int _dotCount = 0;
-
-  // ── Timeout ────────────────────────────────────────────────────────────────
   Timer? _timeoutTimer;
-
-  // ── Auth Listener ──────────────────────────────────────────────────────────
   VoidCallback? _authListener;
 
   @override
@@ -87,10 +93,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _introCtrl.dispose();
-    _loopCtrl.dispose();
+    _spinCtrl.dispose();
     _outroCtrl.dispose();
-    _cloudCtrl.dispose();
-    _dotsTimer?.cancel();
     _timeoutTimer?.cancel();
     if (_authListener != null) {
       context.read<AuthProvider>().removeListener(_authListener!);
@@ -104,112 +108,41 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _initControllers() {
     _introCtrl = AnimationController(
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: _bloomMs),
       vsync: this,
     );
-    _loopCtrl = AnimationController(
-      duration: const Duration(milliseconds: 2800),
+    _spinCtrl = AnimationController(
+      duration: const Duration(milliseconds: _ringSpinMs),
       vsync: this,
-    );
+    )..repeat();
     _outroCtrl = AnimationController(
-      duration: const Duration(milliseconds: 850),
-      vsync: this,
-    );
-    _cloudCtrl = AnimationController(
-      duration: const Duration(milliseconds: 30000),
+      duration: const Duration(milliseconds: _outroMs),
       vsync: this,
     );
   }
 
   void _buildAnimations() {
-    // ── INTRO (2200ms total) ──────────────────────────────────────────────
-
-    // Wordmark: fade+slide in, starts at 0.2s, 0.6s duration
-    // Interval: 0.2/2.2 = 0.091 → 0.8/2.2 = 0.364
-    _wordmarkFade = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.091, 0.364, curve: Curves.easeOutCubic),
-    );
-    _wordmarkSlideY = Tween<double>(begin: -14, end: 0).animate(
-      CurvedAnimation(
+    Animation<double> reveal(double begin, double end, Curve curve) {
+      return CurvedAnimation(
         parent: _introCtrl,
-        curve: const Interval(0.091, 0.364, curve: Curves.easeOutCubic),
-      ),
-    );
+        curve: Interval(begin, end, curve: curve),
+      );
+    }
 
-    // Pin: drop+scale, starts at 0.8s, 0.85s duration
-    // Interval: 0.8/2.2 = 0.364 → 1.65/2.2 = 0.75
-    // Elastic overshoot curve
-    _pinDropY = Tween<double>(begin: -55, end: 0).animate(
-      CurvedAnimation(
-        parent: _introCtrl,
-        curve: const Interval(0.364, 0.75, curve: Curves.elasticOut),
-      ),
-    );
-    _pinScaleIntro = Tween<double>(begin: 0.82, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _introCtrl,
-        curve: const Interval(0.364, 0.75, curve: Curves.elasticOut),
-      ),
-    );
-    _pinFadeIntro = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.364, 0.45, curve: Curves.easeIn),
-    );
+    const Cubic bloomCurve = Cubic(0.3, 0.8, 0.3, 1.0);
+    const Cubic overshoot = Cubic(0.2, 1.3, 0.4, 1.0);
+    const Cubic textCurve = Cubic(0.2, 0.7, 0.2, 1.0);
 
-    // Loading text: fade in at 1.5s
-    // Interval: 1.5/2.2 = 0.682 → 2.0/2.2 = 0.909
-    _loadingFade = CurvedAnimation(
-      parent: _introCtrl,
-      curve: const Interval(0.682, 0.909, curve: Curves.easeIn),
-    );
-
-    // ── LOOP (2800ms, reverse:true → 5600ms full cycle) ──────────────────
-
-    _pinHoverY = Tween<double>(begin: 0, end: -9).animate(
-      CurvedAnimation(parent: _loopCtrl, curve: Curves.easeInOut),
-    );
-    _haloScaleX = Tween<double>(begin: 1.0, end: 0.6).animate(
-      CurvedAnimation(parent: _loopCtrl, curve: Curves.easeInOut),
-    );
-    _haloOpacity = Tween<double>(begin: 1.0, end: 0.4).animate(
-      CurvedAnimation(parent: _loopCtrl, curve: Curves.easeInOut),
-    );
-    _shimmerGlow = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _loopCtrl, curve: Curves.easeInOut),
-    );
-
-    // ── OUTRO (850ms) ────────────────────────────────────────────────────
+    _ringReveal = reveal(0.083, 0.306, Curves.easeInOut);
+    _outerReveal = reveal(0.083, 0.375, bloomCurve);
+    _innerReveal = reveal(0.194, 0.500, bloomCurve);
+    _centerReveal = reveal(0.333, 0.583, overshoot);
+    _wordReveal = reveal(0.639, 0.861, textCurve);
+    _lineReveal = reveal(0.750, 0.944, textCurve);
+    _tagReveal = reveal(0.806, 1.000, Curves.easeInOut);
 
     _outroFade = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _outroCtrl,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-      ),
-    );
-    _outroWordmarkSlideY = Tween<double>(begin: 0, end: -10).animate(
-      CurvedAnimation(
-        parent: _outroCtrl,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-      ),
-    );
-    _outroPinSlideY = Tween<double>(begin: 0, end: -35).animate(
-      CurvedAnimation(
-        parent: _outroCtrl,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeIn),
-      ),
-    );
-    _outroPinScale = Tween<double>(begin: 1.0, end: 0.88).animate(
-      CurvedAnimation(
-        parent: _outroCtrl,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeIn),
-      ),
-    );
-    _flashOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _outroCtrl,
-        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
-      ),
+      CurvedAnimation(parent: _outroCtrl, curve: Curves.easeIn),
     );
   }
 
@@ -218,7 +151,6 @@ class _SplashScreenState extends State<SplashScreen>
   // ══════════════════════════════════════════════════════════════════════════
 
   void _startIntro() {
-    _cloudCtrl.repeat();
     _introCtrl.forward();
 
     _introCtrl.addStatusListener((status) {
@@ -235,16 +167,14 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _startLoop() {
     if (!mounted) return;
+    // The ornament is fully bloomed; it simply holds while the ring keeps
+    // spinning (driven by _spinCtrl) until auth is ready or the timeout fires.
     setState(() => _phase = SplashPhase.loop);
-    _loopCtrl.repeat(reverse: true);
-    _startDots();
   }
 
   void _startOutro() {
     if (!mounted || _phase == SplashPhase.outro) return;
     setState(() => _phase = SplashPhase.outro);
-    _loopCtrl.stop();
-    _stopDots();
     _outroCtrl.forward();
 
     _outroCtrl.addStatusListener((status) {
@@ -255,7 +185,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // AUTH LISTENER
+  // AUTH LISTENER (load gate — unchanged contract)
   // ══════════════════════════════════════════════════════════════════════════
 
   void _listenToAuth() {
@@ -284,7 +214,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (_introComplete && _phase == SplashPhase.loop) {
       _startOutro();
     }
-    // If still in intro, _introComplete callback will trigger outro
+    // If still in intro, the intro-complete listener triggers the outro.
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -292,7 +222,7 @@ class _SplashScreenState extends State<SplashScreen>
   // ══════════════════════════════════════════════════════════════════════════
 
   void _startTimeout() {
-    _timeoutTimer = Timer(const Duration(seconds: 10), () {
+    _timeoutTimer = Timer(_timeout, () {
       if (!mounted || _phase == SplashPhase.outro) return;
       _authReady = true;
       if (_introComplete) {
@@ -321,204 +251,81 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // LOADING DOTS
-  // ══════════════════════════════════════════════════════════════════════════
-
-  void _startDots() {
-    _dotsTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted) return;
-      setState(() => _dotCount = (_dotCount + 1) % 4);
-    });
-  }
-
-  void _stopDots() {
-    _dotsTimer?.cancel();
-    _dotsTimer = null;
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
   // BUILD
   // ══════════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Layer 0: Radial gradient background
-          _buildBackground(),
-
-          // Layer 1: Back clouds (slowest)
-          CloudField(layer: 0, driftAnimation: _cloudCtrl),
-
-          // Layer 2: Mid clouds
-          CloudField(layer: 1, driftAnimation: _cloudCtrl),
-
-          // Layer 3: Center content (wordmark + pin + halo + loading)
-          _buildCenterContent(),
-
-          // Layer 4: Front clouds (fastest)
-          CloudField(layer: 2, driftAnimation: _cloudCtrl),
-
-          // Layer 5: White flash overlay (outro)
-          _buildWhiteFlash(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBackground() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(0.0, -0.2),
-          radius: 1.2,
-          colors: [
-            AppTheme.primaryOrangeLight,
-            AppTheme.primaryOrange,
-            AppTheme.primaryOrangeDark,
-          ],
-          stops: [0.0, 0.48, 1.0],
+      body: DecoratedBox(
+        // Warm beige radial wash (design: radial at 50% 38%).
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.0, -0.24),
+            radius: 1.0,
+            colors: [
+              AppTheme.splashBgInner,
+              AppTheme.splashBgMid,
+              AppTheme.splashBgOuter,
+            ],
+            stops: [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: SizedBox.expand(
+          child: AnimatedBuilder(
+            animation: Listenable.merge([_introCtrl, _spinCtrl, _outroCtrl]),
+            builder: (context, _) => _buildScene(context),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCenterContent() {
-    return AnimatedBuilder(
-      animation: Listenable.merge([_introCtrl, _loopCtrl, _outroCtrl]),
-      builder: (context, child) {
-        // Compute animation values based on current phase
-        double wordmarkOpacity = 1.0;
-        double wordmarkY = 0.0;
-        double pinY = 0.0;
-        double pinScale = 1.0;
-        double pinOpacity = 1.0;
-        double haloSX = 1.0;
-        double haloOp = 1.0;
-        double shimmer = 0.0;
-        double loadingOpacity = 1.0;
+  Widget _buildScene(BuildContext context) {
+    final double screenW = MediaQuery.of(context).size.width;
+    // Ornament diameter ≈ 0.72 of screen width (handoff: 0.7–0.8), capped on
+    // large screens. One viewBox unit (the design's 300-grid) → logical px.
+    final double sceneSide = math.min(screenW * 0.72, 360.0);
+    final double unit = sceneSide / 300.0;
 
-        switch (_phase) {
-          case SplashPhase.intro:
-            wordmarkOpacity = _wordmarkFade.value;
-            wordmarkY = _wordmarkSlideY.value;
-            pinY = _pinDropY.value;
-            pinScale = _pinScaleIntro.value;
-            pinOpacity = _pinFadeIntro.value;
-            loadingOpacity = _loadingFade.value;
-            break;
+    final double g = _phase == SplashPhase.outro ? _outroFade.value : 1.0;
+    final double centerProgress = _centerReveal.value; // overshoots past 1
 
-          case SplashPhase.loop:
-            pinY = _pinHoverY.value;
-            haloSX = _haloScaleX.value;
-            haloOp = _haloOpacity.value;
-            shimmer = _shimmerGlow.value;
-            break;
-
-          case SplashPhase.outro:
-            wordmarkOpacity = _outroFade.value;
-            wordmarkY = _outroWordmarkSlideY.value;
-            pinOpacity = _outroFade.value;
-            pinY = _outroPinSlideY.value;
-            pinScale = _outroPinScale.value;
-            loadingOpacity = 0.0;
-            break;
-        }
-
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 40),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Wordmark
-                Transform.translate(
-                  offset: Offset(0, wordmarkY),
-                  child: Opacity(
-                    opacity: wordmarkOpacity.clamp(0.0, 1.0),
-                    child: WordmarkWidget(shimmerGlow: shimmer),
-                  ),
-                ),
-
-                const SizedBox(height: 36),
-
-                // Pin + Halo
-                SizedBox(
-                  width: 100,
-                  height: 160,
-                  child: Stack(
-                    alignment: Alignment.topCenter,
-                    children: [
-                      // Halo beneath pin
-                      Positioned(
-                        bottom: 0,
-                        child: CustomPaint(
-                          size: const Size(90, 18),
-                          painter: HaloPainter(
-                            opacity: haloOp * pinOpacity,
-                            scaleX: haloSX,
-                            color: AppTheme.primaryOrangeDark,
-                          ),
-                        ),
-                      ),
-                      // Pin
-                      Transform.translate(
-                        offset: Offset(0, pinY),
-                        child: Transform.scale(
-                          scale: pinScale,
-                          child: Opacity(
-                            opacity: pinOpacity.clamp(0.0, 1.0),
-                            child: CustomPaint(
-                              size: const Size(80, 130),
-                              painter: PinPainter(
-                                bodyColor: AppTheme.textOnPrimary,
-                                cutoutColor: AppTheme.primaryOrange,
-                                shadowColor: AppTheme.primaryOrangeDark,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Loading text
-                Opacity(
-                  opacity: loadingOpacity.clamp(0.0, 1.0),
-                  child: Text(
-                    _phase == SplashPhase.loop
-                        ? 'загрузка${'.' * _dotCount}'
-                        : (_phase == SplashPhase.intro ? 'загрузка' : ''),
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w200,
-                      color: Colors.white.withValues(alpha: 0.6),
-                      letterSpacing: 13 * 0.38,
-                    ),
-                  ),
-                ),
-              ],
+    return Align(
+      alignment: const Alignment(0.0, -0.08),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: sceneSide,
+            height: sceneSide,
+            child: CustomPaint(
+              painter: OrnamentPainter(
+                ringOpacity: _ringReveal.value,
+                ringSpin: _spinCtrl.value * 2 * math.pi,
+                outerOpacity: _outerReveal.value,
+                outerScale: _lerp(0.5, 1.0, _outerReveal.value),
+                outerRotation: _lerp(-14, 0, _outerReveal.value) * math.pi / 180,
+                innerOpacity: _innerReveal.value,
+                innerScale: _lerp(0.4, 1.0, _innerReveal.value),
+                innerRotation: _lerp(12, 0, _innerReveal.value) * math.pi / 180,
+                centerOpacity: centerProgress,
+                centerScale: centerProgress,
+                globalOpacity: g,
+                eyeletColor: _eyeletColor,
+              ),
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildWhiteFlash() {
-    return AnimatedBuilder(
-      animation: _outroCtrl,
-      builder: (context, child) {
-        final opacity =
-            _phase == SplashPhase.outro ? _flashOpacity.value : 0.0;
-        if (opacity <= 0.0) return const SizedBox.shrink();
-        return Container(color: Colors.white.withValues(alpha: opacity));
-      },
+          SizedBox(height: 6 * unit),
+          WordmarkWidget(
+            unit: unit,
+            wordT: _wordReveal.value,
+            lineT: _lineReveal.value,
+            tagT: _tagReveal.value,
+            globalOpacity: g,
+          ),
+        ],
+      ),
     );
   }
 }
