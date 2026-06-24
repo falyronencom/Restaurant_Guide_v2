@@ -99,6 +99,7 @@ type MapFilters = {
 };
 
 type Status = 'loading' | 'ready' | 'error';
+type DataStatus = 'idle' | 'fetching' | 'error';
 
 export default function MapView({
   citySlug,
@@ -117,7 +118,14 @@ export default function MapView({
   // card's close button can reach the imperative pin de-highlight.
   const clearSelectionRef = useRef<(() => void) | null>(null);
   const [status, setStatus] = useState<Status>(YMAPS_KEY ? 'loading' : 'error');
+  // Data-fetch state for a ready map: separates a genuine empty result
+  // (count === 0) from a refetch failure, and drives the refetch-in-flight
+  // indicator. Only the latest-issued refetch writes it (generation guard).
+  const [dataStatus, setDataStatus] = useState<DataStatus>('idle');
   const [count, setCount] = useState<number | null>(null);
+  // Bumped by the "retry" control after a map-init failure; recreates the map
+  // by re-running the lifecycle effect.
+  const [retryToken, setRetryToken] = useState(0);
   const [selected, setSelected] = useState<PublicEstablishmentMapMarker | null>(
     null,
   );
@@ -127,6 +135,15 @@ export default function MapView({
   const filters = buildFilters(categorySlug, searchParams);
   const filterKey = JSON.stringify(filters);
   const filtersRef = useRef(filters);
+  // Tunes the empty-state hint: only suggest "change filters" when a facet is
+  // actually narrowing the result (the establishment overlay passes none).
+  const hasActiveFilters = Boolean(
+    filters.cuisines?.length ||
+      filters.priceRange?.length ||
+      filters.minRating != null ||
+      filters.hours_filter ||
+      filters.search,
+  );
 
   // Deep-link focus (Slice D part 1). Coordinates centre the map immediately;
   // the slug matches a marker once the viewport loads → auto-select its pin.
@@ -138,10 +155,16 @@ export default function MapView({
   useEffect(() => {
     if (!YMAPS_KEY) return;
 
+    const container = containerRef.current;
     let cancelled = false;
     let map: YMapInstance | null = null;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let generation = 0; // request-sequence token — apply only the latest refetch
+
+    // Tap on the map backdrop (not a pin) clears the selection. Pins
+    // stopPropagation their own click, so a pin tap never bubbles to the
+    // container — only a backdrop tap does.
+    const onContainerClick = () => clearSelectionRef.current?.();
 
     void (async () => {
       const ymaps3 = await waitForYmaps3();
@@ -206,30 +229,39 @@ export default function MapView({
         const refetch = async () => {
           if (cancelled || !map) return;
           const gen = ++generation;
+          setDataStatus('fetching');
           const raw = boxFromBounds(map.bounds) ?? boxAroundCenter(center);
           const box = bufferBox(raw, VIEWPORT_BUFFER);
-          const data = await fetchMarkers(box, filtersRef.current);
-          // Drop a stale response: a newer refetch (camera move or filter change)
-          // superseded this one. Apply only the latest-issued result so the map
-          // can't settle on an out-of-order earlier fetch (which would then
-          // disagree with the server-rendered list).
-          if (cancelled || !map || gen !== generation) return;
-          const autoFocus =
-            focusSlug && !autoFocusDone
-              ? {
-                  slug: focusSlug,
-                  select: (
-                    m: PublicEstablishmentMapMarker,
-                    el: HTMLElement,
-                  ) => {
-                    onMarkerClick(m, el);
-                    autoFocusDone = true;
-                  },
-                }
-              : undefined;
-          setCount(
-            syncMarkers(map, ymaps3, markers, data, onMarkerClick, autoFocus),
-          );
+          try {
+            const data = await fetchMarkers(box, filtersRef.current);
+            // Drop a stale response: a newer refetch (camera move or filter
+            // change) superseded this one. Apply only the latest-issued result
+            // so the map can't settle on an out-of-order earlier fetch (which
+            // would then disagree with the server-rendered list).
+            if (cancelled || !map || gen !== generation) return;
+            const autoFocus =
+              focusSlug && !autoFocusDone
+                ? {
+                    slug: focusSlug,
+                    select: (
+                      m: PublicEstablishmentMapMarker,
+                      el: HTMLElement,
+                    ) => {
+                      onMarkerClick(m, el);
+                      autoFocusDone = true;
+                    },
+                  }
+                : undefined;
+            setCount(
+              syncMarkers(map, ymaps3, markers, data, onMarkerClick, autoFocus),
+            );
+            setDataStatus('idle');
+          } catch {
+            // Same generation guard: a stale failure must not overwrite a
+            // fresher result — only the latest refetch may surface an error.
+            if (cancelled || !map || gen !== generation) return;
+            setDataStatus('error');
+          }
         };
 
         map.addChild(
@@ -242,6 +274,7 @@ export default function MapView({
         );
 
         refetchRef.current = refetch;
+        container?.addEventListener('click', onContainerClick);
         setStatus('ready');
         await refetch(); // immediate pins; camera onUpdate refines on layout
       } catch {
@@ -252,11 +285,12 @@ export default function MapView({
     return () => {
       cancelled = true;
       clearTimeout(debounceTimer);
+      container?.removeEventListener('click', onContainerClick);
       refetchRef.current = null;
       clearSelectionRef.current = null;
       map?.destroy();
     };
-  }, [citySlug, focusSlug, focusLat, focusLng]);
+  }, [citySlug, focusSlug, focusLat, focusLng, retryToken]);
 
   // Filters changed → publish latest filters to the ref and refetch (no map
   // recreation). filterKey is the value-stable serialization of `filters`;
@@ -273,21 +307,84 @@ export default function MapView({
       {YMAPS_KEY && <Script src={YMAPS_SRC} strategy="afterInteractive" />}
       <div className="relative h-[70vh] w-full overflow-hidden rounded-card bg-muted">
         <div ref={containerRef} className="absolute inset-0" />
+
         {status === 'loading' && (
           <div className="absolute inset-0 grid place-items-center text-body-m text-muted-foreground">
             Загрузка карты…
           </div>
         )}
+
         {status === 'error' && (
-          <div className="absolute inset-0 grid place-items-center px-m text-center text-body-m text-muted-foreground">
-            Не удалось загрузить карту. Обновите страницу.
+          <div className="absolute inset-0 grid place-items-center px-m text-center">
+            <div className="flex flex-col items-center gap-3 text-body-m text-muted-foreground">
+              <span>Не удалось загрузить карту.</span>
+              {YMAPS_KEY && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatus('loading');
+                    setRetryToken((t) => t + 1);
+                  }}
+                  className="rounded-full bg-brand px-4 py-1.5 text-caption-l font-medium text-white"
+                >
+                  Повторить
+                </button>
+              )}
+            </div>
           </div>
         )}
-        {status === 'ready' && count != null && (
-          <div className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-caption-l text-foreground shadow">
-            Заведений на карте: {count}
+
+        {/* Status badge / refetch indicator (top-left); hidden on empty + error,
+            which surface their own centred panel. */}
+        {status === 'ready' &&
+          (dataStatus === 'fetching' ||
+            (dataStatus === 'idle' && (count ?? 0) > 0)) && (
+            <div className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-caption-l text-foreground shadow">
+              {dataStatus === 'fetching' ? (
+                <span className="flex items-center gap-2">
+                  <span className="size-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+                  Обновление…
+                </span>
+              ) : (
+                `Заведений на карте: ${count}`
+              )}
+            </div>
+          )}
+
+        {/* Refetch failed — kept distinct from a genuine empty result. */}
+        {status === 'ready' && dataStatus === 'error' && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center px-m">
+            <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-card bg-white/95 px-5 py-4 text-center shadow-lg">
+              <span className="text-body-m text-foreground">
+                Не удалось обновить карту
+              </span>
+              <button
+                type="button"
+                onClick={() => void refetchRef.current?.()}
+                className="rounded-full bg-brand px-4 py-1.5 text-caption-l font-medium text-white"
+              >
+                Повторить
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Genuine empty viewport (after filters), not an error. */}
+        {status === 'ready' && dataStatus === 'idle' && count === 0 && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center px-m">
+            <div className="pointer-events-auto max-w-[16rem] rounded-card bg-white/95 px-5 py-4 text-center shadow-lg">
+              <p className="text-body-m text-foreground">
+                В этой области ничего не найдено
+              </p>
+              <p className="mt-1 text-body-s text-muted-foreground">
+                {hasActiveFilters
+                  ? 'Измените фильтры или сместите карту'
+                  : 'Сместите или приблизьте карту'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {selected && (
           <MapPreviewCard
             marker={selected}
@@ -337,7 +434,10 @@ async function fetchMarkers(
   if (filters.search) qs.set('search', filters.search);
 
   const res = await fetch(`/api/map?${qs.toString()}`);
-  if (!res.ok) return [];
+  // Throw (not return []) so the caller can tell a fetch failure apart from a
+  // genuine empty viewport: the former drives the error panel + retry, the
+  // latter the "nothing here" empty state. A network failure rejects already.
+  if (!res.ok) throw new Error(`Map fetch failed: ${res.status}`);
   const data = (await res.json()) as {
     establishments?: PublicEstablishmentMapMarker[];
   };
@@ -399,8 +499,12 @@ function makeBrandPin(variant: 'default' | 'selected' = 'default'): HTMLElement 
   const el = document.createElement('div');
   el.style.cssText =
     'width:40px;height:48px;transform:translate(-50%,-100%);cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));';
+  // pointer-events:none on the SVG makes the solid 40×48 div the single hit
+  // target. Without it, hits land on painted SVG shapes only — the fork/knife
+  // glyph is fill="none", so its gaps let a click on the pin's centre fall
+  // through; the rim (filled teardrop) registered but the centre felt "dead".
   el.innerHTML =
-    '<svg width="40" height="48" viewBox="0 0 40 48" xmlns="http://www.w3.org/2000/svg">' +
+    '<svg width="40" height="48" viewBox="0 0 40 48" style="display:block;pointer-events:none" xmlns="http://www.w3.org/2000/svg">' +
     `<path d="M20 2C12.27 2 6 8.27 6 16c0 10.5 14 28 14 28s14-17.5 14-28C34 8.27 27.73 2 20 2z" fill="${fill}" stroke="#fff" stroke-width="3"/>` +
     '<g transform="translate(11.5 7.5) scale(0.71)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>' +
