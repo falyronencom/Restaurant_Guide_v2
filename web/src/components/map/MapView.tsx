@@ -12,6 +12,8 @@ import {
 } from '@/lib/catalog-params';
 import type { PublicEstablishmentMapMarker } from '@/lib/api/types';
 
+import { MapPreviewCard } from './MapPreviewCard';
+
 /*
  * Interactive map island — Slices A+B.
  *
@@ -105,8 +107,14 @@ export default function MapView({
   // The map's refetch closure, published by the lifecycle effect so the
   // "filters changed" effect can re-run it without recreating the map.
   const refetchRef = useRef<(() => Promise<void>) | null>(null);
+  // Clears the tapped pin + card; published by the lifecycle effect so the
+  // card's close button can reach the imperative pin de-highlight.
+  const clearSelectionRef = useRef<(() => void) | null>(null);
   const [status, setStatus] = useState<Status>(YMAPS_KEY ? 'loading' : 'error');
   const [count, setCount] = useState<number | null>(null);
+  const [selected, setSelected] = useState<PublicEstablishmentMapMarker | null>(
+    null,
+  );
 
   // Latest filters in a ref so the once-created camera listener reads current
   // values; a primitive key drives the refetch-on-change effect.
@@ -149,6 +157,32 @@ export default function MapView({
         map.addChild(new YMapDefaultFeaturesLayer());
 
         const markers = new Map<string, Entity>();
+
+        // Tap → preview card + selected-pin highlight. Selection is tracked
+        // imperatively (selectedEl) and mirrored to React state (the card);
+        // clearSelectionRef lets the card's ✕ reach the de-highlight.
+        let selectedEl: HTMLElement | null = null;
+        const paint = (el: HTMLElement, variant: 'default' | 'selected') => {
+          el.querySelector('path')?.setAttribute(
+            'fill',
+            variant === 'selected' ? '#F2B600' : '#E8622B',
+          );
+        };
+        const onMarkerClick = (
+          m: PublicEstablishmentMapMarker,
+          el: HTMLElement,
+        ) => {
+          if (selectedEl && selectedEl !== el) paint(selectedEl, 'default');
+          paint(el, 'selected');
+          selectedEl = el;
+          setSelected(m);
+        };
+        clearSelectionRef.current = () => {
+          if (selectedEl) paint(selectedEl, 'default');
+          selectedEl = null;
+          setSelected(null);
+        };
+
         const refetch = async () => {
           if (cancelled || !map) return;
           const gen = ++generation;
@@ -160,7 +194,7 @@ export default function MapView({
           // can't settle on an out-of-order earlier fetch (which would then
           // disagree with the server-rendered list).
           if (cancelled || !map || gen !== generation) return;
-          setCount(syncMarkers(map, ymaps3, markers, data));
+          setCount(syncMarkers(map, ymaps3, markers, data, onMarkerClick));
         };
 
         map.addChild(
@@ -184,6 +218,7 @@ export default function MapView({
       cancelled = true;
       clearTimeout(debounceTimer);
       refetchRef.current = null;
+      clearSelectionRef.current = null;
       map?.destroy();
     };
   }, [citySlug]);
@@ -217,6 +252,14 @@ export default function MapView({
           <div className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-caption-l text-foreground shadow">
             Заведений на карте: {count}
           </div>
+        )}
+        {selected && (
+          <MapPreviewCard
+            marker={selected}
+            fallbackCitySlug={citySlug}
+            fallbackCategorySlug={categorySlug ?? 'restaurants'}
+            onClose={() => clearSelectionRef.current?.()}
+          />
         )}
       </div>
     </>
@@ -273,6 +316,7 @@ function syncMarkers(
   ymaps3: Ymaps3,
   markers: Map<string, Entity>,
   data: PublicEstablishmentMapMarker[],
+  onMarkerClick: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void,
 ): number {
   const next = new Map(
     data
@@ -290,9 +334,14 @@ function syncMarkers(
   const { YMapMarker } = ymaps3;
   for (const [id, m] of next) {
     if (!markers.has(id)) {
+      const el = makeBrandPin();
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onMarkerClick(m, el);
+      });
       const marker = new YMapMarker(
         { coordinates: [m.longitude as number, m.latitude as number] },
-        makeBrandPin(),
+        el,
       );
       map.addChild(marker);
       markers.set(id, marker);
