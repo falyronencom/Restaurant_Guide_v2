@@ -1,8 +1,10 @@
 /**
- * MapPreview — Server Component. Compact location card that deep-links into our
- * OWN interactive map (Slice D part 1), centred on this establishment with its
- * pin pre-selected — keeping the user in our funnel to explore nearby places,
- * instead of bouncing out to external Yandex Maps.
+ * MapPreview — Server Component. Compact location card that opens our OWN
+ * interactive map as an in-page overlay (D-2A), centred on this establishment
+ * with its pin pre-selected — keeping the user on the establishment page (its
+ * URL is preserved) instead of bouncing out to external Yandex Maps or away to
+ * the catalog. The click→overlay behaviour lives in the MapPreviewTrigger client
+ * wrapper; the page-level EstablishmentMapOverlay renders the actual map.
  *
  * Shared by the main-column Location section and the contact sidebar. Renders a
  * real Yandex Static API map when YANDEX_MAPS_API_KEY is set (read server-side
@@ -16,33 +18,21 @@
  * server-side and trip the lock. See yandexStaticMapUrl.
  */
 
-import Link from 'next/link';
-
 import { yandexStaticMapUrl } from '@/lib/establishment-helpers';
 
 import { MapBrandPin } from './MapBrandPin';
+import { MapPreviewTrigger } from './MapPreviewTrigger';
 
 export function MapPreview({
   latitude,
   longitude,
   address,
-  citySlug,
-  slug,
 }: {
   latitude: number | null;
   longitude: number | null;
   address: string;
-  /** URL slug of the city (authoritative — establishment.city_slug may be null). */
-  citySlug: string;
-  /** Establishment slug — matched against the map marker to pre-select its pin. */
-  slug: string;
 }) {
   if (latitude == null || longitude == null) return null;
-  // Deep-link into our interactive map: ?view=map opens it, focus+coords centre
-  // it on this establishment and auto-select its pin (see MapView Slice D part 1).
-  const href = `/${citySlug}?view=map&focus=${encodeURIComponent(
-    slug,
-  )}&flat=${latitude}&flng=${longitude}`;
   const mapSrc = yandexStaticMapUrl(
     latitude,
     longitude,
@@ -50,10 +40,7 @@ export function MapPreview({
   );
 
   return (
-    <Link
-      href={href}
-      className='relative block h-[180px] overflow-hidden rounded-card bg-muted'
-    >
+    <MapPreviewTrigger>
       {mapSrc && (
         // eslint-disable-next-line @next/next/no-img-element -- external Referer-locked static map; must load client-side, so not next/image (see doc comment)
         <img
@@ -74,6 +61,6 @@ export function MapPreview({
         <div className='text-body-m font-semibold text-white'>{address}</div>
         <div className='text-caption-l text-white/85'>Открыть на карте →</div>
       </div>
-    </Link>
+    </MapPreviewTrigger>
   );
 }

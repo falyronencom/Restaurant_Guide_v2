@@ -7,7 +7,7 @@
  * so they are not repeated here. On mobile the sidebar is hidden (parent layout).
  */
 
-import { Phone, Globe } from 'lucide-react';
+import { Phone, Globe, Navigation } from 'lucide-react';
 
 import type { PublicEstablishmentDetail } from '@/lib/api/types';
 import {
@@ -16,17 +16,15 @@ import {
   pluralizeReviews,
   ratingColorClass,
   ratingLabel,
+  yandexRouteUrl,
 } from '@/lib/establishment-helpers';
 
 import { MapPreview } from './MapPreview';
 
 export function ContactSidebar({
   establishment,
-  citySlug,
 }: {
   establishment: PublicEstablishmentDetail;
-  /** URL slug of the city (authoritative — establishment.city_slug may be null). */
-  citySlug: string;
 }) {
   const label = ratingLabel(establishment.average_rating);
 
@@ -83,9 +81,18 @@ export function ContactSidebar({
         latitude={establishment.latitude}
         longitude={establishment.longitude}
         address={establishment.address}
-        citySlug={citySlug}
-        slug={establishment.slug}
       />
+      {establishment.latitude != null && establishment.longitude != null ? (
+        <a
+          href={yandexRouteUrl(establishment.latitude, establishment.longitude)}
+          target='_blank'
+          rel='noopener noreferrer'
+          className='inline-flex items-center justify-center gap-2 rounded-[14px] bg-background px-l py-3 text-body-m font-semibold text-foreground transition-colors hover:bg-muted'
+        >
+          <Navigation className='size-4 text-brand' aria-hidden='true' />
+          Как добраться
+        </a>
+      ) : null}
     </div>
   );
 }

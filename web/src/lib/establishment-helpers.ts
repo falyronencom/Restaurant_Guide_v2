@@ -82,17 +82,18 @@ export function extractActiveAttributes(
 }
 
 /**
- * Build a Yandex Maps deep-link URL for the given coordinates and address.
- * The `pt=lng,lat` order is Yandex convention (longitude first). The address
- * is included in the `text` param so the marker shows the place name.
+ * Build a Yandex Maps routing deep-link ("Как добраться") to the given point —
+ * destination only, with an empty origin so Yandex fills the user's start
+ * (geolocation / manual entry).
+ *
+ * NOTE the coordinate order: `rtext` is the one Yandex param that takes
+ * latitude FIRST (`lat,lon`), unlike `pt`/`ll` which are longitude-first.
+ * Route points are `~`-separated; a leading `~` means "no start point set".
+ * `rtt=auto` selects the driving route. yandex.by — the Belarus ccTLD, matching
+ * the local audience.
  */
-export function yandexMapUrl(
-  latitude: number,
-  longitude: number,
-  address: string,
-): string {
-  const text = encodeURIComponent(address);
-  return `https://yandex.by/maps/?pt=${longitude},${latitude}&z=17&text=${text}`;
+export function yandexRouteUrl(latitude: number, longitude: number): string {
+  return `https://yandex.by/maps/?rtext=~${latitude},${longitude}&rtt=auto`;
 }
 
 /**
@@ -100,9 +101,8 @@ export function yandexMapUrl(
  * null when no API key is configured — so MapPreview falls back to its
  * placeholder (local dev without the key, or a deploy missing the env var).
  *
- * `ll` is longitude,latitude (Yandex convention, longitude first — same as
- * yandexMapUrl). No `pt` placemark: MapPreview overlays its own brand pin on the
- * centered point. `size` is within the API max (650×450); we request a wide
+ * `ll` is longitude,latitude (Yandex convention, longitude first). No `pt`
+ * placemark: MapPreview overlays its own brand pin on the centered point. `size` is within the API max (650×450); we request a wide
  * frame and let the card crop via object-cover. Built as a raw string (not
  * URLSearchParams) so the commas in `ll`/`size` stay unescaped, matching the
  * format in Yandex's own examples.

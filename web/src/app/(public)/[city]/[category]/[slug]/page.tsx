@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { cache } from 'react';
+import { Suspense, cache } from 'react';
 
 import { ApiError } from '@/lib/api/types';
 import {
@@ -24,6 +24,7 @@ import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
 import { Attributes } from '@/components/establishment/Attributes';
 import { ContactSidebar } from '@/components/establishment/ContactSidebar';
+import { EstablishmentMapOverlay } from '@/components/establishment/EstablishmentMapOverlay';
 import { FavoriteButton } from '@/components/favorites/FavoriteButton';
 import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
 import { Description } from '@/components/establishment/Description';
@@ -327,8 +328,6 @@ export default async function EstablishmentPage({
               longitude={establishment.longitude}
               address={establishment.address}
               city={establishment.city}
-              citySlug={city}
-              slug={establishment.slug}
             />
           </section>
 
@@ -343,9 +342,22 @@ export default async function EstablishmentPage({
         </div>
 
         <aside className='hidden lg:sticky lg:top-l lg:block lg:self-start'>
-          <ContactSidebar establishment={establishment} citySlug={city} />
+          <ContactSidebar establishment={establishment} />
         </aside>
       </div>
+
+      {/* In-page interactive-map overlay (D-2A) — one per page; the MapPreview
+          triggers (main column + sidebar) open it via ?map=1. Suspense: it reads
+          useSearchParams and this page is ISR (prod-build requirement). */}
+      <Suspense fallback={null}>
+        <EstablishmentMapOverlay
+          citySlug={city}
+          slug={establishment.slug}
+          name={establishment.name}
+          latitude={establishment.latitude}
+          longitude={establishment.longitude}
+        />
+      </Suspense>
     </main>
   );
 }
