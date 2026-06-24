@@ -13,11 +13,15 @@ export function Location({
   longitude,
   address,
   city,
+  citySlug,
+  slug,
 }: {
   latitude: number | null;
   longitude: number | null;
   address: string;
   city: string;
+  citySlug: string;
+  slug: string;
 }) {
   const hasCoordinates = latitude != null && longitude != null;
 
@@ -29,7 +33,8 @@ export function Location({
           latitude={latitude}
           longitude={longitude}
           address={address}
-          city={city}
+          citySlug={citySlug}
+          slug={slug}
         />
       ) : (
         <div className='flex flex-col gap-s rounded-card bg-figma-bg-warm p-l'>

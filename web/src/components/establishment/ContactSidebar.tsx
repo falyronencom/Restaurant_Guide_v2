@@ -22,8 +22,11 @@ import { MapPreview } from './MapPreview';
 
 export function ContactSidebar({
   establishment,
+  citySlug,
 }: {
   establishment: PublicEstablishmentDetail;
+  /** URL slug of the city (authoritative — establishment.city_slug may be null). */
+  citySlug: string;
 }) {
   const label = ratingLabel(establishment.average_rating);
 
@@ -80,7 +83,8 @@ export function ContactSidebar({
         latitude={establishment.latitude}
         longitude={establishment.longitude}
         address={establishment.address}
-        city={establishment.city}
+        citySlug={citySlug}
+        slug={establishment.slug}
       />
     </div>
   );

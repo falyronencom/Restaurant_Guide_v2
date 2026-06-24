@@ -327,6 +327,8 @@ export default async function EstablishmentPage({
               longitude={establishment.longitude}
               address={establishment.address}
               city={establishment.city}
+              citySlug={city}
+              slug={establishment.slug}
             />
           </section>
 
@@ -341,7 +343,7 @@ export default async function EstablishmentPage({
         </div>
 
         <aside className='hidden lg:sticky lg:top-l lg:block lg:self-start'>
-          <ContactSidebar establishment={establishment} />
+          <ContactSidebar establishment={establishment} citySlug={city} />
         </aside>
       </div>
     </main>

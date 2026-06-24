@@ -27,10 +27,15 @@ import { MapPreviewCard } from './MapPreviewCard';
  * Client-only (window/ymaps3); rendered via a dynamic ssr:false import from the
  * ResultsSwitcher toggle, so the Yandex script loads only when the map opens.
  *
+ * Slice D part 1 — deep-link focus: a ?focus=<slug>&flat=<lat>&flng=<lng> query
+ * (from an establishment card's MapPreview) centres the map on that point and
+ * auto-selects its pin once the viewport's markers load, keeping the user inside
+ * our funnel instead of bouncing to external Yandex Maps.
+ *
  * Deferred: open/closed marker state (needs working_hours on the marker
- * projection) and tap-to-preview + selected marker (Slice C); clustering for
- * dense city-wide zoom (Slice D). The `features` attribute facet is not honored
- * — searchByBounds (the bounds backend) does not accept it (known gap).
+ * projection); clustering for dense city-wide zoom (Slice D part 2). The
+ * `features` attribute facet is not honored — searchByBounds (the bounds
+ * backend) does not accept it (known gap).
  */
 
 // [lon, lat] — Yandex v3 takes longitude first.
@@ -44,6 +49,7 @@ const CITY_CENTERS: Record<string, [number, number]> = {
 };
 const DEFAULT_CENTER = CITY_CENTERS.minsk;
 const DEFAULT_ZOOM = 12;
+const FOCUS_ZOOM = 15; // street-level when deep-linked to one establishment
 const VIEWPORT_BUFFER = 0.3; // fetch 30% beyond the viewport on each side
 const REFETCH_DEBOUNCE_MS = 350;
 const FETCH_LIMIT = 200;
@@ -122,7 +128,13 @@ export default function MapView({
   const filterKey = JSON.stringify(filters);
   const filtersRef = useRef(filters);
 
-  // Map lifecycle — recreate only on city change (different centre).
+  // Deep-link focus (Slice D part 1). Coordinates centre the map immediately;
+  // the slug matches a marker once the viewport loads → auto-select its pin.
+  const focusSlug = asString(searchParams.focus);
+  const focusLat = asFloat(searchParams.flat);
+  const focusLng = asFloat(searchParams.flng);
+
+  // Map lifecycle — recreate on city OR focus change (different centre).
   useEffect(() => {
     if (!YMAPS_KEY) return;
 
@@ -142,7 +154,11 @@ export default function MapView({
         await ymaps3.ready;
         if (cancelled || !containerRef.current) return;
 
-        const center = CITY_CENTERS[citySlug] ?? DEFAULT_CENTER;
+        const hasFocusCenter = focusLat != null && focusLng != null;
+        const center: [number, number] = hasFocusCenter
+          ? [focusLng, focusLat]
+          : CITY_CENTERS[citySlug] ?? DEFAULT_CENTER;
+        const zoom = hasFocusCenter ? FOCUS_ZOOM : DEFAULT_ZOOM;
         const {
           YMap,
           YMapDefaultSchemeLayer,
@@ -151,7 +167,7 @@ export default function MapView({
         } = ymaps3;
 
         map = new YMap(containerRef.current, {
-          location: { center, zoom: DEFAULT_ZOOM },
+          location: { center, zoom },
         });
         map.addChild(new YMapDefaultSchemeLayer());
         map.addChild(new YMapDefaultFeaturesLayer());
@@ -183,6 +199,10 @@ export default function MapView({
           setSelected(null);
         };
 
+        // Deep-link auto-select fires once, when the focused slug's pin is first
+        // created (centring guarantees it's in the first viewport).
+        let autoFocusDone = false;
+
         const refetch = async () => {
           if (cancelled || !map) return;
           const gen = ++generation;
@@ -194,7 +214,22 @@ export default function MapView({
           // can't settle on an out-of-order earlier fetch (which would then
           // disagree with the server-rendered list).
           if (cancelled || !map || gen !== generation) return;
-          setCount(syncMarkers(map, ymaps3, markers, data, onMarkerClick));
+          const autoFocus =
+            focusSlug && !autoFocusDone
+              ? {
+                  slug: focusSlug,
+                  select: (
+                    m: PublicEstablishmentMapMarker,
+                    el: HTMLElement,
+                  ) => {
+                    onMarkerClick(m, el);
+                    autoFocusDone = true;
+                  },
+                }
+              : undefined;
+          setCount(
+            syncMarkers(map, ymaps3, markers, data, onMarkerClick, autoFocus),
+          );
         };
 
         map.addChild(
@@ -221,7 +256,7 @@ export default function MapView({
       clearSelectionRef.current = null;
       map?.destroy();
     };
-  }, [citySlug]);
+  }, [citySlug, focusSlug, focusLat, focusLng]);
 
   // Filters changed → publish latest filters to the ref and refetch (no map
   // recreation). filterKey is the value-stable serialization of `filters`;
@@ -317,6 +352,10 @@ function syncMarkers(
   markers: Map<string, Entity>,
   data: PublicEstablishmentMapMarker[],
   onMarkerClick: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void,
+  autoFocus?: {
+    slug: string;
+    select: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
+  },
 ): number {
   const next = new Map(
     data
@@ -339,6 +378,7 @@ function syncMarkers(
         e.stopPropagation();
         onMarkerClick(m, el);
       });
+      if (autoFocus && m.slug === autoFocus.slug) autoFocus.select(m, el);
       const marker = new YMapMarker(
         { coordinates: [m.longitude as number, m.latitude as number] },
         el,

@@ -1,7 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import type { ReactNode } from 'react';
 
 import type { SearchParams } from '@/lib/catalog-params';
 
@@ -12,6 +13,11 @@ import type { SearchParams } from '@/lib/catalog-params';
  * The server-rendered list is passed as `children` so it stays the SSR/SEO
  * surface; the map is a client-only island loaded on demand (dynamic ssr:false)
  * so the Yandex JS API script is fetched only when the user opens the map.
+ *
+ * View lives in the URL (?view=map), not local state, so an establishment card
+ * can deep-link straight into the map (Slice D part 1: ?view=map&focus=…). The
+ * host pages are force-dynamic, so reading useSearchParams needs no Suspense
+ * boundary (it resolves on the server during the initial render).
  */
 const MapView = dynamic(() => import('@/components/map/MapView'), {
   ssr: false,
@@ -28,7 +34,26 @@ export function ResultsSwitcher({
   searchParams: SearchParams;
   children: ReactNode;
 }) {
-  const [view, setView] = useState<'list' | 'map'>('list');
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const view = sp.get('view') === 'map' ? 'map' : 'list';
+
+  const setView = (next: 'list' | 'map') => {
+    const params = new URLSearchParams(sp.toString());
+    if (next === 'map') {
+      params.set('view', 'map');
+    } else {
+      // Back to the list → drop map-only params so the URL stays clean.
+      params.delete('view');
+      params.delete('focus');
+      params.delete('flat');
+      params.delete('flng');
+    }
+    const qs = params.toString();
+    // scroll:false — toggling in place shouldn't jump the viewport to the top.
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   return (
     <div>

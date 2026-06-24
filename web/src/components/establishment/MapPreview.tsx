@@ -1,5 +1,8 @@
 /**
- * MapPreview — Server Component. Compact location card linking to Yandex Maps.
+ * MapPreview — Server Component. Compact location card that deep-links into our
+ * OWN interactive map (Slice D part 1), centred on this establishment with its
+ * pin pre-selected — keeping the user in our funnel to explore nearby places,
+ * instead of bouncing out to external Yandex Maps.
  *
  * Shared by the main-column Location section and the contact sidebar. Renders a
  * real Yandex Static API map when YANDEX_MAPS_API_KEY is set (read server-side
@@ -13,7 +16,9 @@
  * server-side and trip the lock. See yandexStaticMapUrl.
  */
 
-import { yandexMapUrl, yandexStaticMapUrl } from '@/lib/establishment-helpers';
+import Link from 'next/link';
+
+import { yandexStaticMapUrl } from '@/lib/establishment-helpers';
 
 import { MapBrandPin } from './MapBrandPin';
 
@@ -21,15 +26,23 @@ export function MapPreview({
   latitude,
   longitude,
   address,
-  city,
+  citySlug,
+  slug,
 }: {
   latitude: number | null;
   longitude: number | null;
   address: string;
-  city: string;
+  /** URL slug of the city (authoritative — establishment.city_slug may be null). */
+  citySlug: string;
+  /** Establishment slug — matched against the map marker to pre-select its pin. */
+  slug: string;
 }) {
   if (latitude == null || longitude == null) return null;
-  const href = yandexMapUrl(latitude, longitude, `${address}, ${city}`);
+  // Deep-link into our interactive map: ?view=map opens it, focus+coords centre
+  // it on this establishment and auto-select its pin (see MapView Slice D part 1).
+  const href = `/${citySlug}?view=map&focus=${encodeURIComponent(
+    slug,
+  )}&flat=${latitude}&flng=${longitude}`;
   const mapSrc = yandexStaticMapUrl(
     latitude,
     longitude,
@@ -37,10 +50,8 @@ export function MapPreview({
   );
 
   return (
-    <a
+    <Link
       href={href}
-      target='_blank'
-      rel='noopener noreferrer'
       className='relative block h-[180px] overflow-hidden rounded-card bg-muted'
     >
       {mapSrc && (
@@ -61,10 +72,8 @@ export function MapPreview({
       <MapBrandPin className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full' />
       <div className='absolute inset-x-0 bottom-0 p-4'>
         <div className='text-body-m font-semibold text-white'>{address}</div>
-        <div className='text-caption-l text-white/85'>
-          Открыть на Яндекс.Картах →
-        </div>
+        <div className='text-caption-l text-white/85'>Открыть на карте →</div>
       </div>
-    </a>
+    </Link>
   );
 }
