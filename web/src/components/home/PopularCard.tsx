@@ -1,6 +1,6 @@
 import Image from 'next/image';
-import Link from 'next/link';
 
+import { SmartLink } from '@/components/SmartLink';
 import { FavoriteButton } from '@/components/favorites/FavoriteButton';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import type { PublicEstablishmentListing } from '@/lib/api/types';
@@ -40,7 +40,7 @@ export function PopularCard({
 
   return (
     <div className="group relative">
-      <Link
+      <SmartLink
         href={href}
         className="block transition-transform hover:-translate-y-0.5"
       >
@@ -114,7 +114,7 @@ export function PopularCard({
             </p>
           </div>
         </article>
-      </Link>
+      </SmartLink>
       {/* Favorites island — sibling of the Link (tap never navigates). */}
       <FavoriteButton
         establishmentId={establishment.id}

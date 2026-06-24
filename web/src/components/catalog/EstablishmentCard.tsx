@@ -1,10 +1,10 @@
 import Image from 'next/image';
-import Link from 'next/link';
 
 import type { PublicEstablishmentListing } from '@/lib/api/types';
 import { formatRating, ratingColorClass } from '@/lib/establishment-helpers';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 
+import { SmartLink } from '@/components/SmartLink';
 import { FavoriteButton } from '@/components/favorites/FavoriteButton';
 
 import { OpenStatusBadge } from './OpenStatusBadge';
@@ -47,7 +47,7 @@ export function EstablishmentCard({
 
   return (
     <div className='group relative'>
-      <Link
+      <SmartLink
         href={href}
         className='block transition-transform hover:-translate-y-0.5'
       >
@@ -124,7 +124,7 @@ export function EstablishmentCard({
             </div>
           </div>
         </article>
-      </Link>
+      </SmartLink>
       {/* Favorites proving-action — sibling of the Link (valid markup; tap never
           navigates). Overlays the image column. */}
       <FavoriteButton

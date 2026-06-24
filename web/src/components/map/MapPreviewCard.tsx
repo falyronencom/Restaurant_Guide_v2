@@ -1,11 +1,12 @@
 'use client';
 
 import Image from 'next/image';
-import Link from 'next/link';
 
 import type { PublicEstablishmentMapMarker } from '@/lib/api/types';
 import { formatRating, ratingColorClass } from '@/lib/establishment-helpers';
 import { normalizeCategory } from '@/lib/working-hours';
+
+import { SmartLink } from '@/components/SmartLink';
 
 /*
  * Map tap-to-preview card (Slice C) — the web mirror of the mobile map preview
@@ -39,7 +40,7 @@ export function MapPreviewCard({
   return (
     <div className="absolute inset-x-3 bottom-3 z-10 mx-auto max-w-md">
       <div className="relative flex overflow-hidden rounded-card bg-figma-bg-warm shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
-        <Link href={href} className="flex min-w-0 flex-1">
+        <SmartLink href={href} className="flex min-w-0 flex-1">
           <div className="relative aspect-square w-24 shrink-0 bg-muted">
             {marker.primary_image_url ? (
               <Image
@@ -93,7 +94,7 @@ export function MapPreviewCard({
               Подробнее →
             </span>
           </div>
-        </Link>
+        </SmartLink>
 
         <button
           type="button"
