@@ -11,6 +11,7 @@ import {
   type SearchParams,
 } from '@/lib/catalog-params';
 import type { PublicEstablishmentMapMarker } from '@/lib/api/types';
+import { cn } from '@/lib/utils';
 
 import { MapPreviewCard } from './MapPreviewCard';
 
@@ -53,6 +54,13 @@ const FOCUS_ZOOM = 15; // street-level when deep-linked to one establishment
 const VIEWPORT_BUFFER = 0.3; // fetch 30% beyond the viewport on each side
 const REFETCH_DEBOUNCE_MS = 350;
 const FETCH_LIMIT = 200;
+// Debounce hiding the desktop hover preview so the cursor crossing the gap
+// between two adjacent pins doesn't make the card flicker.
+const HOVER_HIDE_MS = 120;
+// Pin fills: brand orange at rest, brand yellow when highlighted (the committed
+// selection or the transient hover).
+const FILL_DEFAULT = '#E8622B';
+const FILL_HIGHLIGHT = '#F2B600';
 
 const YMAPS_KEY = process.env.NEXT_PUBLIC_YANDEX_JS_API_KEY;
 const YMAPS_SRC = `https://api-maps.yandex.ru/v3/?apikey=${YMAPS_KEY ?? ''}&lang=ru_RU`;
@@ -105,10 +113,12 @@ export default function MapView({
   citySlug,
   categorySlug,
   searchParams,
+  className,
 }: {
   citySlug: string;
   categorySlug?: string;
   searchParams: SearchParams;
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // The map's refetch closure, published by the lifecycle effect so the
@@ -197,28 +207,81 @@ export default function MapView({
 
         const markers = new Map<string, Entity>();
 
-        // Tap → preview card + selected-pin highlight. Selection is tracked
-        // imperatively (selectedEl) and mirrored to React state (the card);
-        // clearSelectionRef lets the card's ✕ reach the de-highlight.
-        let selectedEl: HTMLElement | null = null;
-        const paint = (el: HTMLElement, variant: 'default' | 'selected') => {
-          el.querySelector('path')?.setAttribute(
-            'fill',
-            variant === 'selected' ? '#F2B600' : '#E8622B',
-          );
-        };
-        const onMarkerClick = (
+        // Desktop (a fine pointer that can hover — a mouse) gets Booking-style
+        // hover preview + click-to-open; touch keeps tap-to-preview. Mirror of
+        // SmartLink's capability gate.
+        const isDesktopHover = window.matchMedia(
+          '(pointer: fine) and (hover: hover)',
+        ).matches;
+
+        // Pin paint: a single highlight shared by the committed selection and
+        // the transient hover; default otherwise. The card shows the hovered
+        // marker if any, else the committed one.
+        const paint = (el: HTMLElement, fill: string) =>
+          el.querySelector('path')?.setAttribute('fill', fill);
+
+        // Committed = a persisted selection: a touch tap, or the deep-link
+        // anchor (Slice D). Hovered = the transient desktop hover.
+        let committedEl: HTMLElement | null = null;
+        let committedMarker: PublicEstablishmentMapMarker | null = null;
+        let hoveredEl: HTMLElement | null = null;
+        let hideTimer: ReturnType<typeof setTimeout> | undefined;
+        const restFill = (el: HTMLElement) =>
+          el === committedEl ? FILL_HIGHLIGHT : FILL_DEFAULT;
+
+        // Touch tap / deep-link anchor → persist the selection + show its card.
+        const commitSelection = (
           m: PublicEstablishmentMapMarker,
           el: HTMLElement,
         ) => {
-          if (selectedEl && selectedEl !== el) paint(selectedEl, 'default');
-          paint(el, 'selected');
-          selectedEl = el;
+          if (committedEl && committedEl !== el) paint(committedEl, FILL_DEFAULT);
+          committedEl = el;
+          committedMarker = m;
+          paint(el, FILL_HIGHLIGHT);
           setSelected(m);
         };
+
+        // Desktop hover → transient preview; does not persist.
+        const onMarkerEnter = (
+          m: PublicEstablishmentMapMarker,
+          el: HTMLElement,
+        ) => {
+          clearTimeout(hideTimer);
+          if (hoveredEl && hoveredEl !== el) paint(hoveredEl, restFill(hoveredEl));
+          hoveredEl = el;
+          paint(el, FILL_HIGHLIGHT);
+          setSelected(m);
+        };
+        const onMarkerLeave = (el: HTMLElement) => {
+          clearTimeout(hideTimer);
+          hideTimer = setTimeout(() => {
+            if (hoveredEl === el) {
+              paint(el, restFill(el));
+              hoveredEl = null;
+            }
+            // Fall back to the committed selection (the anchor) or clear.
+            setSelected(committedMarker);
+          }, HOVER_HIDE_MS);
+        };
+
+        // Desktop click → straight to the detail page in a new tab (mirror
+        // SmartLink / D-2B); hover already gives the preview, so no persist.
+        const onMarkerActivate = (m: PublicEstablishmentMapMarker) =>
+          window.open(
+            detailHref(m, citySlug, categorySlug),
+            '_blank',
+            'noopener,noreferrer',
+          );
+
         clearSelectionRef.current = () => {
-          if (selectedEl) paint(selectedEl, 'default');
-          selectedEl = null;
+          clearTimeout(hideTimer);
+          if (committedEl) paint(committedEl, FILL_DEFAULT);
+          if (hoveredEl && hoveredEl !== committedEl) {
+            paint(hoveredEl, FILL_DEFAULT);
+          }
+          committedEl = null;
+          committedMarker = null;
+          hoveredEl = null;
           setSelected(null);
         };
 
@@ -247,13 +310,26 @@ export default function MapView({
                       m: PublicEstablishmentMapMarker,
                       el: HTMLElement,
                     ) => {
-                      onMarkerClick(m, el);
+                      commitSelection(m, el);
                       autoFocusDone = true;
                     },
                   }
                 : undefined;
             setCount(
-              syncMarkers(map, ymaps3, markers, data, onMarkerClick, autoFocus),
+              syncMarkers(
+                map,
+                ymaps3,
+                markers,
+                data,
+                {
+                  isDesktopHover,
+                  onActivate: onMarkerActivate,
+                  onCommit: commitSelection,
+                  onEnter: onMarkerEnter,
+                  onLeave: onMarkerLeave,
+                },
+                autoFocus,
+              ),
             );
             setDataStatus('idle');
           } catch {
@@ -290,7 +366,7 @@ export default function MapView({
       clearSelectionRef.current = null;
       map?.destroy();
     };
-  }, [citySlug, focusSlug, focusLat, focusLng, retryToken]);
+  }, [citySlug, categorySlug, focusSlug, focusLat, focusLng, retryToken]);
 
   // Filters changed → publish latest filters to the ref and refetch (no map
   // recreation). filterKey is the value-stable serialization of `filters`;
@@ -305,7 +381,12 @@ export default function MapView({
   return (
     <>
       {YMAPS_KEY && <Script src={YMAPS_SRC} strategy="afterInteractive" />}
-      <div className="relative h-[70vh] w-full overflow-hidden rounded-card bg-muted">
+      <div
+        className={cn(
+          'relative h-[70vh] w-full overflow-hidden rounded-card bg-muted',
+          className,
+        )}
+      >
         <div ref={containerRef} className="absolute inset-0" />
 
         {status === 'loading' && (
@@ -414,6 +495,20 @@ function buildFilters(
   };
 }
 
+// Detail href for a marker — mirror MapPreviewCard / EstablishmentCard: the
+// establishment's own city/category slug, falling back to the current map
+// page's slugs when the projection is null (category_slug is null outside the
+// slug canon).
+function detailHref(
+  m: PublicEstablishmentMapMarker,
+  fallbackCitySlug: string,
+  fallbackCategorySlug?: string,
+): string {
+  const citySlug = m.city_slug ?? fallbackCitySlug;
+  const categorySlug = m.category_slug ?? fallbackCategorySlug ?? 'restaurants';
+  return `/${citySlug}/${categorySlug}/${m.slug}`;
+}
+
 async function fetchMarkers(
   box: Box,
   filters: MapFilters,
@@ -446,12 +541,23 @@ async function fetchMarkers(
 
 // Add/remove markers by id against the live set so unchanged pins never flicker
 // on refetch. Returns the count currently shown.
+type MarkerHandlers = {
+  isDesktopHover: boolean;
+  // Desktop click → open the detail page (new tab).
+  onActivate: (m: PublicEstablishmentMapMarker) => void;
+  // Touch tap / deep-link anchor → persist the selection.
+  onCommit: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
+  // Desktop hover enter/leave → transient preview.
+  onEnter: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
+  onLeave: (el: HTMLElement) => void;
+};
+
 function syncMarkers(
   map: YMapInstance,
   ymaps3: Ymaps3,
   markers: Map<string, Entity>,
   data: PublicEstablishmentMapMarker[],
-  onMarkerClick: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void,
+  handlers: MarkerHandlers,
   autoFocus?: {
     slug: string;
     select: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
@@ -474,10 +580,19 @@ function syncMarkers(
   for (const [id, m] of next) {
     if (!markers.has(id)) {
       const el = makeBrandPin();
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onMarkerClick(m, el);
-      });
+      if (handlers.isDesktopHover) {
+        el.addEventListener('mouseenter', () => handlers.onEnter(m, el));
+        el.addEventListener('mouseleave', () => handlers.onLeave(el));
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handlers.onActivate(m);
+        });
+      } else {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handlers.onCommit(m, el);
+        });
+      }
       if (autoFocus && m.slug === autoFocus.slug) autoFocus.select(m, el);
       const marker = new YMapMarker(
         { coordinates: [m.longitude as number, m.latitude as number] },

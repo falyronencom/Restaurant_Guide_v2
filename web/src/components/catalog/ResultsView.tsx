@@ -72,7 +72,7 @@ export function ResultsView({
         selected={selected}
       />
 
-      <aside className="hidden lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-2rem)] lg:w-80 lg:shrink-0 lg:self-start lg:overflow-y-auto">
+      <aside className="hidden lg:sticky lg:top-24 lg:block lg:max-h-[calc(100dvh-7rem)] lg:w-80 lg:shrink-0 lg:self-start lg:overflow-y-auto">
         <FilterShelf
           citySlug={citySlug}
           categories={categories}

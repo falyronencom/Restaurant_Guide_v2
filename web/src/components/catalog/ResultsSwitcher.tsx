@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import type { SearchParams } from '@/lib/catalog-params';
 
@@ -23,6 +23,12 @@ const MapView = dynamic(() => import('@/components/map/MapView'), {
   ssr: false,
 });
 
+// Offset (px) the results section (toggle + map) is lifted to under the sticky
+// header on entering map view — small enough that the Найдено/Sort toolbar above
+// the toggle tucks fully behind the header (no clipped text), with a little
+// breathing room beneath the header.
+const MAP_VIEW_TOP_OFFSET = 80;
+
 export function ResultsSwitcher({
   citySlug,
   categorySlug,
@@ -38,6 +44,45 @@ export function ResultsSwitcher({
   const pathname = usePathname();
   const sp = useSearchParams();
   const view = sp.get('view') === 'map' ? 'map' : 'list';
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Immersive map: when the map opens, lift the results section (the
+  // Списком/На карте toggle + the map) under the header so the whole map — and
+  // its bottom preview card — sits on screen without the user scrolling below
+  // the fold (the catalog hero pushes it down), while the toggle stays reachable
+  // for the trip back to the list. Mirrors Booking/Yandex's full-height map
+  // view; the sticky filter rail stays put.
+  useEffect(() => {
+    if (view !== 'map') return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let tries = 0;
+    // The map is a dynamic (ssr:false) island: on a cold load its chunk lays out
+    // AFTER this effect first runs, so the page isn't yet tall enough to scroll
+    // to (scrollTo would clamp to 0). Retry briefly until the target is
+    // reachable, then do one smooth lift.
+    const lift = () => {
+      if (cancelled) return;
+      const el = rootRef.current;
+      if (el) {
+        const target =
+          el.getBoundingClientRect().top + window.scrollY - MAP_VIEW_TOP_OFFSET;
+        const maxScroll =
+          document.documentElement.scrollHeight - window.innerHeight;
+        if (target <= maxScroll + 1 || tries >= 12) {
+          window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+          return;
+        }
+      }
+      tries += 1;
+      timer = setTimeout(lift, 100);
+    };
+    timer = setTimeout(lift, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [view]);
 
   const setView = (next: 'list' | 'map') => {
     const params = new URLSearchParams(sp.toString());
@@ -56,7 +101,7 @@ export function ResultsSwitcher({
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div className="mb-m flex justify-end">
         <div className="inline-flex rounded-full border border-figma-border-light p-1 text-caption-l">
           <button
@@ -85,6 +130,7 @@ export function ResultsSwitcher({
           citySlug={citySlug}
           categorySlug={categorySlug}
           searchParams={searchParams}
+          className="lg:h-[calc(100dvh-10rem)]"
         />
       )}
     </div>

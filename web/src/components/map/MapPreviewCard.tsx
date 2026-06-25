@@ -37,17 +37,24 @@ export function MapPreviewCard({
     ? normalizeCategory(marker.categories[0])
     : null;
 
+  // Bottom-left, narrow, lifted clear of the Yandex controls row that lines the
+  // map's bottom edge (the "Открыть Яндекс Карты" button bottom-left + the
+  // copyright bottom-right — a licence requirement to keep visible). Full-width
+  // on mobile, capped on desktop.
   return (
-    <div className="absolute inset-x-3 bottom-3 z-10 mx-auto max-w-md">
+    <div className="absolute bottom-16 left-3 z-10 w-[calc(100%-1.5rem)] max-w-[360px]">
       <div className="relative flex overflow-hidden rounded-card bg-figma-bg-warm shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
         <SmartLink href={href} className="flex min-w-0 flex-1">
-          <div className="relative aspect-square w-24 shrink-0 bg-muted">
+          <div className="relative aspect-square w-28 shrink-0 bg-muted">
             {marker.primary_image_url ? (
               <Image
                 src={marker.primary_image_url}
                 alt={marker.name}
                 fill
-                sizes="96px"
+                // Match the rendered thumbnail box (w-28 = 112px) so next/image
+                // serves a crisp variant on retina/scaled displays (a smaller
+                // `sizes` makes it pick a too-small width that looks soft).
+                sizes="112px"
                 className="object-cover"
               />
             ) : (
