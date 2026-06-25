@@ -39,6 +39,23 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  flutter_launcher_icons: ^0.14.4
+
+# App launcher icon — NIRIVIO «cockade» (source assets in mobile/icon/, exported
+# from the Claude Design handoff). Regenerate with:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path_android: "icon/android-legacy-ic_launcher-512.png"
+  adaptive_icon_background: "icon/android-adaptive-background-1024.png"
+  adaptive_icon_foreground: "icon/android-adaptive-foreground-1024.png"
+  # Foreground asset is already fitted to the 66dp safe-zone (×0.79) by the
+  # design export, so suppress the generator's default 16% inset (would
+  # double-shrink the mark).
+  adaptive_icon_foreground_inset: 0
+  image_path_ios: "icon/ios-appicon-1024.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
