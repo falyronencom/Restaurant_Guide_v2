@@ -52,6 +52,72 @@ export const CUISINES = [
 ];
 
 /**
+ * English → Cyrillic canon normalization for categories/cuisines.
+ *
+ * The configs below are authored with the legacy English tokens (CATEGORIES /
+ * CUISINES above), but the platform's canonical storage value for
+ * establishments.categories and .cuisines is the Cyrillic display name — see
+ * CATEGORY_SLUG_MAP / CUISINE_SLUG_MAP in backend/src/constants/urlSlugs.js and
+ * VALID_CATEGORIES / VALID_CUISINES in establishmentService.js. Inserting English
+ * left category_slug null in the public projection and broke the catalog filter
+ * (the controller translates the URL slug to Cyrillic, then matches the array).
+ *
+ * These maps mirror backend/scripts/run-normalize.js (the converter already
+ * applied to production data), so seeded rows are identical to "old seed +
+ * normalize". ESTABLISHMENT_CONFIGS is normalized through them on export, so both
+ * seed-establishments.js and seed-establishments-placeholder.js insert Cyrillic.
+ * Already-Cyrillic (or unknown) tokens pass through unchanged.
+ */
+const CATEGORY_CYRILLIC = {
+  restaurant: 'Ресторан',
+  cafe: 'Кофейня',
+  cafe_dining: 'Кафе',
+  bar: 'Бар',
+  fast_food: 'Фаст-фуд',
+  pizzeria: 'Пиццерия',
+  bakery: 'Пекарня',
+  pub: 'Паб',
+  canteen: 'Столовая',
+  hookah_lounge: 'Кальянная',
+  hookah_bar: 'Кальянная',
+  bowling: 'Боулинг',
+  karaoke: 'Караоке',
+  billiards: 'Бильярд',
+  nightclub: 'Клуб',
+  confectionery: 'Кондитерская',
+};
+
+const CUISINE_CYRILLIC = {
+  belarusian: 'Народная',
+  national: 'Народная',
+  european: 'Европейская',
+  continental: 'Европейская',
+  italian: 'Итальянская',
+  asian: 'Азиатская',
+  american: 'Американская',
+  georgian: 'Грузинская',
+  japanese: 'Японская',
+  vegetarian: 'Вегетарианская',
+  mixed: 'Смешанная',
+  international: 'Смешанная',
+  fusion: 'Авторская',
+  author: 'Авторская',
+  chinese: 'Китайская',
+  eastern: 'Восточная',
+};
+
+/**
+ * Map an array of category/cuisine tokens to the Cyrillic canon.
+ * @param {Object} map - English → Cyrillic lookup
+ * @returns {(values: string[]) => string[]}
+ */
+const toCyrillic = (map) => (values) =>
+  Array.isArray(values) ? values.map((v) => map[v] || v) : values;
+
+const toCyrillicCategories = toCyrillic(CATEGORY_CYRILLIC);
+const toCyrillicCuisines = toCyrillic(CUISINE_CYRILLIC);
+
+/**
  * Valid price ranges
  */
 export const PRICE_RANGES = ['$', '$$', '$$$'];
@@ -231,7 +297,7 @@ export function generatePhotoCount(photoCount = 'normal') {
  * - status: 'active' or 'suspended'
  * - isEdgeCase: Optional edge case identifier
  */
-export const ESTABLISHMENT_CONFIGS = [
+const ESTABLISHMENT_CONFIGS_RAW = [
   // ========================================
   // EDGE CASES (7 explicit)
   // ========================================
@@ -1238,3 +1304,14 @@ export const ESTABLISHMENT_CONFIGS = [
     status: 'active',
   },
 ];
+
+/**
+ * Seed configs with categories/cuisines normalized to the Cyrillic canon.
+ * This is the single conversion point — consumed by both seed-establishments.js
+ * and seed-establishments-placeholder.js, so every seeded row stores Cyrillic.
+ */
+export const ESTABLISHMENT_CONFIGS = ESTABLISHMENT_CONFIGS_RAW.map((config) => ({
+  ...config,
+  categories: toCyrillicCategories(config.categories),
+  cuisines: toCyrillicCuisines(config.cuisines),
+}));

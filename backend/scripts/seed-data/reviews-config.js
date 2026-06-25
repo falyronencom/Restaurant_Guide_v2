@@ -36,21 +36,28 @@ export const SEED_USER_PASSWORD = process.env.SEED_PASSWORD || (() => {
 export const SEED_USER_EMAIL_PATTERN = 'seed.user.%@restaurantguide.by';
 
 // ─── Category → Review Group Mapping ───────────────────────────────────────
+//
+// Keyed by the Cyrillic canon (see backend/src/constants/urlSlugs.js). Seed
+// establishments store Cyrillic categories, and seed-reviews.js reads them back
+// from the DB to pick category-appropriate review templates — English keys here
+// would silently fall back to the 'dining' group for every establishment.
 
 export const CATEGORY_GROUP_MAP = {
-  restaurant: 'dining',
-  cafe: 'dining',
-  bar: 'drinks',
-  pub: 'drinks',
-  fast_food: 'quick',
-  pizzeria: 'quick',
-  canteen: 'quick',
-  bakery: 'bakery',
-  hookah_lounge: 'entertainment',
-  bowling: 'entertainment',
-  karaoke: 'entertainment',
-  billiards: 'entertainment',
-  nightclub: 'entertainment',
+  'Ресторан': 'dining',
+  'Кафе': 'dining',
+  'Кофейня': 'dining',
+  'Бар': 'drinks',
+  'Паб': 'drinks',
+  'Фаст-фуд': 'quick',
+  'Пиццерия': 'quick',
+  'Столовая': 'quick',
+  'Пекарня': 'bakery',
+  'Кондитерская': 'bakery',
+  'Кальянная': 'entertainment',
+  'Боулинг': 'entertainment',
+  'Караоке': 'entertainment',
+  'Бильярд': 'entertainment',
+  'Клуб': 'entertainment',
 };
 
 // ─── Rating Distribution Weights ───────────────────────────────────────────
@@ -253,10 +260,10 @@ export function pickFrom(arr, randomFn = Math.random) {
  */
 export function getTargetReviewCount(city, categories, randomFn) {
   const isMinsk = city === 'Минск';
-  const isDining = categories.some(c => ['restaurant', 'cafe'].includes(c));
-  const isDrinks = categories.some(c => ['bar', 'pub'].includes(c));
+  const isDining = categories.some(c => ['Ресторан', 'Кафе', 'Кофейня'].includes(c));
+  const isDrinks = categories.some(c => ['Бар', 'Паб'].includes(c));
   const isEntertainment = categories.some(c =>
-    ['bowling', 'karaoke', 'billiards', 'nightclub', 'hookah_lounge'].includes(c),
+    ['Боулинг', 'Караоке', 'Бильярд', 'Клуб', 'Кальянная'].includes(c),
   );
 
   if (isMinsk && isDining) return randomInt(5, 10, randomFn);
