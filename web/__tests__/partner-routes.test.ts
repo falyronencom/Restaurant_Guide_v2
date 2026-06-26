@@ -24,9 +24,11 @@ jest.mock('@/lib/partner/operations', () => ({
   submitEstablishmentAction: jest.fn(),
   loadEstablishmentForEdit: jest.fn(),
   retryOcrAction: jest.fn(),
+  deleteEstablishmentAction: jest.fn(),
 }));
 
 import { POST as createPost } from '@/app/api/partner/establishments/create/route';
+import { POST as deletePost } from '@/app/api/partner/establishments/[id]/delete/route';
 import { POST as listPost } from '@/app/api/partner/establishments/list/route';
 import { POST as loadPost } from '@/app/api/partner/establishments/[id]/load/route';
 import { POST as retryPost } from '@/app/api/partner/establishments/[id]/retry-ocr/route';
@@ -34,6 +36,7 @@ import { POST as submitPost } from '@/app/api/partner/establishments/[id]/submit
 import { POST as updatePost } from '@/app/api/partner/establishments/[id]/update/route';
 import {
   createEstablishmentAction,
+  deleteEstablishmentAction,
   loadEstablishmentForEdit,
   loadEstablishments,
   retryOcrAction,
@@ -70,6 +73,12 @@ describe('same-origin guard on the partner handlers', () => {
     const res = await updatePost(makeRequest(CROSS, { name: 'X' }), ctx('e9'));
     expect(res.status).toBe(403);
     expect(updateEstablishmentAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin delete POST (destructive — guard must hold)', async () => {
+    const res = await deletePost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(deleteEstablishmentAction).not.toHaveBeenCalled();
   });
 });
 
@@ -140,5 +149,12 @@ describe('happy path — handlers forward to operations and return the envelope'
     const res = await retryPost(makeRequest(SAME), ctx('e9'));
     expect(await res.json()).toEqual({ ok: true });
     expect(retryOcrAction).toHaveBeenCalledWith('e9');
+  });
+
+  it('delete forwards the [id] param', async () => {
+    (deleteEstablishmentAction as jest.Mock).mockResolvedValue({ ok: true });
+    const res = await deletePost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true });
+    expect(deleteEstablishmentAction).toHaveBeenCalledWith('e9');
   });
 });

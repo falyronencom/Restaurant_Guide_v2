@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
@@ -61,6 +61,15 @@ export function CabinetDashboard() {
     };
   }, []);
 
+  // Drop a deleted card from the list in place (B4) — no refetch needed.
+  const handleDeleted = useCallback((id: string) => {
+    setState((prev) =>
+      prev.phase === 'ready'
+        ? { ...prev, items: prev.items.filter((item) => item.id !== id) }
+        : prev,
+    );
+  }, []);
+
   return (
     <div className="flex flex-col gap-l">
       <div className="flex items-center justify-between gap-m">
@@ -113,7 +122,11 @@ export function CabinetDashboard() {
                   ) : (
                     <div className="grid gap-m sm:grid-cols-2">
                       {items.map((e) => (
-                        <EstablishmentVignette key={e.id} establishment={e} />
+                        <EstablishmentVignette
+                          key={e.id}
+                          establishment={e}
+                          onDeleted={handleDeleted}
+                        />
                       ))}
                     </div>
                   )}

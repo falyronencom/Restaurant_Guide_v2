@@ -83,3 +83,7 @@ export function retryOcrAction(id: string): Promise<WriteResult> {
     `${BASE}/${encodeURIComponent(id)}/retry-ocr`,
   );
 }
+
+export function deleteEstablishmentAction(id: string): Promise<WriteResult> {
+  return postPartner<WriteResult>(`${BASE}/${encodeURIComponent(id)}/delete`);
+}

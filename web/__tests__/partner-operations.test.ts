@@ -12,6 +12,7 @@ jest.mock('@/lib/api/endpoints/partner', () => ({
   listEstablishments: jest.fn(),
   getEstablishment: jest.fn(),
   retryOcr: jest.fn(),
+  deleteEstablishment: jest.fn(),
 }));
 jest.mock('@/lib/auth/session', () => ({
   getSessionUser: jest.fn(),
@@ -20,6 +21,7 @@ jest.mock('@/lib/auth/session', () => ({
 
 import {
   createEstablishment,
+  deleteEstablishment,
   submitEstablishment,
   updateEstablishment,
 } from '@/lib/api/endpoints/partner';
@@ -27,6 +29,7 @@ import { ApiError, type CreateEstablishmentPayload } from '@/lib/api/types';
 import { getSessionUser, refreshSession } from '@/lib/auth/session';
 import {
   createEstablishmentAction,
+  deleteEstablishmentAction,
   submitEstablishmentAction,
   updateEstablishmentAction,
 } from '@/lib/partner/operations';
@@ -34,6 +37,7 @@ import {
 const createMock = createEstablishment as jest.Mock;
 const updateMock = updateEstablishment as jest.Mock;
 const submitMock = submitEstablishment as jest.Mock;
+const deleteMock = deleteEstablishment as jest.Mock;
 const getUserMock = getSessionUser as jest.Mock;
 const refreshMock = refreshSession as jest.Mock;
 
@@ -102,6 +106,24 @@ describe('update / submit operations', () => {
     await expect(submitEstablishmentAction('e1')).resolves.toEqual({
       ok: false,
       code: 'INVALID_STATUS_TRANSITION',
+    });
+  });
+});
+
+describe('delete operation', () => {
+  it('returns {ok:true} on success', async () => {
+    deleteMock.mockResolvedValue(undefined);
+    await expect(deleteEstablishmentAction('e1')).resolves.toEqual({ ok: true });
+    expect(deleteMock).toHaveBeenCalledWith('e1');
+  });
+
+  it('maps an ApiError to {ok:false, code}', async () => {
+    deleteMock.mockRejectedValue(
+      new ApiError(404, 'gone', 'ESTABLISHMENT_NOT_FOUND'),
+    );
+    await expect(deleteEstablishmentAction('e1')).resolves.toEqual({
+      ok: false,
+      code: 'ESTABLISHMENT_NOT_FOUND',
     });
   });
 });

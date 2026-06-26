@@ -2,6 +2,7 @@ import 'server-only';
 
 import {
   createEstablishment,
+  deleteEstablishment,
   getEstablishment,
   listEstablishments,
   retryOcr,
@@ -125,6 +126,16 @@ export async function loadEstablishmentForEdit(
 export async function retryOcrAction(id: string): Promise<WriteResult> {
   try {
     await retryOcr(id);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: codeFromError(err) };
+  }
+}
+
+/** Delete an establishment permanently (draft/rejected; backend cascades media). */
+export async function deleteEstablishmentAction(id: string): Promise<WriteResult> {
+  try {
+    await deleteEstablishment(id);
     return { ok: true };
   } catch (err) {
     return { ok: false, code: codeFromError(err) };

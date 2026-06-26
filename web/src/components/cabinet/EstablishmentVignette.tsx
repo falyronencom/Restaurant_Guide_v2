@@ -11,6 +11,8 @@ import type {
 import { STATUS_LABELS, isAdminSuspended } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
+import { DeleteEstablishmentButton } from './DeleteEstablishmentButton';
+
 /*
  * Cabinet establishment vignette (Phase C Slice 1, Segment B). Renders inside the
  * client dashboard. Surfaces the primary photo, status, engagement metrics,
@@ -33,13 +35,18 @@ const EDIT_LABEL: Partial<Record<EstablishmentStatus, string>> = {
 
 export function EstablishmentVignette({
   establishment: e,
+  onDeleted,
 }: {
   establishment: PartnerEstablishmentListing;
+  onDeleted: (id: string) => void;
 }) {
   const photo = e.primary_photo?.thumbnail_url ?? e.primary_photo?.url ?? null;
   const notes = e.moderation_notes;
   const rejectionEntries =
     e.status === 'rejected' && notes ? Object.entries(notes) : [];
+  // Delete is offered only for draft/rejected — removing an active card with
+  // reviews/engagement from the cabinet is intentionally not a one-click action.
+  const canDelete = e.status === 'draft' || e.status === 'rejected';
 
   return (
     <article className="flex flex-col overflow-hidden rounded-l border border-border bg-background">
@@ -114,16 +121,23 @@ export function EstablishmentVignette({
             </p>
           )}
 
-        <div className="mt-auto pt-s">
+        <div className="mt-auto flex items-center gap-2 pt-s">
           <Link
             href={`/cabinet/${e.id}/edit`}
             className={cn(
               buttonVariants({ variant: 'outline', size: 'sm' }),
-              'w-full',
+              'flex-1',
             )}
           >
             {EDIT_LABEL[e.status] ?? 'Редактировать'}
           </Link>
+          {canDelete && (
+            <DeleteEstablishmentButton
+              establishmentId={e.id}
+              establishmentName={e.name}
+              onDeleted={onDeleted}
+            />
+          )}
         </div>
       </div>
     </article>

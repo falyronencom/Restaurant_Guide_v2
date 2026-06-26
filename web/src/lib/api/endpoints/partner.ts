@@ -84,3 +84,8 @@ export async function retryOcr(id: string): Promise<unknown> {
     method: 'POST',
   });
 }
+
+/** Permanently delete an establishment (backend cascades media). Owner-checked. */
+export async function deleteEstablishment(id: string): Promise<void> {
+  await authedFetch(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

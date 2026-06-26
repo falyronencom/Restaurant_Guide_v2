@@ -54,7 +54,7 @@ type Props =
       readOnly: boolean;
     };
 
-const LS_KEY = 'nirivio:wizard:new';
+const LS_KEY_PREFIX = 'nirivio:wizard:new';
 const AUTOSAVE_MS = 800;
 
 export function EstablishmentWizard(props: Props) {
@@ -65,7 +65,11 @@ export function EstablishmentWizard(props: Props) {
     props.mode === 'edit' ? props.establishmentId : undefined;
 
   const router = useRouter();
-  const { applySession } = useAuth();
+  const { applySession, user, status } = useAuth();
+  // Per-account draft key (B2, CAT-C-3.x): scope localStorage to the current user
+  // so a different account in the same browser can neither see nor overwrite this
+  // draft (the cross-account bleed Discovery surfaced).
+  const lsKey = user?.id ? `${LS_KEY_PREFIX}:${user.id}` : null;
 
   const [form, setForm] = useState<WizardFormState>(() =>
     props.mode === 'edit' ? props.initial : emptyForm(),
@@ -85,31 +89,42 @@ export function EstablishmentWizard(props: Props) {
   const inFlight = useRef(false);
   const submittingRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hydratedRef = useRef(false);
 
   const persistLocal = useCallback(
     (f: WizardFormState, id: string | null) => {
-      if (isEdit) return; // edit operates directly on the server record
+      if (isEdit || !lsKey) return; // edit → server record; no key until auth known
       try {
-        localStorage.setItem(LS_KEY, JSON.stringify({ form: f, draftId: id }));
+        localStorage.setItem(lsKey, JSON.stringify({ form: f, draftId: id }));
       } catch {
         /* private mode / quota — non-fatal */
       }
     },
-    [isEdit],
+    [isEdit, lsKey],
   );
 
-  // Hydrate: create → localStorage (deferred a tick, avoiding set-state-in-effect);
-  // edit → already seeded from `initial`.
+  // Hydrate: create → per-account localStorage (deferred a tick, avoiding
+  // set-state-in-effect); edit → already seeded from `initial`. Gated on auth
+  // resolution (status !== 'loading') so the key is the CURRENT user's, and the
+  // legacy unscoped key is dropped on the way (B2 — no cross-account bleed).
   useEffect(() => {
-    if (isEdit) return undefined; // edit is already seeded — nothing in LS
+    if (isEdit || hydratedRef.current || status === 'loading') return undefined;
+    hydratedRef.current = true;
+    try {
+      localStorage.removeItem(LS_KEY_PREFIX); // pre-scoping bled key — remove once
+    } catch {
+      /* ignore */
+    }
     let saved:
       | { form?: Partial<WizardFormState>; draftId?: string | null }
       | null = null;
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) saved = JSON.parse(raw);
-    } catch {
-      saved = null;
+    if (lsKey) {
+      try {
+        const raw = localStorage.getItem(lsKey);
+        if (raw) saved = JSON.parse(raw);
+      } catch {
+        saved = null;
+      }
     }
     const timer = setTimeout(() => {
       if (saved?.form) setForm({ ...emptyForm(), ...saved.form });
@@ -120,7 +135,7 @@ export function EstablishmentWizard(props: Props) {
       setHydrated(true);
     }, 0);
     return () => clearTimeout(timer);
-  }, [isEdit]);
+  }, [isEdit, status, lsKey]);
 
   const patch = useCallback(
     (partial: Partial<WizardFormState>) => {
@@ -200,7 +215,7 @@ export function EstablishmentWizard(props: Props) {
     setSubmitting(false);
     if (r.ok) {
       try {
-        localStorage.removeItem(LS_KEY);
+        if (lsKey) localStorage.removeItem(lsKey);
       } catch {
         /* non-fatal */
       }
@@ -208,7 +223,7 @@ export function EstablishmentWizard(props: Props) {
     } else {
       setError(messageForEstablishmentError(r.code));
     }
-  }, [e1.passed, form, router]);
+  }, [e1.passed, form, router, lsKey]);
 
   const onRetryOcr = useCallback(async () => {
     const id = draftIdRef.current;
@@ -225,9 +240,11 @@ export function EstablishmentWizard(props: Props) {
   const saveLabel = readOnly
     ? 'Только просмотр'
     : !draftId
-      ? meetsValidatorMinimum(form)
-        ? 'Сохранение черновика…'
-        : 'Заполните название, город, адрес, классификацию и часы — черновик сохранится сам'
+      ? saveState === 'error'
+        ? 'Не удалось сохранить черновик'
+        : meetsValidatorMinimum(form)
+          ? 'Сохранение черновика…'
+          : 'Заполните название, город, адрес, классификацию и часы — черновик сохранится сам'
       : saveState === 'saving'
         ? 'Сохранение…'
         : saveState === 'error'
