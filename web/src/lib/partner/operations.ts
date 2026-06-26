@@ -1,4 +1,4 @@
-'use server';
+import 'server-only';
 
 import {
   createEstablishment,
@@ -11,32 +11,36 @@ import {
 import {
   ApiError,
   type CreateEstablishmentPayload,
-  type EstablishmentStatus,
-  type PartnerEstablishmentDetail,
-  type PartnerEstablishmentListing,
-  type SessionUser,
   type UpdateEstablishmentPayload,
 } from '@/lib/api/types';
 import { getSessionUser, refreshSession } from '@/lib/auth/session';
+import type {
+  CreateResult,
+  LoadDetailResult,
+  LoadEstablishmentsResult,
+  WriteResult,
+} from '@/lib/partner/results';
 
 /*
- * Partner cabinet Server Actions (Phase C Slice 1, Segment B).
+ * Partner cabinet operations (CAT-C-3.14). Plain server-only async functions
+ * returning discriminated {ok,…} envelopes. Formerly the Phase C Slice 1
+ * `actions.ts` Server Actions; the `'use server'` transport was dropped and the
+ * six are now invoked from buffered POST Route Handlers (app/api/partner/
+ * establishments/*) so the cabinet is edge-503-immune — the Railway edge 503s
+ * STREAMED Server-Action responses (text/x-component) while origin returns 200;
+ * buffered JSON over a Route Handler is unaffected. Behaviour is byte-identical:
+ * only the transport changed.
  *
- * State-changing + authed-read operations are Server Actions for the built-in
- * CSRF defense AND because authedFetch may rotate the single-use refresh token
- * (a cookie WRITE), illegal during RSC render — only a Server Action or Route
- * Handler may write cookies. Thin: codes are russified client-side via
- * lib/partner/errors (mirrors the Slice 1-2 split).
+ * Cookie writes remain legal: a Route Handler, exactly like a Server Action, may
+ * set/delete cookies — so authedFetch's transparent single-use refresh-token
+ * rotation (reachable from every operation) and the create-path refreshSession()
+ * below still work. Codes are russified client-side via lib/partner/errors.
  */
 
 function codeFromError(err: unknown): string {
   if (err instanceof ApiError) return err.errorCode ?? `HTTP_${err.statusCode}`;
   return 'NETWORK';
 }
-
-export type LoadEstablishmentsResult =
-  | { ok: true; establishments: PartnerEstablishmentListing[] }
-  | { ok: false; code: string };
 
 /** Fetch the partner's establishments (all statuses; grouped client-side). */
 export async function loadEstablishments(): Promise<LoadEstablishmentsResult> {
@@ -47,17 +51,6 @@ export async function loadEstablishments(): Promise<LoadEstablishmentsResult> {
     return { ok: false, code: codeFromError(err) };
   }
 }
-
-export type CreateResult =
-  | {
-      ok: true;
-      id: string;
-      status?: EstablishmentStatus;
-      base_score?: number | null;
-      /** Re-stamped display user after the first create (role → partner), else unchanged. */
-      user: SessionUser | null;
-    }
-  | { ok: false; code: string };
 
 /**
  * Create a draft establishment. The FIRST create upgrades the user → partner
@@ -91,10 +84,6 @@ export async function createEstablishmentAction(
   }
 }
 
-export type WriteResult =
-  | { ok: true; status?: EstablishmentStatus; base_score?: number | null }
-  | { ok: false; code: string };
-
 /** Autosave / edit a draft or existing establishment (PUT). */
 export async function updateEstablishmentAction(
   id: string,
@@ -119,10 +108,6 @@ export async function submitEstablishmentAction(
     return { ok: false, code: codeFromError(err) };
   }
 }
-
-export type LoadDetailResult =
-  | { ok: true; establishment: PartnerEstablishmentDetail }
-  | { ok: false; code: string };
 
 /** Load a single establishment for the edit wizard. */
 export async function loadEstablishmentForEdit(

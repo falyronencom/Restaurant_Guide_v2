@@ -1,0 +1,144 @@
+/**
+ * @jest-environment node
+ */
+/*
+ * Partner cabinet Route Handlers (CAT-C-3.14). Verifies the transport layer:
+ * the same-origin guard runs first (cross-origin → 403, operation untouched),
+ * the JSON body + [id] param are forwarded to the (mocked) operation, and the
+ * operation's {ok,…} envelope is returned verbatim. Node env: the guard's 403 is
+ * a real global Response. NextResponse.json is stubbed (it does not load here);
+ * operations are mocked so no backend is reached.
+ */
+jest.mock('next/server', () => ({
+  NextResponse: {
+    json: (body: unknown, init?: { status?: number }) => ({
+      status: init?.status ?? 200,
+      json: async () => body,
+    }),
+  },
+}));
+jest.mock('@/lib/partner/operations', () => ({
+  loadEstablishments: jest.fn(),
+  createEstablishmentAction: jest.fn(),
+  updateEstablishmentAction: jest.fn(),
+  submitEstablishmentAction: jest.fn(),
+  loadEstablishmentForEdit: jest.fn(),
+  retryOcrAction: jest.fn(),
+}));
+
+import { POST as createPost } from '@/app/api/partner/establishments/create/route';
+import { POST as listPost } from '@/app/api/partner/establishments/list/route';
+import { POST as loadPost } from '@/app/api/partner/establishments/[id]/load/route';
+import { POST as retryPost } from '@/app/api/partner/establishments/[id]/retry-ocr/route';
+import { POST as submitPost } from '@/app/api/partner/establishments/[id]/submit/route';
+import { POST as updatePost } from '@/app/api/partner/establishments/[id]/update/route';
+import {
+  createEstablishmentAction,
+  loadEstablishmentForEdit,
+  loadEstablishments,
+  retryOcrAction,
+  submitEstablishmentAction,
+  updateEstablishmentAction,
+} from '@/lib/partner/operations';
+
+const SAME = { origin: 'http://localhost:3000', host: 'localhost:3000' };
+const CROSS = { origin: 'http://evil.example', host: 'localhost:3000' };
+
+function makeRequest(headers: Record<string, string>, body?: unknown): Request {
+  return {
+    headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
+    json: async () => {
+      if (body === undefined) throw new Error('no body');
+      return body;
+    },
+  } as unknown as Request;
+}
+
+const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+beforeEach(() => jest.clearAllMocks());
+
+describe('same-origin guard on the partner handlers', () => {
+  it('blocks a cross-origin list POST with 403 before the operation runs', async () => {
+    const res = await listPost(makeRequest(CROSS));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, code: 'CSRF' });
+    expect(loadEstablishments).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin [id] update POST before reading params/body', async () => {
+    const res = await updatePost(makeRequest(CROSS, { name: 'X' }), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(updateEstablishmentAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('happy path — handlers forward to operations and return the envelope', () => {
+  it('list returns the loadEstablishments envelope', async () => {
+    (loadEstablishments as jest.Mock).mockResolvedValue({
+      ok: true,
+      establishments: [],
+    });
+    const res = await listPost(makeRequest(SAME));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, establishments: [] });
+    expect(loadEstablishments).toHaveBeenCalledTimes(1);
+  });
+
+  it('create parses the JSON body and forwards it', async () => {
+    (createEstablishmentAction as jest.Mock).mockResolvedValue({
+      ok: true,
+      id: 'e1',
+      user: null,
+    });
+    const payload = { name: 'Кафе' };
+    const res = await createPost(makeRequest(SAME, payload));
+    expect(await res.json()).toEqual({ ok: true, id: 'e1', user: null });
+    expect(createEstablishmentAction).toHaveBeenCalledWith(payload);
+  });
+
+  it('create returns 400 on a malformed body without calling the operation', async () => {
+    const res = await createPost(makeRequest(SAME)); // no body → json() throws
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, code: 'BAD_REQUEST' });
+    expect(createEstablishmentAction).not.toHaveBeenCalled();
+  });
+
+  it('update forwards the [id] param and the body', async () => {
+    (updateEstablishmentAction as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 'draft',
+    });
+    const payload = { name: 'X' };
+    const res = await updatePost(makeRequest(SAME, payload), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, status: 'draft' });
+    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload);
+  });
+
+  it('submit forwards the [id] param', async () => {
+    (submitEstablishmentAction as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 'pending',
+    });
+    const res = await submitPost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, status: 'pending' });
+    expect(submitEstablishmentAction).toHaveBeenCalledWith('e9');
+  });
+
+  it('load forwards the [id] param', async () => {
+    (loadEstablishmentForEdit as jest.Mock).mockResolvedValue({
+      ok: true,
+      establishment: { id: 'e9' },
+    });
+    const res = await loadPost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, establishment: { id: 'e9' } });
+    expect(loadEstablishmentForEdit).toHaveBeenCalledWith('e9');
+  });
+
+  it('retry-ocr forwards the [id] param', async () => {
+    (retryOcrAction as jest.Mock).mockResolvedValue({ ok: true });
+    const res = await retryPost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true });
+    expect(retryOcrAction).toHaveBeenCalledWith('e9');
+  });
+});

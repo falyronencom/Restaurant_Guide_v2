@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   loadEstablishmentForEdit,
   loadEstablishments,
-} from '@/lib/partner/actions';
+} from '@/lib/partner/client';
 import { fromDetail, type WizardFormState } from '@/lib/partner/form';
 
 import { Field, SectionCard } from './primitives';

@@ -1,7 +1,9 @@
 /**
- * Partner Server Actions (Phase C Slice 1, Segment B). Mocked at the API-client
- * boundary (lib/api/endpoints/partner) + session. Focus: the first-create
- * role re-stamp (user→partner) and error-code mapping.
+ * Partner cabinet operations (CAT-C-3.14). Formerly partner-actions.test.ts —
+ * the Server Actions became plain server-only operations behind buffered Route
+ * Handlers; the logic (and this coverage) is byte-identical. Mocked at the
+ * API-client boundary (lib/api/endpoints/partner) + session. Focus: the
+ * first-create role re-stamp (user→partner) and error-code mapping.
  */
 jest.mock('@/lib/api/endpoints/partner', () => ({
   createEstablishment: jest.fn(),
@@ -27,7 +29,7 @@ import {
   createEstablishmentAction,
   submitEstablishmentAction,
   updateEstablishmentAction,
-} from '@/lib/partner/actions';
+} from '@/lib/partner/operations';
 
 const createMock = createEstablishment as jest.Mock;
 const updateMock = updateEstablishment as jest.Mock;
@@ -83,7 +85,7 @@ describe('createEstablishmentAction — first-create role re-stamp', () => {
   });
 });
 
-describe('update / submit actions', () => {
+describe('update / submit operations', () => {
   it('update returns status + base_score', async () => {
     updateMock.mockResolvedValue({ status: 'draft', base_score: 60 });
     await expect(updateEstablishmentAction('e1', {})).resolves.toEqual({

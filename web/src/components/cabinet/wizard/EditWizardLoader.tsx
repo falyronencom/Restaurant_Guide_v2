@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { EstablishmentStatus } from '@/lib/api/types';
-import { loadEstablishmentForEdit } from '@/lib/partner/actions';
+import { loadEstablishmentForEdit } from '@/lib/partner/client';
 import { fromDetail, type WizardFormState } from '@/lib/partner/form';
 import { isAdminSuspended } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
@@ -15,8 +15,9 @@ import { EstablishmentWizard } from './EstablishmentWizard';
 
 /*
  * Edit-route loader (Phase C Slice 1, Segment B). authedFetch cannot run in RSC
- * render, so the establishment is loaded client-side via a Server Action (as the
- * dashboard does) and the wizard is seeded in edit mode. Self-suspended (no
+ * render, so the establishment is loaded client-side via a buffered Route Handler
+ * fetch (as the dashboard does) and the wizard is seeded in edit mode.
+ * Self-suspended (no
  * suspend_reason) → read-only.
  */
 export function EditWizardLoader({ id }: { id: string }) {

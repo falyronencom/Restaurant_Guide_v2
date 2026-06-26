@@ -18,7 +18,15 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 // controls (and @testing-library/user-event's pointer simulation) reach for.
 // Without these, userEvent.click on a base-ui checkbox/button throws
 // "PointerEvent is not a constructor". Polyfill the minimum.
-if (typeof globalThis.PointerEvent === 'undefined') {
+//
+// Guarded on the DOM globals existing: this setup file also runs for `@jest-
+// environment node` test files (server Route Handler / guard tests), where
+// MouseEvent and Element are absent — and unneeded. Skip the polyfill there
+// rather than crash. jsdom is unaffected (both globals exist → runs as before).
+if (
+  typeof MouseEvent !== 'undefined' &&
+  typeof globalThis.PointerEvent === 'undefined'
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, params: PointerEventInit = {}) {
       super(type, params);
@@ -26,7 +34,7 @@ if (typeof globalThis.PointerEvent === 'undefined') {
   }
   globalThis.PointerEvent = PointerEventPolyfill as typeof PointerEvent;
 }
-if (!Element.prototype.hasPointerCapture) {
+if (typeof Element !== 'undefined' && !Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.setPointerCapture = () => {};
   Element.prototype.releasePointerCapture = () => {};

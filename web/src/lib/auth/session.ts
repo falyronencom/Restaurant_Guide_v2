@@ -23,7 +23,8 @@ import {
  *
  * IMPORTANT: cookies().set/.delete are legal ONLY inside a Server Function
  * (action) or Route Handler — never during RSC render (cookies.md:71-73,80-82).
- * Every writer here is therefore only ever reached from a Server Action. Public
+ * Every writer here is therefore only ever reached from a Server Action or Route
+ * Handler. Public
  * catalog RSC must NOT import this module: coupling it to cookies() would force
  * those routes out of ISR (cookies.md:69).
  */
@@ -267,8 +268,9 @@ async function fetchWithBearer<T>(
 }
 
 /**
- * Authenticated backend call. Reachable only from Server Actions (so the
- * transparent refresh below can legally rotate cookies). Missing/expired access
+ * Authenticated backend call. Reachable only from Server Actions or Route
+ * Handlers (so the transparent refresh below can legally rotate cookies).
+ * Missing/expired access
  * token → refresh once; a 401 from the backend → refresh once and retry.
  * Throws ApiError(401, …, 'NO_SESSION') when there is no recoverable session.
  */

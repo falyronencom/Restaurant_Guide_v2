@@ -16,7 +16,7 @@ import type {
   EstablishmentStatus,
   PartnerEstablishmentListing,
 } from '@/lib/api/types';
-import { loadEstablishments } from '@/lib/partner/actions';
+import { loadEstablishments } from '@/lib/partner/client';
 import { STATUS_LABELS, STATUS_ORDER } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
@@ -24,7 +24,7 @@ import { EstablishmentVignette } from './EstablishmentVignette';
 
 /*
  * Cabinet dashboard (Phase C Slice 1, Segment B). Client island: hydrates the
- * authed list via the loadEstablishments Server Action on mount (httpOnly tokens
+ * authed list via the loadEstablishments Route Handler fetch on mount (httpOnly tokens
  * → ask the server, mirroring AuthProvider), then groups by status into tabs.
  */
 

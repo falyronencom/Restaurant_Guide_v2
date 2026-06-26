@@ -12,7 +12,7 @@ import {
   retryOcrAction,
   submitEstablishmentAction,
   updateEstablishmentAction,
-} from '@/lib/partner/actions';
+} from '@/lib/partner/client';
 import { clientCompleteness } from '@/lib/partner/completeness';
 import { messageForEstablishmentError } from '@/lib/partner/errors';
 import {
@@ -38,7 +38,7 @@ import { StickySidebar } from './StickySidebar';
  *
  * Create — two-stage draft (Decision 5): localStorage until the validator
  *   minimum, then a server draft + debounced PUT autosave. The FIRST create
- *   upgrades user→partner; the action re-stamps rg_user, applied here.
+ *   upgrades user→partner; the create operation re-stamps rg_user, applied here.
  * Edit — seeded from the server record (no localStorage); autosave PUTs directly.
  *   Submit shows for draft/rejected/admin-suspended (E1-gated); active edits
  *   autosave without a status change; self-suspended is read-only.

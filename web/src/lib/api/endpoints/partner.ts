@@ -12,8 +12,9 @@ import type {
 /*
  * Partner establishment endpoints (Phase C Slice 1, Segment B) over
  * /api/v1/partner/establishments. authedFetch injects the Bearer and refreshes
- * transparently, so these are reachable ONLY from Server Actions (session.ts).
- * Thin wrappers: no error mapping here — the actions layer russifies codes.
+ * transparently, so these are reachable ONLY from Server Actions or Route
+ * Handlers (session.ts). Thin wrappers: no error mapping here — the operations
+ * layer russifies codes.
  *
  * Casing/shape are snake_case JSON bodies (mirrors the backend validator); a
  * mismatch is a silent 422. The create/update payloads are built by
