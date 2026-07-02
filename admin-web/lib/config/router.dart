@@ -9,6 +9,7 @@ import 'package:restaurant_guide_admin_web/screens/menu_items/menu_items_moderat
 import 'package:restaurant_guide_admin_web/screens/moderation/suspended_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_container_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/quality/quality_health_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/audit_log/audit_log_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/reviews/reviews_management_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/notifications/notifications_screen.dart';
@@ -100,6 +101,11 @@ GoRouter createRouter(AuthProvider authProvider) {
             path: '/audit-log',
             builder: (context, state) =>
                 const AuditLogScreen(),
+          ),
+          GoRoute(
+            path: '/quality/health',
+            builder: (context, state) =>
+                const QualityHealthScreen(),
           ),
         ],
       ),

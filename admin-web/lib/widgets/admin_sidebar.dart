@@ -110,6 +110,16 @@ class AdminSidebar extends StatelessWidget {
                     path: '/audit-log',
                     currentPath: location,
                   ),
+
+                  const SizedBox(height: 16),
+
+                  // Section: Качество
+                  const _SectionHeader(title: 'Качество'),
+                  _NavItem(
+                    title: 'Здоровье данных',
+                    path: '/quality/health',
+                    currentPath: location,
+                  ),
                 ],
               ),
             ),

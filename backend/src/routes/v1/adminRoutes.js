@@ -15,6 +15,7 @@ import * as analyticsController from '../../controllers/analyticsController.js';
 import * as auditLogController from '../../controllers/auditLogController.js';
 import * as adminReviewController from '../../controllers/adminReviewController.js';
 import * as adminMenuItemController from '../../controllers/adminMenuItemController.js';
+import * as qualityHealthController from '../../controllers/qualityHealthController.js';
 import { validateLogin } from '../../validators/authValidation.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
@@ -421,6 +422,24 @@ router.get(
   authenticate,
   authorize(['admin']),
   auditLogController.listAuditLog,
+);
+
+// ============================================================================
+// Segment F: Quality Health (AI-ops Brick-1 — Tier-0 immunity, read-only)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/quality/health
+ *
+ * Read-only quality-immunity snapshot over active establishments: canon/slug
+ * reachability, menu completeness, geo bounds, working-hours sanity, attribute
+ * census, hanging OCR flags. Zero writes, zero LLM.
+ */
+router.get(
+  '/quality/health',
+  authenticate,
+  authorize(['admin']),
+  qualityHealthController.getHealth,
 );
 
 export default router;
