@@ -16,6 +16,15 @@ import type {
  * Handlers (session.ts). Thin wrappers: no error mapping here — the operations
  * layer russifies codes.
  *
+ * WIRE ENVELOPE (verified against establishmentController.js): create / get /
+ * update / submit wrap the entity as `data: { establishment: {…} }` — these
+ * wrappers UNWRAP it. Only the list returns `data: { establishments, pagination }`
+ * directly. Casting `data` as the entity itself made every `.id`/`.name` read
+ * undefined: the wizard never stored its draftId (→ each autosave re-CREATEd →
+ * DUPLICATE_ESTABLISHMENT) and the edit form seeded empty. Unit tests mock THIS
+ * boundary, so only a live wire call could catch it — partner-endpoints.test.ts
+ * now pins the envelope.
+ *
  * Casing/shape are snake_case JSON bodies (mirrors the backend validator); a
  * mismatch is a silent 422. The create/update payloads are built by
  * lib/partner/form.toCreatePayload / toUpdatePayload.
@@ -35,26 +44,31 @@ export async function listEstablishments(): Promise<PartnerEstablishmentListResp
 export async function getEstablishment(
   id: string,
 ): Promise<PartnerEstablishmentDetail> {
-  return authedFetch<PartnerEstablishmentDetail>(
+  const data = await authedFetch<{ establishment: PartnerEstablishmentDetail }>(
     `${BASE}/${encodeURIComponent(id)}`,
   );
+  return data.establishment;
 }
 
 export async function createEstablishment(
   payload: CreateEstablishmentPayload,
 ): Promise<EstablishmentWriteResult> {
-  return authedFetch<EstablishmentWriteResult>(BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const data = await authedFetch<{ establishment: EstablishmentWriteResult }>(
+    BASE,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  return data.establishment;
 }
 
 export async function updateEstablishment(
   id: string,
   payload: UpdateEstablishmentPayload,
 ): Promise<EstablishmentWriteResult> {
-  return authedFetch<EstablishmentWriteResult>(
+  const data = await authedFetch<{ establishment: EstablishmentWriteResult }>(
     `${BASE}/${encodeURIComponent(id)}`,
     {
       method: 'PUT',
@@ -62,16 +76,18 @@ export async function updateEstablishment(
       body: JSON.stringify(payload),
     },
   );
+  return data.establishment;
 }
 
 /** Submit a draft/rejected/suspended establishment for moderation (→ pending). */
 export async function submitEstablishment(
   id: string,
 ): Promise<EstablishmentWriteResult> {
-  return authedFetch<EstablishmentWriteResult>(
+  const data = await authedFetch<{ establishment: EstablishmentWriteResult }>(
     `${BASE}/${encodeURIComponent(id)}/submit`,
     { method: 'POST' },
   );
+  return data.establishment;
 }
 
 /**
