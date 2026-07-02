@@ -8,11 +8,22 @@
 /**
  * Format rating as Russian-locale string with comma decimal separator.
  * Mirrors mobile and Brief 3 EstablishmentCard: `4.8 → '4,8'`.
- * Returns '—' when rating is null/undefined.
+ * Returns '—' when rating is null/undefined or not a finite number.
+ *
+ * Accepts strings too: pg returns NUMERIC columns as STRINGS, and non-projected
+ * paths (partner listing) deliver them to the web verbatim — types.ts claims
+ * `number`, but the wire can carry "0.0". A bare `.toFixed` on that string
+ * crashed the whole cabinet dashboard island on its first live render of a real
+ * card. The public path never hit this because toPublicEstablishment
+ * parseFloats server-side.
  */
-export function formatRating(rating: number | null | undefined): string {
+export function formatRating(
+  rating: number | string | null | undefined,
+): string {
   if (rating == null) return '—';
-  return rating.toFixed(1).replace('.', ',');
+  const n = Number(rating);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(1).replace('.', ',');
 }
 
 /**

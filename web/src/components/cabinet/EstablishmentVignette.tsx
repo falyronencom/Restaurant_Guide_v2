@@ -90,7 +90,9 @@ export function EstablishmentVignette({
             icon={<MessageSquare className="size-3.5" />}
             value={e.review_count}
           />
-          {e.average_rating != null && (
+          {/* A rating is meaningful only once reviews exist — drafts carry the
+              column default (0.0) and would otherwise show a noise «0,0 ★». */}
+          {e.average_rating != null && e.review_count > 0 && (
             <Metric
               icon={<Star className="size-3.5" />}
               value={formatRating(e.average_rating)}
