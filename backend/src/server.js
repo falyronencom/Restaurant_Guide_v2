@@ -24,6 +24,18 @@ const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 /**
+ * Trust exactly ONE reverse-proxy hop (Railway's edge terminates TLS and
+ * forwards X-Forwarded-For). Without this, req.ip is the proxy address and
+ * every per-IP rate limit collapses into a single shared bucket (OSB-G1).
+ *
+ * MUST stay the integer 1, never `true`: `true` trusts the entire
+ * client-supplied X-Forwarded-For chain, letting an attacker mint unlimited
+ * per-IP buckets by spoofing the header. Revisit the hop count only if
+ * another trusted proxy layer is ever added in front of the app.
+ */
+app.set('trust proxy', 1);
+
+/**
  * Security middleware (helmet) - MUST be first.
  * ...existing code...
  */
