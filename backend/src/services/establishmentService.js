@@ -550,9 +550,15 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
       },
     );
 
-    // Normalize moderation_notes: TEXT column stores JSON string, parse to object
+    // Normalize moderation_notes (TEXT column stores JSON string, parse to
+    // object) and coerce pg NUMERIC strings to numbers, mirroring the
+    // single-establishment path below — web types.ts declares these as
+    // number | null, so the list wire must not ship "4.50" strings.
     const establishments = rawEstablishments.map(est => ({
       ...est,
+      latitude: est.latitude ? parseFloat(est.latitude) : est.latitude,
+      longitude: est.longitude ? parseFloat(est.longitude) : est.longitude,
+      average_rating: est.average_rating ? parseFloat(est.average_rating) : est.average_rating,
       moderation_notes: typeof est.moderation_notes === 'string'
         ? (() => { try { return JSON.parse(est.moderation_notes); } catch { return null; } })()
         : (est.moderation_notes || null),

@@ -441,6 +441,36 @@ describe('establishmentService', () => {
       );
     });
 
+    test('coerces pg NUMERIC strings to numbers on the list wire', async () => {
+      // pg returns NUMERIC columns as strings ("4.50"), while web types.ts
+      // declares number | null — the list path must coerce like the
+      // single-establishment path does (partner-projection parity, OSB).
+      const stringNumericRow = createMockEstablishment({
+        average_rating: '4.50',
+        latitude: '53.90000000',
+        longitude: '27.50000000',
+      });
+      EstablishmentModel.getEstablishmentsByPartner.mockResolvedValue([stringNumericRow]);
+      EstablishmentModel.countPartnerEstablishments.mockResolvedValue(1);
+
+      const result = await getPartnerEstablishments(partnerId);
+
+      const [row] = result.establishments;
+      expect(row.average_rating).toBe(4.5);
+      expect(row.latitude).toBe(53.9);
+      expect(row.longitude).toBe(27.5);
+    });
+
+    test('keeps null average_rating null on the list wire', async () => {
+      const neverRatedRow = createMockEstablishment({ average_rating: null });
+      EstablishmentModel.getEstablishmentsByPartner.mockResolvedValue([neverRatedRow]);
+      EstablishmentModel.countPartnerEstablishments.mockResolvedValue(1);
+
+      const result = await getPartnerEstablishments(partnerId);
+
+      expect(result.establishments[0].average_rating).toBeNull();
+    });
+
     test('should handle custom pagination parameters', async () => {
       EstablishmentModel.getEstablishmentsByPartner.mockResolvedValue([]);
       EstablishmentModel.countPartnerEstablishments.mockResolvedValue(100);

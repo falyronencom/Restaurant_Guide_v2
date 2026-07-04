@@ -86,4 +86,33 @@ describe('partner endpoints — data.establishment unwrapping', () => {
 
     await expect(listEstablishments()).resolves.toBe(data);
   });
+
+  it('list wire carries NUMERIC fields as numbers, never "4.50" strings', async () => {
+    // Fixture mirrors the REAL list wire: the backend coerces pg NUMERIC at
+    // the getPartnerEstablishments boundary (parity with single-get). The
+    // enforcing test lives backend-side (establishmentService list-coercion);
+    // this one keeps the web contract documented at the boundary web owns —
+    // a mocked wire encodes assumptions, so state them, don't hide them.
+    const data = {
+      establishments: [
+        {
+          id: 'e1',
+          status: 'active',
+          average_rating: 4.5,
+          latitude: 53.9,
+          longitude: 27.5,
+          review_count: 12,
+        },
+      ],
+      pagination: { total: 1 },
+    };
+    fetchMock.mockResolvedValue(data);
+
+    const r = await listEstablishments();
+    const row = r.establishments[0];
+
+    expect(typeof row.average_rating).toBe('number');
+    expect(typeof row.latitude).toBe('number');
+    expect(typeof row.longitude).toBe('number');
+  });
 });

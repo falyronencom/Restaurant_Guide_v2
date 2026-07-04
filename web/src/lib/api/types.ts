@@ -349,7 +349,14 @@ export type EstablishmentStatus =
  */
 export type ModerationNotes = Record<string, string> | null;
 
-/** Partner list row — getPartnerEstablishments projection (+ primary_photo subselect). */
+/**
+ * Partner list row — getPartnerEstablishments projection (+ primary_photo
+ * subselect). pg NUMERIC columns (average_rating, latitude, longitude) are
+ * coerced to numbers at the backend list boundary (parity with the single-get
+ * path, OSB hardening), so `number | null` below is the true wire type — not
+ * a hopeful cast over a "4.50" string. Pinned by the backend
+ * establishmentService list-coercion test.
+ */
 export type PartnerEstablishmentListing = {
   id: string;
   partner_id: string;
