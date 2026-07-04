@@ -110,9 +110,10 @@ export async function smartSearch(req, res, next) {
       },
     });
   } catch (error) {
+    // Never log req.body here: it carries the user's free-text query and
+    // exact lat/long (PII). errorHandler re-logs curated request context.
     logger.error('Smart search controller error', {
       error: error.message,
-      body: req.body,
     });
     next(error);
   }
