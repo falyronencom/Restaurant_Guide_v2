@@ -28,6 +28,28 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  /*
+   * Static security headers for every route (OSB-P3).
+   *
+   * Deliberately NO Content-Security-Policy: a full CSP for Next 16 /
+   * React 19 (inline runtime chunks, streamed RSC payloads, Yandex Maps)
+   * is high-fragility to author and maintain for a solo operator and is
+   * explicitly non-gating — see OSB assessment / CAT-C-4.3. Keep this list
+   * to cheap static headers.
+   */
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
