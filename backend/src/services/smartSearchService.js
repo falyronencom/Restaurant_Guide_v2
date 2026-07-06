@@ -16,22 +16,9 @@ import { setWithExpiry } from '../config/redis.js';
 import redisClient from '../config/redis.js';
 import * as searchService from './searchService.js';
 import logger from '../utils/logger.js';
-
-/**
- * Valid values from establishmentValidation.js — used in AI prompt and Zod validation.
- * DB stores cyrillic directly.
- */
-const VALID_CATEGORIES = [
-  'Ресторан', 'Кофейня', 'Кафе', 'Фаст-фуд', 'Бар', 'Кондитерская',
-  'Пиццерия', 'Пекарня', 'Паб', 'Столовая', 'Кальянная', 'Боулинг',
-  'Караоке', 'Бильярд', 'Клуб',
-];
-
-const VALID_CUISINES = [
-  'Народная', 'Авторская', 'Азиатская', 'Американская', 'Вегетарианская',
-  'Японская', 'Грузинская', 'Итальянская', 'Смешанная', 'Европейская',
-  'Китайская', 'Восточная',
-];
+// Canon shared with the write-path + DB CHECK (CAT-C-2.9). DB stores Cyrillic
+// directly; these drive the AI prompt and Zod enum validation.
+import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 
 /**
  * Zod schema for AI response validation.

@@ -43,7 +43,7 @@ const SEARCH_SYNONYMS = {
   'выпечка':  { categories: ['Пекарня', 'Кондитерская'], cuisines: [] },
   'пиво':     { categories: ['Бар', 'Паб'], cuisines: [] },
   'коктейль': { categories: ['Бар'], cuisines: [] },
-  'кальян':   { categories: ['Кальянная', 'Кальян'], cuisines: [] },
+  'кальян':   { categories: ['Кальянная'], cuisines: [] },
   'драники':  { categories: [], cuisines: ['Народная'] },
   'веган':    { categories: [], cuisines: ['Вегетарианская'] },
   'вегетарианское': { categories: [], cuisines: ['Вегетарианская'] },

@@ -20,6 +20,7 @@ import logger from '../utils/logger.js';
 import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MEDIA_LIMITS } from './mediaService.js';
+import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 
 /**
  * Statuses in which a partner-driven name change triggers slug regeneration.
@@ -33,44 +34,8 @@ const SLUG_MUTABLE_STATUSES = ['draft', 'pending', 'rejected'];
  */
 const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Могилёв', 'Бобруйск'];
 
-/**
- * Valid category values
- */
-const VALID_CATEGORIES = [
-  'Ресторан',
-  'Кофейня',
-  'Кафе',
-  'Фаст-фуд',
-  'Бар',
-  'Кондитерская',
-  'Пиццерия',
-  'Пекарня',
-  'Паб',
-  'Столовая',
-  'Кальянная',
-  'Боулинг',
-  'Караоке',
-  'Бильярд',
-  'Клуб',
-];
-
-/**
- * Valid cuisine types
- */
-const VALID_CUISINES = [
-  'Народная',
-  'Авторская',
-  'Азиатская',
-  'Американская',
-  'Вегетарианская',
-  'Японская',
-  'Грузинская',
-  'Итальянская',
-  'Смешанная',
-  'Европейская',
-  'Китайская',
-  'Восточная',
-];
+// VALID_CATEGORIES (15) / VALID_CUISINES (12) now imported from the shared
+// canon (constants/establishmentVocab.js) — see CAT-C-2.9 consolidation.
 
 /**
  * Geographic bounds for Belarus

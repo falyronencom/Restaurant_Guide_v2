@@ -1,0 +1,3 @@
+# Runtime artifacts (never commit)
+.geocode-cache.json
+rollback-snapshot-*.json

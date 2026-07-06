@@ -17,50 +17,15 @@
  */
 
 import { body, param, query } from 'express-validator';
+import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 
 /**
  * Valid city enum values for Belarus
  */
 const VALID_CITIES = ['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилев', 'Могилёв', 'Бобруйск'];
 
-/**
- * Valid establishment category values
- */
-const VALID_CATEGORIES = [
-  'Ресторан',
-  'Кофейня',
-  'Кафе',
-  'Фаст-фуд',
-  'Бар',
-  'Кондитерская',
-  'Пиццерия',
-  'Пекарня',
-  'Паб',
-  'Столовая',
-  'Кальянная',
-  'Боулинг',
-  'Караоке',
-  'Бильярд',
-  'Клуб',
-];
-
-/**
- * Valid cuisine type values
- */
-const VALID_CUISINES = [
-  'Народная',
-  'Авторская',
-  'Азиатская',
-  'Американская',
-  'Вегетарианская',
-  'Японская',
-  'Грузинская',
-  'Итальянская',
-  'Смешанная',
-  'Европейская',
-  'Китайская',
-  'Восточная',
-];
+// VALID_CATEGORIES (15) / VALID_CUISINES (12) now imported from the shared
+// canon (constants/establishmentVocab.js) — see CAT-C-2.9 consolidation.
 
 /**
  * Valid price range values
@@ -283,6 +248,22 @@ export const validateUpdate = [
     .trim()
     .isURL()
     .withMessage('Website must be a valid URL'),
+
+  // Categories validation (optional for updates)
+  // CAT-C-2.9: mirror the create-path canon gate so an UPDATE can't set a
+  // non-canonical category (the service backstops this, but the DB CHECK
+  // makes it a hard invariant — validate here for a clear 422 over a raw 23514).
+  body('categories')
+    .optional()
+    .isArray({ min: 1, max: 2 })
+    .withMessage('Categories must be an array with 1-2 items')
+    .custom((categories) => {
+      const invalidCategories = categories.filter(cat => !VALID_CATEGORIES.includes(cat));
+      if (invalidCategories.length > 0) {
+        throw new Error(`Invalid categories: ${invalidCategories.join(', ')}`);
+      }
+      return true;
+    }),
 
   // Cuisines validation (optional for updates)
   body('cuisines')
