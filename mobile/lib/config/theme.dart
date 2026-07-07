@@ -218,6 +218,107 @@ class AppTheme {
   );
 
   // ============================================================================
+  // Canonical Applied Styles — «канон B» (применённый Figma-фундамент)
+  // ============================================================================
+  // Аудит консистентности 2026-07-06 (mobile/session_reports/
+  // ui_consistency_audit_2026_07_06_report.md): реальный канон приложения живёт
+  // в эталонных экранах (search_home / detail / filter / auth), а не в textTheme
+  // ниже. Новые экраны используют стили этого блока.
+  // Статусный зелёный канона — statusGreen (#34C759), НЕ successGreen.
+
+  /// Заголовок AppBar: Unbounded 25/w400 тёмно-оранжевый.
+  /// Применять через CanonAppBar (widgets/canon_app_bar.dart).
+  /// Образцы: login_screen, edit_establishment_screen.
+  static final TextStyle canonAppBarTitle = TextStyle(
+    fontFamily: fontDisplayFamily,
+    fontSize: 25,
+    fontWeight: FontWeight.w400,
+    color: primaryOrangeDark,
+  );
+
+  /// Заголовок страницы/шага внутри тела экрана: Unbounded 25/w400 чёрный.
+  static final TextStyle canonPageTitle = TextStyle(
+    fontFamily: fontDisplayFamily,
+    fontSize: 25,
+    fontWeight: FontWeight.w400,
+    color: textPrimary,
+  );
+
+  /// Заголовок крупной секции: Unbounded 30/w400 («Наше меню» в detail_screen).
+  static final TextStyle canonSectionHeader = TextStyle(
+    fontFamily: fontDisplayFamily,
+    fontSize: 30,
+    fontWeight: FontWeight.w400,
+    color: textPrimary,
+  );
+
+  /// Заголовок модальной шторки: Unbounded 20/w400.
+  static final TextStyle canonSheetTitle = TextStyle(
+    fontFamily: fontDisplayFamily,
+    fontSize: 20,
+    fontWeight: FontWeight.w400,
+    color: textPrimary,
+  );
+
+  /// Подсекция / заголовок карточки / секция списка: Nunito 18/w600.
+  /// В каноне жирнее w600 не используется.
+  static const TextStyle canonSubsectionHeader = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    color: textPrimary,
+  );
+
+  /// Каноническая карточка: белая, рамка strokeGrey, тёплая тень
+  /// primaryOrangeShadow 4% (образец: карточка меню detail_screen).
+  static BoxDecoration canonCardDecoration({
+    double radius = radiusMedium,
+    Color? borderColor,
+  }) =>
+      BoxDecoration(
+        color: backgroundPrimary,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: borderColor ?? strokeGrey),
+        boxShadow: [
+          BoxShadow(
+            color: primaryOrangeShadow.withValues(alpha: 0.04),
+            blurRadius: 12,
+            spreadRadius: 1,
+            offset: const Offset(2, 2),
+          ),
+        ],
+      );
+
+  /// CTA-кнопка L (крупное действие экрана, «Хочу забронировать»):
+  /// вертикальный паддинг 16, r12, label 17/w600. Образец: detail_screen CTA.
+  static ButtonStyle canonCtaL({Color? backgroundColor}) =>
+      ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor ?? primaryOrange,
+        foregroundColor: textOnPrimary,
+        disabledBackgroundColor: strokeGrey,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusMedium),
+        ),
+        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      );
+
+  /// CTA-кнопка M (списочные действия): высота 47, r8, label 15/w500.
+  /// Образец: CTA главной поиска.
+  static ButtonStyle canonCtaM({Color? backgroundColor}) =>
+      ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor ?? primaryOrange,
+        foregroundColor: textOnPrimary,
+        disabledBackgroundColor: strokeGrey,
+        elevation: 0,
+        minimumSize: const Size(0, 47),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusSmall),
+        ),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      );
+
+  // ============================================================================
   // Theme Data
   // ============================================================================
 

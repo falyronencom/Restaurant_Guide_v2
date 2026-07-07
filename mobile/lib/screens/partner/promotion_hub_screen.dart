@@ -7,6 +7,7 @@ import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/promotions_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/booking_wizard_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/bookings_management_screen.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Hub screen replacing direct navigation to PromotionsScreen.
 /// Two sections: Акции (promotions) and Бронирование (bookings).
@@ -46,12 +47,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: const Text('Продвижение'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
+      appBar: const CanonAppBar(title: 'Продвижение'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -89,7 +85,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: activeCount > 0
-                          ? AppTheme.successGreen.withValues(alpha: 0.1)
+                          ? AppTheme.statusGreen.withValues(alpha: 0.1)
                           : AppTheme.gray100,
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
@@ -97,8 +93,8 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
                       'Активных: $activeCount/3',
                       style: TextStyle(
                         color: activeCount > 0
-                            ? AppTheme.successGreen
-                            : AppTheme.gray500,
+                            ? AppTheme.statusGreen
+                            : AppTheme.textGrey,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -172,7 +168,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
   Widget _buildBookingInvitation() {
     return _buildSectionCard(
       icon: Icons.calendar_today,
-      iconColor: AppTheme.gray500,
+      iconColor: AppTheme.textGrey,
       title: 'Бронирование',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,7 +176,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
           const Text(
             'Принимайте онлайн-бронирования от гостей прямо в приложении. '
             'Управляйте расписанием и подтверждайте брони в пару нажатий.',
-            style: TextStyle(fontSize: 14, color: AppTheme.gray600),
+            style: TextStyle(fontSize: 14, color: AppTheme.textDark),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -189,14 +185,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
               onPressed: _navigateToWizard,
               icon: const Icon(Icons.add, size: 20),
               label: const Text('Подключить'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryOrange,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                ),
-              ),
+              style: AppTheme.canonCtaM(),
             ),
           ),
         ],
@@ -217,7 +206,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
 
     return _buildSectionCard(
       icon: Icons.calendar_today,
-      iconColor: AppTheme.successGreen,
+      iconColor: AppTheme.statusGreen,
       title: 'Бронирование',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +223,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
               _buildCountBadge(
                 'Подтверждённых',
                 bookingProvider.confirmedCount,
-                AppTheme.successGreen,
+                AppTheme.statusGreen,
               ),
             ],
           ),
@@ -245,14 +234,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _navigateToManagement,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryOrange,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                ),
-              ),
+              style: AppTheme.canonCtaM(),
               child: const Text('Управление →'),
             ),
           ),
@@ -264,7 +246,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
             child: TextButton(
               onPressed: _navigateToWizard,
               style: TextButton.styleFrom(
-                foregroundColor: AppTheme.gray600,
+                foregroundColor: AppTheme.textDark,
                 textStyle: const TextStyle(fontSize: 14),
               ),
               child: const Text('Настройки'),
@@ -288,10 +270,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-      ),
+      decoration: AppTheme.canonCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -299,13 +278,7 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
             children: [
               Icon(icon, color: iconColor, size: 22),
               const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text(title, style: AppTheme.canonSubsectionHeader),
             ],
           ),
           const SizedBox(height: 16),

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:restaurant_guide_mobile/models/promotion.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Create or edit a promotion
 /// In edit mode, pre-fills fields from existingPromotion
@@ -57,11 +58,8 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: Text(_isEditMode ? 'Изменить акцию' : 'Новая акция'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
+      appBar: CanonAppBar(
+        title: _isEditMode ? 'Изменить акцию' : 'Новая акция',
       ),
       body: Form(
         key: _formKey,
@@ -124,29 +122,27 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
 
             // Save button
             SizedBox(
-              height: 50,
+              width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryOrange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                style: AppTheme.canonCtaL(),
+                // Фиксированная высота контента: без скачка при смене
+                // текст ↔ спиннер
+                child: SizedBox(
+                  height: 24,
+                  child: Center(
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(_isEditMode ? 'Сохранить' : 'Создать акцию'),
                   ),
                 ),
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        _isEditMode ? 'Сохранить' : 'Создать акцию',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
               ),
             ),
           ],
@@ -159,9 +155,9 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
     return Text(
       text,
       style: const TextStyle(
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: FontWeight.w600,
-        color: Colors.black87,
+        color: AppTheme.textDark,
       ),
     );
   }
@@ -169,21 +165,19 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
   InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      filled: true,
-      fillColor: Colors.white,
+      hintStyle: const TextStyle(color: AppTheme.textGrey),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        borderSide: const BorderSide(color: AppTheme.strokeGrey),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        borderSide: const BorderSide(color: AppTheme.strokeGrey),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         borderSide: const BorderSide(color: AppTheme.primaryOrange),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
   }
 
@@ -194,8 +188,8 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
         height: 150,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          border: Border.all(color: AppTheme.strokeGrey),
         ),
         child: _imagePath != null
             ? Stack(
@@ -234,15 +228,15 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
                       fit: BoxFit.cover,
                     ),
                   )
-                : Column(
+                : const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.add_photo_alternate_outlined,
-                          size: 40, color: Colors.grey[400]),
-                      const SizedBox(height: 8),
+                          size: 40, color: AppTheme.textGrey),
+                      SizedBox(height: 8),
                       Text(
                         'Добавить фото',
-                        style: TextStyle(color: Colors.grey[500]),
+                        style: TextStyle(color: AppTheme.textGrey),
                       ),
                     ],
                   ),
@@ -267,15 +261,16 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
         if (picked != null) onPick(picked);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey[300]!),
+          color: AppTheme.gray50,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+          border: Border.all(color: AppTheme.strokeGrey),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, size: 18, color: Colors.grey[500]),
+            const Icon(Icons.calendar_today,
+                size: 18, color: AppTheme.textGrey),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -283,7 +278,9 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
                     ? '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}'
                     : hint,
                 style: TextStyle(
-                  color: value != null ? Colors.black87 : Colors.grey[500],
+                  color: value != null
+                      ? AppTheme.textPrimary
+                      : AppTheme.textGrey,
                   fontSize: 15,
                 ),
               ),
@@ -291,7 +288,8 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
             if (value != null && onClear != null)
               GestureDetector(
                 onTap: onClear,
-                child: Icon(Icons.clear, size: 18, color: Colors.grey[400]),
+                child: const Icon(Icons.clear,
+                    size: 18, color: AppTheme.textGrey),
               ),
           ],
         ),

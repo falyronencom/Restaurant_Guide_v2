@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/booking.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// User's bookings screen — active and history.
 class UserBookingsScreen extends StatefulWidget {
@@ -26,12 +27,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: const Text('Мои бронирования'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
+      appBar: const CanonAppBar(title: 'Мои бронирования'),
       body: Consumer<BookingProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading && provider.userBookings.isEmpty) {
@@ -46,11 +42,12 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.calendar_today, size: 48, color: AppTheme.gray400),
+                  Icon(Icons.calendar_today,
+                      size: 48, color: AppTheme.textGrey),
                   SizedBox(height: 16),
                   Text(
                     'У вас пока нет бронирований',
-                    style: TextStyle(fontSize: 16, color: AppTheme.gray600),
+                    style: TextStyle(fontSize: 16, color: AppTheme.textDark),
                   ),
                 ],
               ),
@@ -63,19 +60,15 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 if (active.isNotEmpty) ...[
-                  const Text(
-                    'Активные',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Активные',
+                      style: AppTheme.canonSubsectionHeader),
                   const SizedBox(height: 12),
                   ...active.map((b) => _buildActiveCard(b)),
                   const SizedBox(height: 24),
                 ],
                 if (history.isNotEmpty) ...[
-                  const Text(
-                    'История',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('История',
+                      style: AppTheme.canonSubsectionHeader),
                   const SizedBox(height: 12),
                   ...history.map((b) => _buildHistoryCard(b)),
                 ],
@@ -95,16 +88,14 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
   Widget _buildActiveCard(Booking booking) {
     final isPending = booking.isPending;
     final statusColor = isPending
-        ? const Color(0xFFFFC107) // yellow
-        : AppTheme.successGreen; // green
+        ? AppTheme.primaryOrange // ожидание — оранжевая пара канона
+        : AppTheme.statusGreen; // подтверждено
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+      decoration: AppTheme.canonCardDecoration(
+        borderColor: statusColor.withValues(alpha: 0.3),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -141,7 +132,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF8E1),
+                color: AppTheme.primaryOrange.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: const Text(
@@ -154,7 +145,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.successGreen.withValues(alpha: 0.08),
+                color: AppTheme.statusGreen.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: Text(
@@ -191,23 +182,20 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
     Color statusColor;
     switch (booking.status) {
       case 'completed':
-        statusColor = AppTheme.successGreen;
+        statusColor = AppTheme.statusGreen;
       case 'declined':
         statusColor = AppTheme.errorRed;
       case 'cancelled':
       case 'expired':
       case 'no_show':
       default:
-        statusColor = AppTheme.gray500;
+        statusColor = AppTheme.textGrey;
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-      ),
+      decoration: AppTheme.canonCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -226,7 +214,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
           const SizedBox(height: 8),
           Text(
             '${booking.formattedDate} • ${booking.formattedTime} • ${booking.guestCount} гост.',
-            style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
+            style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
           ),
 
           // Declined — show reason + retry
@@ -235,7 +223,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
               const SizedBox(height: 8),
               Text(
                 'Причина: ${booking.declineReason}',
-                style: const TextStyle(fontSize: 13, color: AppTheme.gray600),
+                style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
               ),
             ],
             const SizedBox(height: 12),
@@ -260,7 +248,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
             const SizedBox(height: 8),
             const Text(
               'Заведение не успело ответить',
-              style: TextStyle(fontSize: 13, color: AppTheme.gray600),
+              style: TextStyle(fontSize: 13, color: AppTheme.textDark),
             ),
             const SizedBox(height: 12),
             Row(
@@ -284,8 +272,8 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
                   OutlinedButton(
                     onPressed: () => _callPhone(booking.establishmentPhone!),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.gray600,
-                      side: const BorderSide(color: AppTheme.gray400),
+                      foregroundColor: AppTheme.textDark,
+                      side: const BorderSide(color: AppTheme.strokeGrey),
                       shape: RoundedRectangleBorder(
                         borderRadius:
                             BorderRadius.circular(AppTheme.radiusSmall),
@@ -327,7 +315,7 @@ class _UserBookingsScreenState extends State<UserBookingsScreen> {
   Widget _buildDetailRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppTheme.gray500),
+        Icon(icon, size: 16, color: AppTheme.textGrey),
         const SizedBox(width: 8),
         Text(text, style: const TextStyle(fontSize: 14)),
       ],

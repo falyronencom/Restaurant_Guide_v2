@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/booking.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Partner bookings management screen.
 /// Three sections: pending requests, confirmed, history.
@@ -54,12 +55,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: const Text('Бронирования'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
+      appBar: const CanonAppBar(title: 'Бронирования'),
       body: Consumer<BookingProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading && provider.pendingBookings.isEmpty) {
@@ -71,7 +67,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               provider.confirmedBookings.isEmpty) {
             return Center(
               child: Text(provider.error!,
-                  style: const TextStyle(color: AppTheme.gray600)),
+                  style: const TextStyle(color: AppTheme.textDark)),
             );
           }
 
@@ -106,7 +102,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
       children: [
         Text(
           'Новые запросы (${bookings.length})',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: AppTheme.canonSubsectionHeader,
         ),
         const SizedBox(height: 12),
         if (bookings.isEmpty)
@@ -122,7 +118,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     final isExpiringSoon = remaining.inMinutes <= 60 && remaining.inMinutes > 0;
     final isCritical = remaining.inMinutes <= 30 && remaining.inMinutes > 0;
 
-    Color timerColor = AppTheme.gray600;
+    Color timerColor = AppTheme.textDark;
     if (isCritical) {
       timerColor = AppTheme.errorRed;
     } else if (isExpiringSoon) {
@@ -141,14 +137,10 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        border: Border.all(
-          color: isCritical
-              ? AppTheme.errorRed.withValues(alpha: 0.3)
-              : AppTheme.gray200,
-        ),
+      decoration: AppTheme.canonCardDecoration(
+        borderColor: isCritical
+            ? AppTheme.errorRed.withValues(alpha: 0.3)
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,6 +216,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.errorRed,
                     side: const BorderSide(color: AppTheme.errorRed),
+                    minimumSize: const Size(0, 47),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
@@ -235,14 +228,8 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () => _confirmBooking(booking),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.successGreen,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    ),
-                  ),
+                  style:
+                      AppTheme.canonCtaM(backgroundColor: AppTheme.statusGreen),
                   child: const Text('Подтвердить'),
                 ),
               ),
@@ -291,7 +278,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
       children: [
         Text(
           'Подтверждённые (${bookings.length})',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: AppTheme.canonSubsectionHeader,
         ),
         const SizedBox(height: 12),
         if (bookings.isEmpty) _buildEmptyCard('Нет подтверждённых броней'),
@@ -319,7 +306,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: AppTheme.gray600,
+          color: AppTheme.textGrey,
         ),
       ),
     );
@@ -335,10 +322,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-      ),
+      decoration: AppTheme.canonCardDecoration(radius: AppTheme.radiusSmall),
       child: Row(
         children: [
           // Time
@@ -346,7 +330,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
             booking.formattedTime,
             style: const TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 16),
@@ -361,7 +345,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
                 ),
                 Text(
                   '${booking.guestCount} гост.',
-                  style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
                 ),
               ],
             ),
@@ -371,7 +355,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
             TextButton(
               onPressed: () => _markNoShow(booking),
               style: TextButton.styleFrom(
-                foregroundColor: AppTheme.gray600,
+                foregroundColor: AppTheme.textDark,
                 textStyle: const TextStyle(fontSize: 13),
               ),
               child: const Text('Не пришёл'),
@@ -395,10 +379,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'История',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
+        const Text('История', style: AppTheme.canonSubsectionHeader),
         const SizedBox(height: 12),
         // Filter chips
         SingleChildScrollView(
@@ -430,13 +411,19 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
       label: Text(label),
       selected: isSelected,
       onSelected: (_) => setState(() => _historyFilter = value),
-      selectedColor: AppTheme.primaryOrange,
+      selectedColor: AppTheme.primaryOrangeDark,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : AppTheme.gray700,
+        color: isSelected ? Colors.white : AppTheme.textDark,
         fontSize: 13,
       ),
-      backgroundColor: AppTheme.gray100,
-      side: BorderSide.none,
+      backgroundColor: AppTheme.backgroundPrimary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      side: BorderSide(
+        color:
+            isSelected ? AppTheme.primaryOrangeDark : AppTheme.strokeGrey,
+      ),
     );
   }
 
@@ -444,10 +431,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-      ),
+      decoration: AppTheme.canonCardDecoration(radius: AppTheme.radiusSmall),
       child: Row(
         children: [
           Expanded(
@@ -456,7 +440,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               children: [
                 Text(
                   '${booking.formattedDate} • ${booking.formattedTime}',
-                  style: const TextStyle(fontSize: 13, color: AppTheme.gray500),
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -478,11 +462,11 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
 
     switch (booking.status) {
       case 'completed':
-        bgColor = AppTheme.successGreen.withValues(alpha: 0.1);
-        textColor = AppTheme.successGreen;
+        bgColor = AppTheme.statusGreen.withValues(alpha: 0.1);
+        textColor = AppTheme.statusGreen;
       case 'cancelled':
         bgColor = AppTheme.gray200;
-        textColor = AppTheme.gray600;
+        textColor = AppTheme.textDark;
       case 'no_show':
         bgColor = AppTheme.errorRed.withValues(alpha: 0.1);
         textColor = AppTheme.errorRed;
@@ -491,10 +475,10 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
         textColor = AppTheme.errorRed;
       case 'expired':
         bgColor = AppTheme.gray200;
-        textColor = AppTheme.gray600;
+        textColor = AppTheme.textDark;
       default:
         bgColor = AppTheme.gray200;
-        textColor = AppTheme.gray600;
+        textColor = AppTheme.textDark;
     }
 
     return Container(
@@ -522,12 +506,9 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-      ),
+      decoration: AppTheme.canonCardDecoration(),
       child: Center(
-        child: Text(text, style: const TextStyle(color: AppTheme.gray500)),
+        child: Text(text, style: const TextStyle(color: AppTheme.textGrey)),
       ),
     );
   }
@@ -535,7 +516,7 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
   Widget _buildDetailRow(IconData icon, String text, {bool isLink = false}) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppTheme.gray500),
+        Icon(icon, size: 16, color: AppTheme.textGrey),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

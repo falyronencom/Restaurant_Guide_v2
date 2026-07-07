@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// News screen - shows latest updates and promotions
 /// Full implementation in future phases
@@ -7,34 +9,29 @@ class NewsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Новости'),
-      ),
+      backgroundColor: AppTheme.backgroundWarm,
+      appBar: const CanonAppBar(title: 'Новости'),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.newspaper,
                 size: 80,
-                color: theme.colorScheme.primary,
+                color: AppTheme.primaryOrange,
               ),
               const SizedBox(height: 24),
               Text(
                 'Новости и акции',
-                style: theme.textTheme.headlineMedium,
+                style: AppTheme.canonSheetTitle,
               ),
               const SizedBox(height: 16),
-              Text(
+              const Text(
                 'Актуальные новости от заведений\nи специальные предложения',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.secondary,
-                ),
+                style: TextStyle(fontSize: 15, color: AppTheme.textGrey),
                 textAlign: TextAlign.center,
               ),
             ],

@@ -185,7 +185,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            // Канон верхнего радиуса шторок = 24 (промо-шторка detail_screen)
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -220,7 +221,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: AppTheme.gray300,
+                color: AppTheme.strokeGrey,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -230,20 +231,18 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Бронирование столика',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
+              Text('Бронирование столика', style: AppTheme.canonSheetTitle),
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: const Icon(Icons.close, size: 24, color: AppTheme.gray500),
+                child:
+                    const Icon(Icons.close, size: 24, color: AppTheme.textDark),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
             '${widget.establishment.name} • ${widget.establishment.address}',
-            style: const TextStyle(fontSize: 13, color: AppTheme.gray600),
+            style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -267,7 +266,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               ),
               child: const Text(
                 'Заведение не работает в этот день',
-                style: TextStyle(color: AppTheme.gray600),
+                style: TextStyle(color: AppTheme.textDark),
               ),
             )
           else
@@ -288,16 +287,15 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             maxLines: 2,
             decoration: InputDecoration(
               hintText: 'Детское кресло, аллергии, повод...',
-              hintStyle: const TextStyle(color: AppTheme.gray400),
+              hintStyle: const TextStyle(color: AppTheme.textGrey),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: const BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.strokeGrey),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: const BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.strokeGrey),
               ),
-              contentPadding: const EdgeInsets.all(12),
             ),
           ),
           const SizedBox(height: 16),
@@ -310,16 +308,15 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             keyboardType: TextInputType.phone,
             decoration: InputDecoration(
               hintText: '+375 __ _______',
-              hintStyle: const TextStyle(color: AppTheme.gray400),
+              hintStyle: const TextStyle(color: AppTheme.textGrey),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: const BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.strokeGrey),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                borderSide: const BorderSide(color: AppTheme.gray300),
+                borderSide: const BorderSide(color: AppTheme.strokeGrey),
               ),
-              contentPadding: const EdgeInsets.all(12),
             ),
           ),
           const SizedBox(height: 20),
@@ -346,22 +343,11 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             builder: (context, provider, _) {
               return SizedBox(
                 width: double.infinity,
-                height: 52,
                 child: ElevatedButton(
                   onPressed: provider.isLoading || isClosed ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryOrange,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppTheme.gray300,
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.radiusMedium),
-                    ),
-                    elevation: 0,
-                  ),
+                  style: AppTheme.canonCtaL(),
                   child: Text(
                     provider.isLoading ? 'Отправка...' : 'Отправить запрос',
-                    style: const TextStyle(fontSize: 17),
                   ),
                 ),
               );
@@ -374,7 +360,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             Text(
               'Заведение подтвердит бронь в течение ${_settings!.confirmationTimeoutHours} часов. '
               'Администратор может связаться с вами для уточнения.',
-              style: const TextStyle(fontSize: 12, color: AppTheme.gray500),
+              style: const TextStyle(fontSize: 12, color: AppTheme.textGrey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -386,7 +372,11 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   Widget _buildLabel(String text) {
     return Text(
       text,
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.textDark,
+      ),
     );
   }
 
@@ -429,8 +419,15 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? AppTheme.primaryOrange : AppTheme.gray100,
+                color: isSelected
+                    ? AppTheme.primaryOrangeDark
+                    : AppTheme.backgroundPrimary,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                border: Border.all(
+                  color: isSelected
+                      ? AppTheme.primaryOrangeDark
+                      : AppTheme.strokeGrey,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -440,7 +437,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : AppTheme.gray700,
+                      color: isSelected ? Colors.white : AppTheme.textDark,
                     ),
                   ),
                   if (index > 1) ...[
@@ -451,7 +448,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                         fontSize: 11,
                         color: isSelected
                             ? Colors.white.withValues(alpha: 0.8)
-                            : AppTheme.gray500,
+                            : AppTheme.textGrey,
                       ),
                     ),
                   ],
@@ -468,7 +465,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     if (slots.isEmpty) {
       return const Text(
         'Нет доступных слотов',
-        style: TextStyle(color: AppTheme.gray500),
+        style: TextStyle(color: AppTheme.textGrey),
       );
     }
 
@@ -485,17 +482,17 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: isSelected
-                  ? AppTheme.primaryOrange
+                  ? AppTheme.primaryOrangeDark
                   : disabled
                       ? AppTheme.gray100
                       : Colors.white,
               borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               border: Border.all(
                 color: isSelected
-                    ? AppTheme.primaryOrange
+                    ? AppTheme.primaryOrangeDark
                     : disabled
                         ? AppTheme.gray200
-                        : AppTheme.gray300,
+                        : AppTheme.strokeGrey,
               ),
             ),
             child: Text(
@@ -506,8 +503,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
                 color: isSelected
                     ? Colors.white
                     : disabled
-                        ? AppTheme.gray400
-                        : AppTheme.gray700,
+                        ? AppTheme.textGrey
+                        : AppTheme.textDark,
               ),
             ),
           ),
@@ -528,7 +525,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Text(
             '$_guestCount',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
           ),
         ),
         _buildStepperButton(
@@ -546,12 +543,15 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: onTap != null ? AppTheme.gray100 : AppTheme.gray200,
+          color: onTap != null ? Colors.white : AppTheme.gray100,
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+          border: Border.all(
+            color: onTap != null ? AppTheme.strokeGrey : AppTheme.gray200,
+          ),
         ),
         child: Icon(
           icon,
-          color: onTap != null ? AppTheme.gray700 : AppTheme.gray400,
+          color: onTap != null ? AppTheme.textDark : AppTheme.textGrey,
         ),
       ),
     );

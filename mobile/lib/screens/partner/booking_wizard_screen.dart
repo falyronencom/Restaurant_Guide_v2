@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Three-step booking activation wizard.
 /// Step 1: Basic settings (max guests)
@@ -82,11 +83,8 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: const Text('Подключение бронирования'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
+      appBar: CanonAppBar(
+        title: 'Подключение бронирования',
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: _prevStep,
@@ -113,7 +111,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
 
   Widget _buildStepIndicator() {
     return Container(
-      color: Colors.white,
+      color: AppTheme.backgroundWarm,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         children: List.generate(3, (index) {
@@ -123,7 +121,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
               margin: EdgeInsets.only(right: index < 2 ? 8 : 0),
               height: 4,
               decoration: BoxDecoration(
-                color: isActive ? AppTheme.primaryOrange : AppTheme.gray300,
+                color: isActive ? AppTheme.primaryOrange : AppTheme.strokeGrey,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -143,14 +141,11 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Основные настройки',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
+          Text('Основные настройки', style: AppTheme.canonPageTitle),
           const SizedBox(height: 8),
           const Text(
             'Укажите максимальное количество гостей на одну бронь',
-            style: TextStyle(fontSize: 15, color: AppTheme.gray600),
+            style: TextStyle(fontSize: 15, color: AppTheme.textDark),
           ),
           const SizedBox(height: 24),
           const Text(
@@ -181,10 +176,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Время бронирования',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
+          Text('Время бронирования', style: AppTheme.canonPageTitle),
           const SizedBox(height: 24),
 
           // Days ahead
@@ -237,11 +229,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-              border: Border.all(color: AppTheme.gray300),
-            ),
+            decoration: AppTheme.canonCardDecoration(),
             child: const Row(
               children: [
                 Icon(Icons.schedule, color: AppTheme.primaryOrange, size: 20),
@@ -253,7 +241,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
                   ),
                 ),
                 Icon(Icons.check_circle,
-                    color: AppTheme.successGreen, size: 20),
+                    color: AppTheme.statusGreen, size: 20),
               ],
             ),
           ),
@@ -276,14 +264,11 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Подтверждение',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
+              Text('Подтверждение', style: AppTheme.canonPageTitle),
               const SizedBox(height: 8),
               Text(
                 'Проверьте настройки бронирования для «${widget.establishmentName}»',
-                style: const TextStyle(fontSize: 15, color: AppTheme.gray600),
+                style: const TextStyle(fontSize: 15, color: AppTheme.textDark),
               ),
               const SizedBox(height: 24),
               _buildSummaryCard(),
@@ -330,11 +315,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   Widget _buildSummaryCard() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        border: Border.all(color: AppTheme.gray200),
-      ),
+      decoration: AppTheme.canonCardDecoration(),
       child: Column(
         children: [
           _buildSummaryRow('Макс. гостей', '$_maxGuests'),
@@ -359,7 +340,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label,
-            style: const TextStyle(color: AppTheme.gray600, fontSize: 15)),
+            style: const TextStyle(color: AppTheme.textGrey, fontSize: 15)),
         Text(value,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
       ],
@@ -385,16 +366,20 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           label: Text(labels[i]),
           selected: isSelected,
           onSelected: (_) => onSelected(values[i]),
-          selectedColor: AppTheme.primaryOrange,
+          selectedColor: AppTheme.primaryOrangeDark,
           labelStyle: TextStyle(
-            color: isSelected ? Colors.white : AppTheme.gray700,
+            color: isSelected ? Colors.white : AppTheme.textDark,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
           ),
-          backgroundColor: AppTheme.gray100,
+          backgroundColor: AppTheme.backgroundPrimary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           ),
-          side: BorderSide.none,
+          side: BorderSide(
+            color: isSelected
+                ? AppTheme.primaryOrangeDark
+                : AppTheme.strokeGrey,
+          ),
         );
       }),
     );
@@ -403,18 +388,10 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
   Widget _buildNextButton(String label, VoidCallback? onPressed) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
       child: ElevatedButton(
         onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.primaryOrange,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          ),
-          elevation: 0,
-        ),
-        child: Text(label, style: const TextStyle(fontSize: 17)),
+        style: AppTheme.canonCtaL(),
+        child: Text(label),
       ),
     );
   }

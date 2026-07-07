@@ -47,7 +47,9 @@ class AppDimensions {
   static const double paddingXl = 32.0;
 
   /// Screen edge padding (20px)
-  /// Used for consistent screen margins
+  /// ВНИМАНИЕ: мёртвый токен — фактический канон полей экрана = 16 (paddingM),
+  /// авторизация = 24 (paddingL). Не использовать без ревизии
+  /// (аудит 2026-07-06, ui_consistency_audit_2026_07_06_report.md).
   static const double screenPadding = 20.0;
 
   /// Card content padding (16px)

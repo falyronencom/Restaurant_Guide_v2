@@ -1524,7 +1524,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Запрос на бронирование отправлен!'),
-                backgroundColor: AppTheme.successGreen,
+                backgroundColor: AppTheme.statusGreen,
               ),
             );
           }
@@ -1934,7 +1934,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return GestureDetector(
       onTap: () => _showPromotionCarousel(),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: _primaryOrange.withValues(alpha: 0.1),
@@ -2044,7 +2044,7 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.grey[300],
+              color: AppTheme.strokeGrey,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -2056,8 +2056,7 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               children: [
                 Text(
                   widget.promotions.length == 1 ? 'Акция' : 'Акции',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700),
+                  style: AppTheme.canonSheetTitle,
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -2092,7 +2091,7 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
                     decoration: BoxDecoration(
                       color: i == _currentPage
                           ? AppTheme.primaryOrange
-                          : Colors.grey[300],
+                          : AppTheme.strokeGrey,
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
@@ -2135,26 +2134,27 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
           const SizedBox(height: 16),
           Text(
             promotion.title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            style: AppTheme.canonSubsectionHeader,
           ),
           if (promotion.description != null &&
               promotion.description!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               promotion.description!,
-              style:
-                  TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
+              style: const TextStyle(
+                  fontSize: 15, color: AppTheme.textDark, height: 1.4),
             ),
           ],
           if (promotion.validUntil != null) ...[
             const SizedBox(height: 12),
             Row(
               children: [
-                Icon(Icons.schedule, size: 16, color: Colors.grey[500]),
+                const Icon(Icons.schedule, size: 16, color: AppTheme.textGrey),
                 const SizedBox(width: 6),
                 Text(
                   'до ${_formatDate(promotion.validUntil!)}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                  style:
+                      const TextStyle(fontSize: 13, color: AppTheme.textGrey),
                 ),
               ],
             ),
@@ -2182,10 +2182,11 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               Text(
                 promotion.title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
+                  fontFamily: AppTheme.fontDisplayFamily,
                   color: Colors.white,
                   fontSize: 22,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
               const SizedBox(height: 8),

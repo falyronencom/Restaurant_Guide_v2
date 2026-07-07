@@ -4,6 +4,7 @@ import 'package:restaurant_guide_mobile/models/promotion.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/create_promotion_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Partner promotion management screen
 /// Shows active (with N/3 counter) and expired promotions
@@ -34,11 +35,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: AppBar(
-        title: const Text('Акции'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
+      appBar: CanonAppBar(
+        title: 'Акции',
         actions: [
           TextButton.icon(
             onPressed: _navigateToCreate,
@@ -61,7 +59,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(provider.error!,
-                      style: const TextStyle(color: Colors.red)),
+                      style: const TextStyle(color: AppTheme.errorRed)),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () =>
@@ -111,14 +109,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   }
 
   Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: Colors.black87,
-      ),
-    );
+    return Text(title, style: AppTheme.canonSubsectionHeader);
   }
 
   Widget _buildEmptyState() {
@@ -126,28 +117,25 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.local_offer_outlined, size: 64, color: Colors.grey[400]),
+          const Icon(Icons.local_offer_outlined,
+              size: 64, color: AppTheme.textGrey),
           const SizedBox(height: 16),
-          Text(
+          const Text(
             'Нет акций',
-            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 18, color: AppTheme.textDark),
           ),
           const SizedBox(height: 8),
           Text(
             'Создайте первую акцию для\n${widget.establishmentName}',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _navigateToCreate,
             icon: const Icon(Icons.add),
             label: const Text('Создать акцию'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryOrange,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
+            style: AppTheme.canonCtaM(),
           ),
         ],
       ),
@@ -157,12 +145,9 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   Widget _buildEmptyCard(String text) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: AppTheme.canonCardDecoration(),
       child: Center(
-        child: Text(text, style: TextStyle(color: Colors.grey[500])),
+        child: Text(text, style: const TextStyle(color: AppTheme.textGrey)),
       ),
     );
   }
@@ -171,11 +156,9 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: isActive
-            ? Border.all(color: AppTheme.primaryOrange.withValues(alpha: 0.3))
+      decoration: AppTheme.canonCardDecoration(
+        borderColor: isActive
+            ? AppTheme.primaryOrange.withValues(alpha: 0.3)
             : null,
       ),
       child: Column(
@@ -190,7 +173,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: isActive ? Colors.black87 : Colors.grey[500],
+                    color:
+                        isActive ? AppTheme.textPrimary : AppTheme.textGrey,
                   ),
                 ),
               ),
@@ -199,12 +183,14 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(4),
+                    color: AppTheme.gray200,
+                    borderRadius:
+                        BorderRadius.circular(AppTheme.radiusXSmall),
                   ),
-                  child: Text(
+                  child: const Text(
                     'Завершена',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style:
+                        TextStyle(fontSize: 11, color: AppTheme.textDark),
                   ),
                 ),
             ],
@@ -218,7 +204,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               promotion.description!,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              style:
+                  const TextStyle(fontSize: 14, color: AppTheme.textDark),
             ),
           ],
 
@@ -227,7 +214,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
             const SizedBox(height: 8),
             Text(
               'до ${promotion.validUntil!.day.toString().padLeft(2, '0')}.${promotion.validUntil!.month.toString().padLeft(2, '0')}.${promotion.validUntil!.year}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              style: const TextStyle(fontSize: 12, color: AppTheme.textGrey),
             ),
           ],
 
@@ -246,7 +233,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed: () => _confirmDeactivate(promotion),
-                  style: TextButton.styleFrom(foregroundColor: Colors.grey),
+                  style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.textGrey),
                   child: const Text('Завершить'),
                 ),
               ],
@@ -303,7 +291,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                     establishmentId: widget.establishmentId,
                   );
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.errorRed),
             child: const Text('Завершить'),
           ),
         ],
