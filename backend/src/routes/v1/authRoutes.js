@@ -21,6 +21,8 @@ import {
   validateRefresh,
   validateLogout,
   validateOAuthLogin,
+  validateForgotPassword,
+  validateResetPassword,
 } from '../../validators/authValidation.js';
 import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
@@ -261,6 +263,61 @@ router.post(
     keyPrefix: 'verify-code',
   }),
   authController.verifyEmailCode,
+);
+
+/**
+ * POST /api/v1/auth/forgot-password
+ *
+ * Public endpoint. Emails a single-use password reset link. Always answers
+ * 200 with a generic message — never reveals whether the email exists
+ * (enumeration safety).
+ *
+ * Path and payload match the contract mobile already ships
+ * (mobile/lib/services/auth_service.dart requestPasswordReset).
+ *
+ * Middleware chain:
+ *   1. Rate limiter: 10 per hour per IP (defense-in-depth; service layer
+ *      also throttles 5/hour per target user via DB count, so rotating IPs
+ *      cannot bomb one inbox)
+ *   2. Validation: email format only — existence is deliberately unchecked
+ *   3. Controller: issue token + send email, uniform 200
+ */
+router.post(
+  '/forgot-password',
+  createRateLimiter({
+    limit: 10,
+    windowSeconds: 3600,
+    keyPrefix: 'forgot-password',
+  }),
+  validateForgotPassword,
+  authController.forgotPassword,
+);
+
+/**
+ * POST /api/v1/auth/reset-password
+ *
+ * Public endpoint. Consumes a reset token (single-use, hashed at rest),
+ * sets the new password, and revokes all refresh tokens for the user.
+ *
+ * Path and payload match the contract mobile already ships
+ * (mobile/lib/services/auth_service.dart resetPassword).
+ *
+ * Middleware chain:
+ *   1. Rate limiter: 20 per hour per IP — tokens are 256-bit so guessing is
+ *      hopeless anyway; the limit mostly caps junk traffic while letting a
+ *      legitimate user retry after validation errors (422s count too)
+ *   2. Validation: token presence/length + register password complexity
+ *   3. Controller: consume token, update password, revoke sessions
+ */
+router.post(
+  '/reset-password',
+  createRateLimiter({
+    limit: 20,
+    windowSeconds: 3600,
+    keyPrefix: 'reset-password',
+  }),
+  validateResetPassword,
+  authController.resetPassword,
 );
 
 export default router;

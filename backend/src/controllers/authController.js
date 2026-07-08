@@ -889,3 +889,89 @@ export async function verifyEmailCode(req, res, next) {
   }
 }
 
+/**
+ * Request a password reset link
+ *
+ * POST /api/v1/auth/forgot-password
+ *
+ * Public endpoint. Issues a single-use reset token and emails it as a deep
+ * link to the web reset page.
+ *
+ * ENUMERATION-SAFE: always responds 200 with the same generic message —
+ * whether the email exists, the user is throttled, or the send failed.
+ * Internal failures are logged, never surfaced. This is deliberate; do not
+ * add distinguishing status codes here (register's 409 EMAIL_EXISTS already
+ * leaks existence — this endpoint must not widen that surface).
+ *
+ * Body:
+ *  - email: address to send the reset link to
+ *
+ * Response:
+ *  - 200 OK: generic acknowledgement (always)
+ */
+export async function forgotPassword(req, res) {
+  const { email } = req.body;
+
+  try {
+    await authService.createPasswordResetToken(email);
+  } catch (error) {
+    // Swallow by design — response must be indistinguishable
+    logger.error('Password reset request failed internally', {
+      error: error.message,
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      message: 'If this email is registered, a password reset link has been sent',
+    },
+  });
+}
+
+/**
+ * Reset password with a token from the emailed link
+ *
+ * POST /api/v1/auth/reset-password
+ *
+ * Public endpoint. Validates the token, sets the new password, and revokes
+ * all refresh tokens for the user (force re-login on every device).
+ *
+ * Body:
+ *  - token: raw token from the emailed link
+ *  - password: new password (register complexity rules)
+ *
+ * Response:
+ *  - 200 OK: password changed
+ *  - 410 INVALID_OR_EXPIRED_TOKEN: token unknown, expired, or already used
+ *  - 404 USER_NOT_FOUND: account deleted/deactivated after token was issued
+ */
+export async function resetPassword(req, res, next) {
+  try {
+    const { token, password } = req.body;
+
+    await authService.consumePasswordResetToken(token, password);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        message: 'Password has been reset successfully',
+      },
+    });
+  } catch (error) {
+    if (error.message === 'INVALID_OR_EXPIRED_TOKEN') {
+      return res.status(410).json({
+        success: false,
+        error: { code: 'INVALID_OR_EXPIRED_TOKEN', message: 'Reset link is invalid or has expired' },
+      });
+    }
+    if (error.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+      });
+    }
+    next(error);
+  }
+}
+

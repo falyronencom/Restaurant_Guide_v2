@@ -7,6 +7,7 @@ import {
   ApiError,
   type LoginData,
   type OAuthLoginData,
+  type PasswordResetMessageData,
   type RegisterData,
   type SessionUser,
 } from '@/lib/api/types';
@@ -61,20 +62,35 @@ export type AuthFormState =
   // (which has no form state). Keep the hidden inputs sourced from the page
   // prop so the two stay the same value.
   | { ok: true; user: SessionUser; returnTo: string }
-  | {
-      ok: false;
-      code: string;
-      message: string;
-      /** Per-field Russian texts keyed by input name (email/password/name). */
-      fieldErrors?: Record<string, string>;
-      /**
-       * Entered values echoed back so the form can repopulate after React 19's
-       * post-action uncontrolled-form reset (inputs re-read defaultValue on the
-       * error re-render). The password is deliberately NEVER echoed — this
-       * state travels through the RSC payload.
-       */
-      values?: { name?: string; email?: string };
-    }
+  | AuthFormError
+  | null;
+
+/** Error branch shared by every email/password form action (login, register,
+ *  forgot/reset password) — extracted so the password flows reuse mapFormError
+ *  without inheriting the session-carrying ok-branch. */
+export type AuthFormError = {
+  ok: false;
+  code: string;
+  message: string;
+  /** Per-field Russian texts keyed by input name (email/password/name). */
+  fieldErrors?: Record<string, string>;
+  /**
+   * Entered values echoed back so the form can repopulate after React 19's
+   * post-action uncontrolled-form reset (inputs re-read defaultValue on the
+   * error re-render). The password is deliberately NEVER echoed — this
+   * state travels through the RSC payload.
+   */
+  values?: { name?: string; email?: string };
+};
+
+/**
+ * useActionState shape for the forgot/reset password forms. No session is
+ * created, so the ok-branch carries only the fixed Russian confirmation the
+ * island renders in place of the form.
+ */
+export type PasswordFormState =
+  | { ok: true; message: string }
+  | AuthFormError
   | null;
 
 /**
@@ -247,6 +263,86 @@ export async function loginAction(
 }
 
 /**
+ * Request a password reset email (useActionState signature). The backend is
+ * enumeration-safe by contract (always the same 200), so the ok-branch text is
+ * the SAME fixed generic message for every outcome — this action must never
+ * become a way to probe whether an email is registered. Only transport-level
+ * failures (network, 429, 5xx) surface as errors.
+ */
+export async function forgotPasswordAction(
+  _prevState: PasswordFormState,
+  formData: FormData,
+): Promise<PasswordFormState> {
+  const email = (formData.get('email')?.toString() ?? '').trim();
+
+  if (!EMAIL_RE.test(email)) {
+    return {
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: VALIDATION_SUMMARY_RU,
+      fieldErrors: { email: FIELD_TEXTS_RU.email },
+      values: { email },
+    };
+  }
+
+  try {
+    await serverFetch<PasswordResetMessageData>('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+  } catch (err) {
+    return mapFormError(err, { email });
+  }
+
+  return { ok: true, message: FORGOT_SENT_RU };
+}
+
+/**
+ * Set a new password with the token from the emailed link (useActionState
+ * signature). The token arrives via a hidden input sourced from the page's
+ * awaited `?token=` search param. Password complexity pre-check mirrors
+ * register; the backend 422 remains the canon. On success the backend has
+ * revoked every session of the user — the island shows a login link.
+ */
+export async function resetPasswordAction(
+  _prevState: PasswordFormState,
+  formData: FormData,
+): Promise<PasswordFormState> {
+  const token = formData.get('token')?.toString() ?? '';
+  const password = formData.get('password')?.toString() ?? '';
+
+  if (token.length === 0) {
+    return {
+      ok: false,
+      code: 'INVALID_OR_EXPIRED_TOKEN',
+      message: messageForCode('INVALID_OR_EXPIRED_TOKEN', 410),
+    };
+  }
+
+  if (!isCompliantPassword(password)) {
+    return {
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: VALIDATION_SUMMARY_RU,
+      fieldErrors: { password: FIELD_TEXTS_RU.password },
+    };
+  }
+
+  try {
+    await serverFetch<PasswordResetMessageData>('/api/v1/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    });
+  } catch (err) {
+    return mapFormError(err, {});
+  }
+
+  return { ok: true, message: RESET_DONE_RU };
+}
+
+/**
  * Read the current session's display user (for AuthProvider hydration on mount
  * / reload). Silently restores the access token via refresh if it expired but a
  * refresh token remains. Returns null when there is no recoverable session.
@@ -348,6 +444,12 @@ const FIELD_TEXTS_RU = {
 
 const VALIDATION_SUMMARY_RU = 'Проверьте правильность заполнения полей.';
 
+/** Enumeration-safe by design: one fixed text for every forgot outcome. */
+const FORGOT_SENT_RU =
+  'Если такой email зарегистрирован, мы отправили на него письмо со ссылкой для сброса пароля.';
+
+const RESET_DONE_RU = 'Пароль изменён. Войдите с новым паролем.';
+
 /** Light-touch shape check; the backend's isEmail stays the canon. */
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
@@ -370,7 +472,7 @@ function isCompliantPassword(password: string): boolean {
 function mapFormError(
   err: unknown,
   values: { name?: string; email?: string },
-): AuthFormState {
+): AuthFormError {
   if (err instanceof ApiError) {
     if (err.errorCode === 'VALIDATION_ERROR') {
       return {
@@ -427,6 +529,8 @@ function messageForCode(code: string | undefined, status: number): string {
     case 'INVALID_CREDENTIALS':
       // Deliberately generic — mirrors the backend's anti-enumeration stance.
       return 'Неверный email или пароль.';
+    case 'INVALID_OR_EXPIRED_TOKEN':
+      return 'Ссылка для сброса пароля недействительна или устарела. Запросите новую.';
     case 'RATE_LIMIT_EXCEEDED':
       return 'Слишком много попыток. Попробуйте позже.';
     default:

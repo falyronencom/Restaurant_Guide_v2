@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,12 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
             {fieldErrors.password}
           </p>
         ) : null}
+        <Link
+          href="/forgot-password"
+          className="self-start text-caption-l font-medium text-brand transition-colors hover:text-brand-dark"
+        >
+          Забыли пароль?
+        </Link>
       </div>
 
       <p aria-live="polite" className="min-h-4 text-caption-l text-destructive">

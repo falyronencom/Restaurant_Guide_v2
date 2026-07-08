@@ -316,6 +316,15 @@ export type RegisterData = {
  */
 export type LoginData = OAuthLoginData;
 
+/**
+ * Backend `POST /api/v1/auth/forgot-password` and `POST /api/v1/auth/reset-password`
+ * success `data` payloads — a generic acknowledgement. On forgot the backend
+ * answers with the byte-identical body whether or not the email exists
+ * (enumeration safety); the web tier shows its own fixed Russian texts and
+ * never surfaces this English message.
+ */
+export type PasswordResetMessageData = { message: string };
+
 // ============================================================================
 // Partner cabinet — Phase C Slice 1 (Segment B)
 //

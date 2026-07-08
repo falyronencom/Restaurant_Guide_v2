@@ -30,6 +30,7 @@ export const TEST_STATE_TABLES = [
   'subscriptions',
   'establishment_analytics',
   'email_verification_codes',
+  'password_reset_tokens',
   'establishments',
   'refresh_tokens',
   'users',

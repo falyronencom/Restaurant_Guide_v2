@@ -320,3 +320,61 @@ export const validateOAuthLogin = [
   handleValidationErrors,
 ];
 
+/**
+ * Forgot-password validation rules
+ *
+ * Email is required here (unlike login/register where phone is an
+ * alternative) because the reset link can only be delivered by email.
+ * Format-only validation — existence is deliberately not checked, the
+ * endpoint answers the same way regardless (enumeration safety).
+ */
+export const validateForgotPassword = [
+  body('email')
+    .notEmpty()
+    .withMessage('Email is required')
+    .trim()
+    .toLowerCase()
+    .isEmail()
+    .withMessage('Invalid email format')
+    .isLength({ max: 255 })
+    .withMessage('Email is too long')
+    .normalizeEmail({
+      gmail_remove_dots: false,
+      gmail_remove_subaddress: false,
+    }),
+
+  handleValidationErrors,
+];
+
+/**
+ * Reset-password validation rules
+ *
+ * Token: presence + sane length only — actual validity is a hashed DB
+ * lookup in the service layer.
+ * Password: same complexity rules as registration — a reset password is
+ * a brand-new password.
+ */
+export const validateResetPassword = [
+  body('token')
+    .notEmpty()
+    .withMessage('Token is required')
+    .isString()
+    .withMessage('Token must be a string')
+    .isLength({ min: 32, max: 128 })
+    .withMessage('Invalid token format'),
+
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required')
+    .isLength({ min: PASSWORD_MIN_LENGTH })
+    .withMessage(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long`)
+    .matches(/[A-Z]/)
+    .withMessage('Password must contain at least one uppercase letter')
+    .matches(/[a-z]/)
+    .withMessage('Password must contain at least one lowercase letter')
+    .matches(/[0-9]/)
+    .withMessage('Password must contain at least one digit'),
+
+  handleValidationErrors,
+];
+

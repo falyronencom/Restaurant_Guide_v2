@@ -17,7 +17,7 @@ import argon2 from 'argon2';
 import { pool } from '../config/database.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
-import { randomUUID, randomBytes } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
   findActiveCodeForUser,
@@ -26,7 +26,14 @@ import {
   incrementAttempts,
   markAsUsed,
 } from '../models/emailVerificationModel.js';
-import { sendVerificationCodeEmail } from './emailService.js';
+import {
+  createToken as createResetToken,
+  findValidByTokenHash as findValidResetToken,
+  countRecentRequests as countRecentResetRequests,
+  invalidateActiveTokensForUser as invalidateActiveResetTokens,
+  markAsUsed as markResetTokenUsed,
+} from '../models/passwordResetModel.js';
+import { sendVerificationCodeEmail, sendPasswordResetEmail } from './emailService.js';
 
 /**
  * Argon2id Parameters
@@ -868,6 +875,141 @@ export async function verifyEmailCode(userId, code) {
   }
 
   logger.info('Email verified successfully', { userId });
+
+  return updateResult.rows[0];
+}
+
+/**
+ * SHA-256 hex digest of a reset token. Tokens are stored hashed so a
+ * database leak yields nothing usable; the raw token lives only in the
+ * emailed link.
+ */
+function hashResetToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Issue a password reset token for the account behind an email address.
+ *
+ * ENUMERATION-SAFE BY CONTRACT: this function never signals to the caller
+ * whether the email exists. Unknown email, throttled user, and successful
+ * issue all resolve (no throws for those cases) — the controller returns
+ * the same generic 200 regardless. Do not add distinguishing throws here.
+ *
+ * Flow:
+ *   1. Look up active user by email — silently resolve if absent.
+ *   2. Per-user issue throttle: max 5 requests per hour (DB count), so an
+ *      attacker cycling IPs still cannot bomb a victim's inbox.
+ *   3. Invalidate prior active tokens (only the latest emailed link works).
+ *   4. Generate 32-byte token, persist SHA-256 hash with TTL from
+ *      PASSWORD_RESET_EXPIRY_MINUTES (default 30).
+ *   5. Email the raw token as a deep link — FIRE-AND-FORGET (same pattern as
+ *      the post-register verification send). Awaiting the Resend round-trip
+ *      here would make registered-email responses measurably slower than
+ *      unknown-email ones, reopening enumeration through timing.
+ *
+ * @param {string} email
+ * @returns {Promise<void>}
+ */
+export async function createPasswordResetToken(email) {
+  const userResult = await pool.query(
+    `SELECT id, email, name
+     FROM users
+     WHERE email = $1 AND is_active = true`,
+    [email.toLowerCase().trim()],
+  );
+
+  if (userResult.rows.length === 0) {
+    logger.info('Password reset requested for unknown email');
+    return;
+  }
+
+  const user = userResult.rows[0];
+
+  const recentCount = await countRecentResetRequests(user.id, 60);
+  if (recentCount >= 5) {
+    logger.warn('Password reset issue throttled (per-user)', {
+      userId: user.id,
+      recentCount,
+    });
+    return;
+  }
+
+  // Only the latest emailed link is valid
+  await invalidateActiveResetTokens(user.id);
+
+  const rawToken = randomBytes(32).toString('hex');
+  const tokenHash = hashResetToken(rawToken);
+  const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
+  const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+  await createResetToken(user.id, tokenHash, expiresAt);
+
+  // Fire-and-forget (timing-channel defense, see flow note above). Send
+  // failure does not roll back token creation — the user can re-request.
+  sendPasswordResetEmail(user.email, rawToken, user.name).catch((err) => {
+    logger.error('Failed to send password reset email', {
+      userId: user.id,
+      error: err.message,
+    });
+  });
+
+  logger.info('Password reset token issued', {
+    userId: user.id,
+    expiresAt,
+  });
+}
+
+/**
+ * Consume a password reset token: set the new password and revoke all
+ * active sessions.
+ *
+ * Order matters for safety:
+ *   1. Claim the token FIRST (atomic UPDATE ... WHERE used_at IS NULL) —
+ *      of two concurrent submissions exactly one proceeds, and a failure
+ *      later leaves the token burned rather than replayable.
+ *   2. Hash the new password with the same Argon2id parameters as register.
+ *   3. Revoke every refresh token for the user (invalidateAllUserTokens) —
+ *      a password reset must terminate whoever held the old credentials.
+ *
+ * @param {string} token - Raw token from the emailed link
+ * @param {string} newPassword - Already validated against register rules
+ * @returns {Promise<Object>} { id, email, name } of the updated user
+ * @throws {Error} 'INVALID_OR_EXPIRED_TOKEN' | 'USER_NOT_FOUND'
+ */
+export async function consumePasswordResetToken(token, newPassword) {
+  const tokenHash = hashResetToken(token);
+  const resetToken = await findValidResetToken(tokenHash);
+
+  if (!resetToken) {
+    throw new Error('INVALID_OR_EXPIRED_TOKEN');
+  }
+
+  const claimed = await markResetTokenUsed(resetToken.id);
+  if (!claimed) {
+    // Lost a concurrent race for the same token
+    throw new Error('INVALID_OR_EXPIRED_TOKEN');
+  }
+
+  const passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
+
+  const updateResult = await pool.query(
+    `UPDATE users
+     SET password_hash = $1, updated_at = $2
+     WHERE id = $3 AND is_active = true
+     RETURNING id, email, name`,
+    [passwordHash, new Date(), resetToken.user_id],
+  );
+
+  if (updateResult.rows.length === 0) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  // Force re-login everywhere: the reset link came from email ownership,
+  // any session created with the old password is no longer trustworthy
+  await invalidateAllUserTokens(resetToken.user_id);
+
+  logger.info('Password reset completed', { userId: resetToken.user_id });
 
   return updateResult.rows[0];
 }

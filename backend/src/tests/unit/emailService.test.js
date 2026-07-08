@@ -98,7 +98,7 @@ describe('emailService.sendVerificationCodeEmail', () => {
     expect(sentMsg.text).toContain('20 минут');
   });
 
-  test('uses default niriveo.by from-address and 15-minute expiry when env vars unset', async () => {
+  test('uses default nirivio.by from-address and 15-minute expiry when env vars unset', async () => {
     process.env.RESEND_API_KEY = 're_test_key';
     mockSend.mockResolvedValue({ data: { id: 'msg_abc' }, error: null });
 
@@ -109,7 +109,7 @@ describe('emailService.sendVerificationCodeEmail', () => {
     );
 
     const sentMsg = mockSend.mock.calls[0][0];
-    expect(sentMsg.from).toBe('noreply@niriveo.by');
+    expect(sentMsg.from).toBe('noreply@nirivio.by');
     expect(sentMsg.text).toContain('15 минут');
   });
 
@@ -154,5 +154,109 @@ describe('emailService.sendVerificationCodeEmail', () => {
 
     expect(mockResendCtor).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('emailService.sendPasswordResetEmail', () => {
+  const originalEnv = { ...process.env };
+  const RAW_TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    emailService._resetForTests();
+    mockResendCtor.mockImplementation(() => ({
+      emails: { send: mockSend },
+    }));
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM_ADDRESS;
+    delete process.env.PASSWORD_RESET_EXPIRY_MINUTES;
+    delete process.env.SITE_URL;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  test('returns sent:false with RESEND_NOT_CONFIGURED when API key is unset', async () => {
+    const result = await emailService.sendPasswordResetEmail(
+      'user@test.com',
+      RAW_TOKEN,
+      'Иван',
+    );
+
+    expect(result.sent).toBe(false);
+    expect(result.reason).toBe('RESEND_NOT_CONFIGURED');
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  test('sends Russian reset email with deep link built from SITE_URL', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    process.env.EMAIL_FROM_ADDRESS = 'noreply@example.com';
+    process.env.SITE_URL = 'http://localhost:3001/';
+    process.env.PASSWORD_RESET_EXPIRY_MINUTES = '45';
+
+    mockSend.mockResolvedValue({ data: { id: 'msg_reset' }, error: null });
+
+    const result = await emailService.sendPasswordResetEmail(
+      'user@test.com',
+      RAW_TOKEN,
+      'Иван',
+    );
+
+    expect(result.sent).toBe(true);
+
+    const sentMsg = mockSend.mock.calls[0][0];
+    expect(sentMsg.to).toBe('user@test.com');
+    expect(sentMsg.from).toBe('noreply@example.com');
+    expect(sentMsg.subject).toContain('Сброс пароля');
+    // Trailing slash on SITE_URL must not produce a double slash
+    const expectedUrl = `http://localhost:3001/reset-password?token=${RAW_TOKEN}`;
+    expect(sentMsg.html).toContain(expectedUrl);
+    expect(sentMsg.text).toContain(expectedUrl);
+    expect(sentMsg.html).toContain('Иван');
+    expect(sentMsg.text).toContain('45 минут');
+  });
+
+  test('defaults: nirivio.by site + from-address, 30-minute expiry', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockSend.mockResolvedValue({ data: { id: 'msg_reset' }, error: null });
+
+    await emailService.sendPasswordResetEmail('user@test.com', RAW_TOKEN, '');
+
+    const sentMsg = mockSend.mock.calls[0][0];
+    expect(sentMsg.from).toBe('noreply@nirivio.by');
+    expect(sentMsg.text).toContain(`https://nirivio.by/reset-password?token=${RAW_TOKEN}`);
+    expect(sentMsg.text).toContain('30 минут');
+  });
+
+  test('returns sent:false with RESEND_ERROR when response.error is populated', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockSend.mockResolvedValue({
+      data: null,
+      error: { name: 'validation_error', message: 'Invalid recipient' },
+    });
+
+    const result = await emailService.sendPasswordResetEmail(
+      'bad-address',
+      RAW_TOKEN,
+      'Test',
+    );
+
+    expect(result.sent).toBe(false);
+    expect(result.reason).toBe('RESEND_ERROR');
+  });
+
+  test('returns sent:false with RESEND_ERROR when send throws', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockSend.mockRejectedValue(new Error('Network failure'));
+
+    const result = await emailService.sendPasswordResetEmail(
+      'user@test.com',
+      RAW_TOKEN,
+      'Test',
+    );
+
+    expect(result.sent).toBe(false);
+    expect(result.reason).toBe('RESEND_ERROR');
   });
 });
