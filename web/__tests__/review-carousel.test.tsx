@@ -1,21 +1,26 @@
 /**
- * ReviewCarousel — SYNC Server Component (Brief 4 / Phase A).
+ * ReviewCarousel — SYNC Server Component (Brief 4 / Phase A; reviews-write
+ * Slice 1 update).
  *
- * Plain prop-taking component (no top-level await) → render directly with RTL.
- * ReviewCard children (next/image + lucide-react) render fine under jsdom, so
- * no child mocks are needed — same approach as the existing city-page test
- * rendering real synchronous children.
- *
- * SHAPE-CONTRACT focus: the «Все N отзывов →» link is the only branch under
- * test. Its condition (read from source) is:
+ * SHAPE-CONTRACT focus: the «Все N отзывов →» link branch. Its condition
+ * (read from source) is:
  *     reviewsHref != null && totalCount > reviews.length
- * i.e. the "shown count" threshold is the LENGTH of the reviews array passed
- * in, not a hardcoded literal. The link text is `Все ${pluralizeReviews(N)} →`.
+ * i.e. the "shown count" threshold is the LENGTH of the reviews array passed in,
+ * not a hardcoded literal. The link text is `Все ${pluralizeReviews(N)} →`.
+ *
+ * The write-review CTA is a client island (useAuth → needs AuthProvider); it is
+ * stubbed here to a labelled button — its ownership behaviour lives in
+ * write-review-cta.test.tsx. Slice 1 guard update: the CTA is now a button
+ * (was a role=link Link in the footer).
  */
 import { render, screen } from '@testing-library/react';
 
 import { ReviewCarousel } from '@/components/establishment/ReviewCarousel';
 import type { PublicReview } from '@/lib/api/types';
+
+jest.mock('@/components/establishment/WriteReviewCta', () => ({
+  WriteReviewCta: () => <button type="button">Оставить отзыв</button>,
+}));
 
 function makeReview(id: string): PublicReview {
   return {
@@ -34,6 +39,13 @@ function makeReview(id: string): PublicReview {
 
 const THREE_REVIEWS = [makeReview('a'), makeReview('b'), makeReview('c')];
 
+// Establishment props added in Slice 1 (threaded to the CTA island).
+const EST_PROPS = {
+  establishmentId: 'est-1',
+  establishmentName: 'Тест',
+  detailPath: '/minsk/restorany/some-slug',
+};
+
 describe('ReviewCarousel — "Все N отзывов →" link', () => {
   it('renders the all-reviews link when reviewsHref is set AND totalCount > shown count', () => {
     render(
@@ -42,6 +54,7 @@ describe('ReviewCarousel — "Все N отзывов →" link', () => {
         totalCount={12}
         averageRating={4.7}
         reviewsHref='/minsk/restorany/some-slug/reviews'
+        {...EST_PROPS}
       />,
     );
 
@@ -61,29 +74,34 @@ describe('ReviewCarousel — "Все N отзывов →" link', () => {
         totalCount={999}
         averageRating={4.7}
         // reviewsHref intentionally omitted (legacy callers)
+        {...EST_PROPS}
       />,
     );
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('omits the link when reviewsHref is set but totalCount does not exceed the shown count', () => {
+  it('omits the «Все N» link when totalCount == shown, but the write-review CTA renders as a button (link→button guard)', () => {
     render(
       <ReviewCarousel
         reviews={THREE_REVIEWS}
         totalCount={3} // equals reviews.length → nothing more to show
         averageRating={4.7}
         reviewsHref='/minsk/restorany/some-slug/reviews'
+        {...EST_PROPS}
       />,
     );
 
-    // reviewsHref is truthy but totalCount == shown → no «Все N» link; the
-    // «Оставить отзыв» CTA still renders (it links to the reviews route).
+    // reviewsHref is truthy but totalCount == shown → no «Все N» link.
     expect(
       screen.queryByRole('link', { name: /^Все/ }),
     ).not.toBeInTheDocument();
+    // The «Оставить отзыв» CTA is now a button, not a role=link (Slice 1 guard).
     expect(
-      screen.getByRole('link', { name: 'Оставить отзыв' }),
+      screen.getByRole('button', { name: 'Оставить отзыв' }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Оставить отзыв' }),
+    ).not.toBeInTheDocument();
   });
 });

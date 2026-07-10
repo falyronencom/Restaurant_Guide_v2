@@ -9,14 +9,16 @@ import {
 } from '@/lib/establishment-helpers';
 
 import { ReviewCard } from './ReviewCard';
+import { WriteReviewCta } from './WriteReviewCta';
 
 /**
  * ReviewCarousel — Server Component.
  *
  * Header: overall rating badge + verbal label + total count + «Все N отзывов →»
- * link to the dedicated /reviews route. Body: a 2-column grid on desktop, a
- * horizontal scroll-snap row on mobile (CSS-only). Footer: «Оставить отзыв»
- * outline CTA (→ the reviews route, where the submit flow will live).
+ * link to the dedicated /reviews route + the write-review CTA (reviews-write
+ * Slice 1 — a client island that opens the modal, or shows «Ваш отзыв» when the
+ * user already reviewed this place). Body: a 2-column grid on desktop, a
+ * horizontal scroll-snap row on mobile (CSS-only).
  */
 
 export function ReviewCarousel({
@@ -24,11 +26,17 @@ export function ReviewCarousel({
   totalCount,
   averageRating,
   reviewsHref,
+  establishmentId,
+  establishmentName,
+  detailPath,
 }: {
   reviews: PublicReview[];
   totalCount: number;
   averageRating: number | null;
   reviewsHref?: string;
+  establishmentId: string;
+  establishmentName: string;
+  detailPath: string;
 }) {
   const label = ratingLabel(averageRating);
 
@@ -59,14 +67,22 @@ export function ReviewCarousel({
             {pluralizeReviews(totalCount)}
           </span>
         )}
-        {reviewsHref != null && totalCount > reviews.length ? (
-          <Link
-            href={reviewsHref}
-            className='ml-auto text-body-m font-medium text-brand underline-offset-4 hover:underline'
-          >
-            Все {pluralizeReviews(totalCount)} →
-          </Link>
-        ) : null}
+        <div className='ml-auto flex items-center gap-3'>
+          {reviewsHref != null && totalCount > reviews.length ? (
+            <Link
+              href={reviewsHref}
+              className='text-body-m font-medium text-brand underline-offset-4 hover:underline'
+            >
+              Все {pluralizeReviews(totalCount)} →
+            </Link>
+          ) : null}
+          <WriteReviewCta
+            establishmentId={establishmentId}
+            establishmentName={establishmentName}
+            detailPath={detailPath}
+            reviews={reviews}
+          />
+        </div>
       </div>
 
       {reviews.length === 0 ? (
@@ -87,15 +103,6 @@ export function ReviewCarousel({
           ))}
         </div>
       )}
-
-      {reviewsHref != null ? (
-        <Link
-          href={reviewsHref}
-          className='inline-flex w-fit items-center gap-2 rounded-[14px] border border-brand px-5 py-3 text-body-l font-semibold text-brand transition-colors hover:bg-brand/5'
-        >
-          Оставить отзыв
-        </Link>
-      ) : null}
     </div>
   );
 }

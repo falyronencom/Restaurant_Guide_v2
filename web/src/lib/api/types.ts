@@ -197,9 +197,11 @@ export type ApiErrorResponse = {
    * (e.g. 'OAUTH_EMAIL_NOT_VERIFIED', 'INVALID_TOKEN') the web tier maps to
    * user-facing messages. `statusCode` is often absent from the body — the
    * HTTP response status is the source of truth (serverFetch falls back to it).
-   * `details` carries field-level validation errors on 422 VALIDATION_ERROR
-   * (`{field: [messages]}` from express-validator) — backend texts are English,
-   * so the web tier maps them to Russian per-field (Slice 2).
+   * `details` carries field-level validation errors on 422 VALIDATION_ERROR.
+   * Shape varies by the route's validation path: routes using the shared
+   * `validate` middleware (e.g. reviews) emit an ARRAY `[{field, message,
+   * value}, …]` (errorHandler.js:198) — confirm the shape per endpoint. Backend
+   * texts are English, so the web tier maps them to Russian per-field.
    */
   error: {
     message: string;

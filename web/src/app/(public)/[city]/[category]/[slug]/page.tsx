@@ -337,6 +337,9 @@ export default async function EstablishmentPage({
               totalCount={reviewsResult.pagination.total}
               averageRating={establishment.average_rating}
               reviewsHref={`/${city}/${category}/${establishment.slug}/reviews`}
+              establishmentId={establishment.id}
+              establishmentName={establishment.name}
+              detailPath={`/${city}/${category}/${establishment.slug}`}
             />
           </section>
         </div>
