@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -72,9 +73,8 @@ export function DeleteReviewDialog({
         onOpenChange(next);
       }}
     >
-      {/* No close-X: the mock draws none, and the default X rides the base-ui
-          Close path that is inert for controlled dialogs (see footer comment) —
-          it would be a dead control on a destructive confirm. */}
+      {/* No close-X: дизайн-решение — макет не рисует X на destructive confirm
+          (showCloseButton={false}), а не техническое ограничение. */}
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Удалить отзыв?</DialogTitle>
@@ -98,18 +98,16 @@ export function DeleteReviewDialog({
         ) : null}
 
         <DialogFooter>
-          {/* Direct onClick, NOT base-ui DialogClose: the Close/Esc dismiss
-              path is inert for controlled dialogs in the real browser (verified
-              live — trusted click lands on the button, dialog stays open;
-              jsdom doesn't catch it). Mirrors WriteReviewModal's «Отмена». */}
-          <Button
-            type='button'
-            variant='outline'
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
+          {/* «Отмена» — канонический base-ui DialogClose (идиома кабинета).
+              Прежняя ревизия обходила его прямым onClick из-за ложного диагноза
+              «Close-путь инертен у контролируемых диалогов»: живой разбор
+              2026-07-10 показал, что закрытие срабатывало всегда, но в СКРЫТОЙ
+              автоматизационной вкладке CSS-анимация выхода замерзает и base-ui
+              не размонтирует попап до её завершения — в видимом браузере все
+              пути (Close/X/Esc/backdrop) работают. Не base-ui дефект. */}
+          <DialogClose render={<Button variant='outline' disabled={pending} />}>
             Отмена
-          </Button>
+          </DialogClose>
           <Button
             type='button'
             variant='destructive'

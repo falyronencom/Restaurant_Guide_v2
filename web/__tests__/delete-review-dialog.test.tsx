@@ -46,13 +46,14 @@ it('renders the title and the terminality warning (load-bearing copy)', () => {
 });
 
 it('renders NO close-X — the only controls are Отмена and Удалить', () => {
-  // The default DialogContent X rides the base-ui Close path that is inert for
-  // controlled dialogs (verified live) — a dead control on a destructive
-  // confirm, and the approved mock draws none (showCloseButton={false}).
+  // showCloseButton={false} is a design decision (the approved mock draws no X
+  // on the destructive confirm). «Отмена» is a regular DialogClose, so assert
+  // the absence of the X specifically (its sr-only name is "Close"), not of
+  // any [data-slot="dialog-close"].
   renderDialog();
 
   const dialog = document.querySelector('[data-slot="dialog-content"]')!;
-  expect(dialog.querySelector('[data-slot="dialog-close"]')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
   expect(
     [...dialog.querySelectorAll('button')].map((b) => b.textContent?.trim()),
   ).toEqual(['Отмена', 'Удалить']);
@@ -72,6 +73,11 @@ it('confirm calls deleteReviewAction and fires onSuccess on {ok:true}', async ()
 });
 
 it('cancel closes without calling the action', async () => {
+  // «Отмена» is a base-ui DialogClose: this asserts the full base-ui close
+  // pipeline (store.setOpen → onOpenChange), not just a bare onClick. The
+  // 2026-07-10 "Close path inert in real browsers" report was traced to a
+  // hidden-automation-tab artifact (exit animation frozen → popup not
+  // unmounted), NOT a base-ui defect — this path is live-verified working.
   renderDialog();
 
   await userEvent.click(screen.getByRole('button', { name: 'Отмена' }));
@@ -79,6 +85,15 @@ it('cancel closes without calling the action', async () => {
   expect(mockDelete).not.toHaveBeenCalled();
   expect(mockOnSuccess).not.toHaveBeenCalled();
   expect(mockOnOpenChange).toHaveBeenCalledWith(false);
+});
+
+it('Escape requests close through onOpenChange', async () => {
+  renderDialog();
+
+  await userEvent.keyboard('{Escape}');
+
+  expect(mockOnOpenChange).toHaveBeenCalledWith(false);
+  expect(mockDelete).not.toHaveBeenCalled();
 });
 
 it('shows «Удаляем…», disables both buttons mid-flight, and blocks dismissal', async () => {
