@@ -7,25 +7,33 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { registerAction } from '@/lib/auth/actions';
 
-import { useAuth } from './AuthProvider';
-
 const PASSWORD_HINT = 'Минимум 8 символов, заглавная и строчная буквы, цифра.';
 
 /*
  * Email/password registration form (Slice 2). Same mechanics as LoginForm:
- * useActionState + per-field errors from the action, AuthRedirect navigates
- * after applySession. The password requirements hint is always visible (grey)
- * and is replaced by the destructive per-field text when the rule fails.
+ * useActionState + per-field errors from the action. The password requirements
+ * hint is always visible (grey) and is replaced by the destructive per-field
+ * text when the rule fails.
+ *
+ * Post-success (email-channel Slice 2): every RegisterForm success IS an email
+ * registration (registerAction fixes authMethod:'email'; OAuth never passes
+ * through this form), and the backend has already fire-and-forget sent the
+ * verification code — so continue to /verify-email. Deliberately a FULL
+ * navigation WITHOUT applySession: applySession would flip the auth context
+ * and the page-level AuthRedirect (shared with the Google flow and
+ * already-logged-in visitors) would deterministically override this navigation
+ * with returnTo — its effect runs on the later context flip, so its
+ * router.replace wins. The hard load remounts AuthProvider, which hydrates the
+ * session from the cookies the action already set (header stays correct).
  */
 export function RegisterForm({ returnTo }: { returnTo: string }) {
   const [state, formAction, pending] = useActionState(registerAction, null);
-  const { applySession } = useAuth();
 
   useEffect(() => {
     if (state?.ok) {
-      applySession(state.user);
+      window.location.assign('/verify-email');
     }
-  }, [state, applySession]);
+  }, [state]);
 
   const fieldErrors = state && !state.ok ? state.fieldErrors : undefined;
   const summaryError = state && !state.ok && !state.fieldErrors ? state.message : null;

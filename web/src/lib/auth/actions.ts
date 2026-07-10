@@ -4,6 +4,10 @@ import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
 import {
+  sendVerificationCode,
+  verifyEmailCode,
+} from '@/lib/api/endpoints/verification';
+import {
   ApiError,
   type LoginData,
   type OAuthLoginData,
@@ -11,6 +15,7 @@ import {
   type RegisterData,
   type SessionUser,
 } from '@/lib/api/types';
+import { messageForCode } from '@/lib/auth/errors';
 import {
   clearSession,
   consumeNonce,
@@ -91,6 +96,25 @@ export type AuthFormError = {
 export type PasswordFormState =
   | { ok: true; message: string }
   | AuthFormError
+  | null;
+
+/**
+ * useActionState shape for the verify-email code form (email-channel Slice 2).
+ * The ok-branch carries nothing — Decision V «screen only»: the island renders
+ * its own terminal confirmation and the session is deliberately NOT re-stamped
+ * (no SessionUser.emailVerified until the deferred session-wiring increment).
+ * `values.code` echoes the entered code after React 19's post-action reset —
+ * a 6-digit verification code is low-sensitivity, unlike passwords.
+ */
+export type VerifyEmailFormState =
+  | { ok: true }
+  | { ok: false; code: string; message: string; values?: { code?: string } }
+  | null;
+
+/** useActionState shape for the resend-code button (its own tiny form). */
+export type ResendCodeState =
+  | { ok: true; message: string }
+  | { ok: false; code: string; message: string }
   | null;
 
 /**
@@ -343,6 +367,60 @@ export async function resetPasswordAction(
 }
 
 /**
+ * Verify the 6-digit email code (email-channel Slice 2, useActionState
+ * signature). Authed mutation → authedFetch boundary (via the verification
+ * endpoints wrapper), NOT serverFetch. The shape pre-check mirrors the
+ * backend's inline 400 INVALID_REQUEST (this route never emits a 422, so no
+ * details parsing). UX footgun pinned by the backend tests: after 5 wrong
+ * tries the 6th call returns 410 INVALID_OR_EXPIRED_CODE — its Russian text
+ * says «запросите новый», not «слишком много попыток».
+ */
+export async function verifyEmailCodeAction(
+  _prevState: VerifyEmailFormState,
+  formData: FormData,
+): Promise<VerifyEmailFormState> {
+  const code = (formData.get('code')?.toString() ?? '').trim();
+
+  if (!/^\d{6}$/.test(code)) {
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      message: messageForCode('INVALID_REQUEST', 400),
+      values: { code },
+    };
+  }
+
+  try {
+    await verifyEmailCode(code);
+  } catch (err) {
+    return mapVerifyError(err, { code });
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Re-send the verification code (email-channel Slice 2, useActionState
+ * signature — no fields). `sent:false` (Resend unconfigured) deliberately gets
+ * the same confirmation: the code row exists either way, and the difference is
+ * infrastructure state the user cannot act on. Backend throttles: 5/hour/user
+ * service-side (RATE_LIMITED) + 10/hour route limiter (RATE_LIMIT_EXCEEDED);
+ * a new code invalidates all prior active ones.
+ */
+export async function resendVerificationCodeAction(
+  _prevState: ResendCodeState,
+  _formData: FormData,
+): Promise<ResendCodeState> {
+  try {
+    await sendVerificationCode();
+  } catch (err) {
+    return mapVerifyError(err, undefined);
+  }
+
+  return { ok: true, message: RESEND_SENT_RU };
+}
+
+/**
  * Read the current session's display user (for AuthProvider hydration on mount
  * / reload). Silently restores the access token via refresh if it expired but a
  * refresh token remains. Returns null when there is no recoverable session.
@@ -450,6 +528,8 @@ const FORGOT_SENT_RU =
 
 const RESET_DONE_RU = 'Пароль изменён. Войдите с новым паролем.';
 
+const RESEND_SENT_RU = 'Мы отправили новый код на вашу почту.';
+
 /** Light-touch shape check; the backend's isEmail stays the canon. */
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
@@ -498,6 +578,35 @@ function mapFormError(
   };
 }
 
+/**
+ * Map a verify/resend failure into the error branch shared by both verify-email
+ * actions. The user-reachable codes are covered by messageForCode
+ * (INVALID_CODE, INVALID_OR_EXPIRED_CODE, TOO_MANY_ATTEMPTS, RATE_LIMITED,
+ * RATE_LIMIT_EXCEEDED, NO_EMAIL, EMAIL_ALREADY_VERIFIED, INVALID_REQUEST,
+ * NO_SESSION) — guarded by auth-errors.test.ts. 404 USER_NOT_FOUND (deleted
+ * account mid-session) deliberately rides the neutral fallback. `values`
+ * echoes the entered code (verify form only; resend has no fields).
+ */
+function mapVerifyError(
+  err: unknown,
+  values: { code?: string } | undefined,
+): { ok: false; code: string; message: string; values?: { code?: string } } {
+  if (err instanceof ApiError) {
+    return {
+      ok: false,
+      code: err.errorCode ?? `HTTP_${err.statusCode}`,
+      message: messageForCode(err.errorCode, err.statusCode),
+      values,
+    };
+  }
+  return {
+    ok: false,
+    code: 'NETWORK',
+    message: 'Сеть недоступна. Попробуйте позже.',
+    values,
+  };
+}
+
 /** `details` is `{field: [English messages]}` — only the keys are trusted. */
 function mapValidationDetails(
   details: unknown,
@@ -512,31 +621,5 @@ function mapValidationDetails(
   return Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined;
 }
 
-function messageForCode(code: string | undefined, status: number): string {
-  switch (code) {
-    case 'INVALID_TOKEN':
-      return 'Не удалось войти через Google. Попробуйте ещё раз.';
-    case 'OAUTH_NO_EMAIL':
-      return 'В аккаунте Google нет адреса электронной почты.';
-    case 'OAUTH_EMAIL_NOT_VERIFIED':
-      return 'Email в аккаунте Google не подтверждён.';
-    case 'ACCOUNT_DEACTIVATED':
-      return 'Этот аккаунт деактивирован.';
-    case 'ACCOUNT_CONFLICT':
-      return 'Аккаунт с этим провайдером уже существует.';
-    case 'EMAIL_EXISTS':
-      return 'Аккаунт с таким email уже существует. Попробуйте войти.';
-    case 'INVALID_CREDENTIALS':
-      // Deliberately generic — mirrors the backend's anti-enumeration stance.
-      return 'Неверный email или пароль.';
-    case 'INVALID_OR_EXPIRED_TOKEN':
-      return 'Ссылка для сброса пароля недействительна или устарела. Запросите новую.';
-    case 'RATE_LIMIT_EXCEEDED':
-      return 'Слишком много попыток. Попробуйте позже.';
-    default:
-      if (status === 429) return 'Слишком много попыток входа. Попробуйте позже.';
-      // Neutral: this default also surfaces on the register form (e.g. 500),
-      // so it must not say «войти».
-      return 'Не удалось выполнить запрос. Попробуйте позже.';
-  }
-}
+// messageForCode lives in lib/auth/errors.ts — a 'use server' module may only
+// export async functions, and the anti-drift guard test needs the mapper.
