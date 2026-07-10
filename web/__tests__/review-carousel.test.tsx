@@ -21,6 +21,12 @@ import type { PublicReview } from '@/lib/api/types';
 jest.mock('@/components/establishment/WriteReviewCta', () => ({
   WriteReviewCta: () => <button type="button">Оставить отзыв</button>,
 }));
+// Slice 2: every card also carries the OwnReviewControls island (useAuth →
+// needs AuthProvider); stubbed out — its ownership behaviour lives in
+// own-review-controls.test.tsx.
+jest.mock('@/components/establishment/OwnReviewControls', () => ({
+  OwnReviewControls: () => null,
+}));
 
 function makeReview(id: string): PublicReview {
   return {

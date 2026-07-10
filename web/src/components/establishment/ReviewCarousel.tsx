@@ -8,6 +8,7 @@ import {
   ratingLabel,
 } from '@/lib/establishment-helpers';
 
+import { OwnReviewControls } from './OwnReviewControls';
 import { ReviewCard } from './ReviewCard';
 import { WriteReviewCta } from './WriteReviewCta';
 
@@ -18,7 +19,9 @@ import { WriteReviewCta } from './WriteReviewCta';
  * link to the dedicated /reviews route + the write-review CTA (reviews-write
  * Slice 1 — a client island that opens the modal, or shows «Ваш отзыв» when the
  * user already reviewed this place). Body: a 2-column grid on desktop, a
- * horizontal scroll-snap row on mobile (CSS-only).
+ * horizontal scroll-snap row on mobile (CSS-only). Every card also gets the
+ * OwnReviewControls island in its footer slot (Slice 2) — it renders edit/delete
+ * only on the session user's own review, nothing otherwise.
  */
 
 export function ReviewCarousel({
@@ -99,6 +102,14 @@ export function ReviewCarousel({
               key={review.id}
               review={review}
               className='min-w-[85%] snap-center lg:min-w-0'
+              actions={
+                <OwnReviewControls
+                  review={review}
+                  establishmentId={establishmentId}
+                  establishmentName={establishmentName}
+                  detailPath={detailPath}
+                />
+              }
             />
           ))}
         </div>

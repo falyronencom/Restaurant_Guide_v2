@@ -65,4 +65,14 @@ describe('ReviewCard — sync Server Component', () => {
     const body = screen.getByText('Отличное место, вкусная еда');
     expect(body).not.toHaveClass('line-clamp-6');
   });
+
+  // Slice 2: an edited review carries the «изменён» marker next to the date
+  // (is_edited comes from the public projection; VISUAL_SPEC_slice2 §1).
+  it('marks an edited review with «изменён» and omits it otherwise', () => {
+    const { rerender } = render(<ReviewCard review={baseReview} />);
+    expect(screen.queryByText(/изменён/)).not.toBeInTheDocument();
+
+    rerender(<ReviewCard review={{ ...baseReview, is_edited: true }} />);
+    expect(screen.getByText(/изменён/)).toBeInTheDocument();
+  });
 });

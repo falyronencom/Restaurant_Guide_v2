@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import { Star } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import type { PublicReview } from '@/lib/api/types';
 import { formatDateRu } from '@/lib/establishment-helpers';
@@ -10,6 +11,11 @@ import { cn } from '@/lib/utils';
  * (compact, clamped) and the /reviews route (full). Warm-beige card: colored
  * initial avatar + author + date, star rating on the right, body, and an
  * optional partner response with a brand left-rule.
+ *
+ * `actions` is an optional footer slot: the detail carousel injects the
+ * own-review edit/delete island (Slice 2) into every card — the island decides
+ * client-side whether to render, so the card itself adds no divider/wrapper.
+ * The /reviews route passes nothing (R1: controls live on the detail top-5).
  */
 
 // Stable avatar tint by author name (design uses a small varied palette).
@@ -32,10 +38,12 @@ export function ReviewCard({
   review,
   className,
   clamp = true,
+  actions,
 }: {
   review: PublicReview;
   className?: string;
   clamp?: boolean;
+  actions?: ReactNode;
 }) {
   return (
     <article
@@ -73,6 +81,9 @@ export function ReviewCard({
           >
             {formatDateRu(review.created_at)}
           </time>
+          {review.is_edited ? (
+            <span className='text-caption-m text-[#9a9a9a]'> · изменён</span>
+          ) : null}
         </div>
         <div className='ml-auto'>
           <StarRating rating={review.rating} />
@@ -105,6 +116,8 @@ export function ReviewCard({
           </p>
         </div>
       ) : null}
+
+      {actions}
     </article>
   );
 }

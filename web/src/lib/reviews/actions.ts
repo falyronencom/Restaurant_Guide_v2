@@ -2,19 +2,29 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { createReview } from '@/lib/api/endpoints/reviews';
+import {
+  createReview,
+  deleteReview,
+  updateReview,
+} from '@/lib/api/endpoints/reviews';
 import { ApiError } from '@/lib/api/types';
 
 /*
- * Review Server Actions (reviews-write Slice 1). The state-changing write is a
- * Server Action for Next 16's built-in POST-only + Origin/Host CSRF defense —
- * same rationale as favorites/actions.ts and auth/actions.ts (no Route Handler,
- * no middleware). Fallback to a buffered Route Handler ONLY if edge-503 recurs
- * on write; favorites' single authed call survived Railway edge, so Server
- * Actions are expected fine here (feedback_railway_edge_503).
+ * Review Server Actions (reviews-write Slice 1 create + Slice 2 edit/delete).
+ * The state-changing writes are Server Actions for Next 16's built-in POST-only
+ * + Origin/Host CSRF defense — same rationale as favorites/actions.ts and
+ * auth/actions.ts (no Route Handler, no middleware). Fallback to a buffered
+ * Route Handler ONLY if edge-503 recurs on write; favorites' single authed call
+ * survived Railway edge, so Server Actions are expected fine here
+ * (feedback_railway_edge_503).
+ *
+ * All three actions share the {ok} union, the 422-ARRAY field mapping, and the
+ * LITERAL revalidatePath on success; they differ only in the per-code Russian
+ * texts (edit/delete have ownership codes and can never hit 409/429 — the
+ * duplicate check and the daily quota are create-only, Discovery §2/§4).
  */
 
-export type CreateReviewResult =
+export type ReviewActionResult =
   | { ok: true }
   | {
       ok: false;
@@ -22,6 +32,8 @@ export type CreateReviewResult =
       message: string;
       fieldErrors?: Record<string, string>;
     };
+
+export type CreateReviewResult = ReviewActionResult;
 
 /**
  * Per-field Russian texts keyed by the backend validator's field names
@@ -54,7 +66,7 @@ export async function createReviewAction(input: {
       content: input.content,
     });
   } catch (err) {
-    return mapReviewError(err);
+    return mapReviewError(err, messageForCreateCode);
   }
 
   // Literal path → invalidates EXACTLY this one detail page. A dynamic pattern
@@ -65,7 +77,53 @@ export async function createReviewAction(input: {
   return { ok: true };
 }
 
-function mapReviewError(err: unknown): CreateReviewResult {
+/**
+ * Update the user's own review (rating + content — the form always submits
+ * both). Mirrors createReviewAction: literal revalidatePath on success only.
+ * Ownership is authoritative server-side (403 UNAUTHORIZED_REVIEW_MODIFICATION);
+ * the client check on the card is a UX affordance.
+ */
+export async function updateReviewAction(input: {
+  reviewId: string;
+  rating: number;
+  content: string;
+  detailPath: string;
+}): Promise<ReviewActionResult> {
+  try {
+    await updateReview(input.reviewId, {
+      rating: input.rating,
+      content: input.content,
+    });
+  } catch (err) {
+    return mapReviewError(err, messageForUpdateCode);
+  }
+  revalidatePath(input.detailPath);
+  return { ok: true };
+}
+
+/**
+ * Delete (soft) the user's own review. Terminal for this establishment: the
+ * backend still finds the tombstone on a later create → 409 DUPLICATE_REVIEW
+ * (R2 — the confirm dialog carries the warning). Success busts the literal
+ * detail path so the card disappears and the recomputed aggregate re-renders.
+ */
+export async function deleteReviewAction(input: {
+  reviewId: string;
+  detailPath: string;
+}): Promise<ReviewActionResult> {
+  try {
+    await deleteReview(input.reviewId);
+  } catch (err) {
+    return mapReviewError(err, messageForDeleteCode);
+  }
+  revalidatePath(input.detailPath);
+  return { ok: true };
+}
+
+function mapReviewError(
+  err: unknown,
+  messageFor: (code: string | undefined, status: number) => string,
+): ReviewActionResult {
   if (err instanceof ApiError) {
     if (err.errorCode === 'VALIDATION_ERROR') {
       return {
@@ -78,7 +136,7 @@ function mapReviewError(err: unknown): CreateReviewResult {
     return {
       ok: false,
       code: err.errorCode ?? `HTTP_${err.statusCode}`,
-      message: messageForCode(err.errorCode, err.statusCode),
+      message: messageFor(err.errorCode, err.statusCode),
     };
   }
   return {
@@ -112,12 +170,16 @@ function mapValidationDetails(
   return Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined;
 }
 
-function messageForCode(code: string | undefined, status: number): string {
+function messageForCreateCode(
+  code: string | undefined,
+  status: number,
+): string {
   switch (code) {
     case 'DUPLICATE_REVIEW':
       // One-per-establishment. The CTA normally hides create when the user's
       // review is in the loaded set; this is the graceful fallback when it isn't
-      // (own review beyond the top-5 — Discovery).
+      // (own review beyond the top-5 — Discovery). Also reached after a delete:
+      // deletion is terminal (R2), the tombstone still trips this 409.
       return 'Вы уже оставили отзыв на это заведение.';
     case 'RATE_LIMIT_EXCEEDED':
       // Backend emits RATE_LIMIT_EXCEEDED (NOT the mobile DAILY_QUOTA_EXCEEDED,
@@ -131,5 +193,35 @@ function messageForCode(code: string | undefined, status: number): string {
     default:
       if (status === 429) return 'Слишком часто, попробуйте позже.';
       return 'Не удалось отправить отзыв. Попробуйте позже.';
+  }
+}
+
+// Edit/delete cannot 409 or 429 (duplicate check and daily quota are
+// create-only), so their maps carry the ownership/not-found codes instead.
+function messageForUpdateCode(code: string | undefined): string {
+  switch (code) {
+    case 'UNAUTHORIZED_REVIEW_MODIFICATION':
+      // Client-side ownership is an affordance; this is the authoritative 403.
+      return 'Можно изменять только свой отзыв.';
+    case 'REVIEW_NOT_FOUND':
+      return 'Отзыв не найден. Обновите страницу.';
+    case 'NO_SESSION':
+      return 'Войдите, чтобы изменить отзыв.';
+    default:
+      return 'Не удалось сохранить изменения. Попробуйте позже.';
+  }
+}
+
+function messageForDeleteCode(code: string | undefined): string {
+  switch (code) {
+    case 'UNAUTHORIZED_REVIEW_DELETION':
+      return 'Можно удалять только свой отзыв.';
+    case 'REVIEW_NOT_FOUND':
+      // Covers an already-deleted review (stale page) — same backend code.
+      return 'Отзыв не найден. Обновите страницу.';
+    case 'NO_SESSION':
+      return 'Войдите, чтобы удалить отзыв.';
+    default:
+      return 'Не удалось удалить отзыв. Попробуйте позже.';
   }
 }

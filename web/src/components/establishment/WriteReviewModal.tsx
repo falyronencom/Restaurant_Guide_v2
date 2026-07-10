@@ -12,19 +12,30 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { createReviewAction } from '@/lib/reviews/actions';
+import { createReviewAction, updateReviewAction } from '@/lib/reviews/actions';
 import { cn } from '@/lib/utils';
 
 /*
- * Write-review modal (reviews-write Slice 1). Controlled star + textarea state
- * (never uncontrolled → immune to React 19's post-action form reset,
- * feedback_react19_form_reset; the char counter needs the value anyway). Submit
- * calls the createReviewAction Server Action directly (favorites pattern), NOT a
+ * Write-review modal (reviews-write Slice 1 create + Slice 2 edit). Controlled
+ * star + textarea state (never uncontrolled → immune to React 19's post-action
+ * form reset, feedback_react19_form_reset; the char counter needs the value
+ * anyway). Submit calls the Server Action directly (favorites pattern), NOT a
  * <form> useActionState — the field-error RENDERING mirrors LoginForm, the
  * MECHANISM mirrors favorites. Rendered on the design-system ui/dialog (base-ui).
+ *
+ * Edit mode = the same form parameterized, not a fork (Discovery §5): an
+ * `editTarget` prop pre-fills the fields, retitles to «Редактировать отзыв» /
+ * «Сохранить», and routes submit to updateReviewAction. Without it the Slice-1
+ * create contract is byte-for-byte unchanged.
  */
 
 const MAX_CONTENT = 1000;
+
+export type ReviewEditTarget = {
+  reviewId: string;
+  rating: number;
+  content: string;
+};
 
 export function WriteReviewModal({
   open,
@@ -33,6 +44,7 @@ export function WriteReviewModal({
   establishmentId,
   detailPath,
   onSuccess,
+  editTarget,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,10 +52,11 @@ export function WriteReviewModal({
   establishmentId: string;
   detailPath: string;
   onSuccess: () => void;
+  editTarget?: ReviewEditTarget;
 }) {
-  const [rating, setRating] = useState(0);
+  const [rating, setRating] = useState(editTarget?.rating ?? 0);
   const [hover, setHover] = useState<number | null>(null);
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState(editTarget?.content ?? '');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{
     message?: string;
@@ -59,9 +72,11 @@ export function WriteReviewModal({
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setRating(0);
+      // Edit re-seeds from the target so an abandoned session's typing never
+      // leaks into the next open (and a refreshed prop wins after a save).
+      setRating(editTarget?.rating ?? 0);
       setHover(null);
-      setContent('');
+      setContent(editTarget?.content ?? '');
       setPending(false);
       setError(null);
     }
@@ -89,12 +104,19 @@ export function WriteReviewModal({
 
     setPending(true);
     setError(null);
-    const result = await createReviewAction({
-      establishmentId,
-      rating,
-      content: trimmed,
-      detailPath,
-    });
+    const result = editTarget
+      ? await updateReviewAction({
+          reviewId: editTarget.reviewId,
+          rating,
+          content: trimmed,
+          detailPath,
+        })
+      : await createReviewAction({
+          establishmentId,
+          rating,
+          content: trimmed,
+          detailPath,
+        });
     setPending(false);
 
     if (result.ok) {
@@ -113,7 +135,9 @@ export function WriteReviewModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='sm:max-w-md'>
         <DialogHeader>
-          <DialogTitle>Ваш отзыв</DialogTitle>
+          <DialogTitle>
+            {editTarget ? 'Редактировать отзыв' : 'Ваш отзыв'}
+          </DialogTitle>
           <DialogDescription>
             Заведение: «{establishmentName}»
           </DialogDescription>
@@ -211,7 +235,13 @@ export function WriteReviewModal({
             disabled={pending}
             className='bg-brand text-text-on-primary hover:bg-brand/90'
           >
-            {pending ? 'Публикуем…' : 'Опубликовать'}
+            {editTarget
+              ? pending
+                ? 'Сохраняем…'
+                : 'Сохранить'
+              : pending
+                ? 'Публикуем…'
+                : 'Опубликовать'}
           </Button>
         </div>
       </DialogContent>
