@@ -33,6 +33,14 @@ export function AuthMenu({ overlay = false }: Props) {
   }
 
   if (status === 'authenticated' && user) {
+    // Shared look for the account items (links + logout) in both header
+    // variants; the name stays a plain, slightly brighter label.
+    const itemClass = cn(
+      'text-body-m transition-colors',
+      overlay
+        ? 'text-white/90 hover:text-white'
+        : 'text-figma-text-grey hover:text-brand-dark',
+    );
     return (
       <div className="flex items-center gap-s">
         <span
@@ -43,16 +51,13 @@ export function AuthMenu({ overlay = false }: Props) {
         >
           {user.name || user.email}
         </span>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className={cn(
-            'text-body-m transition-colors',
-            overlay
-              ? 'text-white/90 hover:text-white'
-              : 'text-figma-text-grey hover:text-brand-dark',
-          )}
-        >
+        <Link href="/favorites" className={itemClass}>
+          Избранное
+        </Link>
+        <Link href="/profile" className={itemClass}>
+          Профиль
+        </Link>
+        <button type="button" onClick={() => void logout()} className={itemClass}>
           Выйти
         </button>
       </div>

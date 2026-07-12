@@ -496,3 +496,75 @@ export type CreateEstablishmentPayload = {
 export type UpdateEstablishmentPayload = Partial<
   Omit<CreateEstablishmentPayload, 'menu_pdfs'>
 >;
+
+// ============================================================================
+// User account — user-ЛК Slice 1 (favorites list + profile)
+// ============================================================================
+
+/**
+ * GET /api/v1/favorites list row — favoriteService.getUserFavorites projection.
+ * FLAT establishment_* fields: the route's doc-comment sketches a nested
+ * `establishment` object, but the SERVICE (authoritative) returns flat rows.
+ * Numeric coercions (parseFloat) happen backend-side, so numbers are real
+ * numbers on the wire; a NULL latitude serialises to null (NaN → null in JSON).
+ * The slug triplet is additive (user-ЛК Slice 1) for web card links; city/
+ * category slugs are null outside the URL canon (backend urlSlugs.js).
+ */
+export type FavoriteListItem = {
+  id: string;
+  user_id: string;
+  establishment_id: string;
+  created_at: string;
+  establishment_slug: string | null;
+  establishment_city_slug: string | null;
+  establishment_category_slug: string | null;
+  establishment_name: string;
+  establishment_description: string | null;
+  establishment_city: string;
+  establishment_address: string;
+  establishment_latitude: number | null;
+  establishment_longitude: number | null;
+  establishment_categories: string[];
+  establishment_cuisines: string[];
+  establishment_price_range: string | null;
+  establishment_average_rating: number | null;
+  establishment_review_count: number;
+  establishment_status: string;
+  establishment_working_hours: unknown;
+  establishment_primary_image: string | null;
+};
+
+/**
+ * GET /api/v1/favorites envelope `data`. Pagination keeps the service's raw
+ * `pages` key (favorites is an /api/v1 surface — NOT the public catalog's
+ * `totalPages` normalisation).
+ */
+export type FavoritesListData = {
+  favorites: FavoriteListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
+  };
+};
+
+/**
+ * GET /api/v1/auth/me `data.user` — camelCase auth-surface user (backend
+ * authController.getCurrentUser). PUT /api/v1/auth/profile echoes the SAME
+ * shape (verified against updateProfile controller).
+ */
+export type AuthUserData = {
+  id: string;
+  email: string;
+  phone: string | null;
+  name: string;
+  role: string;
+  authMethod: string;
+  avatarUrl: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  createdAt: string;
+};

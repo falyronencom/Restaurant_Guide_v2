@@ -39,3 +39,25 @@ if (typeof Element !== 'undefined' && !Element.prototype.hasPointerCapture) {
   Element.prototype.setPointerCapture = () => {};
   Element.prototype.releasePointerCapture = () => {};
 }
+
+// jsdom lacks window.matchMedia; SmartLink's post-hydration capability check
+// calls it inside a deferred setTimeout, which surfaces as unhandled-exception
+// noise in any suite that renders establishment cards. Default stub: no match
+// (links stay same-tab, as pre-hydration). Suites that test the desktop
+// upgrade override window.matchMedia themselves. Guarded like the polyfills
+// above so `@jest-environment node` files are untouched.
+if (
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'undefined'
+) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}

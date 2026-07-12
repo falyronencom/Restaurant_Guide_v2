@@ -16,6 +16,7 @@
 
 import * as FavoriteModel from '../models/favoriteModel.js';
 import * as PartnerAnalyticsModel from '../models/partnerAnalyticsModel.js';
+import { categoryCyrillicToSlug, cityCyrillicToSlug } from '../constants/urlSlugs.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -188,6 +189,16 @@ export const getUserFavorites = async (userId, options = {}) => {
     user_id: favorite.user_id,
     establishment_id: favorite.establishment_id,
     created_at: favorite.created_at,
+    // Slug triplet for web card links (additive, user-ЛК Slice 1). city/category
+    // slugs derive from the same canon as the public projections (urlSlugs.js)
+    // and are null outside it; mobile ignores unknown keys.
+    establishment_slug: favorite.establishment_slug,
+    establishment_city_slug: cityCyrillicToSlug(favorite.establishment_city),
+    establishment_category_slug: categoryCyrillicToSlug(
+      Array.isArray(favorite.establishment_categories) && favorite.establishment_categories.length > 0
+        ? favorite.establishment_categories[0]
+        : null,
+    ),
     establishment_name: favorite.establishment_name,
     establishment_description: favorite.establishment_description,
     establishment_city: favorite.establishment_city,

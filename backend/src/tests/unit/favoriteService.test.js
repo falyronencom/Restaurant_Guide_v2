@@ -126,6 +126,7 @@ describe('favoriteService', () => {
           user_id: userId,
           establishment_id: 'est-1',
           created_at: new Date(),
+          establishment_slug: 'cafe-x',
           establishment_name: 'Cafe',
           establishment_description: 'Desc',
           establishment_city: 'Минск',
@@ -153,6 +154,11 @@ describe('favoriteService', () => {
         establishment_longitude: 27.5,
         establishment_average_rating: 4.5,
         establishment_review_count: 5,
+        // Slug triplet (user-ЛК Slice 1): raw slug passthrough + canon-derived
+        // city/category slugs (constants/urlSlugs.js).
+        establishment_slug: 'cafe-x',
+        establishment_city_slug: 'minsk',
+        establishment_category_slug: 'coffee',
       });
       expect(result.pagination).toEqual({
         page: 1,

@@ -72,6 +72,16 @@ type AuthContextValue = {
    * soft navigation.
    */
   applySession: (user: SessionUser) => void;
+  /**
+   * Sync the client context to logged-out WITHOUT touching cookies or the
+   * backend. Used by private islands before a NO_SESSION redirect to /login:
+   * the provider hydrates once per hard load, so a stale 'authenticated'
+   * status would make /login's AuthRedirect bounce straight back (redirect
+   * ping-pong). Non-destructive on purpose — a transient refresh failure
+   * keeps the cookies intact, so the session can still recover on a later
+   * hard load (accept-and-recover, see lib/auth/session.ts).
+   */
+  markAnonymous: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -188,6 +198,11 @@ export function AuthProvider({
     setLoginError(null);
   }, []);
 
+  const markAnonymous = useCallback(() => {
+    setUser(null);
+    setStatus('anonymous');
+  }, []);
+
   const value: AuthContextValue = {
     status,
     user,
@@ -196,6 +211,7 @@ export function AuthProvider({
     logout,
     loginError,
     applySession,
+    markAnonymous,
   };
 
   return (

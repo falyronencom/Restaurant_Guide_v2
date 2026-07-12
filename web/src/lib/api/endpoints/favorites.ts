@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { FavoritesListData } from '@/lib/api/types';
 import { authedFetch } from '@/lib/auth/session';
 
 /*
@@ -12,6 +13,7 @@ import { authedFetch } from '@/lib/auth/session';
  *   ADD          → POST /api/v1/favorites          body { establishmentId }   (camelCase)
  *   CHECK-BATCH  → POST /api/v1/favorites/check-batch body { establishment_ids } (snake_case, 1-50)
  *   REMOVE       → DELETE /api/v1/favorites/:establishmentId  (path param, no body)
+ *   LIST         → GET /api/v1/favorites?page=&limit=  (query only, limit ≤ 50)
  */
 
 /** check-batch returns a MAP with an explicit boolean for EVERY requested id: { "<uuid>": true | false }. A missing id reads as false either way. */
@@ -46,4 +48,19 @@ export async function removeFavorite(establishmentId: string): Promise<void> {
   await authedFetch(`/api/v1/favorites/${encodeURIComponent(establishmentId)}`, {
     method: 'DELETE',
   });
+}
+
+/**
+ * LIST — the user's favorites with flat establishment_* details (see
+ * FavoriteListItem in types.ts for the verified wire contract). Query params
+ * only, no body; the backend caps limit at 50 per page.
+ */
+export async function getFavorites(
+  params: { page?: number; limit?: number } = {},
+): Promise<FavoritesListData> {
+  const query = new URLSearchParams({
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 50),
+  });
+  return authedFetch<FavoritesListData>(`/api/v1/favorites?${query.toString()}`);
 }

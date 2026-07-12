@@ -207,6 +207,7 @@ export const getUserFavorites = async (userId, options = {}) => {
       f.user_id,
       f.establishment_id,
       f.created_at,
+      e.slug as establishment_slug,
       e.name as establishment_name,
       e.description as establishment_description,
       e.city as establishment_city,

@@ -28,14 +28,17 @@ export type FavoriteToggleResult =
  */
 export async function getFavoritesForIds(ids: string[]): Promise<FavoritesMap> {
   if (ids.length === 0) return {};
-  if (ids.length > MAX_BATCH) {
-    console.warn(
-      `[favorites] getFavoritesForIds received ${ids.length} ids; capping at ${MAX_BATCH}. ` +
-        'A page rendering >50 cards needs chunking.',
-    );
+  // Chunk to the backend's 1-50 batch window and merge: pages may legally
+  // render >50 hearts (/favorites with «Показать ещё», user-ЛК Slice 1).
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += MAX_BATCH) {
+    chunks.push(ids.slice(i, i + MAX_BATCH));
   }
   try {
-    return await checkFavoritesBatch(ids.slice(0, MAX_BATCH));
+    const maps = await Promise.all(
+      chunks.map((chunk) => checkFavoritesBatch(chunk)),
+    );
+    return Object.assign({}, ...maps) as FavoritesMap;
   } catch {
     return {};
   }

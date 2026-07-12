@@ -11,6 +11,7 @@ import { authedFetch } from '@/lib/auth/session';
 import {
   addFavorite,
   checkFavoritesBatch,
+  getFavorites,
   removeFavorite,
 } from '@/lib/api/endpoints/favorites';
 
@@ -60,9 +61,36 @@ describe('favorites endpoint encoders — casing/shape contract', () => {
     expect(init.body).toBeUndefined();
   });
 
+  it('LIST is a GET with page/limit in the query string and no body', async () => {
+    mockAuthedFetch.mockResolvedValue({ favorites: [], pagination: {} });
+    await getFavorites();
+    expect(mockAuthedFetch).toHaveBeenCalledWith(
+      '/api/v1/favorites?page=1&limit=50',
+    );
+  });
+
+  it('LIST forwards explicit page/limit', async () => {
+    mockAuthedFetch.mockResolvedValue({ favorites: [], pagination: {} });
+    await getFavorites({ page: 3, limit: 20 });
+    expect(mockAuthedFetch).toHaveBeenCalledWith(
+      '/api/v1/favorites?page=3&limit=20',
+    );
+  });
+
+  it('LIST returns the envelope data verbatim (flat establishment_* rows)', async () => {
+    const data = {
+      favorites: [{ id: 'f1', establishment_slug: 'cafe-x' }],
+      pagination: { page: 1, hasNext: false },
+    };
+    mockAuthedFetch.mockResolvedValue(data);
+    await expect(getFavorites()).resolves.toBe(data);
+  });
+
   it('never includes a user_id key in any payload (JWT-derived invariant)', async () => {
+    mockAuthedFetch.mockResolvedValue({ favorites: [], pagination: {} });
     await checkFavoritesBatch(['e1']);
     await addFavorite('e1');
+    await getFavorites();
     for (const call of mockAuthedFetch.mock.calls) {
       const init = call[1] as { body?: string } | undefined;
       expect(init?.body ?? '').not.toMatch(/user_?id/i);

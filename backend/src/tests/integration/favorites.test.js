@@ -240,6 +240,11 @@ describe('Favorites System - List Favorites', () => {
       expect(fav.establishment_name).toBeDefined();
       expect(fav.establishment_city).toBeDefined();
       expect(fav.establishment_address).toBeDefined();
+      // Slug triplet for web card links (user-ЛК Slice 1): slug is NOT NULL in
+      // schema; city/category slugs may be null outside the URL canon.
+      expect(fav.establishment_slug).toBeTruthy();
+      expect(fav).toHaveProperty('establishment_city_slug');
+      expect(fav).toHaveProperty('establishment_category_slug');
     });
   });
 
