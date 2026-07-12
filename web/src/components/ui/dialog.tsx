@@ -122,7 +122,9 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        'font-heading text-base leading-none font-medium',
+        // Канонный заголовок модалки: Unbounded 20/w400 (зеркало
+        // mobile canonSheetTitle; аудит 2026-07-12)
+        'font-heading text-[20px] leading-snug font-normal',
         className,
       )}
       {...props}

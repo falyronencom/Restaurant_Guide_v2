@@ -19,10 +19,10 @@ export const metadata: Metadata = {
 export default function VerifyEmailPage() {
   return (
     <main className="mx-auto w-full max-w-md px-l py-xl">
-      <h1 className="font-display text-headline-m text-foreground">
+      <h1 className="font-display text-display-s text-foreground">
         Подтверждение почты
       </h1>
-      <div className="mt-l">
+      <div className="mt-l rounded-card bg-figma-bg-warm p-l">
         <VerifyEmailForm />
       </div>
     </main>

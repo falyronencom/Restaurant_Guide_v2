@@ -21,7 +21,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
       <Button
         type="button"
         variant="outline"
-        size="lg"
+        size="cta"
         className="w-full"
         onClick={requestLogin}
       >
@@ -29,7 +29,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
       </Button>
       <form action={startYandexLogin}>
         <input type="hidden" name="returnTo" value={returnTo} />
-        <Button type="submit" variant="outline" size="lg" className="w-full">
+        <Button type="submit" variant="outline" size="cta" className="w-full">
           Войти через Яндекс
         </Button>
       </form>

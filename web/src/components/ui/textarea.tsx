@@ -13,7 +13,8 @@ function Textarea({
     <textarea
       data-slot="textarea"
       className={cn(
-        'flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
+        // Паддинги/размер текста выровнены с канонным Input (аудит 2026-07-12)
+        'flex min-h-20 w-full rounded-[10px] border border-input bg-background px-4 py-3 text-base shadow-xs transition-colors outline-none placeholder:text-figma-text-grey focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
         className,
       )}
       {...props}

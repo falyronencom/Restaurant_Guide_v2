@@ -31,11 +31,11 @@ export default async function ResetPasswordPage({
 
   return (
     <main className="mx-auto w-full max-w-md px-l py-xl">
-      <h1 className="font-display text-headline-m text-foreground">
+      <h1 className="font-display text-display-s text-foreground">
         Новый пароль
       </h1>
       {token ? (
-        <div className="mt-l">
+        <div className="mt-l rounded-card bg-figma-bg-warm p-l">
           <ResetPasswordForm token={token} />
         </div>
       ) : (

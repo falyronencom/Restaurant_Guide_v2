@@ -78,7 +78,7 @@ export function CabinetDashboard() {
         </h1>
         <Link
           href="/cabinet/new"
-          className={cn(buttonVariants({ size: 'lg' }), 'gap-1.5')}
+          className={cn(buttonVariants({ size: 'cta' }), 'gap-1.5')}
         >
           <Plus className="size-4" />
           Создать заведение
@@ -194,7 +194,7 @@ function EmptyState() {
       </p>
       <Link
         href="/cabinet/new"
-        className={cn(buttonVariants({ size: 'lg' }), 'gap-1.5')}
+        className={cn(buttonVariants({ size: 'cta' }), 'gap-1.5')}
       >
         <Plus className="size-4" />
         Создать заведение

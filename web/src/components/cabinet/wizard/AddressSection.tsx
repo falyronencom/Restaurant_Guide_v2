@@ -60,7 +60,7 @@ export function AddressSection({ form, patch, disabled }: SectionProps) {
           value={form.city}
           disabled={disabled}
           onChange={(e) => patch({ city: e.target.value })}
-          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-12 w-full rounded-[10px] border border-input bg-background px-4 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">Выберите город</option>
           {CITIES.map((c) => (

@@ -105,7 +105,9 @@ export function RegisterForm({ returnTo }: { returnTo: string }) {
           className={
             fieldErrors?.password
               ? 'text-caption-l text-destructive'
-              : 'text-caption-l text-muted-foreground'
+              /* Функциональная подсказка на тёплой карточке: textDark читаем
+               * (#ABABAB на #F4F1EC — 2:1, ревью 3.5); зеркало mobile-решения */
+              : 'text-caption-l text-figma-text-dark'
           }
         >
           {fieldErrors?.password ?? PASSWORD_HINT}
@@ -116,7 +118,7 @@ export function RegisterForm({ returnTo }: { returnTo: string }) {
         {summaryError}
       </p>
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      <Button type="submit" size="cta" className="w-full" disabled={pending}>
         {pending ? 'Создаём аккаунт…' : 'Зарегистрироваться'}
       </Button>
     </form>

@@ -92,6 +92,7 @@ export function StickySidebar({
         {showSubmit && (
           <Button
             type="button"
+            size="cta"
             disabled={!canSubmit || submitting}
             onClick={onSubmit}
           >

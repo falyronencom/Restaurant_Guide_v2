@@ -45,7 +45,7 @@ export function WriteReviewCta({
 
   if (hasOwnReview) {
     return (
-      <span className='inline-flex items-center gap-1.5 rounded-m border border-border px-3 py-1.5 text-body-m font-medium text-muted-foreground'>
+      <span className='inline-flex items-center gap-1.5 rounded-m border border-border px-3 py-1.5 text-body-m font-medium text-figma-text-grey'>
         Ваш отзыв
       </span>
     );
@@ -55,6 +55,7 @@ export function WriteReviewCta({
     <>
       <Button
         type='button'
+        size='cta'
         onClick={() => {
           if (!isAuthenticated) {
             requestLogin();

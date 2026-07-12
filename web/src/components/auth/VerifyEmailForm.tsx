@@ -116,7 +116,7 @@ export function VerifyEmailForm() {
             aria-invalid={summaryError ? true : undefined}
             aria-describedby="verify-code-hint"
           />
-          <p id="verify-code-hint" className="text-caption-l text-muted-foreground">
+          <p id="verify-code-hint" className="text-caption-l text-figma-text-dark">
             Мы отправили 6-значный код на вашу почту.
           </p>
         </div>
@@ -125,7 +125,7 @@ export function VerifyEmailForm() {
           {summaryError}
         </p>
 
-        <Button type="submit" size="lg" className="w-full" disabled={verifyPending}>
+        <Button type="submit" size="cta" className="w-full" disabled={verifyPending}>
           {verifyPending ? 'Проверяем…' : 'Подтвердить'}
         </Button>
       </form>

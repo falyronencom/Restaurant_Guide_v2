@@ -145,7 +145,7 @@ export function WriteReviewModal({
 
         {/* Rating — single-select toggle buttons (one pressed at a time). */}
         <div className='flex flex-col gap-1.5'>
-          <span className='text-caption-l text-muted-foreground'>Оценка</span>
+          <span className='text-label-m text-foreground'>Оценка</span>
           <div
             role='group'
             aria-label='Оценка'
@@ -167,7 +167,7 @@ export function WriteReviewModal({
                     'size-7 transition-colors',
                     n <= litUpTo
                       ? 'fill-brand text-brand'
-                      : 'text-muted-foreground',
+                      : 'text-figma-text-grey',
                   )}
                   aria-hidden='true'
                 />
@@ -183,7 +183,7 @@ export function WriteReviewModal({
         <div className='flex flex-col gap-1.5'>
           <label
             htmlFor='review-content'
-            className='text-caption-l text-muted-foreground'
+            className='text-label-m text-foreground'
           >
             Отзыв
           </label>
@@ -208,7 +208,7 @@ export function WriteReviewModal({
             ) : (
               <span aria-hidden='true' />
             )}
-            <span className='shrink-0 text-caption-m text-muted-foreground'>
+            <span className='shrink-0 text-caption-m text-figma-text-grey'>
               {content.length} / {MAX_CONTENT}
             </span>
           </div>
@@ -224,6 +224,7 @@ export function WriteReviewModal({
           <Button
             type='button'
             variant='outline'
+            size='cta'
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
@@ -231,6 +232,7 @@ export function WriteReviewModal({
           </Button>
           <Button
             type='button'
+            size='cta'
             onClick={handleSubmit}
             disabled={pending}
             className='bg-brand text-text-on-primary hover:bg-brand/90'

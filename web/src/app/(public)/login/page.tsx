@@ -37,12 +37,14 @@ export default async function LoginPage({
   return (
     <main className="mx-auto w-full max-w-md px-l py-xl">
       <AuthRedirect returnTo={returnTo} />
-      <h1 className="font-display text-headline-m text-foreground">Вход</h1>
-      <div className="mt-l">
+      <h1 className="font-display text-display-s text-foreground">Вход</h1>
+      {/* Тёплая карточка витринного паттерна — auth перестаёт быть «холодным
+          островом» (аудит 2026-07-12) */}
+      <div className="mt-l rounded-card bg-figma-bg-warm p-l">
         <LoginForm returnTo={returnTo} />
-      </div>
-      <div className="mt-l border-t border-border pt-l">
-        <OAuthButtons returnTo={returnTo} />
+        <div className="mt-l border-t border-figma-divider pt-l">
+          <OAuthButtons returnTo={returnTo} />
+        </div>
       </div>
       <p className="mt-l text-body-m text-figma-text-grey">
         Нет аккаунта?{' '}

@@ -35,14 +35,14 @@ export default async function RegisterPage({
   return (
     <main className="mx-auto w-full max-w-md px-l py-xl">
       <AuthRedirect returnTo={returnTo} />
-      <h1 className="font-display text-headline-m text-foreground">
+      <h1 className="font-display text-display-s text-foreground">
         Регистрация
       </h1>
-      <div className="mt-l">
+      <div className="mt-l rounded-card bg-figma-bg-warm p-l">
         <RegisterForm returnTo={returnTo} />
-      </div>
-      <div className="mt-l border-t border-border pt-l">
-        <OAuthButtons returnTo={returnTo} />
+        <div className="mt-l border-t border-figma-divider pt-l">
+          <OAuthButtons returnTo={returnTo} />
+        </div>
       </div>
       <p className="mt-l text-body-m text-figma-text-grey">
         Уже есть аккаунт?{' '}

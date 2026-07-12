@@ -78,7 +78,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      <Button type="submit" size="cta" className="w-full" disabled={pending}>
         {pending ? 'Сохраняем…' : 'Сохранить пароль'}
       </Button>
     </form>

@@ -48,7 +48,7 @@ export function ReviewCard({
   return (
     <article
       className={cn(
-        'flex flex-col gap-2.5 rounded-[18px] bg-figma-bg-warm p-[18px]',
+        'flex flex-col gap-2.5 rounded-card bg-figma-bg-warm p-[18px]',
         className,
       )}
     >

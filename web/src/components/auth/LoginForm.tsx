@@ -86,7 +86,7 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
         {summaryError}
       </p>
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      <Button type="submit" size="cta" className="w-full" disabled={pending}>
         {pending ? 'Входим…' : 'Войти'}
       </Button>
     </form>
