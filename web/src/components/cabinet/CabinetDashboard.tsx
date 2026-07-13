@@ -145,7 +145,7 @@ function DashboardSkeleton() {
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}
-          className="flex flex-col overflow-hidden rounded-l border border-border bg-background"
+          className="flex flex-col overflow-hidden rounded-[var(--radius-l)] border border-border bg-background"
         >
           <Skeleton className="aspect-[16/9] w-full rounded-none" />
           <div className="flex flex-col gap-s p-m">
@@ -162,7 +162,7 @@ function DashboardSkeleton() {
 function DashboardError({ code }: { code: string }) {
   if (code === 'NO_SESSION') {
     return (
-      <div className="rounded-l border border-border bg-background p-l text-center">
+      <div className="rounded-[var(--radius-l)] border border-border bg-background p-l text-center">
         <p className="text-body-m text-foreground">Сессия истекла.</p>
         <Link
           href="/login?returnTo=/cabinet"
@@ -174,7 +174,7 @@ function DashboardError({ code }: { code: string }) {
     );
   }
   return (
-    <div className="rounded-l border border-border bg-background p-l text-center">
+    <div className="rounded-[var(--radius-l)] border border-border bg-background p-l text-center">
       <p className="text-body-m text-foreground">
         Не удалось загрузить заведения. Обновите страницу.
       </p>
@@ -184,7 +184,7 @@ function DashboardError({ code }: { code: string }) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center gap-m rounded-l border border-dashed border-border bg-background p-xl text-center">
+    <div className="flex flex-col items-center gap-m rounded-[var(--radius-l)] border border-dashed border-border bg-background p-xl text-center">
       <p className="text-headline-s text-foreground">
         У вас пока нет заведений
       </p>

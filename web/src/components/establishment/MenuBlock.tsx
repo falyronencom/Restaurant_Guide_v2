@@ -46,7 +46,7 @@ export function MenuBlock({
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <h2 className='font-display text-[20px] font-semibold'>Меню</h2>
         {hasItems ? (
-          <span className='inline-flex items-center gap-1.5 rounded-s bg-[#F7EFE6] px-2.5 py-1.5 text-body-s text-[#A07A52]'>
+          <span className='inline-flex items-center gap-1.5 rounded-[var(--radius-s)] bg-[#F7EFE6] px-2.5 py-1.5 text-body-s text-[#A07A52]'>
             <AlertCircle className='size-3.5 shrink-0' aria-hidden='true' />
             Меню извлечено автоматически — уточняйте у заведения
           </span>
@@ -59,7 +59,7 @@ export function MenuBlock({
             <div key={group.category ?? '__uncategorized__'}>
               {group.category ? (
                 <h3 className='mb-2 flex items-center gap-2.5 font-display text-[15px] font-medium text-foreground'>
-                  <span className='flex size-[26px] shrink-0 items-center justify-center rounded-s bg-background text-brand'>
+                  <span className='flex size-[26px] shrink-0 items-center justify-center rounded-[var(--radius-s)] bg-background text-brand'>
                     <ChefHat className='size-4' aria-hidden='true' />
                   </span>
                   {group.category}

@@ -32,9 +32,9 @@ export function CatalogPagination({
   const nextPage = currentPage < totalPages ? currentPage + 1 : null;
 
   const linkBase =
-    'inline-flex items-center gap-1 rounded-s border border-border bg-background px-m py-s text-body-m text-foreground transition-colors hover:bg-muted';
+    'inline-flex items-center gap-1 rounded-[var(--radius-s)] border border-border bg-background px-m py-s text-body-m text-foreground transition-colors hover:bg-muted';
   const disabledBase =
-    'inline-flex items-center gap-1 rounded-s border border-border bg-background px-m py-s text-body-m text-muted-foreground opacity-50 cursor-not-allowed';
+    'inline-flex items-center gap-1 rounded-[var(--radius-s)] border border-border bg-background px-m py-s text-body-m text-muted-foreground opacity-50 cursor-not-allowed';
 
   return (
     <nav

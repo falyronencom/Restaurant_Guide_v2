@@ -244,7 +244,7 @@ function ListSkeleton() {
 
 function ListError() {
   return (
-    <div className="rounded-l border border-border bg-background p-l text-center">
+    <div className="rounded-[var(--radius-l)] border border-border bg-background p-l text-center">
       <p className="text-body-m text-foreground">
         Не удалось загрузить избранное. Обновите страницу.
       </p>
@@ -254,7 +254,7 @@ function ListError() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center gap-m rounded-l border border-dashed border-border bg-background p-xl text-center">
+    <div className="flex flex-col items-center gap-m rounded-[var(--radius-l)] border border-dashed border-border bg-background p-xl text-center">
       <p className="text-headline-s text-foreground">В избранном пока пусто</p>
       <p className="max-w-md text-body-m text-figma-text-grey">
         Нажимайте на сердечко на карточке заведения, чтобы сохранить его здесь.

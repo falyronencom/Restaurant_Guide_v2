@@ -84,7 +84,7 @@ export function EstablishmentCard({
               {establishment.average_rating != null &&
               establishment.review_count > 0 && (
                 <div
-                  className={`flex size-[34px] shrink-0 items-center justify-center rounded-s text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
+                  className={`flex size-[34px] shrink-0 items-center justify-center rounded-[var(--radius-s)] text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
                     establishment.average_rating,
                   )}`}
                 >

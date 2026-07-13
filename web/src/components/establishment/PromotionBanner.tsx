@@ -35,7 +35,7 @@ export function PromotionBanner({
         {promotions.map((promo) => (
           <li
             key={promo.id}
-            className='flex flex-col gap-m rounded-l border border-brand/30 bg-brand/5 p-m sm:flex-row'
+            className='flex flex-col gap-m rounded-[var(--radius-l)] border border-brand/30 bg-brand/5 p-m sm:flex-row'
           >
             {promo.preview_url || promo.image_url ? (
               <div className='relative aspect-[16/9] w-full overflow-hidden rounded-m bg-muted sm:aspect-[4/3] sm:w-48 sm:shrink-0'>

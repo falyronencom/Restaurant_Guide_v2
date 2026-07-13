@@ -50,7 +50,7 @@ export function ReviewCarousel({
         {averageRating != null && totalCount > 0 ? (
           <span className='inline-flex items-center gap-2'>
             <span
-              className={`flex size-[34px] items-center justify-center rounded-s text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
+              className={`flex size-[34px] items-center justify-center rounded-[var(--radius-s)] text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
                 averageRating,
               )}`}
             >

@@ -48,7 +48,7 @@ export function StickySidebar({
   const clamped = Math.max(0, Math.min(100, score));
 
   return (
-    <aside className="sticky top-l flex flex-col gap-l rounded-l border border-border bg-background p-l">
+    <aside className="sticky top-l flex flex-col gap-l rounded-[var(--radius-l)] border border-border bg-background p-l">
       <div>
         <div className="flex items-center justify-between">
           <span className="text-label-m text-foreground">Готовность</span>

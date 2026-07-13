@@ -63,7 +63,7 @@ export function EditWizardLoader({ id }: { id: string }) {
 
   if (state.phase === 'error') {
     return (
-      <div className="rounded-l border border-border bg-background p-l text-center">
+      <div className="rounded-[var(--radius-l)] border border-border bg-background p-l text-center">
         <p className="text-body-m text-foreground">
           {state.code === 'NO_SESSION'
             ? 'Сессия истекла.'
@@ -97,10 +97,10 @@ function WizardSkeleton() {
       <div className="grid gap-l lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-l">
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-l" />
+            <Skeleton key={i} className="h-48 w-full rounded-[var(--radius-l)]" />
           ))}
         </div>
-        <Skeleton className="h-80 w-full rounded-l" />
+        <Skeleton className="h-80 w-full rounded-[var(--radius-l)]" />
       </div>
     </div>
   );

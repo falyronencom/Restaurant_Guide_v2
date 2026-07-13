@@ -195,7 +195,7 @@ export default async function ReviewsPage({
         <div className='flex flex-wrap items-center gap-m'>
           {averageRating != null ? (
             <span className='inline-flex items-center gap-s'>
-              <span className='inline-flex size-10 items-center justify-center rounded-s bg-success-status text-headline-m font-medium text-text-on-primary'>
+              <span className='inline-flex size-10 items-center justify-center rounded-[var(--radius-s)] bg-success-status text-headline-m font-medium text-text-on-primary'>
                 {formatRating(averageRating)}
               </span>
               {label ? (
@@ -215,7 +215,7 @@ export default async function ReviewsPage({
 
       {/* Review list (full content, clamp=false) or graceful empty-state */}
       {reviewsResult.reviews.length === 0 ? (
-        <p className='rounded-l border border-border bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
+        <p className='rounded-[var(--radius-l)] border border-border bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
           Пока нет отзывов. Будьте первым, кто оставит отзыв!
         </p>
       ) : (

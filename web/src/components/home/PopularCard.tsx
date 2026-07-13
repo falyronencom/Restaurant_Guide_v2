@@ -68,7 +68,7 @@ export function PopularCard({
             )}
 
             {establishment.average_rating != null && (
-              <span className="absolute top-2 right-2 flex h-[31px] min-w-[31px] items-center justify-center rounded-s bg-success-status px-1.5 text-[16px] leading-none text-text-on-primary">
+              <span className="absolute top-2 right-2 flex h-[31px] min-w-[31px] items-center justify-center rounded-[var(--radius-s)] bg-success-status px-1.5 text-[16px] leading-none text-text-on-primary">
                 {formatRating(establishment.average_rating)}
               </span>
             )}

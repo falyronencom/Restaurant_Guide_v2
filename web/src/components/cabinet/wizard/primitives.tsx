@@ -20,7 +20,7 @@ export function SectionCard({
   return (
     <section
       id={id}
-      className="scroll-mt-24 rounded-l border border-border bg-background p-l"
+      className="scroll-mt-24 rounded-[var(--radius-l)] border border-border bg-background p-l"
     >
       <h2 className="font-display text-headline-m text-foreground">{title}</h2>
       {description && (

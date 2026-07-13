@@ -144,7 +144,7 @@ export function FilterShelf({
     <Accordion
       multiple
       defaultValue={['category', 'cuisine', 'price', 'hours', 'features']}
-      className='rounded-l border border-border bg-background px-m'
+      className='rounded-[var(--radius-l)] border border-border bg-background px-m'
       aria-label='Фильтры'
     >
       <FacetGroup id='category' title='Категория'>

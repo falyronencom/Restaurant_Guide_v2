@@ -49,7 +49,7 @@ export function EstablishmentVignette({
   const canDelete = e.status === 'draft' || e.status === 'rejected';
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-l border border-border bg-background">
+    <article className="flex flex-col overflow-hidden rounded-[var(--radius-l)] border border-border bg-background">
       <div className="relative aspect-[16/9] w-full bg-muted">
         {photo ? (
           <Image
@@ -66,7 +66,7 @@ export function EstablishmentVignette({
         )}
         <span
           className={cn(
-            'absolute top-2 left-2 rounded-s px-2 py-1 text-caption-m font-medium',
+            'absolute top-2 left-2 rounded-[var(--radius-s)] px-2 py-1 text-caption-m font-medium',
             STATUS_BADGE[e.status],
           )}
         >
@@ -103,7 +103,7 @@ export function EstablishmentVignette({
         {e.base_score != null && <Completeness score={e.base_score} />}
 
         {rejectionEntries.length > 0 && (
-          <div className="rounded-s border border-error-light/40 bg-error/5 p-s">
+          <div className="rounded-[var(--radius-s)] border border-error-light/40 bg-error/5 p-s">
             <p className="text-caption-m font-medium text-error-dark">
               Причины отклонения:
             </p>

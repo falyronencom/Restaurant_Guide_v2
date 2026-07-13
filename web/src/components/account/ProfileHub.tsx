@@ -129,7 +129,7 @@ export function ProfileHub() {
 
   if (state.phase === 'error') {
     return (
-      <div className="max-w-3xl rounded-l border border-border bg-background p-l text-center">
+      <div className="max-w-3xl rounded-[var(--radius-l)] border border-border bg-background p-l text-center">
         <p className="text-body-m text-foreground">
           Не удалось загрузить профиль. Обновите страницу.
         </p>

@@ -263,7 +263,7 @@ export default async function EstablishmentPage({
               {establishment.average_rating != null &&
               establishment.review_count > 0 ? (
                 <span
-                  className={`inline-flex items-center rounded-s px-2.5 py-1 text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
+                  className={`inline-flex items-center rounded-[var(--radius-s)] px-2.5 py-1 text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
                     establishment.average_rating,
                   )}`}
                 >

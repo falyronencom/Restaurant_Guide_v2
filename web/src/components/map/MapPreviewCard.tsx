@@ -71,7 +71,7 @@ export function MapPreviewCard({
               </h3>
               {marker.average_rating != null && marker.review_count > 0 && (
                 <div
-                  className={`flex size-[30px] shrink-0 items-center justify-center rounded-s text-[14px] font-semibold text-text-on-primary ${ratingColorClass(
+                  className={`flex size-[30px] shrink-0 items-center justify-center rounded-[var(--radius-s)] text-[14px] font-semibold text-text-on-primary ${ratingColorClass(
                     marker.average_rating,
                   )}`}
                 >

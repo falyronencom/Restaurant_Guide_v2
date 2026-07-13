@@ -11,7 +11,7 @@
  * the day can be up to a revalidate-window stale around midnight.
  */
 
-import { Clock, MapPin, Phone } from 'lucide-react';
+import { ChevronDown, Clock, MapPin, Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import type { PublicEstablishmentDetail } from '@/lib/api/types';
@@ -118,12 +118,10 @@ function HoursFact({ workingHours }: { workingHours: unknown }) {
         <details className='group'>
           <summary className='flex cursor-pointer list-none items-center gap-1 text-[15px] font-semibold text-foreground marker:hidden'>
             {formatDay(parsed[DAY_KEYS[todayIdx]])}
-            <span
+            <ChevronDown
               aria-hidden='true'
-              className='text-muted-foreground transition-transform group-open:rotate-180'
-            >
-              ⌄
-            </span>
+              className='size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180'
+            />
           </summary>
           <table className='mt-2 text-body-s'>
             <tbody>
