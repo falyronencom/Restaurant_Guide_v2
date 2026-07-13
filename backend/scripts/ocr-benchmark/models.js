@@ -18,6 +18,7 @@ export const DEFAULT_MODELS = [
   'google/gemini-2.5-flash',
   'google/gemini-3.5-flash',
   'qwen/qwen3.5-flash-02-23', // cross-family vision signal
+  'google/gemini-3.1-flash-lite', // gen-3.1 successor of the baseline lite (Coordinator, 2026-07-13)
 ];
 
 const CATALOG_URL = 'https://openrouter.ai/api/v1/models';
