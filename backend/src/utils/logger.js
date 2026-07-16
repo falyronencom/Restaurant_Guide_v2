@@ -6,34 +6,67 @@ dotenv.config();
 /**
  * Custom log format that redacts sensitive information before logging.
  * This prevents accidentally logging passwords, tokens, or other secrets.
- * 
+ *
  * Critical security requirement from architectural review: all sensitive data
  * must be logged as [REDACTED] to prevent credential leakage through logs.
+ *
+ * Constraint that shapes the implementation (OSB-I1): with winston 3.x the
+ * call pattern used across this codebase — `logger.error('message', { ctx })`
+ * — spreads the context onto the TOP LEVEL of `info` (there is no
+ * `info.meta`), so redaction walks the top-level keys and recurses into
+ * plain nested objects/arrays. Depth-capped and cycle-guarded; non-plain
+ * values (Error, Date, Buffer) pass through untouched so
+ * `winston.format.errors` output stays intact.
  */
-const redactSensitiveData = winston.format((info) => {
-  const sensitiveFields = ['password', 'token', 'refresh_token', 'access_token', 'authorization'];
-  
-  if (info.message && typeof info.message === 'object') {
-    const redacted = { ...info.message };
-    sensitiveFields.forEach(field => {
-      if (redacted[field]) {
-        redacted[field] = '[REDACTED]';
-      }
-    });
-    info.message = redacted;
+const SENSITIVE_FIELDS = new Set([
+  'password',
+  'token',
+  'refresh_token',
+  'access_token',
+  'authorization',
+]);
+const REDACTION_DEPTH_LIMIT = 4;
+
+const redactValue = (value, depth, seen) => {
+  if (value === null || typeof value !== 'object' || depth > REDACTION_DEPTH_LIMIT) {
+    return value;
+  }
+  if (seen.has(value)) {
+    return '[CIRCULAR]';
+  }
+  seen.add(value);
+
+  let redacted;
+  if (Array.isArray(value)) {
+    redacted = value.map((item) => redactValue(item, depth + 1, seen));
+  } else {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      seen.delete(value);
+      return value;
+    }
+    redacted = {};
+    for (const [key, item] of Object.entries(value)) {
+      redacted[key] = SENSITIVE_FIELDS.has(key.toLowerCase())
+        ? '[REDACTED]'
+        : redactValue(item, depth + 1, seen);
+    }
   }
 
-  // Redact sensitive fields from metadata
-  if (info.meta && typeof info.meta === 'object') {
-    const redacted = { ...info.meta };
-    sensitiveFields.forEach(field => {
-      if (redacted[field]) {
-        redacted[field] = '[REDACTED]';
-      }
-    });
-    info.meta = redacted;
-  }
+  // Backtrack so shared (non-circular) references are not misreported as
+  // circular — only genuine cycles remain in `seen` on the way down.
+  seen.delete(value);
+  return redacted;
+};
 
+export const redactSensitiveData = winston.format((info) => {
+  for (const [key, value] of Object.entries(info)) {
+    if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
+      info[key] = '[REDACTED]';
+    } else {
+      info[key] = redactValue(value, 1, new WeakSet());
+    }
+  }
   return info;
 });
 
