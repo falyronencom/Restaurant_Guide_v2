@@ -26,14 +26,20 @@ jest.mock('@/lib/partner/operations', () => ({
   retryOcrAction: jest.fn(),
   deleteEstablishmentAction: jest.fn(),
 }));
+jest.mock('@/lib/partner/media-proxy', () => ({
+  proxyMediaUpload: jest.fn(),
+}));
 
 import { POST as createPost } from '@/app/api/partner/establishments/create/route';
 import { POST as deletePost } from '@/app/api/partner/establishments/[id]/delete/route';
 import { POST as listPost } from '@/app/api/partner/establishments/list/route';
 import { POST as loadPost } from '@/app/api/partner/establishments/[id]/load/route';
+import { POST as mediaAttachPost } from '@/app/api/partner/establishments/[id]/media/route';
 import { POST as retryPost } from '@/app/api/partner/establishments/[id]/retry-ocr/route';
 import { POST as submitPost } from '@/app/api/partner/establishments/[id]/submit/route';
 import { POST as updatePost } from '@/app/api/partner/establishments/[id]/update/route';
+import { POST as mediaTempPost } from '@/app/api/partner/media/route';
+import { proxyMediaUpload } from '@/lib/partner/media-proxy';
 import {
   createEstablishmentAction,
   deleteEstablishmentAction,
@@ -79,6 +85,38 @@ describe('same-origin guard on the partner handlers', () => {
     const res = await deletePost(makeRequest(CROSS), ctx('e9'));
     expect(res.status).toBe(403);
     expect(deleteEstablishmentAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin temp media upload with 403 (OSB-P4 parity)', async () => {
+    const res = await mediaTempPost(makeRequest(CROSS));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, code: 'CSRF' });
+    expect(proxyMediaUpload).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin establishment media upload with 403 (OSB-P4 parity)', async () => {
+    const res = await mediaAttachPost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(proxyMediaUpload).not.toHaveBeenCalled();
+  });
+
+  it('passes a same-origin media upload through to the proxy with the right paths', async () => {
+    (proxyMediaUpload as jest.Mock).mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
+    const tempReq = makeRequest(SAME);
+    await mediaTempPost(tempReq);
+    expect(proxyMediaUpload).toHaveBeenCalledWith(
+      tempReq,
+      '/api/v1/partner/media/upload',
+    );
+
+    const attachReq = makeRequest(SAME);
+    await mediaAttachPost(attachReq, ctx('e9'));
+    expect(proxyMediaUpload).toHaveBeenCalledWith(
+      attachReq,
+      '/api/v1/partner/establishments/e9/media',
+    );
   });
 });
 

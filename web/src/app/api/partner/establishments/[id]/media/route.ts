@@ -1,4 +1,5 @@
 import { proxyMediaUpload } from '@/lib/partner/media-proxy';
+import { assertSameOrigin } from '@/lib/partner/same-origin';
 
 /*
  * Establishment-scoped media proxy (Phase C Slice 1, Segment B). Streams a
@@ -14,6 +15,8 @@ export async function POST(
   request: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const blocked = assertSameOrigin(request);
+  if (blocked) return blocked;
   const { id } = await ctx.params;
   return proxyMediaUpload(
     request,
