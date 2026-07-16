@@ -2,14 +2,15 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 /*
  * Error boundary for (public) routes. Must be a Client Component (Next.js
  * error boundary requirement). Receives `error` + `unstable_retry` from
  * Next 16 runtime.
  *
- * Brief 2 keeps this minimal — log + retry button. Brief 3+ can wire to
- * Sentry/error tracking and improve UX with context-aware messaging.
+ * Errors are beaconed to /api/client-error (operator-visible in Railway
+ * logs — OSB-P6 вариант B); full Sentry remains a post-launch option.
  */
 export default function PublicError({
   error,
@@ -19,8 +20,8 @@ export default function PublicError({
   unstable_retry: () => void;
 }) {
   useEffect(() => {
-     
     console.error('Public route error:', error);
+    reportClientError(error);
   }, [error]);
 
   return (
