@@ -81,6 +81,12 @@ const CLUSTER_MAX_ZOOM = 14;
 // Floor for a cluster's zoom-to-contents span (~150m). Coincident coordinates
 // give a zero-extent box, which is not a usable camera target.
 const CLUSTER_MIN_SPAN = 0.0015;
+// Below this a viewport rectangle is collapsed, not merely small: ~0.1mm, five
+// orders of magnitude under the smallest viewport a live map can report (max
+// zoom, ~2e-4 — see boxFromBounds). Exists to absorb float noise around an
+// exactly-zero extent, NOT as a "too small to be real" heuristic — that is
+// unimplementable here, and attempting it is what broke deep zoom.
+const DEGENERATE_SPAN = 1e-9;
 // Debounce hiding the desktop hover preview so the cursor crossing the gap
 // between two adjacent pins doesn't make the card flicker.
 const HOVER_HIDE_MS = 120;
@@ -851,7 +857,43 @@ function makeClusterBubble(count: number): HTMLElement {
   return el;
 }
 
-function boxFromBounds(bounds: LngLatBounds | undefined): Box | null {
+/*
+ * Live camera bounds → fetch box. Returns null when the rectangle is unusable,
+ * which sends refetch to the city-wide boxAroundCenter fallback.
+ *
+ * This guard used to reject any span under 0.005° (~550m) on the theory that an
+ * un-laid-out map reports a near-point. Both halves of that were wrong, and the
+ * combination made every deep-zoom refetch pull the whole city:
+ *
+ *  - A real viewport IS smaller than 0.005° once you pass zoom ~17, so the guard
+ *    fired on legitimate cameras — exactly when the user had asked for one block.
+ *  - An un-laid-out map does not report a near-point. ymaps3 clamps the viewport
+ *    to a 1×1 pixel minimum, so it reports a real box for a 1px map: measured at
+ *    zoom 12, lon 3.433e-4 / lat 2.027e-4 (~22×22m). That is BIGGER than the
+ *    1e-4 a "tighter threshold" would use — such a guard would pass the very
+ *    read it exists to catch.
+ *
+ * No absolute degree threshold can separate the two, because the populations
+ * overlap: one pixel at city zoom (~22×22m) covers the same ground as an entire
+ * 760×560 viewport at ymaps3's max zoom of 21 (lon 5.096e-4 / lat 2.218e-4,
+ * ~33×25m) — and a shorter phone viewport at max zoom is smaller still. Any
+ * threshold that rejects the first rejects the second. So this only rejects what
+ * is structurally unusable: a malformed/non-finite read, or a collapsed box.
+ *
+ * Dropping the size heuristic costs nothing real. The pre-layout read it was
+ * written against does not occur on this path: the container is `absolute
+ * inset-0` inside a fixed-height parent and is mounted only when the map view is
+ * active (ResultsSwitcher swaps children, never pre-mounts hidden), so it is laid
+ * out long before ymaps3.ready resolves and the map is constructed. Verified on a
+ * live prod build — map.bounds is the true viewport from the synchronous read
+ * after `new YMap` onward, identical at every sample through t+1000ms.
+ *
+ * The residual case, a 0×0 container, is accepted here by construction: its 1px
+ * box is indistinguishable from a max-zoom viewport. It is also harmless — a
+ * 0×0 map is invisible, and a container that later gains size moves the camera,
+ * whose onUpdate refetches with real bounds.
+ */
+export function boxFromBounds(bounds: LngLatBounds | undefined): Box | null {
   if (!Array.isArray(bounds) || bounds.length !== 2) return null;
   const lngs = [bounds[0][0], bounds[1][0]];
   const lats = [bounds[0][1], bounds[1][1]];
@@ -862,16 +904,16 @@ function boxFromBounds(bounds: LngLatBounds | undefined): Box | null {
     swLat: Math.min(...lats),
     neLat: Math.max(...lats),
   };
-  // Reject a degenerate (near-point) box: map.bounds is a near-point until the
-  // map has laid out its viewport — true for the synchronous initial read, but
-  // the camera onUpdate fires post-layout with a real box.
-  if (box.neLat - box.swLat < 0.005 || box.neLon - box.swLon < 0.005) {
+  if (
+    box.neLat - box.swLat < DEGENERATE_SPAN ||
+    box.neLon - box.swLon < DEGENERATE_SPAN
+  ) {
     return null;
   }
   return box;
 }
 
-// Fallback box (~city metro span) for the initial read before the map lays out.
+// Fallback box (~city metro span) for a bounds read the map cannot give us.
 function boxAroundCenter([lon, lat]: [number, number]): Box {
   return { swLon: lon - 0.35, neLon: lon + 0.35, swLat: lat - 0.2, neLat: lat + 0.2 };
 }
