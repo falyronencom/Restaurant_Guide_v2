@@ -96,6 +96,9 @@ export function createMockReview(overrides = {}) {
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,
+    // findReviewById always selects these — mirror the model row shape
+    is_deleted: false,
+    is_visible: true,
     ...overrides,
   };
 }

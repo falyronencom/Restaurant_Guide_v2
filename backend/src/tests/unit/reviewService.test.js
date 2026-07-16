@@ -517,6 +517,28 @@ describe('reviewService', () => {
         code: 'REVIEW_NOT_FOUND',
       });
     });
+
+    test('should throw 404 for a soft-deleted review (single-fetch parity, OSB-I2)', async () => {
+      ReviewModel.findReviewById.mockResolvedValue(
+        createMockReview({ is_deleted: true }),
+      );
+
+      await expect(getReviewById('deleted')).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+      });
+    });
+
+    test('should throw 404 for a moderator-hidden review', async () => {
+      ReviewModel.findReviewById.mockResolvedValue(
+        createMockReview({ is_visible: false }),
+      );
+
+      await expect(getReviewById('hidden')).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+      });
+    });
   });
 
   describe('getUserReviews', () => {

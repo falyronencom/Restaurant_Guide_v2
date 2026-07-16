@@ -168,15 +168,19 @@ export const createReview = async (reviewData) => {
 
 /**
  * Get a specific review by ID
- * 
+ *
  * @param {string} reviewId - UUID of the review to retrieve
  * @returns {Promise<Object>} Review object with author and establishment information
- * @throws {AppError} If review not found
+ * @throws {AppError} If review not found, moderator-hidden, or soft-deleted
  */
 export const getReviewById = async (reviewId) => {
   const review = await ReviewModel.findReviewById(reviewId);
-  
-  if (!review) {
+
+  // Single-fetch parity with the list path (OSB-I2): a moderator-hidden or
+  // soft-deleted review must not stay readable by direct UUID. This function
+  // backs ONLY the public GET /reviews/:id — owner/partner mutation flows
+  // read the model directly and keep their access to hidden rows.
+  if (!review || review.is_deleted || !review.is_visible) {
     throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
   }
 
