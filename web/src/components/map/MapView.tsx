@@ -33,10 +33,21 @@ import { MapPreviewCard } from './MapPreviewCard';
  * auto-selects its pin once the viewport's markers load, keeping the user inside
  * our funnel instead of bouncing to external Yandex Maps.
  *
+ * Slice D part 2 — clustering: at city-wide zoom the real seed puts ~257 pins in
+ * the Minsk viewport, which is both unreadable and heavy. Markers are handed to
+ * Yandex's own clusterer (@yandex/ymaps3-clusterer), which groups them into
+ * brand bubbles and re-clusters on camera move without a refetch. It is a
+ * bundled npm dependency pulled in by a dynamic import from OUR origin — not
+ * ymaps3.import, which has no loader for it; see the block at the import site.
+ * Its entity cache keys a lone point by our own establishment id, so an
+ * unchanged pin survives a refetch as the same DOM node (no flicker; the
+ * hover/committed element refs stay valid). If the module fails to load we fall
+ * back to the pre-clustering path: every marker rendered flat.
+ *
  * Deferred: open/closed marker state (needs working_hours on the marker
- * projection); clustering for dense city-wide zoom (Slice D part 2). The
- * `features` attribute facet is not honored — searchByBounds (the bounds
- * backend) does not accept it (known gap).
+ * projection); spiderfy for coincident coordinates. The `features` attribute
+ * facet is not honored — searchByBounds (the bounds backend) does not accept it
+ * (known gap).
  */
 
 // [lon, lat] — Yandex v3 takes longitude first.
@@ -53,7 +64,23 @@ const DEFAULT_ZOOM = 12;
 const FOCUS_ZOOM = 15; // street-level when deep-linked to one establishment
 const VIEWPORT_BUFFER = 0.3; // fetch 30% beyond the viewport on each side
 const REFETCH_DEBOUNCE_MS = 350;
-const FETCH_LIMIT = 200;
+// Covers the whole launch-horizon seed (~500-600 cards) in one viewport read:
+// at 200 the Minsk city view silently truncated (~257 active cards inside the
+// bbox), leaving 57+ establishments off the map at any zoom. 500 is exactly the
+// backend's clamp ceiling (publicService: min(max(limit,1),500)); a denser
+// Minsk (5000+) is a post-launch problem needing server-side clustering.
+const FETCH_LIMIT = 500;
+
+// Clustering. gridSize is in screen pixels — 64 is the module default and keeps
+// bubbles from touching, given the 40px-wide pin.
+const CLUSTER_GRID_SIZE = 64;
+// Above this zoom the clusterer renders every point as its own marker. Deep-link
+// focus lands at FOCUS_ZOOM (15), so the anchored establishment is always an
+// individual pin by construction — never swallowed by a bubble.
+const CLUSTER_MAX_ZOOM = 14;
+// Floor for a cluster's zoom-to-contents span (~150m). Coincident coordinates
+// give a zero-extent box, which is not a usable camera target.
+const CLUSTER_MIN_SPAN = 0.0015;
 // Debounce hiding the desktop hover preview so the cursor crossing the gap
 // between two adjacent pins doesn't make the card flicker.
 const HOVER_HIDE_MS = 120;
@@ -65,7 +92,8 @@ const FILL_HIGHLIGHT = '#F2B600';
 const YMAPS_KEY = process.env.NEXT_PUBLIC_YANDEX_JS_API_KEY;
 const YMAPS_SRC = `https://api-maps.yandex.ru/v3/?apikey=${YMAPS_KEY ?? ''}&lang=ru_RU`;
 
-type LngLatBounds = [[number, number], [number, number]];
+type LngLat = [number, number];
+type LngLatBounds = [LngLat, LngLat];
 type Box = { swLat: number; neLat: number; swLon: number; neLon: number };
 type Entity = unknown;
 
@@ -73,21 +101,54 @@ type YMapInstance = {
   addChild: (child: Entity) => void;
   removeChild: (child: Entity) => void;
   destroy: () => void;
+  // `location` accepts duration/easing per ymaps3's types, but pairing either
+  // with `bounds` makes the whole update a no-op at runtime. We only ever send
+  // bounds, so the animation fields are deliberately absent from this contract.
+  update: (opts: { location: { bounds: LngLatBounds } }) => void;
   bounds: LngLatBounds;
+};
+
+/*
+ * Clusterer contract, transcribed from the installed package's own declarations
+ * (@yandex/ymaps3-clusterer@0.0.12 dist/types). We restate it instead of using
+ * those types directly: they import from `@yandex/ymaps3-types`, a types-only
+ * package we deliberately do not install (it would drag react/vue peer deps in
+ * for nothing). Under skipLibCheck those imports silently degrade to `any`, so
+ * this local contract is what actually holds the seam.
+ */
+type ClusterFeature = {
+  type: 'Feature';
+  id: string;
+  geometry: { type: 'Point'; coordinates: LngLat };
+};
+
+type ClusterMethod = { render: unknown };
+
+type ClustererEntity = Entity & {
+  update: (props: { features: ClusterFeature[] }) => void;
+};
+
+type ClustererModule = {
+  YMapClusterer: new (props: {
+    method: ClusterMethod;
+    features: ClusterFeature[];
+    marker: (feature: ClusterFeature) => Entity;
+    cluster: (coordinates: LngLat, features: ClusterFeature[]) => Entity;
+    tickTimeout?: number;
+    maxZoom?: number;
+  }) => ClustererEntity;
+  clusterByGrid: (opts: { gridSize: number }) => ClusterMethod;
 };
 
 type Ymaps3 = {
   ready: Promise<void>;
   YMap: new (
     el: HTMLElement,
-    opts: { location: { center: [number, number]; zoom: number } },
+    opts: { location: { center: LngLat; zoom: number } },
   ) => YMapInstance;
   YMapDefaultSchemeLayer: new () => Entity;
   YMapDefaultFeaturesLayer: new () => Entity;
-  YMapMarker: new (
-    opts: { coordinates: [number, number] },
-    el: HTMLElement,
-  ) => Entity;
+  YMapMarker: new (opts: { coordinates: LngLat }, el: HTMLElement) => Entity;
   YMapListener: new (opts: { onUpdate?: () => void }) => Entity;
 };
 
@@ -157,9 +218,20 @@ export default function MapView({
 
   // Deep-link focus (Slice D part 1). Coordinates centre the map immediately;
   // the slug matches a marker once the viewport loads → auto-select its pin.
-  const focusSlug = asString(searchParams.focus);
+  //
+  // The slug is honoured ONLY together with coordinates, and that coupling is
+  // load-bearing under clustering: auto-select fires when the anchor's own pin
+  // is built, which only happens if the anchor is not inside a bubble. The
+  // centring zoom (FOCUS_ZOOM) is what pushes past CLUSTER_MAX_ZOOM and
+  // guarantees that. A slug arriving without coordinates would open at
+  // DEFAULT_ZOOM, where the anchor is clustered and its pin never built — so
+  // treat that URL as having no focus at all rather than silently arming an
+  // anchor that can never resolve. Every producer emits all three together
+  // (see EstablishmentMapOverlay).
   const focusLat = asFloat(searchParams.flat);
   const focusLng = asFloat(searchParams.flng);
+  const hasFocusCenter = focusLat != null && focusLng != null;
+  const focusSlug = hasFocusCenter ? asString(searchParams.focus) : undefined;
 
   // Map lifecycle — recreate on city OR focus change (different centre).
   useEffect(() => {
@@ -187,8 +259,7 @@ export default function MapView({
         await ymaps3.ready;
         if (cancelled || !containerRef.current) return;
 
-        const hasFocusCenter = focusLat != null && focusLng != null;
-        const center: [number, number] = hasFocusCenter
+        const center: LngLat = hasFocusCenter
           ? [focusLng, focusLat]
           : CITY_CENTERS[citySlug] ?? DEFAULT_CENTER;
         const zoom = hasFocusCenter ? FOCUS_ZOOM : DEFAULT_ZOOM;
@@ -205,7 +276,13 @@ export default function MapView({
         map.addChild(new YMapDefaultSchemeLayer());
         map.addChild(new YMapDefaultFeaturesLayer());
 
+        // Flat-render bookkeeping — only used on the no-clusterer fallback path.
         const markers = new Map<string, Entity>();
+        // Latest marker data by id. A pin's DOM node outlives the refetch that
+        // replaced its data (both the clusterer's entity cache and the flat
+        // path's id-diff reuse it), so handlers must read the establishment at
+        // event time instead of closing over the one present at creation.
+        const dataById = new Map<string, PublicEstablishmentMapMarker>();
 
         // Desktop (a fine pointer that can hover — a mouse) gets Booking-style
         // hover preview + click-to-open; touch keeps tap-to-preview. Mirror of
@@ -286,8 +363,115 @@ export default function MapView({
         };
 
         // Deep-link auto-select fires once, when the focused slug's pin is first
-        // created (centring guarantees it's in the first viewport).
+        // created: centring guarantees it is in the first viewport, and
+        // CLUSTER_MAX_ZOOM < FOCUS_ZOOM guarantees it renders as its own pin
+        // rather than being swallowed into a bubble.
         let autoFocusDone = false;
+
+        // The one place a pin is built — used by the clusterer's `marker`
+        // callback and by the flat fallback, so both render the identical
+        // brand pin with identical behaviour.
+        const makePinEntity = (id: string, coordinates: LngLat): Entity => {
+          const el = makeBrandPin();
+          const current = () => dataById.get(id);
+          if (isDesktopHover) {
+            el.addEventListener('mouseenter', () => {
+              const m = current();
+              if (m) onMarkerEnter(m, el);
+            });
+            el.addEventListener('mouseleave', () => onMarkerLeave(el));
+            el.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const m = current();
+              if (m) onMarkerActivate(m);
+            });
+          } else {
+            el.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const m = current();
+              if (m) commitSelection(m, el);
+            });
+          }
+          const m = current();
+          if (m && focusSlug && !autoFocusDone && m.slug === focusSlug) {
+            commitSelection(m, el);
+            autoFocusDone = true;
+          }
+          return new ymaps3.YMapMarker({ coordinates }, el);
+        };
+
+        // Brand bubble for a group: click zooms to the group's own extent, hover
+        // does nothing (a preview belongs to a single establishment).
+        const makeBubbleEntity = (
+          coordinates: LngLat,
+          features: ClusterFeature[],
+        ): Entity => {
+          const el = makeClusterBubble(features.length);
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const bounds = boundsOfFeatures(features);
+            // No duration/easing here, deliberately: ymaps3 accepts the combo in
+            // its types but silently drops a `bounds` location when either is
+            // present — the camera simply never moves. Animating a zoom-to-extent
+            // means converting it to center+zoom by hand; an instant jump is what
+            // the interaction needs anyway. Verified against a live map.
+            if (bounds && map) map.update({ location: { bounds } });
+          });
+          return new ymaps3.YMapMarker({ coordinates }, el);
+        };
+
+        /*
+         * The clusterer is a bundled npm dependency loaded through a dynamic
+         * import — NOT through ymaps3.import. The documented ymaps3.import path
+         * carries no loader for this package (`ymaps3.import.loaders` is empty;
+         * it fails with "no loader for pkg"), and registering one means pointing
+         * ymaps3 at a third-party CDN. The package is a self-contained bundle
+         * whose only external reference is the `ymaps3` global, so importing it
+         * here — after `ymaps3.ready` — satisfies it while keeping the code on
+         * our own origin. Deferring the import to this point is load-bearing:
+         * the module reads the global as it evaluates.
+         *
+         * A failure must not cost us the pins: fall back to the flat render
+         * (what shipped before clustering) instead of an empty map.
+         */
+        // The map itself is built and interactive by now; only the grouping of
+        // pins waits on the chunk. Clearing 'loading' here keeps the overlay
+        // from covering a working map for the download's duration — nothing is
+        // rendered into it until the refetch below either way.
+        setStatus('ready');
+        let clusterer: ClustererEntity | null = null;
+        try {
+          const { YMapClusterer, clusterByGrid } = (await import(
+            '@yandex/ymaps3-clusterer'
+          )) as unknown as ClustererModule;
+          if (cancelled || !map) return;
+          clusterer = new YMapClusterer({
+            method: clusterByGrid({ gridSize: CLUSTER_GRID_SIZE }),
+            features: [],
+            marker: (f) => makePinEntity(f.id, f.geometry.coordinates),
+            cluster: makeBubbleEntity,
+            maxZoom: CLUSTER_MAX_ZOOM,
+          });
+          map.addChild(clusterer);
+        } catch {
+          clusterer = null;
+        }
+
+        // Publish a viewport's data. Returns the establishment count — never a
+        // bubble count: the badge speaks in places, not in groups.
+        const applyData = (data: PublicEstablishmentMapMarker[]): number => {
+          // Refresh the lookup before rendering so a newly built pin's handlers
+          // resolve against this response, not the previous one.
+          dataById.clear();
+          for (const m of data) dataById.set(m.id, m);
+          const features = toClusterFeatures(data);
+          if (clusterer) {
+            clusterer.update({ features });
+          } else if (map) {
+            syncMarkers(map, markers, features, makePinEntity);
+          }
+          return features.length;
+        };
 
         const refetch = async () => {
           if (cancelled || !map) return;
@@ -302,35 +486,7 @@ export default function MapView({
             // so the map can't settle on an out-of-order earlier fetch (which
             // would then disagree with the server-rendered list).
             if (cancelled || !map || gen !== generation) return;
-            const autoFocus =
-              focusSlug && !autoFocusDone
-                ? {
-                    slug: focusSlug,
-                    select: (
-                      m: PublicEstablishmentMapMarker,
-                      el: HTMLElement,
-                    ) => {
-                      commitSelection(m, el);
-                      autoFocusDone = true;
-                    },
-                  }
-                : undefined;
-            setCount(
-              syncMarkers(
-                map,
-                ymaps3,
-                markers,
-                data,
-                {
-                  isDesktopHover,
-                  onActivate: onMarkerActivate,
-                  onCommit: commitSelection,
-                  onEnter: onMarkerEnter,
-                  onLeave: onMarkerLeave,
-                },
-                autoFocus,
-              ),
-            );
+            setCount(applyData(data));
             setDataStatus('idle');
           } catch {
             // Same generation guard: a stale failure must not overwrite a
@@ -351,7 +507,6 @@ export default function MapView({
 
         refetchRef.current = refetch;
         container?.addEventListener('click', onContainerClick);
-        setStatus('ready');
         await refetch(); // immediate pins; camera onUpdate refines on layout
       } catch {
         if (!cancelled) setStatus('error');
@@ -366,7 +521,17 @@ export default function MapView({
       clearSelectionRef.current = null;
       map?.destroy();
     };
-  }, [citySlug, categorySlug, focusSlug, focusLat, focusLng, retryToken]);
+    // hasFocusCenter is derived from focusLat/focusLng, so listing it adds no
+    // re-runs beyond theirs — it is here to keep the dep list honest.
+  }, [
+    citySlug,
+    categorySlug,
+    focusSlug,
+    focusLat,
+    focusLng,
+    hasFocusCenter,
+    retryToken,
+  ]);
 
   // Filters changed → publish latest filters to the ref and refetch (no map
   // recreation). filterKey is the value-stable serialization of `filters`;
@@ -539,35 +704,88 @@ async function fetchMarkers(
   return data.establishments ?? [];
 }
 
-// Add/remove markers by id against the live set so unchanged pins never flicker
-// on refetch. Returns the count currently shown.
-type MarkerHandlers = {
-  isDesktopHover: boolean;
-  // Desktop click → open the detail page (new tab).
-  onActivate: (m: PublicEstablishmentMapMarker) => void;
-  // Touch tap / deep-link anchor → persist the selection.
-  onCommit: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
-  // Desktop hover enter/leave → transient preview.
-  onEnter: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
-  onLeave: (el: HTMLElement) => void;
-};
+/*
+ * Marker projection → clusterer input. Drops rows the map cannot place (the
+ * projection allows null coordinates), so the returned length is also the
+ * "establishments on the map" count. Coordinates are [lng, lat] — Yandex takes
+ * longitude first.
+ */
+export function toClusterFeatures(
+  data: PublicEstablishmentMapMarker[],
+): ClusterFeature[] {
+  const features: ClusterFeature[] = [];
+  for (const m of data) {
+    if (m.latitude == null || m.longitude == null) continue;
+    features.push({
+      type: 'Feature',
+      id: m.id,
+      geometry: { type: 'Point', coordinates: [m.longitude, m.latitude] },
+    });
+  }
+  return features;
+}
 
+/*
+ * Bubble size steps by member count. Deliberately coarse — the number inside is
+ * the information, the size is only a hint at magnitude.
+ */
+export function bubbleTier(count: number): { size: number; font: number } {
+  if (count < 10) return { size: 36, font: 13 };
+  if (count < 50) return { size: 46, font: 15 };
+  return { size: 58, font: 17 };
+}
+
+/*
+ * Extent of a cluster's members, as the camera target for a bubble click.
+ *
+ * Corner order is [top-left, bottom-right] — i.e. NORTH latitude first — per
+ * ymaps3's own `LngLatBounds` ("Rectangle bounded by top-left and bottom-right
+ * coordinates"). Handing it a south-first rectangle does not throw: the camera
+ * silently treats the inverted box as degenerate and slams to max zoom.
+ *
+ * Coincident members give a zero-extent box, which is not a usable target
+ * either, so every span is floored at CLUSTER_MIN_SPAN around its own midpoint.
+ */
+export function boundsOfFeatures(
+  features: ClusterFeature[],
+  minSpan: number = CLUSTER_MIN_SPAN,
+): LngLatBounds | null {
+  if (features.length === 0) return null;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const f of features) {
+    const [lng, lat] = f.geometry.coordinates;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
+  const pad = (min: number, max: number): [number, number] => {
+    if (max - min >= minSpan) return [min, max];
+    const mid = (min + max) / 2;
+    return [mid - minSpan / 2, mid + minSpan / 2];
+  };
+  const [west, east] = pad(minLng, maxLng);
+  const [south, north] = pad(minLat, maxLat);
+  return [
+    [west, north],
+    [east, south],
+  ];
+}
+
+// Flat render — the no-clusterer fallback. Adds/removes by id against the live
+// set so unchanged pins never flicker on refetch.
 function syncMarkers(
   map: YMapInstance,
-  ymaps3: Ymaps3,
   markers: Map<string, Entity>,
-  data: PublicEstablishmentMapMarker[],
-  handlers: MarkerHandlers,
-  autoFocus?: {
-    slug: string;
-    select: (m: PublicEstablishmentMapMarker, el: HTMLElement) => void;
-  },
-): number {
-  const next = new Map(
-    data
-      .filter((m) => m.latitude != null && m.longitude != null)
-      .map((m) => [m.id, m] as const),
-  );
+  features: ClusterFeature[],
+  makePin: (id: string, coordinates: LngLat) => Entity,
+): void {
+  const next = new Map(features.map((f) => [f.id, f] as const));
 
   for (const [id, marker] of markers) {
     if (!next.has(id)) {
@@ -576,34 +794,13 @@ function syncMarkers(
     }
   }
 
-  const { YMapMarker } = ymaps3;
-  for (const [id, m] of next) {
+  for (const [id, f] of next) {
     if (!markers.has(id)) {
-      const el = makeBrandPin();
-      if (handlers.isDesktopHover) {
-        el.addEventListener('mouseenter', () => handlers.onEnter(m, el));
-        el.addEventListener('mouseleave', () => handlers.onLeave(el));
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handlers.onActivate(m);
-        });
-      } else {
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handlers.onCommit(m, el);
-        });
-      }
-      if (autoFocus && m.slug === autoFocus.slug) autoFocus.select(m, el);
-      const marker = new YMapMarker(
-        { coordinates: [m.longitude as number, m.latitude as number] },
-        el,
-      );
+      const marker = makePin(id, f.geometry.coordinates);
       map.addChild(marker);
       markers.set(id, marker);
     }
   }
-
-  return next.size;
 }
 
 // Web mirror of the mobile canvas pin (mobile/lib/widgets/map/map_marker_painter)
@@ -624,6 +821,33 @@ function makeBrandPin(variant: 'default' | 'selected' = 'default'): HTMLElement 
     '<g transform="translate(11.5 7.5) scale(0.71)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>' +
     '</g></svg>';
+  return el;
+}
+
+// Group bubble — the brand pin's palette in the shape the eye reads as "many":
+// a filled circle with the count. Centred on the group (translate(-50%,-50%)),
+// unlike the pin, which is tip-anchored.
+function makeClusterBubble(count: number): HTMLElement {
+  const { size, font } = bubbleTier(count);
+  const el = document.createElement('div');
+  el.style.cssText = [
+    `width:${size}px`,
+    `height:${size}px`,
+    'transform:translate(-50%,-50%)',
+    'border-radius:9999px',
+    `background:${FILL_DEFAULT}`,
+    'border:3px solid #fff',
+    'color:#fff',
+    `font-size:${font}px`,
+    'font-weight:600',
+    'line-height:1',
+    'display:flex',
+    'align-items:center',
+    'justify-content:center',
+    'cursor:pointer',
+    'filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))',
+  ].join(';');
+  el.textContent = String(count);
   return el;
 }
 

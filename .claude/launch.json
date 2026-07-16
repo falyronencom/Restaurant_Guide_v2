@@ -18,6 +18,36 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "npx", "next", "dev", "--port", "3000"],
       "port": 3000
+    },
+    {
+      "name": "web-prod",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "npx", "next", "start", "--port", "3000"],
+      "port": 3000
+    },
+    {
+      "name": "web-e2e",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "npx", "next", "dev", "--port", "3001"],
+      "port": 3001
+    },
+    {
+      "name": "web-e2e-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "set", "API_URL=http://localhost:3000&&", "npx", "next", "dev", "--port", "3002"],
+      "port": 3002
+    },
+    {
+      "name": "web-prod-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "set", "API_URL=http://localhost:3100&&", "npx", "next", "start", "--port", "3002"],
+      "port": 3002
+    },
+    {
+      "name": "backend-dryrun",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\backend", "&&", "set", "DB_NAME=seed_dryrun&&", "set", "PORT=3100&&", "node", "src/server.js"],
+      "port": 3100
     }
   ]
 }
