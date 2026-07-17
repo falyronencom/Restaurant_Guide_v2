@@ -42,8 +42,26 @@ import bookingSettingsRoutes from './bookingSettingsRoutes.js';
 import partnerMenuItemRoutes from './partnerMenuItemRoutes.js';
 import { partnerBookingRouter, userBookingRouter } from './bookingRoutes.js';
 import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
+import { createRateLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
+
+/**
+ * Shared per-IP budget for the two unauthenticated analytics writes (OSB-P5).
+ *
+ * One limiter instance on both routes = one Redis budget (the key carries
+ * prefix+IP, not the path), so a counter-inflation script cannot double its
+ * rate by alternating endpoints. 60/hour/IP is ~20× the legitimate ceiling
+ * (a person taps «позвонить» or opens promo sheets a handful of times an
+ * hour), while cutting the inflation potential of the global 300/hour bucket
+ * by 5× on these counters. Both mobile call sites are fire-and-forget
+ * (.ignore() / .catchError), so a 429 is invisible to users.
+ */
+const analyticsWriteLimiter = createRateLimiter({
+  limit: 60,
+  windowSeconds: 3600,
+  keyPrefix: 'analytics-write',
+});
 
 /**
  * GET /api/v1/health
@@ -268,7 +286,7 @@ router.use('/notifications', notificationRoutes);
  * Public endpoint for recording phone tap events from the mobile app.
  * No authentication required — lightweight fire-and-forget tracking.
  */
-router.post('/establishments/:id/track-call', trackCall);
+router.post('/establishments/:id/track-call', analyticsWriteLimiter, trackCall);
 
 /**
  * POST /api/v1/analytics/promotion-view
@@ -277,7 +295,7 @@ router.post('/establishments/:id/track-call', trackCall);
  * No authentication required — lightweight fire-and-forget tracking.
  * Body: { establishmentId: UUID }
  */
-router.post('/analytics/promotion-view', trackPromotionView);
+router.post('/analytics/promotion-view', analyticsWriteLimiter, trackPromotionView);
 
 /**
  * /api/v1/partner/analytics/*

@@ -13,6 +13,7 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { clearAllData } from '../utils/database.js';
 import { createPartnerAndGetToken, createTestEstablishment } from '../utils/auth.js';
+import redisClient, { connectRedis } from '../../config/redis.js';
 
 // Mock Cloudinary
 let app;
@@ -43,19 +44,44 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   default: {},
 }));
 
+/** The analytics-write limiter keys by IP — constant under supertest — with an
+ *  hour-long window, so clear its keys between tests (and between suite runs
+ *  within the same hour). Mirrors auth-password-reset.test.js.
+ *
+ *  `ratelimit:ip:*` must be cleared too: connecting redis in this suite arms
+ *  the GLOBAL 300/hour limiter for every request the file makes (~106/run) —
+ *  without the sweep, a 3rd same-hour rerun would cross 300 mid-file and
+ *  cascade 429s into unrelated tests. */
+const clearRateLimitKeys = async () => {
+  for (const pattern of ['ratelimit:analytics-write:*', 'ratelimit:ip:*']) {
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+    }
+  }
+};
+
 beforeAll(async () => {
   fs.mkdirSync('backend/tmp/uploads', { recursive: true });
   const appModule = await import('../../server.js');
   app = appModule.default || appModule.app;
   const poolModule = await import('../../config/database.js');
   pool = poolModule.default;
+  if (!redisClient.isOpen) {
+    const connected = await connectRedis();
+    if (!connected) {
+      throw new Error('Redis connection is required for rate limit tests');
+    }
+  }
 });
 
 beforeEach(async () => {
   await clearAllData();
+  await clearRateLimitKeys();
 });
 
 afterAll(async () => {
+  await clearRateLimitKeys();
   if (pool) await pool.end();
 });
 
@@ -458,6 +484,50 @@ describe('Promotion View Tracking', () => {
       .post('/api/v1/analytics/promotion-view')
       .send({})
       .expect(400);
+  });
+});
+
+// ============================================================================
+// Analytics-write rate limit (OSB-P5)
+// ============================================================================
+describe('Analytics-write rate limit (OSB-P5)', () => {
+  test('both endpoints sit behind ONE named 60/hour budget, not the global 300', async () => {
+    const { partner } = await createPartnerAndGetToken();
+    const establishment = await createTestEstablishment(partner.id);
+
+    // Named limiter present: the global unauth limiter advertises 300.
+    const first = await request(app)
+      .post('/api/v1/analytics/promotion-view')
+      .send({ establishmentId: establishment.id })
+      .expect(200);
+    expect(first.headers['x-ratelimit-limit']).toBe('60');
+    expect(first.headers['x-ratelimit-remaining']).toBe('59');
+
+    // Shared budget: a track-call from the same IP continues the SAME
+    // counter (58, not 59) — alternating endpoints cannot double the rate.
+    const second = await request(app)
+      .post(`/api/v1/establishments/${establishment.id}/track-call`)
+      .expect(200);
+    expect(second.headers['x-ratelimit-limit']).toBe('60');
+    expect(second.headers['x-ratelimit-remaining']).toBe('58');
+  });
+
+  test('61st write in the window → 429 RATE_LIMIT_EXCEEDED', async () => {
+    // The limiter sits BEFORE the controller, so cheap 400s (no body) spend
+    // budget without touching the DB — lets us reach the cap fast.
+    for (let i = 0; i < 60; i += 1) {
+      await request(app)
+        .post('/api/v1/analytics/promotion-view')
+        .send({})
+        .expect(400);
+    }
+
+    const response = await request(app)
+      .post('/api/v1/analytics/promotion-view')
+      .send({})
+      .expect(429);
+
+    expect(response.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
   });
 });
 
