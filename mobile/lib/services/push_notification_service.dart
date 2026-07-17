@@ -44,20 +44,26 @@ class PushNotificationService {
 
       // Handle foreground messages
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        debugPrint('Push received in foreground: ${message.notification?.title}');
+        if (kDebugMode) {
+          debugPrint('Push received in foreground: ${message.notification?.title}');
+        }
         onForegroundMessage?.call(message);
       });
 
       // Handle background message tap (app was in background)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        debugPrint('Push tapped (background): ${message.data}');
+        if (kDebugMode) {
+          debugPrint('Push tapped (background): ${message.data}');
+        }
         onMessageTap?.call(message);
       });
 
       // Handle terminated message tap (app was closed)
       final initialMessage = await _messaging.getInitialMessage();
       if (initialMessage != null) {
-        debugPrint('Push tapped (terminated): ${initialMessage.data}');
+        if (kDebugMode) {
+          debugPrint('Push tapped (terminated): ${initialMessage.data}');
+        }
         // Delay slightly to ensure navigation context is ready
         Future.delayed(const Duration(milliseconds: 500), () {
           onMessageTap?.call(initialMessage);

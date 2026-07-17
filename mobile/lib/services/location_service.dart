@@ -59,7 +59,9 @@ class LocationService {
       Position? position = await Geolocator.getLastKnownPosition();
 
       if (position != null) {
-        debugPrint('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
+        if (kDebugMode) {
+          debugPrint('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
+        }
         _lastKnownPosition = position;
         return position;
       }
@@ -71,7 +73,9 @@ class LocationService {
         timeLimit: const Duration(seconds: 5),
       );
 
-      debugPrint('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
+      if (kDebugMode) {
+        debugPrint('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
+      }
       return _lastKnownPosition;
     } catch (e) {
       debugPrint('LocationService: Error getting position: $e');

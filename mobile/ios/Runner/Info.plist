@@ -73,9 +73,10 @@
 	<!-- Location permissions for finding nearby restaurants -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>
+	<!-- Camera and photo library permissions for profile and establishment photos -->
+	<key>NSCameraUsageDescription</key>
+	<string>Приложение использует камеру для съёмки фотографий профиля и заведений</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Приложение использует доступ к фотогалерее для выбора изображений</string>
 </dict>
 </plist>
