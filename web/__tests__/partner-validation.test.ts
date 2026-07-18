@@ -64,7 +64,7 @@ describe('evaluateE1', () => {
     menuPhotos: [photo(6)],
   });
 
-  it('passes only when all five checks hold', () => {
+  it('passes when the gating checks hold (description reported alongside)', () => {
     expect(evaluateE1(ready)).toMatchObject({
       photos: true,
       menu: true,
@@ -93,8 +93,22 @@ describe('evaluateE1', () => {
     expect(evaluateE1(f).menu).toBe(true);
   });
 
-  it('fails description below the minimum', () => {
-    expect(evaluateE1({ ...ready, description: 'коротко' }).description).toBe(false);
+  it('reports a short description as unmet but still passes (CAT-E-2.3 Amendment)', () => {
+    const e1 = evaluateE1({ ...ready, description: 'коротко' });
+    expect(e1.description).toBe(false);
+    expect(e1.passed).toBe(true);
+  });
+
+  it('passes with NO description — it is a pre-flip requirement, not a submit gate', () => {
+    const e1 = evaluateE1({ ...ready, description: '' });
+    expect(e1.description).toBe(false);
+    expect(e1.passed).toBe(true);
+  });
+
+  it('still fails when a genuinely gating item is missing', () => {
+    expect(evaluateE1({ ...ready, description: '', menuPhotos: [] }).passed).toBe(
+      false,
+    );
   });
 });
 

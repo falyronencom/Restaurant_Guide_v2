@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react';
+import { Check, Minus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { E1_MIN_DESCRIPTION, E1_MIN_PHOTOS } from '@/lib/partner/constants';
@@ -13,12 +13,23 @@ import { cn } from '@/lib/utils';
  * minimum (name/city/address) was met.
  */
 
-const ITEMS: { key: keyof Omit<E1Checklist, 'passed'>; label: string }[] = [
+const ITEMS: {
+  key: keyof Omit<E1Checklist, 'passed'>;
+  label: string;
+  optional?: boolean;
+}[] = [
   { key: 'photos', label: `Фото заведения: от ${E1_MIN_PHOTOS}` },
   { key: 'menu', label: 'Меню: фото или PDF' },
   { key: 'classification', label: 'Категория и кухня' },
-  { key: 'description', label: `Описание: от ${E1_MIN_DESCRIPTION} симв.` },
   { key: 'hours', label: 'Часы работы' },
+  // Description does NOT gate Submit (CAT-E-2.3 Amendment — it is a pre-flip
+  // requirement). Listed last, marked optional, and never drawn as a blocking ✗
+  // so a collector on site is not pushed into inventing 120 characters.
+  {
+    key: 'description',
+    label: `Описание: от ${E1_MIN_DESCRIPTION} симв. — по желанию`,
+    optional: true,
+  },
 ];
 
 export function StickySidebar({
@@ -74,6 +85,8 @@ export function StickySidebar({
               <li key={it.key} className="flex items-center gap-2 text-body-s">
                 {done ? (
                   <Check className="size-4 shrink-0 text-success-dark" />
+                ) : it.optional ? (
+                  <Minus className="size-4 shrink-0 text-figma-text-grey" />
                 ) : (
                   <X className="size-4 shrink-0 text-figma-text-grey" />
                 )}

@@ -45,7 +45,7 @@ export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
       <Field
         label="Описание"
         htmlFor="f-desc"
-        hint={`${descLen} симв. · для публикации нужно от ${E1_MIN_DESCRIPTION}`}
+        hint={`${descLen} симв. · по желанию — можно оставить пустым (от ${E1_MIN_DESCRIPTION} для полного описания)`}
       >
         <Textarea
           id="f-desc"

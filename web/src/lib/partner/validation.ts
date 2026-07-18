@@ -8,8 +8,14 @@
  *     threshold the draft stays client-only (localStorage).
  *
  *   evaluateE1 — the sticky-sidebar checklist that gates Submit. Stricter than the
- *     backend submit-gate (which ignores media). Submit is enabled only when every
- *     item passes.
+ *     backend submit-gate (which ignores media) in the media dimension, but NOT in
+ *     the description one: `description` is reported for progress and deliberately
+ *     EXCLUDED from `passed` (SDL CAT-E-2.3 Amendment, 2026-07-17 — the description
+ *     requirement moved from the import/submit gate to the pre-flip gate: cards are
+ *     created without one, OCR runs, then descriptions are batch-generated and
+ *     reviewed before the NOINDEX flip). The backend agrees — its create/update
+ *     validators mark description `.optional()`. Mobile has always treated it as
+ *     optional; this keeps the three targets aligned.
  */
 
 import { DAY_KEYS, E1_MIN_DESCRIPTION, E1_MIN_PHOTOS } from '@/lib/partner/constants';
@@ -44,8 +50,9 @@ export type E1Checklist = {
   menu: boolean; // ≥1 menu photo OR PDF
   hours: boolean; // ≥1 open day with times
   classification: boolean; // ≥1 category AND ≥1 cuisine
-  description: boolean; // ≥ E1_MIN_DESCRIPTION chars
-  passed: boolean; // all of the above
+  /** ≥ E1_MIN_DESCRIPTION chars — PROGRESS ONLY, never gates Submit (see header). */
+  description: boolean;
+  passed: boolean; // every gating item above (description excluded)
 };
 
 export function evaluateE1(form: WizardFormState): E1Checklist {
@@ -61,6 +68,9 @@ export function evaluateE1(form: WizardFormState): E1Checklist {
     hours,
     classification,
     description,
-    passed: photos && menu && hours && classification && description,
+    // `description` is intentionally absent — it is a pre-flip requirement, not a
+    // submit-time one (CAT-E-2.3 Amendment). Collectors would otherwise be forced
+    // to invent 120 chars per card on site, which is the slowest field to fill.
+    passed: photos && menu && hours && classification,
   };
 }
