@@ -40,6 +40,10 @@ logs/
 *.bak
 *~
 
+# Production data dumps written by cleanup/rollback scripts.
+# These contain real user data (reviews, favorites) — NEVER commit.
+backend/cleanup-backup-*.json
+
 # Flutter/Dart specific
 .dart_tool/
 .packages

@@ -48,6 +48,18 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\backend", "&&", "set", "DB_NAME=seed_dryrun&&", "set", "PORT=3100&&", "node", "src/server.js"],
       "port": 3100
+    },
+    {
+      "name": "backend-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\backend", "&&", "set", "PORT=3200&&", "node", "src/server.js"],
+      "port": 3200
+    },
+    {
+      "name": "web-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd", "/d", "C:\\Users\\Honor\\Restaurant_Guide_Belarus_v2\\web", "&&", "set", "API_URL=http://localhost:3200&&", "npx", "next", "dev", "--port", "3202"],
+      "port": 3202
     }
   ]
 }
