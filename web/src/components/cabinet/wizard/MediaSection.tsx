@@ -11,7 +11,11 @@ import {
   MEDIA_LIMITS,
 } from '@/lib/partner/constants';
 import type { WizardPdf, WizardPhoto } from '@/lib/partner/form';
-import { uploadMedia, uploadMediaToEstablishment } from '@/lib/partner/upload';
+import {
+  uploadMedia,
+  uploadMediaToEstablishment,
+  validateMediaFileName,
+} from '@/lib/partner/upload';
 import { cn } from '@/lib/utils';
 
 import { Field, SectionCard } from './primitives';
@@ -59,6 +63,13 @@ export function MediaSection({
         setError(`Достигнут лимит — максимум ${cap} фото.`);
         break;
       }
+      // Extension pre-check: the OS-supplied mimetype can lie (.ai as PDF), so
+      // reject by name before spending the upload round-trip.
+      const invalid = validateMediaFileName(file.name, 'photo');
+      if (invalid) {
+        setError(invalid);
+        break;
+      }
       const r = await uploadMedia(file, bucket);
       if (!r.ok) {
         setError(r.message);
@@ -92,6 +103,11 @@ export function MediaSection({
     for (const file of Array.from(files)) {
       if (form.menuPdfs.length + added.length >= MAX_MENU_PDFS) {
         setError(`Максимум ${MAX_MENU_PDFS} PDF меню.`);
+        break;
+      }
+      const invalid = validateMediaFileName(file.name, 'pdf');
+      if (invalid) {
+        setError(invalid);
         break;
       }
       // In edit mode a PDF must attach to the establishment (POST /:id/media —
@@ -246,7 +262,7 @@ export function MediaSection({
         <input
           ref={menuPdfRef}
           type="file"
-          accept="application/pdf"
+          accept=".pdf,application/pdf"
           hidden
           onChange={(e) => {
             void addPdfs(e.target.files);

@@ -27,7 +27,8 @@ const CODE_RU: Record<string, string> = {
   // Upload / streaming-proxy codes (also surfaced from the media routes).
   FILE_TOO_LARGE: 'Файл слишком большой.',
   HTTP_413: 'Файл слишком большой.',
-  INVALID_FILE_TYPE: 'Недопустимый тип файла.',
+  INVALID_FILE_TYPE:
+    'Недопустимый формат файла. Допустимы фото JPG, PNG, WebP, HEIC и меню в PDF.',
   PDF_TYPE_MISMATCH: 'PDF можно загрузить только для меню.',
   FILE_REQUIRED: 'Файл не выбран.',
   INVALID_CONTENT_TYPE: 'Не удалось загрузить файл.',

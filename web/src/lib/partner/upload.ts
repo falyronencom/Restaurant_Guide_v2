@@ -27,6 +27,31 @@ export type UploadResult =
   | { ok: true; media: TempMediaResponse }
   | { ok: false; message: string };
 
+/*
+ * Pre-flight extension check, mirroring the backend allow-list (temp-upload +
+ * media routes). The browser-supplied mimetype comes from OS file associations
+ * — a PDF-compatible .ai file can report application/pdf and pass an accept
+ * filter — so the file NAME extension is the client-side signal. The backend
+ * re-checks authoritatively; this only saves the round-trip and phrases the
+ * rejection in Russian immediately.
+ */
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|jfif)$/i;
+const PDF_EXT_RE = /\.pdf$/i;
+
+export function validateMediaFileName(
+  name: string,
+  kind: 'photo' | 'pdf',
+): string | null {
+  if (kind === 'pdf') {
+    return PDF_EXT_RE.test(name)
+      ? null
+      : `Файл «${name}» не является PDF. Меню можно загрузить как PDF или фото JPG/PNG/WebP.`;
+  }
+  return IMAGE_EXT_RE.test(name)
+    ? null
+    : `Недопустимый формат файла «${name}». Допустимы фото JPG, PNG, WebP или HEIC.`;
+}
+
 export async function uploadMedia(
   file: File,
   type: 'interior' | 'menu',
