@@ -507,6 +507,16 @@ export const updateEstablishment = async (establishmentId, updates) => {
     paramCount++;
   }
 
+  // primary_image_url is normally synced by MediaModel.setPrimaryPhoto (which also
+  // clears the flag across the media rows). It is whitelisted here for the one
+  // case setPrimaryPhoto cannot express: clearing the catalog thumbnail to NULL
+  // when the last interior photo is removed (no media row to point at).
+  if (updates.primary_image_url !== undefined) {
+    fields.push(`primary_image_url = $${paramCount}`);
+    values.push(updates.primary_image_url);
+    paramCount++;
+  }
+
   if (updates.categories !== undefined) {
     fields.push(`categories = $${paramCount}`);
     values.push(updates.categories);

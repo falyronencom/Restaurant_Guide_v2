@@ -21,6 +21,35 @@ import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MEDIA_LIMITS } from './mediaService.js';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import {
+  extractPublicIdFromUrl,
+  generatePdfThumbnailUrl,
+  generatePdfPreviewUrl,
+} from '../config/cloudinary.js';
+
+/**
+ * Build the establishment_media type/url triplet for a synced menu URL. Menu PDFs
+ * (uploaded to menu_pdf/, url ends in .pdf) must carry file_type='pdf' and derived
+ * pg_1 JPG preview/thumbnail URLs — Cloudinary blocks RAW .pdf delivery (401), so a
+ * .pdf placed in an <img> renders broken. Plain image URLs pass through unchanged
+ * (Cloudinary resizes them via URL params). Mirrors the create-path menu_pdfs branch
+ * so the two vehicles agree.
+ */
+function buildMenuMediaFields(url) {
+  const isPdf = url.split('?')[0].toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    return { file_type: 'image', url, thumbnail_url: url, preview_url: url };
+  }
+  const publicId = extractPublicIdFromUrl(url);
+  return {
+    file_type: 'pdf',
+    url,
+    // Fall back to the raw url only if the public_id could not be parsed — the
+    // thumbnail would then be broken, but the record is still typed as a pdf.
+    thumbnail_url: publicId ? generatePdfThumbnailUrl(publicId) : url,
+    preview_url: publicId ? generatePdfPreviewUrl(publicId) : url,
+  };
+}
 
 /**
  * Statuses in which a partner-driven name change triggers slug regeneration.
@@ -915,17 +944,21 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           await MediaModel.deleteMedia(media.id);
         }
 
-        // Insert new media
+        // Insert new media. Menu URLs may be PDFs (uploaded to menu_pdf/) — they
+        // need file_type='pdf' + pg_1 preview/thumbnail via buildMenuMediaFields,
+        // otherwise the raw .pdf lands in an <img> and Cloudinary 401s it.
         const toInsert = newUrls.filter(url => !existingUrls.includes(url));
         for (let i = 0; i < toInsert.length; i++) {
+          const url = toInsert[i];
+          const mediaFields = type === 'menu'
+            ? buildMenuMediaFields(url)
+            : { file_type: 'image', url, thumbnail_url: url, preview_url: url };
           await MediaModel.createMedia({
             establishment_id: establishmentId,
             type,
-            url: toInsert[i],
-            thumbnail_url: toInsert[i],
-            preview_url: toInsert[i],
+            ...mediaFields,
             position: existingOfType.length + i,
-            is_primary: toInsert[i] === primaryPhotoUrl,
+            is_primary: url === primaryPhotoUrl,
           });
         }
 
@@ -940,16 +973,27 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         }
       }
 
-      // Fallback: ensure at least one interior photo is marked as primary
+      // Sync the primary photo THROUGH setPrimaryPhoto — the only writer that also
+      // updates establishments.primary_image_url (the catalog thumbnail). The inline
+      // is_primary flags set on createMedia/updateMedia above touch ONLY the media
+      // row, so calling this unconditionally is what keeps the establishment column
+      // from going stale (the empty-catalog-thumbnail bug). Choose the partner's
+      // pick, else an existing primary, else the first interior photo.
       const updatedMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const interiorPhotos = updatedMedia.filter(m => m.type === 'interior');
-      const hasPrimary = interiorPhotos.some(m => m.is_primary);
-      if (!hasPrimary && interiorPhotos.length > 0) {
-        await MediaModel.setPrimaryPhoto(establishmentId, interiorPhotos[0].id);
-        logger.info('Auto-assigned primary photo (fallback)', {
+      if (interiorPhotos.length > 0) {
+        const chosen = interiorPhotos.find(m => m.url === primaryPhotoUrl)
+          || interiorPhotos.find(m => m.is_primary)
+          || interiorPhotos[0];
+        await MediaModel.setPrimaryPhoto(establishmentId, chosen.id);
+        logger.info('Primary photo synced to establishment column', {
           establishmentId,
-          mediaId: interiorPhotos[0].id,
+          mediaId: chosen.id,
         });
+      } else {
+        // All interior photos removed — clear the catalog thumbnail (setPrimaryPhoto
+        // has no media row to point at; the whitelist handles the NULL write).
+        updates.primary_image_url = null;
       }
 
       // Clean media fields from updates before sending to model (not DB columns)

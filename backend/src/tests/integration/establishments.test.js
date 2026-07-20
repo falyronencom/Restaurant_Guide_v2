@@ -257,6 +257,125 @@ describe('Establishments System - Create Establishment', () => {
       );
       expect(media.rows).toHaveLength(30);
     });
+
+    // Regression: cabinet cards are created in two stages (POST at validator
+    // minimum WITHOUT photos, then autosave PUT adds media). The PUT media-sync
+    // must populate establishments.primary_image_url (catalog thumbnail) and type
+    // menu PDFs correctly — both were broken (MARBL, 2026-07-20).
+    const menuPdfUrl = 'https://res.cloudinary.com/test/image/upload/v1/establishments/temp/x/menu_pdf/abc.pdf';
+
+    test('two-stage create→PUT populates establishments.primary_image_url', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+      expect(created.body.data.establishment.primary_image_url).toBeNull();
+
+      const interior = photoUrls(3, 'interior');
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: interior, primary_photo: interior[1] })
+        .expect(200);
+
+      const row = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
+      expect(row.rows[0].primary_image_url).toBe(interior[1]);
+    });
+
+    test('PUT falls back to the first interior photo as primary when none named', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const interior = photoUrls(2, 'interior');
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: interior })
+        .expect(200);
+
+      const row = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
+      expect(row.rows[0].primary_image_url).toBe(interior[0]);
+    });
+
+    test('removing all interior photos clears primary_image_url', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const interior = photoUrls(2, 'interior');
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: interior })
+        .expect(200);
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: [] })
+        .expect(200);
+
+      const row = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
+      expect(row.rows[0].primary_image_url).toBeNull();
+    });
+
+    test('PUT with a menu PDF url stores file_type=pdf + transformed pg_1 preview', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: [menuPdfUrl] })
+        .expect(200);
+
+      const row = await query(
+        "SELECT file_type, url, preview_url, thumbnail_url FROM establishment_media WHERE establishment_id = $1 AND type = 'menu'",
+        [estId],
+      );
+      expect(row.rows).toHaveLength(1);
+      const m = row.rows[0];
+      expect(m.file_type).toBe('pdf');
+      expect(m.url).toBe(menuPdfUrl); // original preserved for download
+      expect(m.preview_url).not.toBe(menuPdfUrl); // transformed, not raw pdf (Cloudinary 401s raw)
+      expect(m.preview_url).toContain('pg_1');
+      expect(m.thumbnail_url).toContain('pg_1');
+    });
+
+    test('PUT with a plain image menu url keeps file_type=image (unchanged url)', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const menuImg = photoUrls(1, 'menu')[0];
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: [menuImg] })
+        .expect(200);
+
+      const row = await query(
+        "SELECT file_type, preview_url FROM establishment_media WHERE establishment_id = $1 AND type = 'menu'",
+        [estId],
+      );
+      expect(row.rows[0].file_type).toBe('image');
+      expect(row.rows[0].preview_url).toBe(menuImg);
+    });
   });
 
   describe('POST /api/v1/partner/establishments - Belarus City Validation', () => {
