@@ -41,6 +41,16 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   extractPublicIdFromUrl: jest.fn(() => 'test-promo-public-id'),
   isValidImageType: jest.fn(() => true),
   isValidImageSize: jest.fn(() => true),
+  // Named-imported by establishmentService (loaded via server.js) — must exist
+  // in the module mock or ESM linking fails. Mirrors the real allow-list.
+  hasValidImageExtension: jest.fn((name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0])),
+  hasValidPdfExtension: jest.fn((name) => /\.pdf$/i.test(String(name || '').split('?')[0])),
+  fileExtension: jest.fn((name) => {
+    const base = String(name || '').split('?')[0];
+    const seg = base.slice(base.lastIndexOf('/') + 1);
+    const dot = seg.lastIndexOf('.');
+    return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
+  }),
   default: {},
 }));
 

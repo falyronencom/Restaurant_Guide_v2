@@ -376,6 +376,174 @@ describe('Establishments System - Create Establishment', () => {
       expect(row.rows[0].file_type).toBe('image');
       expect(row.rows[0].preview_url).toBe(menuImg);
     });
+
+    // Regression: cabinet menus arrive via the two-stage flow (POST without
+    // media, then autosave PUT), so OCR must be enqueued on the sync path too —
+    // before 2026-07-20 only createEstablishment enqueued, and no cabinet menu
+    // was ever recognized (MARBL).
+    test('PUT media-sync enqueues OCR for newly inserted menu media only', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const menuUrls = [photoUrls(1, 'menu')[0], menuPdfUrl];
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: photoUrls(2, 'interior'), menu_photos: menuUrls })
+        .expect(200);
+
+      const jobs = await pollOcrJobs(estId, 2);
+      const menuMedia = await query(
+        "SELECT id FROM establishment_media WHERE establishment_id = $1 AND type = 'menu'",
+        [estId],
+      );
+      expect(menuMedia.rows).toHaveLength(2);
+      expect(jobs.map((j) => j.media_id).sort())
+        .toEqual(menuMedia.rows.map((r) => r.id).sort());
+
+      // Re-sending the same bucket must not duplicate jobs (diff yields no
+      // inserts; enqueue idempotency is the second guard).
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: menuUrls })
+        .expect(200);
+      const jobsAfter = await query(
+        'SELECT media_id FROM ocr_jobs WHERE establishment_id = $1',
+        [estId],
+      );
+      expect(jobsAfter.rows).toHaveLength(2);
+    });
+
+    // Regression (MARKS, 2026-07-20): an .ai URL in the menu bucket lands as
+    // file_type='image' and renders broken everywhere. The URL extension gate
+    // must reject it before any DB write.
+    const aiUrl = 'https://res.cloudinary.com/test/image/upload/v1/establishments/temp/x/menu_pdf/menu.ai';
+
+    test('create rejects an .ai menu url with INVALID_FILE_TYPE, no orphan row', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], menu_photos: [aiUrl] })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+      const rows = await query('SELECT id FROM establishments', []);
+      expect(rows.rows).toHaveLength(0);
+    });
+
+    test('create rejects a PDF url in menu_photos (create types that bucket as image)', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], menu_photos: [menuPdfUrl] })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    test('PUT media-sync rejects an .ai menu url and writes nothing', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const response = await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: [aiUrl] })
+        .expect(422);
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+
+      const media = await query(
+        'SELECT id FROM establishment_media WHERE establishment_id = $1',
+        [estId],
+      );
+      expect(media.rows).toHaveLength(0);
+    });
+
+    test('PUT media-sync rejects a PDF url in the interior bucket', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      const response = await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: [menuPdfUrl] })
+        .expect(422);
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    // Contract pin: canonical image delivery URLs built by
+    // generateAllResolutions carry NO extension (cloudinary.url() without
+    // `format` — transformation segment + public_id + query only). The gate
+    // must accept that shape for image buckets, or every real cabinet
+    // autosave PUT / mobile registration finalize 422s (found in review,
+    // 2026-07-20).
+    const extensionlessUrl = 'https://res.cloudinary.com/test/image/upload/c_limit,h_1080,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/u1/interior/abc123xyz?_a=BAMAK';
+
+    test('PUT media-sync accepts a canonical extension-less image url', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ interior_photos: [extensionlessUrl], menu_photos: [extensionlessUrl] })
+        .expect(200);
+
+      const media = await query(
+        'SELECT id FROM establishment_media WHERE establishment_id = $1',
+        [estId],
+      );
+      expect(media.rows).toHaveLength(2);
+    });
+
+    test('create accepts a canonical extension-less image url', async () => {
+      await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ ...testEstablishments[0], interior_photos: [extensionlessUrl] })
+        .expect(201);
+    });
+
+    test('PUT media-sync keeps accepting an unchanged legacy url set (gate is insert-only)', async () => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(testEstablishments[0])
+        .expect(201);
+      const estId = created.body.data.establishment.id;
+
+      // Seed a legacy row whose url would FAIL today's gate (pre-gate data).
+      await query(
+        `INSERT INTO establishment_media
+           (establishment_id, type, file_type, url, thumbnail_url, preview_url, position)
+         VALUES ($1, 'menu', 'image', $2, $2, $2, 0)`,
+        [estId, aiUrl],
+      );
+
+      // Re-sending the same set = no new inserts → must stay 200.
+      await request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: [aiUrl] })
+        .expect(200);
+    });
   });
 
   describe('POST /api/v1/partner/establishments - Belarus City Validation', () => {

@@ -154,6 +154,17 @@ router.post(
           });
         }
 
+        // Mimetype is client-supplied: a PDF-compatible .ai arrives as
+        // application/pdf, so the extension is the discriminating check.
+        if (!CloudinaryUtil.hasValidPdfExtension(req.file.originalname)) {
+          fs.unlink(req.file.path, () => {});
+          return res.status(422).json({
+            success: false,
+            message: 'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+            error: { code: 'INVALID_FILE_TYPE' },
+          });
+        }
+
         if (!CloudinaryUtil.isValidPdfSize(req.file.size)) {
           fs.unlink(req.file.path, () => {});
           return res.status(422).json({
@@ -198,8 +209,13 @@ router.post(
         });
       }
 
-      // Image path (unchanged behavior, validators/uploader scoped to images)
-      if (!CloudinaryUtil.isValidImageType(req.file.mimetype)) {
+      // Image path (unchanged behavior, validators/uploader scoped to images).
+      // Extension checked alongside the mimetype — both are required (§ mimetype
+      // is client-supplied, see cloudinary.js extension helpers).
+      if (
+        !CloudinaryUtil.isValidImageType(req.file.mimetype) ||
+        !CloudinaryUtil.hasValidImageExtension(req.file.originalname)
+      ) {
         fs.unlink(req.file.path, () => {});
         return res.status(422).json({
           success: false,

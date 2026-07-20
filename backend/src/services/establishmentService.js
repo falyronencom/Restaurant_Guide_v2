@@ -23,9 +23,44 @@ import { MEDIA_LIMITS } from './mediaService.js';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 import {
   extractPublicIdFromUrl,
+  fileExtension,
   generatePdfThumbnailUrl,
   generatePdfPreviewUrl,
+  hasValidImageExtension,
+  hasValidPdfExtension,
 } from '../config/cloudinary.js';
+
+/**
+ * Reject media URLs whose file extension is outside the allow-list, BEFORE any
+ * DB write. The upload endpoints gate by extension too, but the create/update
+ * payloads carry raw URLs, so this is the authoritative check for what lands in
+ * establishment_media. A URL that slips through untyped (e.g. a PDF-compatible
+ * .ai reported as application/pdf — MARKS, 2026-07-20) renders as a broken
+ * image in every consumer.
+ */
+function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = false, bucket }) {
+  const accepted = [
+    ...(allowImage ? ['JPEG, PNG, WebP, HEIC'] : []),
+    ...(allowPdf ? ['PDF'] : []),
+  ].join(', ');
+  for (const url of urls) {
+    // Canonical image delivery URLs from generateAllResolutions carry NO
+    // extension (cloudinary.url() without `format`) — that shape is
+    // system-generated and valid for image buckets. An extension, when
+    // present, must be on the allow-list (rejects .ai/.txt — MARKS). PDF
+    // URLs (uploadPdf secure_url) always carry .pdf, so the pdf-only bucket
+    // keeps requiring it.
+    const valid = (allowImage && (fileExtension(url) === '' || hasValidImageExtension(url)))
+      || (allowPdf && hasValidPdfExtension(url));
+    if (!valid) {
+      throw new AppError(
+        `Invalid ${bucket} file format. Accepted formats: ${accepted}`,
+        422,
+        'INVALID_FILE_TYPE',
+      );
+    }
+  }
+}
 
 /**
  * Build the establishment_media type/url triplet for a synced menu URL. Menu PDFs
@@ -261,6 +296,17 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         'MEDIA_LIMIT_EXCEEDED',
       );
     }
+
+    // Format gate before the establishment INSERT (no orphan row on failure).
+    // Create materializes menu_photos as file_type='image' and menu_pdfs as
+    // file_type='pdf' unconditionally, so each bucket accepts only the formats
+    // its materialization can render.
+    assertValidMediaUrlExtensions(interior_photos || [], { bucket: 'interior photo' });
+    assertValidMediaUrlExtensions(menu_photos || [], { bucket: 'menu photo' });
+    assertValidMediaUrlExtensions(
+      (Array.isArray(menu_pdfs) ? menu_pdfs : []).map((pdf) => pdf?.url ?? ''),
+      { allowImage: false, allowPdf: true, bucket: 'menu PDF' },
+    );
 
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
@@ -930,6 +976,22 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const primaryPhotoUrl = updates.primary_photo || null;
 
+      // Format gate on newly added URLs only — existing rows stay untouched
+      // (legacy-safe), and the check runs before the first DB write below
+      // (deletes happen inside the sync loop). The menu bucket accepts PDFs on
+      // this path: buildMenuMediaFields types them correctly.
+      for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
+        if (updates[field] === undefined) continue;
+        const existingUrlsOfType = existingMedia
+          .filter(m => m.type === type)
+          .map(m => m.url);
+        const addedUrls = (updates[field] || []).filter(url => !existingUrlsOfType.includes(url));
+        assertValidMediaUrlExtensions(addedUrls, {
+          allowPdf: type === 'menu',
+          bucket: type === 'menu' ? 'menu' : 'interior photo',
+        });
+      }
+
       // Sync each media type
       for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
         if (updates[field] === undefined) continue;
@@ -953,13 +1015,28 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           const mediaFields = type === 'menu'
             ? buildMenuMediaFields(url)
             : { file_type: 'image', url, thumbnail_url: url, preview_url: url };
-          await MediaModel.createMedia({
+          const record = await MediaModel.createMedia({
             establishment_id: establishmentId,
             type,
             ...mediaFields,
             position: existingOfType.length + i,
             is_primary: url === primaryPhotoUrl,
           });
+
+          // Cabinet cards add menus through this sync path (two-stage create →
+          // autosave PUT), so newly inserted menu media must enter the OCR
+          // pipeline here in parity with createEstablishment. Fire-and-forget;
+          // idempotency in OcrJobModel.enqueue protects against duplicates.
+          if (type === 'menu') {
+            OcrJobModel.enqueue({
+              establishmentId,
+              mediaId: record.id,
+            }).catch((err) => logger.error('Failed to enqueue OCR job for menu media on update sync', {
+              error: err.message,
+              mediaId: record.id,
+              establishmentId,
+            }));
+          }
         }
 
         // Update primary flag if needed

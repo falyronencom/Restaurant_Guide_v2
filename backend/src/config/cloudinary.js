@@ -369,6 +369,55 @@ export const isValidImageType = (mimetype) => {
 };
 
 /**
+ * Extension allow-lists, complementing the mimetype checks above.
+ *
+ * The mimetype is client-supplied and derived from OS file associations, so it
+ * cannot be trusted alone: a PDF-compatible `.ai` (Adobe Illustrator) file is
+ * reported as application/pdf on machines where Acrobat owns the extension,
+ * passes isValidPdfType, and lands in the menu bucket as an asset browsers
+ * cannot render (MARKS, 2026-07-20). Content sniffing cannot catch this either
+ * — PDF-compatible .ai files start with the same %PDF- magic bytes — so the
+ * file name extension is the discriminating signal.
+ */
+const IMAGE_FILE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'jfif'];
+
+/**
+ * Lower-cased extension of a file name or URL ('' when there is none).
+ * Exported for the URL-level media gate: canonical Cloudinary delivery URLs
+ * built by generateAllResolutions carry NO extension (cloudinary.url() without
+ * `format`), so '' is a shape the gate must treat as system-generated.
+ */
+export const fileExtension = (filename) => {
+  if (typeof filename !== 'string') return '';
+  const base = filename.split('?')[0];
+  // Look only at the last path segment — for URLs the host dots
+  // (res.cloudinary.com) must not read as an extension.
+  const lastSegment = base.slice(base.lastIndexOf('/') + 1);
+  const dot = lastSegment.lastIndexOf('.');
+  return dot === -1 ? '' : lastSegment.slice(dot + 1).toLowerCase();
+};
+
+/**
+ * Validate image file extension (jpg/jpeg/png/webp/heic)
+ *
+ * @param {string} filename - Original file name (or URL) of the upload
+ * @returns {boolean} True if the extension is an accepted image format
+ */
+export const hasValidImageExtension = (filename) => {
+  return IMAGE_FILE_EXTENSIONS.includes(fileExtension(filename));
+};
+
+/**
+ * Validate PDF file extension
+ *
+ * @param {string} filename - Original file name (or URL) of the upload
+ * @returns {boolean} True if the extension is .pdf
+ */
+export const hasValidPdfExtension = (filename) => {
+  return fileExtension(filename) === 'pdf';
+};
+
+/**
  * Validate image file size
  * 
  * We enforce a maximum file size to prevent abuse and ensure reasonable

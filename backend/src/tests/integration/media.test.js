@@ -57,6 +57,16 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   isValidImageSize: jest.fn(() => true),
   isValidPdfType: jest.fn(() => true),
   isValidPdfSize: jest.fn(() => true),
+  // Extension gates mirror the real logic — the format-rejection tests below
+  // exercise real semantics, not a stub.
+  hasValidImageExtension: jest.fn((name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0])),
+  hasValidPdfExtension: jest.fn((name) => /\.pdf$/i.test(String(name || '').split('?')[0])),
+  fileExtension: jest.fn((name) => {
+    const base = String(name || '').split('?')[0];
+    const seg = base.slice(base.lastIndexOf('/') + 1);
+    const dot = seg.lastIndexOf('.');
+    return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
+  }),
   default: {},
 }));
 
@@ -95,6 +105,14 @@ beforeEach(async () => {
     cloudinary.isValidImageSize.mockReturnValue(true);
     cloudinary.isValidPdfType.mockReturnValue(true);
     cloudinary.isValidPdfSize.mockReturnValue(true);
+    cloudinary.hasValidImageExtension.mockImplementation((name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0]));
+    cloudinary.hasValidPdfExtension.mockImplementation((name) => /\.pdf$/i.test(String(name || '').split('?')[0]));
+    cloudinary.fileExtension.mockImplementation((name) => {
+      const base = String(name || '').split('?')[0];
+      const seg = base.slice(base.lastIndexOf('/') + 1);
+      const dot = seg.lastIndexOf('.');
+      return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
+    });
     cloudinary.uploadPdf.mockResolvedValue({
       public_id: 'test-pdf-public-id',
       secure_url: 'https://res.cloudinary.com/test/image/upload/v1/establishments/test/menu_pdf/test.pdf',
@@ -247,6 +265,31 @@ describe('Media System - Upload Operations', () => {
       expect(response.body.data.is_primary).toBe(false);
     });
 
+    // Regression (MARKS, 2026-07-20): a PDF-compatible .ai file arrives with
+    // mimetype application/pdf on machines where Acrobat owns the extension.
+    // The mimetype gate alone passes it; the extension gate must reject it.
+    test('should reject .ai spoofed as application/pdf (menu)', async () => {
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 illustrator'), { filename: 'menu.ai', contentType: 'application/pdf' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    test('should reject .ai spoofed as image/jpeg (interior)', async () => {
+      const response = await request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'interior')
+        .attach('file', Buffer.from('fake'), { filename: 'photo.ai', contentType: 'image/jpeg' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
     test('should reject 3rd PDF upload (max 2 per establishment)', async () => {
       // Upload first 2 PDFs successfully
       for (let i = 0; i < 2; i++) {
@@ -281,6 +324,54 @@ describe('Media System - Upload Operations', () => {
         .expect(422);
 
       expect(response.body.error.code).toBe('FILE_TOO_LARGE');
+    });
+  });
+
+  describe('POST /api/v1/partner/media/upload - Temp Upload Format Gate', () => {
+    // The cabinet wizard uploads through this temp endpoint BEFORE the
+    // establishment exists; the .ai that broke MARKS entered here.
+    test('accepts a real PDF menu', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/media/upload')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 fake'), { filename: 'menu.pdf', contentType: 'application/pdf' })
+        .expect(201);
+
+      expect(response.body.data.file_type).toBe('pdf');
+    });
+
+    test('accepts a JPG photo', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/media/upload')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'interior')
+        .attach('file', Buffer.from('fake image'), { filename: 'photo.jpg', contentType: 'image/jpeg' })
+        .expect(201);
+
+      expect(response.body.data.file_type).toBe('image');
+    });
+
+    test('rejects .ai spoofed as application/pdf', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/media/upload')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 illustrator'), { filename: 'menu.ai', contentType: 'application/pdf' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+    });
+
+    test('rejects .ai spoofed as image/jpeg', async () => {
+      const response = await request(app)
+        .post('/api/v1/partner/media/upload')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('fake'), { filename: 'scan.ai', contentType: 'image/jpeg' })
+        .expect(422);
+
+      expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
     });
   });
 

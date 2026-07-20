@@ -86,6 +86,23 @@ export const isValidImageType = jest.fn(() => true);
 export const isValidImageSize = jest.fn(() => true);
 
 /**
+ * Mock: Extension gates — mirror the real allow-list logic so format-rejection
+ * paths behave realistically by default
+ */
+export const hasValidImageExtension = jest.fn(
+  (name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0]),
+);
+export const hasValidPdfExtension = jest.fn(
+  (name) => /\.pdf$/i.test(String(name || '').split('?')[0]),
+);
+export const fileExtension = jest.fn((name) => {
+  const base = String(name || '').split('?')[0];
+  const seg = base.slice(base.lastIndexOf('/') + 1);
+  const dot = seg.lastIndexOf('.');
+  return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
+});
+
+/**
  * Mock: Raw cloudinary instance (default export)
  */
 const cloudinaryInstance = {};
@@ -135,4 +152,16 @@ export function resetCloudinaryMocks() {
 
   isValidImageType.mockReset().mockReturnValue(true);
   isValidImageSize.mockReset().mockReturnValue(true);
+  hasValidImageExtension.mockReset().mockImplementation(
+    (name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0]),
+  );
+  hasValidPdfExtension.mockReset().mockImplementation(
+    (name) => /\.pdf$/i.test(String(name || '').split('?')[0]),
+  );
+  fileExtension.mockReset().mockImplementation((name) => {
+    const base = String(name || '').split('?')[0];
+    const seg = base.slice(base.lastIndexOf('/') + 1);
+    const dot = seg.lastIndexOf('.');
+    return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
+  });
 }

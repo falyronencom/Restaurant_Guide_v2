@@ -115,6 +115,16 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         );
       }
 
+      // Mimetype is client-supplied: a PDF-compatible .ai arrives as
+      // application/pdf, so the extension is the discriminating check.
+      if (!CloudinaryUtil.hasValidPdfExtension(file.originalname)) {
+        throw new AppError(
+          'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+          422,
+          'INVALID_FILE_TYPE',
+        );
+      }
+
       if (!CloudinaryUtil.isValidPdfSize(file.size)) {
         throw new AppError(
           'PDF file size exceeds 60MB limit',
@@ -185,8 +195,12 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       );
     }
 
-    // Validate file type
-    if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
+    // Validate file type — mimetype AND extension (mimetype alone is
+    // client-supplied and spoofable, see cloudinary.js extension helpers)
+    if (
+      !CloudinaryUtil.isValidImageType(file.mimetype) ||
+      !CloudinaryUtil.hasValidImageExtension(file.originalname)
+    ) {
       throw new AppError(
         'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
         422,
