@@ -10,11 +10,18 @@
  * Photo filter: media[] with file_type='image' and type ∉ {'menu'} (menu photos
  * live in MenuBlock). Primary photo (is_primary / primary_image_url) goes first.
  *
- * Lightbox deferred: clicks open the original in a new tab via native anchors.
+ * Clicking a tile opens the in-page lightbox (client island) over the FULL
+ * photo set — the «+N фотографий» overlay included. Tiles stay server-rendered;
+ * only the provider/trigger shells are client components.
  */
 
 import Image from 'next/image';
 
+import {
+  LightboxProvider,
+  LightboxTrigger,
+  type LightboxPhoto,
+} from '@/components/establishment/Lightbox';
 import type { PublicMedia } from '@/lib/api/types';
 
 type GalleryProps = {
@@ -40,20 +47,29 @@ export function Gallery({
 
   const [main, second, third] = photos;
   const remaining = Math.max(0, photos.length - 3);
+  const lightboxPhotos: LightboxPhoto[] = photos.map((p) => ({
+    id: p.id,
+    url: p.url,
+    previewUrl: p.preview_url ?? null,
+    thumbnailUrl: p.thumbnail_url ?? null,
+    caption: p.caption ?? null,
+  }));
 
   return (
-    <>
+    <LightboxProvider
+      photos={lightboxPhotos}
+      label={`Фотографии — ${establishmentName}`}
+    >
       {/* Mobile: scroll-snap horizontal carousel */}
       <div
         className='-mx-l flex snap-x snap-mandatory gap-s overflow-x-auto px-l md:hidden'
         style={{ scrollbarWidth: 'none' }}
       >
         {photos.map((photo, idx) => (
-          <a
+          <LightboxTrigger
             key={photo.id}
-            href={photo.url}
-            target='_blank'
-            rel='noopener noreferrer'
+            index={idx}
+            aria-label={`Открыть фото ${idx + 1} из ${photos.length}`}
             className='relative aspect-[4/3] min-w-[85%] shrink-0 snap-center overflow-hidden rounded-card bg-muted'
           >
             <Image
@@ -64,16 +80,15 @@ export function Gallery({
               className='object-cover'
               priority={idx === 0}
             />
-          </a>
+          </LightboxTrigger>
         ))}
       </div>
 
       {/* Desktop: hero mosaic — 1 large left + 2 stacked right */}
       <div className='hidden h-[420px] grid-cols-[1.7fr_1fr] grid-rows-2 gap-[10px] md:grid'>
-        <a
-          href={main.url}
-          target='_blank'
-          rel='noopener noreferrer'
+        <LightboxTrigger
+          index={0}
+          aria-label={`Открыть фото 1 из ${photos.length}`}
           className='relative col-start-1 row-span-2 overflow-hidden rounded-[20px_0_0_20px] bg-muted'
         >
           <Image
@@ -84,13 +99,12 @@ export function Gallery({
             className='object-cover'
             priority
           />
-        </a>
+        </LightboxTrigger>
 
         {second ? (
-          <a
-            href={second.url}
-            target='_blank'
-            rel='noopener noreferrer'
+          <LightboxTrigger
+            index={1}
+            aria-label={`Открыть фото 2 из ${photos.length}`}
             className='relative col-start-2 row-start-1 overflow-hidden rounded-[0_20px_0_0] bg-muted'
           >
             <Image
@@ -100,7 +114,7 @@ export function Gallery({
               sizes='(max-width: 1024px) 40vw, 25vw'
               className='object-cover'
             />
-          </a>
+          </LightboxTrigger>
         ) : (
           <div
             className='col-start-2 row-start-1 rounded-[0_20px_0_0] bg-muted'
@@ -109,10 +123,13 @@ export function Gallery({
         )}
 
         {third ? (
-          <a
-            href={third.url}
-            target='_blank'
-            rel='noopener noreferrer'
+          <LightboxTrigger
+            index={2}
+            aria-label={
+              remaining > 0
+                ? `Открыть все ${photos.length} фотографий`
+                : `Открыть фото 3 из ${photos.length}`
+            }
             className='relative col-start-2 row-start-2 overflow-hidden rounded-[0_0_20px_0] bg-muted'
           >
             <Image
@@ -127,7 +144,7 @@ export function Gallery({
                 +{remaining} фотографий
               </span>
             ) : null}
-          </a>
+          </LightboxTrigger>
         ) : (
           <div
             className='col-start-2 row-start-2 rounded-[0_0_20px_0] bg-muted'
@@ -135,7 +152,7 @@ export function Gallery({
           />
         )}
       </div>
-    </>
+    </LightboxProvider>
   );
 }
 

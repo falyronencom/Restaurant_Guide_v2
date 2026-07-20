@@ -5,8 +5,11 @@
  *   1. Text menu (OCR) — warm-beige card, grouped by category with a brand
  *      icon-tile header, items as «name …(dotted leader)… price» rows. A
  *      disclaimer chip flags the auto-extraction. JSON-LD emits CLEAN items only.
- *   2. Photo menu — 4-up grid (3:4) with a «+N» overlay on the last tile.
- *   3. PDF — «Скачать PDF» download button(s) in the photo-menu header.
+ *   2. Photo menu — 4-up grid (3:4) with a «+N» overlay on the last tile; a
+ *      click opens the in-page lightbox over the FULL photo set (client island;
+ *      tiles stay server-rendered).
+ *   3. PDF — «Скачать PDF» download button(s) in the photo-menu header. PDFs
+ *      keep the preview + download flow and never enter the photo lightbox.
  *
  * Empty-state: nothing rendered beyond the heading when there is no menu data.
  * Server Component throughout.
@@ -15,6 +18,11 @@
 import Image from 'next/image';
 import { AlertCircle, ChefHat, FileText } from 'lucide-react';
 
+import {
+  LightboxProvider,
+  LightboxTrigger,
+  type LightboxPhoto,
+} from '@/components/establishment/Lightbox';
 import type { PublicMenuItem, PublicMedia } from '@/lib/api/types';
 
 type MenuBlockProps = {
@@ -123,33 +131,49 @@ export function MenuBlock({
           </div>
 
           {hasPhotos ? (
-            <div className='grid grid-cols-4 gap-2.5'>
-              {shownPhotos.map((photo, idx) => {
-                const showMore = idx === shownPhotos.length - 1 && morePhotos > 0;
-                return (
-                  <a
-                    key={photo.id}
-                    href={photo.url}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='relative aspect-[3/4] overflow-hidden rounded-m bg-muted'
-                  >
-                    <Image
-                      src={photo.preview_url ?? photo.url}
-                      alt={photo.caption ?? `Меню — ${establishmentName}`}
-                      fill
-                      sizes='(max-width: 768px) 25vw, 160px'
-                      className='object-cover'
-                    />
-                    {showMore ? (
-                      <span className='absolute inset-0 flex items-center justify-center bg-black/50 text-body-m font-medium text-text-on-primary'>
-                        +{morePhotos}
-                      </span>
-                    ) : null}
-                  </a>
-                );
-              })}
-            </div>
+            <LightboxProvider
+              photos={menuPhotos.map(
+                (p): LightboxPhoto => ({
+                  id: p.id,
+                  url: p.url,
+                  previewUrl: p.preview_url ?? null,
+                  thumbnailUrl: p.thumbnail_url ?? null,
+                  caption: p.caption ?? null,
+                }),
+              )}
+              label={`Фото меню — ${establishmentName}`}
+            >
+              <div className='grid grid-cols-4 gap-2.5'>
+                {shownPhotos.map((photo, idx) => {
+                  const showMore = idx === shownPhotos.length - 1 && morePhotos > 0;
+                  return (
+                    <LightboxTrigger
+                      key={photo.id}
+                      index={idx}
+                      aria-label={
+                        showMore
+                          ? `Открыть все ${menuPhotos.length} фото меню`
+                          : `Открыть фото меню ${idx + 1} из ${menuPhotos.length}`
+                      }
+                      className='relative aspect-[3/4] overflow-hidden rounded-m bg-muted'
+                    >
+                      <Image
+                        src={photo.preview_url ?? photo.url}
+                        alt={photo.caption ?? `Меню — ${establishmentName}`}
+                        fill
+                        sizes='(max-width: 768px) 25vw, 160px'
+                        className='object-cover'
+                      />
+                      {showMore ? (
+                        <span className='absolute inset-0 flex items-center justify-center bg-black/50 text-body-m font-medium text-text-on-primary'>
+                          +{morePhotos}
+                        </span>
+                      ) : null}
+                    </LightboxTrigger>
+                  );
+                })}
+              </div>
+            </LightboxProvider>
           ) : null}
         </div>
       ) : null}
