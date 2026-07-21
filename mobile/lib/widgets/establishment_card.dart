@@ -192,19 +192,17 @@ class EstablishmentCard extends StatelessWidget {
     );
   }
 
-  /// Build establishment name (Unbounded font, 18px)
+  /// Build establishment name — «витринный» заголовок карточки через токен
+  /// AppTheme.canonCardTitle (шрифт и кегль заданы там — единый источник правды).
+  /// Раньше стоял широкий Unbounded, из-за которого даже «Сорренто» не влезало
+  /// в строку и ломалось по буквам.
   /// Right padding prevents overlap with rating badge + price column
   Widget _buildName() {
     return Padding(
       padding: const EdgeInsets.only(right: _ratingSize + 12),
       child: Text(
         establishment.name,
-        style: AppTheme.unbounded(
-          fontSize: 18,
-          fontWeight: FontWeight.w400,
-          color: AppTheme.textPrimary,
-          height: 25 / 18,
-        ),
+        style: AppTheme.canonCardTitle,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -329,18 +327,23 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build address with underline (Figma design)
+  /// Правый отступ резервирует место под иконку избранного в правом-нижнем углу
+  /// (сердечко 27 + паддинг 8×2 = 43) — иначе длинный адрес заходит под неё.
   Widget _buildAddress() {
-    return Text(
-      establishment.address,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: AppTheme.textPrimary,
-        decoration: TextDecoration.underline,
-        height: 20 / 14,
+    return Padding(
+      padding: const EdgeInsets.only(right: 43),
+      child: Text(
+        establishment.address,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppTheme.textPrimary,
+          decoration: TextDecoration.underline,
+          height: 20 / 14,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
     );
   }
 

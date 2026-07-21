@@ -268,6 +268,16 @@ class AppTheme {
     color: textPrimary,
   );
 
+  /// Заголовок карточки-витрины (список результатов поиска): Onest 20/w600 —
+  /// стильный дисплейный шрифт у́же Unbounded, с поддержкой кириллицы. Выбран
+  /// сравнением на устройстве среди Comfortaa · Rubik · Onest (Quicksand отклонён —
+  /// нет кириллического покрытия: latin/latin-ext/vietnamese).
+  static final TextStyle canonCardTitle = GoogleFonts.onest(
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    color: textPrimary,
+  );
+
   /// Каноническая карточка: белая, рамка strokeGrey, тёплая тень
   /// primaryOrangeShadow 4% (образец: карточка меню detail_screen).
   static BoxDecoration canonCardDecoration({
