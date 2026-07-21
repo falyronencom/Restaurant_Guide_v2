@@ -398,6 +398,10 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                             SmartSearchState.results &&
                         smartProvider.smartResults.isNotEmpty;
 
+                    // Шапка поджимается и при фокусе строки поиска — иначе на iOS
+                    // всплывающая клавиатура перекрывает подсказки Smart Search.
+                    final bool compact = showCompact || _isSearchFocused;
+
                     // Track results state for other widgets
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (_hasResults != showCompact) {
@@ -412,7 +416,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
-                          height: showCompact ? 40 : 120,
+                          height: compact ? 40 : 120,
                         ),
 
                         // Logo with animated size
@@ -420,10 +424,10 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
                           style: GoogleFonts.josefinSans(
-                            fontSize: showCompact ? 32 : 48,
+                            fontSize: compact ? 32 : 48,
                             fontWeight: FontWeight.w600,
                             color: AppTheme.textOnPrimary,
-                            letterSpacing: (showCompact ? 32 : 48) * 0.3,
+                            letterSpacing: (compact ? 32 : 48) * 0.3,
                           ),
                           child: const Text('NIRIVIO'),
                         ),
@@ -431,7 +435,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         // Tagline — animated hide
                         AnimatedCrossFade(
                           duration: const Duration(milliseconds: 300),
-                          crossFadeState: showCompact
+                          crossFadeState: compact
                               ? CrossFadeState.showSecond
                               : CrossFadeState.showFirst,
                           firstChild: Padding(
@@ -445,7 +449,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
-                          height: showCompact ? 20 : 80,
+                          height: compact ? 20 : 80,
                         ),
 
                         // City and Filter buttons row

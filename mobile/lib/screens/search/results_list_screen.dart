@@ -859,6 +859,14 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
             fontWeight: FontWeight.w400,
           ),
           border: InputBorder.none,
+          // Поле само рисует свою форму (Container). Гасим рамку и заливку из
+          // глобальной inputDecorationTheme — иначе на фокусе всплывает
+          // оранжевая обводка со скруглением всех углов.
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          filled: false,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 20,
@@ -1267,6 +1275,14 @@ class _CollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
             fontWeight: FontWeight.w400,
           ),
           border: InputBorder.none,
+          // Поле само рисует свою форму (Container). Гасим рамку и заливку из
+          // глобальной inputDecorationTheme — иначе на фокусе всплывает
+          // оранжевая обводка со скруглением всех углов.
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          filled: false,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 20,

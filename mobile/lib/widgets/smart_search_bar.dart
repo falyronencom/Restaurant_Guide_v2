@@ -120,6 +120,14 @@ class _SmartSearchBarState extends State<SmartSearchBar> {
                   fontWeight: FontWeight.w400,
                 ),
                 border: InputBorder.none,
+                // Поле само рисует свою форму (Container). Гасим рамку и заливку
+                // из глобальной inputDecorationTheme — иначе на фокусе всплывает
+                // оранжевая обводка со скруглением всех углов и зазоры у кнопки.
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                filled: false,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 20,
