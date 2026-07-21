@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -197,6 +198,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return Scaffold(
       backgroundColor: _backgroundColor,
       body: SingleChildScrollView(
+        // ClampingScrollPhysics: на iOS убирает bounce-overscroll, который
+        // открывал пустой фон Scaffold над/под контентом (на Android так по умолч.).
+        physics: const ClampingScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -232,8 +236,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             // Reviews section (dark background)
             _buildReviewsSection(),
 
-            // Bottom padding
-            const SizedBox(height: 34),
+            // Bottom padding — чёрный, чтобы низ тёмной секции «Отзывы» доходил
+            // до края экрана (иначе под кнопкой виден бежевый фон Scaffold).
+            Container(
+              width: double.infinity,
+              height: 34,
+              color: AppTheme.textPrimary,
+            ),
           ],
         ),
       ),
@@ -360,28 +369,29 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: _buildShareButton(),
           ),
 
-          // Info overlay (IgnorePointer so swipe reaches PageView)
+          // Info overlay. Тап-обработчики внутри (адрес→карты, телефон→звонок,
+          // чип→сайт/соцсеть) используют только onTap и не претендуют на
+          // горизонтальный drag, поэтому свайп галереи сохраняется без IgnorePointer.
           Positioned(
             bottom: 60,
             left: 17,
             right: 17,
-            child: IgnorePointer(
-              child: _buildInfoOverlay(),
-            ),
+            child: _buildInfoOverlay(),
           ),
 
-          // Rating badge
+          // Right-side stack: рейтинг + $$ + избранное — одной bottom-привязанной
+          // колонкой, чтобы делить нижнюю базу с info-оверлеем (сердечко встаёт на
+          // уровень чипа «Сайт»). Раньше жёсткие top:500/585 уезжали вниз.
           Positioned(
-            top: 500,
+            bottom: 60,
             right: 24,
-            child: _buildRatingBadge(),
-          ),
-
-          // Favorite button (below rating badge)
-          Positioned(
-            top: 585,
-            right: 34,
-            child: _buildFavoriteButton(),
+            child: Column(
+              children: [
+                _buildRatingBadge(),
+                const SizedBox(height: 8),
+                _buildFavoriteButton(),
+              ],
+            ),
           ),
         ],
       ),
@@ -627,27 +637,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         // Address
         GestureDetector(
-          onTap: () async {
-            final lat = _establishment!.latitude;
-            final lng = _establishment!.longitude;
-            if (lat == null || lng == null) return;
-
-            // Try Yandex Maps first, then Google Maps, then browser
-            final yandexUrl = Uri.parse(
-                'yandexmaps://maps.yandex.ru/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(_establishment!.address)}');
-            final geoUrl = Uri.parse(
-                'geo:$lat,$lng?q=${Uri.encodeComponent(_establishment!.address)}');
-            final webUrl = Uri.parse(
-                'https://yandex.by/maps/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(_establishment!.address)}');
-
-            if (await canLaunchUrl(yandexUrl)) {
-              await launchUrl(yandexUrl);
-            } else if (await canLaunchUrl(geoUrl)) {
-              await launchUrl(geoUrl);
-            } else {
-              await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-            }
-          },
+          onTap: _showAddressSheet,
           child: Text(
             _establishment!.address,
             style: const TextStyle(
@@ -696,7 +686,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   Widget _buildSocialChip(String url) {
     final info = _parseSocialLink(url);
     return GestureDetector(
-      onTap: () => _launchSocialUrl(url),
+      onTap: () => _showLinkSheet(url),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -764,6 +754,139 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  /// Bottom-sheet выбора действия — держит пользователя в приложении до
+  /// осознанного перехода (адрес/сайт/соцсеть): выбор навигатора + «копировать».
+  void _showActionSheet(
+      List<({IconData icon, String label, VoidCallback onTap})> actions) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.backgroundPrimary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.strokeGrey,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final a in actions)
+              ListTile(
+                leading: Icon(a.icon, color: AppTheme.textPrimary),
+                title: Text(
+                  a.label,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  a.onTap();
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Адрес → выбор навигатора / копирование (вместо мгновенного ухода в карты).
+  void _showAddressSheet() {
+    final address = _establishment!.address;
+    final lat = _establishment!.latitude;
+    final lng = _establishment!.longitude;
+    final hasCoords = lat != null && lng != null;
+    _showActionSheet([
+      if (hasCoords)
+        (
+          icon: Icons.map_outlined,
+          label: 'Яндекс.Карты',
+          onTap: () => _launchYandexMaps(lat, lng, address),
+        ),
+      if (hasCoords)
+        (
+          icon: Icons.public,
+          label: 'Google Карты',
+          onTap: () => _launchGoogleMaps(lat, lng),
+        ),
+      (
+        icon: Icons.copy_outlined,
+        label: 'Скопировать адрес',
+        onTap: () => _copyToClipboard(address, 'Адрес скопирован'),
+      ),
+    ]);
+  }
+
+  /// Сайт/соцсеть → открыть (адаптивно под платформу) / копировать / поделиться.
+  void _showLinkSheet(String url) {
+    final info = _parseSocialLink(url);
+    final openLabel =
+        info.$2 == 'Сайт' ? 'Открыть сайт' : 'Открыть в ${info.$2}';
+    _showActionSheet([
+      (icon: info.$1, label: openLabel, onTap: () => _launchSocialUrl(url)),
+      (
+        icon: Icons.copy_outlined,
+        label: 'Скопировать ссылку',
+        onTap: () => _copyToClipboard(url, 'Ссылка скопирована'),
+      ),
+      (
+        icon: Icons.ios_share,
+        label: 'Поделиться',
+        onTap: () => Share.share(url),
+      ),
+    ]);
+  }
+
+  /// Открыть адрес в Яндекс.Картах (приложение → geo: → браузер).
+  Future<void> _launchYandexMaps(
+      double? lat, double? lng, String address) async {
+    if (lat == null || lng == null) return;
+    final yandexUrl = Uri.parse(
+        'yandexmaps://maps.yandex.ru/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(address)}');
+    final geoUrl =
+        Uri.parse('geo:$lat,$lng?q=${Uri.encodeComponent(address)}');
+    final webUrl = Uri.parse(
+        'https://yandex.by/maps/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(address)}');
+    if (await canLaunchUrl(yandexUrl)) {
+      await launchUrl(yandexUrl);
+    } else if (await canLaunchUrl(geoUrl)) {
+      await launchUrl(geoUrl);
+    } else {
+      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /// Открыть адрес в Google Картах (браузер/приложение).
+  Future<void> _launchGoogleMaps(double? lat, double? lng) async {
+    if (lat == null || lng == null) return;
+    final url = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  /// Скопировать текст в буфер обмена + подтверждение.
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   /// Build status line (Open/Closed with time)
@@ -1307,7 +1430,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           // Amenities horizontal carousel
           SizedBox(
-            height: 130,
+            height: 105,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1338,8 +1461,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         // SVG is a full circle badge with icon inside
         SvgPicture.asset(
           'assets/icons/$svgFileName.svg',
-          width: 80,
-          height: 80,
+          width: 60,
+          height: 60,
         ),
         const SizedBox(height: 8),
         // Label
