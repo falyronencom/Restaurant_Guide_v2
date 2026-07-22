@@ -39,7 +39,7 @@ export function MobileFilterDrawer(props: Props) {
   return (
     <div className="mb-m lg:hidden">
       <Sheet>
-        <SheetTrigger className="inline-flex items-center gap-s rounded-full border border-border bg-background px-l py-m text-label-l text-foreground shadow-sm transition-colors hover:bg-muted">
+        <SheetTrigger className="inline-flex items-center gap-s rounded-2xl border border-border bg-background px-l py-m text-label-l text-foreground shadow-sm transition-colors hover:bg-muted">
           <FilterIcon />
           Фильтры
         </SheetTrigger>

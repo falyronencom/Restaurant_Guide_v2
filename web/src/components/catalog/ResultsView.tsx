@@ -89,7 +89,7 @@ export function ResultsView({
         <div className="mb-m flex items-center justify-between gap-m">
           <p className="text-body-m text-muted-foreground">
             {pagination.total > 0
-              ? `Найдено заведений: ${pagination.total}`
+              ? `Найдено ${pagination.total}`
               : 'Заведений по этим параметрам не найдено'}
           </p>
           {pagination.total > 0 && (
