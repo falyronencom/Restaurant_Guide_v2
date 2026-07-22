@@ -6,6 +6,9 @@ import { useState } from 'react';
 import { CitySheet } from '@/components/home/CitySheet';
 import type { MetadataSlug } from '@/lib/api/types';
 import type { SearchParams } from '@/lib/catalog-params';
+import type { FacetOption } from '@/lib/facets';
+
+import { MobileFilterDrawer } from './MobileFilterDrawer';
 
 type Props = {
   citySlug: string;
@@ -14,27 +17,48 @@ type Props = {
   categorySlug?: string;
   cities: MetadataSlug[];
   searchParams: SearchParams;
+  // Filter data — powers the «Фильтры» drawer that now sits in the hero next to
+  // the city pill (mobile/tablet only; desktop uses the sidebar shelf).
+  categories: MetadataSlug[];
+  activeCategorySlug?: string;
+  cuisineOptions: FacetOption[];
+  selected: {
+    cuisines: string[];
+    priceRange: string[];
+    features: string[];
+    hours: string | undefined;
+  };
+  basePath: string;
 };
 
 // Glass pill over the photo banner — the catalog variant of the hero city chip.
-// self-start keeps it content-width when the cluster stacks on mobile.
+// Same padding as the home-hero pills (px-l py-s), so only the translucent fill
+// distinguishes it — the fill reads as "you're now in the results field".
 const GLASS_TRIGGER =
-  'flex items-center gap-s self-start rounded-2xl border border-white/35 bg-white/[0.12] px-4 py-[13px] text-label-l text-white backdrop-blur-[4px] transition-colors hover:bg-white/20 sm:self-auto';
+  'flex items-center gap-s rounded-2xl border border-white/35 bg-white/[0.12] px-l py-s text-label-l text-white backdrop-blur-[4px] transition-colors hover:bg-white/20';
 
 /*
- * Catalog banner search cluster — the interactive island of CatalogHero. Unlike
- * the home HeroSearch this has no «Фильтры» pill (refinement lives in the
- * sidebar FilterShelf) and it navigates WITHIN the catalog:
+ * Catalog banner search cluster — the interactive island of CatalogHero. Mirrors
+ * the home HeroSearch: the city pill + «Фильтры» pill sit in a row over the
+ * photo, the search box below. It navigates WITHIN the catalog:
  *   - city pill  → /{newCity}/{category}  (city is part of the SEO route)
  *   - search box → /{city}/{category}?search=…
  * Both preserve the currently-applied facets (cuisine/price/hours/features) and
  * reset pagination, mirroring the URL contract the page reads server-side.
+ *
+ * The «Фильтры» pill is mobile/tablet only (lg:hidden) — on desktop the facets
+ * live in the sticky sidebar shelf (ResultsView).
  */
 export function CatalogSearch({
   citySlug,
   categorySlug,
   cities,
   searchParams,
+  categories,
+  activeCategorySlug,
+  cuisineOptions,
+  selected,
+  basePath,
 }: Props) {
   const router = useRouter();
   const initial =
@@ -57,13 +81,27 @@ export function CatalogSearch({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <CitySheet
-        cities={cities}
-        value={citySlug}
-        onChange={(slug) => navigate(slug, term.trim() || undefined)}
-        triggerClassName={GLASS_TRIGGER}
-      />
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <CitySheet
+          cities={cities}
+          value={citySlug}
+          onChange={(slug) => navigate(slug, term.trim() || undefined)}
+          triggerClassName={GLASS_TRIGGER}
+        />
+        <div className="lg:hidden">
+          <MobileFilterDrawer
+            triggerClassName={GLASS_TRIGGER}
+            citySlug={citySlug}
+            categories={categories}
+            activeCategorySlug={activeCategorySlug}
+            basePath={basePath}
+            searchParams={searchParams}
+            cuisineOptions={cuisineOptions}
+            selected={selected}
+          />
+        </div>
+      </div>
 
       <form
         onSubmit={(e) => {

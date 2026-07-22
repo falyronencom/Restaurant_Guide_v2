@@ -23,37 +23,50 @@ type Props = {
     features: string[];
     hours: string | undefined;
   };
+  /** Override the trigger pill styling — e.g. the catalog hero's glass variant.
+   *  Defaults to a solid white-outline button. */
+  triggerClassName?: string;
 };
 
+const DEFAULT_TRIGGER =
+  'inline-flex items-center gap-s rounded-2xl border border-border bg-background px-l py-m text-label-l text-foreground shadow-sm transition-colors hover:bg-muted';
+
 /*
- * Mobile-only filter affordance: a "Фильтры" trigger that opens the FilterShelf
- * inside a left sheet drawer. Desktop renders the shelf directly in a sticky
- * <aside> (see ResultsView), so this whole control is lg:hidden.
+ * Mobile/tablet filter affordance (the caller applies `lg:hidden`): a «Фильтры»
+ * trigger that opens the FilterShelf inside a full-screen right sheet. Desktop
+ * renders the shelf directly in a sticky <aside> (see ResultsView).
  *
  * Uncontrolled (base-ui Dialog manages its own open state). FilterShelf
  * navigates (router.push) on each toggle; the drawer stays mounted across the
  * soft navigation (same route segment), so the user can toggle several facets
  * before dismissing via the close button or backdrop.
+ *
+ * Now placed next to the city pill in the catalog hero (CatalogSearch) so the
+ * results hero mirrors the home hero — city + filters together.
  */
-export function MobileFilterDrawer(props: Props) {
+export function MobileFilterDrawer({
+  triggerClassName = DEFAULT_TRIGGER,
+  ...props
+}: Props) {
   return (
-    <div className="mb-m lg:hidden">
-      <Sheet>
-        <SheetTrigger className="inline-flex items-center gap-s rounded-2xl border border-border bg-background px-l py-m text-label-l text-foreground shadow-sm transition-colors hover:bg-muted">
-          <FilterIcon />
-          Фильтры
-        </SheetTrigger>
-        <SheetContent
-          side="left"
-          className="w-80 max-w-[85vw] gap-0 overflow-y-auto p-l"
-        >
-          <SheetHeader className="p-0 pb-m">
-            <SheetTitle>Фильтры</SheetTitle>
-          </SheetHeader>
-          <FilterShelf {...props} />
-        </SheetContent>
-      </Sheet>
-    </div>
+    <Sheet>
+      <SheetTrigger className={triggerClassName}>
+        <FilterIcon />
+        Фильтры
+      </SheetTrigger>
+      <SheetContent
+        side="right"
+        // Full-screen on phones: the sheet default carries `data-[side=right]:w-3/4`,
+        // so override at the same variant (tailwind-merge replaces it). The default
+        // `sm:max-w-sm` still caps it to a panel on tablet/desktop.
+        className="gap-0 overflow-y-auto p-l data-[side=right]:w-full"
+      >
+        <SheetHeader className="p-0 pb-m">
+          <SheetTitle>Фильтры</SheetTitle>
+        </SheetHeader>
+        <FilterShelf {...props} />
+      </SheetContent>
+    </Sheet>
   );
 }
 

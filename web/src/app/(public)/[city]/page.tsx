@@ -136,6 +136,10 @@ export default async function CityPage({
         cityName={cityName}
         cities={meta.cities}
         searchParams={sp}
+        categories={meta.categories}
+        cuisineOptions={cuisineOptions}
+        selected={{ cuisines, priceRange, features, hours }}
+        basePath={`/${city}`}
       />
 
       <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>

@@ -168,6 +168,11 @@ export default async function CategoryPage({
         categoryName={categoryName}
         cities={meta.cities}
         searchParams={sp}
+        categories={meta.categories}
+        activeCategorySlug={category}
+        cuisineOptions={cuisineOptions}
+        selected={{ cuisines, priceRange, features, hours }}
+        basePath={`/${city}/${category}`}
       />
 
       <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { MetadataSlug } from '@/lib/api/types';
 import { catalogHeading, categoryPlural, cityHeading } from '@/lib/catalog-labels';
 import type { SearchParams } from '@/lib/catalog-params';
+import type { FacetOption } from '@/lib/facets';
 
 import { CatalogSearch } from './CatalogSearch';
 
@@ -17,6 +18,17 @@ type Props = {
   categoryName?: string;
   cities: MetadataSlug[];
   searchParams: SearchParams;
+  // Filter data forwarded to the in-hero «Фильтры» drawer (CatalogSearch).
+  categories: MetadataSlug[];
+  activeCategorySlug?: string;
+  cuisineOptions: FacetOption[];
+  selected: {
+    cuisines: string[];
+    priceRange: string[];
+    features: string[];
+    hours: string | undefined;
+  };
+  basePath: string;
 };
 
 /*
@@ -41,6 +53,11 @@ export function CatalogHero({
   categoryName,
   cities,
   searchParams,
+  categories,
+  activeCategorySlug,
+  cuisineOptions,
+  selected,
+  basePath,
 }: Props) {
   return (
     <section className="relative -mt-[73px] w-full overflow-hidden">
@@ -103,6 +120,11 @@ export function CatalogHero({
             categorySlug={categorySlug}
             cities={cities}
             searchParams={searchParams}
+            categories={categories}
+            activeCategorySlug={activeCategorySlug}
+            cuisineOptions={cuisineOptions}
+            selected={selected}
+            basePath={basePath}
           />
         </div>
       </div>
