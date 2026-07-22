@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import { AuthMenu } from '@/components/auth/AuthMenu';
 import { cn } from '@/lib/utils';
 
+import { MobileNav } from './MobileNav';
+
 /*
  * Unified site header — one chrome for the home, city and catalog routes (and,
  * as the accepted D-A side-effect, /login + /register, which also sit under the
@@ -19,10 +21,17 @@ import { cn } from '@/lib/utils';
  *    It turns solid once the user scrolls past a small threshold.
  *
  * Controls: «Стать партнёром» (the vitrine's partner-acquisition CTA → the
- * cabinet create flow; logged-out users pass through /login) + «Войти». City
+ * cabinet create flow; logged-out users pass through /login) + the account
+ * control (AuthMenu: a dropdown when signed in, «Войти» when not). City
  * switching lives in the home hero chip and the footer, not the header
  * (Coordinator review 2026-06-17 — removes a redundant city picker and makes the
  * header partner-forward).
+ *
+ * Responsive: from `md` up the controls sit inline; below `md` they collapse
+ * into a single burger → sheet drawer (MobileNav), so the bar never wraps. The
+ * inner row is a fixed 72px (73px with the 1px border-b) — the home/catalog hero
+ * pulls itself up under the header by exactly that (-mt-[73px]), so the height
+ * must not vary with content.
  *
  * Client Component: the variant depends on usePathname + a scroll listener,
  * both client-only. It reads NO cookies/headers, so the (public) layout stays a
@@ -71,7 +80,7 @@ export function SiteHeader() {
           : 'border-border bg-background',
       )}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-l px-l py-m">
+      <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-l px-l">
         <Link
           href="/"
           aria-label="Nirivio — на главную"
@@ -89,7 +98,8 @@ export function SiteHeader() {
           NIRIVIO
         </Link>
 
-        <div className="flex items-center gap-m text-body-m">
+        {/* Desktop — partner CTA + account control inline (md and up). */}
+        <div className="hidden items-center gap-m text-body-m md:flex">
           <Link
             href="/login?returnTo=/cabinet/new"
             className={cn(
@@ -102,6 +112,11 @@ export function SiteHeader() {
             Стать партнёром
           </Link>
           <AuthMenu overlay={overlay} />
+        </div>
+
+        {/* Mobile — everything collapses into a burger → sheet drawer. */}
+        <div className="flex md:hidden">
+          <MobileNav overlay={overlay} />
         </div>
       </div>
     </header>

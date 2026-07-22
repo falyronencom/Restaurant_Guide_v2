@@ -346,3 +346,15 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
+
+/*
+ * Horizontal-overflow safety net. `clip` (not `hidden`/`auto`) stops a stray
+ * wide element from making the whole page scroll sideways WITHOUT turning the
+ * root into a scroll container — so `position: sticky` (the header) keeps
+ * sticking. Applied to `html` too: iOS Safari ignores overflow-x on `body`
+ * alone. Wide content (map, tables) must scroll inside its own container.
+ */
+html,
+body {
+  overflow-x: clip;
+}

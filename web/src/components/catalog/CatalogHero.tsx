@@ -24,8 +24,9 @@ type Props = {
  * mirroring the home hero's treatment (own photo + dark wash + warm gradient).
  *
  * Overlay coupling: like the home Hero, the (public) SiteHeader is `sticky
- * top-0` and the banner is pulled up beneath it (-mt-[72px], the live header
- * height) so the transparent overlay header sits over the photo. SiteHeader
+ * top-0` and the banner is pulled up beneath it (-mt-[73px] = the 72px header
+ * row + its 1px border-b) so the transparent overlay header sits over the photo.
+ * SiteHeader
  * detects the catalog route (2 path segments) and renders its overlay variant —
  * but keeps the wordmark visible (white), since the banner has no large wordmark
  * of its own. The header turns solid on scroll (client logic in SiteHeader).
@@ -42,7 +43,7 @@ export function CatalogHero({
   searchParams,
 }: Props) {
   return (
-    <section className="relative -mt-[72px] w-full overflow-hidden">
+    <section className="relative -mt-[73px] w-full overflow-hidden">
       <Image
         src="/search_background.jpg"
         alt=""

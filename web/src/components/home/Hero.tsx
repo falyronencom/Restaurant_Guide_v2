@@ -20,7 +20,7 @@ type Props = {
  * blank strip would show above the photo. The header turns solid on scroll
  * (client logic in SiteHeader); this pull-up applies only on the home route,
  * since the hero is rendered only here. The -mt value matches the live header
- * height (verified via preview_inspect).
+ * height: a 72px inner row + the 1px border-b = 73px (measured in-browser).
  *
  * LCP: the background photo is `priority` (preloaded); the large heading rides
  * on the already-loaded Unbounded (font-display) and the wordmark on Josefin
@@ -28,7 +28,7 @@ type Props = {
  */
 export function Hero({ cities, categories, cuisines }: Props) {
   return (
-    <section className="relative -mt-[72px] min-h-[80vh] w-full overflow-hidden">
+    <section className="relative -mt-[73px] min-h-[80vh] w-full overflow-hidden">
       <Image
         src="/search_background.jpg"
         alt=""
