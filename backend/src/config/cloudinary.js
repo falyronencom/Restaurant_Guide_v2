@@ -71,21 +71,28 @@ const AVATAR_CONFIG = {
   gravity: 'face', // Cloudinary face detection for better avatar crops
 };
 
+/**
+ * Delivery-time variants (2026-07-20 uplift for DPR 2–3 screens).
+ *
+ * No height cap on original/preview: a height cap crushes vertical photos
+ * (menu shots are usually vertical — a 3024×4032 phone photo capped at
+ * h=1080 keeps only 810×1080 and menu text turns to mush). c_limit bounds
+ * the width only, never upscales, and lets the long side of verticals
+ * survive. Thumbnail keeps a fill crop — cards need a fixed aspect.
+ */
 const RESOLUTION_CONFIG = {
   original: {
     width: 1920,
-    height: 1080,
-    crop: 'limit', // Never exceed dimensions, maintain aspect ratio
+    crop: 'limit', // Cap width only, never upscale
   },
   preview: {
-    width: 800,
-    height: 600,
-    crop: 'fit', // Fit within dimensions, maintain aspect ratio
+    width: 1200,
+    crop: 'limit', // Mid-size for tiles/cards; covers ~600 CSS px at DPR 2
   },
   thumbnail: {
-    width: 200,
-    height: 150,
-    crop: 'fill', // Fill entire dimensions, may crop to fit
+    width: 400,
+    height: 300,
+    crop: 'fill', // Fixed-aspect crop for card covers
   },
 };
 
@@ -107,16 +114,15 @@ const PDF_MAX_SIZE = 60 * 1024 * 1024; // 60MB in bytes
 
 const PDF_THUMBNAIL_CONFIG = {
   page: 1,
-  width: 200,
-  height: 150,
+  width: 400,
+  height: 300,
   crop: 'fill',
 };
 
 const PDF_PREVIEW_CONFIG = {
   page: 1,
-  width: 800,
-  height: 600,
-  crop: 'fit',
+  width: 1200,
+  crop: 'limit', // Width cap only — vertical menu pages keep their long side
 };
 
 /**
@@ -143,19 +149,14 @@ const PDF_PREVIEW_CONFIG = {
  */
 export const uploadImage = async (filePath, establishmentId, mediaType) => {
   try {
-    // Upload to Cloudinary with optimization settings
+    // Store the ORIGINAL as-is — no incoming transformation. Resizing at
+    // upload permanently destroys the master (a vertical phone photo capped
+    // at 1080 loses menu-text legibility forever) and double-compresses
+    // (q_auto at upload + q_auto at delivery). All sizing/quality happens at
+    // delivery time via generateImageUrl (Cloudinary's recommended model).
     const uploadResult = await cloudinary.uploader.upload(filePath, {
       folder: `establishments/${establishmentId}/${mediaType}`,
       resource_type: 'image',
-      transformation: [
-        {
-          width: RESOLUTION_CONFIG.original.width,
-          height: RESOLUTION_CONFIG.original.height,
-          crop: RESOLUTION_CONFIG.original.crop,
-          quality: 'auto',
-          fetch_format: 'auto',
-        },
-      ],
     });
 
     logger.info('Image uploaded to Cloudinary', {
@@ -208,14 +209,11 @@ export const generateImageUrl = (publicId, resolution = 'original') => {
     return generateImageUrl(publicId, 'original');
   }
 
-  // Generate URL with transformation parameters
+  // Generate URL with transformation parameters. Config is spread so variants
+  // without a height cap emit no h_ component at all.
   const url = cloudinary.url(publicId, {
     transformation: [
-      {
-        width: config.width,
-        height: config.height,
-        crop: config.crop,
-      },
+      { ...config },
       {
         fetch_format: 'auto',
         quality: 'auto',
@@ -297,29 +295,38 @@ export const deleteImage = async (publicId) => {
  */
 export const extractPublicIdFromUrl = (cloudinaryUrl) => {
   try {
-    // Cloudinary URL pattern: .../upload/{version or transformations}/{public_id}.{format}
-    const urlParts = cloudinaryUrl.split('/upload/');
-    
+    // Query string first (canonical delivery URLs carry ?_a=... analytics).
+    const urlParts = String(cloudinaryUrl).split('?')[0].split('/upload/');
+
     if (urlParts.length < 2) {
       logger.warn('Invalid Cloudinary URL format', { cloudinaryUrl });
       return null;
     }
 
-    // Get the part after '/upload/'
-    const afterUpload = urlParts[1];
-    
-    // Skip version number (v1234567890) or transformation parameters if present
-    const pathParts = afterUpload.split('/');
-    
-    // Find the start of the actual path (after version/transformations)
+    // After '/upload/' a URL may chain SEVERAL transformation segments plus a
+    // version segment before the public_id:
+    //   .../upload/c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/.../abc123xyz
+    // Skip ALL leading segments that are transformations (contain ',') or a
+    // version marker (strictly v+digits — 'vintage-cafe' must NOT be eaten).
+    const pathParts = urlParts[1].split('/');
     let startIndex = 0;
-    if (pathParts[0].startsWith('v') || pathParts[0].includes(',')) {
-      startIndex = 1;
+    while (
+      startIndex < pathParts.length - 1 &&
+      (pathParts[startIndex].includes(',') || /^v\d+$/.test(pathParts[startIndex]))
+    ) {
+      startIndex += 1;
     }
 
-    // Rejoin the path and remove file extension
-    const pathWithExtension = pathParts.slice(startIndex).join('/');
-    const publicId = pathWithExtension.replace(/\.[^.]+$/, ''); // Remove extension
+    // Rejoin the path; strip the extension of the LAST segment only (canonical
+    // image URLs are extension-less — folder dots must survive).
+    const remaining = pathParts.slice(startIndex);
+    const last = remaining[remaining.length - 1].replace(/\.[^.]+$/, '');
+    const publicId = [...remaining.slice(0, -1), last].join('/');
+
+    if (!publicId) {
+      logger.warn('Empty public_id extracted from URL', { cloudinaryUrl });
+      return null;
+    }
 
     logger.debug('Extracted public_id from URL', {
       cloudinaryUrl,
@@ -551,12 +558,8 @@ export const generatePdfPreviewUrl = (publicId) => {
   return cloudinary.url(publicId, {
     resource_type: 'image',
     transformation: [
-      {
-        page: PDF_PREVIEW_CONFIG.page,
-        width: PDF_PREVIEW_CONFIG.width,
-        height: PDF_PREVIEW_CONFIG.height,
-        crop: PDF_PREVIEW_CONFIG.crop,
-      },
+      // Spread: the preview config carries no height cap (vertical menu pages).
+      { ...PDF_PREVIEW_CONFIG },
       {
         fetch_format: 'jpg',
         quality: 'auto',

@@ -44,6 +44,7 @@ logs/
 # These contain real prod data — NEVER commit.
 backend/cleanup-backup-*.json
 backend/backfill-media-backup-*.json
+backend/media-resolutions-backup-*.json
 
 # Flutter/Dart specific
 .dart_tool/
