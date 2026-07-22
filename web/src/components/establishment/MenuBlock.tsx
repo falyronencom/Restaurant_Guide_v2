@@ -41,6 +41,10 @@ export function MenuBlock({
   const hasItems = menuItems.length > 0;
   const hasPhotos = menuPhotos.length > 0;
   const hasPdfs = pdfFallbacks.length > 0;
+  // Two identical «Скачать PDF» buttons are indistinguishable; number them
+  // «Меню 1 / Меню 2 …» once there is more than one file. A single PDF keeps
+  // the plain «Скачать PDF» label.
+  const multiplePdfs = pdfFallbacks.length > 1;
 
   const groups = hasItems ? groupByCategory(menuItems) : [];
   const cleanItems = menuItems.filter((i) => i.quality_tier === 'clean');
@@ -114,16 +118,21 @@ export function MenuBlock({
             </h3>
             {hasPdfs ? (
               <div className='flex flex-wrap gap-2'>
-                {pdfFallbacks.map((pdf) => (
+                {pdfFallbacks.map((pdf, idx) => (
                   <a
                     key={pdf.id}
                     href={pdf.url}
                     target='_blank'
                     rel='noopener noreferrer'
+                    aria-label={
+                      multiplePdfs
+                        ? `Скачать меню ${idx + 1} (PDF)`
+                        : undefined
+                    }
                     className='inline-flex items-center gap-1.5 rounded-m border border-border bg-background px-3.5 py-2 text-body-s font-semibold text-foreground transition-colors hover:bg-muted'
                   >
                     <FileText className='size-4 text-brand' aria-hidden='true' />
-                    Скачать PDF
+                    {multiplePdfs ? `Меню ${idx + 1}` : 'Скачать PDF'}
                   </a>
                 ))}
               </div>

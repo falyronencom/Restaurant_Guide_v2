@@ -126,6 +126,29 @@ describe('MenuBlock — empty-state / PDF fallback', () => {
     expect(parseJsonLd(container)).toBeNull();
   });
 
+  it('empty items + two PDFs: numbers the buttons «Меню 1 / Меню 2» so they are distinguishable', () => {
+    render(
+      <MenuBlock
+        menuItems={[]}
+        menuPhotos={[]}
+        pdfFallbacks={[
+          pdf({ id: 'm1', url: 'https://cdn.example.com/menu-1.pdf' }),
+          pdf({ id: 'm2', url: 'https://cdn.example.com/menu-2.pdf' }),
+        ]}
+        establishmentName='Васильки'
+      />,
+    );
+
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(2);
+    expect(screen.getByText('Меню 1')).toBeInTheDocument();
+    expect(screen.getByText('Меню 2')).toBeInTheDocument();
+    // The ambiguous generic label is gone once there is more than one file.
+    expect(screen.queryByText('Скачать PDF')).not.toBeInTheDocument();
+    expect(links[0]).toHaveAttribute('href', 'https://cdn.example.com/menu-1.pdf');
+    expect(links[1]).toHaveAttribute('href', 'https://cdn.example.com/menu-2.pdf');
+  });
+
   it('empty items + no PDF: renders the graceful empty-state, no link, no JSON-LD', () => {
     const { container } = render(
       <MenuBlock
