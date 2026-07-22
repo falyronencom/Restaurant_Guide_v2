@@ -191,13 +191,15 @@ class OrnamentPainter extends CustomPainter {
       canvas.drawCircle(const Offset(0, -34), 6.5, corn);
       canvas.restore();
     }
-    // Concentric core: cornflower ring → background hole → orange core.
+    // Concentric core: cornflower ring → white ring → orange core.
+    // White (not the background tone) makes the center a true «cockade»
+    // bullseye — maximum focal contrast — matching the launcher icon.
     canvas.drawCircle(Offset.zero, 22, corn);
     canvas.drawCircle(
       Offset.zero,
       13,
       Paint()
-        ..color = AppTheme.ornamentBgHole
+        ..color = Colors.white
         ..isAntiAlias = true,
     );
     canvas.drawCircle(
