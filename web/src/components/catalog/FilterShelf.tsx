@@ -69,7 +69,7 @@ const PRICE_TILE_BASE =
   'flex flex-col items-center gap-0.5 rounded-m border px-1 py-2.5 transition-colors';
 const TILE_ACTIVE = 'border-brand bg-brand/10';
 const TILE_INACTIVE = 'border-border bg-background hover:bg-muted';
-const TILE_LABEL = 'text-[11px] leading-tight text-foreground';
+const TILE_LABEL = 'text-[11px] leading-tight break-words text-foreground';
 
 const PILL_BASE =
   'inline-flex items-center gap-1.5 rounded-full border px-3 py-[7px] text-[13px] transition-colors';
@@ -156,6 +156,10 @@ export function FilterShelf({
                 key={cat.slug}
                 href={`/${citySlug}/${cat.slug}`}
                 aria-current={active ? 'page' : undefined}
+                // no-underline: the tile is an <a> (SEO category route), and the
+                // accordion panel styles descendant links as prose (underline).
+                // Inline style beats that rule regardless of specificity.
+                style={{ textDecorationLine: 'none' }}
                 className={cn(TILE_BASE, active ? TILE_ACTIVE : TILE_INACTIVE)}
               >
                 <CategoryIcon slug={cat.slug} size={28} />

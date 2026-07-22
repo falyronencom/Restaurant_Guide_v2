@@ -120,7 +120,9 @@ export function HeroFilters({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="w-full gap-0 overflow-y-auto p-l sm:max-w-md"
+        // Full-screen on phones (override the sheet's `data-[side=right]:w-3/4`
+        // at the same variant); `sm:max-w-sm` still caps it on tablet/desktop.
+        className="gap-0 overflow-y-auto p-l data-[side=right]:w-full"
       >
         <SheetHeader className="flex-row items-center justify-between p-0 pb-l">
           <SheetTitle>Фильтры</SheetTitle>
@@ -148,7 +150,7 @@ export function HeroFilters({
                   aria-pressed={active}
                   onClick={() => toggleCategory(c.slug)}
                   className={cn(
-                    'flex flex-col items-center gap-s rounded-2xl border p-m text-center text-caption-m transition-colors',
+                    'flex flex-col items-center gap-1.5 rounded-m border px-1 py-3 text-center text-[11px] leading-tight break-words transition-colors',
                     active
                       ? 'border-brand bg-brand/10 text-foreground'
                       : 'border-border bg-background text-text-secondary hover:bg-muted',
@@ -174,7 +176,7 @@ export function HeroFilters({
                   aria-pressed={active}
                   onClick={() => toggleCuisine(c.slug)}
                   className={cn(
-                    'flex flex-col items-center gap-s rounded-2xl border p-m text-center text-caption-m transition-colors',
+                    'flex flex-col items-center gap-1.5 rounded-m border px-1 py-3 text-center text-[11px] leading-tight break-words transition-colors',
                     active
                       ? 'border-brand bg-brand/10 text-foreground'
                       : 'border-border bg-background text-text-secondary hover:bg-muted',
