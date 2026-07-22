@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ (API 31) system splash. Paint the full splash and the
+         icon-background disc the same beige as the Flutter splash, so the disc
+         blends into the screen (no visible circle) and the cockade sits directly
+         on the beige — a seamless system-splash → Flutter-splash handoff. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/nirivio_splash_bg</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/nirivio_splash_bg</item>
+    </style>
+</resources>
