@@ -2,6 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
 /*
  * Catalog sort dropdown — client island. Mutates the `sort_by` query param and
  * the Server Component re-fetches (same URL contract as FilterShelf): preserve
@@ -11,6 +19,10 @@ import { useRouter } from 'next/navigation';
  * Values match the backend's buildOrderByClause (searchService.js): 'rating',
  * 'price_asc', 'price_desc'. Distance sort is geo-only — excluded on the web
  * catalog, which has no client location.
+ *
+ * Rendered with the themed base-ui Select (ui/select) rather than a native
+ * <select>: the native option popup is OS-chrome (unstyled) and clashed with the
+ * brand UI; the base-ui popup inherits our tokens.
  */
 
 const SORT_OPTIONS = [
@@ -18,6 +30,11 @@ const SORT_OPTIONS = [
   { value: 'price_asc', label: 'сначала дешевле' },
   { value: 'price_desc', label: 'сначала дороже' },
 ] as const;
+
+// Value→label map so <SelectValue> renders the label of the current selection.
+const SORT_ITEMS: Record<string, string> = Object.fromEntries(
+  SORT_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 type Props = {
   basePath: string;
@@ -29,8 +46,7 @@ export function SortSelect({ basePath, searchParams }: Props) {
   const current =
     typeof searchParams.sort_by === 'string' ? searchParams.sort_by : 'rating';
 
-  function onChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const next = event.target.value;
+  function handleChange(next: string) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(searchParams)) {
       if (key === 'page' || key === 'sort_by') continue;
@@ -47,20 +63,27 @@ export function SortSelect({ basePath, searchParams }: Props) {
   }
 
   return (
-    <label className='flex shrink-0 items-center gap-2 text-body-m text-muted-foreground'>
-      Сортировать:
-      <select
+    <div className='flex shrink-0 items-center gap-2 text-body-m text-muted-foreground'>
+      <span>Сортировать:</span>
+      <Select
         value={current}
-        onChange={onChange}
-        aria-label='Сортировка'
-        className='cursor-pointer bg-transparent font-semibold text-foreground outline-none'
+        onValueChange={(value) => handleChange(value as string)}
+        items={SORT_ITEMS}
       >
-        {SORT_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        <SelectTrigger
+          aria-label='Сортировка'
+          className='font-semibold text-foreground'
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SORT_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
