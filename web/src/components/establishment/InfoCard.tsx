@@ -51,7 +51,7 @@ export function InfoCard({
           <Fact
             tile={
               <span className='text-[18px] leading-none font-bold'>
-                {'₽'.repeat(priceRange.length)}
+                {'$'.repeat(priceRange.length)}
               </span>
             }
             label='Средний чек'

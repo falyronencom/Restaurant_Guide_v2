@@ -92,7 +92,7 @@ export function MapPreviewCard({
               </p>
               {marker.price_range && (
                 <span className="shrink-0 text-[14px] font-semibold text-foreground">
-                  {'₽'.repeat(marker.price_range.length)}
+                  {'$'.repeat(marker.price_range.length)}
                 </span>
               )}
             </div>

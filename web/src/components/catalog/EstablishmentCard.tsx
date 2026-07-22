@@ -118,7 +118,7 @@ export function EstablishmentCard({
               </p>
               {establishment.price_range && (
                 <span className='shrink-0 text-[15px] font-semibold text-foreground'>
-                  {'₽'.repeat(establishment.price_range.length)}
+                  {'$'.repeat(establishment.price_range.length)}
                 </span>
               )}
             </div>

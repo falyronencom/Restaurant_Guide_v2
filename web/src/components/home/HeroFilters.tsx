@@ -208,7 +208,7 @@ export function HeroFilters({
                   )}
                 >
                   <span className="text-headline-m font-bold text-brand">
-                    {'₽'.repeat(opt.value.length)}
+                    {'$'.repeat(opt.value.length)}
                   </span>
                   <span className="text-caption-m text-text-secondary">
                     {sub}

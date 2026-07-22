@@ -212,7 +212,7 @@ export function FilterShelf({
                 )}
               >
                 <span className='text-[15px] leading-none font-bold text-brand'>
-                  {'₽'.repeat(opt.value.length)}
+                  {'$'.repeat(opt.value.length)}
                 </span>
                 <span className='text-[10px] text-text-secondary'>{sub}</span>
               </button>
