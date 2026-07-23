@@ -60,6 +60,25 @@ type Props = {
   searchParams: Record<string, string | string[] | undefined>;
   cuisineOptions: readonly FacetOption[];
   selected: Selected;
+  /*
+   * Controlled / batch mode (the mobile full-screen drawer). When `onSelectedChange`
+   * is supplied the shelf stops navigating: every toggle mutates the caller's local
+   * state instead (raw add/remove — the omit-when-all/empty collapsing happens once,
+   * in the drawer's «Применить», mirroring HeroFilters/HeroSearch), and Category
+   * renders as a <button> driving `onCategoryChange` rather than a SEO <Link>.
+   * Highlighting still reads `selected`/`activeCategorySlug`, so the caller feeds
+   * those from its draft state. Omitted (desktop sidebar) → live-navigate as before.
+   */
+  onSelectedChange?: (next: Selected) => void;
+  onCategoryChange?: (slug: string | undefined) => void;
+};
+
+// Selected-field name for each multi-facet's URL key (only `cuisine` differs from
+// its plural field). Used to build the next draft in controlled mode.
+const MULTI_FIELD: Record<string, 'cuisines' | 'priceRange' | 'features'> = {
+  cuisine: 'cuisines',
+  priceRange: 'priceRange',
+  features: 'features',
 };
 
 // Tile + pill style tokens (mirror of the home HeroFilters panel).
@@ -84,8 +103,11 @@ export function FilterShelf({
   searchParams,
   cuisineOptions,
   selected,
+  onSelectedChange,
+  onCategoryChange,
 }: Props) {
   const router = useRouter();
+  const controlled = onSelectedChange != null;
 
   // Clone current params, replace `key` with `value` (or drop it when value is
   // undefined), ALWAYS drop `page` (a filter change returns to page 1), navigate.
@@ -123,19 +145,31 @@ export function FilterShelf({
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
         : [...current, value];
+      if (onSelectedChange) {
+        // Batch mode: store the raw selection; the drawer's «Применить» applies
+        // omit-when-all/empty when it builds the URL.
+        onSelectedChange({ ...selected, [MULTI_FIELD[key]]: next });
+        return;
+      }
       const omit =
         next.length === 0 || (omitWhenAll && next.length === allValues.length);
       navigate(key, omit ? undefined : next.join(','));
     },
-    [navigate],
+    [navigate, onSelectedChange, selected],
   );
 
   // Single-select: re-selecting the active bucket clears it (mirrors mobile).
   const toggleSingle = useCallback(
     (key: string, current: string | undefined, value: string) => {
-      navigate(key, current === value ? undefined : value);
+      const next = current === value ? undefined : value;
+      if (onSelectedChange) {
+        // hours is the only single-select facet; field name == URL key.
+        onSelectedChange({ ...selected, hours: next });
+        return;
+      }
+      navigate(key, next);
     },
-    [navigate],
+    [navigate, onSelectedChange, selected],
   );
 
   const cuisineValues = cuisineOptions.map((o) => o.value);
@@ -151,7 +185,33 @@ export function FilterShelf({
         <div className='grid grid-cols-3 gap-s'>
           {categories.map((cat) => {
             const active = cat.slug === activeCategorySlug;
-            return (
+            const tileClass = cn(
+              TILE_BASE,
+              active ? TILE_ACTIVE : TILE_INACTIVE,
+            );
+            const inner = (
+              <>
+                <CategoryIcon slug={cat.slug} size={28} />
+                <span className={TILE_LABEL}>{cat.name}</span>
+              </>
+            );
+            // Batch mode: category is just another toggle in the local draft, so
+            // it's a <button> (tapping it no longer navigates away — the whole
+            // selection commits on «Применить»). Re-tapping the active one clears
+            // it (→ /{city}). Desktop stays a crawlable SEO <Link>.
+            return controlled ? (
+              <button
+                key={cat.slug}
+                type='button'
+                aria-pressed={active}
+                onClick={() =>
+                  onCategoryChange?.(active ? undefined : cat.slug)
+                }
+                className={tileClass}
+              >
+                {inner}
+              </button>
+            ) : (
               <Link
                 key={cat.slug}
                 href={`/${citySlug}/${cat.slug}`}
@@ -160,10 +220,9 @@ export function FilterShelf({
                 // accordion panel styles descendant links as prose (underline).
                 // Inline style beats that rule regardless of specificity.
                 style={{ textDecorationLine: 'none' }}
-                className={cn(TILE_BASE, active ? TILE_ACTIVE : TILE_INACTIVE)}
+                className={tileClass}
               >
-                <CategoryIcon slug={cat.slug} size={28} />
-                <span className={TILE_LABEL}>{cat.name}</span>
+                {inner}
               </Link>
             );
           })}

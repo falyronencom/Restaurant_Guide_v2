@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 import {
   Sheet,
@@ -11,6 +12,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import type { MetadataSlug } from '@/lib/api/types';
+import { buildResultsHref } from '@/lib/catalog-href';
 import type { FacetOption } from '@/lib/facets';
 
 import { FilterShelf } from './FilterShelf';
@@ -41,13 +43,20 @@ const DEFAULT_TRIGGER =
  * trigger opening the FilterShelf inside a full-screen right sheet. Desktop
  * renders the shelf directly in a sticky <aside> (see ResultsView).
  *
+ * BATCH model (distinct from the desktop shelf's live-navigate). In a full-screen
+ * sheet the results are hidden behind the panel, so navigating on every tap is
+ * both wasteful and race-prone: under network latency a fast re-tap / «Сбросить»
+ * would act on a stale, still-in-flight `selected` (the prod-only symptoms this
+ * replaces — category kicking you out, «Сбросить» / double-tap missing). Instead
+ * the sheet drives FilterShelf in controlled mode: every toggle mutates a LOCAL
+ * draft instantly (no navigation, no race), and a SINGLE «Применить» commits the
+ * whole draft as one router.push — landing the results on the same screen.
+ *
  * Chrome mirrors the home HeroFilters panel: back-chevron · centered title ·
- * «Сбросить» header, and a bottom «Применить». Unlike the home panel (a
- * pre-search refinement), the catalog facets navigate LIVE on each toggle
- * (FilterShelf → router.push), so the results already update behind the now
- * full-screen sheet — «Применить» simply closes it to reveal them on the same
- * screen. «Сбросить» clears the query facets (navigate to the clean basePath,
- * keeping the category route).
+ * «Сбросить» header, and a bottom «Применить». «Сбросить» clears the draft in
+ * place (no navigation); the back-chevron closes without applying. The open state
+ * is controlled so opening always re-seeds the draft from the live URL (props) —
+ * abandoned edits from a previous open are discarded; the URL stays the truth.
  *
  * Placed next to the city pill in the catalog hero (CatalogSearch).
  */
@@ -56,15 +65,52 @@ export function MobileFilterDrawer({
   ...props
 }: Props) {
   const router = useRouter();
-  const { selected, basePath } = props;
+  const { citySlug, activeCategorySlug, searchParams, cuisineOptions, selected } =
+    props;
+
+  const [open, setOpen] = useState(false);
+  // Local draft — the batch selection. Seeded from the URL-derived props and
+  // mutated instantly on each toggle; only «Применить» writes it to the URL.
+  const [draft, setDraft] = useState(selected);
+  const [categorySlug, setCategorySlug] = useState(activeCategorySlug);
+
+  function handleOpenChange(next: boolean) {
+    // Re-seed from the live URL every time the sheet opens: the results may have
+    // changed since last time, and any abandoned draft edits are dropped.
+    if (next) {
+      setDraft(selected);
+      setCategorySlug(activeCategorySlug);
+    }
+    setOpen(next);
+  }
+
+  function handleApply() {
+    router.push(
+      buildResultsHref({
+        citySlug,
+        categorySlug,
+        selected: draft,
+        searchParams,
+        cuisineCount: cuisineOptions.length,
+      }),
+    );
+    setOpen(false);
+  }
+
+  function handleReset() {
+    setDraft({ cuisines: [], priceRange: [], features: [], hours: undefined });
+    setCategorySlug(undefined);
+  }
+
   const hasFilters =
-    selected.cuisines.length > 0 ||
-    selected.priceRange.length > 0 ||
-    selected.features.length > 0 ||
-    selected.hours !== undefined;
+    categorySlug !== undefined ||
+    draft.cuisines.length > 0 ||
+    draft.priceRange.length > 0 ||
+    draft.features.length > 0 ||
+    draft.hours !== undefined;
 
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger className={triggerClassName}>
         <FilterIcon />
         Фильтры
@@ -97,7 +143,7 @@ export function MobileFilterDrawer({
           <SheetTitle className="text-center">Фильтры</SheetTitle>
           <button
             type="button"
-            onClick={() => router.push(basePath)}
+            onClick={handleReset}
             disabled={!hasFilters}
             className="justify-self-end text-body-m text-brand transition-colors hover:text-brand-dark disabled:text-text-tertiary"
           >
@@ -105,11 +151,21 @@ export function MobileFilterDrawer({
           </button>
         </SheetHeader>
 
-        <FilterShelf {...props} />
+        <FilterShelf
+          {...props}
+          selected={draft}
+          activeCategorySlug={categorySlug}
+          onSelectedChange={setDraft}
+          onCategoryChange={setCategorySlug}
+        />
 
-        <SheetClose className="mt-m w-full rounded-2xl bg-brand px-l py-m text-label-l text-white transition-colors hover:bg-brand-dark">
+        <button
+          type="button"
+          onClick={handleApply}
+          className="mt-m w-full rounded-2xl bg-brand px-l py-m text-label-l text-white transition-colors hover:bg-brand-dark"
+        >
           Применить
-        </SheetClose>
+        </button>
       </SheetContent>
     </Sheet>
   );

@@ -268,3 +268,150 @@ describe('FilterShelf — toggle → URL round-trip', () => {
     ).toBeInTheDocument();
   });
 });
+
+// ===========================================================================
+// 4. FilterShelf — controlled / batch mode (mobile drawer)
+// ===========================================================================
+
+describe('FilterShelf — controlled/batch mode', () => {
+  const baseProps = {
+    citySlug: 'minsk',
+    categories: [{ slug: 'restorany', name: 'Рестораны' }],
+    basePath: '/minsk/restorany',
+    searchParams: {},
+    cuisineOptions: [
+      { value: 'italian', label: 'Итальянская' },
+      { value: 'asian', label: 'Азиатская' },
+    ],
+  };
+  const EMPTY = {
+    cuisines: [],
+    priceRange: [],
+    features: [],
+    hours: undefined,
+  };
+
+  it('toggling a cuisine calls onSelectedChange with the raw array — NO navigation', async () => {
+    const onSelectedChange = jest.fn();
+    render(
+      <FilterShelf
+        {...baseProps}
+        selected={EMPTY}
+        onSelectedChange={onSelectedChange}
+        onCategoryChange={jest.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Итальянская' }));
+
+    expect(onSelectedChange).toHaveBeenCalledWith(
+      expect.objectContaining({ cuisines: ['italian'] }),
+    );
+    expect(mockPush).not.toHaveBeenCalled(); // batch: no per-tap navigation
+  });
+
+  it('does NOT collapse when every cuisine becomes selected (raw storage, unlike live)', async () => {
+    const onSelectedChange = jest.fn();
+    render(
+      <FilterShelf
+        {...baseProps}
+        selected={{ ...EMPTY, cuisines: ['italian'] }}
+        onSelectedChange={onSelectedChange}
+        onCategoryChange={jest.fn()}
+      />,
+    );
+
+    // Selecting the 2nd of 2 options → "all". Live mode omits the param; batch
+    // mode must keep the full array (collapsing is deferred to «Применить»).
+    await userEvent.click(screen.getByRole('button', { name: 'Азиатская' }));
+
+    expect(onSelectedChange).toHaveBeenCalledWith(
+      expect.objectContaining({ cuisines: ['italian', 'asian'] }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('re-toggling an active cuisine removes it from the draft', async () => {
+    const onSelectedChange = jest.fn();
+    render(
+      <FilterShelf
+        {...baseProps}
+        selected={{ ...EMPTY, cuisines: ['italian'] }}
+        onSelectedChange={onSelectedChange}
+        onCategoryChange={jest.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Итальянская' }));
+
+    expect(onSelectedChange).toHaveBeenCalledWith(
+      expect.objectContaining({ cuisines: [] }),
+    );
+  });
+
+  it('renders category as a <button> that drives onCategoryChange (not a link)', async () => {
+    const onCategoryChange = jest.fn();
+    render(
+      <FilterShelf
+        {...baseProps}
+        selected={EMPTY}
+        onSelectedChange={jest.fn()}
+        onCategoryChange={onCategoryChange}
+      />,
+    );
+
+    const tile = screen.getByRole('button', { name: /Рестораны/ });
+    expect(tile.tagName).toBe('BUTTON'); // batch: category is NOT a SEO <Link>
+    await userEvent.click(tile);
+    expect(onCategoryChange).toHaveBeenCalledWith('restorany');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('re-tapping the active category clears it (→ undefined)', async () => {
+    const onCategoryChange = jest.fn();
+    render(
+      <FilterShelf
+        {...baseProps}
+        activeCategorySlug="restorany"
+        selected={EMPTY}
+        onSelectedChange={jest.fn()}
+        onCategoryChange={onCategoryChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Рестораны/ }));
+    expect(onCategoryChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it('toggles the single hours bucket in the draft, clearing on re-tap', async () => {
+    const onSelectedChange = jest.fn();
+    const { rerender } = render(
+      <FilterShelf
+        {...baseProps}
+        selected={EMPTY}
+        onSelectedChange={onSelectedChange}
+        onCategoryChange={jest.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'До 22:00' }));
+    expect(onSelectedChange).toHaveBeenCalledWith(
+      expect.objectContaining({ hours: 'until_22' }),
+    );
+
+    onSelectedChange.mockClear();
+    rerender(
+      <FilterShelf
+        {...baseProps}
+        selected={{ ...EMPTY, hours: 'until_22' }}
+        onSelectedChange={onSelectedChange}
+        onCategoryChange={jest.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'До 22:00' }));
+    expect(onSelectedChange).toHaveBeenCalledWith(
+      expect.objectContaining({ hours: undefined }),
+    );
+  });
+});
