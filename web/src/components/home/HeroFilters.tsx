@@ -124,13 +124,33 @@ export function HeroFilters({
         // at the same variant); `sm:max-w-sm` still caps it on tablet/desktop.
         className="gap-0 overflow-y-auto p-l data-[side=right]:w-full"
       >
-        <SheetHeader className="flex-row items-center justify-between p-0 pb-l">
-          <SheetTitle>Фильтры</SheetTitle>
+        {/* Header mirrors the mobile Flutter filter: back-chevron (left) ·
+            centered title · reset (right). grid-cols-3 keeps the title centered
+            regardless of the side elements' widths. */}
+        <SheetHeader className="grid grid-cols-3 items-center p-0 pb-l">
+          <SheetClose
+            aria-label="Назад"
+            className="justify-self-start text-foreground transition-colors hover:text-brand"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-6"
+              aria-hidden="true"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </SheetClose>
+          <SheetTitle className="text-center">Фильтры</SheetTitle>
           <button
             type="button"
             onClick={reset}
             disabled={activeCount === 0}
-            className="text-body-m text-brand transition-colors hover:text-brand-dark disabled:text-text-tertiary"
+            className="justify-self-end text-body-m text-brand transition-colors hover:text-brand-dark disabled:text-text-tertiary"
           >
             Сбросить
           </button>
@@ -271,8 +291,8 @@ export function HeroFilters({
           </div>
         </section>
 
-        <SheetClose className="mt-m w-full rounded-full bg-brand px-l py-m text-label-l text-white transition-colors hover:bg-brand-dark">
-          Готово
+        <SheetClose className="mt-m w-full rounded-2xl bg-brand px-l py-m text-label-l text-white transition-colors hover:bg-brand-dark">
+          Применить
         </SheetClose>
       </SheetContent>
     </Sheet>
