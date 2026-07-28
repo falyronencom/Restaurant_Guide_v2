@@ -85,6 +85,10 @@ nul
 # Internal documentation (local only, not for public repo)
 docs/
 
+# Pilot OCR-benchmark source imagery (personal photos + digitized menus) —
+# local working material, never for the public repo
+Menu-AI OCR/
+
 # All .md documentation gitignored — no exceptions
 **/*.md
 
