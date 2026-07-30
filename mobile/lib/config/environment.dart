@@ -32,12 +32,22 @@ class Environment {
     defaultValue: '',
   );
 
-  /// Google OAuth Client ID (for Google Sign-In server-side verification)
-  /// Configure in Google Cloud Console → APIs & Services → Credentials
-  /// Must match the OAuth 2.0 client ID used on the backend
-  static const String googleClientId = String.fromEnvironment(
-    'GOOGLE_CLIENT_ID',
-    defaultValue: '',
+  /// Google OAuth Web client ID («Nirivio Backend» in Google Cloud console).
+  /// Audience of the id_token sent to our backend — must match the backend's
+  /// GOOGLE_CLIENT_ID env var. Client IDs are public by OAuth design.
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue:
+        '486251629564-3aef99s1bv779lqkafnsc28f0j9g5ltk.apps.googleusercontent.com',
+  );
+
+  /// Google OAuth iOS client ID («Nirivio iOS» in Google Cloud console).
+  /// Identifies the app itself to the Google Sign-In SDK on iOS; Android is
+  /// recognized by package name + SHA-1 registered in the console instead.
+  static const String googleIosClientId = String.fromEnvironment(
+    'GOOGLE_IOS_CLIENT_ID',
+    defaultValue:
+        '486251629564-14a4nbpnke2e9imj0glgm3snb26oj6ab.apps.googleusercontent.com',
   );
 
   /// Yandex OAuth Client ID

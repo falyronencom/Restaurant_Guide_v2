@@ -260,6 +260,16 @@ class AuthService {
   Future<AuthResponse> loginWithGoogle() async {
     try {
       final googleSignIn = GoogleSignIn(
+        // iOS: the SDK needs the app's own client ID; without any configuration
+        // it raises a native exception (hard crash, unreachable from Dart).
+        // Android identifies the app by package name + SHA-1, no clientId.
+        clientId: defaultTargetPlatform == TargetPlatform.iOS
+            ? Environment.googleIosClientId
+            : null,
+        // Requests an id_token whose audience is the Web client ID — the one
+        // the backend verifies. Required on Android (google-services.json
+        // carries no OAuth clients), harmless duplication of the plist on iOS.
+        serverClientId: Environment.googleServerClientId,
         scopes: ['email', 'profile'],
       );
 
