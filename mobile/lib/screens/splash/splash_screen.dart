@@ -77,6 +77,11 @@ class _SplashScreenState extends State<SplashScreen>
   Timer? _timeoutTimer;
   VoidCallback? _authListener;
 
+  // dispose() may not use context.read: ancestor lookup on a deactivated
+  // widget throws when the tree is torn down (e.g. test teardown), so the
+  // provider reference is cached while the widget is still in the tree.
+  AuthProvider? _authProvider;
+
   @override
   void initState() {
     super.initState();
@@ -91,13 +96,19 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _authProvider = context.read<AuthProvider>();
+  }
+
+  @override
   void dispose() {
     _introCtrl.dispose();
     _spinCtrl.dispose();
     _outroCtrl.dispose();
     _timeoutTimer?.cancel();
     if (_authListener != null) {
-      context.read<AuthProvider>().removeListener(_authListener!);
+      _authProvider?.removeListener(_authListener!);
     }
     super.dispose();
   }

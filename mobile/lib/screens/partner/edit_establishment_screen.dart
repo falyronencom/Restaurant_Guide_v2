@@ -681,6 +681,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     final initialData =
         PartnerRegistrationProvider.dataFromEstablishment(establishment);
 
+    if (!context.mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => PartnerRegistrationScreen(
