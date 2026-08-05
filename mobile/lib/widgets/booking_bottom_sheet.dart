@@ -179,7 +179,16 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   Widget build(BuildContext context) {
     final maxHeight = MediaQuery.of(context).size.height * 0.9;
     return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
+      // translucent обязателен: всё содержимое шторки — SingleChildScrollView
+      // (_buildForm), а прокручиваемая область непрозрачна для хит-теста по
+      // всей площади, включая пустую. Без этого обработчик не срабатывал
+      // нигде, и клавиатуру нельзя было убрать тапом.
+      // Тапы по полям и кнопкам не задеваются: их распознаватели глубже.
+      behavior: HitTestBehavior.translucent,
+      // Гасим сам узел в фокусе, а не область: FocusScope.of(context).unfocus()
+      // чистит историю фокуса у объемлющей области, оставляя ссылку на поле
+      // живой (см. feedback про возврат фокуса после шторок).
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
         child: Container(

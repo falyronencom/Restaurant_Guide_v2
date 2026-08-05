@@ -70,10 +70,33 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   }
 
   /// Show city selection bottom sheet (Figma design)
-  void _showCityPicker() {
+  /// Убрать клавиатуру И стереть у области память о том, кто был в фокусе.
+  ///
+  /// Важно бить именно по узлу в фокусе, а не по `FocusScope.of(context)`:
+  /// `unfocus()` чистит список ранее сфокусированных детей у ОБЪЕМЛЮЩЕЙ
+  /// области (focus_manager.dart:934). Позвав его на области роута, мы чистим
+  /// историю навигатора, а сама область роута продолжает помнить строку поиска.
+  /// Тогда при закрытии любой шторки роут получает `setFirstFocus`
+  /// (routes.dart:1144), спускается к запомненному ребёнку — и клавиатура
+  /// выезжает сама. Вызов на `primaryFocus` чистит историю той области, что
+  /// реально держит поле.
+  ///
+  /// Второй подводный камень: `unfocus()` — no-op, если узел не в фокусе
+  /// (focus_manager.dart:917), поэтому «на всякий случай» до открытия шторки
+  /// он не сработает, если поле уже расфокусировано.
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  Future<void> _showCityPicker() async {
+    // Снимаем фокус ДО шторки и ещё раз ПОСЛЕ неё. Иначе клавиатура выезжает
+    // сама: закрывая модальный роут, Flutter возвращает фокус тому полю,
+    // которое держала область под шторкой, — то есть строке поиска.
+    _dismissKeyboard();
+
     String? tempSelectedCity;
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.backgroundPrimary,
       isScrollControlled: true,
@@ -228,6 +251,9 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
         },
       ),
     );
+
+    if (!mounted) return;
+    _dismissKeyboard();
   }
 
   /// Build city option tile (Figma design)
@@ -319,7 +345,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     if (query.isEmpty) return;
 
     // Dismiss keyboard so results/empty message are immediately visible
-    FocusScope.of(context).unfocus();
+    _dismissKeyboard();
 
     final estProvider = context.read<EstablishmentsProvider>();
     final smartProvider = context.read<SmartSearchProvider>();
@@ -366,7 +392,17 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: Consumer<EstablishmentsProvider>(
+      // Тап по любому пустому месту закрывает клавиатуру.
+      // translucent обязателен: нижнюю половину экрана занимает
+      // Expanded(SingleChildScrollView) с подсказками, а прокручиваемая область
+      // непрозрачна для хит-теста и раньше съедала эти тапы — работал только
+      // тап по верхней части, где под контентом лежит затемняющий слой.
+      // Тапы по самим подсказкам и кнопкам не задеваются: их распознаватели
+      // лежат глубже и выигрывают арену жестов.
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => _dismissKeyboard(),
+        child: Consumer<EstablishmentsProvider>(
         builder: (context, provider, child) => Stack(
           fit: StackFit.expand,
           children: [
@@ -377,7 +413,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
             if (_isSearchFocused)
               Positioned.fill(
                 child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
+                  onTap: () => _dismissKeyboard(),
                   child: AnimatedOpacity(
                     opacity: _isSearchFocused ? 0.3 : 0.0,
                     duration: const Duration(milliseconds: 200),
@@ -498,6 +534,7 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
           ],
         ),
+      ),
       ),
     );
   }

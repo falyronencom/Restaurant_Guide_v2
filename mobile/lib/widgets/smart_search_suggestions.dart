@@ -33,34 +33,52 @@ class SmartSearchSuggestions extends StatelessWidget {
         duration: const Duration(milliseconds: 250),
         child: SizedBox(
           height: 44,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            itemCount: _suggestions.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () => onChipTap(_suggestions[index]),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    _suggestions[index],
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textOnPrimary,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Ряд уезжает под настоящие края экрана, а не обрезается по полю
+              // страницы (16dp). Обрезка ровно по краю строки поиска читалась как
+              // огрех вёрстки, а не как «здесь можно листать».
+              // Растягиваем ряд на всю ширину экрана, а поле страницы переносим
+              // внутрь списка отступом — в покое чипы стоят там же, где раньше.
+              final screenWidth = MediaQuery.sizeOf(context).width;
+              final bleed = constraints.maxWidth.isFinite
+                  ? ((screenWidth - constraints.maxWidth) / 2).clamp(0.0, 64.0)
+                  : 0.0;
+
+              return OverflowBox(
+                minWidth: screenWidth,
+                maxWidth: screenWidth,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: bleed + 4),
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    return GestureDetector(
+                      onTap: () => onChipTap(_suggestions[index]),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          _suggestions[index],
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.textOnPrimary,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             },
