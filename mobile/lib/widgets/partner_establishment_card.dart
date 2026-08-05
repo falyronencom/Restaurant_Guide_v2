@@ -37,6 +37,16 @@ class PartnerEstablishmentCard extends StatelessWidget {
   static const Color _statusRejected = Color(0xFFFF3B30);
   static const Color _statusSuspended = Color(0xFF8E8E93);
 
+  // ============================================================================
+  // Dimensions
+  // ============================================================================
+
+  /// Высота карточки. Верхний блок (фото → имя → тип → кухня → счётчики →
+  /// адрес) растёт от top: 125 вниз вместе с текстом, нижний (шкала заполненности
+  /// и кнопка «Продвижение») прижат к низу. Высоты хватает, чтобы блоки не
+  /// встретились даже на самых «высоких» метриках шрифта.
+  static const double _cardHeight = 310.0;
+
   @override
   Widget build(BuildContext context) {
     final isPremium = establishment.isPremium;
@@ -49,7 +59,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
           onTap: onTap,
           child: Container(
             width: double.infinity,
-            height: 277,
+            height: _cardHeight,
             decoration: BoxDecoration(
               color: isPremium ? _cardDarkBg : _backgroundColor,
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
@@ -87,7 +97,10 @@ class PartnerEstablishmentCard extends StatelessWidget {
                   ),
                 ),
 
-                // Content section (name + stats below)
+                // Content section (name + stats + address below)
+                // Адрес идёт последним в этом же потоке, а не абсолютной
+                // позицией от низа карточки: иначе при более высоком блоке
+                // имени/типа/кухни он наезжал на строку счётчиков.
                 Positioned(
                   left: 18,
                   top: 125,
@@ -98,20 +111,9 @@ class PartnerEstablishmentCard extends StatelessWidget {
                       _buildEstablishmentInfo(isPremium),
                       const SizedBox(height: 6),
                       _buildStats(isPremium),
+                      const SizedBox(height: 6),
+                      _buildAddress(isPremium),
                     ],
-                  ),
-                ),
-
-                // Address (bottom left)
-                Positioned(
-                  left: 18,
-                  bottom: establishment.baseScore < 100 ? 50 : 45,
-                  child: Text(
-                    establishment.shortAddress,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isPremium ? _backgroundColor : AppTheme.textPrimary,
-                    ),
                   ),
                 ),
 
@@ -197,9 +199,12 @@ class PartnerEstablishmentCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name
+        // Name — одна строка: перенос сдвинул бы весь блок вниз, на адрес
+        // и шкалу заполненности
         Text(
           establishment.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 22,
@@ -224,6 +229,19 @@ class PartnerEstablishmentCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Build address line (последняя строка блока контента)
+  Widget _buildAddress(bool isPremium) {
+    return Text(
+      establishment.shortAddress,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 14,
+        color: isPremium ? _backgroundColor : AppTheme.textPrimary,
+      ),
     );
   }
 
@@ -287,8 +305,11 @@ class PartnerEstablishmentCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Одна строка: перенос подписи поднял бы весь нижний блок вверх, на адрес
         Text(
           'Заполненность данных',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 11,
             color: labelColor,

@@ -24,6 +24,7 @@ import 'package:restaurant_guide_mobile/screens/establishment/pdf_viewer_screen.
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
+import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -595,9 +596,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name
-        Text(
-          _establishment!.name,
+        // Name — кегль подбирается по ширине экрана: 50 задумано под макет,
+        // но Unbounded широкий, и на 384dp «Осмоловка» рвалась по буквам
+        AdaptiveTitle(
+          text: _establishment!.name,
+          minFontSize: 30,
           style: TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 50,

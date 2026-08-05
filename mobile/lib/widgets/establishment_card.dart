@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 
 /// Reusable card component for displaying establishment information
 /// Figma design implementation with image on left, content on right
@@ -31,6 +32,32 @@ class EstablishmentCard extends StatelessWidget {
   static const double _cardHeight = 291.0;
   static const double _imageWidth = 172.0;
   static const double _ratingSize = 31.0;
+
+  // Сердечко избранного: сама иконка + прозрачный паддинг под палец.
+  static const double _favoriteIconSize = 27.0;
+  static const double _favoriteTapPadding = 8.0;
+
+  /// Сдвиг кнопки избранного, ставящий центр сердечка на ту же вертикаль,
+  /// что центр бейджа рейтинга и цена под ним. Бейдж прижат к правому краю
+  /// контента → его центр в _ratingSize/2 от края; центр иконки — в
+  /// (паддинг + половина иконки) от края кнопки. Разница и есть смещение
+  /// (отрицательное = кнопка выезжает в правый паддинг контента, 15px —
+  /// хватает с запасом, скругление угла 40px не задевается).
+  static const double _favoriteAxisOffset =
+      _ratingSize / 2 - (_favoriteTapPadding + _favoriteIconSize / 2);
+
+  /// Ширина зоны, занятой сердечком у правого края контента, — на неё
+  /// резервируется отступ адреса.
+  static const double _favoriteReserve =
+      _favoriteIconSize + _favoriteTapPadding * 2 + _favoriteAxisOffset;
+
+  /// Отступ названия под правую колонку (бейдж рейтинга + цена под ним).
+  /// Действует на ОБЕ строки: колонка высотой 31+6+25=62dp перекрывает по
+  /// высоте оба ряда заголовка (~50dp), свободной второй строки не бывает.
+  static const double _titleBadgeReserve = _ratingSize + 12;
+
+  /// Пол подбора кегля заголовка: ниже — многоточие вместо уменьшения.
+  static const double _titleMinFontSize = 15.0;
 
   @override
   Widget build(BuildContext context) {
@@ -181,10 +208,10 @@ class EstablishmentCard extends StatelessWidget {
             right: 0,
             child: _buildRatingAndPrice(),
           ),
-          // Favorite button (bottom right)
+          // Favorite button (bottom right) — по одной вертикали с рейтингом
           Positioned(
             bottom: 0,
-            right: 0,
+            right: _favoriteAxisOffset,
             child: _buildFavoriteButton(),
           ),
         ],
@@ -199,12 +226,11 @@ class EstablishmentCard extends StatelessWidget {
   /// Right padding prevents overlap with rating badge + price column
   Widget _buildName() {
     return Padding(
-      padding: const EdgeInsets.only(right: _ratingSize + 12),
-      child: Text(
-        establishment.name,
+      padding: const EdgeInsets.only(right: _titleBadgeReserve),
+      child: AdaptiveTitle(
+        text: establishment.name,
         style: AppTheme.canonCardTitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        minFontSize: _titleMinFontSize,
       ),
     );
   }
@@ -327,11 +353,11 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build address with underline (Figma design)
-  /// Правый отступ резервирует место под иконку избранного в правом-нижнем углу
-  /// (сердечко 27 + паддинг 8×2 = 43) — иначе длинный адрес заходит под неё.
+  /// Правый отступ резервирует место под иконку избранного в правом-нижнем
+  /// углу — иначе длинный адрес заходит под неё.
   Widget _buildAddress() {
     return Padding(
-      padding: const EdgeInsets.only(right: 43),
+      padding: const EdgeInsets.only(right: _favoriteReserve),
       child: Text(
         establishment.address,
         style: const TextStyle(
@@ -353,11 +379,11 @@ class EstablishmentCard extends StatelessWidget {
       onTap: onFavoriteToggle,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(_favoriteTapPadding),
         child: Icon(
           isFavorite ? Icons.favorite : Icons.favorite_border,
-          size: 27,
-          color: isFavorite ? _orangeHeart : _orangeHeart,
+          size: _favoriteIconSize,
+          color: _orangeHeart,
         ),
       ),
     );
