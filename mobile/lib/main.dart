@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -36,6 +37,12 @@ import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Шрифты берём только из ассетов (google_fonts/), в сеть не ходим:
+  // при первом запуске без интернета весь текст иначе рисуется системным
+  // шрифтом. Если какое-то начертание забыли вшить — пакет напишет ошибку
+  // в лог и откатится на системный шрифт, приложение не упадёт.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   // Initialize Firebase (non-blocking — app works without it)
   try {
