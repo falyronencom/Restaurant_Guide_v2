@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
 
 /// Authentication status enum
@@ -28,6 +29,9 @@ class AuthProvider with ChangeNotifier {
 
   AuthenticationStatus _status = AuthenticationStatus.unauthenticated;
   User? _currentUser;
+
+  /// Last account id bound in this app run; guards account-switch resets.
+  String? _lastAccountId;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -89,7 +93,7 @@ class AuthProvider with ChangeNotifier {
         // Try to get current user to validate token
         try {
           final user = await _authService.getCurrentUser();
-          _currentUser = user;
+          _bindAccount(user);
           _status = AuthenticationStatus.authenticated;
         } catch (e) {
           final errorStr = e.toString();
@@ -143,7 +147,7 @@ class AuthProvider with ChangeNotifier {
 
       // Check if backend returned direct auth tokens (no verification needed)
       if (response.hasDirectAuth && response.user != null) {
-        _currentUser = User.fromJson(response.user!);
+        _bindAccount(User.fromJson(response.user!));
         _status = AuthenticationStatus.authenticated;
         _setLoading(false);
         return true;
@@ -185,7 +189,7 @@ class AuthProvider with ChangeNotifier {
 
       // Check if backend returned direct auth tokens (no verification needed)
       if (response.hasDirectAuth && response.user != null) {
-        _currentUser = User.fromJson(response.user!);
+        _bindAccount(User.fromJson(response.user!));
         _status = AuthenticationStatus.authenticated;
         _setLoading(false);
         return true;
@@ -223,7 +227,7 @@ class AuthProvider with ChangeNotifier {
         verificationToken: _verificationToken!,
       );
 
-      _currentUser = authResponse.user;
+      _bindAccount(authResponse.user);
       _status = AuthenticationStatus.authenticated;
       _clearVerificationState();
       _setLoading(false);
@@ -246,7 +250,7 @@ class AuthProvider with ChangeNotifier {
         emailToken: emailToken,
       );
 
-      _currentUser = authResponse.user;
+      _bindAccount(authResponse.user);
       _status = AuthenticationStatus.authenticated;
       _clearVerificationState();
       _setLoading(false);
@@ -265,7 +269,7 @@ class AuthProvider with ChangeNotifier {
       try {
         final user = await _authService.getCurrentUser();
         if (user.isVerified) {
-          _currentUser = user;
+          _bindAccount(user);
           _status = AuthenticationStatus.authenticated;
           _clearVerificationState();
           notifyListeners();
@@ -305,7 +309,7 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final user = await _authService.verifyEmailCode(code: code);
-      _currentUser = user;
+      _bindAccount(user);
       _status = AuthenticationStatus.authenticated;
       _clearVerificationState();
       _setLoading(false);
@@ -369,7 +373,7 @@ class AuthProvider with ChangeNotifier {
         password: password,
       );
 
-      _currentUser = authResponse.user;
+      _bindAccount(authResponse.user);
       _status = AuthenticationStatus.authenticated;
       _setLoading(false);
 
@@ -396,7 +400,7 @@ class AuthProvider with ChangeNotifier {
     try {
       final authResponse = await _authService.loginWithGoogle();
 
-      _currentUser = authResponse.user;
+      _bindAccount(authResponse.user);
       _status = AuthenticationStatus.authenticated;
       _setLoading(false);
 
@@ -419,7 +423,7 @@ class AuthProvider with ChangeNotifier {
     try {
       final authResponse = await _authService.loginWithYandex();
 
-      _currentUser = authResponse.user;
+      _bindAccount(authResponse.user);
       _status = AuthenticationStatus.authenticated;
       _setLoading(false);
 
@@ -446,6 +450,12 @@ class AuthProvider with ChangeNotifier {
     _status = AuthenticationStatus.unauthenticated;
     _clearError();
     _clearVerificationState();
+
+    // Wipe account-scoped provider caches (partner cards, bookings, etc.) —
+    // otherwise the next signed-in user sees the previous account's data.
+    AccountScope.resetAll();
+    _lastAccountId = null;
+
     _setLoading(false);
 
     notifyListeners();
@@ -461,7 +471,7 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final user = await _authService.getCurrentUser();
-      _currentUser = user;
+      _bindAccount(user);
       notifyListeners();
     } catch (e) {
       // If refresh fails, user might be logged out
@@ -501,7 +511,7 @@ class AuthProvider with ChangeNotifier {
         avatarUrl: avatarUrl,
       );
 
-      _currentUser = user;
+      _bindAccount(user);
       _setLoading(false);
 
       return true;
@@ -521,7 +531,7 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final user = await _authService.uploadAvatar(filePath);
-      _currentUser = user;
+      _bindAccount(user);
       _setLoading(false);
       return true;
     } catch (e) {
@@ -575,6 +585,17 @@ class AuthProvider with ChangeNotifier {
   // ============================================================================
   // Helper Methods
   // ============================================================================
+
+  /// Bind the authenticated [user] as the active account. When the account
+  /// differs from the previous one in this app run, account-scoped provider
+  /// state is reset first — covers logins without an explicit logout between.
+  void _bindAccount(User user) {
+    if (_lastAccountId != null && _lastAccountId != user.id) {
+      AccountScope.resetAll();
+    }
+    _lastAccountId = user.id;
+    _currentUser = user;
+  }
 
   /// Set loading state
   void _setLoading(bool loading) {

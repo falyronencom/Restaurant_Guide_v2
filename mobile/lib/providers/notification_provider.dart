@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/notification_model.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/notification_service.dart';
 
 /// Polling interval for unread count updates
@@ -23,7 +24,11 @@ class NotificationProvider with ChangeNotifier {
   bool _isAuthenticated = false;
 
   NotificationProvider({NotificationService? service})
-      : _service = service ?? NotificationService();
+      : _service = service ?? NotificationService() {
+    // stopPolling already clears the list, badge and timer — exactly the
+    // account-scoped reset needed on logout / account switch.
+    AccountScope.register(stopPolling);
+  }
 
   // Getters
   int get unreadCount => _unreadCount;
@@ -57,6 +62,7 @@ class NotificationProvider with ChangeNotifier {
     _pollingTimer = null;
     _unreadCount = 0;
     _notifications = [];
+    _isLoading = false;
     _currentPage = 1;
     _hasMore = true;
     _currentCategory = null;

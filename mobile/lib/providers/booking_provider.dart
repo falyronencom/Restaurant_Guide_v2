@@ -1,12 +1,29 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/booking.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Provider for partner booking management.
 /// Handles listing, confirming, declining, and status updates.
 class BookingProvider with ChangeNotifier {
   final ApiClient _apiClient = ApiClient();
+
+  BookingProvider() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Clears partner and user booking lists (guest names/phones — the most
+  /// sensitive cache); registered in [AccountScope], runs on logout / switch.
+  void resetAccountScope() {
+    _pendingBookings = [];
+    _confirmedBookings = [];
+    _historyBookings = [];
+    _userBookings = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   // State
   List<Booking> _pendingBookings = [];

@@ -1,11 +1,25 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/booking_settings.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Provider for partner booking settings management.
 /// Follows PromotionProvider pattern.
 class BookingSettingsProvider with ChangeNotifier {
   final ApiClient _apiClient = ApiClient();
+
+  BookingSettingsProvider() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Clears the partner's booking settings; registered in [AccountScope],
+  /// runs on logout / account switch.
+  void resetAccountScope() {
+    _settings = null;
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   // State
   BookingSettings? _settings;

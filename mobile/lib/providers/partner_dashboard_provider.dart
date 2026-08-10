@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/partner_service.dart';
 
 /// Partner Dashboard state provider
@@ -8,6 +9,34 @@ import 'package:restaurant_guide_mobile/services/partner_service.dart';
 /// Phase 5.2 - Partner Dashboard
 class PartnerDashboardProvider with ChangeNotifier {
   final PartnerService _partnerService = PartnerService();
+
+  PartnerDashboardProvider() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Bumped on every account-scope reset; in-flight requests captured an
+  /// older value and drop their writes, so a fetch started under the previous
+  /// account can never repopulate state (or mark it initialized) after reset.
+  int _generation = 0;
+
+  /// Clears everything cached for the signed-in partner; registered in
+  /// [AccountScope], runs on logout / account switch.
+  void resetAccountScope() {
+    _generation++;
+    _establishments = [];
+    _isLoading = false;
+    _isInitialized = false;
+    _error = null;
+    _selectedEstablishment = null;
+    _isLoadingDetails = false;
+    _detailsError = null;
+    _analyticsPeriod = '7d';
+    _analyticsOverview = null;
+    _analyticsTrends = null;
+    _isLoadingAnalytics = false;
+    _analyticsError = null;
+    notifyListeners();
+  }
 
   // ============================================================================
   // State
@@ -106,11 +135,15 @@ class PartnerDashboardProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
-      _establishments = await _partnerService.getMyEstablishments();
+      final loaded = await _partnerService.getMyEstablishments();
+      if (generation != _generation) return; // account switched mid-flight
+      _establishments = loaded;
       _error = null;
       debugPrint('PartnerDashboard: Loaded ${_establishments.length} establishments');
     } catch (e) {
+      if (generation != _generation) return;
       _error = e.toString().replaceFirst('Exception: ', '');
       debugPrint('PartnerDashboard: Error loading establishments: $_error');
       // Keep existing data on error if we have any
@@ -118,9 +151,11 @@ class PartnerDashboardProvider with ChangeNotifier {
         _establishments = [];
       }
     } finally {
-      _isInitialized = true;
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isInitialized = true;
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -146,17 +181,23 @@ class PartnerDashboardProvider with ChangeNotifier {
     _detailsError = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
-      _selectedEstablishment = await _partnerService.getEstablishmentDetails(id);
+      final details = await _partnerService.getEstablishmentDetails(id);
+      if (generation != _generation) return; // account switched mid-flight
+      _selectedEstablishment = details;
     } catch (e) {
+      if (generation != _generation) return;
       _detailsError = e.toString().replaceFirst('Exception: ', '');
       // Fallback: use establishment from already-loaded list (always update, not ??=)
       _selectedEstablishment = _establishments
           .where((est) => est.id == id)
           .firstOrNull;
     } finally {
-      _isLoadingDetails = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoadingDetails = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -316,22 +357,29 @@ class PartnerDashboardProvider with ChangeNotifier {
     _analyticsError = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final overviews = await _partnerService.getAnalyticsOverview(period);
+      if (generation != _generation) return; // account switched mid-flight
       _analyticsOverview = overviews
           .where((o) => o.establishmentId == establishmentId)
           .firstOrNull;
 
-      _analyticsTrends = await _partnerService.getAnalyticsTrends(
+      final trends = await _partnerService.getAnalyticsTrends(
         establishmentId,
         period,
       );
+      if (generation != _generation) return;
+      _analyticsTrends = trends;
     } catch (e) {
+      if (generation != _generation) return;
       _analyticsError = e.toString().replaceFirst('Exception: ', '');
       debugPrint('PartnerDashboard: Analytics error: $_analyticsError');
     } finally {
-      _isLoadingAnalytics = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoadingAnalytics = false;
+        notifyListeners();
+      }
     }
   }
 

@@ -1,12 +1,26 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/promotion.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Promotion state provider for partner's promotion management
 /// Follows PartnerDashboardProvider patterns
 class PromotionProvider with ChangeNotifier {
   final ApiClient _apiClient = ApiClient();
+
+  PromotionProvider() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Clears the partner's promotions; registered in [AccountScope],
+  /// runs on logout / account switch.
+  void resetAccountScope() {
+    _promotions = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   // State
   List<Promotion> _promotions = [];

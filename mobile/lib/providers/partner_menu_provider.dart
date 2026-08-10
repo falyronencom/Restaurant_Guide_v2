@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/partner_menu_service.dart';
 
 /// Polling interval aligned with notifications polling (Segment C Block 1).
@@ -22,7 +23,20 @@ class PartnerMenuProvider with ChangeNotifier {
   Timer? _pollingTimer;
 
   PartnerMenuProvider({PartnerMenuService? service})
-      : _service = service ?? PartnerMenuService();
+      : _service = service ?? PartnerMenuService() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Clears cached menu state and stops polling; registered in
+  /// [AccountScope], runs on logout / account switch.
+  void resetAccountScope() {
+    stopPolling();
+    _currentEstablishmentId = null;
+    _items = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   // Getters
   List<PartnerMenuItem> get items => _items;

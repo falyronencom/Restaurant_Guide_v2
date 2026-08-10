@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 
@@ -88,7 +89,20 @@ class EstablishmentsProvider with ChangeNotifier {
   String? _favoritesError;
 
   EstablishmentsProvider({EstablishmentsService? service})
-      : _service = service ?? EstablishmentsService();
+      : _service = service ?? EstablishmentsService() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Favorites belong to the signed-in account — cleared on logout / account
+  /// switch. Public catalog/search state deliberately survives (not
+  /// account-scoped).
+  void resetAccountScope() {
+    _favoriteIds = {};
+    _favoriteEstablishments = [];
+    _isFavoritesLoading = false;
+    _favoritesError = null;
+    notifyListeners();
+  }
 
   // ============================================================================
   // Getters - Search Results

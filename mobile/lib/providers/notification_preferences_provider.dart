@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Provider for push notification preferences (ChangeNotifier).
@@ -7,6 +8,21 @@ import 'package:restaurant_guide_mobile/services/api_client.dart';
 /// Uses GET/PUT /api/v1/notifications/preferences with optimistic updates.
 class NotificationPreferencesProvider extends ChangeNotifier {
   final ApiClient _apiClient = ApiClient();
+
+  NotificationPreferencesProvider() {
+    AccountScope.register(resetAccountScope);
+  }
+
+  /// Back to defaults + not-initialized so the next account re-fetches its
+  /// own preferences; registered in [AccountScope].
+  void resetAccountScope() {
+    _bookingPushEnabled = true;
+    _reviewsPushEnabled = true;
+    _promotionsPushEnabled = true;
+    _isLoading = false;
+    _isInitialized = false;
+    notifyListeners();
+  }
 
   bool _bookingPushEnabled = true;
   bool _reviewsPushEnabled = true;
