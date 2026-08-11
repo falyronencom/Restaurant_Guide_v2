@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 
 /// Fixed-width sidebar navigation for admin panel
@@ -19,18 +20,10 @@ class AdminSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Text(
-                '{N}YAMA',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFDB4F13),
-                  letterSpacing: 1.2,
-                ),
-              ),
+            // Вордмарк. Раскладка верхнего блока рейла — этап 1.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Text('NIRIVIO', style: AppTheme.canonWordmark),
             ),
             const Divider(height: 1),
 

@@ -1,12 +1,12 @@
 {
-    "name": "restaurant_guide_admin_web",
-    "short_name": "restaurant_guide_admin_web",
+    "name": "NIRIVIO · Админ-панель",
+    "short_name": "NIRIVIO Админ",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#F4F1EC",
+    "theme_color": "#F06B32",
+    "description": "Админ-панель Nirivio — модерация заведений, аналитика, журнал действий.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

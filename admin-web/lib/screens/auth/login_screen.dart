@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 
 /// Admin login screen
@@ -57,16 +58,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Logo
-                      const Text(
-                        '{N}YAMA',
+                      // Вордмарк. Раскладка экрана входа — этап 1.
+                      Text(
+                        'NIRIVIO',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFDB4F13),
-                          letterSpacing: 1.5,
-                        ),
+                        style: AppTheme.canonWordmark.copyWith(fontSize: 32),
                       ),
                       const SizedBox(height: 4),
                       Text(

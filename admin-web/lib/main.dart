@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
@@ -19,6 +21,12 @@ import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dar
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Шрифты канона вшиты в сборку (admin-web/google_fonts/) — из сети ничего
+  // не тянем. Если какое-то начертание забыли вшить, пакет напишет ошибку
+  // в лог и откатится на системный шрифт, приложение не упадёт.
+  GoogleFonts.config.allowRuntimeFetching = false;
+
   runApp(const AdminApp());
 }
 
@@ -66,7 +74,7 @@ class _AdminAppState extends State<AdminApp> {
         ChangeNotifierProvider(create: (_) => QualityHealthProvider()),
       ],
       child: MaterialApp.router(
-        title: '{N}YAMA Admin',
+        title: 'NIRIVIO · Админ-панель',
         debugShowCheckedModeBanner: false,
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
@@ -78,10 +86,7 @@ class _AdminAppState extends State<AdminApp> {
           Locale('en'),
         ],
         locale: const Locale('ru'),
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: const Color(0xFFDB4F13),
-        ),
+        theme: AppTheme.lightTheme,
         routerConfig: _router,
       ),
     );

@@ -20,6 +20,7 @@ dependencies:
   intl: ^0.20.2
   fl_chart: ^0.69.2
   url_launcher: ^6.2.5
+  google_fonts: ^6.1.0
   # Для web: используйте web-specific пакеты, если требуется
   # Например, для карт можно использовать flutter_map или другие web-совместимые решения
 
@@ -30,3 +31,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Шрифты канона Nirivio вшиты в сборку, а не тянутся из сети:
+    # GoogleFonts.config.allowRuntimeFetching = false в main.dart.
+    # Имена файлов обязаны следовать схеме google_fonts: Family-Variant.ttf.
+    # Источник — mobile/google_fonts/. Новое начертание = добавить сюда .ttf.
+    - google_fonts/
