@@ -62,7 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'NIRIVIO',
                         textAlign: TextAlign.center,
-                        style: AppTheme.canonWordmark.copyWith(fontSize: 32),
+                        style: AppTheme.canonWordmark
+                            .copyWith(fontSize: 30, height: 1.1),
                       ),
                       const SizedBox(height: 4),
                       Text(

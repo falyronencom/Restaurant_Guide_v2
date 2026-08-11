@@ -303,6 +303,8 @@ class AppTheme {
     fontFamily: fontWordmarkFamily,
     fontSize: 24,
     fontWeight: FontWeight.w600,
+    letterSpacing: 0.5,
+    height: 1,
     color: primaryOrangeDark,
   );
 
@@ -320,6 +322,19 @@ class AppTheme {
     fontWeight: FontWeight.w600,
     letterSpacing: 1.2,
     color: textSecondary,
+  );
+
+  /// Пометка «скоро» у тупикового пункта рейла: 10/w600 uppercase, приглушённая.
+  ///
+  /// Расхождение с макетом, санкционированное владельцем 11.08.2026: в
+  /// `Admin-web редизайн.dc.html` пометки нет ни в одном из 11 кадров, но
+  /// HANDOFF.md фиксирует намерение и его причину — «Уведомления» и «История
+  /// платежей» осознанные заглушки, и тупик должен быть виден до клика.
+  static const TextStyle canonRailSoonLabel = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.2,
+    color: textGrey,
   );
 
   /// Подпись колонки таблицы: 11/w600 uppercase, ls .08em → 0.88.

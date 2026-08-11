@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_sidebar.dart';
 
-/// Main layout shell with sidebar + content area
-/// Used as ShellRoute builder — sidebar persists across navigation
+/// Каркас админки: рейл слева + область контента справа.
+/// Используется как builder у ShellRoute — рейл переживает навигацию.
+///
+/// Разделительной линии здесь нет намеренно: в макете граница принадлежит
+/// самому рейлу (`border-right: 1px solid #E4DFD6`), а не отдельному элементу.
 class AdminShell extends StatelessWidget {
   final Widget child;
 
@@ -14,10 +18,9 @@ class AdminShell extends StatelessWidget {
       body: Row(
         children: [
           const AdminSidebar(),
-          const VerticalDivider(width: 1, thickness: 1),
           Expanded(
-            child: Container(
-              color: const Color(0xFFF9F9F9),
+            child: ColoredBox(
+              color: AppTheme.backgroundPrimary,
               child: child,
             ),
           ),
