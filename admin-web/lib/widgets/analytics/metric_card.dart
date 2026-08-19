@@ -1,133 +1,176 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 
-/// Reusable metric card for the Dashboard.
-/// Shows title, large number, change percentage with colored indicator,
-/// and optional subtitle.
+/// Карточка метрики дашборда — инструментальная, белая с тёплой тенью.
+///
+/// Устройство сверху вниз: плитка иконки и лейбл, крупное число с дельтой
+/// на одной базовой линии, сноска. Дельта и сноска отвечают на разные
+/// вопросы: дельта — «куда движется», сноска — «что за этим стоит прямо
+/// сейчас» («7 ожидают модерации»).
+///
+/// У метрики может не быть дельты вовсе: «Модерация» показывает размер
+/// очереди, и сравнивать её с прошлым периодом бессмысленно — там уместна
+/// нейтральная приписка [valueNote] («в очереди»), а не выдуманный процент.
 class MetricCard extends StatelessWidget {
-  final String title;
+  /// Material-глиф. Взаимоисключающ с [brandIcon].
+  final IconData? icon;
+
+  /// Имя файла брендовой иконки без расширения — «restaurant», «cafe».
+  /// Перекрашивается в брендовый тёмный, поэтому контур должен быть
+  /// одноцветным.
+  final String? brandIcon;
+
+  final String label;
   final String value;
+
+  /// Процент изменения к прошлому периоду. null — дельты нет.
   final double? changePercent;
-  final String? subtitle;
-  final IconData icon;
-  final Color iconColor;
+
+  /// Нейтральная приписка вместо дельты.
+  final String? valueNote;
+
+  final String? footnote;
 
   const MetricCard({
     super.key,
-    required this.title,
+    this.icon,
+    this.brandIcon,
+    required this.label,
     required this.value,
     this.changePercent,
-    this.subtitle,
-    required this.icon,
-    this.iconColor = const Color(0xFFF06B32),
-  });
+    this.valueNote,
+    this.footnote,
+  }) : assert(
+          (icon == null) != (brandIcon == null),
+          'нужен ровно один источник иконки',
+        );
 
   @override
   Widget build(BuildContext context) {
+    final note = footnote;
+
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.canonCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
+            spacing: 10,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              const SizedBox(width: 12),
+              _IconTile(icon: icon, brandIcon: brandIcon),
               Expanded(
                 child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
+                  label.toUpperCase(),
+                  style: AppTheme.canonMetricLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1A1A1A),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            spacing: 9,
             children: [
-              _buildChangeIndicator(),
-              if (subtitle != null)
-                Text(
-                  subtitle!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
+              Flexible(
+                child: Text(
+                  value,
+                  style: AppTheme.canonMetricValue,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              _trailing(),
             ],
           ),
+          if (note != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              note,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.textTertiary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildChangeIndicator() {
-    if (changePercent == null) {
-      return Text(
-        'Новый показатель',
-        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+  Widget _trailing() {
+    final delta = changePercent;
+    final note = valueNote;
+
+    if (delta != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Text(
+          formatDelta(delta),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: delta == 0
+                ? AppTheme.textGrey
+                : delta > 0
+                    ? AppTheme.statusGreen
+                    : AppTheme.errorRed,
+          ),
+        ),
       );
     }
 
-    final isPositive = changePercent! > 0;
-    final isZero = changePercent == 0;
-    final color = isZero
-        ? Colors.grey[500]!
-        : isPositive
-            ? const Color(0xFF3FD00D)
-            : Colors.red[600]!;
-    final arrow = isZero ? '' : (isPositive ? '\u2191 ' : '\u2193 ');
-    final sign = isPositive ? '+' : '';
+    if (note != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          note,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textGrey),
+        ),
+      );
+    }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$arrow$sign${changePercent!.toStringAsFixed(1)}%',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: color,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          'vs пред. период',
-          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-        ),
-      ],
+    return const SizedBox.shrink();
+  }
+}
+
+/// Плитка 32×32 на бежевом с иконкой брендового тёмного цвета.
+class _IconTile extends StatelessWidget {
+  final IconData? icon;
+  final String? brandIcon;
+
+  const _IconTile({this.icon, this.brandIcon});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = brandIcon;
+
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundWarm,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: name != null
+          ? SvgPicture.asset(
+              'assets/icons/$name.svg',
+              width: 17,
+              height: 17,
+              colorFilter: const ColorFilter.mode(
+                AppTheme.primaryOrangeDark,
+                BlendMode.srcIn,
+              ),
+            )
+          : Icon(icon, size: 18, color: AppTheme.primaryOrangeDark),
     );
   }
 }

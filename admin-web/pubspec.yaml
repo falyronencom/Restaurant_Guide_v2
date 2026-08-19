@@ -21,6 +21,7 @@ dependencies:
   fl_chart: ^0.69.2
   url_launcher: ^6.2.5
   google_fonts: ^6.1.0
+  flutter_svg: ^2.0.10
   # Для web: используйте web-specific пакеты, если требуется
   # Например, для карт можно использовать flutter_map или другие web-совместимые решения
 
@@ -38,3 +39,7 @@ flutter:
     # Имена файлов обязаны следовать схеме google_fonts: Family-Variant.ttf.
     # Источник — mobile/google_fonts/. Новое начертание = добавить сюда .ttf.
     - google_fonts/
+    # Брендовый набор иконок (категории, кухни, атрибуты). Источник —
+    # docs/design_handoff_web_vitrine/assets/icons. Перекрашиваются через
+    # ColorFilter, поэтому контур должен быть одноцветным.
+    - assets/icons/

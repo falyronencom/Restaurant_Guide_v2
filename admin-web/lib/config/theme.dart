@@ -291,11 +291,13 @@ class AppTheme {
     color: textPrimary,
   );
 
-  /// Число метрики: Unbounded 30/w400.
+  /// Число метрики: Unbounded 30/w400, lh 1 — чтобы дельта вставала по базовой
+  /// линии числа, а не «плавала» относительно него.
   static final TextStyle canonMetricValue = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 30,
     fontWeight: FontWeight.w400,
+    height: 1,
     color: textPrimary,
   );
 

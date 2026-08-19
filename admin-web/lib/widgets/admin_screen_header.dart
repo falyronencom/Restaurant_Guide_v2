@@ -18,12 +18,18 @@ class AdminScreenHeader extends StatelessWidget {
   final Widget? subtitleLeading;
   final List<Widget> actions;
 
+  /// Идёт фоновое обновление: по нижней кромке шапки бежит полоса 2px.
+  /// Данные при этом остаются на экране и читаемыми — подменять их
+  /// скелетоном на обновлении нельзя, это первичная загрузка так делает.
+  final bool busy;
+
   const AdminScreenHeader({
     super.key,
     required this.title,
     this.subtitle,
     this.subtitleLeading,
     this.actions = const <Widget>[],
+    this.busy = false,
   });
 
   static const double height = 72;
@@ -32,6 +38,28 @@ class AdminScreenHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final subtitleText = subtitle;
 
+    return Stack(
+      children: [
+        _bar(subtitleText),
+        if (busy)
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SizedBox(
+              height: 2,
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                color: AppTheme.primaryOrange,
+                backgroundColor: AppTheme.backgroundWarm,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _bar(String? subtitleText) {
     return Container(
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 24),
