@@ -197,6 +197,11 @@ export const getOverview = async ({ period, from, to }) => {
       moderation: {
         pending_count: moderationCounts.pending_count,
         actions_in_period: moderationCounts.actions_in_period,
+        // ISO-строка или null. Возраст считает клиент — так подпись
+        // «старейшая ждёт N дней» не устаревает между запросами.
+        oldest_pending_at: moderationCounts.oldest_pending_at
+          ? new Date(moderationCounts.oldest_pending_at).toISOString()
+          : null,
       },
     };
   } catch (error) {

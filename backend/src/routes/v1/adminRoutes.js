@@ -16,6 +16,7 @@ import * as auditLogController from '../../controllers/auditLogController.js';
 import * as adminReviewController from '../../controllers/adminReviewController.js';
 import * as adminMenuItemController from '../../controllers/adminMenuItemController.js';
 import * as qualityHealthController from '../../controllers/qualityHealthController.js';
+import * as badgesController from '../../controllers/badgesController.js';
 import { validateLogin } from '../../validators/authValidation.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
@@ -440,6 +441,24 @@ router.get(
   authenticate,
   authorize(['admin']),
   qualityHealthController.getHealth,
+);
+
+// ============================================================================
+// Segment G: Badges (счётчики очередей для рейла админки)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/badges
+ *
+ * Размеры очередей одним запросом: заведения на модерации и приостановленные,
+ * висящие флаги позиций меню. Рейл живёт в шелле и спрашивает счётчики на
+ * каждом экране — отсюда кэш 30 с в сервисе. Read-only.
+ */
+router.get(
+  '/badges',
+  authenticate,
+  authorize(['admin']),
+  badgesController.getBadges,
 );
 
 export default router;

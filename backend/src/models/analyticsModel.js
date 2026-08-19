@@ -131,9 +131,24 @@ export const countReviewsInPeriod = async (startDate, endDate) => {
  * Count pending moderation items and moderation actions in period
  */
 export const getModerationCounts = async (startDate, endDate) => {
+  // oldest_pending_at считается здесь, а не отдельным запросом: фронт видит
+  // очередь страницами по 20 и максимума по ней не знает, а лишний round-trip
+  // ради одного скаляра не нужен. NULL при пустой очереди — это корректный
+  // ответ «ждать нечему», а не отсутствие данных.
+  //
+  // AT TIME ZONE 'UTC' обязателен. Колонка — timestamp WITHOUT time zone, и
+  // NOW() пишет в неё UTC. node-pg разбирает наивную метку как ЛОКАЛЬНОЕ время
+  // процесса, после чего toISOString() уезжает на смещение машины: на UTC+3
+  // возраст заявки завышался ровно на три часа. На Railway процесс живёт в UTC,
+  // поэтому в проде дефект невидим и проявляется только локально — что делает
+  // его особенно неприятным. Конверсия в SQL снимает зависимость от TZ сервера.
   const query = `
     SELECT
       (SELECT COUNT(*)::int FROM establishments WHERE status = 'pending') AS pending_count,
+      (
+        SELECT MIN(created_at) AT TIME ZONE 'UTC'
+        FROM establishments WHERE status = 'pending'
+      ) AS oldest_pending_at,
       (
         SELECT COUNT(*)::int FROM audit_log
         WHERE action IN ('moderate_approve', 'moderate_reject', 'suspend_establishment', 'unsuspend_establishment')
