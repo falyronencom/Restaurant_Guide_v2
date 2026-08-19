@@ -80,7 +80,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// Navigate to login screen
   void _navigateToLogin() {
-    Navigator.of(context).pushNamed('/auth/login');
+    // rootNavigator: маршрут '/auth/login' живёт в таблице корневого навигатора.
+    // Без флага запрос уходит во вкладочный навигатор, а тот на любое имя
+    // возвращает корневой экран вкладки — экран «Избранное» приезжал сам на себя.
+    Navigator.of(context, rootNavigator: true).pushNamed('/auth/login');
   }
 
   @override

@@ -208,6 +208,16 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
     return Navigator(
       key: _navigatorKeys[index],
       onGenerateRoute: (settings) {
+        // Вкладочный навигатор держит только свой корневой экран. Именованный
+        // маршрут сюда попадать не должен: экраны приложения живут в таблице
+        // маршрутов КОРНЕВОГО навигатора, а здесь любое имя молча вернёт тот же
+        // экран вкладки — симптом «нажал кнопку, приехала та же страница».
+        // Из вкладок звать Navigator.of(context, rootNavigator: true).
+        assert(
+          settings.name == null || settings.name == '/',
+          'Именованный маршрут "${settings.name}" ушёл во вкладочный навигатор '
+          'вместо корневого. Нужен Navigator.of(context, rootNavigator: true).',
+        );
         return MaterialPageRoute(
           builder: (context) => child,
           settings: settings,
