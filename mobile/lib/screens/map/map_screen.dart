@@ -754,7 +754,11 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _navigateToDetail(Establishment establishment) {
-    Navigator.of(context).push(
+    // rootNavigator: карточка должна открываться поверх всего, как из избранного,
+    // поиска и уведомлений. Без флага маршрут ложится в навигатор вкладки и
+    // рисуется внутри body — нижнее меню остаётся на экране, а карточке достаётся
+    // высота за вычетом этой полосы. Возврат по «назад» ведёт обратно на карту.
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (context) => EstablishmentDetailScreen(
           establishmentId: establishment.id,
