@@ -95,22 +95,24 @@ export const getEstablishmentForModeration = async (establishmentId) => {
     ]);
 
     // Organize media by type
+    // preview_url и file_type нужны просмотрщику админки: модератор должен
+    // рассмотреть снимок, а не довольствоваться миниатюрой 120×90. Меню при
+    // этом бывает PDF — его нельзя отрисовать как картинку, у него смотрят
+    // растр первой страницы (preview_url), а оригинал открывают отдельно.
+    // Без file_type клиент этих двух случаев не различает.
+    const projectMedia = m => ({
+      id: m.id,
+      url: m.url,
+      thumbnail_url: m.thumbnail_url,
+      preview_url: m.preview_url,
+      file_type: m.file_type,
+    });
+
     const interiorPhotos = media
       .filter(m => m.type === 'interior')
-      .map(m => ({
-        id: m.id,
-        url: m.url,
-        thumbnail_url: m.thumbnail_url,
-        is_primary: m.is_primary,
-      }));
+      .map(m => ({ ...projectMedia(m), is_primary: m.is_primary }));
 
-    const menuMedia = media
-      .filter(m => m.type === 'menu')
-      .map(m => ({
-        id: m.id,
-        url: m.url,
-        thumbnail_url: m.thumbnail_url,
-      }));
+    const menuMedia = media.filter(m => m.type === 'menu').map(projectMedia);
 
     // Convert numeric types from PostgreSQL strings
     return {
