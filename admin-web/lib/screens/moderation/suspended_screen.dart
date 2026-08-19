@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
@@ -326,6 +327,10 @@ class _DetailPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SuspendedProvider>();
+    // Счётчики очередей берём ДО асинхронного действия: обращаться к
+    // context после await нельзя.
+    final badges = context.read<BadgesProvider>();
+
 
     return ModerationDetailPanel(
       mode: DetailPanelMode.suspended,
@@ -333,7 +338,9 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
-      onUnsuspend: () => provider.unsuspendEstablishment(),
+      onUnsuspend: () => provider
+          .unsuspendEstablishment()
+          .then((ok) => ok ? badges.load() : null),
     );
   }
 }

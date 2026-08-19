@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
@@ -522,6 +523,10 @@ class _DetailPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ApprovedProvider>();
+    // Счётчики очередей берём ДО асинхронного действия: обращаться к
+    // context после await нельзя.
+    final badges = context.read<BadgesProvider>();
+
 
     // Determine mode based on selected establishment status
     final detail = provider.selectedDetail;
@@ -534,10 +539,14 @@ class _DetailPanel extends StatelessWidget {
       detailError: provider.detailError,
       selectedId: provider.selectedId,
       onSuspend: !isSuspended && detail != null
-          ? (reason) => provider.suspendEstablishment(reason)
+          ? (reason) => provider
+              .suspendEstablishment(reason)
+              .then((ok) => ok ? badges.load() : null)
           : null,
       onUnsuspend: isSuspended
-          ? () => provider.unsuspendEstablishment()
+          ? () => provider
+              .unsuspendEstablishment()
+              .then((ok) => ok ? badges.load() : null)
           : null,
       onClaim: detail != null
           ? (userId) => provider.claimEstablishment(userId)

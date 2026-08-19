@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 
@@ -321,6 +322,7 @@ class MenuItemDetailPanel extends StatelessWidget {
     FlaggedMenuItem item,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final badges = context.read<BadgesProvider>();
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) => _HideDialog(itemName: item.itemName),
@@ -328,6 +330,9 @@ class MenuItemDetailPanel extends StatelessWidget {
     if (reason == null) return;
 
     final ok = await provider.hideItem(item.id, reason);
+    // Флаг снят или позиция скрыта — счётчик «Позиции меню»
+    // в рейле меняется, и увидеть это надо сразу.
+    if (ok) badges.load();
     messenger.showSnackBar(
       SnackBar(
         content: Text(ok ? 'Позиция скрыта' : 'Ошибка скрытия позиции'),
@@ -343,6 +348,7 @@ class MenuItemDetailPanel extends StatelessWidget {
     FlaggedMenuItem item,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final badges = context.read<BadgesProvider>();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -363,6 +369,9 @@ class MenuItemDetailPanel extends StatelessWidget {
     if (confirm != true) return;
 
     final ok = await provider.unhideItem(item.id);
+    // Флаг снят или позиция скрыта — счётчик «Позиции меню»
+    // в рейле меняется, и увидеть это надо сразу.
+    if (ok) badges.load();
     messenger.showSnackBar(
       SnackBar(
         content: Text(ok ? 'Позиция показана' : 'Ошибка'),
@@ -378,6 +387,7 @@ class MenuItemDetailPanel extends StatelessWidget {
     FlaggedMenuItem item,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final badges = context.read<BadgesProvider>();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -399,6 +409,9 @@ class MenuItemDetailPanel extends StatelessWidget {
     if (confirm != true) return;
 
     final ok = await provider.dismissFlag(item.id);
+    // Флаг снят или позиция скрыта — счётчик «Позиции меню»
+    // в рейле меняется, и увидеть это надо сразу.
+    if (ok) badges.load();
     messenger.showSnackBar(
       SnackBar(
         content: Text(ok ? 'Флаг снят' : 'Ошибка'),

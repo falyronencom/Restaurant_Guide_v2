@@ -4,6 +4,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/utils/open_url.dart';
 import 'package:restaurant_guide_admin_web/widgets/media/media_viewer.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
@@ -1148,6 +1149,10 @@ class _ActionBar extends StatelessWidget {
   }
 
   void _confirmApprove(BuildContext context) {
+    // Провайдер берём ДО показа диалога: после await обращаться к
+    // context нельзя, а счётчики очередей обновить надо.
+    final badges = context.read<BadgesProvider>();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1163,7 +1168,11 @@ class _ActionBar extends StatelessWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              provider.approveEstablishment();
+              provider.approveEstablishment().then((ok) {
+                // Очередь стала короче — бейдж в рейле обязан это
+                // показать сразу, иначе действие выглядит несработавшим.
+                if (ok) badges.load();
+              });
             },
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF3FD00D),
@@ -1176,6 +1185,10 @@ class _ActionBar extends StatelessWidget {
   }
 
   void _confirmReject(BuildContext context) {
+    // Провайдер берём ДО показа диалога: после await обращаться к
+    // context нельзя, а счётчики очередей обновить надо.
+    final badges = context.read<BadgesProvider>();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1191,7 +1204,11 @@ class _ActionBar extends StatelessWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              provider.rejectEstablishment();
+              provider.rejectEstablishment().then((ok) {
+                // Очередь стала короче — бейдж в рейле обязан это
+                // показать сразу, иначе действие выглядит несработавшим.
+                if (ok) badges.load();
+              });
             },
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFF3B30),
