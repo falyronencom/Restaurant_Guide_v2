@@ -164,16 +164,32 @@ class OverviewModeration {
   final int pendingCount;
   final int actionsInPeriod;
 
+  /// Когда была подана старейшая заявка в очереди. null — очередь пуста.
+  ///
+  /// Возраст считается на клиенте, а не приходит числом: так подпись
+  /// «старейшая ждёт N дней» не устаревает между запросами.
+  final DateTime? oldestPendingAt;
+
   const OverviewModeration({
     required this.pendingCount,
     required this.actionsInPeriod,
+    this.oldestPendingAt,
   });
 
   factory OverviewModeration.fromJson(Map<String, dynamic> json) {
+    final oldest = json['oldest_pending_at'] as String?;
     return OverviewModeration(
       pendingCount: json['pending_count'] as int? ?? 0,
       actionsInPeriod: json['actions_in_period'] as int? ?? 0,
+      oldestPendingAt: oldest == null ? null : DateTime.tryParse(oldest),
     );
+  }
+
+  /// Сколько полных суток ждёт старейшая заявка. null — очереди нет.
+  int? get oldestPendingDays {
+    final since = oldestPendingAt;
+    if (since == null) return null;
+    return DateTime.now().difference(since.toLocal()).inDays;
   }
 }
 

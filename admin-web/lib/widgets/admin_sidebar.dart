@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 
 /// Навигационный рейл админки — 260px по редизайну (было 363).
 ///
@@ -46,6 +47,9 @@ class AdminSidebar extends StatelessWidget {
 // Данные навигации
 // ============================================================================
 
+/// Какая очередь питает бейдж пункта.
+enum _RailBadge { pendingModeration, menuFlags }
+
 /// Пункт рейла.
 ///
 /// [soon] помечает раздел-заглушку: экран существует, но осмысленного
@@ -56,8 +60,15 @@ class _NavEntry {
   final String path;
   final IconData icon;
   final bool soon;
+  final _RailBadge? badge;
 
-  const _NavEntry(this.title, this.path, this.icon, {this.soon = false});
+  const _NavEntry(
+    this.title,
+    this.path,
+    this.icon, {
+    this.soon = false,
+    this.badge,
+  });
 }
 
 /// Группа пунктов. [title] == null — пункты до первого заголовка секции.
@@ -82,14 +93,16 @@ const List<_NavGroup> _navGroups = <_NavGroup>[
     title: 'Модерация',
     items: <_NavEntry>[
       _NavEntry('Ожидают просмотра', '/moderation/pending',
-          Icons.pending_actions_outlined),
+          Icons.pending_actions_outlined,
+          badge: _RailBadge.pendingModeration),
       _NavEntry(
           'Одобренные', '/moderation/approved', Icons.check_circle_outline),
       _NavEntry('Отказанные', '/moderation/rejected', Icons.cancel_outlined),
       _NavEntry('Приостановленные', '/moderation/suspended',
           Icons.pause_circle_outline),
       _NavEntry(
-          'Позиции меню', '/moderation/menu-items', Icons.menu_book_outlined),
+          'Позиции меню', '/moderation/menu-items', Icons.menu_book_outlined,
+          badge: _RailBadge.menuFlags),
     ],
   ),
   _NavGroup(
@@ -153,6 +166,8 @@ class _RailNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final badges = context.watch<BadgesProvider>().badges;
+
     final children = <Widget>[];
     for (final group in _navGroups) {
       final title = group.title;
@@ -163,6 +178,11 @@ class _RailNav extends StatelessWidget {
         children.add(_RailItem(
           entry: entry,
           isActive: location == entry.path,
+          badgeCount: switch (entry.badge) {
+            _RailBadge.pendingModeration => badges?.establishmentsPending,
+            _RailBadge.menuFlags => badges?.menuFlags,
+            null => null,
+          },
         ));
       }
     }
@@ -199,7 +219,15 @@ class _RailItem extends StatelessWidget {
   final _NavEntry entry;
   final bool isActive;
 
-  const _RailItem({required this.entry, required this.isActive});
+  /// Размер очереди. null — счётчики ещё не пришли или пункт их не имеет;
+  /// ноль — очередь разобрана, и бейдж не рисуется: молчание = норма.
+  final int? badgeCount;
+
+  const _RailItem({
+    required this.entry,
+    required this.isActive,
+    this.badgeCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -265,10 +293,46 @@ class _RailItem extends StatelessWidget {
                     const SizedBox(width: 6),
                     const Text('СКОРО', style: AppTheme.canonRailSoonLabel),
                   ],
+                  if ((badgeCount ?? 0) > 0) ...[
+                    const SizedBox(width: 6),
+                    _QueueBadge(count: badgeCount!),
+                  ],
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Бейдж очереди: пилюля 18×18 (шире при двузначном), брендовая @14%.
+///
+/// Нулевую очередь не показывает вовсе — молчание означает норму. Бейдж на
+/// каждом пункте превратился бы в шум, из которого не видно, где работа.
+class _QueueBadge extends StatelessWidget {
+  final int count;
+
+  const _QueueBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18),
+      height: 18,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: AppTheme.brandTint(0.14),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.primaryOrangeDark,
         ),
       ),
     );

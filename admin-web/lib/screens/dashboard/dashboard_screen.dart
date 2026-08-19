@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
+import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
@@ -189,7 +192,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     SizedBox(
                       width: _attentionWidth,
-                      child: AttentionPanel(items: _attention(context, ov)),
+                      child: AttentionPanel(
+                        items: _attention(
+                          context,
+                          ov,
+                          context.watch<BadgesProvider>().badges,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -201,19 +210,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Пока доступна одна строка из четырёх, нарисованных в макете.
+  /// Две строки из четырёх, нарисованных в макете.
   ///
-  /// Остальные три требуют счётчиков, которых `/admin/analytics/overview` не
-  /// отдаёт: флаги позиций меню, сигналы здоровья данных, отзывы на разбор.
-  /// Подпись «старейшая ждёт N дней» требует `oldest_pending_at`. Ни то ни
-  /// другое не заполняется приблизительным значением — строки просто нет.
-  List<AttentionItem> _attention(BuildContext context, dynamic ov) {
+  /// Не хватает «сигналов здоровья данных» и «отзывов на разбор»: ни для того
+  /// ни для другого в коде нет определения, сколько именно требует разбора, —
+  /// это policy-решение, а не порт. Приблизительным значением не заполняем:
+  /// панель существует ради доверия к ней.
+  List<AttentionItem> _attention(
+    BuildContext context,
+    OverviewData ov,
+    AdminBadges? badges,
+  ) {
+    final oldestDays = ov.moderation.oldestPendingDays;
+
     return <AttentionItem>[
       AttentionItem(
-        count: ov.moderation.pendingCount as int,
+        count: ov.moderation.pendingCount,
         title: 'Заявок на модерации',
+        note: oldestDays == null
+            ? null
+            : 'старейшая ждёт ${countWithNoun(oldestDays, 'день', 'дня', 'дней')}',
         onTap: () => context.go('/moderation/pending'),
       ),
+      if (badges != null)
+        AttentionItem(
+          count: badges.menuFlags,
+          title: 'Флагов в позициях меню',
+          note: badges.menuFlagsAgedOver7d > 0
+              ? '${badges.menuFlagsAgedOver7d} старше 7 дней'
+              : null,
+          onTap: () => context.go('/moderation/menu-items'),
+        ),
     ];
   }
 

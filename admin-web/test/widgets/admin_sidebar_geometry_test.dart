@@ -3,15 +3,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_sidebar.dart';
 
-/// Геометрия навигационного рейла.
-///
-/// Смысл этих проверок — не «виджет отрисовался», а конкретное обещание
-/// редизайна: на рабочем окне 1440×820 все 12 разделов видны без прокрутки.
-/// Раньше при ширине 363 и высоте пункта 44 «Здоровье данных» уходило под
-/// нижний разделитель. Такие дефекты меряются числами, а не глазами.
+// Геометрия навигационного рейла.
+//
+// Смысл этих проверок — не «виджет отрисовался», а конкретное обещание
+// редизайна: на рабочем окне 1440×820 все 12 разделов видны без прокрутки.
+// Раньше при ширине 363 и высоте пункта 44 «Здоровье данных» уходило под
+// нижний разделитель. Такие дефекты меряются числами, а не глазами.
+
+/// Провайдер с заранее известными счётчиками: сеть в этих тестах не нужна.
+class _StubBadgesProvider extends BadgesProvider {
+  final AdminBadges? _stub;
+
+  _StubBadgesProvider(this._stub);
+
+  @override
+  AdminBadges? get badges => _stub;
+
+  @override
+  Future<void> load() async {}
+}
+
 void main() {
   const paths = <String>[
     '/',
@@ -28,7 +44,11 @@ void main() {
     '/quality/health',
   ];
 
-  Future<void> pumpRail(WidgetTester tester, {String location = '/'}) async {
+  Future<void> pumpRail(
+    WidgetTester tester, {
+    String location = '/',
+    AdminBadges? badges,
+  }) async {
     // Реальный рабочий вьюпорт: окно браузера на экране 1440×900.
     tester.view.physicalSize = const Size(1440, 820);
     tester.view.devicePixelRatio = 1.0;
@@ -51,8 +71,13 @@ void main() {
     addTearDown(router.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<AuthProvider>(
-        create: (_) => AuthProvider(),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+          ChangeNotifierProvider<BadgesProvider>(
+            create: (_) => _StubBadgesProvider(badges),
+          ),
+        ],
         child: MaterialApp.router(
           theme: AppTheme.lightTheme,
           routerConfig: router,
@@ -153,6 +178,38 @@ void main() {
     expect(idle.style?.color, AppTheme.textDark);
   });
 
+  testWidgets('бейджи очередей: показываются только непустые', (tester) async {
+    await pumpRail(
+      tester,
+      badges: const AdminBadges(
+        establishmentsPending: 7,
+        menuFlags: 12,
+      ),
+    );
+
+    expect(find.text('7'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('разобранная очередь бейджа не рисует — молчание есть норма',
+      (tester) async {
+    await pumpRail(
+      tester,
+      badges: const AdminBadges(establishmentsPending: 0, menuFlags: 4),
+    );
+
+    expect(find.text('0'), findsNothing);
+    expect(find.text('4'), findsOneWidget);
+  });
+
+  testWidgets('без загруженных счётчиков бейджей нет вовсе', (tester) async {
+    await pumpRail(tester);
+
+    for (final n in const <String>['7', '12', '0']) {
+      expect(find.text(n), findsNothing);
+    }
+  });
+
   testWidgets('заголовки секций набраны прописными', (tester) async {
     await pumpRail(tester);
 
@@ -166,3 +223,4 @@ void main() {
     }
   });
 }
+

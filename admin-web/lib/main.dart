@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
@@ -72,6 +73,7 @@ class _AdminAppState extends State<AdminApp> {
         ChangeNotifierProvider(create: (_) => AdminReviewsProvider()),
         ChangeNotifierProvider(create: (_) => MenuItemsModerationProvider()),
         ChangeNotifierProvider(create: (_) => QualityHealthProvider()),
+        ChangeNotifierProvider(create: (_) => BadgesProvider()),
       ],
       child: MaterialApp.router(
         title: 'NIRIVIO · Админ-панель',
