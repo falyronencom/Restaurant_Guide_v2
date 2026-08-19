@@ -1,20 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 
-/// Reusable widget for reviewing a single moderable field.
+/// Строка проверяемого поля: слева лейбл и значение, справа вердикт.
 ///
-/// Displays field label, value content, and three action buttons
-/// (approve, reject, comment). Maintains visual state via ModerationProvider.
-/// Used 14 times across 4 moderation tabs.
+/// Раньше строка была вертикальной и просторной — лейбл 18/w500 над значением,
+/// под ним три кнопки 50×50. На четырнадцать полей это давало экран, по
+/// которому надо было долго скроллить, чтобы понять, что ещё не проверено.
+/// Канон делает её горизонтальной и плотной: лейбл 12, значение 15/600,
+/// вердикт-группа 34×34 у правого края.
 ///
-/// When [isReadOnly] is true, action buttons are hidden and the widget
-/// shows [readOnlyComment] if provided (used for rejected field display).
+/// Подсветка состояния выходит за паддинг списка на 12px — поэтому контейнер
+/// вкладки держит паддинг 12, а строка добавляет свои 12 изнутри. Текст в
+/// итоге стоит на 24 от края панели, а заливка — на 12. Отрицательных
+/// отступов, как в вёрстке, во Flutter не бывает: `Container.margin` их
+/// запрещает.
 class ModerationFieldReview extends StatelessWidget {
   final String fieldName;
   final String label;
   final bool isRequired;
+
+  /// Значение поля. Рамок у него быть не должно — рамка означает ввод.
   final Widget child;
+
   final bool isReadOnly;
   final String? readOnlyComment;
 
@@ -30,194 +39,197 @@ class ModerationFieldReview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // In read-only mode, skip provider dependency
-    Color? bgColor;
     FieldReviewState? state;
+    Color? background;
+    String? comment;
 
-    if (!isReadOnly) {
-      final provider = context.watch<ModerationProvider>();
-      state = provider.getFieldState(fieldName);
-
-      if (state.status == FieldReviewStatus.approved) {
-        bgColor = const Color(0x1A3FD00D); // green 10%
-      } else if (state.status == FieldReviewStatus.rejected) {
-        bgColor = const Color(0x1AFF3B30); // red 10%
+    if (isReadOnly) {
+      comment = readOnlyComment;
+      // Комментарий в режиме чтения бывает только у отклонённого поля —
+      // это причина отказа, ушедшая партнёру.
+      if (comment != null && comment.isNotEmpty) {
+        background = AppTheme.errorTint(0.06);
       }
-    } else if (readOnlyComment != null && readOnlyComment!.isNotEmpty) {
-      // In read-only mode with rejection comment, show red tint
-      bgColor = const Color(0x1AFF3B30); // red 10%
+    } else {
+      state = context.watch<ModerationProvider>().getFieldState(fieldName);
+      comment = state.comment;
+      background = switch (state.status) {
+        FieldReviewStatus.approved => AppTheme.successTint(0.06),
+        FieldReviewStatus.rejected => AppTheme.errorTint(0.06),
+        _ => null,
+      };
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Label row
-          Row(
+    final hasComment = comment != null && comment.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
-                      ),
+              Row(
+                spacing: 16,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _Label(label: label, isRequired: isRequired),
+                        const SizedBox(height: 3),
+                        child,
+                      ],
                     ),
-                    if (isRequired)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 4),
-                        child: Text(
-                          '*',
-                          style: TextStyle(
-                            color: Color(0xFFF06B32),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                  ),
+                  if (!isReadOnly) _VerdictGroup(fieldName: fieldName, label: label, state: state!),
+                ],
               ),
+              if (hasComment) ...[
+                const SizedBox(height: 11),
+                _CommentBlock(text: comment),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
-
-          // Field content
-          child,
-          const SizedBox(height: 12),
-
-          // Action buttons row (hidden in read-only mode)
-          if (!isReadOnly) ...[
-            _buildActionButtons(context, state!),
-          ],
-
-          // Show comment: interactive state or read-only
-          if (!isReadOnly &&
-              state!.comment != null &&
-              state.comment!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _buildCommentBox(state.comment!),
-          ],
-
-          // Read-only rejection comment
-          if (isReadOnly &&
-              readOnlyComment != null &&
-              readOnlyComment!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _buildCommentBox(readOnlyComment!, isRejection: true),
-          ],
-
-          const SizedBox(height: 8),
-          const Divider(color: Color(0xFFD2D2D2), height: 1),
-          const SizedBox(height: 8),
-        ],
-      ),
+        ),
+        // Разделитель уже подсветки: он отбит на 24 от края панели, а заливка
+        // строки — на 12.
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Divider(height: 1, thickness: 1, color: AppTheme.borderLight),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildActionButtons(BuildContext context, FieldReviewState state) {
+class _Label extends StatelessWidget {
+  final String label;
+  final bool isRequired;
+
+  const _Label({required this.label, required this.isRequired});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        text: label,
+        style: AppTheme.canonFieldLabel,
+        children: isRequired
+            ? const [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: AppTheme.primaryOrange),
+                ),
+              ]
+            : null,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// Три кнопки 34×34: одобрить, отклонить, прокомментировать.
+class _VerdictGroup extends StatelessWidget {
+  final String fieldName;
+  final String label;
+  final FieldReviewState state;
+
+  const _VerdictGroup({
+    required this.fieldName,
+    required this.label,
+    required this.state,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final provider = context.read<ModerationProvider>();
+    final approved = state.status == FieldReviewStatus.approved;
+    final rejected = state.status == FieldReviewStatus.rejected;
+    final commented = state.comment != null && state.comment!.isNotEmpty;
 
     return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 6,
       children: [
-        _ActionButton(
+        _VerdictButton(
           icon: Icons.check,
-          isActive: state.status == FieldReviewStatus.approved,
-          activeColor: const Color(0xFF3FD00D),
+          isActive: approved,
+          activeColor: AppTheme.statusGreen,
           tooltip: 'Одобрить',
-          onTap: () {
-            if (state.status == FieldReviewStatus.approved) {
-              provider.resetField(fieldName);
-            } else {
-              provider.approveField(fieldName);
-            }
-          },
+          // Повторное нажатие снимает вердикт — иначе ошибочный клик
+          // нечем отменить.
+          onTap: () => approved
+              ? provider.resetField(fieldName)
+              : provider.approveField(fieldName),
         ),
-        const SizedBox(width: 12),
-        _ActionButton(
+        _VerdictButton(
           icon: Icons.close,
-          isActive: state.status == FieldReviewStatus.rejected,
-          activeColor: const Color(0xFFFF3B30),
+          isActive: rejected,
+          activeColor: AppTheme.errorRed,
           tooltip: 'Отклонить',
-          onTap: () {
-            if (state.status == FieldReviewStatus.rejected) {
-              provider.resetField(fieldName);
-            } else {
-              _showRejectDialog(context, provider);
-            }
-          },
+          onTap: () => rejected
+              ? provider.resetField(fieldName)
+              : _ask(
+                  context,
+                  provider,
+                  title: 'Отклонить: $label',
+                  hint: 'Причина отклонения — уйдёт партнёру',
+                  confirm: 'Отклонить',
+                  danger: true,
+                  onSave: (text) => provider.rejectField(fieldName, comment: text),
+                ),
         ),
-        const SizedBox(width: 12),
-        _ActionButton(
+        _VerdictButton(
           icon: Icons.chat_bubble_outline,
-          isActive: state.comment != null && state.comment!.isNotEmpty,
-          activeColor: const Color(0xFFF06B32),
+          isActive: commented,
+          activeColor: AppTheme.primaryOrange,
           tooltip: 'Комментарий',
-          onTap: () => _showCommentDialog(context, provider),
+          onTap: () => _ask(
+            context,
+            provider,
+            title: 'Комментарий: $label',
+            hint: 'Заметка для себя и следующего модератора',
+            confirm: 'Сохранить',
+            danger: false,
+            onSave: (text) => provider.commentField(fieldName, text),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildCommentBox(String comment, {bool isRejection = false}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: isRejection
-            ? const Color(0x0DFF3B30) // subtle red for rejection reason
-            : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(6),
-        border: isRejection
-            ? Border.all(color: const Color(0x33FF3B30))
-            : null,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isRejection) ...[
-            const Icon(Icons.info_outline, size: 16, color: Color(0xFFFF3B30)),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: Text(
-              comment,
-              style: TextStyle(
-                fontSize: 13,
-                color: isRejection
-                    ? const Color(0xFFFF3B30)
-                    : Colors.grey.shade700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showRejectDialog(BuildContext context, ModerationProvider provider) {
+  void _ask(
+    BuildContext context,
+    ModerationProvider provider, {
+    required String title,
+    required String hint,
+    required String confirm,
+    required bool danger,
+    required ValueChanged<String> onSave,
+  }) {
     final controller = TextEditingController(
       text: provider.getFieldState(fieldName).comment ?? '',
     );
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Отклонить: $label'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Причина отклонения...',
-            border: OutlineInputBorder(),
+        title: Text(title),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: controller,
+            maxLines: 4,
+            autofocus: true,
+            decoration: InputDecoration(hintText: hint),
           ),
         ),
         actions: [
@@ -225,49 +237,15 @@ class ModerationFieldReview extends StatelessWidget {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Отмена'),
           ),
-          FilledButton(
+          ElevatedButton(
             onPressed: () {
-              provider.rejectField(fieldName, comment: controller.text);
+              onSave(controller.text);
               Navigator.pop(ctx);
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF3B30),
+            style: AppTheme.canonCtaL(
+              backgroundColor: danger ? AppTheme.errorRed : null,
             ),
-            child: const Text('Отклонить'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCommentDialog(BuildContext context, ModerationProvider provider) {
-    final controller = TextEditingController(
-      text: provider.getFieldState(fieldName).comment ?? '',
-    );
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Комментарий: $label'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Ваш комментарий...',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              provider.commentField(fieldName, controller.text);
-              Navigator.pop(ctx);
-            },
-            child: const Text('Сохранить'),
+            child: Text(confirm),
           ),
         ],
       ),
@@ -275,15 +253,14 @@ class ModerationFieldReview extends StatelessWidget {
   }
 }
 
-/// Single action button (approve / reject / comment)
-class _ActionButton extends StatelessWidget {
+class _VerdictButton extends StatelessWidget {
   final IconData icon;
   final bool isActive;
   final Color activeColor;
   final String tooltip;
   final VoidCallback onTap;
 
-  const _ActionButton({
+  const _VerdictButton({
     required this.icon,
     required this.isActive,
     required this.activeColor,
@@ -293,26 +270,65 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(AppTheme.radiusControl);
+
     return Tooltip(
       message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: isActive ? activeColor : null,
-            border: Border.all(
-              color: isActive ? activeColor : const Color(0xFFD2D2D2),
+      child: Material(
+        color: isActive ? activeColor : Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: isActive
+                  ? null
+                  : Border.all(color: AppTheme.strokeGrey),
             ),
-            borderRadius: BorderRadius.circular(10),
+            child: Icon(
+              icon,
+              size: 18,
+              color: isActive ? AppTheme.textOnPrimary : AppTheme.textGrey,
+            ),
           ),
-          child: Icon(
-            icon,
-            color: isActive ? Colors.white : const Color(0xFFD2D2D2),
-            size: 22,
-          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Комментарий к полю: белый блок с красной полосой слева.
+class _CommentBlock extends StatelessWidget {
+  final String text;
+
+  const _CommentBlock({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        color: AppTheme.backgroundPrimary,
+        border: Border(
+          left: BorderSide(color: AppTheme.errorRed, width: 2),
+        ),
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(AppTheme.radiusControl),
+          bottomRight: Radius.circular(AppTheme.radiusControl),
+        ),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          height: 1.5,
+          color: AppTheme.textDark,
         ),
       ),
     );

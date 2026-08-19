@@ -148,20 +148,14 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
             widget.rejectionNotes!.isNotEmpty)
           _RejectionNotesHeader(notes: widget.rejectionNotes!),
 
-        // Tab bar
+        // Вкладки. Стили не задаются на месте: активная 15/600 тёмно-оранжевым
+        // с подчёркиванием 2px и нижняя граница полосы приходят из
+        // tabBarTheme канона. Раньше здесь стоял кегль 18 и чёрный цвет
+        // неактивной — они перекрывали тему.
         TabBar(
           controller: _tabController,
-          labelColor: const Color(0xFFF06B32),
-          unselectedLabelColor: Colors.black,
-          labelStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w400,
-          ),
-          indicatorColor: const Color(0xFFF06B32),
+          tabAlignment: TabAlignment.start,
+          isScrollable: true,
           tabs: const [
             Tab(text: 'Данные'),
             Tab(text: 'О заведении'),
@@ -169,7 +163,6 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
             Tab(text: 'Адрес'),
           ],
         ),
-        const Divider(height: 1, color: Color(0xFFD2D2D2)),
 
         // Tab content
         Expanded(
@@ -656,7 +649,7 @@ class _DataTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
         ModerationFieldReview(
           fieldName: 'legal_name',
@@ -840,7 +833,7 @@ class _MediaTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
         ModerationFieldReview(
           fieldName: 'photos',
@@ -900,7 +893,7 @@ class _AddressTab extends StatelessWidget {
     ];
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
         ModerationFieldReview(
           fieldName: 'address',
@@ -1232,20 +1225,13 @@ class _FieldValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFD2D2D2), width: 1.13),
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Text(
-        value ?? '—',
-        style: TextStyle(
-          fontSize: 15,
-          color: value != null ? Colors.black : const Color(0xFFABABAB),
-        ),
-      ),
+    final empty = value == null || value!.isEmpty;
+
+    // Ни рамки, ни подложки: рамка означает поле ввода, а это значение для
+    // чтения. Пустое называется словом, а не прочерком.
+    return Text(
+      empty ? 'не указан' : value!,
+      style: empty ? AppTheme.canonFieldValueEmpty : AppTheme.canonFieldValue,
     );
   }
 }
@@ -1259,18 +1245,23 @@ class _FileLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final fileName = Uri.tryParse(url)?.pathSegments.lastOrNull ?? url;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFD2D2D2)),
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Text(
-        fileName,
-        style: const TextStyle(fontSize: 15),
-        textAlign: TextAlign.center,
+    return InkWell(
+      onTap: () => openInNewTab(url),
+      borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
+          const Icon(Icons.description, size: 17, color: AppTheme.primaryOrange),
+          Flexible(
+            child: Text(
+              fileName,
+              style: AppTheme.canonFieldValue,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
