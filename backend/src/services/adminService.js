@@ -20,6 +20,7 @@ import { BELARUS_BOUNDS, CITY_BOUNDS, validateCityCoordinates } from './establis
 import { upgradeUserToPartner } from './authService.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
+import { invalidateCache as invalidateBadges } from './badgesService.js';
 
 /**
  * Get paginated list of pending establishments for the moderation queue
@@ -300,6 +301,11 @@ export const moderateEstablishment = async (establishmentId, params) => {
       })();
     }
 
+    // Размер очереди изменился — счётчики рейла обязаны это увидеть
+    // сразу, иначе бейдж до полминуты показывал бы число, которое
+    // модератор только что сам и поменял.
+    invalidateBadges();
+
     logger.info('Establishment moderation completed', {
       establishmentId,
       action,
@@ -515,6 +521,11 @@ export const suspendEstablishment = async (establishmentId, params) => {
       reason,
     ).catch(() => {});
 
+    // Размер очереди изменился — счётчики рейла обязаны это увидеть
+    // сразу, иначе бейдж до полминуты показывал бы число, которое
+    // модератор только что сам и поменял.
+    invalidateBadges();
+
     logger.info('Establishment suspended', {
       establishmentId,
       adminUserId,
@@ -611,6 +622,11 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       establishmentId,
       'unsuspended',
     ).catch(() => {});
+
+    // Размер очереди изменился — счётчики рейла обязаны это увидеть
+    // сразу, иначе бейдж до полминуты показывал бы число, которое
+    // модератор только что сам и поменял.
+    invalidateBadges();
 
     logger.info('Establishment unsuspended', {
       establishmentId,
@@ -1268,6 +1284,11 @@ export const hideMenuItem = async (menuItemId, params) => {
   // helper in notificationService is retained for potential Phase 2 reuse
   // when the partner's responsibility model may change.
 
+  // Размер очереди изменился — счётчики рейла обязаны это увидеть
+  // сразу, иначе бейдж до полминуты показывал бы число, которое
+  // модератор только что сам и поменял.
+  invalidateBadges();
+
   logger.info('Menu item hidden by admin', {
     menuItemId,
     adminUserId,
@@ -1330,6 +1351,11 @@ export const unhideMenuItem = async (menuItemId, params) => {
     user_agent: userAgent,
   });
 
+  // Размер очереди изменился — счётчики рейла обязаны это увидеть
+  // сразу, иначе бейдж до полминуты показывал бы число, которое
+  // модератор только что сам и поменял.
+  invalidateBadges();
+
   logger.info('Menu item unhidden by admin', {
     menuItemId,
     adminUserId,
@@ -1379,6 +1405,11 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
     ip_address: ipAddress,
     user_agent: userAgent,
   });
+
+  // Размер очереди изменился — счётчики рейла обязаны это увидеть
+  // сразу, иначе бейдж до полминуты показывал бы число, которое
+  // модератор только что сам и поменял.
+  invalidateBadges();
 
   logger.info('Menu item sanity flag dismissed', {
     menuItemId,

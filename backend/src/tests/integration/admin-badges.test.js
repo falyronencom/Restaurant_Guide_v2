@@ -100,7 +100,7 @@ afterAll(async () => {
 beforeEach(() => {
   // Кэш живёт в модуле и переживает тесты — иначе первый же прогретый ответ
   // «залипнет» на всю сюиту и следующие проверки будут смотреть в прошлое.
-  badgesService.resetCache();
+  badgesService.invalidateCache();
 });
 
 // ===========================================================================
@@ -180,7 +180,7 @@ describe('GET /api/v1/admin/badges — счётчики', () => {
     // Пока кэш не сброшен — старое значение, это и есть смысл кэша.
     expect((await badgesService.getBadges()).establishments_suspended).toBe(2);
 
-    badgesService.resetCache();
+    badgesService.invalidateCache();
     expect((await badgesService.getBadges()).establishments_suspended).toBe(0);
 
     // Возвращаем фикстуру, чтобы порядок тестов не влиял на соседей.
@@ -188,7 +188,7 @@ describe('GET /api/v1/admin/badges — счётчики', () => {
       "UPDATE establishments SET status = 'suspended' WHERE id IN (SELECT id FROM establishments WHERE status = 'active' AND id <> $1 LIMIT 2)",
       [oldestPendingId],
     );
-    badgesService.resetCache();
+    badgesService.invalidateCache();
   });
 });
 
@@ -230,5 +230,40 @@ describe('GET /api/v1/admin/analytics/overview — oldest_pending_at', () => {
     await query(
       "UPDATE establishments SET status = 'pending' WHERE status = 'rejected'",
     );
+  });
+});
+
+// ===========================================================================
+// Инвалидация кэша со стороны записи
+// ===========================================================================
+
+describe('Действие модератора сбрасывает кэш счётчиков', () => {
+  it('после одобрения бейдж показывает новое число, а не прежнее', async () => {
+    // Прогреваем кэш — именно он и мог бы соврать.
+    const before = await request(app)
+      .get(BADGES_URL)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(before.body.data.establishments_pending).toBe(3);
+
+    await request(app)
+      .post(`/api/v1/admin/establishments/${oldestPendingId}/moderate`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'approve' })
+      .expect(200);
+
+    // Кэш вручную НЕ сбрасываем: это должен был сделать сам сервис записи.
+    // Иначе модератор до полминуты видел бы число, которое сам же изменил,
+    // и читал бы это как «действие не сработало».
+    const after = await request(app)
+      .get(BADGES_URL)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(after.body.data.establishments_pending).toBe(2);
+
+    // Возвращаем фикстуру.
+    await query(
+      "UPDATE establishments SET status = 'pending' WHERE id = $1",
+      [oldestPendingId],
+    );
+    badgesService.invalidateCache();
   });
 });
