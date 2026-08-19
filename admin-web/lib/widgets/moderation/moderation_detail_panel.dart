@@ -1,13 +1,12 @@
-import 'dart:js_interop';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/utils/open_url.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/media_viewer.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
-
-@JS('window.open')
-external void _jsWindowOpen(JSString url, JSString target);
 
 /// Display mode for the detail panel
 enum DetailPanelMode {
@@ -849,7 +848,7 @@ class _MediaTab extends StatelessWidget {
           isReadOnly: isReadOnly,
           readOnlyComment: _note('photos'),
           child: detail.interiorPhotos.isNotEmpty
-              ? _PhotoGrid(photos: detail.interiorPhotos)
+              ? _PhotoGrid(photos: detail.interiorPhotos, title: 'Фото')
               : const Text(
                   'Фотографии не загружены',
                   style: TextStyle(color: Color(0xFFABABAB)),
@@ -862,7 +861,7 @@ class _MediaTab extends StatelessWidget {
           isReadOnly: isReadOnly,
           readOnlyComment: _note('menu'),
           child: detail.menuMedia.isNotEmpty
-              ? _PhotoGrid(photos: detail.menuMedia)
+              ? _PhotoGrid(photos: detail.menuMedia, title: 'Меню')
               : const Text(
                   'Меню не загружено',
                   style: TextStyle(color: Color(0xFFABABAB)),
@@ -1023,7 +1022,7 @@ class _MapPreview extends StatelessWidget {
 
   void _openInYandexMaps() {
     final url = 'https://yandex.ru/maps/?pt=$longitude,$latitude&z=16&l=map';
-    _jsWindowOpen(url.toJS, '_blank'.toJS);
+    openInNewTab(url);
   }
 
   void _showCoordinateDialog(BuildContext context) {
@@ -1375,34 +1374,118 @@ class _AttributesDisplay extends StatelessWidget {
   }
 }
 
-/// Photo grid for the Media tab
+/// Сетка медиа во вкладке «Медиа».
+///
+/// Каждая плитка открывает полноэкранный просмотр с увеличением. Без него
+/// модерация медиа не работает: на 120×90 снимок не разглядеть, а меню —
+/// это текст, который на таком размере просто не читается.
 class _PhotoGrid extends StatelessWidget {
   final List<MediaItem> photos;
-  const _PhotoGrid({required this.photos});
+
+  /// Что за набор — «Фото» или «Меню». Показывается в шапке просмотрщика.
+  final String title;
+
+  const _PhotoGrid({required this.photos, required this.title});
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: photos.map((photo) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+      children: [
+        for (var i = 0; i < photos.length; i++)
+          _PhotoTile(
+            item: photos[i],
+            onOpen: () => showMediaViewer(
+              context,
+              items: photos,
+              title: title,
+              initialIndex: i,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Плитка с подсказкой при наведении — иначе о возможности увеличить никто
+/// не догадается: раньше её просто не было.
+class _PhotoTile extends StatefulWidget {
+  final MediaItem item;
+  final VoidCallback onOpen;
+
+  const _PhotoTile({required this.item, required this.onOpen});
+
+  @override
+  State<_PhotoTile> createState() => _PhotoTileState();
+}
+
+class _PhotoTileState extends State<_PhotoTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onOpen,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           child: SizedBox(
             width: 120,
             height: 90,
-            child: Image.network(
-              photo.thumbnailUrl ?? photo.url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: const Color(0xFFF5F5F5),
-                child: const Icon(Icons.broken_image,
-                    color: Color(0xFFD2D2D2)),
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  item.thumbnailUrl ?? item.previewUrl ?? item.url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const ColoredBox(
+                    color: AppTheme.gray100,
+                    child: Icon(Icons.broken_image,
+                        color: AppTheme.strokeGrey),
+                  ),
+                ),
+                if (item.isPdf)
+                  Positioned(
+                    left: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.disclaimerBg,
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.radiusXSmall),
+                      ),
+                      child: const Text(
+                        'PDF',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.disclaimerText,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_hovered)
+                  ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    child: const Center(
+                      child: Icon(Icons.zoom_in, color: Colors.white, size: 28),
+                    ),
+                  ),
+              ],
             ),
           ),
-        );
-      }).toList(),
+        ),
+      ),
     );
   }
 }

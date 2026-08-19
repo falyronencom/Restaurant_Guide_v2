@@ -163,22 +163,49 @@ class EstablishmentDetail {
 /// Media item (photo or document)
 class MediaItem {
   final String? id;
+
+  /// Оригинал. Для PDF это сам PDF — отрисовать его как картинку нельзя.
   final String url;
+
+  /// Миниатюра для сетки.
   final String? thumbnailUrl;
+
+  /// Промежуточное разрешение 800×600. Для PDF — растр первой страницы,
+  /// то есть единственное, что можно показать на экране.
+  final String? previewUrl;
+
+  /// `image` или `pdf`. В базе NOT NULL DEFAULT 'image', но проекция могла
+  /// прийти без поля — считаем такие записи картинками.
+  final String fileType;
+
   final bool isPrimary;
 
   const MediaItem({
     this.id,
     required this.url,
     this.thumbnailUrl,
+    this.previewUrl,
+    this.fileType = 'image',
     this.isPrimary = false,
   });
+
+  bool get isPdf => fileType == 'pdf';
+
+  /// Что показывать в полноэкранном просмотре.
+  ///
+  /// Для картинки — оригинал: модератор смотрит именно его. Для PDF оригинал
+  /// нарисовать невозможно, остаётся растр первой страницы; сам файл
+  /// открывается отдельным действием.
+  String get viewableUrl =>
+      isPdf ? (previewUrl ?? thumbnailUrl ?? url) : url;
 
   factory MediaItem.fromJson(Map<String, dynamic> json) {
     return MediaItem(
       id: json['id'] as String?,
       url: json['url'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String?,
+      previewUrl: json['preview_url'] as String?,
+      fileType: json['file_type'] as String? ?? 'image',
       isPrimary: json['is_primary'] as bool? ?? false,
     );
   }
