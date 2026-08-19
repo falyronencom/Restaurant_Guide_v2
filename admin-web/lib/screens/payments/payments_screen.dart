@@ -1,71 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_empty_state.dart';
 
-/// Professional "coming soon" screen for Payment History.
-/// Replaces PlaceholderScreen with informative content about planned features.
+/// История платежей — раздел ещё не запущен (кадр 15 редизайна).
+///
+/// Зависимость названа честно: раздел ждёт не «следующего обновления», а
+/// первой платящей подписки, то есть запуска монетизации после публичного
+/// выхода платформы. Пункт рейла помечен «скоро».
 class PaymentsScreen extends StatelessWidget {
   const PaymentsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 480),
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF06B32).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Icon(
-                Icons.payment_outlined,
-                size: 40,
-                color: Color(0xFFF06B32),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'История платежей',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Управление подписками и история платежей партнёров '
-              'будут доступны после запуска системы монетизации. '
-              'Здесь можно будет просматривать активные подписки, '
-              'историю транзакций и управлять тарифами.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 15,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Ожидается в следующих обновлениях',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
+    return const Column(
+      children: [
+        AdminScreenHeader(
+          title: 'История платежей',
+          subtitle: 'Появится вместе с монетизацией',
         ),
-      ),
+        Expanded(
+          child: AdminEmptyState.section(
+            icon: Icons.receipt_long_outlined,
+            title: 'Платежей пока нет',
+            status: 'Монетизация запускается после выхода платформы',
+            message: 'Раздел ждёт первую платящую подписку. До запуска '
+                'монетизации показывать здесь нечего — партнёры пользуются '
+                'платформой бесплатно.',
+            rows: <EmptyStateRow>[
+              EmptyStateRow(
+                icon: Icons.workspace_premium_outlined,
+                text: 'Активные подписки партнёров',
+              ),
+              EmptyStateRow(
+                icon: Icons.receipt_long_outlined,
+                text: 'История транзакций',
+              ),
+              EmptyStateRow(
+                icon: Icons.sell_outlined,
+                text: 'Управление тарифами',
+              ),
+            ],
+            footnote: 'Поздний этап — после публичного запуска',
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,70 +1,50 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_empty_state.dart';
 
-/// Professional "coming soon" screen for Notifications.
-/// Replaces PlaceholderScreen with informative content about planned features.
+/// Уведомления — раздел ещё не запущен (кадр 14 редизайна).
+///
+/// Это не заглушка «в разработке», а честный экран: перечисляет, что здесь
+/// появится, и называет реальную зависимость, а не безадресный срок. Пункт
+/// рейла помечен «скоро», чтобы тупик был виден до клика.
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 480),
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF06B32).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Icon(
-                Icons.notifications_outlined,
-                size: 40,
-                color: Color(0xFFF06B32),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Уведомления',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Система уведомлений находится в разработке. '
-              'Здесь будут отображаться уведомления о новых заявках '
-              'на модерацию, отзывах и важных событиях платформы.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 15,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Ожидается в следующих обновлениях',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
+    return const Column(
+      children: [
+        AdminScreenHeader(
+          title: 'Уведомления',
+          subtitle: 'Раздел в разработке — событий пока нет',
         ),
-      ),
+        Expanded(
+          child: AdminEmptyState.section(
+            icon: Icons.notifications_outlined,
+            title: 'Пока тихо',
+            status: 'Система уведомлений в разработке',
+            message: 'Когда раздел заработает, здесь будет лента событий '
+                'платформы — то, что сейчас приходится проверять вручную '
+                'на каждом экране модерации.',
+            rows: <EmptyStateRow>[
+              EmptyStateRow(
+                icon: Icons.pending_actions_outlined,
+                text: 'Новые заявки на модерацию',
+              ),
+              EmptyStateRow(
+                icon: Icons.reviews_outlined,
+                text: 'Отзывы с низкой оценкой и жалобы',
+              ),
+              EmptyStateRow(
+                icon: Icons.monitor_heart_outlined,
+                text: 'Важные события платформы',
+              ),
+            ],
+            footnote: 'В следующих обновлениях. '
+                'Пока сигналы собраны в «Здоровье данных»',
+          ),
+        ),
+      ],
     );
   }
 }
