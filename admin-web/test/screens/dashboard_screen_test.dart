@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
@@ -96,6 +97,12 @@ UsersAnalyticsData _users({List<TimelinePoint>? timeline}) =>
       aggregation: 'day',
     );
 
+/// Счётчики очередей в этих тестах не участвуют — сеть трогать незачем.
+class _IdleBadgesProvider extends BadgesProvider {
+  @override
+  Future<void> load() async {}
+}
+
 void main() {
   /// Поднимает экран на подставном сервисе и отдаёт этот сервис тесту.
   ///
@@ -116,8 +123,16 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => DashboardProvider(service: fake),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => DashboardProvider(service: fake)),
+          // Панель «Требует внимания» читает счётчики очередей. Здесь они не
+          // нужны: провайдер отдаёт null, и панель показывает только те
+          // строки, что собираются из overview.
+          ChangeNotifierProvider<BadgesProvider>(
+            create: (_) => _IdleBadgesProvider(),
+          ),
+        ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
           home: const Scaffold(body: DashboardScreen()),
