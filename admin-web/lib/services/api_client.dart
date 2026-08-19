@@ -6,27 +6,23 @@ import 'package:restaurant_guide_admin_web/config/environment.dart';
 /// HTTP API client with authentication and error handling
 /// Built on Dio with custom interceptors for token management
 class ApiClient {
-  late final Dio _dio;
+  final Dio _dio;
   final FlutterSecureStorage _storage;
 
   // Singleton pattern
-  static final ApiClient _instance = ApiClient._internal();
+  static final ApiClient _instance = ApiClient.withDio(_defaultDio());
   factory ApiClient() => _instance;
 
-  ApiClient._internal() : _storage = const FlutterSecureStorage() {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: Environment.apiBaseUrl,
-        connectTimeout: const Duration(seconds: Environment.apiConnectTimeout),
-        receiveTimeout: const Duration(seconds: Environment.apiTimeout),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        listFormat: ListFormat.multiCompatible,
-      ),
-    );
-
+  /// Собирает клиент поверх готового Dio.
+  ///
+  /// Прод по-прежнему ходит через синглтон `ApiClient()` — поведение не
+  /// изменилось. Конструктор доступен потому, что класс с одним лишь
+  /// приватным генеративным конструктором нельзя ни собрать поверх
+  /// подставного транспорта, ни унаследовать: в тестах не остаётся ни одной
+  /// точки входа.
+  ApiClient.withDio(Dio dio)
+      : _dio = dio,
+        _storage = const FlutterSecureStorage() {
     // Add interceptors
     _dio.interceptors.add(_createRequestInterceptor());
     _dio.interceptors.add(_createResponseInterceptor());
@@ -45,6 +41,21 @@ class ApiClient {
       ));
     }
   }
+
+  /// Транспорт прод-сборки: базовый адрес и таймауты из `Environment`.
+  static Dio _defaultDio() => Dio(
+        BaseOptions(
+          baseUrl: Environment.apiBaseUrl,
+          connectTimeout:
+              const Duration(seconds: Environment.apiConnectTimeout),
+          receiveTimeout: const Duration(seconds: Environment.apiTimeout),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          listFormat: ListFormat.multiCompatible,
+        ),
+      );
 
   // ============================================================================
   // Request Interceptor - Adds authentication token

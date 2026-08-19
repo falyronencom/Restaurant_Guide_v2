@@ -10,12 +10,16 @@ class AuthService {
   final FlutterSecureStorage _storage;
 
   // Singleton pattern
-  static final AuthService _instance = AuthService._internal();
+  static final AuthService _instance = AuthService.withClient(ApiClient());
   factory AuthService() => _instance;
 
-  AuthService._internal()
-      : _apiClient = ApiClient(),
-        _storage = const FlutterSecureStorage();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  AuthService.withClient(this._apiClient)
+      : _storage = const FlutterSecureStorage();
 
   // ============================================================================
   // Authentication Operations

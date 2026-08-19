@@ -5,10 +5,16 @@ import 'package:restaurant_guide_admin_web/services/api_client.dart';
 class AuditLogService {
   final ApiClient _apiClient;
 
-  static final AuditLogService _instance = AuditLogService._internal();
+  static final AuditLogService _instance =
+      AuditLogService.withClient(ApiClient());
   factory AuditLogService() => _instance;
 
-  AuditLogService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  AuditLogService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/audit-log
   Future<AuditLogListResponse> getAuditLog({

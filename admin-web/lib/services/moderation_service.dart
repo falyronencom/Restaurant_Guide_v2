@@ -5,10 +5,16 @@ import 'package:restaurant_guide_admin_web/services/api_client.dart';
 class ModerationService {
   final ApiClient _apiClient;
 
-  static final ModerationService _instance = ModerationService._internal();
+  static final ModerationService _instance =
+      ModerationService.withClient(ApiClient());
   factory ModerationService() => _instance;
 
-  ModerationService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  ModerationService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/establishments/pending
   Future<PendingListResponse> getPendingEstablishments({

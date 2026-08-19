@@ -5,10 +5,16 @@ import 'package:restaurant_guide_admin_web/services/api_client.dart';
 class AnalyticsService {
   final ApiClient _apiClient;
 
-  static final AnalyticsService _instance = AnalyticsService._internal();
+  static final AnalyticsService _instance =
+      AnalyticsService.withClient(ApiClient());
   factory AnalyticsService() => _instance;
 
-  AnalyticsService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  AnalyticsService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/analytics/overview
   Future<OverviewData> getOverview({

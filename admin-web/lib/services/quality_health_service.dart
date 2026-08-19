@@ -6,10 +6,15 @@ class QualityHealthService {
   final ApiClient _apiClient;
 
   static final QualityHealthService _instance =
-      QualityHealthService._internal();
+      QualityHealthService.withClient(ApiClient());
   factory QualityHealthService() => _instance;
 
-  QualityHealthService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  QualityHealthService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/quality/health
   Future<QualityHealthData> getHealth() async {

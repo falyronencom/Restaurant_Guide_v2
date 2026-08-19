@@ -11,10 +11,15 @@ class AdminMenuItemService {
   final ApiClient _apiClient;
 
   static final AdminMenuItemService _instance =
-      AdminMenuItemService._internal();
+      AdminMenuItemService.withClient(ApiClient());
   factory AdminMenuItemService() => _instance;
 
-  AdminMenuItemService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  AdminMenuItemService.withClient(this._apiClient);
 
   /// Fetch a page of flagged menu items. Backend supports `reason` filter;
   /// city + status filters are applied client-side by the provider.

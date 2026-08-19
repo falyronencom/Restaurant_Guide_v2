@@ -5,10 +5,16 @@ import 'package:restaurant_guide_admin_web/services/api_client.dart';
 class AdminReviewService {
   final ApiClient _apiClient;
 
-  static final AdminReviewService _instance = AdminReviewService._internal();
+  static final AdminReviewService _instance =
+      AdminReviewService.withClient(ApiClient());
   factory AdminReviewService() => _instance;
 
-  AdminReviewService._internal() : _apiClient = ApiClient();
+  /// Собирает сервис поверх переданного клиента.
+  ///
+  /// Прод не меняется: фабрика по-прежнему отдаёт синглтон. Доступный
+  /// генеративный конструктор нужен затем, что класс с одним лишь приватным
+  /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
+  AdminReviewService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/reviews
   Future<AdminReviewListResponse> getReviews({
