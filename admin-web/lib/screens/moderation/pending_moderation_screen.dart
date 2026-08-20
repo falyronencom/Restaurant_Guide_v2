@@ -80,7 +80,9 @@ class _PendingModerationScreenState extends State<PendingModerationScreen> {
     final queue = '${countWithNoun(total, 'заявка', 'заявки', 'заявок')} в очереди';
     final oldest = provider.oldestWaitingDays;
     if (oldest == null) return queue;
-    if (oldest == 0) return '$queue · старейшая пришла сегодня';
+    // Не «пришла сегодня»: счёт идёт полными сутками, а не календарными
+    // днями, и заявка от 22:00 вчерашнего дня в девять утра даёт ноль.
+    if (oldest == 0) return '$queue · старейшая ждёт меньше суток';
 
     return '$queue · старейшая ждёт ${countWithNoun(oldest, 'день', 'дня', 'дней')}';
   }

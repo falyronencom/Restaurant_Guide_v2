@@ -17,8 +17,13 @@ import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_list_pa
 /// Провайдер с заранее выложенной очередью: сеть в этих тестах не нужна.
 class _StubModerationProvider extends ModerationProvider {
   final List<EstablishmentListItem> _items;
+  final String? _selected;
 
-  _StubModerationProvider(this._items);
+  _StubModerationProvider(this._items, {String? selected})
+      : _selected = selected;
+
+  @override
+  String? get selectedId => _selected;
 
   @override
   List<EstablishmentListItem> get establishments => _items;
@@ -36,7 +41,7 @@ class _StubModerationProvider extends ModerationProvider {
 EstablishmentListItem _item({
   required String id,
   required String name,
-  String city = 'Минск',
+  String? city = 'Минск',
   List<String> categories = const <String>['Ресторан'],
   List<String> cuisines = const <String>['Народная'],
   required int waitingDays,
@@ -59,15 +64,16 @@ void main() {
   group('Очередь: геометрия', () {
     Future<void> pumpQueue(
       WidgetTester tester,
-      List<EstablishmentListItem> items,
-    ) async {
+      List<EstablishmentListItem> items, {
+      String? selected,
+    }) async {
       tester.view.physicalSize = const Size(1440, 820);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(
         ChangeNotifierProvider<ModerationProvider>.value(
-          value: _StubModerationProvider(items),
+          value: _StubModerationProvider(items, selected: selected),
           child: MaterialApp(
             theme: AppTheme.lightTheme,
             home: const Scaffold(
@@ -96,10 +102,47 @@ void main() {
         _item(id: 'a', name: 'Кухмістр', waitingDays: 4),
       ]);
 
-      // 16 паддинг списка + 96 полоса + 14 паддинг тела = 126.
-      // Одно число доказывает все три величины сразу; расползётся любая —
+      // 16 паддинг списка + 1.5 рамка + 96 полоса + 14 паддинг тела = 127.5.
+      // Одно число доказывает все четыре величины сразу; расползётся любая —
       // тест упадёт и назовёт, на сколько.
-      expect(tester.getRect(find.text('Кухмістр')).left, 126);
+      expect(tester.getRect(find.text('Кухмістр')).left, 127.5);
+    });
+
+    testWidgets('выбор карточки не сдвигает её геометрию', (tester) async {
+      await pumpQueue(tester, <EstablishmentListItem>[
+        _item(id: 'a', name: 'Кухмістр', waitingDays: 4),
+      ]);
+      final unselected = tester.getRect(find.text('Кухмістр'));
+
+      await pumpQueue(
+        tester,
+        <EstablishmentListItem>[
+          _item(id: 'a', name: 'Кухмістр', waitingDays: 4),
+        ],
+        selected: 'a',
+      );
+
+      // У невыбранной карточки рамка прозрачная, но той же ширины. Иначе
+      // выбор раздвигает карточку, и список под ней прыгает на каждом шаге
+      // обхода очереди.
+      expect(tester.getRect(find.text('Кухмістр')), unselected);
+    });
+
+    testWidgets('бейдж срока стоит по правому краю независимо от города',
+        (tester) async {
+      await pumpQueue(tester, <EstablishmentListItem>[
+        _item(id: 'a', name: 'Кухмістр', city: 'Брест', waitingDays: 4),
+        _item(id: 'b', name: 'Лідо', city: 'Новогрудок', waitingDays: 3),
+        _item(id: 'c', name: 'Тбілісо', city: null, waitingDays: 2),
+      ]);
+
+      // Правый край бейджа обязан совпадать у всех карточек: длина названия
+      // города на него влиять не должна.
+      final edges = <double>{
+        for (final label in <String>['4 дня', '3 дня', '2 дня'])
+          tester.getRect(find.text(label)).right,
+      };
+      expect(edges, hasLength(1));
     });
 
     testWidgets('бейдж называет срок словами, а не числом суток',

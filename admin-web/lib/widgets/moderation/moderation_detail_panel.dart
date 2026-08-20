@@ -9,6 +9,7 @@ import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_inline_spinner.dart';
 
 /// Display mode for the detail panel
 enum DetailPanelMode {
@@ -1135,16 +1136,37 @@ class _ActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Ход отправки показывается слева, а не внутри кнопки. Причина не
+          // косметическая: `isSubmitting` общий для обоих действий, и спиннер
+          // на кнопке одобрения загорался бы при отказе — то есть сообщал бы
+          // о противоположном действии. К тому же при отклонённом поле эта
+          // кнопка заблокирована и залита `strokeGrey`, на котором белый
+          // спиннер не виден вовсе, и отказ оставался бы вообще без отклика.
           Expanded(
-            child: error != null
-                ? Text(
-                    error,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.errorRed,
-                    ),
+            child: provider.isSubmitting
+                ? const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      AdminInlineSpinner(),
+                      SizedBox(width: 8),
+                      Text(
+                        'Сохраняем решение…',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   )
-                : _StateHint(provider: provider),
+                : error != null
+                    ? Text(
+                        error,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.errorRed,
+                        ),
+                      )
+                    : _StateHint(provider: provider),
           ),
           const SizedBox(width: 14),
           OutlinedButton(
@@ -1161,16 +1183,7 @@ class _ActionBar extends StatelessWidget {
                 ? null
                 : () => _confirmApprove(context),
             style: AppTheme.canonCtaL(),
-            child: provider.isSubmitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('Одобрить заведение'),
+            child: const Text('Одобрить заведение'),
           ),
         ],
       ),

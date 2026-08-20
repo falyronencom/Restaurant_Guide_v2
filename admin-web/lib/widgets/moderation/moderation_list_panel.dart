@@ -94,7 +94,15 @@ class _EstablishmentCard extends StatelessWidget {
         child: Container(
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : AppTheme.canonPanelDecoration(radius: AppTheme.radiusMedium),
+              : BoxDecoration(
+                  color: AppTheme.backgroundWarm,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                  // Рамка прозрачная, но ширины той же, что у выбранной.
+                  // Без неё выбор карточки раздвигает её на 1.5px с каждой
+                  // стороны, и весь список под ней прыгает — при обходе
+                  // очереди это заметно на каждом шаге.
+                  border: Border.all(color: Colors.transparent, width: 1.5),
+                ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             child: IntrinsicHeight(
@@ -130,10 +138,23 @@ class _MediaStrip extends StatelessWidget {
     return SizedBox(
       width: _EstablishmentCard.mediaWidth,
       child: url != null && url.isNotEmpty
-          ? Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _fallback(),
+          // Stack только из позиционированных детей заявляет нулевой
+          // собственный размер. Это принципиально: высоту карточки задаёт
+          // IntrinsicHeight, а `Image.network` иначе отдал бы ей высоту по
+          // соотношению сторон снимка. `thumbnail_url` в базе обнуляем, и
+          // тогда сюда приходит полноразмерный файл — портретное фото
+          // растянуло бы карточку вдвое, причём уже после загрузки байтов,
+          // то есть прыжком.
+          ? Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _fallback(),
+                  ),
+                ),
+              ],
             )
           : _fallback(),
     );
@@ -225,8 +246,12 @@ class _CardBody extends StatelessWidget {
           const SizedBox(height: 9),
           Row(
             children: [
+              // Город забирает всю свободную ширину, а не половину: с
+              // `Flexible` рядом со `Spacer` остаток от короткого названия
+              // уходил за бейдж, и тот вставал не по правому краю, а вразнобой
+              // от карточки к карточке.
               if (item.city != null)
-                Flexible(
+                Expanded(
                   child: Text(
                     item.city!,
                     style: const TextStyle(
@@ -236,8 +261,9 @@ class _CardBody extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              const Spacer(),
+                )
+              else
+                const Spacer(),
               _WaitingBadge(
                 days: moderationWaitingDays(item.updatedAt),
                 isSelected: isSelected,
@@ -309,7 +335,9 @@ class _QueueSkeleton extends StatelessWidget {
       itemCount: 4,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, __) => Container(
-        height: 90,
+        // Высота настоящей карточки при однострочных полях — скелетон не
+        // должен смещать список в момент подмены.
+        height: 94,
         decoration: AppTheme.canonPanelDecoration(radius: AppTheme.radiusMedium),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
