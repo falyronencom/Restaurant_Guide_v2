@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_list_panel.dart';
 
-/// Main screen for "Ожидают просмотра" — pending moderation.
+/// Экран «Ожидают просмотра» — очередь заявок и разбор выбранной.
 ///
-/// Three-panel layout: Sidebar (from AdminShell) | Card List | Detail Panel.
-/// Loads pending list on init, provides ModerationProvider to children.
+/// Шапка держит три вещи: состояние очереди (сколько ждёт и сколько ждёт
+/// старейшая), прогресс проверки выбранной заявки и порядок сортировки.
+/// Все три относятся к экрану целиком, поэтому живут в шапке, а не внутри
+/// панелей — в панель опускается только то, что принадлежит ей одной.
 class PendingModerationScreen extends StatefulWidget {
   const PendingModerationScreen({super.key});
 
@@ -28,16 +33,162 @@ class _PendingModerationScreenState extends State<PendingModerationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    final provider = context.watch<ModerationProvider>();
+
+    return Column(
       children: [
-        // Middle panel: card list
-        ModerationListPanel(),
-        VerticalDivider(width: 1, thickness: 1),
-        // Right panel: detail with tabs
-        Expanded(
-          child: ModerationDetailPanel(),
+        AdminScreenHeader(
+          title: 'Ожидают просмотра',
+          subtitle: _queueSubtitle(provider),
+          actions: <Widget>[
+            // Прогресс показывается только при выбранной заявке: без неё
+            // проверять нечего, и «0 из 14» было бы не состоянием, а шумом.
+            if (provider.selectedId != null)
+              _FieldProgress(
+                checked: provider.checkedFieldCount,
+                total: provider.totalFieldCount,
+                fraction: provider.checkedFraction,
+              ),
+            const _SortOrderLabel(),
+          ],
+        ),
+        const Expanded(
+          child: Row(
+            children: [
+              ModerationListPanel(),
+              Expanded(child: ModerationDetailPanel()),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  /// «7 заявок в очереди · старейшая ждёт 4 дня».
+  ///
+  /// Обе величины берутся из загруженного списка, а не из `oldest_pending_at`
+  /// дашборда: тот считает возраст по `created_at`, а очередь здесь живёт по
+  /// `updated_at`, и смешение двух отсчётов дало бы подпись, противоречащую
+  /// бейджам под ней.
+  String? _queueSubtitle(ModerationProvider provider) {
+    if (provider.isLoadingList) return null;
+    if (provider.listError != null) return null;
+
+    final total = provider.totalCount;
+    if (total == 0) return 'Очередь пуста';
+
+    final queue = '${countWithNoun(total, 'заявка', 'заявки', 'заявок')} в очереди';
+    final oldest = provider.oldestWaitingDays;
+    if (oldest == null) return queue;
+    if (oldest == 0) return '$queue · старейшая пришла сегодня';
+
+    return '$queue · старейшая ждёт ${countWithNoun(oldest, 'день', 'дня', 'дней')}';
+  }
+}
+
+/// Индикатор проверки полей в шапке экрана.
+class _FieldProgress extends StatelessWidget {
+  final int checked;
+  final int total;
+  final double fraction;
+
+  const _FieldProgress({
+    required this.checked,
+    required this.total,
+    required this.fraction,
+  });
+
+  static const double minWidth = 190;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: minWidth),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              const Text(
+                'Проверено полей',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textDark,
+                ),
+              ),
+              const Spacer(),
+              Text.rich(
+                TextSpan(
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: '$checked',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primaryOrangeDark,
+                      ),
+                    ),
+                    TextSpan(text: ' из $total'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 5,
+              backgroundColor: AppTheme.backgroundWarm,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppTheme.primaryOrange,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Порядок разбора очереди.
+///
+/// Подпись, а не выпадающий список: бэкенд отдаёт очередь единственным
+/// порядком (`ORDER BY e.updated_at ASC`), и стрелка вниз обещала бы выбор,
+/// которого нет. В макете стрелка нарисована — отступление сознательное и
+/// ровно на одну иконку. Появится параметр сортировки в API — здесь встанет
+/// настоящий контрол.
+class _SortOrderLabel extends StatelessWidget {
+  const _SortOrderLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppTheme.strokeGrey),
+        borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_vert, size: 17, color: AppTheme.textSecondary),
+          SizedBox(width: 8),
+          Text(
+            'Сначала старые',
+            style: TextStyle(fontSize: 14, color: AppTheme.textDark),
+          ),
+        ],
+      ),
     );
   }
 }

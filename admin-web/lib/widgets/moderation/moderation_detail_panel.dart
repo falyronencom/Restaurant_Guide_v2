@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/utils/open_url.dart';
 import 'package:restaurant_guide_admin_web/widgets/media/media_viewer.dart';
@@ -152,16 +153,9 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
         // с подчёркиванием 2px и нижняя граница полосы приходят из
         // tabBarTheme канона. Раньше здесь стоял кегль 18 и чёрный цвет
         // неактивной — они перекрывали тему.
-        TabBar(
-          controller: _tabController,
-          tabAlignment: TabAlignment.start,
-          isScrollable: true,
-          tabs: const [
-            Tab(text: 'Данные'),
-            Tab(text: 'О заведении'),
-            Tab(text: 'Медиа'),
-            Tab(text: 'Адрес'),
-          ],
+        _buildTabBar(
+          context,
+          showCounts: widget.mode == DetailPanelMode.moderation,
         ),
 
         // Tab content
@@ -200,6 +194,53 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
         if (widget.mode == DetailPanelMode.moderation)
           _ActionBar(provider: context.watch<ModerationProvider>()),
       ],
+    );
+  }
+
+  /// Полоса вкладок. В режиме модерации у каждой стоит «проверено/всего».
+  ///
+  /// Счётчики только здесь: на «Одобренных» и «Отказанных» та же панель
+  /// работает на чтение, вердиктов там не выносят, и «0/5» было бы враньём
+  /// о наличии работы.
+  ///
+  /// [AnimatedBuilder] нужен ради цвета счётчика — он различается у активной
+  /// и неактивной вкладки, а значит зависит от `_tabController.index`.
+  /// Перерисовка ограничена полосой, тело вкладок её не касается.
+  Widget _buildTabBar(BuildContext context, {required bool showCounts}) {
+    final provider = showCounts ? context.watch<ModerationProvider>() : null;
+
+    return AnimatedBuilder(
+      animation: _tabController,
+      builder: (context, _) => TabBar(
+        controller: _tabController,
+        tabAlignment: TabAlignment.start,
+        isScrollable: true,
+        tabs: <Widget>[
+          for (var i = 0; i < kModerationTabTitles.length; i++)
+            Tab(
+              child: provider == null
+                  ? Text(kModerationTabTitles[i])
+                  : Text.rich(
+                      TextSpan(
+                        children: <InlineSpan>[
+                          TextSpan(text: kModerationTabTitles[i]),
+                          TextSpan(
+                            text: ' ${provider.tabCheckedCounts[i]}'
+                                '/${provider.tabFieldCounts[i]}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: _tabController.index == i
+                                  ? AppTheme.textSecondary
+                                  : AppTheme.textGrey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1085,43 +1126,41 @@ class _ActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final error = provider.submitError;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0xFFD2D2D2))),
+        border: Border(top: BorderSide(color: AppTheme.borderLight)),
       ),
       child: Row(
         children: [
-          if (provider.submitError != null)
-            Expanded(
-              child: Text(
-                provider.submitError!,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
-              ),
-            ),
-          if (provider.submitError == null) const Spacer(),
-          OutlinedButton(
-            onPressed: provider.isSubmitting
-                ? null
-                : () => _confirmReject(context),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFFF3B30),
-              side: const BorderSide(color: Color(0xFFFF3B30)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            ),
-            child: const Text('Отклонить', style: TextStyle(fontSize: 16)),
+          Expanded(
+            child: error != null
+                ? Text(
+                    error,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.errorRed,
+                    ),
+                  )
+                : _StateHint(provider: provider),
           ),
-          const SizedBox(width: 12),
-          FilledButton(
-            onPressed: provider.isSubmitting
+          const SizedBox(width: 14),
+          OutlinedButton(
+            onPressed:
+                provider.isSubmitting ? null : () => _confirmReject(context),
+            style: AppTheme.canonCtaOutlined(color: AppTheme.errorRed),
+            child: const Text('Отклонить заявку'),
+          ),
+          const SizedBox(width: 14),
+          // Причина блокировки объясняется слева, а не внутри кнопки:
+          // заблокированная кнопка без объяснения читается как поломка.
+          ElevatedButton(
+            onPressed: provider.isSubmitting || !provider.canApprove
                 ? null
                 : () => _confirmApprove(context),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF3FD00D),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            ),
+            style: AppTheme.canonCtaL(),
             child: provider.isSubmitting
                 ? const SizedBox(
                     width: 20,
@@ -1131,10 +1170,7 @@ class _ActionBar extends StatelessWidget {
                       color: Colors.white,
                     ),
                   )
-                : const Text(
-                    'Одобрить заведение',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                : const Text('Одобрить заведение'),
           ),
         ],
       ),
@@ -1168,7 +1204,7 @@ class _ActionBar extends StatelessWidget {
               });
             },
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF3FD00D),
+              backgroundColor: AppTheme.primaryOrange,
             ),
             child: const Text('Одобрить'),
           ),
@@ -1204,11 +1240,64 @@ class _ActionBar extends StatelessWidget {
               });
             },
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF3B30),
+              backgroundColor: AppTheme.errorRed,
             ),
             child: const Text('Отклонить'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Пояснение слева в нижней панели: почему кнопки выглядят именно так и
+/// сколько работы осталось.
+///
+/// Заблокированная кнопка обязана иметь объяснение рядом — иначе модератор
+/// читает её как поломку интерфейса, а не как следствие своего же вердикта.
+class _StateHint extends StatelessWidget {
+  final ModerationProvider provider;
+
+  const _StateHint({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = provider.rejectedFieldCount;
+    final remaining = provider.remainingFieldCount;
+    final spans = <InlineSpan>[];
+
+    if (rejected > 0) {
+      spans.add(
+        TextSpan(
+          text: rejected == 1
+              ? 'Одно поле отклонено — доступен только отказ.'
+              : '${countWithNoun(rejected, 'поле', 'поля', 'полей')} '
+                  'отклонено — доступен только отказ.',
+        ),
+      );
+    }
+
+    if (remaining > 0) {
+      if (spans.isNotEmpty) spans.add(const TextSpan(text: ' '));
+      spans.add(const TextSpan(text: 'Осталось проверить '));
+      spans.add(
+        TextSpan(
+          text: countWithNoun(remaining, 'поле', 'поля', 'полей'),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textDark,
+          ),
+        ),
+      );
+      spans.add(const TextSpan(text: '.'));
+    } else if (spans.isEmpty) {
+      spans.add(const TextSpan(text: 'Все поля проверены.'));
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        children: spans,
       ),
     );
   }

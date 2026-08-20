@@ -22,6 +22,62 @@ class FieldReviewState {
   }
 }
 
+/// Названия вкладок панели модерации — в порядке их показа.
+const List<String> kModerationTabTitles = <String>[
+  'Данные',
+  'О заведении',
+  'Медиа',
+  'Адрес',
+];
+
+/// Поля, разложенные по вкладкам. Единственный источник правды о составе
+/// проверки: 5 + 6 + 2 + 1 = 14.
+///
+/// Три числа на экране считаются отсюда — прогресс в шапке, счётчики на
+/// вкладках и «осталось проверить» в нижней панели. Если каждое из них
+/// считать по месту, они разъедутся ровно тогда, когда состав полей
+/// изменится, и модератор увидит «3 из 14» над вкладками, дающими в сумме 15.
+/// Порядок групп обязан совпадать с порядком вкладок в
+/// `ModerationDetailPanel`.
+const List<List<String>> kModerationTabFields = <List<String>>[
+  <String>[
+    'legal_name',
+    'unp',
+    'registration_doc',
+    'contact_person',
+    'contact_email',
+  ],
+  <String>[
+    'description',
+    'name',
+    'customer_phone',
+    'website',
+    'working_hours',
+    'price_range',
+  ],
+  <String>['photos', 'menu'],
+  <String>['address'],
+];
+
+/// Сколько полных суток заявка ждёт очереди.
+///
+/// Отсчёт от `updated_at`, а не от `created_at`: партнёр может держать
+/// черновик неделями, и ожиданием это не является — очередь начинается с
+/// отправки на модерацию, которая и есть последняя запись в строку. Бэкенд
+/// сортирует очередь тем же полем (`ORDER BY e.updated_at ASC`), поэтому
+/// бейджи в списке идут строго по убыванию, а подпись шапки сходится с
+/// верхней карточкой.
+///
+/// Расхождение с `oldest_pending_at` на дашборде — осознанное: тот считает
+/// по `created_at` и закреплён тестом с явной формулировкой «время создания».
+/// Это разные экраны; внутри одного экрана все числа сходятся.
+int? moderationWaitingDays(DateTime? since, {DateTime? now}) {
+  if (since == null) return null;
+  final reference = now ?? DateTime.now();
+  final days = reference.difference(since).inDays;
+  return days < 0 ? 0 : days;
+}
+
 /// State management for the moderation workflow
 class ModerationProvider with ChangeNotifier {
   final ModerationService _service;
@@ -67,6 +123,80 @@ class ModerationProvider with ChangeNotifier {
   String? get selectedId => _selectedId;
 
   Map<String, FieldReviewState> get fieldReviews => _fieldReviews;
+
+  // ============================================================================
+  // Прогресс проверки — производное от _fieldReviews, считается в одном месте
+  // ============================================================================
+
+  /// Поле считается проверенным, когда по нему вынесен вердикт. Комментарий
+  /// без вердикта проверкой не является: `commentField` оставляет статус
+  /// `neutral`, и модератор, написавший заметку, поле ещё не закрыл.
+  bool _isChecked(String fieldName) =>
+      (_fieldReviews[fieldName] ?? const FieldReviewState()).status !=
+      FieldReviewStatus.neutral;
+
+  /// Сколько полей на каждой вкладке — [5, 6, 2, 1].
+  List<int> get tabFieldCounts =>
+      kModerationTabFields.map((fields) => fields.length).toList(growable: false);
+
+  /// Сколько проверено на каждой вкладке.
+  List<int> get tabCheckedCounts => kModerationTabFields
+      .map((fields) => fields.where(_isChecked).length)
+      .toList(growable: false);
+
+  int get totalFieldCount =>
+      kModerationTabFields.fold(0, (sum, fields) => sum + fields.length);
+
+  int get checkedFieldCount =>
+      kModerationTabFields.fold(0, (sum, fields) => sum + fields.where(_isChecked).length);
+
+  int get remainingFieldCount => totalFieldCount - checkedFieldCount;
+
+  /// Доля проверенного — для полосы прогресса. 0.0 при пустом составе полей.
+  double get checkedFraction =>
+      totalFieldCount == 0 ? 0 : checkedFieldCount / totalFieldCount;
+
+  /// Сколько полей отклонено — нижняя панель называет это число вслух.
+  int get rejectedFieldCount => kModerationTabFields.fold(
+        0,
+        (sum, fields) =>
+            sum +
+            fields
+                .where(
+                  (name) =>
+                      (_fieldReviews[name] ?? const FieldReviewState()).status ==
+                      FieldReviewStatus.rejected,
+                )
+                .length,
+      );
+
+  /// Хотя бы одно поле отклонено.
+  bool get hasRejectedField => rejectedFieldCount > 0;
+
+  /// Одобрение запрещено ровно одним условием — есть отклонённое поле.
+  ///
+  /// Требовать вердикт по всем четырнадцати полям макет не просит, и вводить
+  /// такой шлюз самостоятельно нельзя: это меняет работу модератора, а не
+  /// оформление экрана. Отклонённое поле блокирует одобрение потому, что
+  /// одобрить отклонённое — противоречие, а не потому, что «мало проверено».
+  bool get canApprove => !hasRejectedField;
+
+  /// Сколько ждёт старейшая заявка из загруженных. `null` — очередь пуста.
+  ///
+  /// Считается по загруженному списку, а не отдельным запросом: очередь
+  /// приходит отсортированной по возрастанию `updated_at`, поэтому максимум
+  /// лежит в первом элементе. Минимум по списку берётся всё равно — так
+  /// подпись остаётся верной и на второй странице («старейшая из показанных»),
+  /// когда пагинацию сюда добавят.
+  int? get oldestWaitingDays {
+    DateTime? oldest;
+    for (final item in _establishments) {
+      final stamp = item.updatedAt;
+      if (stamp == null) continue;
+      if (oldest == null || stamp.isBefore(oldest)) oldest = stamp;
+    }
+    return moderationWaitingDays(oldest);
+  }
 
   bool get isSubmitting => _isSubmitting;
   String? get submitError => _submitError;
