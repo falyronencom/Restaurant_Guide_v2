@@ -93,8 +93,11 @@ Menu-AI OCR/
 **/*.md
 
 # Next.js web/ — build artifacts and runtime caches (Brief 2 foundation)
-# Note: web/package-lock.json is INTENTIONALLY tracked (D5 — divergence
-# from backend's lockfile-ignore convention; web wants deterministic deploys).
+# Note: package-lock.json трекается в ОБОИХ проектах — web и backend.
+# Прежняя конвенция D5 (backend игнорирует lock-файл, web трекается ради
+# детерминированных деплоев) отменена 2026-08-24: CI-гейт SDL CAT-C-4.4
+# использует `npm ci`, который без lock-файла не работает по определению,
+# а детерминированная установка нужна backend не меньше, чем web.
 web/.next/
 web/.vercel/
 web/next-env.d.ts
