@@ -83,9 +83,18 @@ jest.unstable_mockModule('../../services/authService.js', () => ({
   upgradeUserToPartner: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../services/badgesService.js', () => ({
+  invalidateCache: jest.fn(),
+}));
+
 jest.unstable_mockModule('../../config/database.js', () => ({
   query: jest.fn(),
   getClient: jest.fn(),
+  // pool/default must exist: modules deeper in adminService's graph
+  // (badgesModel, reached via badgesService) do `import pool from '../config/database.js'`.
+  // An ESM mock factory that omits them fails the WHOLE suite at link time.
+  pool: { query: jest.fn(), connect: jest.fn(), end: jest.fn() },
+  default: { query: jest.fn(), connect: jest.fn(), end: jest.fn() },
 }));
 
 jest.unstable_mockModule('../../middleware/errorHandler.js', () => ({
