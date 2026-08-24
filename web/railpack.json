@@ -2,6 +2,10 @@
   "$schema": "https://schema.railpack.com",
   "steps": {
     "install": {
+      "inputs": [
+        "...",
+        { "local": true, "include": ["package.json", "package-lock.json"] }
+      ],
       "commands": [
         "corepack enable && corepack prepare npm@10.2.4 --activate",
         "npm ci"
