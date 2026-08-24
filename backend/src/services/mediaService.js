@@ -515,7 +515,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
         // No remaining photos — clear primary_image_url
         await pool.query(
           'UPDATE establishments SET primary_image_url = NULL WHERE id = $1',
-          [establishmentId]
+          [establishmentId],
         );
 
         logger.info('primary_image_url cleared — no remaining media', {

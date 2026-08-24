@@ -70,7 +70,7 @@ const BookingSettingsModel = await import('../../models/bookingSettingsModel.js'
 const EstablishmentModel = await import('../../models/establishmentModel.js');
 const AnalyticsModel = await import('../../models/partnerAnalyticsModel.js');
 const NotificationService = await import('../../services/notificationService.js');
-const { AppError } = await import('../../middleware/errorHandler.js');
+await import('../../middleware/errorHandler.js');
 
 const {
   createBooking,

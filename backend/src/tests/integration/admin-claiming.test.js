@@ -18,7 +18,6 @@ import { randomUUID } from 'crypto';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
-import { testUsers } from '../fixtures/users.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
@@ -27,12 +26,10 @@ import {
 } from '../utils/adminTestHelpers.js';
 
 let adminToken;
-let adminUserId;
 
 beforeAll(async () => {
   const admin = await createAdminAndGetToken();
   adminToken = admin.accessToken;
-  adminUserId = admin.user.id;
 });
 
 beforeEach(async () => {
@@ -66,7 +63,6 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
   test('should successfully claim establishment and upgrade user to partner', async () => {
     // Create establishment owned by seed-like partner
     const { establishment } = await createPartnerWithEstablishment('active');
-    const oldPartnerId = establishment.partner_id;
 
     // Create target user
     const targetUser = await createRegularUser();
@@ -94,7 +90,7 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
   });
 
   test('should work when target user is already a partner (idempotent role upgrade)', async () => {
-    const { partner, establishment } = await createPartnerWithEstablishment('active');
+    const { establishment } = await createPartnerWithEstablishment('active');
 
     // Create another partner (already has partner role)
     const otherPartner = await createUserAndGetTokens({

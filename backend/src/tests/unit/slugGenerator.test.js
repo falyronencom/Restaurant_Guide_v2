@@ -148,17 +148,17 @@ describe('slugGenerator', () => {
     });
 
     test('truncate to last dash boundary if dash is in second half', () => {
-      const slug = 'a'.repeat(70) + '-' + 'b'.repeat(70);
+      const slug = `${'a'.repeat(70)}-${'b'.repeat(70)}`;
       const result = truncateSlug(slug, 100);
       expect(result.length).toBeLessThanOrEqual(100);
       expect(result).toBe('a'.repeat(70));
     });
 
     test('hard truncate if dash is too far back', () => {
-      const slug = 'ab-' + 'c'.repeat(100);
+      const slug = `ab-${'c'.repeat(100)}`;
       const result = truncateSlug(slug, 50);
       expect(result.length).toBe(50);
-      expect(result).toBe('ab-' + 'c'.repeat(47));
+      expect(result).toBe(`ab-${'c'.repeat(47)}`);
     });
 
     test('default maxLength is 150', () => {

@@ -10,17 +10,25 @@
   },
   "rules": {
     "no-console": "off",
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }],
     "prefer-const": "error",
     "no-var": "error",
     "object-shorthand": "error",
-    "quote-props": ["error", "as-needed"],
+    "quote-props": ["error", "as-needed", { "unnecessary": false }],
     "prefer-template": "error",
     "prefer-arrow-callback": "error",
     "arrow-spacing": "error",
     "no-multiple-empty-lines": ["error", { "max": 1 }],
     "comma-dangle": ["error", "always-multiline"],
     "semi": ["error", "always"],
-    "quotes": ["error", "single", { "avoidEscape": true }]
-  }
+    "quotes": ["error", "single", { "avoidEscape": true, "allowTemplateLiterals": true }]
+  },
+  "overrides": [
+    {
+      "files": ["**/src/tests/**/*.js"],
+      "env": {
+        "jest": true
+      }
+    }
+  ]
 }

@@ -385,7 +385,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
           preview_url: photo.url,
           position: photo.position,
           is_primary: photo.is_primary,
-        })
+        }),
       );
 
       const mediaRecords = await Promise.all(mediaPromises);
@@ -428,7 +428,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
           caption: pdf.file_name || null,
           position: index,
           is_primary: false,
-        })
+        }),
       );
 
       const pdfRecords = await Promise.all(pdfPromises);

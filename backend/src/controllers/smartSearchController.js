@@ -19,7 +19,8 @@ const MAX_QUERY_LENGTH = 150;
 function sanitizeQuery(raw) {
   return raw
     .trim()
-    .replace(/[\x00-\x1F\x7F]/g, '') // remove control chars
+    // eslint-disable-next-line no-control-regex -- намеренная санитизация пользовательского ввода
+    .replace(/[\x00-\x1F\x7F]/g, '')
     .replace(/\s+/g, ' ')             // collapse whitespace
     .slice(0, MAX_QUERY_LENGTH);
 }

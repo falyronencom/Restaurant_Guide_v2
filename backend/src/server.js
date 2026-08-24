@@ -46,7 +46,7 @@ app.use(helmet());
  * ...existing code...
  */
 const corsOptions = {
-  origin: function (origin, callback) {
+  origin (origin, callback) {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) {
       return callback(null, true);

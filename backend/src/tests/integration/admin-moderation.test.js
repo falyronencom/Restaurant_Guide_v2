@@ -23,8 +23,6 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
-import { createUserAndGetTokens } from '../utils/auth.js';
-import { testUsers } from '../fixtures/users.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,

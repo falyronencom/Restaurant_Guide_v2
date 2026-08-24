@@ -6,7 +6,6 @@
  */
 
 import * as DeviceTokenModel from '../models/deviceTokenModel.js';
-import logger from '../utils/logger.js';
 
 const VALID_PLATFORMS = ['ios', 'android'];
 

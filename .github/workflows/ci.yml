@@ -8,13 +8,9 @@ name: CI
 # выполнялись пять дней и уехали в прод автодеплоем. Полный прогон при этом
 # через пайп отдавал exit code 0 — красного сигнала не существовало.
 #
-# Состав: backend-тесты + web (lint, jest, tsc) + flutter analyze/test по
-# обоим Flutter-проектам. Два сознательных изъятия — backend-lint и
-# `next build` — расписаны ниже по месту, каждое с причиной и условием возврата.
-# Backend `npm run lint` СОЗНАТЕЛЬНО не в гейте: сейчас 283 замечания
-# (126 no-undef в трёх тестовых файлах + 109 quote-props на картах
-# транслитерации). Включать после чистки конфига, иначе гейт красный с
-# рождения и его начнут игнорировать.
+# Состав: backend (lint + jest) + web (lint, jest, tsc) + flutter analyze/test
+# по обоим Flutter-проектам. Одно сознательное изъятие — `next build` —
+# расписано ниже по месту, с причиной и условием возврата.
 
 on:
   pull_request:
@@ -108,6 +104,14 @@ jobs:
           LOG_LEVEL=error
           OPENROUTER_API_KEY=
           ENVEOF
+
+      - name: Lint
+        # Приведён к нулю 2026-08-24 (было 283 замечания): jest-env для
+        # src/tests, quote-props.unnecessary=false (кириллические карты ключей),
+        # allowTemplateLiterals, ignoreRestSiblings (идиома исключения ключа)
+        # плюс разбор 16 no-unused-vars по одному.
+        working-directory: backend
+        run: npm run lint
 
       - name: Тесты
         # Полный ESM-вызов, а НЕ `npm test`. Последовательно (--runInBand):

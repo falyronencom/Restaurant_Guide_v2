@@ -55,8 +55,8 @@ const API_TIMEOUT_MS = 20000;
  */
 const SYSTEM_PROMPT = [
   'Parse restaurant search query into JSON.',
-  'Categories (establishment types): ' + VALID_CATEGORIES.join(', '),
-  'Cuisines: ' + VALID_CUISINES.join(', '),
+  `Categories (establishment types): ${VALID_CATEGORIES.join(', ')}`,
+  `Cuisines: ${VALID_CUISINES.join(', ')}`,
   '',
   'IMPORTANT — distinguish ESTABLISHMENT TYPE from DISH NAME:',
   '- "кофейня рядом" → category="Кофейня", dish=null (user wants a coffee shop)',

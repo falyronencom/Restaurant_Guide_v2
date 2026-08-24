@@ -41,7 +41,6 @@ cloudinary.config({
   secure: true, // Always use HTTPS for security
 });
 
-
 /**
  * Image resolution configurations for the three-tier system
  * 

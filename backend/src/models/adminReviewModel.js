@@ -63,7 +63,7 @@ const buildReviewWhere = (filters) => {
   }
 
   const whereClause = conditions.length > 0
-    ? 'WHERE ' + conditions.join(' AND ')
+    ? `WHERE ${conditions.join(' AND ')}`
     : '';
 
   return { whereClause, values, paramIndex };

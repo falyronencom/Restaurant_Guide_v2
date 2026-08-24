@@ -45,7 +45,6 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const {
   sendPush,
   TYPE_CATEGORY_MAP,
-  CATEGORY_PREF_FIELD,
   isPushEnabledForType,
 } = await import('../../services/pushService.js');
 const logger = (await import('../../utils/logger.js')).default;

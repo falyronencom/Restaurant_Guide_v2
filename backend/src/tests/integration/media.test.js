@@ -684,7 +684,7 @@ describe('Media System - Upload Operations', () => {
 
     test('should update primary_image_url when primary changes via update', async () => {
       // Upload first as primary
-      const first = await request(app)
+      await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
         .field('type', 'interior')
@@ -699,13 +699,6 @@ describe('Media System - Upload Operations', () => {
         .field('type', 'interior')
         .attach('file', Buffer.from('second'), 'second.jpg')
         .expect(201);
-
-      // Capture URL after first primary
-      const estBefore = await pool.query(
-        'SELECT primary_image_url FROM establishments WHERE id = $1',
-        [establishment.id]
-      );
-      const urlBefore = estBefore.rows[0].primary_image_url;
 
       // Set second as primary via update
       await request(app)

@@ -21,7 +21,7 @@ export const isAvailable = () => {
     _warned = true;
     logger.warn(
       'OpenRouter API key not configured. Smart Search will use fallback (ILIKE). ' +
-      'Set OPENROUTER_API_KEY environment variable to enable AI parsing.'
+      'Set OPENROUTER_API_KEY environment variable to enable AI parsing.',
     );
   }
   return available;

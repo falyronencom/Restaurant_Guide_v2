@@ -102,7 +102,7 @@ export const deleteReview = asyncHandler(async (req, res) => {
   const adminUserId = req.user.userId;
   const { reason } = req.body || {};
 
-  const result = await adminReviewService.deleteReview(reviewId, adminUserId, reason, {
+  await adminReviewService.deleteReview(reviewId, adminUserId, reason, {
     ipAddress: req.ip,
     userAgent: req.get('user-agent'),
   });

@@ -16,7 +16,7 @@ import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { BELARUS_BOUNDS, CITY_BOUNDS, validateCityCoordinates } from './establishmentService.js';
+import { BELARUS_BOUNDS, validateCityCoordinates } from './establishmentService.js';
 import { upgradeUserToPartner } from './authService.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
