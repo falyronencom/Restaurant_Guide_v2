@@ -238,24 +238,65 @@ class ModerationProvider with ChangeNotifier {
   // Detail operations
   // ============================================================================
 
+  /// Открыть карточку из очереди.
+  ///
+  /// Обнуление вердиктов принадлежит смене заявки, а не загрузке данных:
+  /// переносить проверку с одной карточки на другую нельзя, а повторное
+  /// открытие той же карточки заявку не меняет, и проверка обязана уцелеть.
+  /// Поэтому `_fieldReviews` чистится по условию `_selectedId != id`, а не
+  /// на каждом входе сюда.
   Future<void> selectEstablishment(String id) async {
-    if (_selectedId == id && _selectedDetail != null) return;
+    // Повтор по уже открытой и успешно загруженной карточке — ничего не
+    // делаем. Ошибка загрузки исключение: повторный тап по той же строке и
+    // есть «попробовать снова», иначе панель остаётся с ошибкой навсегда.
+    if (_selectedId == id && _selectedDetail != null && _detailError == null) {
+      return;
+    }
+
+    if (_selectedId != id) {
+      // Другая заявка — вердикты предыдущей к ней не относятся.
+      _fieldReviews = {};
+    }
 
     _selectedId = id;
+    _submitError = null;
+    await _reloadSelectedDetail();
+  }
+
+  /// Перечитать деталь уже выбранной карточки, не трогая вердикты.
+  ///
+  /// Отдельный путь нужен затем, что перезагрузка своей же карточки — не
+  /// смена заявки. Раньше её делали через [selectEstablishment], и правка
+  /// координат стирала всю проверку: прогресс в шапке на глазах падал
+  /// с «9 из 14» до «0 из 14», а модератор не понимал, куда делась работа.
+  Future<void> _reloadSelectedDetail() async {
+    final id = _selectedId;
+    if (id == null) return;
+
     _isLoadingDetail = true;
     _detailError = null;
-    _fieldReviews = {};
-    _submitError = null;
     notifyListeners();
 
+    EstablishmentDetail? loaded;
+    String? failure;
     try {
-      _selectedDetail = await _service.getEstablishmentDetails(id);
+      loaded = await _service.getEstablishmentDetails(id);
     } catch (e) {
-      _detailError = _extractMessage(e);
-    } finally {
-      _isLoadingDetail = false;
-      notifyListeners();
+      failure = _extractMessage(e);
     }
+
+    // Пока ответ шёл, модератор мог открыть другую карточку. Тогда этот
+    // ответ уже не о ней: положить его в `_selectedDetail` значит показать
+    // чужие данные под её именем — и вердикты по ним ушли бы не в ту заявку.
+    // Флаг загрузки тоже не трогаем: его держит более свежий запрос.
+    if (_selectedId != id) return;
+
+    // При сбое прежняя деталь остаётся на месте: она устарела, но это всё
+    // ещё та самая карточка, и обнулять её ради сообщения об ошибке незачем.
+    if (loaded != null) _selectedDetail = loaded;
+    _detailError = failure;
+    _isLoadingDetail = false;
+    notifyListeners();
   }
 
   void clearSelection() {
@@ -398,9 +439,10 @@ class ModerationProvider with ChangeNotifier {
         longitude: longitude,
       );
 
-      // Force re-fetch detail to show updated coordinates
-      _selectedDetail = null;
-      await selectEstablishment(_selectedId!);
+      // Перечитать деталь, чтобы показать новые координаты. Именно
+      // перечитать: [selectEstablishment] обнуляет вердикты, и правка
+      // координат стирала бы проверку по всем четырнадцати полям.
+      await _reloadSelectedDetail();
 
       _isSubmitting = false;
       notifyListeners();
