@@ -97,9 +97,11 @@ export const toggleVisibility = async (reviewId, adminUserId, { ipAddress, userA
     // Recalculate establishment aggregates (hidden reviews excluded from rating)
     await ReviewModel.updateEstablishmentAggregates(result.establishment_id);
 
-    // Non-blocking audit log write
+    // Audit log — awaited for determinism and parity with the other admin
+    // handlers: the row must exist by the time the response returns.
+    // createAuditLog swallows its own errors, so awaiting cannot fail the call.
     const action = result.is_visible ? 'review_show' : 'review_hide';
-    AuditLogModel.createAuditLog({
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action,
       entity_type: 'review',
@@ -177,8 +179,10 @@ export const deleteReview = async (reviewId, adminUserId, reason, { ipAddress, u
     NotificationService.notifyReviewModerated(reviewId, 'deleted')
       .catch(() => {});
 
-    // Non-blocking audit log write
-    AuditLogModel.createAuditLog({
+    // Audit log — awaited for determinism and parity with the other admin
+    // handlers: the row must exist by the time the response returns.
+    // createAuditLog swallows its own errors, so awaiting cannot fail the call.
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'review_delete',
       entity_type: 'review',

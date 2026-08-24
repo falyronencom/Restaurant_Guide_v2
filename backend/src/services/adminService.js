@@ -769,7 +769,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
     );
 
     // Audit log (non-blocking)
-    AuditLogModel.createAuditLog({
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'admin_update_coordinates',
       entity_type: 'establishment',
@@ -887,7 +887,7 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
       { slug: trimmed },
     );
 
-    AuditLogModel.createAuditLog({
+    await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'admin_update_slug',
       entity_type: 'establishment',
@@ -1130,7 +1130,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
   }
 
   // 4. Audit log (non-blocking, outside transaction)
-  AuditLogModel.createAuditLog({
+  await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'claim_establishment',
     entity_type: 'establishment',
@@ -1197,7 +1197,7 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
   const updatedUser = await upgradeUserToPartner(targetUserId);
 
   // Audit log (non-blocking)
-  AuditLogModel.createAuditLog({
+  await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'upgrade_user_to_partner',
     entity_type: 'user',
@@ -1267,7 +1267,7 @@ export const hideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  AuditLogModel.createAuditLog({
+  await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'hide_menu_item',
     entity_type: 'menu_item',
@@ -1340,7 +1340,7 @@ export const unhideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  AuditLogModel.createAuditLog({
+  await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'unhide_menu_item',
     entity_type: 'menu_item',
@@ -1395,7 +1395,7 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
     sanity_flag: null,
   });
 
-  AuditLogModel.createAuditLog({
+  await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'dismiss_sanity_flag',
     entity_type: 'menu_item',
