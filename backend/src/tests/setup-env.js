@@ -28,6 +28,23 @@ if (process.env.OPENROUTER_API_KEY === undefined) {
 if (process.env.RESEND_API_KEY === undefined) {
   process.env.RESEND_API_KEY = '';
 }
+// Cloudinary: здесь пустая строка НЕ годится. Media-путь строит pg_1 preview-URL
+// для PDF через cloudinary.url(), а тот без cloud_name бросает исключение —
+// наблюдалось как HTTP 500 в CI 2026-08-24 (два теста establishments.test.js).
+// Поэтому подставляем заведомо нерабочие заглушки: протёк БОЕВЫХ ключей из .env
+// заблокирован, а сборка URL продолжает работать. Сетевых вызовов на этом пути
+// нет — фикстуры содержат готовые res.cloudinary.com/test/... URL, а проверки
+// структурные (file_type, наличие pg_1). Значения совпадают с теми, что пишет
+// .github/workflows/ci.yml, чтобы локальная среда и CI не расходились.
+if (process.env.CLOUDINARY_CLOUD_NAME === undefined) {
+  process.env.CLOUDINARY_CLOUD_NAME = 'test';
+}
+if (process.env.CLOUDINARY_API_KEY === undefined) {
+  process.env.CLOUDINARY_API_KEY = '000000000000000';
+}
+if (process.env.CLOUDINARY_API_SECRET === undefined) {
+  process.env.CLOUDINARY_API_SECRET = 'ci-dummy-no-network-calls-in-tests';
+}
 
 // Verify we're in test environment
 if (process.env.NODE_ENV !== 'test') {
