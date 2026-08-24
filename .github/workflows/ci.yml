@@ -1,0 +1,196 @@
+name: CI
+
+# Гейт перед мержем и перед автодеплоем Railway — SDL CAT-C-4.4.
+#
+# Триггер внедрения («первый инцидент сломанного пуша») сработал 2026-08-19:
+# коммит 59c5b1f добавил adminService прямой импорт badgesService без мока,
+# сьют adminService.test.js перестал загружаться целиком, 76 тестов молча не
+# выполнялись пять дней и уехали в прод автодеплоем. Полный прогон при этом
+# через пайп отдавал exit code 0 — красного сигнала не существовало.
+#
+# Состав: backend-тесты + web (lint, jest, tsc) + flutter analyze/test по
+# обоим Flutter-проектам. Два сознательных изъятия — backend-lint и
+# `next build` — расписаны ниже по месту, каждое с причиной и условием возврата.
+# Backend `npm run lint` СОЗНАТЕЛЬНО не в гейте: сейчас 283 замечания
+# (126 no-undef в трёх тестовых файлах + 109 quote-props на картах
+# транслитерации). Включать после чистки конфига, иначе гейт красный с
+# рождения и его начнут игнорировать.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — jest (полный сьют)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        # Тот же образ, что локальный pg-test, — расширения postgis/pg_trgm/pgcrypto
+        # обязательны, обычный postgres:16 не подойдёт.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restaurant_guide_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Установить зависимости
+        working-directory: backend
+        run: npm ci
+
+      - name: Развернуть схему тестовой БД
+        # production_schema.sql — авторитетный снапшот миграций 001–029,
+        # затем поверх 031 и 032. Это ровно то, что применено на проде.
+        # 030 НЕ применяется намеренно: он dormant до real-500 (ROADMAP),
+        # а canon-check.integration.test.js создаёт собственную scratch-БД и
+        # накатывает его туда сам.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/production_schema.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/031_seed_import_registry.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/032_password_reset_tokens.sql
+
+      - name: Создать backend/.env.test
+        # Файл гитигнорен, а setup-env.js и globalSetup.js читают его по пути.
+        # Значения — исключительно тестовые, секретов здесь нет by construction.
+        # OPENROUTER_API_KEY пустой намеренно: иначе тесты Fallback Mode ловят
+        # реальный ключ через наследование dotenv.
+        run: |
+          cat > backend/.env.test <<'ENVEOF'
+          NODE_ENV=test
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_NAME=restaurant_guide_test
+          DB_USER=postgres
+          DB_PASSWORD=postgres
+          DB_MIN_CONNECTIONS=1
+          DB_MAX_CONNECTIONS=10
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          REDIS_DB=1
+          JWT_SECRET=ci-only-test-secret-at-least-32-characters-long
+          JWT_ACCESS_EXPIRY=15m
+          JWT_REFRESH_EXPIRY=7d
+          LOG_LEVEL=error
+          OPENROUTER_API_KEY=
+          ENVEOF
+
+      - name: Тесты
+        # Полный ESM-вызов, а НЕ `npm test`. Последовательно (--runInBand):
+        # pg-test общий на весь прогон, конкурентные воркеры дают ложные падения.
+        working-directory: backend
+        run: |
+          NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --ci
+
+  web:
+    name: Web — lint + jest + типы
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Установить зависимости
+        working-directory: web
+        run: npm ci
+
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+
+      - name: Тесты
+        working-directory: web
+        run: npm test -- --ci
+
+      - name: Проверка типов
+        # Заменяет `next build` — см. блок ниже.
+        working-directory: web
+        run: npx tsc --noEmit
+
+      # `next build` СОЗНАТЕЛЬНО вне гейта. Сборка структурно требует живого API:
+      # (public)/layout.tsx:19 делает `await getMetadata()` БЕЗ try/catch, поэтому
+      # любая страница под (public) пререндерится только при доступном backend
+      # (локально API_URL смотрит на прод-Railway). Проверено 2026-08-24: с
+      # недостижимым API сборка падает на /forgot-password, statusCode 0.
+      # Рассмотренные варианты:
+      #   — нацелить CI на прод-API: гейт краснеет от чужого простоя, и его
+      #     перестают читать — ровно та болезнь, от которой этот гейт заводится;
+      #   — поднимать backend внутри job (services + схема + сервер): полное
+      #     покрытие, но это отдельная работа со своими неизвестными;
+      #   — герметичный `tsc --noEmit`: ловит типы и битые импорты без сети.
+      # Взят третий. Что НЕ проверяется: конфигурация RSC/ISR и prerender —
+      # класс дефектов вида feedback_nextjs_searchparams_isr_dynamic_server_usage.
+      # Апгрейд: поднять backend в этом же job по рецепту из job backend выше.
+
+  flutter:
+    name: Flutter — ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [mobile, admin-web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Закреплено под локальную версию разработки, а не `stable`, —
+          # иначе обновление канала ломает гейт без единого нашего коммита.
+          flutter-version: '3.35.2'
+          channel: stable
+          cache: true
+
+      - name: pub get
+        working-directory: ${{ matrix.project }}
+        run: flutter pub get
+
+      - name: analyze
+        working-directory: ${{ matrix.project }}
+        run: flutter analyze
+
+      - name: test
+        working-directory: ${{ matrix.project }}
+        run: flutter test

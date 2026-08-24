@@ -108,7 +108,7 @@ afterAll(async () => {
   } finally {
     await admin.end().catch(() => {});
   }
-});
+}, 60000);
 
 describe('canon CHECK — accept / reject', () => {
   test('accepts canonical categories + cuisines', async () => {
