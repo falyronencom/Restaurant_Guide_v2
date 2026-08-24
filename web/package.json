@@ -2,8 +2,9 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.2.4",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=20.9.0 <21"
   },
   "scripts": {
     "dev": "next dev",
