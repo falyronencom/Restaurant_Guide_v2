@@ -3,7 +3,7 @@
   "steps": {
     "install": {
       "commands": [
-        "npm i -g corepack@latest && corepack enable && corepack prepare --activate",
+        "corepack enable && corepack prepare npm@10.2.4 --activate",
         "npm ci"
       ]
     }
