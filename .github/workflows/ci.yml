@@ -11,6 +11,13 @@ name: CI
 # Состав: backend (lint + jest) + web (lint, jest, tsc) + flutter analyze/test
 # по обоим Flutter-проектам. Одно сознательное изъятие — `next build` —
 # расписано ниже по месту, с причиной и условием возврата.
+#
+# Версия Node берётся из .nvmrc (мажор 20) — один источник истины для локали,
+# CI и Railway. Пинится МАЖОР, а не патч: ломает мажор, а патчи закрывают
+# уязвимости и должны приезжать сами. `engines` в обоих package.json =
+# >=20.9.0 — собственное требование Next 16.2.6. Прежний backend-диапазон
+# >=18.0.0 разрешал EOL-линейку (Node 18 без патчей с 30.04.2025) и вдобавок
+# версии 21/23, которые jest 30 прямо не поддерживает.
 
 on:
   pull_request:
@@ -59,7 +66,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -138,7 +145,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
