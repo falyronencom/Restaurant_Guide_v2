@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 

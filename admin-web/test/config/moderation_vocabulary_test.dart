@@ -30,6 +30,34 @@ void main() {
     });
   });
 
+  group('Действия журнала', () {
+    test('фильтр покрывает все действия, которые пишутся в журнал', () {
+      // Набор совпадает со списком в admin-audit-log-summaries.test.js —
+      // там он сверяется с живым API. Здесь проверяется другое: что фильтр
+      // не отстаёт от таблицы. До этой правки в нём было восемь из
+      // четырнадцати, и отфильтровать по прочитанному действию было нельзя.
+      expect(
+        kAuditActions.keys.toSet(),
+        <String>{
+          'moderate_approve',
+          'moderate_reject',
+          'suspend',
+          'unsuspend',
+          'claim_establishment',
+          'admin_update_coordinates',
+          'admin_update_slug',
+          'review_hide',
+          'review_show',
+          'review_delete',
+          'hide_menu_item',
+          'unhide_menu_item',
+          'dismiss_sanity_flag',
+          'upgrade_user_to_partner',
+        },
+      );
+    });
+  });
+
   group('Флаги проверки позиций меню', () {
     test('карта покрывает все правила sanityChecker', () {
       // Набор — из `backend/src/services/ocr/sanityChecker.js`, фаза 1.
@@ -74,6 +102,16 @@ void main() {
         }),
         'Цена 0,30 BYN при пороге 0,50 BYN',
       );
+    });
+
+    test('разряды группируются и у дробной суммы', () {
+      // Иначе в одной фразе два разных формата числа: «1234,50» и «1 000».
+      final phrase = describeSanityFlag(<String, dynamic>{
+        'reason': 'price_above_threshold',
+        'details': <String, dynamic>{'price': 1234.5, 'threshold': 1000},
+      })!;
+      expect(phrase, contains(formatCount(1000)));
+      expect(phrase, isNot(contains('1234')));
     });
 
     test('уверенность — в процентах, а не долей', () {

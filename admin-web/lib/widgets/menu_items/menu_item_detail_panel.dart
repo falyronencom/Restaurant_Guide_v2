@@ -1,12 +1,11 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:restaurant_guide_admin_web/config/theme.dart';
-import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 
 /// Right panel: full details of the selected flagged menu item + admin actions.
@@ -184,12 +183,20 @@ class MenuItemDetailPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _FlagExplanation(flag: item.sanityFlag!, reason: item.sanityReason),
+          // Ключ по идентификатору обязателен: панель живёт в постоянном
+          // слоте экрана, и при переходе к другой позиции Flutter переиспользует
+          // то же состояние. Без ключа раскрытая исходная запись оставалась бы
+          // раскрытой на следующей позиции, а автораскрытие для незнакомого
+          // правила — наоборот, не срабатывало бы.
+          _FlagExplanation(
+            key: ValueKey(item.id),
+            flag: item.sanityFlag!,
+            reason: item.sanityReason,
+          ),
         ],
       ),
     );
   }
-
 
   Widget _buildHiddenSection(FlaggedMenuItem item) {
     if (!item.isHiddenByAdmin) {
@@ -515,7 +522,11 @@ class _FlagExplanation extends StatefulWidget {
   final Map<String, dynamic> flag;
   final String? reason;
 
-  const _FlagExplanation({required this.flag, required this.reason});
+  const _FlagExplanation({
+    super.key,
+    required this.flag,
+    required this.reason,
+  });
 
   @override
   State<_FlagExplanation> createState() => _FlagExplanationState();

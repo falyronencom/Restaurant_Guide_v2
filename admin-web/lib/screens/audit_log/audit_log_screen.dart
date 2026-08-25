@@ -109,33 +109,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                       value: provider.actionFilter,
                       isExpanded: true,
                       isDense: true,
-                      items: const [
-                        DropdownMenuItem(
+                      items: [
+                        const DropdownMenuItem(
                             value: null, child: Text('Все действия')),
-                        DropdownMenuItem(
-                            value: 'moderate_approve',
-                            child: Text('Одобрение')),
-                        DropdownMenuItem(
-                            value: 'moderate_reject',
-                            child: Text('Отклонение')),
-                        DropdownMenuItem(
-                            value: 'suspend',
-                            child: Text('Приостановка')),
-                        DropdownMenuItem(
-                            value: 'unsuspend',
-                            child: Text('Возобновление')),
-                        DropdownMenuItem(
-                            value: 'review_hide',
-                            child: Text('Скрытие отзыва')),
-                        DropdownMenuItem(
-                            value: 'review_show',
-                            child: Text('Показ отзыва')),
-                        DropdownMenuItem(
-                            value: 'review_delete',
-                            child: Text('Удаление отзыва')),
-                        DropdownMenuItem(
-                            value: 'admin_update_coordinates',
-                            child: Text('Обновление координат')),
+                        // Список строится из карты, а не выписывается здесь:
+                        // выписанный руками он уже отставал от журнала на
+                        // шесть действий из четырнадцати.
+                        for (final entry in kAuditActions.entries)
+                          DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(entry.value),
+                          ),
                       ],
                       onChanged: (value) => provider.setActionFilter(value),
                     ),
@@ -346,7 +330,11 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   /// притворяться названием.
   Widget _objectCell(AuditLogEntry entry) {
     final ctx = entry.entityContext;
-    final name = ctx?['name'] ?? ctx?['establishment_name'];
+    // У отзыва берём автора, а не заведение: моноширинный идентификатор под
+    // заголовком — это идентификатор ОТЗЫВА, и имя заведения над ним
+    // подталкивало бы скопировать одно, думая про другое. Заведение при этом
+    // не теряется — оно в раскрытой строке.
+    final name = ctx?['reviewer_name'] ?? ctx?['name'];
     final typeLabel = auditEntityLabel(entry.entityType);
     final title = name is String && name.trim().isNotEmpty ? name : typeLabel;
     final id = entry.entityId;
