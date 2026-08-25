@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
 
-/// Screen for "Отказанные" — rejected establishments (history from audit log).
+/// Экран «Отказанные» — история отказов из журнала аудита.
 ///
-/// Three-panel layout: Sidebar (from AdminShell) | Card List | Detail Panel.
-/// Purely informational — no action buttons. Shows rejection reasons
-/// prominently in the detail panel.
+/// Список приходит не из таблицы заведений, а из `audit_log`: одно заведение
+/// может быть отклонено несколько раз, и запись здесь — это отказ, а не
+/// заведение. Поэтому у карточки два разных состояния: дата отказа и
+/// **текущий** статус заведения, который к моменту просмотра обычно уже
+/// «черновик» — партнёр забрал заявку на доработку.
 class RejectedScreen extends StatefulWidget {
   const RejectedScreen({super.key});
 
@@ -18,6 +24,8 @@ class RejectedScreen extends StatefulWidget {
 }
 
 class _RejectedScreenState extends State<RejectedScreen> {
+  static const int _perPage = 20;
+
   @override
   void initState() {
     super.initState();
@@ -28,324 +36,118 @@ class _RejectedScreenState extends State<RejectedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // Middle panel: card list
-        SizedBox(
-          width: 400,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.swap_vert, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'По дате отказа',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    const Spacer(),
-                    Consumer<RejectedProvider>(
-                      builder: (_, provider, __) {
-                        if (provider.totalCount > 0) {
-                          return Text(
-                            '${provider.totalCount}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
+    final provider = context.watch<RejectedProvider>();
 
-              // Card list
-              Expanded(child: _RejectedCardList()),
+    return Column(
+      children: [
+        AdminScreenHeader(
+          title: 'Отказанные',
+          subtitle: _subtitle(provider),
+        ),
+        Expanded(
+          child: Row(
+            children: [
+              ModerationCatalogList(
+                sectionTitle: 'История отказов',
+                // Порядок один и задан на бэкенде (`ORDER BY rejection_date
+                // DESC`), поэтому подпись остаётся подписью.
+                sortCaption: 'по дате отказа',
+                itemCount: provider.rejections.length,
+                itemBuilder: (context, index) =>
+                    _card(context, provider, provider.rejections[index]),
+                isLoading: provider.isLoadingList,
+                error: provider.listError,
+                onRetry: () => context
+                    .read<RejectedProvider>()
+                    .loadRejectedEstablishments(),
+                emptyTitle: 'Отказов не было',
+                emptyMessage: 'Ни одна заявка ещё не отклонялась — история '
+                    'пуста, и это хорошая новость.',
+                page: provider.currentPage,
+                totalPages: provider.totalPages,
+                totalCount: provider.totalCount,
+                perPage: _perPage,
+                onPageChanged: (page) => context
+                    .read<RejectedProvider>()
+                    .loadRejectedEstablishments(page: page),
+              ),
+              const Expanded(child: _DetailPanel()),
             ],
           ),
         ),
-        const VerticalDivider(width: 1, thickness: 1),
-
-        // Right panel: detail with rejection reasons
-        Expanded(child: _DetailPanel()),
       ],
     );
   }
-}
 
-// =============================================================================
-// Card List
-// =============================================================================
+  /// «18 отказов из журнала аудита · 12 заявок вернулись в черновики».
+  String? _subtitle(RejectedProvider provider) {
+    if (provider.isLoadingList || provider.listError != null) return null;
 
-class _RejectedCardList extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<RejectedProvider>();
+    final total = provider.totalCount;
+    if (total == 0) return 'История пуста';
 
-    if (provider.isLoadingList) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    final head =
+        '${countWithNoun(total, 'отказ', 'отказа', 'отказов')} из журнала аудита';
 
-    if (provider.listError != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    // Вторая величина считается по загруженным записям, поэтому называется
+    // только когда загружена вся история. Иначе получилось бы «12 из 18»,
+    // выданное за «12 из всех», — а это уже неправда.
+    if (provider.rejections.length < total) return head;
+
+    final drafts = provider.rejections
+        .where((item) => item.currentStatus == 'draft')
+        .length;
+    if (drafts == 0) return head;
+
+    return '$head · ${countWithNoun(drafts, 'заявка вернулась', 'заявки вернулись', 'заявок вернулись')} в черновики';
+  }
+
+  Widget _card(
+    BuildContext context,
+    RejectedProvider provider,
+    RejectedEstablishmentItem item,
+  ) {
+    final reasons = item.rejectionNotes?.length ?? 0;
+
+    return ModerationCatalogCard(
+      name: item.name,
+      date: item.rejectionDate,
+      subtitle: _typeAndCity(item),
+      thumbnailUrl: item.thumbnailUrl,
+      categories: item.categories,
+      cuisines: item.cuisines,
+      isSelected: provider.selectedId == item.establishmentId,
+      onTap: () =>
+          context.read<RejectedProvider>().selectEstablishment(item),
+      footer: Row(
+        children: [
+          if (reasons > 0)
             Text(
-              provider.listError!,
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(
-              onPressed: () => provider.loadRejectedEstablishments(),
-              child: const Text('Повторить'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (provider.rejections.isEmpty) {
-      return const Center(
-        child: Text(
-          'Нет отклонённых заведений',
-          style: TextStyle(fontSize: 16, color: Colors.grey),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: provider.rejections.length,
-      itemBuilder: (context, index) {
-        final item = provider.rejections[index];
-        final isSelected =
-            provider.selectedId == item.establishmentId;
-        return _RejectedCard(
-          item: item,
-          isSelected: isSelected,
-          onTap: () => provider.selectEstablishment(item),
-        );
-      },
-    );
-  }
-}
-
-// =============================================================================
-// Card Widget
-// =============================================================================
-
-class _RejectedCard extends StatelessWidget {
-  final RejectedEstablishmentItem item;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _RejectedCard({
-    required this.item,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final dateFormat = DateFormat('dd.MM.yyyy');
-    final dateStr = item.rejectionDate != null
-        ? dateFormat.format(item.rejectionDate!)
-        : '';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 116,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? const Color(0xFFEC723D)
-                    : Colors.transparent,
-                width: isSelected ? 1.5 : 1,
+              countWithNoun(reasons, 'причина', 'причины', 'причин'),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.textTertiary,
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x08D35620),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: Offset(4, 4),
-                ),
-                BoxShadow(
-                  color: Color(0x08D35620),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: Offset(-4, -4),
-                ),
-              ],
             ),
-            child: Row(
-              children: [
-                // Thumbnail
-                ClipRRect(
-                  borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(10),
-                  ),
-                  child: SizedBox(
-                    width: 107,
-                    height: 116,
-                    child: item.thumbnailUrl != null
-                        ? Image.network(
-                            item.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _placeholderImage(),
-                          )
-                        : _placeholderImage(),
-                  ),
-                ),
-
-                // Info
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Name + rejection date
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              dateStr,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFFABABAB),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-
-                        // Category
-                        if (item.categories.isNotEmpty)
-                          Text(
-                            item.categories.first.toLowerCase(),
-                            style: const TextStyle(fontSize: 15),
-                          ),
-
-                        const Spacer(),
-
-                        // Bottom: city + current status
-                        Row(
-                          children: [
-                            if (item.city != null)
-                              Expanded(
-                                child: Text(
-                                  item.city!,
-                                  style: const TextStyle(fontSize: 14),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            _CurrentStatusBadge(
-                              status: item.currentStatus,
-                              label: item.statusLabel,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+          const Spacer(),
+          StatusDot.labelled(item.currentStatus),
+        ],
       ),
     );
   }
 
-  Widget _placeholderImage() {
-    return Container(
-      color: const Color(0xFFF5F5F5),
-      child: const Center(
-        child: Icon(Icons.restaurant, color: Color(0xFFD2D2D2), size: 36),
-      ),
-    );
+  static String? _typeAndCity(RejectedEstablishmentItem item) {
+    final parts = <String>[
+      if (item.categories.isNotEmpty) item.categories.first.toLowerCase(),
+      if (item.city != null) item.city!,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 }
-
-// =============================================================================
-// Current Status Badge
-// =============================================================================
-
-class _CurrentStatusBadge extends StatelessWidget {
-  final String status;
-  final String label;
-
-  const _CurrentStatusBadge({required this.status, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    Color bgColor;
-    Color textColor;
-
-    switch (status) {
-      case 'pending':
-        bgColor = const Color(0x1AF06B32);
-        textColor = const Color(0xFFF06B32);
-        break;
-      case 'draft':
-      default:
-        bgColor = const Color(0x1AABABAB);
-        textColor = const Color(0xFFABABAB);
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: textColor,
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Detail Panel
-// =============================================================================
 
 class _DetailPanel extends StatelessWidget {
+  const _DetailPanel();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<RejectedProvider>();
