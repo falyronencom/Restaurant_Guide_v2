@@ -25,6 +25,18 @@ String formatDelta(double percent) {
 String formatDecimal(double value, {int digits = 1}) =>
     value.toStringAsFixed(digits).replaceAll('.', ',');
 
+/// Дата в местном времени: 2026-08-09T22:10Z → «10.08.2026» на UTC+3.
+///
+/// `.toLocal()` здесь не украшение. Метки приходят с бэкенда в UTC
+/// (`toISOString`), и чтение `.day` прямо с них показывает вчерашнее число
+/// для всего, что произошло после 21:00 по Минску. Дефект тихий: в проде
+/// процесс живёт в UTC, и расхождение видно только у пользователя.
+String formatDateLocal(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}.${two(local.month)}.${local.year}';
+}
+
 /// Склонение существительного при числе.
 ///
 /// [one] — 1 действие, [few] — 2 действия, [many] — 5 действий.

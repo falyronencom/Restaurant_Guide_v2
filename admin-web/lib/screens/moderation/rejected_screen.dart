@@ -110,12 +110,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
         : provider.rejections.first.rejectionDate;
     if (latest == null || provider.currentPage != 1) return head;
 
-    return '$head · последний ${_formatDate(latest)}';
-  }
-
-  static String _formatDate(DateTime value) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(value.day)}.${two(value.month)}.${value.year}';
+    return '$head · последний ${formatDateLocal(latest)}';
   }
 
   Widget _card(

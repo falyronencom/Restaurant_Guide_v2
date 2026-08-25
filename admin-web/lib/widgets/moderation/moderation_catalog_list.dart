@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_admin_web/config/category_icons.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -333,7 +334,7 @@ class ModerationCatalogCard extends StatelessWidget {
             if (stamp != null) ...[
               const SizedBox(width: 8),
               Text(
-                _formatDate(stamp),
+                formatDateLocal(stamp),
                 style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
               ),
             ],
@@ -354,14 +355,7 @@ class ModerationCatalogCard extends StatelessWidget {
     );
   }
 
-  /// Дата в местном времени. Метки приходят с бэкенда в UTC (`toISOString`),
-  /// и без перевода карточка показывала бы вчерашнее число для всего, что
-  /// произошло после 21:00 по Минску.
-  static String _formatDate(DateTime value) {
-    final local = value.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(local.day)}.${two(local.month)}.${local.year}';
-  }
+
 }
 
 class _Thumbnail extends StatelessWidget {
