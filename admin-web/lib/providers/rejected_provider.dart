@@ -7,6 +7,9 @@ import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 /// Loads rejection history from audit log. Purely informational —
 /// no action buttons, read-only detail view.
 class RejectedProvider extends ChangeNotifier {
+  /// Размер страницы — как у сервиса и как в подписи «Показано N–M из T».
+  static const int perPage = 20;
+
   final ModerationService _service = ModerationService();
 
   // List state

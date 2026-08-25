@@ -10,6 +10,10 @@ import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 ///
 /// Also handles detail loading, suspend/unsuspend actions.
 class ApprovedProvider extends ChangeNotifier {
+  /// Размер страницы. Совпадает с умолчанием сервиса и используется экраном
+  /// для подписи «Показано 1–20 из 365»: расходиться этим двум числам нельзя.
+  static const int perPage = 20;
+
   final ModerationService _service = ModerationService();
 
   // List state
@@ -154,6 +158,22 @@ class ApprovedProvider extends ChangeNotifier {
     }
   }
 
+  /// Последнее действие могло убрать единственную запись открытой страницы.
+  /// Раздел при этом не опустел, поэтому список перечитывается, а номер
+  /// страницы зажимается в новые границы: иначе экран показывал бы пустоту
+  /// при непустом разделе, а подпись — перевёрнутый диапазон вида «21–20».
+  void _reloadIfPageEmptied() {
+    if (_establishments.isNotEmpty || _totalCount == 0) return;
+
+    final lastPage = (_totalCount + perPage - 1) ~/ perPage;
+    final target = _currentPage > lastPage ? lastPage : _currentPage;
+    if (_isSearchMode) {
+      searchEstablishments(_searchQuery, page: target);
+    } else {
+      loadActiveEstablishments(page: target);
+    }
+  }
+
   /// Update city filter and reload
   void setCityFilter(String? city) {
     _cityFilter = city;
@@ -215,6 +235,7 @@ class ApprovedProvider extends ChangeNotifier {
       _selectedDetail = null;
       _isSubmitting = false;
       notifyListeners();
+      _reloadIfPageEmptied();
       return true;
     } catch (e) {
       _isSubmitting = false;

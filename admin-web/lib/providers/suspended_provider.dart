@@ -9,6 +9,9 @@ import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 /// - Detail loading for selected establishment
 /// - Unsuspend action (returns establishment to active status)
 class SuspendedProvider extends ChangeNotifier {
+  /// Размер страницы — как у сервиса и как в подписи «Показано N–M из T».
+  static const int perPage = 20;
+
   final ModerationService _service = ModerationService();
 
   // List state
@@ -115,7 +118,9 @@ class SuspendedProvider extends ChangeNotifier {
       _selectedDetail = null;
       _isSubmitting = false;
       notifyListeners();
+      _reloadIfPageEmptied();
       return true;
+
     } catch (e) {
       _isSubmitting = false;
       _submitError = _extractMessage(e);
@@ -143,4 +148,17 @@ class SuspendedProvider extends ChangeNotifier {
     }
     return 'Произошла ошибка';
   }
+
+  /// «Возобновить» могло убрать единственную запись открытой страницы.
+  /// Приостановленных при этом меньше не стало настолько, чтобы раздел
+  /// опустел, — поэтому список перечитывается с зажатым номером страницы.
+  void _reloadIfPageEmptied() {
+    if (_establishments.isNotEmpty || _totalCount == 0) return;
+
+    final lastPage = (_totalCount + perPage - 1) ~/ perPage;
+    loadSuspendedEstablishments(
+      page: _currentPage > lastPage ? lastPage : _currentPage,
+    );
+  }
+
 }

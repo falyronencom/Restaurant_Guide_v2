@@ -18,6 +18,7 @@ void main() {
     List<CatalogSortOption>? sortOptions,
     ValueChanged<String>? onSortChanged,
     int selectedIndex = -1,
+    bool isLoading = false,
   }) async {
     tester.view.physicalSize = const Size(1440, 820);
     tester.view.devicePixelRatio = 1.0;
@@ -45,6 +46,7 @@ void main() {
                   onTap: () {},
                   footer: const StatusDot.labelled('draft'),
                 ),
+                isLoading: isLoading,
                 onRetry: () {},
                 emptyTitle: 'Пусто',
                 emptyMessage: 'Нечего показать',
@@ -149,6 +151,72 @@ void main() {
       await pumpCatalog(tester, itemCount: 18, totalCount: 18);
       // «Показано 1–18 из 18» отвечает на вопрос «это всё?».
       expect(find.textContaining('1–18'), findsOneWidget);
+      // А вот полосы номеров при одной странице нет: три неактивных
+      // контрола ничего не сообщают.
+      expect(find.byIcon(Icons.chevron_right), findsNothing);
+    });
+
+    testWidgets('подпись диапазона не переносится', (tester) async {
+      // В один ряд с полосой номеров подпись не влезала и вставала в две-три
+      // строки. Мерим высоту: одна строка 12-го кегля — меньше 20.
+      await pumpCatalog(
+        tester,
+        itemCount: 20,
+        page: 10,
+        totalPages: 19,
+        totalCount: 365,
+      );
+
+      final range = find.textContaining('181–200');
+      expect(range, findsOneWidget);
+      expect(tester.getSize(range).height, lessThan(20));
+    });
+
+    testWidgets('опустевшая страница не выдаётся за пустой раздел',
+        (tester) async {
+      // Действие модератора убрало последнюю запись второй страницы.
+      await pumpCatalog(
+        tester,
+        itemCount: 0,
+        page: 2,
+        totalPages: 2,
+        totalCount: 20,
+      );
+
+      // Раздел не пуст — и текст об этом говорит прямо.
+      expect(find.text('Пусто'), findsNothing);
+      expect(find.text('Страница опустела'), findsOneWidget);
+      // Перевёрнутого диапазона «21–20» на экране быть не может.
+      expect(find.textContaining('Показано'), findsNothing);
+    });
+
+    testWidgets('перелистывание не подменяет карточки скелетоном',
+        (tester) async {
+      await pumpCatalog(
+        tester,
+        itemCount: 20,
+        page: 2,
+        totalPages: 19,
+        totalCount: 365,
+        isLoading: true,
+      );
+
+      // Прежние карточки и полоса номеров остаются на месте: иначе полоса
+      // исчезает прямо под курсором в момент нажатия.
+      expect(find.byType(ModerationCatalogCard), findsWidgets);
+      expect(find.textContaining('21–40'), findsOneWidget);
+    });
+
+    testWidgets('первая загрузка показывает скелетон', (tester) async {
+      await pumpCatalog(
+        tester,
+        itemCount: 0,
+        totalCount: 0,
+        isLoading: true,
+      );
+
+      expect(find.byType(ModerationCatalogCard), findsNothing);
+      expect(find.text('Пусто'), findsNothing);
     });
   });
 
@@ -159,7 +227,7 @@ void main() {
     });
 
     test('в начале длинного списка многоточие только справа', () {
-      expect(pageEntries(1, 19), <int?>[1, 2, 3, 4, null, 19]);
+      expect(pageEntries(1, 19), <int?>[1, 2, null, 19]);
     });
 
     test('в середине многоточия с обеих сторон', () {
@@ -167,7 +235,42 @@ void main() {
     });
 
     test('в конце многоточие только слева', () {
-      expect(pageEntries(19, 19), <int?>[1, null, 16, 17, 18, 19]);
+      expect(pageEntries(19, 19), <int?>[1, null, 18, 19]);
+    });
+
+    test('многоточие никогда не заменяет ровно одну страницу', () {
+      // Слот у «…» тот же, что у номера, поэтому спрятать за ним одну
+      // страницу — потерять сведения, ничего не выиграв.
+      for (var total = 6; total <= 40; total++) {
+        for (var page = 1; page <= total; page++) {
+          final entries = pageEntries(page, total);
+          for (var i = 1; i < entries.length - 1; i++) {
+            if (entries[i] != null) continue;
+            final before = entries[i - 1]!;
+            final after = entries[i + 1]!;
+            expect(
+              after - before,
+              greaterThan(2),
+              reason: 'страница $page из $total: «…» между $before и $after '
+                  'закрывает одну страницу',
+            );
+          }
+        }
+      }
+    });
+
+    test('полоса номеров остаётся узкой', () {
+      // Ширина футера ограничена колонкой 420. Больше семи слотов туда не
+      // помещается, поэтому окно вокруг текущей страницы — по одному соседу.
+      for (var total = 6; total <= 200; total++) {
+        for (var page = 1; page <= total; page++) {
+          expect(
+            pageEntries(page, total).length,
+            lessThanOrEqualTo(7),
+            reason: 'страница $page из $total',
+          );
+        }
+      }
     });
 
     test('первая и последняя страницы есть всегда', () {

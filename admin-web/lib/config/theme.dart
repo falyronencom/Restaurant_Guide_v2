@@ -238,6 +238,14 @@ class AppTheme {
       );
 
   /// Моноширинный текст таблиц.
+  ///
+  /// Начертание запрашивается у пакета, а не подставляется весом в сырой
+  /// `TextStyle`. Разница не косметическая: `google_fonts` регистрирует
+  /// **каждое** начертание отдельным семейством (`JetBrainsMono_regular`,
+  /// `JetBrainsMono_medium`). Сырой стиль с `fontWeight: w500` поверх
+  /// семейства Regular не подтянул бы вшитый Medium — движок нарисовал бы
+  /// синтетический полужирный, молча, и вшитый файл остался бы лежать
+  /// мёртвым грузом. Ровно этот отказ вшивание и должно было закрыть.
   static TextStyle mono({
     double? fontSize,
     FontWeight? fontWeight,
@@ -245,15 +253,13 @@ class AppTheme {
     double? letterSpacing,
     double? height,
   }) =>
-      TextStyle(
-        fontFamily: fontMonoFamily,
-        fontFamilyFallback: fontMonoFallback,
+      GoogleFonts.jetBrainsMono(
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
         letterSpacing: letterSpacing,
         height: height,
-      );
+      ).copyWith(fontFamilyFallback: fontMonoFallback);
 
   // ============================================================================
   // Канонические применённые стили

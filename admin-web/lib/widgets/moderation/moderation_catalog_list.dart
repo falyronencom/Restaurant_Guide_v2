@@ -94,7 +94,12 @@ class ModerationCatalogList extends StatelessWidget {
           Expanded(child: _body()),
           // Футер показывается и на единственной странице: «Показано 1–18 из
           // 18» отвечает на вопрос «это всё?», который иначе остаётся открытым.
-          if (!isLoading && error == null && totalCount > 0)
+          //
+          // На перелистывании он НЕ снимается: иначе полоса номеров исчезает
+          // прямо под курсором в момент нажатия. Об этом же говорит канон
+          // шапки экрана — данные остаются на месте, о ходе загрузки сообщает
+          // полоска `busy`, а скелетон бывает только у первой загрузки.
+          if (error == null && totalCount > 0 && itemCount > 0)
             _CatalogPagination(
               page: page,
               totalPages: totalPages,
@@ -109,7 +114,9 @@ class ModerationCatalogList extends StatelessWidget {
   }
 
   Widget _body() {
-    if (isLoading) return const _CatalogSkeleton();
+    // Скелетон — только когда показывать нечего. На смене страницы прежние
+    // карточки остаются до прихода новых.
+    if (isLoading && itemCount == 0) return const _CatalogSkeleton();
 
     final message = error;
     if (message != null) {
@@ -122,6 +129,20 @@ class ModerationCatalogList extends StatelessWidget {
     }
 
     if (itemCount == 0) {
+      // Пусто на странице ещё не значит пусто в разделе. Такое случается,
+      // когда действие модератора убрало последнюю запись открытой страницы:
+      // раздел не опустел, опустела страница, и говорить «здесь ничего нет»
+      // было бы неправдой ровно там, где остальное никуда не делось.
+      if (totalCount > 0) {
+        return _CatalogMessage(
+          icon: Icons.refresh,
+          title: 'Страница опустела',
+          message: 'Последняя запись на этой странице обработана. '
+              'Остальные записи раздела на месте.',
+          onRetry: onRetry,
+        );
+      }
+
       return _CatalogMessage(
         icon: Icons.inbox_outlined,
         title: emptyTitle,
@@ -418,38 +439,60 @@ class _CatalogPagination extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final first = totalCount == 0 ? 0 : (page - 1) * perPage + 1;
-    final last = first + shownOnPage - 1;
+    final first = (page - 1) * perPage + 1;
+    // Верх диапазона не может превышать общее число: страницу может опустошить
+    // действие модератора, и тогда `shownOnPage` уже не соответствует `page`.
+    final last = (first + shownOnPage - 1).clamp(first, totalCount);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppTheme.borderLight)),
       ),
-      child: Row(
+      // Строка диапазона и полоса номеров стоят друг под другом, а не в один
+      // ряд, как нарисовано. Замерено: полоса забирает до 310 из 388 пикселей
+      // внутренней ширины, и «Показано 181–200 из 365» в остаток не влезает —
+      // на трёх и более страницах подпись переносилась в две-три строки.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary,
-                ),
-                children: <InlineSpan>[
-                  const TextSpan(text: 'Показано '),
-                  TextSpan(
-                    text: '$first–$last',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textDark,
-                    ),
-                  ),
-                  TextSpan(text: ' из $totalCount'),
-                ],
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.textSecondary,
               ),
+              children: <InlineSpan>[
+                const TextSpan(text: 'Показано '),
+                TextSpan(
+                  text: '$first–$last',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                TextSpan(text: ' из $totalCount'),
+              ],
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          _StepButton(
+          if (totalPages > 1) ...[
+            const SizedBox(height: 8),
+            _pager(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Полоса перелистывания. При единственной странице не рисуется вовсе:
+  /// диапазон уже сказал всё, а три неактивных контрола ничего не добавляют.
+  Widget _pager() {
+    return Row(
+      children: [
+        _StepButton(
             icon: Icons.chevron_left,
             enabled: page > 1,
             onTap: () => onPageChanged?.call(page - 1),
@@ -469,13 +512,12 @@ class _CatalogPagination extends StatelessWidget {
                 isCurrent: entry == page,
                 onTap: () => onPageChanged?.call(entry),
               ),
-          _StepButton(
-            icon: Icons.chevron_right,
-            enabled: page < totalPages,
-            onTap: () => onPageChanged?.call(page + 1),
-          ),
-        ],
-      ),
+        _StepButton(
+          icon: Icons.chevron_right,
+          enabled: page < totalPages,
+          onTap: () => onPageChanged?.call(page + 1),
+        ),
+      ],
     );
   }
 }
@@ -484,24 +526,29 @@ class _CatalogPagination extends StatelessWidget {
 ///
 /// `null` в результате — многоточие. Вынесено наружу и без виджетов, чтобы
 /// раскладку можно было проверить таблицей значений, а не разглядыванием.
+///
+/// Окно вокруг текущей страницы узкое — ровно по соседу с каждой стороны.
+/// Расширять его нечем: в колонке 420 полоса номеров и так забирает почти всю
+/// ширину футера.
+///
+/// Многоточие никогда не заменяет одну страницу: слот у «…» тот же, что у
+/// номера, поэтому спрятать за ним «5» — потерять сведения, ничего не выиграв.
 List<int?> pageEntries(int page, int totalPages) {
   if (totalPages <= 1) return <int?>[1];
   if (totalPages <= 5) {
     return <int?>[for (var i = 1; i <= totalPages; i++) i];
   }
 
-  final entries = <int?>[1];
   var from = page - 1;
+  if (from < 2) from = 2;
   var to = page + 1;
-  if (from < 2) {
-    from = 2;
-    to = 4;
-  }
-  if (to > totalPages - 1) {
-    to = totalPages - 1;
-    from = totalPages - 3;
-  }
+  if (to > totalPages - 1) to = totalPages - 1;
 
+  // Пропуск ровно в одну страницу разворачивается в саму страницу.
+  if (from == 3) from = 2;
+  if (to == totalPages - 2) to = totalPages - 1;
+
+  final entries = <int?>[1];
   if (from > 2) entries.add(null);
   for (var i = from; i <= to; i++) {
     entries.add(i);

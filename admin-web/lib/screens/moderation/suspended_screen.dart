@@ -18,8 +18,6 @@ class SuspendedScreen extends StatefulWidget {
 }
 
 class _SuspendedScreenState extends State<SuspendedScreen> {
-  static const int _perPage = 20;
-
   @override
   void initState() {
     super.initState();
@@ -37,6 +35,7 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
         AdminScreenHeader(
           title: 'Приостановленные',
           subtitle: _subtitle(provider),
+          busy: provider.isLoadingList && provider.establishments.isNotEmpty,
         ),
         Expanded(
           child: Row(
@@ -60,7 +59,7 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
                 page: provider.currentPage,
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
-                perPage: _perPage,
+                perPage: SuspendedProvider.perPage,
                 onPageChanged: (page) => context
                     .read<SuspendedProvider>()
                     .loadSuspendedEstablishments(page: page),
@@ -74,7 +73,10 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
   }
 
   String? _subtitle(SuspendedProvider provider) {
-    if (provider.isLoadingList || provider.listError != null) return null;
+    if (provider.listError != null) return null;
+    // Гасим подпись только на первой загрузке. На перелистывании данные
+    // остаются на экране, и заголовок не должен мигать вместе с ними.
+    if (provider.isLoadingList && provider.totalCount == 0) return null;
 
     final total = provider.totalCount;
     if (total == 0) return 'Приостановленных нет';

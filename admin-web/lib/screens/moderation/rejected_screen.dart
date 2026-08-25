@@ -7,15 +7,19 @@ import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
-import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
 
 /// Экран «Отказанные» — история отказов из журнала аудита.
 ///
-/// Список приходит не из таблицы заведений, а из `audit_log`: одно заведение
-/// может быть отклонено несколько раз, и запись здесь — это отказ, а не
-/// заведение. Поэтому у карточки два разных состояния: дата отказа и
-/// **текущий** статус заведения, который к моменту просмотра обычно уже
-/// «черновик» — партнёр забрал заявку на доработку.
+/// Список приходит не из таблицы заведений, а из `audit_log`, но запросом
+/// `SELECT DISTINCT ON (e.id)` с условием `AND e.status = 'rejected'`
+/// (`backend/src/models/auditLogModel.js`). Отсюда два следствия, которые
+/// легко прочесть неверно:
+///
+/// - в списке одна строка на заведение, а не на каждый отказ, поэтому
+///   `totalCount` — это число заведений, а не число отказов;
+/// - `currentStatus` у всех строк один и тот же, `rejected`: заведения,
+///   вернувшиеся в черновик, из выборки уже выпали. Показывать этот статус
+///   на карточках нечего — он не различает записи, а только повторяется.
 class RejectedScreen extends StatefulWidget {
   const RejectedScreen({super.key});
 
@@ -24,8 +28,6 @@ class RejectedScreen extends StatefulWidget {
 }
 
 class _RejectedScreenState extends State<RejectedScreen> {
-  static const int _perPage = 20;
-
   @override
   void initState() {
     super.initState();
@@ -43,6 +45,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
         AdminScreenHeader(
           title: 'Отказанные',
           subtitle: _subtitle(provider),
+          busy: provider.isLoadingList && provider.rejections.isNotEmpty,
         ),
         Expanded(
           child: Row(
@@ -66,7 +69,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
                 page: provider.currentPage,
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
-                perPage: _perPage,
+                perPage: RejectedProvider.perPage,
                 onPageChanged: (page) => context
                     .read<RejectedProvider>()
                     .loadRejectedEstablishments(page: page),
@@ -79,27 +82,40 @@ class _RejectedScreenState extends State<RejectedScreen> {
     );
   }
 
-  /// «18 отказов из журнала аудита · 12 заявок вернулись в черновики».
+  /// «18 заведений с отказом · последний 09.08.2026».
+  ///
+  /// Не «18 отказов»: запрос отдаёт по одной строке на заведение
+  /// (`DISTINCT ON (e.id)`), и повторные отказы одного и того же заведения в
+  /// это число не входят. Макет обещал вторую величину «12 заявок вернулись в
+  /// черновики», но она непредставима: вернувшиеся в черновик из выборки
+  /// выпадают по условию `e.status = 'rejected'`, и счётчик всегда был бы
+  /// нулём. Вместо выдуманного числа — дата последнего отказа: список
+  /// отсортирован по ней, и она отвечает «насколько это свежее».
   String? _subtitle(RejectedProvider provider) {
-    if (provider.isLoadingList || provider.listError != null) return null;
+    if (provider.listError != null) return null;
+    if (provider.isLoadingList && provider.totalCount == 0) return null;
 
     final total = provider.totalCount;
     if (total == 0) return 'История пуста';
 
-    final head =
-        '${countWithNoun(total, 'отказ', 'отказа', 'отказов')} из журнала аудита';
+    final head = countWithNoun(
+      total,
+      'заведение с отказом',
+      'заведения с отказом',
+      'заведений с отказом',
+    );
 
-    // Вторая величина считается по загруженным записям, поэтому называется
-    // только когда загружена вся история. Иначе получилось бы «12 из 18»,
-    // выданное за «12 из всех», — а это уже неправда.
-    if (provider.rejections.length < total) return head;
+    final latest = provider.rejections.isEmpty
+        ? null
+        : provider.rejections.first.rejectionDate;
+    if (latest == null || provider.currentPage != 1) return head;
 
-    final drafts = provider.rejections
-        .where((item) => item.currentStatus == 'draft')
-        .length;
-    if (drafts == 0) return head;
+    return '$head · последний ${_formatDate(latest)}';
+  }
 
-    return '$head · ${countWithNoun(drafts, 'заявка вернулась', 'заявки вернулись', 'заявок вернулись')} в черновики';
+  static String _formatDate(DateTime value) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(value.day)}.${two(value.month)}.${value.year}';
   }
 
   Widget _card(
@@ -107,7 +123,12 @@ class _RejectedScreenState extends State<RejectedScreen> {
     RejectedProvider provider,
     RejectedEstablishmentItem item,
   ) {
-    final reasons = item.rejectionNotes?.length ?? 0;
+    // Считаем так же, как панель разбора: заполненные причины. Иначе
+    // карточка обещала бы «3 причины», а в панели их оказалось бы две.
+    final reasons = item.rejectionNotes?.values
+            .where((value) => value != null && value.toString().trim().isNotEmpty)
+            .length ??
+        0;
 
     return ModerationCatalogCard(
       name: item.name,
@@ -119,20 +140,15 @@ class _RejectedScreenState extends State<RejectedScreen> {
       isSelected: provider.selectedId == item.establishmentId,
       onTap: () =>
           context.read<RejectedProvider>().selectEstablishment(item),
-      footer: Row(
-        children: [
-          if (reasons > 0)
-            Text(
+      footer: reasons == 0
+          ? null
+          : Text(
               countWithNoun(reasons, 'причина', 'причины', 'причин'),
               style: const TextStyle(
                 fontSize: 12,
                 color: AppTheme.textTertiary,
               ),
             ),
-          const Spacer(),
-          StatusDot.labelled(item.currentStatus),
-        ],
-      ),
     );
   }
 

@@ -25,10 +25,6 @@ class ApprovedScreen extends StatefulWidget {
 class _ApprovedScreenState extends State<ApprovedScreen> {
   final _searchController = TextEditingController();
 
-  /// Размер страницы совпадает с умолчанием сервиса. Расходиться им нельзя:
-  /// из него считается «Показано 1–20 из 365».
-  static const int _perPage = 20;
-
   static const List<CatalogSortOption> _sortOptions = <CatalogSortOption>[
     CatalogSortOption(value: 'newest', label: 'Сначала новые'),
     CatalogSortOption(value: 'oldest', label: 'Сначала старые'),
@@ -66,6 +62,9 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
         AdminScreenHeader(
           title: 'Одобренные',
           subtitle: _subtitle(context, provider),
+          // Обновление списка показывается полоской в шапке, а не подменой
+          // карточек скелетоном: данные остаются читаемыми.
+          busy: provider.isLoadingList && provider.establishments.isNotEmpty,
           actions: <Widget>[
             _SearchField(
               controller: _searchController,
@@ -115,7 +114,7 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
                 page: provider.currentPage,
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
-                perPage: _perPage,
+                perPage: ApprovedProvider.perPage,
                 // Ветвление обязательно: в режиме поиска перелистывание
                 // через loadActiveEstablishments сбросило бы поиск и молча
                 // вернуло каталог — страница сменилась бы, а список стал бы
@@ -142,7 +141,10 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
 
   /// «365 заведений опубликовано · 11 приостановлено».
   String? _subtitle(BuildContext context, ApprovedProvider provider) {
-    if (provider.isLoadingList || provider.listError != null) return null;
+    if (provider.listError != null) return null;
+    // Гасим подпись только на первой загрузке. На перелистывании данные
+    // остаются на экране, и заголовок не должен мигать вместе с ними.
+    if (provider.isLoadingList && provider.totalCount == 0) return null;
 
     if (provider.isSearchMode) {
       final found = provider.totalCount;
@@ -210,18 +212,22 @@ class _ActiveMetrics extends StatelessWidget {
     return Row(
       children: [
         // Оценка — единственная величина с брендовым акцентом: она первая,
-        // по которой судят о заведении.
-        const Icon(Icons.star, size: 14, color: AppTheme.primaryOrange),
-        const SizedBox(width: 4),
-        Text(
-          formatDecimal(item.averageRating),
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
+        // по которой судят о заведении. Без отзывов её не показываем вовсе:
+        // «0,0» под брендовой звездой читается как плохая оценка, хотя
+        // означает отсутствие оценок.
+        if (item.reviewCount > 0) ...[
+          const Icon(Icons.star, size: 14, color: AppTheme.primaryOrange),
+          const SizedBox(width: 4),
+          Text(
+            formatDecimal(item.averageRating),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
           ),
-        ),
-        const SizedBox(width: 14),
+          const SizedBox(width: 14),
+        ],
         _Metric(icon: Icons.visibility_outlined, value: item.viewCount),
         const SizedBox(width: 14),
         _Metric(icon: Icons.favorite_border, value: item.favoriteCount),
