@@ -36,6 +36,10 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
           title: 'Приостановленные',
           subtitle: _subtitle(provider),
           busy: provider.isLoadingList && provider.establishments.isNotEmpty,
+          actions: <Widget>[
+            if (provider.selectedDetail != null)
+              _EntityActions(provider: provider),
+          ],
         ),
         Expanded(
           child: Row(
@@ -166,15 +170,38 @@ class _SuspendReason extends StatelessWidget {
   }
 }
 
+/// Действия над выбранным заведением в слоте шапки.
+///
+/// «Назначить партнёра» здесь нет, хотя кадр 13 её рисует: назначение умеет
+/// только `ApprovedProvider`, и заводить второй путь к тому же действию ради
+/// одной кнопки — не редизайн. Возможность не потеряна: приостановленное
+/// заведение находится поиском на «Одобренных», где кнопка есть.
+class _EntityActions extends StatelessWidget {
+  final SuspendedProvider provider;
+
+  const _EntityActions({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    // Счётчики очередей берём ДО асинхронного действия: обращаться к
+    // context после await нельзя.
+    final badges = context.read<BadgesProvider>();
+
+    return ModerationEntityActions(
+      establishmentName: provider.selectedDetail?.name ?? '',
+      onUnsuspend: () => provider
+          .unsuspendEstablishment()
+          .then((ok) => ok ? badges.load() : null),
+    );
+  }
+}
+
 class _DetailPanel extends StatelessWidget {
   const _DetailPanel();
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SuspendedProvider>();
-    // Счётчики очередей берём ДО асинхронного действия: обращаться к
-    // context после await нельзя.
-    final badges = context.read<BadgesProvider>();
 
     return ModerationDetailPanel(
       mode: DetailPanelMode.suspended,
@@ -182,9 +209,6 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
-      onUnsuspend: () => provider
-          .unsuspendEstablishment()
-          .then((ok) => ok ? badges.load() : null),
     );
   }
 }

@@ -8,7 +8,9 @@ import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/definition_grid.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_inline_spinner.dart';
 
 /// Display mode for the detail panel
@@ -43,10 +45,10 @@ class ModerationDetailPanel extends StatefulWidget {
   final String? detailError;
   final String? selectedId;
 
-  // Optional actions
-  final ValueChanged<String>? onSuspend;
-  final VoidCallback? onUnsuspend;
-  final ValueChanged<String>? onClaim;
+  // Действия над заведением живут в шапке экрана — см.
+  // [ModerationEntityActions]. Панель их не принимает намеренно: приостановка
+  // и назначение партнёра относятся к заведению целиком, а не к открытой
+  // вкладке, и место им в слоте шапки.
 
   // Rejection notes for per-field display (from audit log)
   final Map<String, dynamic>? rejectionNotes;
@@ -58,9 +60,6 @@ class ModerationDetailPanel extends StatefulWidget {
     this.isLoadingDetail,
     this.detailError,
     this.selectedId,
-    this.onSuspend,
-    this.onUnsuspend,
-    this.onClaim,
     this.rejectionNotes,
   });
 
@@ -136,19 +135,18 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 
     return Column(
       children: [
-        // Header actions (suspend / unsuspend)
-        if (widget.onSuspend != null || widget.onUnsuspend != null || widget.onClaim != null)
-          _HeaderActionBar(
-            onSuspend: widget.onSuspend,
-            onUnsuspend: widget.onUnsuspend,
-            onClaim: widget.onClaim,
-            establishmentName: detail.name,
-          ),
+        // Шапка панели — только в режиме чтения. В модерации имя заведения
+        // показывает выбранная карточка очереди (кадр 05), и второй заголовок
+        // на том же экране был бы повтором.
+        if (isReadOnly) _PanelHeader(detail: detail),
 
         // Rejection notes summary (for rejected screen)
         if (widget.rejectionNotes != null &&
             widget.rejectionNotes!.isNotEmpty)
-          _RejectionNotesHeader(notes: widget.rejectionNotes!),
+          _RejectionNotesBlock(notes: widget.rejectionNotes!),
+
+        if (widget.mode == DetailPanelMode.suspended)
+          _SuspensionBlock(notes: detail.moderationNotes),
 
         // Вкладки. Стили не задаются на месте: активная 15/600 тёмно-оранжевым
         // с подчёркиванием 2px и нижняя граница полосы приходят из
@@ -157,6 +155,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
         _buildTabBar(
           context,
           showCounts: widget.mode == DetailPanelMode.moderation,
+          mediaCount: detail.interiorPhotos.length + detail.menuMedia.length,
         ),
 
         // Tab content
@@ -207,7 +206,11 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
   /// [AnimatedBuilder] нужен ради цвета счётчика — он различается у активной
   /// и неактивной вкладки, а значит зависит от `_tabController.index`.
   /// Перерисовка ограничена полосой, тело вкладок её не касается.
-  Widget _buildTabBar(BuildContext context, {required bool showCounts}) {
+  Widget _buildTabBar(
+    BuildContext context, {
+    required bool showCounts,
+    required int mediaCount,
+  }) {
     final provider = showCounts ? context.watch<ModerationProvider>() : null;
 
     return AnimatedBuilder(
@@ -220,7 +223,26 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
           for (var i = 0; i < kModerationTabTitles.length; i++)
             Tab(
               child: provider == null
-                  ? Text(kModerationTabTitles[i])
+                  // Счётчик у «Медиа» в режиме чтения означает СКОЛЬКО
+                  // файлов, а не «проверено из всего», как в модерации.
+                  // Внешне элемент тот же, смысл другой — поэтому и цвет
+                  // приглушённый, без доли.
+                  ? (i == 2 && mediaCount > 0
+                      ? Text.rich(
+                          TextSpan(
+                            children: <InlineSpan>[
+                              TextSpan(text: kModerationTabTitles[i]),
+                              TextSpan(
+                                text: '  $mediaCount',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textGrey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Text(kModerationTabTitles[i]))
                   : Text.rich(
                       TextSpan(
                         children: <InlineSpan>[
@@ -250,85 +272,90 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 // Header Action Bar (Suspend / Unsuspend)
 // =============================================================================
 
-class _HeaderActionBar extends StatelessWidget {
+/// Действия над выбранным заведением — слот шапки экрана.
+///
+/// Раньше эти кнопки жили полосой внутри панели разбора, под её собственным
+/// заголовком. Кадры 11 и 13 ставят их в шапку экрана, и это правильнее по
+/// существу: приостановить или назначить партнёра — действия над заведением
+/// целиком, а не над той вкладкой, которая сейчас открыта.
+///
+/// Виджет рисует только кнопки: имя заведения показывает шапка панели.
+class ModerationEntityActions extends StatelessWidget {
   final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
   final ValueChanged<String>? onClaim;
   final String establishmentName;
 
-  const _HeaderActionBar({
+  const ModerationEntityActions({
+    super.key,
     this.onSuspend,
     this.onUnsuspend,
     this.onClaim,
     required this.establishmentName,
   });
 
+  /// Кнопка слота шапки: высота 40, r10 — как у соседних контролов.
+  static ButtonStyle _action({Color? color, double borderWidth = 1}) =>
+      OutlinedButton.styleFrom(
+        foregroundColor: color ?? AppTheme.textDark,
+        side: BorderSide(color: color ?? AppTheme.strokeGrey, width: borderWidth),
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+        ),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      );
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFD2D2D2))),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              establishmentName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 10,
+      children: [
           if (onSuspend != null)
             OutlinedButton.icon(
               onPressed: () => _confirmSuspend(context),
               icon: const Icon(Icons.pause_circle_outline, size: 18),
               label: const Text('Приостановить'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFFF9500),
-                side: const BorderSide(color: Color(0xFFFF9500)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-              ),
+              // Янтарный #FF9500 ушёл: в каноне такого оттенка нет, и
+              // проверено — в макете редизайна он не встречается ни разу.
+              // Приостановка — действие с последствиями, её место в
+              // предупреждающем красном канона.
+              style: _action(color: AppTheme.errorRed, borderWidth: 1.5),
             ),
           if (onUnsuspend != null)
             FilledButton.icon(
               onPressed: () => _confirmUnsuspend(context),
               icon: const Icon(Icons.play_circle_outline, size: 18),
               label: const Text('Возобновить'),
+              // Салатовый #3FD00D тоже вне канона. Возобновление — обычное
+              // положительное действие, его цвет — брендовый.
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF3FD00D),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
+                backgroundColor: AppTheme.primaryOrange,
+                foregroundColor: AppTheme.textOnPrimary,
+                elevation: 0,
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusControl),
                 ),
+                textStyle:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
             ),
-          if (onClaim != null) ...[
-            if (onSuspend != null || onUnsuspend != null)
-              const SizedBox(width: 8),
+          if (onClaim != null)
             OutlinedButton.icon(
               onPressed: () => _showClaimDialog(context),
-              icon: const Icon(Icons.person_add_outlined, size: 18),
-              label: const Text('Назначить партнёра'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFF06B32),
-                side: const BorderSide(color: Color(0xFFF06B32)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
+              icon: const Icon(
+                Icons.person_add_outlined,
+                size: 18,
+                color: AppTheme.textSecondary,
               ),
+              label: const Text('Назначить партнёра'),
+              style: _action(),
             ),
-          ],
-        ],
-      ),
+      ],
     );
   }
 
@@ -370,7 +397,7 @@ class _HeaderActionBar extends StatelessWidget {
               onSuspend?.call(reason);
             },
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF9500),
+              backgroundColor: AppTheme.errorRed,
             ),
             child: const Text('Приостановить'),
           ),
@@ -398,7 +425,7 @@ class _HeaderActionBar extends StatelessWidget {
               onUnsuspend?.call();
             },
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF3FD00D),
+              backgroundColor: AppTheme.primaryOrange,
             ),
             child: const Text('Возобновить'),
           ),
@@ -591,67 +618,175 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
 // Rejection Notes Header
 // =============================================================================
 
-class _RejectionNotesHeader extends StatelessWidget {
-  final Map<String, dynamic> notes;
-  const _RejectionNotesHeader({required this.notes});
+/// Шапка панели в режиме чтения — кадры 11 и 13.
+///
+/// Имя крупным дисплейным, под ним строка состояния: точка статуса, статус
+/// словом, город и укороченный идентификатор моноширинным. Id здесь не
+/// украшение — это единственное место, где модератор может его взять, когда
+/// нужно сослаться на карточку в переписке или в журнале.
+class _PanelHeader extends StatelessWidget {
+  final EstablishmentDetail detail;
+
+  const _PanelHeader({required this.detail});
 
   @override
   Widget build(BuildContext context) {
-    final nonEmptyNotes = notes.entries
-        .where((e) => e.value != null && e.value.toString().isNotEmpty)
-        .toList();
+    final segments = <Widget>[
+      Text(
+        StatusDot.labelFor(detail.status),
+        style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+      ),
+      if (detail.city != null)
+        Text(
+          detail.city!,
+          style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+        ),
+      Text(
+        detail.id.split('-').first,
+        style: AppTheme.mono(fontSize: 12, color: AppTheme.textGrey),
+      ),
+    ];
 
-    if (nonEmptyNotes.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            detail.name,
+            style: AppTheme.unbounded(fontSize: 30, height: 1.1),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              StatusDot(detail.status),
+              const SizedBox(width: 8),
+              for (var i = 0; i < segments.length; i++) ...<Widget>[
+                if (i > 0) ...<Widget>[
+                  const SizedBox(width: 8),
+                  const Text('·', style: TextStyle(color: AppTheme.textGrey)),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(child: segments[i]),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Причины отказа — кадр 12.
+///
+/// Белая карточка с красноватой рамкой и тенью: отказ это **событие**, у него
+/// есть время, и выглядеть оно должно как отдельная запись поверх карточки.
+/// Причину приостановки рисует [_SuspensionBlock] — плоской заливкой, потому
+/// что это, наоборот, длящееся состояние.
+///
+/// Сюда переехали комментарии, которые раньше показывались прямо в строках
+/// полей: в режиме чтения строки заменены сеткой значений, и место для
+/// причины осталось только здесь. Сведения не потерялись — они собрались.
+class _RejectionNotesBlock extends StatelessWidget {
+  final Map<String, dynamic> notes;
+
+  const _RejectionNotesBlock({required this.notes});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = notes.entries
+        .where((e) => e.value != null && e.value.toString().trim().isNotEmpty)
+        .toList();
+    if (entries.isEmpty) return const SizedBox.shrink();
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Color(0x0DFF3B30), // subtle red background
-        border: Border(bottom: BorderSide(color: Color(0x33FF3B30))),
+      margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundPrimary,
+        border: Border.all(color: AppTheme.errorRed.withValues(alpha: .35)),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        boxShadow: AppTheme.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.warning_amber_rounded,
-                  size: 20, color: Color(0xFFFF3B30)),
-              SizedBox(width: 8),
-              Text(
+              const Icon(
+                Icons.flag_outlined,
+                size: 18,
+                color: AppTheme.errorRed,
+              ),
+              const SizedBox(width: 8),
+              const Text(
                 'Причины отказа',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFFFF3B30),
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.errorRed.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                ),
+                child: Text(
+                  countWithNoun(entries.length, 'поле', 'поля', 'полей'),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.errorRed,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ...nonEmptyNotes.map((entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('• ',
-                        style: TextStyle(
-                            color: Color(0xFFFF3B30), fontSize: 14)),
-                    Expanded(
-                      child: Text(
-                        '${_fieldLabel(entry.key)}: ${entry.value}',
-                        style: const TextStyle(fontSize: 14),
+          const SizedBox(height: 12),
+          for (final entry in entries)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: AppTheme.borderLight)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 120,
+                    child: Text(
+                      _fieldLabel(entry.key),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      entry.value.toString(),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 
-  /// Map field keys to Russian labels
   String _fieldLabel(String key) {
     const labels = {
       'legal_name': 'Полное название',
@@ -673,6 +808,87 @@ class _RejectionNotesHeader extends StatelessWidget {
   }
 }
 
+/// Причина приостановки — кадр 13.
+///
+/// Плоская заливка disclaimer-парой, без рамки и тени: приостановка это
+/// состояние, в котором заведение находится сейчас, а не событие поверх
+/// карточки. Отсюда и разница с [_RejectionNotesBlock].
+///
+/// Имени модератора в подписи нет, хотя макет его рисует: при приостановке в
+/// `moderation_notes` пишутся только причина и время, автор туда не попадает.
+/// Показывать выдуманное имя нельзя — остаётся время.
+class _SuspensionBlock extends StatelessWidget {
+  final Map<String, dynamic>? notes;
+
+  const _SuspensionBlock({required this.notes});
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = notes?['suspend_reason']?.toString().trim();
+    if (reason == null || reason.isEmpty) return const SizedBox.shrink();
+
+    final raw = notes?['suspended_at'];
+    final stamp = raw == null ? null : DateTime.tryParse(raw.toString());
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: AppTheme.disclaimerBg,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.pause_circle_outline,
+                size: 18,
+                color: AppTheme.disclaimerText,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Причина приостановки',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.disclaimerText,
+                ),
+              ),
+              const Spacer(),
+              if (stamp != null)
+                Text(
+                  _formatStamp(stamp),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.disclaimerText,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            reason,
+            style: const TextStyle(
+              fontSize: 15,
+              color: AppTheme.textDark,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatStamp(DateTime value) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(value.day)}.${two(value.month)}.${value.year}, '
+        '${two(value.hour)}:${two(value.minute)}';
+  }
+}
+
 // =============================================================================
 // Tab 1: Данные
 // =============================================================================
@@ -690,6 +906,8 @@ class _DataTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isReadOnly) return _readOnly();
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
@@ -747,6 +965,48 @@ class _DataTab extends StatelessWidget {
 // Tab 2: О заведении
 // =============================================================================
 
+/// Режим чтения вкладки «Данные» — по кадру 11.
+///
+/// Состав отличается от режима модерации намеренно, и это не расхождение
+/// макета: под модерацией «Данные» означают юридические сведения, которые
+/// проверяют, а у одобренного заведения — сведения о карточке, которые
+/// читают. Поэтому сюда стянуто то, что модерация раскладывает по двум
+/// вкладкам.
+///
+/// Ячейки «Партнёр» из макета здесь нет: проекция детали отдаёт только
+/// `partner_id`, а показывать UUID на экране модератора — тот самый дефект,
+/// ради которого заводится русификация машинных обозначений. Понадобится —
+/// добавлять join к `users` в проекцию, это отдельная работа.
+extension _DataTabReadOnly on _DataTab {
+  Widget _readOnly() => DefinitionGrid(
+        items: <Definition>[
+          Definition(label: 'Название', value: detail.name),
+          Definition(
+            label: 'Категории',
+            value: detail.categories.join(', '),
+          ),
+          Definition(label: 'Кухни', value: detail.cuisines.join(', ')),
+          Definition(label: 'Ценовой диапазон', value: detail.priceRange),
+          Definition(label: 'Телефон', value: detail.phone),
+          Definition(label: 'E-mail', value: detail.email ?? detail.contactEmail),
+          Definition(label: 'Сайт', value: detail.website),
+          Definition(label: 'УНП', value: detail.unp, mono: true),
+          Definition(
+            label: 'Юридическое название',
+            value: detail.legalName,
+          ),
+          Definition(
+            label: 'Регистрация',
+            child: detail.registrationDocUrl != null &&
+                    detail.registrationDocUrl!.isNotEmpty
+                ? _FileLink(detail.registrationDocUrl!)
+                : null,
+            value: detail.registrationDocUrl,
+          ),
+        ],
+      );
+}
+
 class _AboutTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
@@ -760,6 +1020,8 @@ class _AboutTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isReadOnly) return _readOnlyAbout();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -861,6 +1123,37 @@ class _AboutTab extends StatelessWidget {
 // Tab 3: Медиа
 // =============================================================================
 
+/// Режим чтения вкладки «О заведении»: проза, расписание и удобства.
+///
+/// Все три занимают строку целиком — это не пары «подпись/значение», а блоки,
+/// которым узкая колонка вредит.
+extension _AboutTabReadOnly on _AboutTab {
+  Widget _readOnlyAbout() => DefinitionGrid(
+        items: <Definition>[
+          Definition(
+            label: 'Описание',
+            value: detail.description,
+            wide: true,
+          ),
+          Definition(
+            label: 'Часы работы',
+            wide: true,
+            child: _WorkingHoursDisplay(detail.workingHours),
+          ),
+          Definition(
+            label: 'Удобства',
+            wide: true,
+            child: _AttributesDisplay(detail.attributes),
+          ),
+          Definition(
+            label: 'Номер контактного лица',
+            value: detail.contactPerson,
+          ),
+          Definition(label: 'Ценовой диапазон', value: detail.priceRange),
+        ],
+      );
+}
+
 class _MediaTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
@@ -874,6 +1167,8 @@ class _MediaTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isReadOnly) return _readOnlyMedia();
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
@@ -914,6 +1209,36 @@ class _MediaTab extends StatelessWidget {
 // Tab 4: Адрес
 // =============================================================================
 
+/// Режим чтения вкладки «Медиа»: галереи без обёрток вердикта.
+///
+/// Сетку определений сюда не применяем — снимки не пара «подпись/значение»,
+/// и разложить их по двум колонкам значило бы уменьшить вдвое.
+extension _MediaTabReadOnly on _MediaTab {
+  Widget _readOnlyMedia() {
+    final hasPhotos = detail.interiorPhotos.isNotEmpty;
+    final hasMenu = detail.menuMedia.isNotEmpty;
+
+    return ListView(
+      padding: DefinitionGrid.padding,
+      children: <Widget>[
+        const Text('Фото', style: AppTheme.canonFieldLabel),
+        const SizedBox(height: 8),
+        if (hasPhotos)
+          _PhotoGrid(photos: detail.interiorPhotos, title: 'Фото')
+        else
+          const Text('не загружено', style: AppTheme.canonFieldValueEmpty),
+        const SizedBox(height: 20),
+        const Text('Меню', style: AppTheme.canonFieldLabel),
+        const SizedBox(height: 8),
+        if (hasMenu)
+          _PhotoGrid(photos: detail.menuMedia, title: 'Меню')
+        else
+          const Text('не загружено', style: AppTheme.canonFieldValueEmpty),
+      ],
+    );
+  }
+}
+
 class _AddressTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
@@ -933,6 +1258,8 @@ class _AddressTab extends StatelessWidget {
       if (detail.city != null) detail.city!,
       if (detail.address != null) detail.address!,
     ];
+
+    if (isReadOnly) return _readOnlyAddress();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -970,6 +1297,37 @@ class _AddressTab extends StatelessWidget {
 // =============================================================================
 // Map Preview — coordinates + "Open in Yandex Maps" button
 // =============================================================================
+
+/// Режим чтения вкладки «Адрес».
+///
+/// Координаты моноширинным — это величина, а не проза; карта занимает строку
+/// целиком. Правка координат здесь недоступна: у одобренного заведения
+/// адрес уже принят, и менять его мимо модерации нельзя.
+extension _AddressTabReadOnly on _AddressTab {
+  Widget _readOnlyAddress() {
+    final lat = detail.latitude;
+    final lon = detail.longitude;
+
+    return DefinitionGrid(
+      items: <Definition>[
+        Definition(label: 'Город', value: detail.city),
+        Definition(label: 'Адрес', value: detail.address),
+        if (lat != null && lon != null)
+          Definition(
+            label: 'Координаты',
+            value: '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
+            mono: true,
+          ),
+        if (lat != null && lon != null)
+          Definition(
+            label: 'На карте',
+            wide: true,
+            child: _MapPreview(latitude: lat, longitude: lon),
+          ),
+      ],
+    );
+  }
+}
 
 class _MapPreview extends StatelessWidget {
   final double latitude;

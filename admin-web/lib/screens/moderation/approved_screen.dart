@@ -66,6 +66,11 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
           // карточек скелетоном: данные остаются читаемыми.
           busy: provider.isLoadingList && provider.establishments.isNotEmpty,
           actions: <Widget>[
+            // Действия появляются только при выбранном заведении: без выбора
+            // приостанавливать нечего, а серые кнопки без причины читаются
+            // как поломка.
+            if (provider.selectedDetail != null)
+              _EntityActions(provider: provider),
             _SearchField(
               controller: _searchController,
               isSearchMode: provider.isSearchMode,
@@ -325,17 +330,42 @@ class _SearchField extends StatelessWidget {
       );
 }
 
+/// Действия над выбранным заведением в слоте шапки.
+class _EntityActions extends StatelessWidget {
+  final ApprovedProvider provider;
+
+  const _EntityActions({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    // Счётчики очередей берём ДО асинхронного действия: обращаться к
+    // context после await нельзя.
+    final badges = context.read<BadgesProvider>();
+    final isSuspended = provider.selectedDetail?.status == 'suspended';
+
+    return ModerationEntityActions(
+      establishmentName: provider.selectedDetail?.name ?? '',
+      onSuspend: isSuspended
+          ? null
+          : (reason) => provider
+              .suspendEstablishment(reason)
+              .then((ok) => ok ? badges.load() : null),
+      onUnsuspend: isSuspended
+          ? () => provider
+              .unsuspendEstablishment()
+              .then((ok) => ok ? badges.load() : null)
+          : null,
+      onClaim: (userId) => provider.claimEstablishment(userId),
+    );
+  }
+}
+
 class _DetailPanel extends StatelessWidget {
   const _DetailPanel();
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ApprovedProvider>();
-    // Счётчики очередей берём ДО асинхронного действия: обращаться к
-    // context после await нельзя.
-    final badges = context.read<BadgesProvider>();
-
-    // Determine mode based on selected establishment status
     final detail = provider.selectedDetail;
     final isSuspended = detail?.status == 'suspended';
 
@@ -345,19 +375,6 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
-      onSuspend: !isSuspended && detail != null
-          ? (reason) => provider
-              .suspendEstablishment(reason)
-              .then((ok) => ok ? badges.load() : null)
-          : null,
-      onUnsuspend: isSuspended
-          ? () => provider
-              .unsuspendEstablishment()
-              .then((ok) => ok ? badges.load() : null)
-          : null,
-      onClaim: detail != null
-          ? (userId) => provider.claimEstablishment(userId)
-          : null,
     );
   }
 }
