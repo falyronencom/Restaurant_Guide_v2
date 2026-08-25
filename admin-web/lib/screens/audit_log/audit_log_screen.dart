@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
@@ -280,9 +282,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               children: [
                 _dataCell(dateFormat.format(entry.createdAt.toLocal())),
                 _dataCell(entry.summary),
-                _dataCell(
-                  '${entry.entityType}${entry.entityId != null ? '\n${_truncateId(entry.entityId!)}' : ''}',
-                ),
+                _objectCell(entry),
                 _dataCell(entry.adminName ?? entry.adminEmail ?? '—'),
                 InkWell(
                   onTap: () => provider.toggleExpanded(entry.id),
@@ -331,6 +331,54 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           fontSize: 13,
           color: Colors.grey[600],
         ),
+      ),
+    );
+  }
+
+  /// Колонка «Объект»: чем является запись и над чем совершено действие.
+  ///
+  /// Раньше здесь стоял машинный тип (`establishment`) и обрезанный
+  /// идентификатор — для модератора это нечитаемо. Имя заведения при этом
+  /// **уже приходило** в `entity_context` и просто отбрасывалось.
+  ///
+  /// Идентификатор остаётся, но на своём месте: моноширинным и приглушённым
+  /// под именем. Он нужен, когда на запись надо сослаться, — и не должен
+  /// притворяться названием.
+  Widget _objectCell(AuditLogEntry entry) {
+    final ctx = entry.entityContext;
+    final name = ctx?['name'] ?? ctx?['establishment_name'];
+    final typeLabel = auditEntityLabel(entry.entityType);
+    final title = name is String && name.trim().isNotEmpty ? name : typeLabel;
+    final id = entry.entityId;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 14),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          // Тип отдельной строкой только когда заголовок — имя: иначе
+          // получилось бы «Заведение / Заведение».
+          if (title != typeLabel)
+            Text(
+              typeLabel,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          if (id != null)
+            Text(
+              _truncateId(id),
+              style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
+            ),
+        ],
       ),
     );
   }

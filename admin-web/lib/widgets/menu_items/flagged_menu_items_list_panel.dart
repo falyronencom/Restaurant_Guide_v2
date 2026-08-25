@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
@@ -322,7 +323,9 @@ class _FlaggedItemCard extends StatelessWidget {
                     border: Border.all(color: const Color(0xFFFFB800)),
                   ),
                   child: Text(
-                    item.flagSnippet,
+                    // Русская подпись правила вместо кода: модератор читает
+                    // «Цена выше порога», а не price_above_threshold.
+                    sanityFlagLabel(item.sanityReason ?? item.flagSnippet),
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF7A5B00),

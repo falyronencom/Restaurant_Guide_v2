@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
@@ -172,7 +174,7 @@ class MenuItemDetailPanel extends StatelessWidget {
                   size: 18, color: Color(0xFF7A5B00)),
               SizedBox(width: 8),
               Text(
-                'Sanity flag',
+                'Флаг проверки',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -182,18 +184,12 @@ class MenuItemDetailPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          SelectableText(
-            const JsonEncoder.withIndent('  ').convert(item.sanityFlag),
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-              color: Color(0xFF4A3700),
-            ),
-          ),
+          _FlagExplanation(flag: item.sanityFlag!, reason: item.sanityReason),
         ],
       ),
     );
   }
+
 
   Widget _buildHiddenSection(FlaggedMenuItem item) {
     if (!item.isHiddenByAdmin) {
@@ -500,6 +496,81 @@ class _HideDialogState extends State<_HideDialog> {
           ),
           child: const Text('Скрыть'),
         ),
+      ],
+    );
+  }
+}
+
+/// Флаг проверки человеческим языком, с исходной записью под спойлером.
+///
+/// Раньше здесь лежал `JsonEncoder.withIndent`, то есть сырой JSON на экране
+/// модератора. Он честно показывал всё — и ровно поэтому не сообщал ничего:
+/// чтобы понять «price_above_threshold, threshold 1000», нужно знать, что
+/// такое threshold и в чём он измеряется.
+///
+/// Исходная запись не выброшена, а убрана под спойлер. Если правило окажется
+/// незнакомым и фразы для него не найдётся, спойлер раскрыт сразу: непонятное
+/// лучше невидимого.
+class _FlagExplanation extends StatefulWidget {
+  final Map<String, dynamic> flag;
+  final String? reason;
+
+  const _FlagExplanation({required this.flag, required this.reason});
+
+  @override
+  State<_FlagExplanation> createState() => _FlagExplanationState();
+}
+
+class _FlagExplanationState extends State<_FlagExplanation> {
+  late bool _rawVisible = describeSanityFlag(widget.flag) == null;
+
+  @override
+  Widget build(BuildContext context) {
+    final code = widget.reason;
+    final label = code == null ? null : sanityFlagLabel(code);
+    final phrase = describeSanityFlag(widget.flag);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (label != null)
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF4A3700),
+            ),
+          ),
+        if (phrase != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            phrase,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF4A3700)),
+          ),
+        ],
+        const SizedBox(height: 6),
+        InkWell(
+          onTap: () => setState(() => _rawVisible = !_rawVisible),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(
+              _rawVisible ? 'Скрыть исходную запись' : 'Исходная запись',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF7A5B00),
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ),
+        if (_rawVisible) ...[
+          const SizedBox(height: 4),
+          SelectableText(
+            const JsonEncoder.withIndent('  ').convert(widget.flag),
+            style: AppTheme.mono(fontSize: 12, color: const Color(0xFF4A3700)),
+          ),
+        ],
       ],
     );
   }

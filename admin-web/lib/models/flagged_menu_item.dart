@@ -57,6 +57,16 @@ class FlaggedMenuItem {
     );
   }
 
+  /// Код причины из флага — то, что положил `sanityChecker`.
+  ///
+  /// Отдаётся сырым намеренно: переводит его в человеческую подпись
+  /// `moderation_vocabulary.dart`, и делает это одно место, а не модель,
+  /// список и панель по-своему.
+  String? get sanityReason {
+    final reason = sanityFlag?['reason'];
+    return reason is String ? reason : null;
+  }
+
   /// Short human-readable summary of the sanity_flag for list previews.
   String get flagSnippet {
     if (sanityFlag == null || sanityFlag!.isEmpty) return '';

@@ -275,6 +275,17 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
+        WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
+        WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
+        WHEN al.action = 'unhide_menu_item' AND al.entity_type = 'menu_item' THEN 'Показана позиция меню'
+        WHEN al.action = 'dismiss_sanity_flag' AND al.entity_type = 'menu_item' THEN 'Снят флаг с позиции меню'
+        -- Фолбэк намеренно выглядит машинным: он и есть симптом того, что в
+        -- журнал начали писать действие, которого нет в этой карте. Сторож
+        -- ловит такую подпись admin-audit-log-summaries.test.js: он сверяет
+        -- карту с полным списком действий, которые сервисы реально пишут,
+        -- поэтому дрейф обнаружится на гейте, а не на экране модератора.
+        -- Обратных кавычек здесь быть не может: запрос лежит в JS-шаблоне,
+        -- и любая из них оборвёт строку прямо посреди SQL.
         ELSE al.action || ' (' || al.entity_type || ')'
       END as summary,
       CASE
