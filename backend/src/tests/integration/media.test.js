@@ -463,15 +463,19 @@ describe('Media System - Upload Operations', () => {
   describe('Menu photo OCR enqueue (vision_image parity)', () => {
     // Enqueue is fire-and-forget after the upload response — poll briefly
     // instead of asserting immediately (avoids missing-await flakiness).
-    async function pollJobs(establishmentId, expected, timeoutMs = 2000) {
+    // Бюджет 8000, а не 2000 — см. тот же приём в establishments.test.js.
+    async function pollJobs(establishmentId, expected, timeoutMs = 8000) {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
         const res = await pool.query(
           'SELECT media_id, status FROM ocr_jobs WHERE establishment_id = $1',
           [establishmentId],
         );
-        if (res.rows.length >= expected || Date.now() > deadline) {
-          return res.rows;
+        if (res.rows.length >= expected) return res.rows;
+        if (Date.now() > deadline) {
+          throw new Error(
+            `OCR-задачи не появились за ${timeoutMs} мс: ожидалось ${expected}, получено ${res.rows.length}`,
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }

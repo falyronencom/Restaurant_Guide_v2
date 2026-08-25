@@ -140,15 +140,23 @@ describe('Establishments System - Create Establishment', () => {
       (_, i) => `https://res.cloudinary.com/test/image/upload/${prefix}-${i}.jpg`,
     );
 
-    const pollOcrJobs = async (establishmentId, expected, timeoutMs = 2000) => {
+    // Бюджет 8000, а не 2000: на медленном раннере двух секунд может не
+    // хватить. Держится под jest testTimeout (10000), поэтому глобальный
+    // таймаут поднимать не требуется. В счастливом пути цикл выходит сразу.
+    const pollOcrJobs = async (establishmentId, expected, timeoutMs = 8000) => {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
         const jobs = await query(
           'SELECT media_id FROM ocr_jobs WHERE establishment_id = $1',
           [establishmentId],
         );
-        if (jobs.rows.length >= expected || Date.now() > deadline) {
-          return jobs.rows;
+        if (jobs.rows.length >= expected) return jobs.rows;
+        if (Date.now() > deadline) {
+          // Падать честно, а не возвращать неполный результат: иначе истёкшее
+          // время выглядит как дефект постановки OCR в очередь.
+          throw new Error(
+            `OCR-задачи не появились за ${timeoutMs} мс: ожидалось ${expected}, получено ${jobs.rows.length}`,
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }

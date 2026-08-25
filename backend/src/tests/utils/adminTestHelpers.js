@@ -195,8 +195,13 @@ export async function checkAuditLogExists(entityId, action) {
       [entityId, action],
     );
     return result.rows.length > 0;
-  } catch {
-    // audit_log table may not be deployed in the test database
-    return null;
+  } catch (error) {
+    // Только «таблицы не существует» (Postgres 42P01) означает «audit_log не
+    // развёрнут» и даёт null — трёхзначный контракт, на который опираются
+    // вызывающие через `if (auditExists !== null)`. ЛЮБАЯ другая ошибка БД
+    // (обрыв соединения, права, опечатка в SQL) обязана падать громко: иначе
+    // она молча выключит все проверки аудита, и они «пройдут».
+    if (error && error.code === '42P01') return null;
+    throw error;
   }
 }
