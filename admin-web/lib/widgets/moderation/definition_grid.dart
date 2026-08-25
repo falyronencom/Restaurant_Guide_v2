@@ -55,32 +55,43 @@ class DefinitionGrid extends StatelessWidget {
       padding: padding,
       children: <Widget>[
         for (var i = 0; i < rows.length; i++)
-          // IntrinsicHeight обязателен: без него `stretch` внутри ListView
-          // получает бесконечную высоту и падает на раскладке. Он же
-          // выравнивает разделители соседних ячеек, когда подписи разной
-          // длины переносятся по-разному. Дорогим он здесь не будет —
-          // в ячейках только текст.
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (var column = 0; column < 2; column++) ...<Widget>[
-                  if (column == 1) const SizedBox(width: columnGap),
-                  Expanded(
-                    child: column < rows[i].length
-                        ? _Cell(
-                            item: rows[i][column],
-                            divided: i < rows.length - 1,
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+          if (_isWideRow(rows[i]))
+            // Широкая ячейка ставится БЕЗ Row: обёртка из двух `Expanded`
+            // отдала бы половину ширины пустышке во второй колонке, и ячейка
+            // вышла бы ровно такой же, как обычная, — то есть широкой только
+            // на словах. Заодно не нужен и IntrinsicHeight: выравнивать не с
+            // чем, строка одна.
+            _Cell(item: rows[i].first, divided: i < rows.length - 1)
+          else
+            // IntrinsicHeight обязателен: без него `stretch` внутри ListView
+            // получает бесконечную высоту и падает на раскладке. Он же
+            // выравнивает разделители соседних ячеек, когда подписи разной
+            // длины переносятся по-разному. Дорогим он здесь не будет —
+            // в ячейках только текст.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (var column = 0; column < 2; column++) ...<Widget>[
+                    if (column == 1) const SizedBox(width: columnGap),
+                    Expanded(
+                      child: column < rows[i].length
+                          ? _Cell(
+                              item: rows[i][column],
+                              divided: i < rows.length - 1,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
       ],
     );
   }
+
+  static bool _isWideRow(List<Definition> row) =>
+      row.length == 1 && row.first.wide;
 
   /// Раскладка по строкам. Широкая ячейка занимает строку целиком, поэтому
   /// её нельзя просто сложить в поток по две.

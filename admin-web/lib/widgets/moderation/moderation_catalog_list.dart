@@ -354,9 +354,13 @@ class ModerationCatalogCard extends StatelessWidget {
     );
   }
 
+  /// Дата в местном времени. Метки приходят с бэкенда в UTC (`toISOString`),
+  /// и без перевода карточка показывала бы вчерашнее число для всего, что
+  /// произошло после 21:00 по Минску.
   static String _formatDate(DateTime value) {
+    final local = value.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(value.day)}.${two(value.month)}.${value.year}';
+    return '${two(local.day)}.${two(local.month)}.${local.year}';
   }
 }
 

@@ -66,10 +66,16 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
           // карточек скелетоном: данные остаются читаемыми.
           busy: provider.isLoadingList && provider.establishments.isNotEmpty,
           actions: <Widget>[
-            // Действия появляются только при выбранном заведении: без выбора
-            // приостанавливать нечего, а серые кнопки без причины читаются
-            // как поломка.
-            if (provider.selectedDetail != null)
+            // Действия появляются только при загруженной детали выбранного
+            // заведения. Проверять один `selectedDetail` мало: провайдер не
+            // обнуляет прежнюю деталь на время загрузки новой, поэтому между
+            // кликом и ответом `selectedId` уже новый, а деталь ещё старая —
+            // и кнопка, собранная по старой, сработала бы по новому id.
+            // Панель от этого защищена своими же ранними возвратами, слот
+            // шапки — нет, и защиту приходится повторить здесь.
+            if (provider.selectedDetail != null &&
+                !provider.isLoadingDetail &&
+                provider.detailError == null)
               _EntityActions(provider: provider),
             _SearchField(
               controller: _searchController,

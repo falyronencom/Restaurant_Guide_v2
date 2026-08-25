@@ -106,6 +106,14 @@ void main() {
         tester.getRect(find.text('Телефон')).top,
         greaterThan(tester.getRect(find.text('Описание')).top),
       );
+
+      // И — главное — она действительно ШИРЕ обычной, а не просто стоит
+      // одна в строке. Проверка по соседству это пропускала: обёртка из
+      // двух Expanded отдавала половину ширины пустышке, и «широкая» ячейка
+      // выходила ровно такой же, как рядовая.
+      final wide = tester.getRect(find.byType(Container).at(0)).width;
+      final normal = tester.getRect(find.byType(Container).at(1)).width;
+      expect(wide, greaterThan(normal * 1.8));
     });
 
     testWidgets('пустое значение называется «не указан», а не прячется',
@@ -219,8 +227,23 @@ void main() {
 
       expect(find.text('Причина приостановки'), findsOneWidget);
       expect(find.text('Жалобы на санитарное состояние кухни'), findsOneWidget);
-      expect(find.textContaining('07.08.2026'), findsOneWidget);
       expect(find.text('приостановлено'), findsOneWidget);
+
+      // Время — местное, а не UTC. Ожидание считается тем же переводом,
+      // поэтому на машине в UTC (как в CI) проверка тавтологична и пройдёт
+      // всегда; смысл она имеет там, где разработка и идёт — на UTC+3, где
+      // без `.toLocal()` метка уезжает на три часа, а всё после 21:00 ещё и
+      // на вчерашнее число.
+      final local = DateTime.parse('2026-08-07T11:40:00.000Z').toLocal();
+      String two(int n) => n.toString().padLeft(2, '0');
+      expect(
+        find.textContaining('${two(local.day)}.${two(local.month)}'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('${two(local.hour)}:${two(local.minute)}'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('без причины блок не появляется', (tester) async {

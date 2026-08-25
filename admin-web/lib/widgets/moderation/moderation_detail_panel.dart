@@ -635,15 +635,21 @@ class _PanelHeader extends StatelessWidget {
       Text(
         StatusDot.labelFor(detail.status),
         style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       if (detail.city != null)
         Text(
           detail.city!,
           style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       Text(
         detail.id.split('-').first,
         style: AppTheme.mono(fontSize: 12, color: AppTheme.textGrey),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     ];
 
@@ -827,8 +833,13 @@ class _SuspensionBlock extends StatelessWidget {
     final reason = notes?['suspend_reason']?.toString().trim();
     if (reason == null || reason.isEmpty) return const SizedBox.shrink();
 
+    // `.toLocal()` обязателен: бэкенд пишет метку через toISOString(), то
+    // есть в UTC, и чтение `.day`/`.hour` прямо с неё показало бы время на
+    // три часа раньше — а всё, что приостановлено после 21:00, ещё и
+    // вчерашним числом. В остальной админке это уже делается так же.
     final raw = notes?['suspended_at'];
-    final stamp = raw == null ? null : DateTime.tryParse(raw.toString());
+    final stamp =
+        raw == null ? null : DateTime.tryParse(raw.toString())?.toLocal();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
@@ -1146,12 +1157,37 @@ extension _AboutTabReadOnly on _AboutTab {
             child: _AttributesDisplay(detail.attributes),
           ),
           Definition(
+            label: 'Время дополнительного меню',
+            value: _specialHoursSummary(detail.specialHours),
+            wide: true,
+          ),
+          Definition(
             label: 'Номер контактного лица',
             value: detail.contactPerson,
           ),
           Definition(label: 'Ценовой диапазон', value: detail.priceRange),
         ],
       );
+}
+
+/// Особые часы одной строкой: «завтрак 08:00–11:00 · бизнес-ланч 12:00–16:00».
+///
+/// В режиме модерации их показывает отдельная строка поля; в чтении они
+/// сжимаются в одну ячейку — иначе на экране, где решать нечего, расписание
+/// занимало бы места больше, чем заслуживает.
+String? _specialHoursSummary(Map<String, dynamic>? hours) {
+  if (hours == null || hours.isEmpty) return null;
+
+  final parts = <String>[];
+  for (final entry in hours.entries) {
+    final value = entry.value;
+    if (value is Map && value['start'] != null && value['end'] != null) {
+      parts.add('${entry.key} ${value['start']}–${value['end']}');
+    } else if (value != null && value.toString().trim().isNotEmpty) {
+      parts.add('${entry.key} $value');
+    }
+  }
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 class _MediaTab extends StatelessWidget {
