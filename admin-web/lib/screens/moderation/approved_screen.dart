@@ -116,9 +116,21 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
                 perPage: _perPage,
-                onPageChanged: (page) => context
-                    .read<ApprovedProvider>()
-                    .loadActiveEstablishments(page: page),
+                // Ветвление обязательно: в режиме поиска перелистывание
+                // через loadActiveEstablishments сбросило бы поиск и молча
+                // вернуло каталог — страница сменилась бы, а список стал бы
+                // отвечать на другой вопрос.
+                onPageChanged: (page) {
+                  final approved = context.read<ApprovedProvider>();
+                  if (provider.isSearchMode) {
+                    approved.searchEstablishments(
+                      provider.searchQuery,
+                      page: page,
+                    );
+                  } else {
+                    approved.loadActiveEstablishments(page: page);
+                  }
+                },
               ),
               const Expanded(child: _DetailPanel()),
             ],

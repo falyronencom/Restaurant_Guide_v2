@@ -94,7 +94,10 @@ class ApprovedProvider extends ChangeNotifier {
   }
 
   /// Search across all statuses
-  Future<void> searchEstablishments(String query) async {
+  /// Поиск по всем статусам. Страница обязана прокидываться: сервис её
+  /// принимает, и без неё футер показывал бы номера страниц, на которые
+  /// невозможно перейти.
+  Future<void> searchEstablishments(String query, {int page = 1}) async {
     if (query.trim().isEmpty) {
       clearSearch();
       return;
@@ -110,6 +113,7 @@ class ApprovedProvider extends ChangeNotifier {
       final result = await _service.searchEstablishments(
         search: query,
         city: _cityFilter,
+        page: page,
       );
 
       _establishments = result.establishments;
@@ -238,7 +242,7 @@ class ApprovedProvider extends ChangeNotifier {
       notifyListeners();
 
       if (_isSearchMode) {
-        searchEstablishments(_searchQuery);
+        searchEstablishments(_searchQuery, page: _currentPage);
       } else {
         loadActiveEstablishments(page: _currentPage);
       }
