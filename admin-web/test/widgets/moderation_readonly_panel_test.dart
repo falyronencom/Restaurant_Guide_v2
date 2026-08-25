@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
+import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/definition_grid.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
 
 // Режим чтения панели разбора — кадры 11–13. У одобренного заведения решать
 // нечего, поэтому строки полей с вердиктами заменены сеткой значений, а имя,
@@ -36,8 +38,9 @@ Future<void> _pumpPanel(
   required DetailPanelMode mode,
   EstablishmentDetail? detail,
   Map<String, dynamic>? rejectionNotes,
+  Size size = const Size(1440, 820),
 }) async {
-  tester.view.physicalSize = const Size(1440, 820);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -253,6 +256,77 @@ void main() {
         detail: _detail(status: 'suspended'),
       );
       expect(find.text('Причина приостановки'), findsNothing);
+    });
+  });
+
+  // Режим чтения до строк полей не доходит: каждая вкладка возвращает сетку
+  // определений раньше. Это и есть причина, по которой у строки поля больше
+  // нет ветки «только чтение» — параметр, который её кормил, был недостижим.
+  // Тест держит сам инвариант, а не его следствие: пропадёт ранний возврат
+  // из вкладки — строки с вердикт-кнопками вылезут на экран, где решать
+  // нечего. Соседний тест «вердикт-кнопок и нижней панели нет» проверяет
+  // только подписи нижней панели и такую поломку не заметил бы.
+  group('Строк полей в режиме чтения нет', () {
+    testWidgets('ни на одной из четырёх вкладок', (tester) async {
+      await _pumpPanel(tester, mode: DetailPanelMode.readonly);
+
+      for (var i = 0; i < kModerationTabTitles.length; i++) {
+        await tester.tap(find.byType(Tab).at(i));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(ModerationFieldReview),
+          findsNothing,
+          reason: 'вкладка «${kModerationTabTitles[i]}» показала строку поля',
+        );
+      }
+    });
+  });
+
+  // «Ничего не пропало с экрана» в исполняемом виде.
+  //
+  // Причины отказа раньше показывались в строке поля, теперь — одним блоком
+  // над вкладками. Блок перебирает всю карту и подписывает ключ словарём, а
+  // незнакомый ключ выводит СЫРЫМ: это ровно тот дефект, ради которого
+  // заводится русификация машинных обозначений на экранах модератора.
+  //
+  // Источник истины по составу ключей — [kModerationTabFields], тот же
+  // список, по которому считается прогресс проверки: новое модерируемое поле
+  // обязано попасть в него, иначе счётчик вкладки соврёт. Поэтому канон
+  // здесь не дублируется списком-копией, как в anti-drift тестах web, где
+  // общего источника между целями нет.
+  group('Причины отказа: ни один ключ не теряется', () {
+    testWidgets('каждый ключ канона подписан по-русски', (tester) async {
+      final keys = kModerationTabFields.expand((f) => f).toList();
+      final notes = <String, dynamic>{
+        for (final key in keys) key: 'причина по полю $key',
+      };
+
+      await _pumpPanel(
+        tester,
+        mode: DetailPanelMode.readonly,
+        rejectionNotes: notes,
+        // Четырнадцать причин в 820 не помещаются, а панель — Column с
+        // Expanded под вкладками: не хватит высоты — будет overflow, а не
+        // осмысленный отказ.
+        size: const Size(1440, 2200),
+      );
+
+      for (final key in keys) {
+        expect(
+          find.text('причина по полю $key'),
+          findsOneWidget,
+          reason: 'причина по «$key» не доехала до блока',
+        );
+        // find.text сверяет data целиком, поэтому подстрока в тексте самой
+        // причины сюда не попадает — совпадение означает именно подпись.
+        expect(
+          find.text(key),
+          findsNothing,
+          reason: 'ключ «$key» показан модератору сырым: '
+              'нет подписи в _fieldLabel',
+        );
+      }
     });
   });
 }

@@ -16,6 +16,11 @@ import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 /// итоге стоит на 24 от края панели, а заливка — на 12. Отрицательных
 /// отступов, как в вёрстке, во Flutter не бывает: `Container.margin` их
 /// запрещает.
+///
+/// Строка живёт только в режиме модерации. В режиме чтения вкладки панели
+/// возвращают сетку определений, не доходя до списка строк, а причины отказа
+/// собраны в блок над вкладками — поэтому вердикт-группа здесь безусловна, и
+/// ветки «только чтение» у строки нет.
 class ModerationFieldReview extends StatelessWidget {
   final String fieldName;
   final String label;
@@ -24,41 +29,23 @@ class ModerationFieldReview extends StatelessWidget {
   /// Значение поля. Рамок у него быть не должно — рамка означает ввод.
   final Widget child;
 
-  final bool isReadOnly;
-  final String? readOnlyComment;
-
   const ModerationFieldReview({
     super.key,
     required this.fieldName,
     required this.label,
     this.isRequired = false,
     required this.child,
-    this.isReadOnly = false,
-    this.readOnlyComment,
   });
 
   @override
   Widget build(BuildContext context) {
-    FieldReviewState? state;
-    Color? background;
-    String? comment;
-
-    if (isReadOnly) {
-      comment = readOnlyComment;
-      // Комментарий в режиме чтения бывает только у отклонённого поля —
-      // это причина отказа, ушедшая партнёру.
-      if (comment != null && comment.isNotEmpty) {
-        background = AppTheme.errorTint(0.06);
-      }
-    } else {
-      state = context.watch<ModerationProvider>().getFieldState(fieldName);
-      comment = state.comment;
-      background = switch (state.status) {
-        FieldReviewStatus.approved => AppTheme.successTint(0.06),
-        FieldReviewStatus.rejected => AppTheme.errorTint(0.06),
-        _ => null,
-      };
-    }
+    final state = context.watch<ModerationProvider>().getFieldState(fieldName);
+    final comment = state.comment;
+    final background = switch (state.status) {
+      FieldReviewStatus.approved => AppTheme.successTint(0.06),
+      FieldReviewStatus.rejected => AppTheme.errorTint(0.06),
+      _ => null,
+    };
 
     final hasComment = comment != null && comment.isNotEmpty;
 
@@ -88,7 +75,11 @@ class ModerationFieldReview extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (!isReadOnly) _VerdictGroup(fieldName: fieldName, label: label, state: state!),
+                  _VerdictGroup(
+                    fieldName: fieldName,
+                    label: label,
+                    state: state,
+                  ),
                 ],
               ),
               if (hasComment) ...[

@@ -166,22 +166,18 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
               _DataTab(
                 detail: detail,
                 isReadOnly: isReadOnly,
-                rejectionNotes: widget.rejectionNotes,
               ),
               _AboutTab(
                 detail: detail,
                 isReadOnly: isReadOnly,
-                rejectionNotes: widget.rejectionNotes,
               ),
               _MediaTab(
                 detail: detail,
                 isReadOnly: isReadOnly,
-                rejectionNotes: widget.rejectionNotes,
               ),
               _AddressTab(
                 detail: detail,
                 isReadOnly: isReadOnly,
-                rejectionNotes: widget.rejectionNotes,
                 onUpdateCoordinates: (lat, lon) {
                   context.read<ModerationProvider>().updateCoordinates(lat, lon);
                 },
@@ -907,12 +903,10 @@ class _SuspensionBlock extends StatelessWidget {
 class _DataTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
-  final Map<String, dynamic>? rejectionNotes;
 
   const _DataTab({
     required this.detail,
     this.isReadOnly = false,
-    this.rejectionNotes,
   });
 
   @override
@@ -926,24 +920,18 @@ class _DataTab extends StatelessWidget {
           fieldName: 'legal_name',
           label: 'Полное название заведения',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('legal_name'),
           child: _FieldValue(detail.legalName ?? detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'unp',
           label: 'УНП',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('unp'),
           child: _FieldValue(detail.unp),
         ),
         ModerationFieldReview(
           fieldName: 'registration_doc',
           label: 'Регистрация',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('registration_doc'),
           child: detail.registrationDocUrl != null &&
                   detail.registrationDocUrl!.isNotEmpty
               ? _FileLink(detail.registrationDocUrl!)
@@ -953,23 +941,17 @@ class _DataTab extends StatelessWidget {
           fieldName: 'contact_person',
           label: 'Номер контактного лица',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('contact_person'),
           child: _FieldValue(detail.contactPerson ?? detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'contact_email',
           label: 'E-mail',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('contact_email'),
           child: _FieldValue(detail.contactEmail ?? detail.email),
         ),
       ],
     );
   }
-
-  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -1021,12 +1003,10 @@ extension _DataTabReadOnly on _DataTab {
 class _AboutTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
-  final Map<String, dynamic>? rejectionNotes;
 
   const _AboutTab({
     required this.detail,
     this.isReadOnly = false,
-    this.rejectionNotes,
   });
 
   @override
@@ -1041,8 +1021,6 @@ class _AboutTab extends StatelessWidget {
           fieldName: 'description',
           label: 'Описание',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('description'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1065,39 +1043,29 @@ class _AboutTab extends StatelessWidget {
           fieldName: 'name',
           label: 'Название',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('name'),
           child: _FieldValue(detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'customer_phone',
           label: 'Номер для связи с клиентом',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('customer_phone'),
           child: _FieldValue(detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'website',
           label: 'Ссылка на соц. сеть/сайт',
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('website'),
           child: _FieldValue(detail.website),
         ),
         ModerationFieldReview(
           fieldName: 'working_hours',
           label: 'Время работы',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('working_hours'),
           child: _WorkingHoursDisplay(detail.workingHours),
         ),
         ModerationFieldReview(
           fieldName: 'price_range',
           label: 'Средний чек',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('price_range'),
           child: _FieldValue(detail.priceRange),
         ),
 
@@ -1126,8 +1094,6 @@ class _AboutTab extends StatelessWidget {
       ],
     );
   }
-
-  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -1193,12 +1159,10 @@ String? _specialHoursSummary(Map<String, dynamic>? hours) {
 class _MediaTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
-  final Map<String, dynamic>? rejectionNotes;
 
   const _MediaTab({
     required this.detail,
     this.isReadOnly = false,
-    this.rejectionNotes,
   });
 
   @override
@@ -1212,8 +1176,6 @@ class _MediaTab extends StatelessWidget {
           fieldName: 'photos',
           label: 'Фото',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('photos'),
           child: detail.interiorPhotos.isNotEmpty
               ? _PhotoGrid(photos: detail.interiorPhotos, title: 'Фото')
               : const Text(
@@ -1225,8 +1187,6 @@ class _MediaTab extends StatelessWidget {
           fieldName: 'menu',
           label: 'Меню',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('menu'),
           child: detail.menuMedia.isNotEmpty
               ? _PhotoGrid(photos: detail.menuMedia, title: 'Меню')
               : const Text(
@@ -1237,8 +1197,6 @@ class _MediaTab extends StatelessWidget {
       ],
     );
   }
-
-  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
@@ -1278,13 +1236,11 @@ extension _MediaTabReadOnly on _MediaTab {
 class _AddressTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
-  final Map<String, dynamic>? rejectionNotes;
   final void Function(double latitude, double longitude)? onUpdateCoordinates;
 
   const _AddressTab({
     required this.detail,
     this.isReadOnly = false,
-    this.rejectionNotes,
     this.onUpdateCoordinates,
   });
 
@@ -1304,8 +1260,6 @@ class _AddressTab extends StatelessWidget {
           fieldName: 'address',
           label: 'Адрес',
           isRequired: true,
-          isReadOnly: isReadOnly,
-          readOnlyComment: _note('address'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1326,8 +1280,6 @@ class _AddressTab extends StatelessWidget {
       ],
     );
   }
-
-  String? _note(String key) => rejectionNotes?[key]?.toString();
 }
 
 // =============================================================================
