@@ -37,6 +37,71 @@ String formatDateLocal(DateTime value) {
   return '${two(local.day)}.${two(local.month)}.${local.year}';
 }
 
+/// Месяцы в родительном падеже — «14 июля», а не «14 июль».
+///
+/// Список написан руками, а не взят у `DateFormat('d MMMM', 'ru')`, по двум
+/// причинам. Первая: данные локали в `intl` подгружает
+/// `GlobalMaterialLocalizations` при старте приложения, и в виджет-тесте, где
+/// делегатов нет, тот же вызов бросает `LocaleDataException` — проверено.
+/// Вторая: `MMMM` отдаёт форму месяца вне контекста даты, и «14 июль» здесь
+/// вероятнее «14 июля».
+const List<String> _monthsGenitive = <String>[
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
+/// День и месяц в местном времени: «14 июля».
+///
+/// Год добавляется, только когда он отличается от текущего: в журнале за
+/// последние 30 дней «14 июля 2026» — лишний шум, а вот «14 июля» у записи
+/// позапрошлого года — прямая дезинформация.
+String formatDayMonthLocal(DateTime value, {DateTime? now}) {
+  final local = value.toLocal();
+  final currentYear = (now ?? DateTime.now()).toLocal().year;
+  final base = '${local.day} ${_monthsGenitive[local.month - 1]}';
+  return local.year == currentYear ? base : '$base ${local.year}';
+}
+
+/// Время в местном времени: «09:41».
+String formatTimeLocal(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}';
+}
+
+/// Сколько прошло: «только что», «4 минуты назад», «2 часа назад», «3 дня назад».
+///
+/// Отрицательная разница (часы клиента убежали вперёд) читается как «только
+/// что»: «−2 минуты назад» сообщало бы о неисправности часов, а не о журнале.
+String formatRelativePast(DateTime value, {DateTime? now}) {
+  final elapsed = (now ?? DateTime.now()).difference(value);
+
+  if (elapsed.inMinutes < 1) return 'только что';
+
+  if (elapsed.inHours < 1) {
+    final minutes = elapsed.inMinutes;
+    return '$minutes ${plural(minutes, 'минуту', 'минуты', 'минут')} назад';
+  }
+
+  if (elapsed.inDays < 1) {
+    final hours = elapsed.inHours;
+    return '$hours ${plural(hours, 'час', 'часа', 'часов')} назад';
+  }
+
+  final days = elapsed.inDays;
+  return '$days ${plural(days, 'день', 'дня', 'дней')} назад';
+}
+
 /// Склонение существительного при числе.
 ///
 /// [one] — 1 действие, [few] — 2 действия, [many] — 5 действий.

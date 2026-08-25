@@ -59,6 +59,54 @@ const Map<String, String> kAuditActions = <String, String>{
   'upgrade_user_to_partner': 'Повышение до партнёра',
 };
 
+/// Что действие сделало с доступностью объекта.
+///
+/// Точка слева от подписи в журнале кодирует **направление ограничения**, а
+/// не одобрение поступка. Приостановка не «плохая» — она ограничивающая;
+/// передача заведения партнёру не «хорошая» — она ничего не открывает и не
+/// закрывает. Такая шкала читается сканирующим взглядом: красное отняло,
+/// зелёное вернуло, серое переписало данные.
+enum AuditActionTone {
+  /// Впустило в каталог или сняло ограничение.
+  allowing,
+
+  /// Отклонило, скрыло, приостановило, удалило.
+  restricting,
+
+  /// Правка, не менявшая доступность.
+  neutral,
+}
+
+/// Направление каждого действия журнала.
+///
+/// Набор ключей обязан совпадать с [kAuditActions] ключ в ключ, и это
+/// проверяется тестом: действие без тона получило бы серую точку молча, а
+/// молчаливый серый неотличим от осознанного серого у правки координат.
+const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>{
+  'moderate_approve': AuditActionTone.allowing,
+  'moderate_reject': AuditActionTone.restricting,
+  'suspend': AuditActionTone.restricting,
+  'unsuspend': AuditActionTone.allowing,
+  'claim_establishment': AuditActionTone.neutral,
+  'admin_update_coordinates': AuditActionTone.neutral,
+  'admin_update_slug': AuditActionTone.neutral,
+  'review_hide': AuditActionTone.restricting,
+  'review_show': AuditActionTone.allowing,
+  'review_delete': AuditActionTone.restricting,
+  'hide_menu_item': AuditActionTone.restricting,
+  'unhide_menu_item': AuditActionTone.allowing,
+  // Снятие флага ничего не открывает: помеченная позиция и так была видна
+  // партнёру и в каталоге — флаг звал модератора посмотреть, а не прятал.
+  'dismiss_sanity_flag': AuditActionTone.neutral,
+  // Повышение до партнёра меняет права человека, а не доступность объекта.
+  'upgrade_user_to_partner': AuditActionTone.neutral,
+};
+
+/// Направление действия. Незнакомое — нейтральное: выдумывать ему цвет
+/// нельзя, а подпись рядом всё равно останется машинной и выдаст дрейф.
+AuditActionTone auditActionTone(String action) =>
+    kAuditActionTones[action] ?? AuditActionTone.neutral;
+
 // ============================================================================
 // Флаги проверки позиций меню
 // ============================================================================

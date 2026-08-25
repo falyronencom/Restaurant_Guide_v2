@@ -56,6 +56,31 @@ void main() {
         },
       );
     });
+
+    test('у каждого действия есть направление', () {
+      // Здесь набор НЕ дублируется намеренно, в отличие от проверки выше:
+      // обе карты живут в одном файле, и сверять их друг с другом честнее,
+      // чем со списком-копией. Действие без направления получило бы серую
+      // точку молча, а молчаливый серый неотличим от осознанного серого у
+      // правки координат.
+      expect(kAuditActionTones.keys.toSet(), kAuditActions.keys.toSet());
+    });
+
+    test('направление отражает ограничение, а не одобрение поступка', () {
+      expect(auditActionTone('moderate_approve'), AuditActionTone.allowing);
+      expect(auditActionTone('unsuspend'), AuditActionTone.allowing);
+      expect(auditActionTone('review_hide'), AuditActionTone.restricting);
+      expect(auditActionTone('suspend'), AuditActionTone.restricting);
+      // Передача заведения партнёру — не награда и не наказание: доступность
+      // объекта она не меняет.
+      expect(auditActionTone('claim_establishment'), AuditActionTone.neutral);
+      expect(
+        auditActionTone('admin_update_coordinates'),
+        AuditActionTone.neutral,
+      );
+      // Незнакомому действию цвет не выдумывается.
+      expect(auditActionTone('payment_refund'), AuditActionTone.neutral);
+    });
   });
 
   group('Флаги проверки позиций меню', () {

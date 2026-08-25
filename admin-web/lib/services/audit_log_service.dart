@@ -21,6 +21,7 @@ class AuditLogService {
     int page = 1,
     int perPage = 20,
     String? action,
+    String? entityType,
     DateTime? from,
     DateTime? to,
   }) async {
@@ -29,8 +30,21 @@ class AuditLogService {
       'per_page': perPage,
     };
     if (action != null && action.isNotEmpty) queryParams['action'] = action;
-    if (from != null) queryParams['from'] = from.toIso8601String();
-    if (to != null) queryParams['to'] = to.toIso8601String();
+    // Фильтр по типу объекта эндпоинт принимал с самого начала — на клиенте
+    // его просто не было, как не было и имени заведения в колонке «Объект».
+    if (entityType != null && entityType.isNotEmpty) {
+      queryParams['entity_type'] = entityType;
+    }
+    // Границы уходят в UTC, а не в местном времени.
+    //
+    // `created_at` в `audit_log` — `timestamp without time zone`, и хранится
+    // там стенное время UTC (сервер БД живёт в `Etc/UTC`). Местный
+    // `toIso8601String()` даёт строку БЕЗ `Z`, Postgres берёт её как есть, и
+    // минское стенное время сравнивается с UTC-стенным — окно съезжает на три
+    // часа. С суффиксом `Z` Postgres при касте в `timestamp` отбрасывает зону
+    // и берёт ровно UTC-поля, что хранению и соответствует.
+    if (from != null) queryParams['from'] = from.toUtc().toIso8601String();
+    if (to != null) queryParams['to'] = to.toUtc().toIso8601String();
 
     final response = await _apiClient.get(
       '/api/v1/admin/audit-log',
