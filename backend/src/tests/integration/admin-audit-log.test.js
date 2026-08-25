@@ -34,7 +34,6 @@ import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
   createTestReview,
-  checkAuditLogExists,
 } from '../utils/adminTestHelpers.js';
 
 const BASE_URL = '/api/v1/admin/audit-log';
@@ -45,7 +44,6 @@ let userToken; // non-admin, for 403 tests
 let approvedEstablishmentId;
 let rejectedEstablishmentId;
 let testReviewId;
-let auditLogAvailable; // null if table absent, true/false if present
 
 beforeAll(async () => {
   // Admin user
@@ -97,12 +95,6 @@ beforeAll(async () => {
     .post(`/api/v1/admin/reviews/${testReviewId}/toggle-visibility`)
     .set('Authorization', `Bearer ${adminToken}`);
 
-  // Allow non-blocking audit log writes to complete
-  await new Promise(r => setTimeout(r, 500));
-
-  // Probe audit_log availability
-  const probe = await checkAuditLogExists(approvedEstablishmentId, 'moderate_approve');
-  auditLogAvailable = probe !== null;
 });
 
 afterAll(async () => {
@@ -166,7 +158,6 @@ describe('GET /api/v1/admin/audit-log (#17) — basic response', () => {
   });
 
   test('returns audit log entries created by moderation actions', async () => {
-    if (!auditLogAvailable) return; // skip if table not deployed
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -183,7 +174,6 @@ describe('GET /api/v1/admin/audit-log (#17) — basic response', () => {
 
 describe('GET /api/v1/admin/audit-log — entry schema', () => {
   test('each entry has required fields: id, action, entity_type, entity_id, created_at', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -200,7 +190,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
   });
 
   test('each entry has admin_name, admin_email (joined from users), and summary', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -214,7 +203,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
   });
 
   test('each entry has old_data and new_data (may be null)', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -227,7 +215,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
   });
 
   test('without include_metadata — ip_address and user_agent are NOT in entries', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -241,7 +228,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
   });
 
   test('?include_metadata=true — entries include ip_address and user_agent', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?include_metadata=true`)
@@ -255,7 +241,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
   });
 
   test('moderate_approve entry has correct action and entity_type', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?action=moderate_approve`)
@@ -275,7 +260,6 @@ describe('GET /api/v1/admin/audit-log — entry schema', () => {
 
 describe('GET /api/v1/admin/audit-log — sort order', () => {
   test('default sort is newest first (DESC by created_at)', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(BASE_URL)
@@ -290,7 +274,6 @@ describe('GET /api/v1/admin/audit-log — sort order', () => {
   });
 
   test('?sort=oldest — entries are ascending by created_at', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?sort=oldest`)
@@ -305,7 +288,6 @@ describe('GET /api/v1/admin/audit-log — sort order', () => {
   });
 
   test('sort=newest and sort=oldest return the same total count', async () => {
-    if (!auditLogAvailable) return;
 
     const [newestRes, oldestRes] = await Promise.all([
       request(app).get(`${BASE_URL}?sort=newest`).set('Authorization', `Bearer ${adminToken}`),
@@ -322,7 +304,6 @@ describe('GET /api/v1/admin/audit-log — sort order', () => {
 
 describe('GET /api/v1/admin/audit-log — filters', () => {
   test('?action=moderate_approve — returns only approve entries', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?action=moderate_approve`)
@@ -335,7 +316,6 @@ describe('GET /api/v1/admin/audit-log — filters', () => {
   });
 
   test('?action=moderate_reject — returns only reject entries', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?action=moderate_reject`)
@@ -348,7 +328,6 @@ describe('GET /api/v1/admin/audit-log — filters', () => {
   });
 
   test('?entity_type=establishment — returns only establishment entries', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?entity_type=establishment`)
@@ -361,7 +340,6 @@ describe('GET /api/v1/admin/audit-log — filters', () => {
   });
 
   test('?entity_type=review — returns only review entries', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?entity_type=review`)
@@ -374,7 +352,6 @@ describe('GET /api/v1/admin/audit-log — filters', () => {
   });
 
   test('?user_id=adminUserId — returns only entries by that admin', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?user_id=${adminUserId}`)
@@ -416,7 +393,6 @@ describe('GET /api/v1/admin/audit-log — filters', () => {
 
 describe('GET /api/v1/admin/audit-log — pagination', () => {
   test('?per_page=1 — returns exactly 1 entry per page', async () => {
-    if (!auditLogAvailable) return;
 
     const { body } = await request(app)
       .get(`${BASE_URL}?per_page=1`)
@@ -428,7 +404,6 @@ describe('GET /api/v1/admin/audit-log — pagination', () => {
   });
 
   test('?per_page=1&page=2 — returns a different entry than page 1', async () => {
-    if (!auditLogAvailable) return;
 
     const [page1, page2] = await Promise.all([
       request(app)

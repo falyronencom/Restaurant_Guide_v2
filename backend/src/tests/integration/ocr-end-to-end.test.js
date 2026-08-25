@@ -23,7 +23,6 @@ import { clearAllData, query } from '../utils/database.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
-  checkAuditLogExists,
 } from '../utils/adminTestHelpers.js';
 import * as NotificationService from '../../services/notificationService.js';
 
@@ -113,16 +112,16 @@ describe('OCR → Smart Search → Admin hide — end-to-end', () => {
     ids = result.establishments.map((e) => e.id);
     expect(ids).not.toContain(estId);
 
-    // ── 7. Audit log has hide_menu_item entry (if audit_log table exists) ─
-    const auditTableExists = await checkAuditLogExists();
-    if (auditTableExists) {
-      const auditRows = await query(
-        `SELECT id FROM audit_log
-         WHERE action = 'hide_menu_item' AND entity_id = $1`,
-        [menuItemId],
-      );
-      expect(auditRows.rows.length).toBeGreaterThanOrEqual(1);
-    }
+    // ── 7. Audit log has hide_menu_item entry ─────────────────────────────
+    // Прежде здесь стоял checkAuditLogExists() БЕЗ АРГУМЕНТОВ: параметры
+    // уходили как undefined, в SQL становились NULL, условие не давало строк
+    // никогда, флаг всегда был false и весь блок не исполнялся ни разу.
+    const auditRows = await query(
+      `SELECT id FROM audit_log
+       WHERE action = 'hide_menu_item' AND entity_id = $1`,
+      [menuItemId],
+    );
+    expect(auditRows.rows.length).toBeGreaterThanOrEqual(1);
   });
 
   test('dish search with priceMaxByn filter excludes over-budget items', async () => {

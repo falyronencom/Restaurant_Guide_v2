@@ -14,10 +14,7 @@
  *   beforeAll  — create admin, partner, regular user (reused across tests)
  *   beforeEach — truncate establishments (each test starts clean)
  *   afterAll   — clearAllData()
- *
- * Audit log assertions use checkAuditLogExists() which returns null when the
- * table does not exist, allowing tests to pass in environments where
- * audit_log has not been deployed.
+
  */
 
 import request from 'supertest';
@@ -344,11 +341,8 @@ describe('POST /api/v1/admin/establishments/:id/moderate (#7)', () => {
       .send({ action: 'approve' })
       .expect(200);
 
-    // checkAuditLogExists returns null if audit_log table is not deployed
     const auditExists = await checkAuditLogExists(establishment.id, 'moderate_approve');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
-    }
+    expect(auditExists).toBe(true);
   });
 
   test('should create audit_log entry after reject (if table exists)', async () => {
@@ -361,9 +355,7 @@ describe('POST /api/v1/admin/establishments/:id/moderate (#7)', () => {
       .expect(200);
 
     const auditExists = await checkAuditLogExists(establishment.id, 'moderate_reject');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
-    }
+    expect(auditExists).toBe(true);
   });
 });
 
@@ -461,9 +453,7 @@ describe('POST /api/v1/admin/establishments/:id/suspend (#8)', () => {
       .expect(200);
 
     const auditExists = await checkAuditLogExists(establishment.id, 'suspend');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
-    }
+    expect(auditExists).toBe(true);
   });
 });
 
@@ -531,9 +521,7 @@ describe('POST /api/v1/admin/establishments/:id/unsuspend (#9)', () => {
       .expect(200);
 
     const auditExists = await checkAuditLogExists(establishment.id, 'unsuspend');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
-    }
+    expect(auditExists).toBe(true);
   });
 
   test('full suspend → unsuspend cycle should restore active status', async () => {

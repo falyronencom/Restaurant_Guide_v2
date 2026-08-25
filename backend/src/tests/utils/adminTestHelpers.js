@@ -181,27 +181,21 @@ export async function getEstablishmentFromDb(establishmentId) {
 
 /**
  * Check if an audit_log entry exists for a given entity + action.
- * Returns null if the audit_log table does not exist (handles undeployed table).
- * Returns true/false if the table exists.
+ *
+ * Возвращает строго boolean. Терпимость к отсутствию таблицы (null) снята
+ * 2026-08-25: audit_log создаётся миграцией 010 и входит в production_schema,
+ * то есть развёрнут локально, в CI и на проде. Она перестала что-либо включать
+ * и начала прятать: guard-условия на null делали около 25 проверок аудита
+ * молча пропускаемыми, а в ocr-end-to-end целый блок не исполнялся ни разу.
  *
  * @param {string} entityId
  * @param {string} action - e.g. 'moderate_approve', 'suspend_establishment'
- * @returns {Promise<boolean|null>}
+ * @returns {Promise<boolean>}
  */
 export async function checkAuditLogExists(entityId, action) {
-  try {
-    const result = await query(
-      'SELECT id FROM audit_log WHERE entity_id = $1 AND action = $2 LIMIT 1',
-      [entityId, action],
-    );
-    return result.rows.length > 0;
-  } catch (error) {
-    // Только «таблицы не существует» (Postgres 42P01) означает «audit_log не
-    // развёрнут» и даёт null — трёхзначный контракт, на который опираются
-    // вызывающие через `if (auditExists !== null)`. ЛЮБАЯ другая ошибка БД
-    // (обрыв соединения, права, опечатка в SQL) обязана падать громко: иначе
-    // она молча выключит все проверки аудита, и они «пройдут».
-    if (error && error.code === '42P01') return null;
-    throw error;
-  }
+  const result = await query(
+    'SELECT id FROM audit_log WHERE entity_id = $1 AND action = $2 LIMIT 1',
+    [entityId, action],
+  );
+  return result.rows.length > 0;
 }

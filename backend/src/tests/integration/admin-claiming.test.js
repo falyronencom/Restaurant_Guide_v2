@@ -209,22 +209,17 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ user_id: targetUser.user.id });
 
-    // Wait briefly for non-blocking audit log write
-    await new Promise(resolve => setTimeout(resolve, 200));
-
     const auditExists = await checkAuditLogExists(establishment.id, 'claim_establishment');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
+    expect(auditExists).toBe(true);
 
-      // Verify audit log details
-      const auditResult = await query(
-        "SELECT old_data, new_data FROM audit_log WHERE entity_id = $1 AND action = 'claim_establishment' LIMIT 1",
-        [establishment.id],
-      );
-      const entry = auditResult.rows[0];
-      expect(entry.old_data.partner_id).toBe(oldPartnerId);
-      expect(entry.new_data.partner_id).toBe(targetUser.user.id);
-    }
+    // Verify audit log details
+    const auditResult = await query(
+      "SELECT old_data, new_data FROM audit_log WHERE entity_id = $1 AND action = 'claim_establishment' LIMIT 1",
+      [establishment.id],
+    );
+    const entry = auditResult.rows[0];
+    expect(entry.old_data.partner_id).toBe(oldPartnerId);
+    expect(entry.new_data.partner_id).toBe(targetUser.user.id);
   });
 
   test('should rollback partner_id if transaction fails', async () => {
@@ -328,12 +323,7 @@ describe('POST /api/v1/admin/users/:id/upgrade-to-partner', () => {
       .post(`/api/v1/admin/users/${targetUser.user.id}/upgrade-to-partner`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    // Wait briefly for non-blocking audit log write
-    await new Promise(resolve => setTimeout(resolve, 200));
-
     const auditExists = await checkAuditLogExists(targetUser.user.id, 'upgrade_user_to_partner');
-    if (auditExists !== null) {
-      expect(auditExists).toBe(true);
-    }
+    expect(auditExists).toBe(true);
   });
 });
