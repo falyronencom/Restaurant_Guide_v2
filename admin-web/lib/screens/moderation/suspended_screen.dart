@@ -101,13 +101,11 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
           context.read<SuspendedProvider>().selectEstablishment(item.id),
       // Нижняя строка — причина приостановки. Точка статуса здесь была бы
       // пустой работой: на этом экране все записи в одном статусе, и
-      // повторять его на каждой карточке нечего.
-      //
-      // Кадр 13 при сборке этой строки прочитать не удалось (часть макета
-      // 13–18 в проекте Design, локальной копии нет). Оформление взято по
-      // канону приостановки — disclaimer-пара, та же, что кадр 13 задаёт
-      // для блока причины в панели. Сверить при разборе кадра 13.
-      footer: _SuspendReason(reason: item.suspendReason),
+      // повторять его на каждой карточке нечего. Сверено с кадром 13.
+      footer: _SuspendReason(
+        reason: item.suspendReason,
+        isSelected: provider.selectedId == item.id,
+      ),
     );
   }
 
@@ -120,37 +118,50 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
   }
 }
 
+/// Чип причины приостановки — по кадру 13.
+///
+/// Фон различается выбором ровно так же, как у бейджа срока ожидания в
+/// кадре 05: у выбранной карточки disclaimer-бежевый, у прочих белый на
+/// бежевом. Подпись остаётся коричневой в обоих случаях — цвет здесь несёт
+/// смысл «приостановлено», а не выделение.
 class _SuspendReason extends StatelessWidget {
   final String? reason;
+  final bool isSelected;
 
-  const _SuspendReason({required this.reason});
+  const _SuspendReason({required this.reason, required this.isSelected});
 
   @override
   Widget build(BuildContext context) {
     final text = reason?.trim();
     final hasReason = text != null && text.isNotEmpty;
+    final color = hasReason ? AppTheme.disclaimerText : AppTheme.textGrey;
 
-    return Row(
-      children: [
-        Icon(
-          Icons.pause_circle_outline,
-          size: 12,
-          color: hasReason ? AppTheme.disclaimerText : AppTheme.textGrey,
-        ),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Text(
-            hasReason ? text : 'причина не указана',
-            style: TextStyle(
-              fontSize: 12,
-              color: hasReason ? AppTheme.disclaimerText : AppTheme.textGrey,
-              fontStyle: hasReason ? FontStyle.normal : FontStyle.italic,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? AppTheme.disclaimerBg : AppTheme.backgroundPrimary,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pause_circle_outline, size: 13, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              hasReason ? text : 'причина не указана',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontStyle: hasReason ? FontStyle.normal : FontStyle.italic,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
