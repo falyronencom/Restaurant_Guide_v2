@@ -1,18 +1,19 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 
 /// Канонический линейный график с заливкой площади — одна величина, одна шкала.
 ///
 /// Намеренно умеет только это. Вторую величину на тот же график канон
-/// разрешает выводить лишь другой геометрией и при двух подписанных шкалах
-/// (столбцы + линия); масштабировать чужую величину в чужую шкалу — запрещено,
-/// такой график врёт. Комбинированный вариант — отдельный виджет, этап 6.
+/// разрешает выводить лишь другой геометрией и при двух подписанных шкалах —
+/// это [CanonComboChart], заведённый на этапе 6. Масштабировать чужую величину
+/// в чужую шкалу запрещено: такой график врёт.
 ///
-/// Не путать с `TimelineChart`: тот пока обслуживает вкладки аналитики и
-/// умеет как раз запрещённое наложение. Он уйдёт на этапе 6.
+/// `TimelineChart`, который умел ровно это запрещённое наложение, удалён
+/// в проходе B этапа 6 вместе с `DistributionChart` и `BarChartWidget`.
 class CanonLineChart extends StatelessWidget {
   final List<TimelinePoint> data;
 
@@ -40,7 +41,11 @@ class CanonLineChart extends StatelessWidget {
     }
 
     final maxCount = data.fold<int>(0, (m, p) => p.count > m ? p.count : m);
-    final maxY = (maxCount * 1.2).ceilToDouble().clamp(1.0, double.infinity);
+    // Верх кратен четырём делениям, иначе шаг выходит нецелым, а подписи
+    // печатаются целыми: при пяти регистрациях шаг был 1,5, и линия сетки,
+    // подписанная «2», стояла на высоте 1,5. Промах тем вероятнее, чем
+    // меньше числа, то есть как раз на малом трафике.
+    final maxY = niceMaxY(maxCount);
     final step = maxY / 4;
 
     return LineChart(

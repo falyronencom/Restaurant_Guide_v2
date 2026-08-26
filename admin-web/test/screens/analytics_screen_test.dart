@@ -176,21 +176,38 @@ UsersAnalyticsData _users({List<DistributionItem>? roles}) => UsersAnalyticsData
       ),
     );
 
-ReviewsAnalyticsData _reviews() => const ReviewsAnalyticsData(
-      reviewTimeline: <TimelinePoint>[],
-      ratingDistribution: <RatingDistributionItem>[],
-      responseStats: ResponseStats(
-        totalReviews: 1240,
-        totalWithResponse: 287,
-        responseRate: 0.2314,
-        avgResponseTimeHours: 18.4,
-      ),
+ReviewsAnalyticsData _reviews({
+  List<RatingDistributionItem>? ratings,
+  ResponseStats? response,
+}) =>
+    ReviewsAnalyticsData(
+      reviewTimeline: const <TimelinePoint>[
+        TimelinePoint(date: '2026-08-08', count: 12, averageRating: 4.4),
+        TimelinePoint(date: '2026-08-09', count: 7, averageRating: 4.1),
+      ],
+      ratingDistribution: ratings ?? _ratingsFrame09,
+      responseStats: response ??
+          const ResponseStats(
+            totalReviews: 1240,
+            totalWithResponse: 287,
+            responseRate: 0.2314,
+            avgResponseTimeHours: 18.4,
+          ),
       total: 1240,
       newInPeriod: 214,
       changePercent: 9.7,
       averageRating: 4.3,
       aggregation: 'day',
     );
+
+/// Распределение оценок с кадра 09.
+const _ratingsFrame09 = <RatingDistributionItem>[
+  RatingDistributionItem(rating: 1, count: 58, percentage: 4.7),
+  RatingDistributionItem(rating: 2, count: 79, percentage: 6.4),
+  RatingDistributionItem(rating: 3, count: 168, percentage: 13.5),
+  RatingDistributionItem(rating: 4, count: 331, percentage: 26.7),
+  RatingDistributionItem(rating: 5, count: 604, percentage: 48.7),
+];
 
 OverviewData _overview() => const OverviewData(
       users: OverviewUsers(total: 3480, newInPeriod: 186),
@@ -467,6 +484,210 @@ void main() {
       // Отбрасывать вторую строку молча значит обещать целую сумму и не
       // давать её — у статусов аккумулятор складывает, здесь тоже.
       expect(unknown.value, 10);
+    });
+  });
+
+  // ==========================================================================
+  // Кадр 09 — Отзывы и оценки
+  // ==========================================================================
+
+  group('Кадр 09 · Отзывы', () {
+    Future<void> openReviews(
+      WidgetTester tester, {
+      ReviewsAnalyticsData? data,
+      double width = 1180,
+    }) async {
+      await pumpEstablishments(tester, width: width);
+      await tester.tap(find.text('Отзывы и оценки'));
+      await tester.pump();
+      service.answerReviews(data ?? _reviews());
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('средняя оценка названа величиной за всё время',
+        (tester) async {
+      await openReviews(tester);
+
+      // Под шапкой с периодом «4,3» читалось бы как «средняя за этот месяц»,
+      // тогда как это среднее по всем отзывам за всю историю. Динамику за
+      // период показывает зелёная линия на графике выше.
+      expect(find.text('СРЕДНЯЯ ОЦЕНКА'), findsOneWidget);
+      expect(find.text('за всё время'), findsOneWidget);
+    });
+
+    testWidgets('доля ответов считается из своей же выборки', (tester) async {
+      await openReviews(tester);
+
+      // 287 из 1240 = 23,1%. Знаменатель едет вместе с числителем — оба из
+      // `response_stats`, а не из соседнего `total` или `new_in_period`.
+      //
+      // Спрашиваем саму карточку, а не текст «23,1%» где-нибудь на экране:
+      // такое же число стоит строкой ниже, в «Доле отзывов с ответом», и
+      // поиск по тексту проходил бы даже при неверном знаменателе в метрике.
+      final card = tester.widget<MetricCard>(
+        find.ancestor(
+          of: find.text('ПАРТНЁР ОТВЕТИЛ'),
+          matching: find.byType(MetricCard),
+        ),
+      );
+      expect(card.value, '23,1%');
+      expect(card.valueNote, '287 отзывов');
+    });
+
+    testWidgets('оценки идут сверху вниз от пяти звёзд к одной',
+        (tester) async {
+      await openReviews(tester);
+
+      final counts = <String>['604', '331', '168', '79', '58'];
+      final positions = <double>[
+        for (final c in counts) tester.getTopLeft(find.text(c)).dy,
+      ];
+
+      for (var i = 1; i < positions.length; i++) {
+        expect(positions[i], greaterThan(positions[i - 1]),
+            reason: 'строка $i должна стоять ниже предыдущей');
+      }
+    });
+
+    testWidgets('низкие оценки посчитаны и названы', (tester) async {
+      await openReviews(tester);
+
+      // 58 + 79 = 137 — единицы и двойки вместе.
+      expect(
+        find.textContaining('137 отзывов с оценкой 1–2'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('без низких оценок сноска не выдумывает ноль', (tester) async {
+      await openReviews(
+        tester,
+        data: _reviews(
+          ratings: const <RatingDistributionItem>[
+            RatingDistributionItem(rating: 1, count: 0, percentage: 0),
+            RatingDistributionItem(rating: 2, count: 0, percentage: 0),
+            RatingDistributionItem(rating: 5, count: 10, percentage: 100),
+          ],
+        ),
+      );
+
+      expect(find.text('Отзывов с оценкой 1–2 нет'), findsOneWidget);
+    });
+
+    testWidgets('«Отзывов без ответа» — разность из одной выборки',
+        (tester) async {
+      await openReviews(tester);
+
+      // 1240 − 287 = 953.
+      expect(find.text(formatCount(953)), findsOneWidget);
+    });
+
+    testWidgets('среднее время ответа с русской запятой', (tester) async {
+      await openReviews(tester);
+
+      expect(find.text('18,4 ч'), findsOneWidget);
+      expect(find.text('18.4 ч'), findsNothing);
+    });
+
+    testWidgets('пустая база не рисует пустые карточки', (tester) async {
+      await openReviews(
+        tester,
+        data: _reviews(
+          ratings: const <RatingDistributionItem>[],
+          response: const ResponseStats(
+            totalReviews: 0,
+            totalWithResponse: 0,
+            responseRate: 0,
+            avgResponseTimeHours: 0,
+          ),
+        ),
+      );
+
+      expect(find.text('Отзывов пока нет'), findsOneWidget);
+      expect(find.text('Отвечать пока не на что'), findsOneWidget);
+    });
+
+    testWidgets('вывод о темпе ответов считается, а не написан руками',
+        (tester) async {
+      await openReviews(tester);
+
+      // 287 из 1240 — это каждый четвёртый; 18,4 ч округляются до 18.
+      expect(
+        find.text('Партнёры отвечают в среднем за 18 часов, '
+            'но только на каждый четвёртый отзыв'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('вывод следует за данными, а не повторяет кадр',
+        (tester) async {
+      await openReviews(
+        tester,
+        data: _reviews(
+          response: const ResponseStats(
+            totalReviews: 100,
+            totalWithResponse: 50,
+            responseRate: 0.5,
+            avgResponseTimeHours: 2,
+          ),
+        ),
+      );
+
+      // Половина — это «каждый второй», а не «каждый четвёртый».
+      expect(
+        find.text('Партнёры отвечают в среднем за 2 часа, '
+            'но только на каждый второй отзыв'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('единственный низкий отзыв согласован по числу',
+        (tester) async {
+      await openReviews(
+        tester,
+        data: _reviews(
+          ratings: const <RatingDistributionItem>[
+            RatingDistributionItem(rating: 1, count: 1, percentage: 10),
+            RatingDistributionItem(rating: 5, count: 9, percentage: 90),
+          ],
+        ),
+      );
+
+      // «1 отзыв … их разбирают» читалось бы как ошибка, а не как число.
+      expect(
+        find.textContaining('1 отзыв с оценкой 1–2 — его разбирают'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('пятизначные счётчики не рвут карточку', (tester) async {
+      await openReviews(
+        tester,
+        width: 764,
+        data: _reviews(
+          ratings: const <RatingDistributionItem>[
+            RatingDistributionItem(rating: 1, count: 58000, percentage: 4.7),
+            RatingDistributionItem(rating: 2, count: 79000, percentage: 6.4),
+            RatingDistributionItem(rating: 3, count: 168000, percentage: 13.5),
+            RatingDistributionItem(rating: 4, count: 331000, percentage: 26.7),
+            RatingDistributionItem(rating: 5, count: 604000, percentage: 48.7),
+          ],
+        ),
+      );
+
+      // Число без `maxLines` переносилось на вторую строку, строка росла,
+      // и карточка фиксированной высоты рвалась.
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('узкое тело не рвёт вкладку', (tester) async {
+      await pumpEstablishments(tester, width: 764);
+      await tester.tap(find.text('Отзывы и оценки'));
+      await tester.pump();
+      service.answerReviews(_reviews());
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
   });
 
