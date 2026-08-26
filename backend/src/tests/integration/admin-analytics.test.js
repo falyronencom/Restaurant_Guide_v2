@@ -18,9 +18,10 @@
  * Ghost table finding: establishment_analytics is not queried by any analytics
  * function. All queries target: users, establishments, reviews, audit_log directly.
  *
- * Aggregation note: 30d period → 'week' aggregation because endDate = new Date()
- * (current time, not midnight), making the range ≈ 30.5 days → ceil=31 > 30.
- * Only 7d period reliably returns 'day' aggregation in all environments.
+ * Aggregation note: windows are whole UTC days, so N days means exactly N
+ * buckets — 7d and 30d both aggregate by 'day', 90d by 'week'. (Before the
+ * stage-6 fix the upper bound was the current instant, which stretched 30d past
+ * the 30-day threshold and silently produced weekly buckets.)
  *
  * All analytics endpoints are read-only — no beforeEach cleanup needed.
  * afterAll clears all test data.
@@ -97,11 +98,19 @@ beforeAll(async () => {
     createPartnerWithEstablishment('suspended'), // suspended #1
   ]);
 
-  // 3 reviews on the first active establishment (ratings 2, 3, 5)
+  // 3 reviews on the first active establishment (ratings 2, 3, 5).
+  // Exactly one carries a partner response, on purpose: 1 из 3 = 0,3333… — a
+  // ratio that two decimal places cannot express. A fixture where every review
+  // is unanswered makes response_rate 0, and a test on its precision then passes
+  // no matter how the number is rounded.
   await Promise.all([
     createTestReview(null, firstActiveEstablishmentId, { rating: 2 }),
     createTestReview(null, firstActiveEstablishmentId, { rating: 3 }),
-    createTestReview(null, firstActiveEstablishmentId, { rating: 5 }),
+    createTestReview(null, firstActiveEstablishmentId, {
+      rating: 5,
+      partner_response: 'Спасибо за отзыв!',
+      partner_response_hours: 5,
+    }),
   ]);
 });
 
@@ -273,12 +282,25 @@ describe('GET /api/v1/admin/analytics/users (#11)', () => {
     expect(body.data.aggregation).toBe('day');
   });
 
-  test('?period=30d → aggregation is week (range > 30 days → ceil=31 → week)', async () => {
+  // Этот тест раньше запирал дефект: он утверждал 'week' и был прав про код,
+  // но код был неправ про «30 дней». Верхней границей окна брался текущий
+  // момент, диапазон выходил на полсуток длиннее тридцати, и `ceil` давал 31 —
+  // то есть подпись «30 дней» означала тридцать один день, разложенный по
+  // неделям. Окно теперь ровно в тридцать суток UTC, и корзины дневные.
+  test('?period=30d → aggregation is day (window is exactly 30 whole days)', async () => {
     const { body } = await request(app)
       .get(`${BASE_URL}/users?period=30d`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(body.data.aggregation).toBe('week');
+    expect(body.data.aggregation).toBe('day');
+  });
+
+  test('?period=30d → registration_timeline has exactly 30 buckets', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?period=30d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(body.data.registration_timeline).toHaveLength(30);
   });
 
   test('registration_timeline entries have date and count fields', async () => {
@@ -355,6 +377,21 @@ describe('GET /api/v1/admin/analytics/establishments (#12)', () => {
 
     expect(body.data.total).toBeGreaterThanOrEqual(4); // 2 active + 1 pending + 1 suspended
     expect(body.data.active).toBeGreaterThanOrEqual(2);
+  });
+
+  // Stage 6 — the «На модерации» metric of frame 08. The count came out of the
+  // same query all along and was projected only by /overview.
+  test('pending is projected and matches /overview', async () => {
+    const [establishments, overview] = await Promise.all([
+      request(app).get(`${BASE_URL}/establishments?period=7d`)
+        .set('Authorization', `Bearer ${adminToken}`),
+      request(app).get(`${BASE_URL}/overview?period=7d`)
+        .set('Authorization', `Bearer ${adminToken}`),
+    ]);
+
+    expect(establishments.body.data.pending).toBeGreaterThanOrEqual(1);
+    expect(establishments.body.data.pending)
+      .toBe(overview.body.data.establishments.pending);
   });
 
   test('status_distribution includes active, pending, suspended', async () => {
@@ -591,5 +628,179 @@ describe('GET /api/v1/admin/analytics/reviews (#13)', () => {
       .expect(200);
 
     expect(res.body.data.new_in_period).toBe(0);
+  });
+
+  // Stage 6 — projection additions the «Отзывы» tab draws its first metric row
+  // from. Both numbers were already computed by the very same queries and
+  // reached only /overview.
+
+  test('average_rating is projected and matches /overview', async () => {
+    const [reviews, overview] = await Promise.all([
+      request(app).get(`${BASE_URL}/reviews?period=7d`)
+        .set('Authorization', `Bearer ${adminToken}`),
+      request(app).get(`${BASE_URL}/overview?period=7d`)
+        .set('Authorization', `Bearer ${adminToken}`),
+    ]);
+
+    expect(typeof reviews.body.data.average_rating).toBe('number');
+    expect(reviews.body.data.average_rating).toBe(overview.body.data.reviews.average_rating);
+  });
+
+  test('response_stats carries its own denominator', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/reviews`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const { response_stats, total } = body.data;
+    expect(typeof response_stats.total_reviews).toBe('number');
+    // Same predicate as `total`, but read in one shot with the numerator so the
+    // card's three numbers cannot come from two different snapshots.
+    expect(response_stats.total_reviews).toBe(total);
+    expect(response_stats.total_with_response)
+      .toBeLessThanOrEqual(response_stats.total_reviews);
+  });
+
+  test('response_rate keeps enough precision for one decimal of a percent', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/reviews`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const { response_rate, total_reviews, total_with_response } = body.data.response_stats;
+    const exact = total_reviews > 0 ? total_with_response / total_reviews : 0;
+
+    // Fixture guard. A tolerance assertion is only a test while the exact ratio
+    // needs more than two decimals; on a round ratio it passes under any
+    // rounding and quietly proves nothing.
+    expect(Math.abs(exact - Number(exact.toFixed(2)))).toBeGreaterThan(0.0005);
+
+    // Rounded to 4 decimals of a ratio: the displayed percent may not drift by
+    // as much as 0.005pp from the division a reader can do themselves.
+    expect(Math.abs(response_rate - exact)).toBeLessThanOrEqual(0.00005);
+  });
+});
+
+// ============================================================================
+// Resolved period window — reported so the screen header states what was queried
+// ============================================================================
+
+describe('Period window is reported back', () => {
+  const endpoints = ['overview', 'users', 'establishments', 'reviews'];
+
+  test.each(endpoints)('%s returns period.start and period.end as ISO strings', async (endpoint) => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/${endpoint}?period=7d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const { period } = body.data;
+    expect(period).toBeDefined();
+    expect(new Date(period.start).toISOString()).toBe(period.start);
+    expect(new Date(period.end).toISOString()).toBe(period.end);
+  });
+
+  test.each(endpoints)('%s: 7d window spans exactly 7 whole UTC days', async (endpoint) => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/${endpoint}?period=7d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const { period } = body.data;
+    const start = new Date(period.start);
+    const end = new Date(period.end);
+
+    expect(end - start).toBe(7 * 24 * 60 * 60 * 1000);
+    // Whole days measured in UTC — the ruler `DATE(created_at)` buckets by.
+    expect(start.toISOString()).toMatch(/T00:00:00\.000Z$/);
+    expect(end.toISOString()).toMatch(/T00:00:00\.000Z$/);
+  });
+
+  test('90d aggregates by week and buckets start on Mondays', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?period=90d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(body.data.aggregation).toBe('week');
+
+    // The bucket keys have to be the ones SQL groups by. Stepping forward from
+    // the window start instead lands on a different weekday every time, the two
+    // key spaces never meet, and the chart is a flat zero beside a non-zero
+    // metric card. `DATE_TRUNC('week')` returns Mondays.
+    const buckets = body.data.registration_timeline.map(p => p.date);
+    expect(buckets.length).toBeGreaterThan(0);
+    for (const bucket of buckets) {
+      expect(new Date(`${bucket}T00:00:00Z`).getUTCDay()).toBe(1);
+    }
+  });
+
+  test('90d timeline carries the users it counted', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?period=90d`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    // The fixture creates its users now, so a 90-day window must contain them.
+    // A zero total here means the buckets and the rows disagree.
+    const inTimeline = body.data.registration_timeline
+      .reduce((sum, p) => sum + p.count, 0);
+    expect(inTimeline).toBe(body.data.new_in_period);
+    expect(inTimeline).toBeGreaterThan(0);
+  });
+
+  test('custom range includes the last day named by `to`', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?from=2026-03-01&to=2026-03-05`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const { period } = body.data;
+    expect(period.start).toBe('2026-03-01T00:00:00.000Z');
+    // Exclusive bound sits at the midnight after 5 March, so 5 March is in.
+    expect(period.end).toBe('2026-03-06T00:00:00.000Z');
+  });
+});
+
+// ============================================================================
+// Refused input — a question declined beats an answer that looks like data
+// ============================================================================
+
+describe('Invalid period parameters', () => {
+  const badRequests = [
+    ['month out of range', 'from=2026-13-45&to=2026-13-46'],
+    ['day out of range', 'from=2026-02-30&to=2026-03-01'],
+    ['start after end', 'from=2026-08-10&to=2026-08-01'],
+    ['unparseable', 'from=вчера&to=сегодня'],
+  ];
+
+  test.each(badRequests)('%s → 400', async (_label, query) => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?${query}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
+    expect(body.error?.code ?? body.code).toBe('INVALID_PERIOD');
+  });
+
+  test('negative period is refused, not silently inverted', async () => {
+    await request(app)
+      .get(`${BASE_URL}/users?period=-5d`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+  });
+
+  test('a rolled-over date is not answered as if it were real', async () => {
+    // `Date.UTC(2026, 12, 45)` is a valid instant — 14 February 2027 — so the
+    // request used to succeed and report a window nobody asked for.
+    const res = await request(app)
+      .get(`${BASE_URL}/users?from=2026-13-45&to=2026-13-46`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.data).toBeUndefined();
+  });
+
+  test('unknown period code still falls back to 30 days', async () => {
+    const { body } = await request(app)
+      .get(`${BASE_URL}/users?period=all`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const span = new Date(body.data.period.end) - new Date(body.data.period.start);
+    expect(span).toBe(30 * 24 * 60 * 60 * 1000);
   });
 });

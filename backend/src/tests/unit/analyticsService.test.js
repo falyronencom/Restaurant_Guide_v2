@@ -12,9 +12,9 @@
  * No database connection. AnalyticsModel is mocked entirely.
  * Time frozen at 2026-02-01T00:00:00.000Z for deterministic date assertions.
  *
- * fillDateGaps note: the function uses local midnight (setHours) internally.
- * Tests use a loopDateKey() helper that mirrors the loop's date-to-string
- * conversion, making assertions timezone-independent (UTC and UTC+3 both pass).
+ * fillDateGaps note: windows are whole UTC days and buckets are keyed by the
+ * calendar date SQL groups by ('YYYY-MM-DD'). Assertions state those dates
+ * literally, so they mean the same thing on UTC and on UTC+3.
  */
 
 import { jest } from '@jest/globals';
@@ -58,20 +58,6 @@ const {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Generate a date key the same way fillDateGaps loop does:
- *   new Date(year, month-1, day) → setHours(0,0,0,0) → toISOString().split('T')[0]
- *
- * Using this helper for both the startDate and the test data rows ensures that
- * the Map lookup inside fillDateGaps finds matches regardless of the server
- * timezone (UTC or UTC+3).
- */
-const loopDateKey = (year, month, day) => {
-  const d = new Date(year, month - 1, day);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
-};
-
 // ============================================================================
 // parsePeriod
 // ============================================================================
@@ -99,47 +85,73 @@ describe('parsePeriod', () => {
     expect(startDate.getTime()).toBeLessThan(endDate.getTime());
   });
 
-  test('7d — current period is approximately 7 days', () => {
+  // Durations are asserted exactly, not «approximately»: the point of the
+  // stage-6 change is that «N дней» is N whole days. A loose bound here is what
+  // let 30d quietly mean 30.5 and get bucketed by week.
+
+  test('7d — current period is exactly 7 days', () => {
     const { startDate, endDate } = parsePeriod('7d');
-    const duration = endDate.getTime() - startDate.getTime();
-    expect(duration).toBeGreaterThanOrEqual(7 * ONE_DAY_MS);
-    expect(duration).toBeLessThan(8 * ONE_DAY_MS);
+    expect(endDate.getTime() - startDate.getTime()).toBe(7 * ONE_DAY_MS);
   });
 
-  test('30d — current period is approximately 30 days', () => {
+  test('30d — current period is exactly 30 days', () => {
     const { startDate, endDate } = parsePeriod('30d');
-    const duration = endDate.getTime() - startDate.getTime();
-    expect(duration).toBeGreaterThanOrEqual(30 * ONE_DAY_MS);
-    expect(duration).toBeLessThan(31 * ONE_DAY_MS);
+    expect(endDate.getTime() - startDate.getTime()).toBe(30 * ONE_DAY_MS);
   });
 
-  test('90d — current period is approximately 90 days', () => {
+  test('90d — current period is exactly 90 days', () => {
     const { startDate, endDate } = parsePeriod('90d');
-    const duration = endDate.getTime() - startDate.getTime();
-    expect(duration).toBeGreaterThanOrEqual(90 * ONE_DAY_MS);
-    expect(duration).toBeLessThan(91 * ONE_DAY_MS);
+    expect(endDate.getTime() - startDate.getTime()).toBe(90 * ONE_DAY_MS);
   });
 
   test('undefined period defaults to 30 days', () => {
     const { startDate, endDate } = parsePeriod(undefined);
-    const duration = endDate.getTime() - startDate.getTime();
-    expect(duration).toBeGreaterThanOrEqual(30 * ONE_DAY_MS);
-    expect(duration).toBeLessThan(31 * ONE_DAY_MS);
+    expect(endDate.getTime() - startDate.getTime()).toBe(30 * ONE_DAY_MS);
   });
 
-  test('custom from/to — startDate matches the from parameter', () => {
-    const result = parsePeriod(undefined, '2026-01-01', '2026-01-31');
-    expect(result.startDate.getTime()).toBe(new Date('2026-01-01').getTime());
+  // Bounds land on UTC midnight regardless of the process timezone. This is the
+  // assertion that keeps a developer's machine honest: the timelines bucket by
+  // `DATE(created_at)`, i.e. UTC days, and a window measured in local days would
+  // agree with them on production (UTC) and nowhere else.
+
+  test('preset window sits on whole UTC days', () => {
+    const { startDate, endDate } = parsePeriod('7d');
+    expect(startDate.toISOString()).toBe('2026-01-26T00:00:00.000Z');
+    expect(endDate.toISOString()).toBe('2026-02-02T00:00:00.000Z');
   });
 
-  test('custom from/to — endDate is exclusive (past start of to date, within 25h)', () => {
+  test('preset window ends with today, not with the current instant', () => {
+    jest.setSystemTime(new Date('2026-02-01T17:45:12.000Z'));
+    const { endDate } = parsePeriod('7d');
+    expect(endDate.toISOString()).toBe('2026-02-02T00:00:00.000Z');
+    jest.setSystemTime(new Date('2026-02-01T00:00:00.000Z'));
+  });
+
+  test('custom from/to — startDate is UTC midnight of the from day', () => {
     const result = parsePeriod(undefined, '2026-01-01', '2026-01-31');
-    // endDate = new Date('2026-01-31') → setHours(23,59,59,999) LOCAL → +1ms
-    // In any timezone, endDate must be after UTC midnight of Jan 31 and within 25h of it
-    // (25h covers UTC-12 where local end-of-day = 23:59 local = 11:59 UTC next day)
-    const toUtcMidnight = new Date('2026-01-31').getTime();
-    expect(result.endDate.getTime()).toBeGreaterThan(toUtcMidnight);
-    expect(result.endDate.getTime()).toBeLessThanOrEqual(toUtcMidnight + 25 * 60 * 60 * 1000);
+    expect(result.startDate.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  test('custom from/to — the day named by `to` is inside the window', () => {
+    const result = parsePeriod(undefined, '2026-01-01', '2026-01-31');
+    // Exclusive bound is the midnight after 31 January: asking for a range that
+    // ends today and not getting today is the failure this pins.
+    expect(result.endDate.toISOString()).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  test('custom from/to — a single day is a one-day window', () => {
+    const result = parsePeriod(undefined, '2026-01-15', '2026-01-15');
+    expect(result.endDate.getTime() - result.startDate.getTime()).toBe(ONE_DAY_MS);
+  });
+
+  test('custom from/to — full ISO timestamps are read as their UTC day', () => {
+    const result = parsePeriod(
+      undefined,
+      '2026-01-01T00:00:00.000',
+      '2026-01-31T00:00:00.000',
+    );
+    expect(result.startDate.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.endDate.toISOString()).toBe('2026-02-01T00:00:00.000Z');
   });
 
   test('prevEnd equals startDate — comparison period ends where current begins', () => {
@@ -239,73 +251,99 @@ describe('computeChangePercent', () => {
 // ============================================================================
 
 describe('fillDateGaps', () => {
-  // 3-day window: local Jan 1, Jan 2, Jan 3 (Jan 4 is excluded by < condition)
-  const start = new Date(2026, 0, 1); // local midnight Jan 1
-  const end = new Date(2026, 0, 4); // local midnight Jan 4
+  // Windows come from parsePeriod, i.e. true UTC midnights — the tests build
+  // them the same way. The previous edition constructed local midnights and
+  // leaned on a loopDateKey() helper that mirrored the loop's own arithmetic,
+  // which made every assertion self-consistent and none of them true: the
+  // helper agreed with the code by construction, including where the code was
+  // wrong. Keys here are plain calendar dates, the way SQL hands them over.
+  const start = Date.UTC(2026, 0, 1);
+  const end = Date.UTC(2026, 0, 4);
+
+  const utc = (y, m, d) => new Date(Date.UTC(y, m - 1, d));
 
   test('fills missing dates with zero-count entries', () => {
-    // Only Jan 2 has data → Jan 1 and Jan 3 must be filled with zeros
-    const data = [{ date: loopDateKey(2026, 1, 2), count: 5 }];
-    const result = fillDateGaps(data, start, end, 'day');
+    const data = [{ date: '2026-01-02', count: 5 }];
+    const result = fillDateGaps(data, new Date(start), new Date(end), 'day');
 
-    expect(result).toHaveLength(3);
-    expect(result[0].count).toBe(0); // Jan 1 — gap
-    expect(result[1].count).toBe(5); // Jan 2 — data
-    expect(result[2].count).toBe(0); // Jan 3 — gap
+    expect(result.map(r => r.date)).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+    expect(result.map(r => r.count)).toEqual([0, 5, 0]);
   });
 
   test('empty data array → all entries have count 0', () => {
-    const result = fillDateGaps([], start, end, 'day');
+    const result = fillDateGaps([], new Date(start), new Date(end), 'day');
     expect(result).toHaveLength(3);
     expect(result.every(r => r.count === 0)).toBe(true);
   });
 
   test('complete data (no gaps) → values pass through unchanged', () => {
     const data = [
-      { date: loopDateKey(2026, 1, 1), count: 10 },
-      { date: loopDateKey(2026, 1, 2), count: 20 },
-      { date: loopDateKey(2026, 1, 3), count: 30 },
+      { date: '2026-01-01', count: 10 },
+      { date: '2026-01-02', count: 20 },
+      { date: '2026-01-03', count: 30 },
     ];
-    const result = fillDateGaps(data, start, end, 'day');
-
-    expect(result).toHaveLength(3);
-    expect(result[0].count).toBe(10);
-    expect(result[1].count).toBe(20);
-    expect(result[2].count).toBe(30);
+    const result = fillDateGaps(data, new Date(start), new Date(end), 'day');
+    expect(result.map(r => r.count)).toEqual([10, 20, 30]);
   });
 
   test('extra fields — null for gap entries, parseFloat for present entries', () => {
-    const data = [{ date: loopDateKey(2026, 1, 2), count: 3, average_rating: '4.50' }];
-    const result = fillDateGaps(data, start, end, 'day', ['average_rating']);
+    const data = [{ date: '2026-01-02', count: 3, average_rating: '4.50' }];
+    const result = fillDateGaps(data, new Date(start), new Date(end), 'day', ['average_rating']);
 
-    expect(result[0].average_rating).toBeNull(); // gap
-    expect(result[1].average_rating).toBe(4.5);  // parsed from string
-    expect(result[2].average_rating).toBeNull(); // gap
-  });
-
-  test('week aggregation — advances by 7 days per bucket', () => {
-    // 3-week range: Jan 1 to Jan 22 → buckets at Jan 1, Jan 8, Jan 15
-    const weekStart = new Date(2026, 0, 1);
-    const weekEnd = new Date(2026, 0, 22);
-    const data = [{ date: loopDateKey(2026, 1, 8), count: 7 }];
-    const result = fillDateGaps(data, weekStart, weekEnd, 'week');
-
-    expect(result).toHaveLength(3);
-    expect(result[0].count).toBe(0); // week starting Jan 1 — gap
-    expect(result[1].count).toBe(7); // week starting Jan 8 — data
-    expect(result[2].count).toBe(0); // week starting Jan 15 — gap
+    expect(result[0].average_rating).toBeNull();
+    expect(result[1].average_rating).toBe(4.5);
+    expect(result[2].average_rating).toBeNull();
   });
 
   test('output is sorted chronologically regardless of input data order', () => {
-    // Input data in reverse order: Jan 3 before Jan 1
     const data = [
-      { date: loopDateKey(2026, 1, 3), count: 99 },
-      { date: loopDateKey(2026, 1, 1), count: 1 },
+      { date: '2026-01-03', count: 99 },
+      { date: '2026-01-01', count: 1 },
     ];
-    const result = fillDateGaps(data, start, end, 'day');
+    const result = fillDateGaps(data, new Date(start), new Date(end), 'day');
+    expect(result.map(r => r.count)).toEqual([1, 0, 99]);
+  });
 
-    expect(result[0].count).toBe(1);  // Jan 1 — first chronologically
-    expect(result[1].count).toBe(0);  // Jan 2 — gap
-    expect(result[2].count).toBe(99); // Jan 3 — last chronologically
+  // The buckets have to land on the same keys SQL groups by, or the series is
+  // a row of zeros next to a non-zero metric card. `DATE_TRUNC('week')` returns
+  // Mondays and `DATE_TRUNC('month')` returns first-of-months; stepping from an
+  // arbitrary start date hits neither.
+
+  test('week buckets start on Monday, whatever weekday the window starts', () => {
+    // 29 May 2026 is a Friday.
+    const result = fillDateGaps([], utc(2026, 5, 29), utc(2026, 6, 12), 'week');
+
+    expect(result.map(r => r.date)).toEqual(['2026-05-25', '2026-06-01', '2026-06-08']);
+  });
+
+  test('week counts land in their buckets instead of vanishing', () => {
+    // Exactly what DATE_TRUNC('week') hands back for that window.
+    const data = [
+      { date: '2026-05-25', count: 7 },
+      { date: '2026-06-01', count: 4 },
+      { date: '2026-06-08', count: 9 },
+    ];
+    const result = fillDateGaps(data, utc(2026, 5, 29), utc(2026, 6, 12), 'week');
+
+    expect(result.reduce((sum, r) => sum + r.count, 0)).toBe(20);
+  });
+
+  test('month buckets start on the first, whatever day the window starts', () => {
+    const data = [{ date: '2026-02-01', count: 12 }];
+    const result = fillDateGaps(data, utc(2026, 1, 17), utc(2026, 4, 3), 'month');
+
+    expect(result.map(r => r.date))
+      .toEqual(['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01']);
+    expect(result[1].count).toBe(12);
+  });
+
+  test('a DATE handed over by node-pg keeps its calendar day', () => {
+    // node-pg turns a DATE column into local midnight; reading it back through
+    // toISOString() moves the key a day earlier on any process east of UTC.
+    const data = [{ date: new Date(2026, 0, 2), count: 5 }];
+    const result = fillDateGaps(data, new Date(start), new Date(end), 'day');
+
+    expect(result[1].date).toBe('2026-01-02');
+    expect(result[1].count).toBe(5);
   });
 });

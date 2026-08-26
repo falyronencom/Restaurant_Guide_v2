@@ -306,6 +306,18 @@ class AppTheme {
     color: textPrimary,
   );
 
+  /// Заголовок карточки в сетке аналитики: Nunito 15/w600.
+  ///
+  /// Мельче, чем `canonSheetTitle` (Unbounded 20) у одиночного графика
+  /// дашборда, и это различие в макете намеренное: там герой экрана, здесь
+  /// шесть карточек в ряд, и заголовок дисплейным кеглем спорил бы с числами
+  /// внутри них.
+  static const TextStyle canonCardTitle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    color: textPrimary,
+  );
+
   /// Число метрики: Unbounded 30/w400, lh 1 — чтобы дельта вставала по базовой
   /// линии числа, а не «плавала» относительно него.
   static final TextStyle canonMetricValue = TextStyle(

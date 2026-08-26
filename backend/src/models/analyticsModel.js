@@ -395,7 +395,12 @@ export const getResponseStats = async () => {
       COUNT(partner_response)::int AS total_with_response,
       CASE
         WHEN COUNT(*) > 0
-        THEN ROUND(COUNT(partner_response)::numeric / COUNT(*)::numeric, 2)
+        -- Четыре знака у доли — это два знака у процента; экран показывает
+        -- один, и запас в разряд оставлен намеренно, чтобы округление делал
+        -- он, а не SQL. При двух знаках 287 из 1240 схлопывались в 0.23, и
+        -- «23,1%» было недостижимо: интерфейс печатал бы «23,0%» и расходился
+        -- с делением, которое читатель может выполнить сам.
+        THEN ROUND(COUNT(partner_response)::numeric / COUNT(*)::numeric, 4)
         ELSE 0
       END AS response_rate,
       COALESCE(

@@ -11,6 +11,7 @@ import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/analytics_totals_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
@@ -69,6 +70,7 @@ class _AdminAppState extends State<AdminApp> {
         ChangeNotifierProvider(create: (_) => EstablishmentsAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => UsersAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => ReviewsAnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => AnalyticsTotalsProvider()),
         ChangeNotifierProvider(create: (_) => AuditLogProvider()),
         ChangeNotifierProvider(create: (_) => AdminReviewsProvider()),
         ChangeNotifierProvider(create: (_) => MenuItemsModerationProvider()),

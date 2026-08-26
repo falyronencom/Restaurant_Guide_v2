@@ -25,6 +25,20 @@ String formatDelta(double percent) {
 String formatDecimal(double value, {int digits = 1}) =>
     value.toStringAsFixed(digits).replaceAll('.', ',');
 
+/// Доля от целого в процентах: 365 из 412 → «88,6%».
+///
+/// Один знак после запятой, и он не декоративный: доли статусов различаются
+/// в пределах процента («1,7%» против «2,2%»), и округление до целых слило бы
+/// их в одинаковые «2%».
+///
+/// Пустое целое даёт «0,0%» — ту же форму, что и нулевая доля непустого, а не
+/// «NaN%» и не пустоту. Две записи нуля в одной колонке читались бы как две
+/// разные величины.
+String formatShare(int value, int total) {
+  if (total <= 0) return '${formatDecimal(0)}%';
+  return '${formatDecimal(value * 100 / total)}%';
+}
+
 /// Дата в местном времени: 2026-08-09T22:10Z → «10.08.2026» на UTC+3.
 ///
 /// `.toLocal()` здесь не украшение. Метки приходят с бэкенда в UTC
@@ -71,6 +85,57 @@ String formatDayMonthLocal(DateTime value, {DateTime? now}) {
   final base = '${local.day} ${_monthsGenitive[local.month - 1]}';
   return local.year == currentYear ? base : '$base ${local.year}';
 }
+
+/// Окно аналитики словами: «12 июля — 10 августа 2026».
+///
+/// Обе границы читаются по UTC, а не переводятся в местное время. Окно и
+/// задано в сутках UTC — по ним же группируются столбцы графиков, — поэтому
+/// перевод в пояс браузера сдвинул бы подпись относительно того, что реально
+/// посчитано, и на UTC+3 подпись разошлась бы с данными на день.
+///
+/// Год пишется один раз в конце, если он общий; месяц не повторяется, когда
+/// обе даты в одном месяце: «1 — 10 августа 2026».
+String formatPeriodRangeUtc(DateTime start, DateTime lastDay) {
+  final a = start.toUtc();
+  final b = lastDay.toUtc();
+
+  String dayMonth(DateTime d) => '${d.day} ${_monthsGenitive[d.month - 1]}';
+
+  if (a.year == b.year && a.month == b.month && a.day == b.day) {
+    return '${dayMonth(b)} ${b.year}';
+  }
+  if (a.year != b.year) {
+    return '${dayMonth(a)} ${a.year} — ${dayMonth(b)} ${b.year}';
+  }
+  if (a.month == b.month) {
+    return '${a.day} — ${dayMonth(b)} ${b.year}';
+  }
+  return '${dayMonth(a)} — ${dayMonth(b)} ${b.year}';
+}
+
+/// Месяц сокращённо для подписи оси: «авг».
+///
+/// Список написан руками по той же причине, что и родительный падеж выше:
+/// `DateFormat('MMM', 'ru')` требует данных локали, которые подгружает
+/// `GlobalMaterialLocalizations` при старте приложения. В виджет-тесте
+/// делегатов нет, и тот же вызов бросает `LocaleDataException` — то есть
+/// график с месячной агрегацией нельзя было бы покрыть тестом вовсе.
+const List<String> _monthsShort = <String>[
+  'янв',
+  'фев',
+  'мар',
+  'апр',
+  'май',
+  'июн',
+  'июл',
+  'авг',
+  'сен',
+  'окт',
+  'ноя',
+  'дек',
+];
+
+String formatMonthShort(DateTime value) => _monthsShort[value.month - 1];
 
 /// День и месяц числами: «12.08».
 ///

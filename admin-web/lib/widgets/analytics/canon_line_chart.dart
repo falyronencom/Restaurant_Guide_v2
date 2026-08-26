@@ -1,6 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 
@@ -19,16 +19,24 @@ class CanonLineChart extends StatelessWidget {
   /// «day» / «week» / «month» — влияет только на формат подписей оси X.
   final String aggregation;
 
+  /// Что написать вместо графика, когда за окно ничего не произошло.
+  ///
+  /// Задаётся вызывающим, потому что пусто здесь означает разное: на дашборде
+  /// не было регистраций, на кадре 08 — не создавали заведений. Общая фраза
+  /// «нет данных» сказала бы, что сломалась загрузка, а не что событий не было.
+  final String emptyMessage;
+
   const CanonLineChart({
     super.key,
     required this.data,
     this.aggregation = 'day',
+    this.emptyMessage = 'За выбранный период регистраций не было',
   });
 
   @override
   Widget build(BuildContext context) {
     if (data.isEmpty || data.every((p) => p.count == 0)) {
-      return const _NoData();
+      return _NoData(emptyMessage);
     }
 
     final maxCount = data.fold<int>(0, (m, p) => p.count > m ? p.count : m);
@@ -160,25 +168,31 @@ class CanonLineChart extends StatelessWidget {
   String _xLabel(String raw) {
     final date = DateTime.tryParse(raw);
     if (date == null) return raw;
-    if (aggregation == 'month') return DateFormat('MMM', 'ru').format(date);
-    return DateFormat('dd.MM').format(date);
+    if (aggregation == 'month') return formatMonthShort(date);
+    return formatDayMonthShort(date);
   }
 }
 
 class _NoData extends StatelessWidget {
-  const _NoData();
+  final String message;
+
+  const _NoData(this.message);
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.show_chart, size: 40, color: AppTheme.strokeGrey),
-          SizedBox(height: 10),
+          const Icon(Icons.show_chart, size: 40, color: AppTheme.strokeGrey),
+          const SizedBox(height: 10),
           Text(
-            'За выбранный период регистраций не было',
-            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppTheme.textSecondary,
+            ),
           ),
         ],
       ),

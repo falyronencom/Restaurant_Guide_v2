@@ -11,11 +11,23 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 /// образуют одну шкалу, а россыпь чипов читается как независимые фильтры.
 class PeriodSelector extends StatefulWidget {
   final String currentPeriod;
+
+  /// Применённый произвольный диапазон, если он есть.
+  ///
+  /// Приходит снаружи, а не хранится в `State`: контрол пересоздаётся при
+  /// каждом входе в раздел, а применённое окно живёт в провайдере уровня
+  /// приложения. Своя копия переживала не то — вернувшись в раздел,
+  /// пользователь видел подсвеченный «Период» без дат, а пикер открывался
+  /// засеянным последними 30 днями вместо выбранного окна: одно неосторожное
+  /// «Готово» молча сдвигало период.
+  final DateTimeRange? customRange;
+
   final ValueChanged<PeriodSelection> onPeriodChanged;
 
   const PeriodSelector({
     super.key,
     required this.currentPeriod,
+    this.customRange,
     required this.onPeriodChanged,
   });
 
@@ -31,11 +43,9 @@ class _PeriodSelectorState extends State<PeriodSelector> {
     ('custom', 'Период'),
   ];
 
-  DateTimeRange? _customRange;
-
   @override
   Widget build(BuildContext context) {
-    final range = _customRange;
+    final range = widget.customRange;
     final showRange = widget.currentPeriod == 'custom' && range != null;
 
     return Row(
@@ -87,7 +97,7 @@ class _PeriodSelectorState extends State<PeriodSelector> {
       context: context,
       firstDate: DateTime(2024),
       lastDate: now,
-      initialDateRange: _customRange ??
+      initialDateRange: widget.customRange ??
           DateTimeRange(
             start: now.subtract(const Duration(days: 30)),
             end: now,
@@ -95,9 +105,12 @@ class _PeriodSelectorState extends State<PeriodSelector> {
       locale: const Locale('ru'),
     );
 
-    if (picked == null) return;
+    // Пикер идёт по корневому навигатору и живёт дольше своего вызова: за это
+    // время маршрут может смениться — редиректом по истёкшей сессии или
+    // кнопкой «назад» браузера. Обращаться к чужому состоянию после этого
+    // нельзя.
+    if (picked == null || !mounted) return;
 
-    setState(() => _customRange = picked);
     widget.onPeriodChanged(PeriodSelection(
       period: 'custom',
       from: picked.start,
@@ -168,4 +181,45 @@ class PeriodSelection {
     this.from,
     this.to,
   });
+
+  /// Границы имеют силу только у произвольного периода.
+  ///
+  /// Это не придирка к типам, а закрытый дефект. Провайдеры хранили границы
+  /// отдельным полем и затирали его только непустым значением, а сервис и
+  /// бэкенд предпочитают `from`/`to` коду периода. Выбрать «Период» 01.08–25.08,
+  /// затем «7 дней» — и подсвечено «7 дней», а данные остались августовские.
+  /// Здесь такое состояние невыразимо: при пресете границ просто нет.
+  bool get isCustom => period == 'custom' && from != null && to != null;
+
+  /// Нижняя граница на провод — датой без времени.
+  ///
+  /// Именно датой: полная метка ушла бы наивной строкой, и Node разобрал бы её
+  /// по поясу процесса. В проде процесс живёт в UTC и совпадение случайное —
+  /// у разработчика окно уезжало на его смещение. Дата же читается как сутки
+  /// UTC везде одинаково, а сутками UTC бэкенд и меряет.
+  String? get fromParam => isCustom ? _isoDay(from!) : null;
+
+  /// Верхняя граница — последний день окна, ВКЛЮЧИТЕЛЬНО. Бэкенд сам сдвигает
+  /// её на полночь следующих суток.
+  String? get toParam => isCustom ? _isoDay(to!) : null;
+
+  /// Ключ периода: по нему видно, что вкладка отстала от выбранного окна.
+  String get key => isCustom ? 'custom:$fromParam|$toParam' : period;
+
+  /// Диапазон для контрола и пикера. `null` — период задан пресетом.
+  DateTimeRange? get range =>
+      isCustom ? DateTimeRange(start: from!, end: to!) : null;
+
+  static String _isoDay(DateTime d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  /// «сравнение с предыдущими 30 днями» — вторая половина подписи шапки.
+  String get comparisonLabel => switch (period) {
+        '7d' => 'сравнение с предыдущими 7 днями',
+        '30d' => 'сравнение с предыдущими 30 днями',
+        '90d' => 'сравнение с предыдущими 90 днями',
+        _ => 'сравнение с предыдущим периодом',
+      };
 }

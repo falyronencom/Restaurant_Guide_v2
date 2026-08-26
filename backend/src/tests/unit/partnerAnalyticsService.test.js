@@ -98,6 +98,22 @@ describe('getOverview', () => {
     expect(mockModel.getMetricsInPeriod).not.toHaveBeenCalled();
   });
 
+  it('period.to names the last day of the window, not the day after it', async () => {
+    // `endDate` from parsePeriod is the EXCLUSIVE bound — midnight after the
+    // window. Reporting it verbatim tells the partner their «last 30 days»
+    // ended tomorrow.
+    mockModel.getPartnerEstablishments.mockResolvedValue([
+      { id: EST_ID_1, name: 'A', view_count: 0, favorite_count: 0 },
+    ]);
+    mockModel.getMetricsInPeriod.mockResolvedValue({});
+    mockModel.getReviewMetricsInPeriod.mockResolvedValue({});
+
+    const { establishments } = await getOverview(PARTNER_ID, { period: '30d' });
+
+    const today = new Date().toISOString().split('T')[0];
+    expect(establishments[0].period.to).toBe(today);
+  });
+
   it('returns metrics for each establishment with period comparison', async () => {
     const establishments = [
       { id: EST_ID_1, name: 'Ресторан 1', view_count: 100, favorite_count: 10, review_count: 5, average_rating: '4.20' },

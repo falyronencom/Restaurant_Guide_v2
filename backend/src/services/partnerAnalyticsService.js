@@ -83,7 +83,9 @@ export const getOverview = async (partnerId, { period, from, to }) => {
       establishment_name: est.name,
       period: {
         from: startDate.toISOString().split('T')[0],
-        to: endDate.toISOString().split('T')[0],
+        // `endDate` is the exclusive bound — the midnight after the window.
+        // Reporting it as-is names tomorrow as the last day of the period.
+        to: new Date(endDate.getTime() - 86400000).toISOString().split('T')[0],
         aggregation: getAggregationType(startDate, endDate),
       },
       views: {

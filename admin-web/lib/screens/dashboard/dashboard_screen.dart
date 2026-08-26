@@ -69,11 +69,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               actions: [
                 PeriodSelector(
                   currentPeriod: provider.period,
-                  onPeriodChanged: (selection) => provider.loadDashboard(
-                    period: selection.period,
-                    from: selection.from?.toIso8601String(),
-                    to: selection.to?.toIso8601String(),
-                  ),
+                  customRange: provider.selection.range,
+                  onPeriodChanged: provider.loadDashboard,
                 ),
               ],
             ),

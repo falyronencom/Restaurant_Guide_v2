@@ -1,452 +1,320 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/analytics_vocabulary.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/distribution_chart.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/timeline_chart.dart';
+import 'package:restaurant_guide_admin_web/screens/analytics/analytics_tab_scaffold.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/ranked_bar_list.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/share_bar.dart';
 
-// Status labels: English → Russian
-const _statusToRussian = {
-  'active': 'Активные',
-  'draft': 'Черновик',
-  'pending': 'На модерации',
-  'suspended': 'Приостановлен',
-  'archived': 'Архив',
-  'rejected': 'Отклонён',
-};
-
-// Category labels: English → Russian (matches mobile/establishment.dart)
-const _categoryToRussian = {
-  'restaurant': 'Ресторан',
-  'cafe': 'Кофейня',
-  'cafe_dining': 'Кафе',
-  'fast_food': 'Фаст-фуд',
-  'pizzeria': 'Пиццерия',
-  'bar': 'Бар',
-  'pub': 'Паб',
-  'bakery': 'Пекарня',
-  'confectionery': 'Кондитерская',
-  'karaoke': 'Караоке',
-  'canteen': 'Столовая',
-  'hookah_bar': 'Кальянная',
-  'hookah_lounge': 'Кальянная',
-  'bowling': 'Боулинг',
-  'billiards': 'Бильярд',
-  'nightclub': 'Клуб',
-};
-
-/// Translate label using a mapping, return as-is if no match
-List<DistributionItem> _translateLabels(
-  List<DistributionItem> data,
-  Map<String, String> mapping,
-) {
-  return data
-      .map((item) => DistributionItem(
-            label: mapping[item.label.toLowerCase()] ?? item.label,
-            count: item.count,
-            percentage: item.percentage,
-          ))
-      .toList();
-}
-
-/// Analytics tab: Заведения
-class EstablishmentsAnalyticsTab extends StatefulWidget {
+/// Вкладка «Заведения» — кадр 08.
+class EstablishmentsAnalyticsTab extends StatelessWidget {
   const EstablishmentsAnalyticsTab({super.key});
 
-  @override
-  State<EstablishmentsAnalyticsTab> createState() =>
-      _EstablishmentsAnalyticsTabState();
-}
+  /// Категорий в каталоге пятнадцать, в карточку помещается девять. Обрезка
+  /// осознанная: карточка отвечает на вопрос «чего в каталоге больше», и
+  /// хвост из единичных категорий на него не отвечает. Сколько скрыто —
+  /// сказано сноской, молчаливого усечения нет.
+  static const int _categoriesShown = 9;
 
-class _EstablishmentsAnalyticsTabState
-    extends State<EstablishmentsAnalyticsTab> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<EstablishmentsAnalyticsProvider>();
-      if (provider.data == null) provider.load();
-    });
-  }
+  /// Городов в карточку помещается шесть — просторная строка вдвое выше
+  /// плотной. Ограничение обязательно: город приходит свободным текстом из
+  /// кабинета партнёра, справочника у него нет, и на каталоге по Беларуси их
+  /// заведомо больше шести. Без обрезки карточка не «показывала бы больше»,
+  /// а рвалась лентой переполнения поперёк экрана.
+  static const int _citiesShown = 6;
+
+  static const double _chartHeight = 216;
+
+  /// Во что помещается самая высокая карточка нижнего ряда — «По категориям»
+  /// с девятью строками и сноской. Значение снято замером, а не выведено из
+  /// кеглей: высота строки текста зависит от метрик шрифта, и арифметика по
+  /// заявленным размерам ошиблась здесь на 21 пиксель — ровно на одну строку.
+  ///
+  /// В окне ровно 820px (высота кадра) содержимое на пару десятков пикселей
+  /// выше видимой области, и страница прокручивается. Это осознанный размен:
+  /// либо честная сноска о скрытых категориях, либо ряд впритык. Молчаливое
+  /// усечение хуже прокрутки — оно читается как «в каталоге девять категорий».
+  static const double _minPanelsHeight = 312;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<EstablishmentsAnalyticsProvider>(
       builder: (context, provider, _) {
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Period selector + summary
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  PeriodSelector(
-                    currentPeriod: provider.period,
-                    onPeriodChanged: (s) => provider.load(
-                      period: s.period,
-                      from: s.from?.toIso8601String(),
-                      to: s.to?.toIso8601String(),
-                    ),
-                  ),
-                  if (provider.data != null)
-                    _SummaryRow(
-                      total: provider.data!.total,
-                      active: provider.data!.active,
-                      newInPeriod: provider.data!.newInPeriod,
-                      changePercent: provider.data!.changePercent,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              if (provider.isLoading && provider.data == null)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(48),
-                    child:
-                        CircularProgressIndicator(color: Color(0xFFF06B32)),
-                  ),
-                )
-              else if (provider.error != null && provider.data == null)
-                _ErrorState(
-                  message: provider.error!,
-                  onRetry: () => provider.load(),
-                )
-              else if (provider.data != null) ...[
-                // Timeline
-                const Text('Создание заведений',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                TimelineChart(
-                  data: provider.data!.creationTimeline,
-                  aggregation: provider.data!.aggregation,
-                  primaryLabel: 'Новые заведения',
-                  primaryColor: const Color(0xFFF06B32),
-                ),
-                const SizedBox(height: 24),
-
-                // Distribution charts row
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final statusData = _translateLabels(
-                      provider.data!.statusDistribution,
-                      _statusToRussian,
-                    );
-                    final categoryData = _translateLabels(
-                      provider.data!.categoryDistribution,
-                      _categoryToRussian,
-                    );
-
-                    if (constraints.maxWidth > 900) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: DistributionChart(
-                              title: 'По статусу',
-                              data: statusData,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: DistributionChart(
-                              title: 'По городу',
-                              data: provider.data!.cityDistribution,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _CategoryProgressList(
-                              title: 'По категориям',
-                              data: categoryData,
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: [
-                        DistributionChart(
-                          title: 'По статусу',
-                          data: statusData,
-                        ),
-                        const SizedBox(height: 16),
-                        DistributionChart(
-                          title: 'По городу',
-                          data: provider.data!.cityDistribution,
-                        ),
-                        const SizedBox(height: 16),
-                        _CategoryProgressList(
-                          title: 'По категориям',
-                          data: categoryData,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-
-                if (provider.isLoading)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 16),
-                    child: Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFFF06B32),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ],
+        return AnalyticsTabScaffold(
+          isLoading: provider.isLoading,
+          error: provider.error,
+          hasData: provider.data != null,
+          onRetry: provider.load,
+          errorTitle: 'Статистика заведений не загрузилась',
+          skeleton: const AnalyticsTabSkeleton(
+            chartHeight: _chartHeight,
+            panelsInRow: 3,
+          ),
+          builder: (context, restHeight) => _content(
+            provider.data!,
+            _chartHeight,
+            AnalyticsTabScaffold.panelsHeight(
+              restHeight,
+              _chartHeight,
+              minimum: _minPanelsHeight,
+            ),
           ),
         );
       },
     );
   }
-}
 
-class _SummaryRow extends StatelessWidget {
-  final int total;
-  final int active;
-  final int newInPeriod;
-  final double? changePercent;
-
-  const _SummaryRow({
-    required this.total,
-    required this.active,
-    required this.newInPeriod,
-    this.changePercent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final changeText = changePercent != null
-        ? '${changePercent! > 0 ? '+' : ''}${changePercent!.toStringAsFixed(1)}%'
-        : 'N/A';
-    final changeColor = changePercent == null
-        ? Colors.grey[500]
-        : changePercent! > 0
-            ? const Color(0xFF3FD00D)
-            : changePercent! < 0
-                ? Colors.red[600]
-                : Colors.grey[500];
-
-    return Row(
-      children: [
-        _chip('Всего: $total'),
-        const SizedBox(width: 8),
-        _chip('Активных: $active'),
-        const SizedBox(width: 8),
-        _chip('+$newInPeriod за период'),
-        const SizedBox(width: 8),
-        Text(changeText,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: changeColor,
-            )),
+  Widget _content(
+    EstablishmentsAnalyticsData data,
+    double chartHeight,
+    double panelsHeight,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: AnalyticsTabScaffold.gap,
+      children: <Widget>[
+        SizedBox(
+          height: AnalyticsTabScaffold.metricsHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: AnalyticsTabScaffold.gap,
+            children: <Widget>[
+              Expanded(
+                child: MetricCard(
+                  icon: Icons.storefront_outlined,
+                  label: 'Всего заведений',
+                  value: formatCount(data.total),
+                ),
+              ),
+              Expanded(
+                child: MetricCard(
+                  icon: Icons.check_circle_outline,
+                  label: 'Активных',
+                  value: formatCount(data.active),
+                  valueNote: '${formatShare(data.active, data.total)} каталога',
+                ),
+              ),
+              Expanded(
+                child: MetricCard(
+                  icon: Icons.add_business_outlined,
+                  label: 'Новых за период',
+                  value: formatCount(data.newInPeriod),
+                  changePercent: data.changePercent,
+                ),
+              ),
+              Expanded(
+                child: MetricCard(
+                  icon: Icons.pending_actions_outlined,
+                  label: 'На модерации',
+                  value: formatCount(data.pending),
+                  // Дельты нет намеренно: очередь — остаток работы, а не рост.
+                  valueNote: 'очередь на просмотр',
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: chartHeight,
+          child: AnalyticsPanel(
+            title: 'Создание заведений',
+            titleGap: 12,
+            expandChild: true,
+            titleTrailing: const <Widget>[
+              ChartLegend(
+                color: AppTheme.primaryOrange,
+                label: 'новые заведения, в день',
+              ),
+            ],
+            child: CanonLineChart(
+              data: data.creationTimeline,
+              aggregation: data.aggregation,
+              emptyMessage: 'За выбранный период заведений не создавали',
+            ),
+          ),
+        ),
+        SizedBox(
+          height: panelsHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: AnalyticsTabScaffold.gap,
+            children: <Widget>[
+              Expanded(child: _StatusPanel(data: data)),
+              Expanded(child: _CityPanel(data: data, shown: _citiesShown)),
+              Expanded(
+                child: _CategoryPanel(
+                  data: data,
+                  shown: _categoriesShown,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
-
-  Widget _chip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(text,
-          style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-    );
-  }
 }
 
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
+/// «По статусу»: полоса долей и легенда числами.
+class _StatusPanel extends StatelessWidget {
+  final EstablishmentsAnalyticsData data;
 
-  const _ErrorState({required this.message, required this.onRetry});
+  const _StatusPanel({required this.data});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          children: [
-            Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
-            const SizedBox(height: 12),
-            Text(message, style: TextStyle(color: Colors.red[600])),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: onRetry,
-              child: const Text('Повторить'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    // Порядок канонический, а не пришедший с бэкенда: тот сортирует по
+    // убыванию количества, и шкала перекладывалась бы при каждом изменении
+    // данных. Незнакомые коды дописываются в конец — потерять их нельзя,
+    // иначе сумма долей молча перестанет быть целым.
+    final counts = <String, int>{
+      for (final key in kStatusShares.keys) key: 0,
+    };
+    for (final item in data.statusDistribution) {
+      counts[item.label] = (counts[item.label] ?? 0) + item.count;
+    }
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
 
-/// Clean progress-bar list for category distribution.
-/// Each row: category name | progress bar | count.
-/// Sorted by count descending (data comes pre-sorted from backend).
-class _CategoryProgressList extends StatelessWidget {
-  final String title;
-  final List<DistributionItem> data;
-
-  const _CategoryProgressList({
-    required this.title,
-    required this.data,
-  });
-
-  static const _barColor = Color(0xFFF06B32);
-
-  @override
-  Widget build(BuildContext context) {
-    if (data.isEmpty || data.every((d) => d.count == 0)) {
-      return _buildEmptyState();
+    if (total == 0) {
+      return const AnalyticsPanel(
+        title: 'По статусу',
+        child: PanelEmpty('В каталоге пока нет заведений'),
+      );
     }
 
-    final maxCount = data.fold<int>(0, (m, d) => d.count > m ? d.count : m);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return AnalyticsPanel(
+      title: 'По статусу',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A1A),
-            ),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          ShareBar(
+            segments: <ShareSegment>[
+              for (final entry in counts.entries)
+                ShareSegment(
+                  color: statusShareColor(entry.key),
+                  value: entry.value,
+                ),
+            ],
           ),
-          const SizedBox(height: 16),
-          ...data.map((item) => _buildRow(item, maxCount)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRow(DistributionItem item, int maxCount) {
-    final fraction = maxCount > 0 ? item.count / maxCount : 0.0;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          // Category name
-          SizedBox(
-            width: 110,
-            child: Text(
-              item.label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[700],
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Progress bar
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Stack(
-                  children: [
-                    // Background track
-                    Container(
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    // Filled bar
-                    Container(
-                      height: 22,
-                      width: constraints.maxWidth * fraction,
-                      decoration: BoxDecoration(
-                        color: _barColor.withValues(
-                          alpha: 0.6 + 0.4 * fraction,
-                        ),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Count value
-          SizedBox(
-            width: 36,
-            child: Text(
-              '${item.count}',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
-              ),
-              textAlign: TextAlign.right,
-            ),
+          const SizedBox(height: 14),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 7,
+            children: <Widget>[
+              for (final entry in counts.entries)
+                ShareLegendRow(
+                  color: statusShareColor(entry.key),
+                  label: statusShareLabel(entry.key),
+                  value: entry.value,
+                  total: total,
+                ),
+            ],
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildEmptyState() {
-    return Container(
-      height: 180,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+/// «По городу»: ранжированные полосы и вывод о концентрации.
+class _CityPanel extends StatelessWidget {
+  final EstablishmentsAnalyticsData data;
+  final int shown;
+
+  const _CityPanel({required this.data, required this.shown});
+
+  @override
+  Widget build(BuildContext context) {
+    final cities = data.cityDistribution;
+
+    if (cities.isEmpty) {
+      return const AnalyticsPanel(
+        title: 'По городу',
+        child: PanelEmpty('Ни у одного заведения не указан город'),
+      );
+    }
+
+    final top = cities.reduce((a, b) => a.count >= b.count ? a : b);
+    final hidden = cities.length - shown;
+
+    return AnalyticsPanel(
+      title: 'По городу',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          RankedBarList.spacious(
+            items: <RankedBarItem>[
+              for (final city in cities)
+                RankedBarItem(label: city.label, value: city.count),
+            ],
+            maxItems: shown,
+          ),
+          const SizedBox(height: 14),
+          // Доля считается от всего каталога, а не от суммы по городам: у
+          // заведения город может быть не указан, и тогда суммы расходятся,
+          // а «52% каталога» обязано означать ровно каталог.
+          PanelFootnote(
+            hidden > 0
+                ? '${top.label} — ${formatShare(top.count, data.total)} каталога'
+                    ' · и ещё ${countWithNoun(hidden, 'город', 'города', 'городов')}'
+                : '${top.label} — ${formatShare(top.count, data.total)} каталога',
+            maxLines: 1,
           ),
         ],
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bar_chart, size: 40, color: Colors.grey[300]),
-            const SizedBox(height: 8),
-            Text(title,
-                style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-            const SizedBox(height: 4),
-            Text('Нет данных',
-                style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+    );
+  }
+}
+
+/// «По категориям»: ранжированные полосы, плотная посадка.
+class _CategoryPanel extends StatelessWidget {
+  final EstablishmentsAnalyticsData data;
+  final int shown;
+
+  const _CategoryPanel({required this.data, required this.shown});
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = data.categoryDistribution;
+
+    if (categories.isEmpty) {
+      return const AnalyticsPanel(
+        title: 'По категориям',
+        child: PanelEmpty('Ни у одного заведения не указана категория'),
+      );
+    }
+
+    final hidden = categories.length - shown;
+
+    return AnalyticsPanel(
+      title: 'По категориям',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          RankedBarList.dense(
+            items: <RankedBarItem>[
+              for (final category in categories)
+                RankedBarItem(label: category.label, value: category.count),
+            ],
+            maxItems: shown,
+          ),
+          if (hidden > 0) ...<Widget>[
+            const SizedBox(height: 12),
+            PanelFootnote(
+              'и ещё ${countWithNoun(hidden, 'категория', 'категории', 'категорий')}',
+              maxLines: 1,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

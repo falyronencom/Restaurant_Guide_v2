@@ -1,27 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/providers/reviews_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/distribution_chart.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/timeline_chart.dart';
 
 /// Analytics tab: Отзывы и оценки
-class ReviewsAnalyticsTab extends StatefulWidget {
+///
+/// ВРЕМЕННОЕ СОСТОЯНИЕ — проход A этапа 6 привёл к кадрам вкладки «Заведения»
+/// и «Пользователи»; эта ждёт кадра 09 в проходе B. Здесь снят только
+/// собственный сегмент-контрол периода — он переехал в шапку раздела и стоял
+/// бы вторым. Остальное, включая `TimelineChart` с наложением оценки на шкалу
+/// количества, живёт до прохода B.
+class ReviewsAnalyticsTab extends StatelessWidget {
   const ReviewsAnalyticsTab({super.key});
-
-  @override
-  State<ReviewsAnalyticsTab> createState() => _ReviewsAnalyticsTabState();
-}
-
-class _ReviewsAnalyticsTabState extends State<ReviewsAnalyticsTab> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<ReviewsAnalyticsProvider>();
-      if (provider.data == null) provider.load();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,28 +24,6 @@ class _ReviewsAnalyticsTabState extends State<ReviewsAnalyticsTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Period selector + summary
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  PeriodSelector(
-                    currentPeriod: provider.period,
-                    onPeriodChanged: (s) => provider.load(
-                      period: s.period,
-                      from: s.from?.toIso8601String(),
-                      to: s.to?.toIso8601String(),
-                    ),
-                  ),
-                  if (provider.data != null)
-                    _SummaryRow(
-                      total: provider.data!.total,
-                      newInPeriod: provider.data!.newInPeriod,
-                      changePercent: provider.data!.changePercent,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
               if (provider.isLoading && provider.data == null)
                 const Center(
                   child: Padding(
@@ -199,7 +169,9 @@ class _ResponseStatsCard extends StatelessWidget {
           const SizedBox(height: 12),
           _statRow(
             'Процент ответов',
-            '${(stats.responseRate * 100).toStringAsFixed(1)}%',
+            // Через общий форматтер: `toStringAsFixed` ставит латинскую точку,
+            // и «23.1%» стояло в русском интерфейсе рядом с «88,6%».
+            '${formatDecimal(stats.responseRate * 100)}%',
             Icons.percent,
           ),
           const SizedBox(height: 12),
@@ -239,58 +211,5 @@ class _ResponseStatsCard extends StatelessWidget {
     if (hours < 24) return '${hours.toStringAsFixed(1)} ч';
     final days = (hours / 24).toStringAsFixed(1);
     return '$days д';
-  }
-}
-
-class _SummaryRow extends StatelessWidget {
-  final int total;
-  final int newInPeriod;
-  final double? changePercent;
-
-  const _SummaryRow({
-    required this.total,
-    required this.newInPeriod,
-    this.changePercent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final changeText = changePercent != null
-        ? '${changePercent! > 0 ? '+' : ''}${changePercent!.toStringAsFixed(1)}%'
-        : 'N/A';
-    final changeColor = changePercent == null
-        ? Colors.grey[500]
-        : changePercent! > 0
-            ? const Color(0xFF3FD00D)
-            : changePercent! < 0
-                ? Colors.red[600]
-                : Colors.grey[500];
-
-    return Row(
-      children: [
-        _chip('Всего: $total'),
-        const SizedBox(width: 8),
-        _chip('+$newInPeriod за период'),
-        const SizedBox(width: 8),
-        Text(changeText,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: changeColor,
-            )),
-      ],
-    );
-  }
-
-  Widget _chip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(text,
-          style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-    );
   }
 }

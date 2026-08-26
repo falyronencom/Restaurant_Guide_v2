@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 
 /// State management for the Dashboard screen
 class DashboardProvider with ChangeNotifier {
@@ -11,9 +12,18 @@ class DashboardProvider with ChangeNotifier {
   String _aggregation = 'day';
   bool _isLoading = false;
   String? _error;
-  String _period = '30d';
-  String? _customFrom;
-  String? _customTo;
+
+  /// Период целиком, а не код отдельно от границ.
+  ///
+  /// Прежде границы жили своими полями и затирались только непустым значением,
+  /// а сервис предпочитает `from`/`to` коду периода: выбрать «Период», затем
+  /// «7 дней» — и подсвечено «7 дней», а данные остались за произвольный
+  /// диапазон. `PeriodSelection` такое состояние не выражает вовсе.
+  PeriodSelection _selection = const PeriodSelection(period: '30d');
+
+  /// Счётчик поколений — как у вкладок аналитики: без него быстрая смена
+  /// периода отдаёт победу ответившему последним, а не запрошенному последним.
+  int _generation = 0;
 
   DashboardProvider({AnalyticsService? service})
       : _service = service ?? AnalyticsService();
@@ -24,17 +34,14 @@ class DashboardProvider with ChangeNotifier {
   String get aggregation => _aggregation;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  String get period => _period;
+  String get period => _selection.period;
+  PeriodSelection get selection => _selection;
 
   /// Load dashboard data for the given period
-  Future<void> loadDashboard({
-    String? period,
-    String? from,
-    String? to,
-  }) async {
-    if (period != null) _period = period;
-    if (from != null) _customFrom = from;
-    if (to != null) _customTo = to;
+  Future<void> loadDashboard([PeriodSelection? selection]) async {
+    if (selection != null) _selection = selection;
+    final requested = _selection;
+    final generation = ++_generation;
 
     _isLoading = true;
     _error = null;
@@ -43,26 +50,30 @@ class DashboardProvider with ChangeNotifier {
     try {
       final results = await Future.wait([
         _service.getOverview(
-          period: _period,
-          from: _customFrom,
-          to: _customTo,
+          period: requested.period,
+          from: requested.fromParam,
+          to: requested.toParam,
         ),
         _service.getUsersAnalytics(
-          period: _period,
-          from: _customFrom,
-          to: _customTo,
+          period: requested.period,
+          from: requested.fromParam,
+          to: requested.toParam,
         ),
       ]);
 
+      if (generation != _generation) return;
       _overview = results[0] as OverviewData;
       final usersData = results[1] as UsersAnalyticsData;
       _registrationTimeline = usersData.registrationTimeline;
       _aggregation = usersData.aggregation;
     } catch (e) {
+      if (generation != _generation) return;
       _error = _extractMessage(e);
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 

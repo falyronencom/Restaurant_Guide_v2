@@ -149,12 +149,29 @@ export async function createTestReview(userId, establishmentId, overrides = {}) 
   const content = overrides.content ?? 'Test review content for admin testing';
   const isVisible = overrides.is_visible ?? true;
   const isDeleted = overrides.is_deleted ?? false;
+  // Ответ партнёра. По умолчанию его нет — существующие вызовы не меняются.
+  // Метка времени ставится только вместе с текстом: строка с `partner_response_at`
+  // и без ответа попала бы в среднее время ответа, которого не было.
+  const partnerResponse = overrides.partner_response ?? null;
+  const partnerResponseHours = overrides.partner_response_hours ?? 0;
 
   const result = await query(
-    `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, is_visible, is_deleted, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, $7, NOW(), NOW())
+    `INSERT INTO reviews (
+       id, user_id, establishment_id, rating, content, text,
+       is_visible, is_deleted, partner_response, partner_response_at,
+       created_at, updated_at
+     )
+     VALUES (
+       $1, $2, $3, $4, $5, $5,
+       $6, $7, $8,
+       CASE WHEN $8::text IS NULL THEN NULL ELSE NOW() + ($9 || ' hours')::interval END,
+       NOW(), NOW()
+     )
      RETURNING *`,
-    [reviewId, effectiveUserId, establishmentId, rating, content, isVisible, isDeleted],
+    [
+      reviewId, effectiveUserId, establishmentId, rating, content,
+      isVisible, isDeleted, partnerResponse, String(partnerResponseHours),
+    ],
   );
 
   return result.rows[0];

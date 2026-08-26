@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
 /// Карточка метрики дашборда — инструментальная, белая с тёплой тенью.
 ///
@@ -128,16 +129,75 @@ class MetricCard extends StatelessWidget {
     }
 
     if (note != null) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          note,
-          style: const TextStyle(fontSize: 12, color: AppTheme.textGrey),
+      // Гибкая и с усечением: четыре карточки в ряд при окне 1024 отдают под
+      // каждую около 180 логических пикселей, и приписка вроде «очередь на
+      // просмотр» вылезала за карточку лентой переполнения. Число важнее
+      // приписки, поэтому ужимается именно она.
+      return Flexible(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(
+            note,
+            style: const TextStyle(fontSize: 12, color: AppTheme.textGrey),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+/// Скелетон метрики — повторяет ту раскладку, которая придёт.
+///
+/// [withFootnote] следует наличию сноски у настоящей карточки: скелетон,
+/// обещающий строку, которой не будет, сдвигает содержимое при появлении
+/// данных.
+class MetricCardSkeleton extends StatelessWidget {
+  final bool withFootnote;
+
+  const MetricCardSkeleton({super.key, this.withFootnote = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.canonCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Row(
+            spacing: 10,
+            children: <Widget>[
+              SkeletonBlock(
+                width: 32,
+                height: 32,
+                radius: 8,
+                shade: SkeletonShade.strong,
+              ),
+              Expanded(child: SkeletonBlock(widthFactor: 0.7, height: 11)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const SkeletonBlock(
+            width: 96,
+            height: 30,
+            radius: 8,
+            shade: SkeletonShade.strong,
+          ),
+          if (withFootnote) ...<Widget>[
+            const SizedBox(height: 8),
+            const SkeletonBlock(
+              widthFactor: 0.55,
+              height: 11,
+              shade: SkeletonShade.weak,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
