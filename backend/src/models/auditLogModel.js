@@ -261,7 +261,11 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
       al.entity_id,
       al.old_data,
       al.new_data,
-      al.created_at,
+      -- AT TIME ZONE 'UTC' обязателен: колонка — timestamp WITHOUT time zone,
+      -- и node-pg читает такую метку как местное время своего процесса. В
+      -- проде (TZ=UTC) совпадает, у разработчика уезжает на его часовой пояс.
+      -- Сортировка и границы from/to ходят по сырой колонке и не затронуты.
+      al.created_at AT TIME ZONE 'UTC' as created_at,
       u.name as admin_name,
       u.email as admin_email,
       CASE

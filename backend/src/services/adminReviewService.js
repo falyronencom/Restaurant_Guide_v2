@@ -49,18 +49,23 @@ export const getReviews = async ({
       to,
     };
 
-    const [reviews, total] = await Promise.all([
+    const [reviews, stats] = await Promise.all([
       AdminReviewModel.getAdminReviews(filters, effectivePerPage, offset),
-      AdminReviewModel.countAdminReviews(filters),
+      AdminReviewModel.getReviewStats(filters),
     ]);
 
     return {
       reviews,
       meta: {
-        total,
+        total: stats.total,
+        // Считаются по той же выборке, что и total: подпись экрана
+        // «180 отзывов · 3 скрыто · средний 1,6» под фильтром «1–2 звезды»
+        // описывает отфильтрованное, а не раздел целиком.
+        hidden: stats.hidden,
+        average_rating: stats.average_rating,
         page: Math.max(page, 1),
         per_page: effectivePerPage,
-        pages: Math.ceil(total / effectivePerPage),
+        pages: Math.ceil(stats.total / effectivePerPage),
       },
     };
   } catch (error) {

@@ -72,6 +72,19 @@ String formatDayMonthLocal(DateTime value, {DateTime? now}) {
   return local.year == currentYear ? base : '$base ${local.year}';
 }
 
+/// День и месяц числами: «12.08».
+///
+/// Компактная форма для карточек списка, где на дату отведён угол строки.
+/// Год не пишется по той же причине, что и в [formatDayMonthLocal], — но
+/// здесь его нет и у прошлогодних записей: в моноширинном углу карточки
+/// «12.08.2025» ломает выравнивание всей колонки дат, а точная давность
+/// читается в панели разбора.
+String formatDayMonthShort(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}.${two(local.month)}';
+}
+
 /// Время в местном времени: «09:41».
 String formatTimeLocal(DateTime value) {
   final local = value.toLocal();

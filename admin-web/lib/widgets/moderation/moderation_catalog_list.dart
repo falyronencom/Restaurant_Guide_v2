@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_admin_web/config/category_icons.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -118,11 +119,11 @@ class ModerationCatalogList extends StatelessWidget {
 
     final message = error;
     if (message != null) {
-      return _CatalogMessage(
+      return AdminColumnMessage(
         icon: Icons.cloud_off_outlined,
         title: 'Список не загрузился',
         message: message,
-        onRetry: onRetry,
+        onAction: onRetry,
       );
     }
 
@@ -132,16 +133,16 @@ class ModerationCatalogList extends StatelessWidget {
       // раздел не опустел, опустела страница, и говорить «здесь ничего нет»
       // было бы неправдой ровно там, где остальное никуда не делось.
       if (totalCount > 0) {
-        return _CatalogMessage(
+        return AdminColumnMessage(
           icon: Icons.refresh,
           title: 'Страница опустела',
           message: 'Последняя запись на этой странице обработана. '
               'Остальные записи раздела на месте.',
-          onRetry: onRetry,
+          onAction: onRetry,
         );
       }
 
-      return _CatalogMessage(
+      return AdminColumnMessage(
         icon: Icons.inbox_outlined,
         title: emptyTitle,
         message: emptyMessage,
@@ -449,61 +450,6 @@ class _CatalogSkeleton extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CatalogMessage extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String message;
-  final VoidCallback? onRetry;
-
-  const _CatalogMessage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final retry = onRetry;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 32, color: AppTheme.textGrey),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: AppTheme.canonSubsectionHeader,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-                height: 1.4,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (retry != null) ...[
-              const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: retry,
-                style: AppTheme.canonHeaderAction(),
-                child: const Text('Повторить'),
-              ),
-            ],
           ],
         ),
       ),

@@ -524,3 +524,209 @@ describe('Aggregate recalculation on toggle-visibility (#17)', () => {
     expect(Number(estRow.rows[0].review_count)).toBe(1);
   });
 });
+
+// ============================================================================
+// Б3 — проекция и агрегаты для экрана «Отзывы» (кадр 07 редизайна)
+// ============================================================================
+
+describe('Б3: агрегаты выборки и статистика в проекции', () => {
+  test('meta несёт число скрытых и среднюю оценку по той же выборке', async () => {
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    await createTestReview(null, testEstablishmentId, { rating: 3 });
+    await createTestReview(null, testEstablishmentId, { rating: 1, is_visible: false });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body.meta.total).toBe(3);
+    expect(response.body.meta.hidden).toBe(1);
+    // (5 + 3 + 1) / 3 — скрытые входят в среднюю ВЫБОРКИ: подпись описывает
+    // то, что модератор видит в списке, а скрытые он видит. Это НЕ то же
+    // самое, что рейтинг заведения: там скрытые исключены
+    // (updateEstablishmentAggregates фильтрует is_visible = true).
+    expect(response.body.meta.average_rating).toBeCloseTo(3, 2);
+  });
+
+  test('удалённый отзыв не портит среднюю', async () => {
+    await createTestReview(null, testEstablishmentId, { rating: 4 });
+    await createTestReview(null, testEstablishmentId, { rating: 1, is_deleted: true });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body.meta.total).toBe(2);
+    expect(response.body.meta.average_rating).toBeCloseTo(4, 2);
+    // Удалённый — не скрытый: у него своя строка статуса на экране.
+    expect(response.body.meta.hidden).toBe(0);
+  });
+
+  test('агрегаты считаются по отфильтрованному, а не по разделу', async () => {
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    await createTestReview(null, testEstablishmentId, { rating: 2, is_visible: false });
+    await createTestReview(null, testEstablishmentId, { rating: 1, is_visible: false });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews?status=hidden')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // Подпись «2 отзыва · 2 скрыто · средний 1,5» описывает то, что в списке.
+    expect(response.body.meta.total).toBe(2);
+    expect(response.body.meta.hidden).toBe(2);
+    expect(response.body.meta.average_rating).toBeCloseTo(1.5, 2);
+  });
+
+  test('пустая выборка отдаёт нули, а среднюю — null, а не 0', async () => {
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body.meta.total).toBe(0);
+    expect(response.body.meta.hidden).toBe(0);
+    // «0,0» под звездой читается как плохая оценка, а не как её отсутствие —
+    // отличать эти случаи должен уже клиент, и для этого ему нужен null.
+    expect(response.body.meta.average_rating).toBeNull();
+  });
+
+  test('числа приходят числами, а не строками NUMERIC', async () => {
+    await createTestReview(null, testEstablishmentId, { rating: 4 });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // node-pg отдаёт NUMERIC СТРОКОЙ. Без каста в float8 клиент получил бы
+    // "4.00" там, где ждёт число, и упал бы на разборе.
+    expect(typeof response.body.meta.average_rating).toBe('number');
+    expect(typeof response.body.data[0].establishment_average_rating).toBe('number');
+    expect(typeof response.body.data[0].author_average_rating).toBe('number');
+  });
+
+  test('проекция несёт рейтинг заведения и статистику автора', async () => {
+    const author = await createUserAndGetTokens({
+      email: `stats-author-${randomUUID()}@test.com`,
+      phone: null,
+      password: 'User123!@#',
+      name: 'Stats Author',
+      role: 'user',
+      authMethod: 'email',
+    });
+
+    const { establishment: second } = await createPartnerWithEstablishment('active');
+
+    // Один автор, два заведения: 2 и 4 → его средняя 3,0 при двух отзывах.
+    const target = await createTestReview(author.user.id, testEstablishmentId, { rating: 2 });
+    await createTestReview(author.user.id, second.id, { rating: 4 });
+    // Чужой отзыв тому же заведению — попадает в рейтинг заведения, но не в
+    // статистику автора.
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const row = response.body.data.find((r) => r.id === target.id);
+
+    expect(row.author_review_count).toBe(2);
+    expect(row.author_average_rating).toBeCloseTo(3, 2);
+    // Рейтинг заведения — по обоим его отзывам: (2 + 5) / 2.
+    expect(row.establishment_review_count).toBe(2);
+    expect(row.establishment_average_rating).toBeCloseTo(3.5, 2);
+    // Дата ответа партнёра приходила и раньше — клиент её просто не читал.
+    expect(row).toHaveProperty('partner_response_at');
+  });
+
+  test('удалённые отзывы автора в его статистику не входят', async () => {
+    const author = await createUserAndGetTokens({
+      email: `deleted-stats-${randomUUID()}@test.com`,
+      phone: null,
+      password: 'User123!@#',
+      name: 'Deleted Stats',
+      role: 'user',
+      authMethod: 'email',
+    });
+    const { establishment: second } = await createPartnerWithEstablishment('active');
+
+    const target = await createTestReview(author.user.id, testEstablishmentId, { rating: 5 });
+    await createTestReview(author.user.id, second.id, { rating: 1, is_deleted: true });
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const row = response.body.data.find((r) => r.id === target.id);
+    expect(row.author_review_count).toBe(1);
+    expect(row.author_average_rating).toBeCloseTo(5, 2);
+  });
+
+  test('метка создания отдаётся как UTC, а не как местное время процесса', async () => {
+    const review = await createTestReview(null, testEstablishmentId, { rating: 4 });
+    await query(
+      "UPDATE reviews SET created_at = '2026-07-14 09:41:00' WHERE id = $1",
+      [review.id],
+    );
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // Стенное время из БД читаем текстом: разбирать его тем же node-pg
+    // значило бы сверять дефект с самим собой.
+    const stored = await query(
+      "SELECT to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') as wall FROM reviews WHERE id = $1",
+      [review.id],
+    );
+
+    // ЧЕСТНАЯ ГРАНИЦА: на UTC-раннере этот тест зелёный и БЕЗ правки — дефект
+    // по построению невидим там, где процесс живёт в UTC. Он краснеет на
+    // машине разработчика (UTC+3) и сторожит смысл: метка на проводе — это
+    // ровно то, что лежит в колонке, а не то же самое минус часовой пояс
+    // того, кто её прочитал.
+    expect(response.body.data[0].created_at).toBe(`${stored.rows[0].wall}.000Z`);
+  });
+});
+
+describe('Б3: чей рейтинг заведения попадает в проекцию', () => {
+  test('скрытый отзыв выпадает из рейтинга заведения — пишет не триггер', async () => {
+    // Посылка, на которой стоит клиентский расчёт «без этого отзыва». Она НЕ
+    // очевидна: триггер update_metrics_after_review считает по всем
+    // неудалённым, и по нему скрытый остался бы внутри. Но после триггера на
+    // каждом пути записи вызывается updateEstablishmentAggregates, а она
+    // фильтрует ещё и is_visible = true — её значение и остаётся в колонке.
+    //
+    // Без этого теста расхождение видно только в панели модератора, и то
+    // числом, которое выглядит правдоподобно.
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    const toHide = await createTestReview(null, testEstablishmentId, { rating: 1 });
+
+    await request(app)
+      .post(`/api/v1/admin/reviews/${toHide.id}/toggle-visibility`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const response = await request(app)
+      .get('/api/v1/admin/reviews')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const hidden = response.body.data.find((r) => r.id === toHide.id);
+
+    expect(hidden.is_visible).toBe(false);
+    // Единица исключена: две видимые пятёрки дают 5,00 при двух отзывах.
+    expect(hidden.establishment_average_rating).toBeCloseTo(5, 2);
+    expect(hidden.establishment_review_count).toBe(2);
+    // Если бы скрытый считался, вышло бы 3,67 при трёх отзывах — и клиент,
+    // вычитая единицу из тройки, получил бы 5,00 вместо честного «ничего не
+    // изменится». Совпадение здесь означает, что вычитать нечего.
+  });
+});

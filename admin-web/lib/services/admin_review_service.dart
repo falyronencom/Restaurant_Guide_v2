@@ -53,6 +53,8 @@ class AdminReviewService {
     return AdminReviewListResponse(
       reviews: items,
       total: meta['total'] as int? ?? items.length,
+      hidden: meta['hidden'] as int? ?? 0,
+      averageRating: (meta['average_rating'] as num?)?.toDouble(),
       page: meta['page'] as int? ?? page,
       pages: meta['pages'] as int? ?? 1,
     );

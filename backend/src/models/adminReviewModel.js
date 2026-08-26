@@ -98,7 +98,12 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       r.is_deleted,
       r.is_visible,
       r.is_edited,
-      r.created_at,
+      -- AT TIME ZONE 'UTC' обязателен. Колонка — timestamp WITHOUT time zone,
+      -- и node-pg читает такую метку как местное время СВОЕГО процесса. В
+      -- проде (TZ=UTC) это совпадает с хранимым, а на машине разработчика
+      -- уезжает на его часовой пояс — дефект, невидимый именно там, где его
+      -- ловят. Каст в timestamptz снимает вопрос для любого клиента.
+      r.created_at AT TIME ZONE 'UTC' as created_at,
       r.partner_response,
       r.partner_response_at,
       CASE WHEN r.partner_response IS NOT NULL THEN true ELSE false END as has_partner_response,
@@ -106,10 +111,31 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       u.email as author_email,
       e.name as establishment_name,
       e.city as establishment_city,
-      e.id as establishment_id
+      e.id as establishment_id,
+      -- Рейтинг заведения — по ВИДИМЫМ неудалённым отзывам.
+      -- Триггер update_metrics_after_review пишет в те же колонки значение по
+      -- всем неудалённым, но последнее слово не за ним: на каждом пути записи
+      -- следом вызывается ReviewModel.updateEstablishmentAggregates, а она
+      -- фильтрует ещё и is_visible = true. Скрытый отзыв здесь не участвует —
+      -- на это опирается клиентский расчёт «без этого отзыва».
+      -- float8, а не numeric: node-pg отдаёт NUMERIC строкой.
+      e.average_rating::float8 as establishment_average_rating,
+      e.review_count as establishment_review_count,
+      author.review_count as author_review_count,
+      author.average_rating::float8 as author_average_rating
     FROM reviews r
     LEFT JOIN users u ON r.user_id = u.id
     LEFT JOIN establishments e ON r.establishment_id = e.id
+    -- Статистика автора одним проходом по idx_reviews_user вместо двух
+    -- скоррелированных подзапросов на строку. Скрытые здесь УЧИТЫВАЮТСЯ: это
+    -- характеристика автора, а не того, что видит посетитель.
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*)::int as review_count,
+        ROUND(AVG(ar.rating)::numeric, 2) as average_rating
+      FROM reviews ar
+      WHERE ar.user_id = r.user_id AND ar.is_deleted = FALSE
+    ) author ON TRUE
     ${whereClause}
     ORDER BY ${orderBy}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -136,25 +162,49 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
 };
 
 /**
- * Count reviews matching filters (for pagination)
+ * Aggregate stats over the reviews matching filters
+ *
+ * Заменяет прежний countAdminReviews: подпись экрана «Отзывы» показывает
+ * рядом со счётчиком, сколько из них скрыто и какова средняя оценка, и все
+ * три величины обязаны считаться по ОДНОЙ выборке. Отдельный запрос за каждой
+ * дал бы три числа, отвечающих на разные вопросы под общим заголовком.
+ *
+ * `hidden` совпадает по условию с фильтром status='hidden' в buildReviewWhere:
+ * иначе счётчик в шапке разошёлся бы с длиной списка под фильтром «Скрытые».
+ * Средняя считается по неудалённым — так же, как её считает триггер
+ * update_metrics_after_review для рейтинга заведения.
  *
  * @param {Object} filters
- * @returns {Promise<number>}
+ * @returns {Promise<{ total: number, hidden: number, average_rating: number|null }>}
  */
-export const countAdminReviews = async (filters = {}) => {
+export const getReviewStats = async (filters = {}) => {
   const { whereClause, values } = buildReviewWhere(filters);
 
   const query = `
-    SELECT COUNT(*) as total
+    SELECT
+      COUNT(*)::int as total,
+      COUNT(*) FILTER (
+        WHERE r.is_visible = FALSE AND r.is_deleted = FALSE
+      )::int as hidden,
+      -- float8, а не numeric: node-pg отдаёт NUMERIC строкой.
+      ROUND(
+        (AVG(r.rating) FILTER (WHERE r.is_deleted = FALSE))::numeric, 2
+      )::float8 as average_rating
     FROM reviews r
     ${whereClause}
   `;
 
   try {
     const result = await pool.query(query, values);
-    return parseInt(result.rows[0].total, 10);
+    const row = result.rows[0];
+
+    return {
+      total: row.total,
+      hidden: row.hidden,
+      average_rating: row.average_rating,
+    };
   } catch (error) {
-    logger.error('Error counting admin reviews', {
+    logger.error('Error aggregating admin reviews', {
       error: error.message,
       filters,
     });
