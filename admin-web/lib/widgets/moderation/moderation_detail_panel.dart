@@ -355,51 +355,14 @@ class ModerationEntityActions extends StatelessWidget {
     );
   }
 
-  void _confirmSuspend(BuildContext context) {
-    final reasonController = TextEditingController();
-
-    showDialog(
+  Future<void> _confirmSuspend(BuildContext context) async {
+    final reason = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Приостановить заведение?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Заведение будет скрыто из поиска и каталога.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Причина приостановки...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final reason = reasonController.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(ctx);
-              onSuspend?.call(reason);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.errorRed,
-            ),
-            child: const Text('Приостановить'),
-          ),
-        ],
-      ),
+      builder: (_) => const _SuspendReasonDialog(),
     );
+
+    if (reason == null) return; // закрыли, не подтвердив
+    onSuspend?.call(reason);
   }
 
   void _confirmUnsuspend(BuildContext context) {
@@ -1971,6 +1934,105 @@ class _InfoField extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// Диалог приостановки — отдельным виджетом, потому что он владеет контроллером.
+///
+/// Две причины, обе проверены на близнеце этого диалога в отзывах.
+///
+/// **Контроллер.** Прежде он создавался в вызывающем методе и не освобождался
+/// вовсе — последний такой случай в проекте. Пользователю это не видно
+/// (слушатель у поля один, и он умирает вместе с диалогом), но правило
+/// «создал — освободи» держится только целиком. Освобождать через
+/// `showDialog(...).whenComplete(dispose)` при этом НЕЛЬЗЯ: future завершается
+/// на попе маршрута, а тот ещё уезжает анимацией, и тронутое поле
+/// перестраивается уже после `dispose`. `State.dispose` вызывается после
+/// размонтирования — тогда, когда поля уже нет.
+///
+/// **Кнопка.** Прежде при пустой причине она выходила по `return`: выглядела
+/// активной и молча не реагировала на нажатие. Это хуже заблокированной
+/// кнопки, про которую канон говорит прямо — причина блокировки объясняется
+/// рядом, иначе кнопка читается как поломка. Теперь состояние кнопки следует
+/// за полем, а рядом написано, чего не хватает.
+class _SuspendReasonDialog extends StatefulWidget {
+  const _SuspendReasonDialog();
+
+  @override
+  State<_SuspendReasonDialog> createState() => _SuspendReasonDialogState();
+}
+
+class _SuspendReasonDialogState extends State<_SuspendReasonDialog> {
+  final _reasonController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Приостановить заведение?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('Заведение будет скрыто из поиска и каталога.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reasonController,
+            maxLines: 3,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Причина приостановки...',
+            ),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        // Значение поля читается через сам контроллер: он и есть источник
+        // истины, а `setState` по каждому нажатию клавиши перерисовывал бы
+        // диалог целиком ради одной кнопки.
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _reasonController,
+          builder: (context, value, _) {
+            final reason = value.text.trim();
+
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 10,
+              children: <Widget>[
+                if (reason.isEmpty)
+                  const Text(
+                    'Нужна причина',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                FilledButton(
+                  onPressed: reason.isEmpty
+                      ? null
+                      : () => Navigator.of(context).pop(reason),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.errorRed,
+                    disabledBackgroundColor: AppTheme.strokeGrey,
+                    disabledForegroundColor: AppTheme.textSecondary,
+                  ),
+                  child: const Text('Приостановить'),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
