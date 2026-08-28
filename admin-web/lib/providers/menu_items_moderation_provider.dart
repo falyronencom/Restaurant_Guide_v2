@@ -2,226 +2,338 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/services/admin_menu_item_service.dart';
 
-enum HiddenStatusFilter { all, hidden, notHidden }
-
-/// State for the admin "Позиции меню" dashboard.
+/// Область очереди по признаку скрытости.
 ///
-/// Loads a page of flagged items from the server (max per_page=50) and
-/// applies client-side filters on top: city + hidden-status.
-/// Backend endpoint only supports `reason` filter in Phase 1; the directive's
-/// city/status filters are implemented locally — acceptable for current
-/// dataset size (flagged items are a small minority of all menu items).
+/// Это НЕ статус заведения: «Активные» здесь значит «не скрытые модератором»,
+/// а заведение при этом может быть и на модерации, и приостановлено. Фильтр
+/// на экране называется «Видимость» именно поэтому — прежнее «Статус» путало
+/// две разные оси.
+enum MenuItemVisibility { all, visible, hidden }
+
+extension MenuItemVisibilityWire on MenuItemVisibility {
+  /// Значение для сервера. Совпадает с `VISIBILITY_MODES` (menuItemModel.js):
+  /// неизвестный режим там отвергается, а не подменяется молча.
+  String get wire => switch (this) {
+        MenuItemVisibility.all => 'all',
+        MenuItemVisibility.visible => 'visible',
+        MenuItemVisibility.hidden => 'hidden',
+      };
+}
+
+/// Состояние экрана «Позиции меню».
+///
+/// **Все фильтры серверные.** Очередь листается, и отбор поверх одной
+/// страницы отвечал бы не на тот вопрос, который показывает: «Гродно»
+/// отфильтровало бы страницу, а подпись говорила бы про очередь.
+///
+/// Снимок загруженного окна (`loadedTotal`, `loadedVisibility` и прочие)
+/// держится отдельно от выставленных фильтров: подпись экрана обязана
+/// описывать ТО, ЧТО НА ЭКРАНЕ. Если обновление не прошло, список остаётся
+/// прежним, и подпись вместе с ним — о сбое сообщает тост.
 class MenuItemsModerationProvider with ChangeNotifier {
   final AdminMenuItemService _service;
 
-  List<FlaggedMenuItem> _allItems = [];
-  FlaggedMenuItem? _selected;
-
-  bool _isLoading = false;
-  String? _error;
-  int _totalFromServer = 0;
-
-  // Filters (client-side)
-  String? _cityFilter;
-  String _searchFilter = '';
-
-  /// По умолчанию — только нескрытые.
-  ///
-  /// Бейдж «Позиции меню» в рейле и карточка «Флаги без реакции» считают
-  /// нескрытые (`getHangingFlags`), а этот список отдаёт и скрытые: их надо
-  /// видеть, чтобы вернуть. Скрытие при этом флаг не снимает, поэтому остаток
-  /// копится навсегда — при `all` бейдж «12» открывался бы списком из двадцати
-  /// без единого слова о том, откуда разница.
-  ///
-  /// Отбор «Все» никуда не делся, он просто перестал быть исходным: так
-  /// нарисовано и в кадре 03, где пилюля «Активные» стоит выбранной.
-  /// Знаменатель «N из M» при этом всё ещё считает скрытых — подпись экрана,
-  /// которая назовёт это вслух, приезжает вместе с перестройкой кадра 03.
-  HiddenStatusFilter _statusFilter = HiddenStatusFilter.notHidden;
-
-  // Action state
-  bool _isSubmittingAction = false;
-  String? _actionError;
+  static const int perPage = 20;
 
   MenuItemsModerationProvider({AdminMenuItemService? service})
       : _service = service ?? AdminMenuItemService();
+
+  List<FlaggedMenuItem> _items = <FlaggedMenuItem>[];
+  String? _selectedId;
+
+  bool _isLoading = false;
+  bool _hasLoaded = false;
+  String? _error;
+
+  /// Номер поколения запроса: ответ, обогнанный более поздним, свой результат
+  /// не пишет. Модератор успевает нажать город и сразу страницу.
+  int _requestSeq = 0;
+
+  // ── Выставленные фильтры ────────────────────────────────────────────────
+  //
+  // Умолчание — нескрытые: бейдж рейла считает их же, и клик по «12» обязан
+  // открыть двенадцать строк. В кадре 03 пилюля «Активные» тоже выбрана.
+  MenuItemVisibility _visibility = MenuItemVisibility.visible;
+  String? _city;
+  String? _reason;
+  String _search = '';
+
+  // ── Снимок загруженного окна ────────────────────────────────────────────
+  int _page = 1;
+  int _loadedPerPage = perPage;
+
+  /// Страница ПОСЛЕДНЕГО запроса — не обязательно загруженная: запрос мог
+  /// упасть. Повтор идёт по ней.
+  int _requestedPage = 1;
+  int _pages = 1;
+  int _loadedTotal = 0;
+  int? _loadedVisibleCount;
+  int? _loadedHiddenCount;
+  MenuItemVisibility _loadedVisibility = MenuItemVisibility.visible;
+  bool _loadedNarrowed = false;
+  List<String> _cities = const <String>[];
+  List<String> _reasons = const <String>[];
+
+  bool _isSubmittingAction = false;
+  String? _actionError;
 
   // ============================================================================
   // Getters
   // ============================================================================
 
-  List<FlaggedMenuItem> get items {
-    return _allItems.where((item) {
-      if (_cityFilter != null && _cityFilter!.isNotEmpty) {
-        if (item.establishmentCity != _cityFilter) return false;
-      }
-      if (_searchFilter.isNotEmpty) {
-        final q = _searchFilter.toLowerCase();
-        final matchesName =
-            item.establishmentName.toLowerCase().contains(q) ||
-                item.itemName.toLowerCase().contains(q);
-        if (!matchesName) return false;
-      }
-      switch (_statusFilter) {
-        case HiddenStatusFilter.hidden:
-          if (!item.isHiddenByAdmin) return false;
-          break;
-        case HiddenStatusFilter.notHidden:
-          if (item.isHiddenByAdmin) return false;
-          break;
-        case HiddenStatusFilter.all:
-          break;
-      }
-      return true;
-    }).toList();
-  }
+  List<FlaggedMenuItem> get items => _items;
+  FlaggedMenuItem? get selected =>
+      _items.where((i) => i.id == _selectedId).firstOrNull;
+  String? get selectedId => _selectedId;
 
-  FlaggedMenuItem? get selected => _selected;
   bool get isLoading => _isLoading;
-  String? get error => _error;
-  int get totalFromServer => _totalFromServer;
 
-  String? get cityFilter => _cityFilter;
-  String get searchFilter => _searchFilter;
-  HiddenStatusFilter get statusFilter => _statusFilter;
+  /// Первая загрузка — под скелетоном; последующие — полосой в шапке поверх
+  /// прежних данных. Подменять список скелетоном на обновлении нельзя: это
+  /// стирает то, что модератор читает.
+  ///
+  /// Состояние «ещё не спрашивали» тоже считается первой загрузкой: запрос
+  /// уходит после первого кадра, и на этом кадре пустой список рисовал бы
+  /// успокоительное «Очередь разобрана» — утверждение о том, чего никто ещё
+  /// не проверял.
+  bool get isFirstLoad => !_hasLoaded && _error == null;
+  bool get isRefreshing => _isLoading && _hasLoaded;
+  bool get hasLoaded => _hasLoaded;
+  String? get error => _error;
+
+  MenuItemVisibility get visibility => _visibility;
+  String? get cityFilter => _city;
+  String? get reasonFilter => _reason;
+  String get searchFilter => _search;
+
+  /// Сужен ли отбор чем-то, кроме области видимости.
+  bool get hasNarrowingFilters =>
+      (_city != null && _city!.isNotEmpty) ||
+      (_reason != null && _reason!.isNotEmpty) ||
+      _search.trim().isNotEmpty;
+
+  int get page => _page;
+  int get pages => _pages;
+
+  /// Размер страницы из ОТВЕТА: сервер зажимает запрошенный своим потолком,
+  /// и футер обязан считать диапазон по тому, что реально приехало.
+  int get loadedPerPage => _loadedPerPage;
+  int get loadedTotal => _loadedTotal;
+  int? get loadedVisibleCount => _loadedVisibleCount;
+  int? get loadedHiddenCount => _loadedHiddenCount;
+  MenuItemVisibility get loadedVisibility => _loadedVisibility;
+  bool get loadedNarrowed => _loadedNarrowed;
+
+  List<String> get availableCities => _cities;
+  List<String> get availableReasons => _reasons;
 
   bool get isSubmittingAction => _isSubmittingAction;
   String? get actionError => _actionError;
-
-  /// Unique cities observed in the currently fetched page (for dropdown).
-  List<String> get availableCities {
-    final cities = <String>{};
-    for (final item in _allItems) {
-      if (item.establishmentCity != null &&
-          item.establishmentCity!.isNotEmpty) {
-        cities.add(item.establishmentCity!);
-      }
-    }
-    final sorted = cities.toList()..sort();
-    return sorted;
-  }
 
   // ============================================================================
   // Load
   // ============================================================================
 
-  Future<void> loadFlaggedItems() async {
+  /// Загрузка страницы.
+  ///
+  /// [allowRewind] защищает от единственного рекурсивного шага: страница за
+  /// пределами выборки перечитывается один раз и не может зациклиться.
+  Future<void> loadFlaggedItems({int? page, bool allowRewind = true}) async {
+    final requestedPage = page ?? _page;
+    _requestedPage = requestedPage;
+    final seq = ++_requestSeq;
+
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _service.getFlaggedItems(perPage: 50);
-      _allItems = response.items;
-      _totalFromServer = response.total;
+      final response = await _service.getFlaggedItems(
+        page: requestedPage,
+        perPage: perPage,
+        reason: _reason,
+        visibility: _visibility.wire,
+        city: _city,
+        search: _search,
+      );
 
-      // Preserve selection if item still present
-      if (_selected != null) {
-        final stillThere = _allItems.where((i) => i.id == _selected!.id);
-        _selected = stillThere.isEmpty ? null : stillThere.first;
+      if (seq != _requestSeq) return;
+
+      _items = response.items;
+      _page = response.page;
+      _pages = response.pages;
+      _loadedPerPage = response.perPage;
+      _loadedTotal = response.total;
+      _loadedVisibleCount = response.visibleCount;
+      _loadedHiddenCount = response.hiddenCount;
+      _loadedVisibility = _visibility;
+      _loadedNarrowed = hasNarrowingFilters;
+      _cities = response.cities;
+      // Канон причин приходит с каждой страницей и не зависит от выборки.
+      // Пустым он не бывает — но если сервер промолчал, прежний список лучше
+      // пустого фильтра.
+      if (response.reasons.isNotEmpty) _reasons = response.reasons;
+
+      // Выбор переопределяется по свежему списку: позиция могла уехать из
+      // выборки (сняли флаг, скрыли при отборе «Активные»), и панель разбора
+      // не должна показывать то, чего в очереди уже нет.
+      if (_selectedId != null && !_items.any((i) => i.id == _selectedId)) {
+        _selectedId = null;
       }
-    } catch (e) {
-      _error = 'Не удалось загрузить список позиций';
-    } finally {
+
+      _hasLoaded = true;
       _isLoading = false;
       notifyListeners();
+
+      // Страница за пределами выборки — тупик, из которого экран сам не
+      // выбирается: тело показывает «очередь разобрана», футер не рисуется
+      // (строк нет), и ни один контрол не возвращает на первую страницу.
+      // Попасть туда просто: провайдер живёт на уровне приложения, номер
+      // страницы переживает уход с экрана, а очередь тем временем убывает.
+      if (allowRewind && _items.isEmpty && _loadedTotal > 0 && _page > 1) {
+        final lastPage = _pages < 1 ? 1 : _pages;
+        if (lastPage != _page) {
+          await loadFlaggedItems(page: lastPage, allowRewind: false);
+        }
+      }
+    } catch (e) {
+      if (seq != _requestSeq) return;
+      _isLoading = false;
+      _error = 'Не удалось загрузить список позиций';
+      notifyListeners();
     }
+  }
+
+  /// Повтор ПОСЛЕДНЕГО запроса, а не последней удачи.
+  ///
+  /// Переход на четвёртую страницу упал, модератор жмёт «Ещё раз» в тосте —
+  /// он просит четвёртую, а не ту третью, на которой остался экран. Иначе
+  /// намерение теряется молча.
+  Future<void> refresh() => loadFlaggedItems(page: _requestedPage);
+
+  Future<void> goToPage(int page) {
+    if (page < 1 || page == _page) return Future<void>.value();
+    return loadFlaggedItems(page: page);
   }
 
   // ============================================================================
   // Selection
   // ============================================================================
 
-  void selectItem(FlaggedMenuItem item) {
-    _selected = item;
+  void selectItem(String id) {
+    if (_selectedId == id) return;
+    _selectedId = id;
     _actionError = null;
     notifyListeners();
   }
 
   void clearSelection() {
-    _selected = null;
+    _selectedId = null;
     notifyListeners();
   }
 
   // ============================================================================
-  // Filter setters
+  // Filters — каждый сбрасывает страницу и перечитывает выборку
   // ============================================================================
 
-  void setCityFilter(String? city) {
-    _cityFilter = city;
+  Future<void> setVisibility(MenuItemVisibility value) {
+    if (_visibility == value) return Future<void>.value();
+    _visibility = value;
     notifyListeners();
+    return loadFlaggedItems(page: 1);
   }
 
-  void setSearchFilter(String q) {
-    _searchFilter = q;
+  Future<void> setCityFilter(String? city) {
+    final next = (city == null || city.isEmpty) ? null : city;
+    if (_city == next) return Future<void>.value();
+    _city = next;
     notifyListeners();
+    return loadFlaggedItems(page: 1);
   }
 
-  void setStatusFilter(HiddenStatusFilter status) {
-    _statusFilter = status;
+  Future<void> setReasonFilter(String? reason) {
+    final next = (reason == null || reason.isEmpty) ? null : reason;
+    if (_reason == next) return Future<void>.value();
+    _reason = next;
     notifyListeners();
+    return loadFlaggedItems(page: 1);
+  }
+
+  Future<void> setSearchFilter(String query) {
+    if (_search == query) return Future<void>.value();
+    _search = query;
+    notifyListeners();
+    return loadFlaggedItems(page: 1);
+  }
+
+  /// Сброс всего, кроме области видимости: её модератор выбирал отдельно и
+  /// вкладку под ним менять не следует.
+  ///
+  /// Условие смотрит и на снимок: если сброс уже обнулил фильтры, а перечитка
+  /// упала, на экране осталось «Ничего не нашлось» с этой самой кнопкой — и
+  /// повторное нажатие обязано повторить запрос, а не выйти молча. Кнопка,
+  /// не реагирующая на нажатие, читается как поломка.
+  Future<void> resetNarrowingFilters() {
+    if (!hasNarrowingFilters && !_loadedNarrowed) return Future<void>.value();
+    _city = null;
+    _reason = null;
+    _search = '';
+    notifyListeners();
+    return loadFlaggedItems(page: 1);
   }
 
   // ============================================================================
   // Actions
   // ============================================================================
 
-  Future<bool> hideItem(String menuItemId, String reason) async {
-    return _runAction(() async {
-      final updated = await _service.hideItem(
-        menuItemId: menuItemId,
-        reason: reason,
-      );
-      _applyUpdate(menuItemId, updated);
-    });
+  Future<bool> hideItem(String menuItemId, String reason) {
+    return _runAction(
+      () => _service.hideItem(menuItemId: menuItemId, reason: reason),
+      failure: 'Позиция не скрыта',
+    );
   }
 
-  Future<bool> unhideItem(String menuItemId) async {
-    return _runAction(() async {
-      final updated = await _service.unhideItem(menuItemId);
-      _applyUpdate(menuItemId, updated);
-    });
+  Future<bool> unhideItem(String menuItemId) {
+    return _runAction(
+      () => _service.unhideItem(menuItemId),
+      failure: 'Позиция не показана',
+    );
   }
 
-  Future<bool> dismissFlag(String menuItemId) async {
-    return _runAction(() async {
-      final updated = await _service.dismissFlag(menuItemId);
-      // dismissFlag clears sanity_flag — item typically drops from the list.
-      final clearedFlag = updated['sanity_flag'] == null;
-      if (clearedFlag) {
-        _allItems = _allItems.where((i) => i.id != menuItemId).toList();
-        if (_selected?.id == menuItemId) {
-          _selected = null;
-        }
-      } else {
-        _applyUpdate(menuItemId, updated);
-      }
-    });
+  Future<bool> dismissFlag(String menuItemId) {
+    return _runAction(
+      () => _service.dismissFlag(menuItemId),
+      failure: 'Флаг не снят',
+    );
   }
 
-  Future<bool> _runAction(Future<void> Function() action) async {
+  /// Действие + перечитка страницы.
+  ///
+  /// Правка строки на месте больше не годится: скрытие меняет и членство в
+  /// выборке (при отборе «Активные» позиция из неё уходит), и оба счётчика
+  /// подписи, и число страниц. Считает это сервер, и спрашивать надо его.
+  Future<bool> _runAction(
+    Future<Map<String, dynamic>> Function() action, {
+    required String failure,
+  }) async {
     _isSubmittingAction = true;
     _actionError = null;
     notifyListeners();
+
     try {
       await action();
+      _isSubmittingAction = false;
+      // Перечитка сама уведёт с опустевшей страницы: последняя позиция могла
+      // уйти из выборки, и страница осталась бы существующей, но пустой.
+      await loadFlaggedItems();
       return true;
     } catch (e) {
-      _actionError = 'Не удалось выполнить действие';
-      return false;
-    } finally {
+      // Сообщение называет ДЕЙСТВИЕ: тост показывает экран, и «не удалось
+      // выполнить действие» не сказало бы модератору, какое именно.
+      _actionError = failure;
       _isSubmittingAction = false;
       notifyListeners();
-    }
-  }
-
-  void _applyUpdate(String menuItemId, Map<String, dynamic> updated) {
-    final idx = _allItems.indexWhere((i) => i.id == menuItemId);
-    if (idx == -1) return;
-    final next = _allItems[idx].copyWithAdminUpdate(updated);
-    _allItems = List.of(_allItems)..[idx] = next;
-    if (_selected?.id == menuItemId) {
-      _selected = next;
+      return false;
     }
   }
 }

@@ -18,6 +18,15 @@ class FlaggedMenuItem {
   final String? establishmentCity;
   final String? establishmentStatus;
 
+  /// Категории и кухни заведения — только ради иконки карточки.
+  ///
+  /// `category_icons.dart` ключуется кириллическим названием и каскадом
+  /// «сначала категория, потом кухня», поэтому нужны оба списка, а не первый
+  /// элемент каждого: у заведения может не быть покрытой иконкой категории,
+  /// зато найдётся покрытая кухня.
+  final List<String> establishmentCategories;
+  final List<String> establishmentCuisines;
+
   FlaggedMenuItem({
     required this.id,
     required this.establishmentId,
@@ -33,6 +42,8 @@ class FlaggedMenuItem {
     required this.establishmentName,
     required this.establishmentCity,
     required this.establishmentStatus,
+    this.establishmentCategories = const <String>[],
+    this.establishmentCuisines = const <String>[],
   });
 
   factory FlaggedMenuItem.fromJson(Map<String, dynamic> json) {
@@ -54,7 +65,17 @@ class FlaggedMenuItem {
           json['establishment_name'] as String? ?? '—',
       establishmentCity: json['establishment_city'] as String?,
       establishmentStatus: json['establishment_status'] as String?,
+      establishmentCategories: _parseStringList(json['establishment_categories']),
+      establishmentCuisines: _parseStringList(json['establishment_cuisines']),
     );
+  }
+
+  /// `varchar[]` приезжает списком, но пустая колонка — это `null`, а не `[]`.
+  /// Элементы приводятся к строке поимённо: один нестроковый элемент не должен
+  /// ронять разбор всей позиции.
+  static List<String> _parseStringList(dynamic value) {
+    if (value is! List) return const <String>[];
+    return value.map((e) => e.toString()).toList();
   }
 
   /// Код причины из флага — то, что положил `sanityChecker`.
@@ -99,6 +120,8 @@ class FlaggedMenuItem {
       establishmentName: establishmentName,
       establishmentCity: establishmentCity,
       establishmentStatus: establishmentStatus,
+      establishmentCategories: establishmentCategories,
+      establishmentCuisines: establishmentCuisines,
     );
   }
 
@@ -111,14 +134,44 @@ class FlaggedMenuItem {
 
 class FlaggedMenuItemsResponse {
   final List<FlaggedMenuItem> items;
+
+  /// Число позиций в ВЫБРАННОЙ области (её задаёт фильтр видимости).
   final int total;
+
   final int page;
   final int pages;
+
+  /// Размер страницы, которым ответил СЕРВЕР. Футер считает диапазон по нему,
+  /// а не по клиентской константе: сервер зажимает `per_page` своим потолком,
+  /// и «Показано 1–80 из 200» обещало бы строки, которых на странице нет.
+  final int perPage;
+
+  /// Обе половины популяции сразу: нескрытые и скрытые.
+  ///
+  /// Из `total` их не вывести — на отборе «Скрытые» он и ЕСТЬ число скрытых,
+  /// и назвать остальную очередь было бы нечем. Подпись экрана строится
+  /// именно отсюда, а `null` означает «сервер не сказал» — тогда подпись
+  /// молчит, а не показывает ноль.
+  final int? visibleCount;
+  final int? hiddenCount;
+
+  /// Города, в которых есть флагованные позиции, — варианты фильтра.
+  /// Выбранный город сервер держит в списке, даже когда его строки отсеяны.
+  final List<String> cities;
+
+  /// Канон причин с бэкенда (`sanityChecker.js`). Русские подписи к ним —
+  /// в `moderation_vocabulary.dart`; код без подписи показывается как есть.
+  final List<String> reasons;
 
   FlaggedMenuItemsResponse({
     required this.items,
     required this.total,
     required this.page,
     required this.pages,
+    required this.perPage,
+    required this.visibleCount,
+    required this.hiddenCount,
+    required this.cities,
+    required this.reasons,
   });
 }

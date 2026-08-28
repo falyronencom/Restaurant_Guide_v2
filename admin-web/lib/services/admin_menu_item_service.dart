@@ -21,17 +21,27 @@ class AdminMenuItemService {
   /// конструктором нечем подменить в тесте — ни поверх, ни наследованием.
   AdminMenuItemService.withClient(this._apiClient);
 
-  /// Fetch a page of flagged menu items. Backend supports `reason` filter;
-  /// city + status filters are applied client-side by the provider.
+  /// Страница очереди. ВСЕ фильтры серверные — клиентских здесь больше нет:
+  /// очередь листается, и отбор поверх одной страницы отвечал бы не на тот
+  /// вопрос, который показывает.
+  ///
+  /// Пустые строки не отправляются: сервер отвергает повторённый параметр и
+  /// не сужает выборку по пробелам, но и грузить провод пустотой незачем.
   Future<FlaggedMenuItemsResponse> getFlaggedItems({
     int page = 1,
-    int perPage = 50,
+    int perPage = 20,
     String? reason,
+    String? visibility,
+    String? city,
+    String? search,
   }) async {
     final query = <String, dynamic>{
       'page': page,
       'per_page': perPage,
       if (reason != null && reason.isNotEmpty) 'reason': reason,
+      if (visibility != null && visibility.isNotEmpty) 'visibility': visibility,
+      if (city != null && city.isNotEmpty) 'city': city,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
     };
 
     final response = await _apiClient.get(
@@ -44,13 +54,29 @@ class AdminMenuItemService {
         .map((e) => FlaggedMenuItem.fromJson(e as Map<String, dynamic>))
         .toList();
     final meta = data['meta'] as Map<String, dynamic>? ?? {};
+    final counts = meta['counts'] as Map<String, dynamic>? ?? const {};
 
     return FlaggedMenuItemsResponse(
       items: list,
       total: meta['total'] as int? ?? list.length,
       page: meta['page'] as int? ?? page,
+      // Ноль страниц — не «страниц нет», а отсутствие поля: пустая выборка
+      // приезжает единицей. Фолбэк на 1 нужен на случай старого ответа.
       pages: meta['pages'] as int? ?? 1,
+      perPage: meta['per_page'] as int? ?? perPage,
+      // Оставлены пустыми, если сервер их не прислал: вывести вторую половину
+      // из total нельзя — на отборе «Скрытые» total и есть число скрытых.
+      // Подпись экрана в таком случае просто промолчит про неё.
+      visibleCount: counts['visible'] as int?,
+      hiddenCount: counts['hidden'] as int?,
+      cities: _stringList(meta['cities']),
+      reasons: _stringList(meta['reasons']),
     );
+  }
+
+  static List<String> _stringList(dynamic value) {
+    if (value is! List) return const <String>[];
+    return value.map((e) => e.toString()).toList();
   }
 
   /// POST /hide — reason required.

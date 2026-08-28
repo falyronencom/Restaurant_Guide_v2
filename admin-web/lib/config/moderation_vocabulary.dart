@@ -1,4 +1,3 @@
-import 'package:intl/intl.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 
 /// Машинные обозначения человеческим языком.
@@ -181,15 +180,9 @@ String? describeSanityFlag(Map<String, dynamic>? flag) {
   }
 }
 
-/// Деньги: 1000 → «1 000», 1234.5 → «1 234,50».
-///
-/// Разряды группируются и у дробных сумм. Иначе в одной фразе оказывались бы
-/// два разных формата числа — «Цена 1234,50 BYN при пороге 1 000 BYN».
-final NumberFormat _moneyFormat = NumberFormat('#,##0.00', 'ru');
-
-String _money(double value) => value == value.roundToDouble()
-    ? formatCount(value.round())
-    : _moneyFormat.format(value);
+/// Деньги берутся из общего форматтера: та же сумма показывается и во фразе
+/// флага, и в факт-гриде панели разбора, и расходиться они не должны.
+String _money(double value) => formatMoney(value);
 
 /// Кратность: 4 → «4», 3.5 → «3,5». Не деньги — копейки ей ни к чему, и
 /// `_money` дал бы «3,50».

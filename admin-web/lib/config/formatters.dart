@@ -25,6 +25,18 @@ String formatDelta(double percent) {
 String formatDecimal(double value, {int digits = 1}) =>
     value.toStringAsFixed(digits).replaceAll('.', ',');
 
+final NumberFormat _money = NumberFormat('#,##0.00', 'ru');
+
+/// Деньги: 1000 → «1 000», 1234.5 → «1 234,50».
+///
+/// Разряды группируются и у дробных сумм: иначе в одной фразе оказывались бы
+/// два разных формата числа — «Цена 1234,50 BYN при пороге 1 000 BYN».
+/// Круглая сумма показывается без копеек — «1 450» вместо «1 450,00»: копейки
+/// в OCR-цене несут не точность, а шум.
+String formatMoney(double value) => value == value.roundToDouble()
+    ? formatCount(value.round())
+    : _money.format(value);
+
 /// Доля от целого в процентах: 365 из 412 → «88,6%».
 ///
 /// Один знак после запятой, и он не декоративный: доли статусов различаются
