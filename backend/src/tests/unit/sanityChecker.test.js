@@ -7,10 +7,12 @@
  * (no I/O), so these tests fully cover the decision logic.
  */
 
+import { readFileSync } from 'fs';
 import {
   check,
   checkItem,
   buildPreviousPriceMap,
+  SANITY_FLAG_REASONS,
   MIN_PRICE_BYN,
   MAX_PRICE_BYN,
   MIN_CONFIDENCE,
@@ -187,6 +189,89 @@ describe('sanityChecker', () => {
       const items = [{ item_name: 'Борщ', price_byn: 50, confidence: 0.9 }];
       const result = check(items, previous);
       expect(result[0].sanity_flag?.reason).toBe('price_delta_anomaly');
+    });
+  });
+
+  // ==========================================================================
+  // Канон причин
+  // ==========================================================================
+  //
+  // Список причин уехал наружу (`SANITY_FLAG_REASONS`), потому что фильтр очереди
+  // «Позиции меню» берёт варианты только оттуда: до этого коды жили строковыми
+  // литералами внутри checkItem и ни одному потребителю видны не были.
+  //
+  // Сторожей два, и они стерегут РАЗНОЕ. Первый — что каждая объявленная причина
+  // достижима: причина, которую не может выдать ни одно правило, дала бы фильтр,
+  // всегда возвращающий пусто. Второй — что ни одно правило не выдаёт причину мимо
+  // канона: новое правило со свежим литералом было бы нефильтруемым на экране и
+  // осталось бы без русской подписи, то есть модератор увидел бы голый код.
+  describe('канон причин', () => {
+    // Первая версия этих сторожей пропускала главный случай: правило с НОВОЙ
+    // константой (`const REASON_DUPLICATE = 'duplicate_item'`), не внесённой в канон,
+    // проходило оба теста — литерала нет, значит сканеру нечего ловить, а тест
+    // достижимости собирал множество из четырёх заранее известных входов и нового
+    // правила не задевал. На экране такая причина была бы нефильтруемой и без
+    // русской подписи, а `?reason=duplicate_item` давал бы 400.
+    //
+    // Поэтому сверка идёт по ОБЪЯВЛЕНИЯМ констант, а не по достижимости.
+    const source = readFileSync(
+      new URL('../../services/ocr/sanityChecker.js', import.meta.url),
+      'utf8',
+    );
+
+    test('объявленные константы причин и канон — одно и то же множество', () => {
+      const declared = [...source.matchAll(/const\s+(REASON_[A-Z0-9_]+)\s*=\s*'([^']+)'/g)]
+        .map((m) => m[2]);
+
+      // Пустой список означал бы, что регулярное выражение разошлось с кодом, а не
+      // что всё в порядке: без этой проверки тест зеленел бы на любом рефакторинге
+      // объявлений.
+      expect(declared.length).toBeGreaterThan(0);
+      expect([...declared].sort()).toEqual([...SANITY_FLAG_REASONS].sort());
+    });
+
+    test('каждая причина канона достижима каким-то правилом', () => {
+      const reached = new Set();
+
+      // Ниже — по одному входу на правило, в порядке самих правил (первое
+      // сработавшее выигрывает, поэтому входы не должны задевать предыдущие).
+      reached.add(checkItem({ price_byn: 0.10, confidence: 0.99 }, new Map()).reason);
+      reached.add(checkItem({ price_byn: 5000, confidence: 0.99 }, new Map()).reason);
+      reached.add(checkItem({ price_byn: 20, confidence: 0.10 }, new Map()).reason);
+      reached.add(
+        checkItem(
+          { item_name: 'Борщ', price_byn: 90, confidence: 0.99 },
+          new Map([['борщ', 10]]),
+        ).reason,
+      );
+
+      // Это утверждение НЕ ловит опечатку в самом значении константы: обе его
+      // стороны выведены из одного места. Опечатку стерегут тесты выше по файлу,
+      // пинящие литералы («price_delta_anomaly» и прочие) — они здесь несущие,
+      // и удалять их как «дублирующие» нельзя.
+      expect([...reached].sort()).toEqual([...SANITY_FLAG_REASONS].sort());
+    });
+
+    test('правила пишут причину только через константы канона', () => {
+      // Разбор построчный, а не сквозным regex: сквозной ловил и слово «reason:»
+      // внутри комментария, объясняющего сам сторож. Любая кавычка, не только
+      // одинарная: `reason: "x"` и бэктик — тот же обход.
+      const usages = source
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('reason:'))
+        .map((line) => line.replace(/^reason:\s*/, '').replace(/,$/, '').trim());
+
+      // Ни одного совпадения тоже нельзя считать успехом — правила могли переехать,
+      // а сканер об этом не узнает.
+      expect(usages.length).toBeGreaterThanOrEqual(SANITY_FLAG_REASONS.length);
+      expect(usages.every((usage) => /^REASON_[A-Z0-9_]+$/.test(usage))).toBe(true);
+    });
+
+    test('канон заморожен и не пуст', () => {
+      expect(Object.isFrozen(SANITY_FLAG_REASONS)).toBe(true);
+      expect(SANITY_FLAG_REASONS.length).toBeGreaterThan(0);
+      expect(new Set(SANITY_FLAG_REASONS).size).toBe(SANITY_FLAG_REASONS.length);
     });
   });
 });

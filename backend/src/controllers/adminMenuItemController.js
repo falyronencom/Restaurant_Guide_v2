@@ -96,13 +96,21 @@ export const dismissMenuItemFlag = asyncHandler(async (req, res) => {
 /**
  * GET /api/v1/admin/menu-items/flagged
  * Query: ?page=1&per_page=20&reason=price_below_threshold
+ *        &visibility=visible|hidden|all&city=Минск&search=кофе
  */
 export const listFlaggedMenuItems = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const perPage = parseInt(req.query.per_page, 10) || 20;
-  const { reason } = req.query;
+  const { reason, visibility, city, search } = req.query;
 
-  const result = await adminService.getFlaggedMenuItems({ page, perPage, reason });
+  const result = await adminService.getFlaggedMenuItems({
+    page,
+    perPage,
+    reason,
+    visibility,
+    city,
+    search,
+  });
 
   res.status(200).json({
     success: true,

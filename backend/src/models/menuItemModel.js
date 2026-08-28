@@ -16,6 +16,11 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
+import {
+  cityCyrillicToSlug,
+  citySlugToCyrillic,
+  expandCityForQuery,
+} from '../constants/urlSlugs.js';
 
 /**
  * Fields writable via createMany / replaceForMedia.
@@ -278,71 +283,255 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
 };
 
 /**
+ * Visibility axis of the admin queue. `visible` mirrors the rail badge exactly;
+ * `all` is the historical behaviour and stays the default so the endpoint's
+ * contract does not change under callers that never pass the parameter.
+ */
+const VISIBILITY_MODES = Object.freeze(['all', 'visible', 'hidden']);
+
+/**
+ * Predicates shared by the three queries below.
+ *
+ * They are declared once and composed per query, because each query needs a
+ * DIFFERENT subset and Postgres numbers placeholders positionally:
+ *   - the page itself: everything;
+ *   - the counters: everything EXCEPT visibility (both numbers come from one
+ *     scan via FILTER, so they cannot disagree with each other);
+ *   - the city list: everything EXCEPT the city (filtering cities by the chosen
+ *     city would collapse the dropdown to the single option already selected).
+ *
+ * @param {Object} filters
+ * @returns {{kind: string, sql: (i: number) => string, value?: *}[]}
+ */
+const flaggedFilters = ({ reason, visibility, city, search }) => {
+  const filters = [
+    // Same ESTABLISHMENT-STATUS scope as qualityHealthModel.getHangingFlags — see
+    // CATALOGUE_TRACK_STATUSES. The rail badge is built from that function, so this
+    // axis must not drift between the badge and the screen it links to.
+    {
+      kind: 'scope',
+      sql: (i) => `e.status = ANY($${i}::varchar[])`,
+      value: CATALOGUE_TRACK_STATUSES,
+    },
+  ];
+
+  // The hidden axis used to differ permanently: getHangingFlags also requires
+  // `is_hidden_by_admin = FALSE`, while the queue showed hidden items unconditionally
+  // so they could be unhidden. Since hiding never clears sanity_flag, a badge of 12
+  // opened onto 20 rows and the gap grew with every hide. It is now a parameter, and
+  // `visibility='visible'` makes total and the badge equal by construction.
+  if (visibility === 'visible') {
+    filters.push({ kind: 'visibility', sql: () => 'mi.is_hidden_by_admin = FALSE' });
+  } else if (visibility === 'hidden') {
+    filters.push({ kind: 'visibility', sql: () => 'mi.is_hidden_by_admin = TRUE' });
+  }
+
+  if (reason) {
+    filters.push({
+      kind: 'reason',
+      sql: (i) => `mi.sanity_flag->>'reason' = $${i}`,
+      value: reason,
+    });
+  }
+
+  if (city) {
+    // Both spellings of Могилёв live in the data (establishmentService allows either),
+    // so an equality match would split one city in two: half the queue under each
+    // spelling, and a total that under-reports without saying so. Same expansion the
+    // public catalogue uses — see publicService.
+    filters.push({
+      kind: 'city',
+      sql: (i) => `e.city = ANY($${i}::varchar[])`,
+      value: expandCityForQuery(city),
+    });
+  }
+
+  if (search) {
+    // One placeholder, two references — the moderator searches by dish or by venue
+    // without choosing which of the two the string is.
+    filters.push({
+      kind: 'search',
+      sql: (i) => `(mi.item_name ILIKE $${i} ESCAPE '\\' OR e.name ILIKE $${i} ESCAPE '\\')`,
+      value: `%${escapeLike(search)}%`,
+    });
+  }
+
+  return filters;
+};
+
+/**
+ * Neutralise LIKE wildcards inside user input.
+ *
+ * Without this a search for «100%» matches «1000 грамм», and a lone «%» returns the
+ * whole queue while the field on screen claims to be filtering it.
+ */
+const escapeLike = (value) => value.replace(/[\\%_]/g, (char) => `\\${char}`);
+
+/**
+ * One spelling per city for the filter dropdown.
+ *
+ * Могилев и Могилёв — один город и один фильтр (see expandCityForQuery), so offering
+ * both would give two options that return the same rows.
+ */
+const canonicalCity = (city) => {
+  const slug = cityCyrillicToSlug(city);
+  return (slug && citySlugToCyrillic(slug)) || city;
+};
+
+/**
+ * Compose a WHERE clause from the subset of filters whose kind is in `kinds`.
+ * Valueless filters (visibility) contribute SQL without consuming a placeholder.
+ */
+const composeWhere = (filters, kinds) => {
+  const values = [];
+  const parts = ['mi.sanity_flag IS NOT NULL'];
+
+  for (const filter of filters) {
+    if (!kinds.includes(filter.kind)) continue;
+    if (filter.value === undefined) {
+      parts.push(filter.sql());
+    } else {
+      values.push(filter.value);
+      parts.push(filter.sql(values.length));
+    }
+  }
+
+  return { where: parts.join(' AND '), values };
+};
+
+/**
  * List items with a non-null sanity_flag, JOINed with parent establishment
- * (name, city, status) for the admin "Подозрительные позиции меню" dashboard.
+ * (name, city, status, categories, cuisines) for the admin "Позиции меню" queue.
+ *
+ * All four filters are server-side: the queue paginates, and a client-side filter
+ * over one page would answer a different question than the one it displays.
  *
  * @param {Object} params
  * @param {number} [params.limit=20]
  * @param {number} [params.offset=0]
- * @param {string} [params.reason] - Optional filter on sanity_flag.reason
- * @returns {Promise<{items: Object[], total: number}>}
+ * @param {string} [params.reason] - Filter on sanity_flag.reason
+ * @param {string} [params.visibility='all'] - all | visible | hidden
+ * @param {string} [params.city] - Exact establishment city
+ * @param {string} [params.search] - Substring of item name OR establishment name
+ * @returns {Promise<{
+ *   items: Object[],
+ *   total: number,
+ *   counts: {visible: number, hidden: number},
+ *   cities: string[]
+ * }>}
  */
-export const getFlaggedItems = async ({ limit = 20, offset = 0, reason } = {}) => {
-  const conditions = ['mi.sanity_flag IS NOT NULL'];
-  const values = [];
-  let paramIndex = 1;
+export const getFlaggedItems = async ({
+  limit = 20,
+  offset = 0,
+  reason,
+  visibility = 'all',
+  city,
+  search,
+} = {}) => {
+  const filters = flaggedFilters({ reason, visibility, city, search });
 
-  // Same ESTABLISHMENT-STATUS scope as qualityHealthModel.getHangingFlags — see
-  // CATALOGUE_TRACK_STATUSES. The rail badge is built from that function, so this axis
-  // must not drift between the badge and the screen it links to.
-  //
-  // The hidden axis still differs and this list is the wider one: getHangingFlags also
-  // requires `is_hidden_by_admin = FALSE`, while the queue keeps showing hidden items so
-  // they can be unhidden. Hiding never clears sanity_flag, so the gap is permanent —
-  // a badge of 12 can open onto 20 rows. Closing it needs an explicit parameter here plus
-  // a header on the screen that states its population; both belong to the "Позиции меню"
-  // rebuild (stage 7 pass B). Do not describe the two as equal until then.
-  conditions.push(`e.status = ANY($${paramIndex++}::varchar[])`);
-  values.push(CATALOGUE_TRACK_STATUSES);
+  const page = composeWhere(filters, ['scope', 'visibility', 'reason', 'city', 'search']);
+  const counts = composeWhere(filters, ['scope', 'reason', 'city', 'search']);
+  const cityList = composeWhere(filters, ['scope', 'visibility', 'reason', 'search']);
 
-  if (reason) {
-    conditions.push(`mi.sanity_flag->>'reason' = $${paramIndex++}`);
-    values.push(reason);
-  }
-
-  const whereClause = conditions.join(' AND ');
-
-  // The count now needs the join too — the status predicate lives on establishments.
-  const countQuery = `
-    SELECT COUNT(*) AS total
+  // Both counters ride ONE scan of the same population, so "shown" and "hidden" can
+  // never contradict each other the way two independent COUNT queries could. The
+  // visibility predicate is deliberately absent here — it is applied by picking the
+  // number below, not by narrowing the scan.
+  const countsQuery = `
+    SELECT
+      COUNT(*) FILTER (WHERE NOT mi.is_hidden_by_admin) AS visible_total,
+      COUNT(*) FILTER (WHERE mi.is_hidden_by_admin)     AS hidden_total
     FROM menu_items mi
     JOIN establishments e ON e.id = mi.establishment_id
-    WHERE ${whereClause}
+    WHERE ${counts.where}
   `;
 
+  const citiesQuery = `
+    SELECT DISTINCT e.city
+    FROM menu_items mi
+    JOIN establishments e ON e.id = mi.establishment_id
+    WHERE ${cityList.where}
+    ORDER BY e.city
+  `;
+
+  // Columns are listed explicitly rather than `mi.*`: created_at needs the UTC cast
+  // below, and a duplicate column name in the projection would leave which one wins
+  // to the driver.
   const dataQuery = `
     SELECT
-      mi.*,
+      mi.id,
+      mi.establishment_id,
+      mi.media_id,
+      mi.item_name,
+      mi.price_byn,
+      mi.category_raw,
+      mi.confidence,
+      mi.sanity_flag,
+      mi.is_hidden_by_admin,
+      mi.hidden_reason,
+      -- AT TIME ZONE 'UTC' обязателен. Колонка — timestamp WITHOUT time zone,
+      -- и node-pg читает такую метку как местное время СВОЕГО процесса: в проде
+      -- (TZ=UTC) совпадает с хранимым, а на машине разработчика уезжает на его
+      -- часовой пояс. «Распарсено 09:41» на экране модератора — это та же метка.
+      mi.created_at AT TIME ZONE 'UTC' AS created_at,
       e.name         AS establishment_name,
       e.city         AS establishment_city,
       e.status       AS establishment_status,
-      e.partner_id   AS establishment_partner_id
+      e.partner_id   AS establishment_partner_id,
+      e.categories   AS establishment_categories,
+      e.cuisines     AS establishment_cuisines
     FROM menu_items mi
     JOIN establishments e ON e.id = mi.establishment_id
-    WHERE ${whereClause}
-    ORDER BY mi.created_at DESC
-    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    WHERE ${page.where}
+    -- Ties are the norm here rather than the exception: every item of one parsed menu
+    -- is inserted in a single transaction and shares the timestamp. Without further
+    -- keys the sort is undefined between them, and a paginated queue would then show
+    -- one row twice and skip another. Position first — inside one menu that is the
+    -- order the dishes were read in; id last, because it alone is guaranteed unique.
+    ORDER BY mi.created_at DESC, mi.position ASC, mi.id DESC
+    LIMIT $${page.values.length + 1} OFFSET $${page.values.length + 2}
   `;
 
-  const [countResult, dataResult] = await Promise.all([
-    pool.query(countQuery, values),
-    pool.query(dataQuery, [...values, limit, offset]),
+  const [countsResult, citiesResult, dataResult] = await Promise.all([
+    pool.query(countsQuery, counts.values),
+    pool.query(citiesQuery, cityList.values),
+    pool.query(dataQuery, [...page.values, limit, offset]),
   ]);
+
+  const visibleTotal = parseInt(countsResult.rows[0].visible_total, 10);
+  const hiddenTotal = parseInt(countsResult.rows[0].hidden_total, 10);
+
+  let total = visibleTotal + hiddenTotal;
+  if (visibility === 'visible') total = visibleTotal;
+  if (visibility === 'hidden') total = hiddenTotal;
+
+  // One spelling per city, and the selected one always present: a filter whose own
+  // value is missing from the option list reads on screen as "no filter applied".
+  // That happens easily — pick Минск, switch to «Скрытые», and every Minsk row is
+  // on the other side of the visibility predicate.
+  const cities = [];
+  for (const row of citiesResult.rows) {
+    const name = canonicalCity(row.city);
+    if (!cities.includes(name)) cities.push(name);
+  }
+  if (city) {
+    const selected = canonicalCity(city);
+    if (!cities.includes(selected)) cities.push(selected);
+  }
+  // Sorted here rather than left to the query: the line above appends, and a list
+  // that is alphabetical except for one entry looks like a bug on the screen.
+  cities.sort((a, b) => a.localeCompare(b, 'ru'));
 
   return {
     items: dataResult.rows,
-    total: parseInt(countResult.rows[0].total, 10),
+    total,
+    // BOTH halves of the population, whatever the chosen visibility. `total` alone
+    // cannot answer "and how many are on the other side" — on the «Скрытые» tab it
+    // IS the hidden count, and the rest of the queue would be unnameable.
+    counts: { visible: visibleTotal, hidden: hiddenTotal },
+    cities,
   };
 };
 
-export { WRITABLE_FIELDS };
+export { WRITABLE_FIELDS, VISIBILITY_MODES };

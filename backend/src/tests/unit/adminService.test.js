@@ -46,6 +46,10 @@ jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   findById: jest.fn(),
   updateById: jest.fn(),
   getFlaggedItems: jest.fn(),
+  // Не функция, но экспорт: `getFlaggedMenuItems` сверяет по нему режим видимости.
+  // Мок без него молча отдал бы undefined, и валидация упала бы на `.includes`
+  // вместо того, чтобы отвергнуть неизвестный режим.
+  VISIBILITY_MODES: ['all', 'visible', 'hidden'],
 }));
 
 jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({

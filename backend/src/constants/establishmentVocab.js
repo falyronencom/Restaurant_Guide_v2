@@ -127,15 +127,13 @@ export const isCanonAttributeKey = (key) => ATTRIBUTE_SET.has(key);
  * list so that the establishment-status axis cannot drift between a badge and the screen
  * it links to.
  *
- * This closes ONE of the two axes, not both. The counting functions also filter
- * `is_hidden_by_admin = FALSE`; getFlaggedItems does not, because the queue has to keep
- * showing hidden items so a moderator can unhide them. Since hiding never clears
- * sanity_flag (adminService.hideMenuItem), that residue is permanent and grows with every
- * hide: a badge reading 12 can open a list of 20. Making the two agree on that axis too
- * means giving getFlaggedItems an explicit hidden-items parameter and a screen header
- * that names its own population — deferred to the "Позиции меню" rebuild (stage 7 pass B),
- * where that screen is redesigned anyway. Until then the client compensates by defaulting
- * its filter to non-hidden.
+ * This list closes the establishment-status axis. The hidden axis is closed separately
+ * and by a parameter: the counting functions always filter `is_hidden_by_admin = FALSE`,
+ * while getFlaggedItems takes `visibility` (all | visible | hidden) because the queue
+ * must be able to show hidden items so a moderator can unhide them. Hiding never clears
+ * sanity_flag (adminService.hideMenuItem), so `all` legitimately exceeds the badge — with
+ * `visibility='visible'` the two are equal by construction, and the screen states which
+ * population it is showing (stage 7 pass B).
  */
 export const CATALOGUE_TRACK_STATUSES = Object.freeze([
   'active',

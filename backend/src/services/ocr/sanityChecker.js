@@ -21,6 +21,34 @@ const MAX_PRICE_BYN = 1000.00;
 const MIN_CONFIDENCE = 0.70;
 const MAX_PRICE_DELTA_RATIO = 3.00; // 300% — a 10 BYN item becoming 40 BYN triggers
 
+const REASON_PRICE_BELOW = 'price_below_threshold';
+const REASON_PRICE_ABOVE = 'price_above_threshold';
+const REASON_LOW_CONFIDENCE = 'low_confidence';
+const REASON_PRICE_DELTA = 'price_delta_anomaly';
+
+/**
+ * The full set of reasons this checker can write into `sanity_flag.reason`,
+ * in rule order.
+ *
+ * Exported because the admin "Позиции меню" queue filters by reason and had no
+ * way to learn the options: the codes used to live as bare string literals inside
+ * checkItem, invisible to every consumer. The list now travels to the client in
+ * `meta.reasons` of GET /admin/menu-items/flagged, and adminService validates the
+ * `reason` query param against it — an unknown code is a 400 rather than a silent
+ * "everything" that would misreport the queue length.
+ *
+ * Rules below MUST build their flags from these constants, never from a fresh
+ * literal — a rule whose reason is not in this list would be unfilterable and
+ * unlabelled on the moderator's screen. `sanityChecker.test.js` guards both
+ * directions: every code here is reachable, and no `reason:` literal bypasses it.
+ */
+export const SANITY_FLAG_REASONS = Object.freeze([
+  REASON_PRICE_BELOW,
+  REASON_PRICE_ABOVE,
+  REASON_LOW_CONFIDENCE,
+  REASON_PRICE_DELTA,
+]);
+
 /**
  * Build a Map<normalized_name, price_byn> from previous items for delta lookup.
  * Normalization: lowercase + trim + collapse whitespace.
@@ -54,21 +82,21 @@ const checkItem = (item, previousPriceMap) => {
 
   if (price != null && price < MIN_PRICE_BYN) {
     return {
-      reason: 'price_below_threshold',
+      reason: REASON_PRICE_BELOW,
       details: { price, threshold: MIN_PRICE_BYN },
     };
   }
 
   if (price != null && price > MAX_PRICE_BYN) {
     return {
-      reason: 'price_above_threshold',
+      reason: REASON_PRICE_ABOVE,
       details: { price, threshold: MAX_PRICE_BYN },
     };
   }
 
   if (confidence != null && confidence < MIN_CONFIDENCE) {
     return {
-      reason: 'low_confidence',
+      reason: REASON_LOW_CONFIDENCE,
       details: { confidence, threshold: MIN_CONFIDENCE },
     };
   }
@@ -80,7 +108,7 @@ const checkItem = (item, previousPriceMap) => {
       const ratio = Math.max(price / previousPrice, previousPrice / price);
       if (ratio > MAX_PRICE_DELTA_RATIO) {
         return {
-          reason: 'price_delta_anomaly',
+          reason: REASON_PRICE_DELTA,
           details: {
             previousPrice,
             currentPrice: price,

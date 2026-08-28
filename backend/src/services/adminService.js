@@ -22,6 +22,7 @@ import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
+import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
 
 /**
  * Get paginated list of pending establishments for the moderation queue
@@ -1452,31 +1453,116 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
 };
 
 /**
- * List flagged menu items with establishment context for admin dashboard.
+ * Trim a filter string, treating blank input as "no filter".
+ *
+ * An empty `?city=` must not become `WHERE e.city = ''`, which matches nothing and
+ * would read on screen as "no flagged items in this city".
+ *
+ * A repeated parameter is rejected rather than ignored. Express (qs) turns
+ * `?reason=a&reason=b` — and `?reason[]=a` — into an array, and treating a non-string
+ * as "absent" would silently drop the filter: the moderator would then read the WHOLE
+ * queue as the output of that filter and count it as such. Same failure the unknown-value
+ * checks below exist to prevent, so it gets the same answer.
+ */
+const optionalFilter = (value, param) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new AppError(
+      `Parameter ${param} must be a single value`,
+      400,
+      'INVALID_FILTER_VALUE',
+      { param },
+    );
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+/**
+ * List flagged menu items with establishment context for the admin queue.
  *
  * @param {Object} params
  * @param {number} [params.page=1]
  * @param {number} [params.perPage=20]
- * @param {string} [params.reason] - Optional filter on sanity_flag.reason
+ * @param {string} [params.reason] - Filter on sanity_flag.reason (must be canonical)
+ * @param {string} [params.visibility='all'] - all | visible | hidden
+ * @param {string} [params.city] - Exact establishment city
+ * @param {string} [params.search] - Substring of item name OR establishment name
  * @returns {Promise<{items: Object[], meta: Object}>}
  */
-export const getFlaggedMenuItems = async ({ page = 1, perPage = 20, reason } = {}) => {
+export const getFlaggedMenuItems = async ({
+  page = 1,
+  perPage = 20,
+  reason,
+  visibility,
+  city,
+  search,
+} = {}) => {
+  // Числовые параметры разбираются мягко (мусор → умолчание), значения-перечисления —
+  // строго (мусор → 400). Асимметрия намеренная: сбитая страница видна в футере
+  // «Показано 1–20 из 34» и ничего не утверждает сверх правды, а сбитый фильтр
+  // молча меняет СМЫСЛ числа, которое модератор потом считает.
   const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
-  const offset = (Math.max(page, 1) - 1) * effectivePerPage;
+  const requestedPage = Math.max(page, 1);
+  const offset = (requestedPage - 1) * effectivePerPage;
 
-  const { items, total } = await MenuItemModel.getFlaggedItems({
+  const requestedReason = optionalFilter(reason, 'reason');
+  // An unknown reason is rejected rather than ignored. Ignoring it would answer a
+  // different question than the one asked — the moderator would read the full queue
+  // as "everything flagged by this rule" and count it as such.
+  if (requestedReason && !SANITY_FLAG_REASONS.includes(requestedReason)) {
+    throw new AppError(
+      `Unknown sanity flag reason: ${requestedReason}`,
+      400,
+      'INVALID_SANITY_REASON',
+      { allowed: SANITY_FLAG_REASONS },
+    );
+  }
+
+  // Absent visibility keeps the historical population (everything, hidden included):
+  // callers that never learned about the parameter must not have their contract
+  // changed under them. The admin screen sends its own choice explicitly.
+  const requestedVisibility = optionalFilter(visibility, 'visibility') ?? 'all';
+  if (!MenuItemModel.VISIBILITY_MODES.includes(requestedVisibility)) {
+    throw new AppError(
+      `Unknown visibility mode: ${requestedVisibility}`,
+      400,
+      'INVALID_VISIBILITY_MODE',
+      { allowed: MenuItemModel.VISIBILITY_MODES },
+    );
+  }
+
+  const { items, total, counts, cities } = await MenuItemModel.getFlaggedItems({
     limit: effectivePerPage,
     offset,
-    reason,
+    reason: requestedReason,
+    visibility: requestedVisibility,
+    city: optionalFilter(city, 'city'),
+    search: optionalFilter(search, 'search'),
   });
 
   return {
     items,
     meta: {
       total,
-      page,
+      // Обе половины популяции, независимо от выбранной видимости, — и НЕ полем
+      // `hidden`, как у соседа-эндпоинта отзывов: там `hidden` считается ВНУТРИ
+      // `total`, здесь на вкладке «Скрытые» он и есть `total`. Одно имя с двумя
+      // смыслами на двух админских экранах даёт ложную подпись у того, кто
+      // переиспользует разбор.
+      counts,
+      page: requestedPage,
       per_page: effectivePerPage,
-      pages: Math.ceil(total / effectivePerPage),
+      // `|| 1`, как у остальных списков этого файла: пустая выборка — это одна
+      // пустая страница, а не ноль страниц. Клиент читает `pages` с фолбэком на
+      // null, и ноль сквозь него проходит как настоящее число.
+      pages: Math.ceil(total / effectivePerPage) || 1,
+      // Filter options travel with the page: the city list is data (only cities that
+      // actually have flagged items appear), the reason list is canon (all four rules
+      // are offered even when nothing currently trips one — an empty result for a rule
+      // is an answer, and a missing option would look like the rule does not exist).
+      cities,
+      reasons: SANITY_FLAG_REASONS,
     },
   };
 };
