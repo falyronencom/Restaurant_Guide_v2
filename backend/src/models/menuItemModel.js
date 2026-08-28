@@ -15,6 +15,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 
 /**
  * Fields writable via createMany / replaceForMedia.
@@ -291,6 +292,19 @@ export const getFlaggedItems = async ({ limit = 20, offset = 0, reason } = {}) =
   const values = [];
   let paramIndex = 1;
 
+  // Same ESTABLISHMENT-STATUS scope as qualityHealthModel.getHangingFlags — see
+  // CATALOGUE_TRACK_STATUSES. The rail badge is built from that function, so this axis
+  // must not drift between the badge and the screen it links to.
+  //
+  // The hidden axis still differs and this list is the wider one: getHangingFlags also
+  // requires `is_hidden_by_admin = FALSE`, while the queue keeps showing hidden items so
+  // they can be unhidden. Hiding never clears sanity_flag, so the gap is permanent —
+  // a badge of 12 can open onto 20 rows. Closing it needs an explicit parameter here plus
+  // a header on the screen that states its population; both belong to the "Позиции меню"
+  // rebuild (stage 7 pass B). Do not describe the two as equal until then.
+  conditions.push(`e.status = ANY($${paramIndex++}::varchar[])`);
+  values.push(CATALOGUE_TRACK_STATUSES);
+
   if (reason) {
     conditions.push(`mi.sanity_flag->>'reason' = $${paramIndex++}`);
     values.push(reason);
@@ -298,9 +312,11 @@ export const getFlaggedItems = async ({ limit = 20, offset = 0, reason } = {}) =
 
   const whereClause = conditions.join(' AND ');
 
+  // The count now needs the join too — the status predicate lives on establishments.
   const countQuery = `
     SELECT COUNT(*) AS total
     FROM menu_items mi
+    JOIN establishments e ON e.id = mi.establishment_id
     WHERE ${whereClause}
   `;
 

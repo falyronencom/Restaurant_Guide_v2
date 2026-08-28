@@ -21,6 +21,7 @@ import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
 } from '../utils/adminTestHelpers.js';
+import * as qualityHealthModel from '../../models/qualityHealthModel.js';
 
 let adminToken;
 
@@ -259,6 +260,78 @@ describe('GET /api/v1/admin/menu-items/flagged', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].item_name).toBe('Низкая уверенность');
   });
+
+  test('skips flagged items on draft, rejected and archived establishments', async () => {
+    // OCR is enqueued at CREATION — createEstablishment fires jobs for menu media while
+    // the card is still 'draft'. A partner who uploads a menu and walks away therefore
+    // leaves flagged items behind permanently. Reviewing those prices changes nothing:
+    // nobody can see them and nobody will publish them.
+    const inScope = ['active', 'pending', 'suspended'];
+    const outOfScope = ['draft', 'rejected', 'archived'];
+
+    for (const status of [...inScope, ...outOfScope]) {
+      const { establishment } = await createPartnerWithEstablishment(status);
+      await seedMenuItem(establishment.id, {
+        itemName: `Блюдо ${status}`,
+        sanityFlag: { reason: 'low_confidence', details: {} },
+      });
+    }
+
+    const res = await request(app)
+      .get('/api/v1/admin/menu-items/flagged')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const names = res.body.data.map((i) => i.item_name).sort();
+    expect(names).toEqual(inScope.map((s) => `Блюдо ${s}`).sort());
+    // meta.total rides a separate COUNT query — a join added to one and not the other
+    // would leave the footer claiming more rows than the list can ever show.
+    expect(res.body.meta.total).toBe(inScope.length);
+  });
+
+  test('list and rail badge agree on the establishment-status axis, and differ only by hidden items',
+    async () => {
+      // Прежняя версия утверждала равенство `meta.total == hanging_count` и была зелёной
+      // по построению: в фикстуре не было НИ ОДНОЙ скрытой флагованной позиции, а
+      // собственный комментарий теста это исключение оговаривал. То есть тест не мог
+      // упасть ровно на том классе дефекта, ради которого писался.
+      //
+      // Теперь скрытая позиция есть, и утверждается настоящее соотношение: по статусу
+      // заведения обе стороны совпадают, а расходятся ровно на скрытые.
+      for (const status of ['active', 'pending', 'suspended', 'draft', 'rejected']) {
+        const { establishment } = await createPartnerWithEstablishment(status);
+        await seedMenuItem(establishment.id, {
+          itemName: `Блюдо ${status}`,
+          sanityFlag: { reason: 'price_above_threshold', details: {} },
+        });
+      }
+
+      // Скрытая позиция с ЖИВЫМ флагом: скрытие не снимает sanity_flag
+      // (adminService.hideMenuItem), поэтому такой остаток накапливается навсегда.
+      const { establishment: hiddenHost } = await createPartnerWithEstablishment('active');
+      await seedMenuItem(hiddenHost.id, {
+        itemName: 'Скрытая с флагом',
+        sanityFlag: { reason: 'price_above_threshold', details: {} },
+        isHiddenByAdmin: true,
+        hiddenReason: 'проверено вручную, цена настоящая',
+      });
+
+      const res = await request(app)
+        .get('/api/v1/admin/menu-items/flagged')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const badge = await qualityHealthModel.getHangingFlags();
+
+      // Бейдж: три статуса в области, скрытая не в счёт.
+      expect(badge.hanging_count).toBe(3);
+      // Список: те же три статуса, плюс скрытая — её надо видеть, чтобы вернуть.
+      expect(res.body.meta.total).toBe(4);
+
+      const hiddenInList = res.body.data.filter((i) => i.is_hidden_by_admin);
+      expect(hiddenInList).toHaveLength(1);
+      // Расхождение объяснимо ровно скрытыми и ничем больше: убрав их, получаем бейдж.
+      expect(res.body.meta.total - hiddenInList.length).toBe(badge.hanging_count);
+    });
 });
 
 describe('Auth + authorization', () => {

@@ -106,3 +106,39 @@ export const isValidCuisine = (value) => CUISINE_SET.has(value);
  * @returns {boolean} true if key is a canonical attribute key
  */
 export const isCanonAttributeKey = (key) => ATTRIBUTE_SET.has(key);
+
+/**
+ * Statuses whose CONTENT is worth a moderator's attention — the establishment is
+ * in the catalogue or can return to it.
+ *
+ * Excluded: 'draft' (never submitted), 'rejected' and 'archived' (never will be).
+ * This matters because OCR runs at CREATION — createEstablishment enqueues jobs for
+ * menu photos/PDFs while status is still 'draft' (hardcoded in the INSERT). A partner
+ * who starts a card, uploads a menu and walks away leaves flagged menu_items behind
+ * forever. Counting them tells a moderator to review prices nobody can see and that
+ * nobody will publish; the moderator cannot even tell which rows those are, because
+ * the establishment status is not on the item.
+ *
+ * 'suspended' stays IN scope: the card was live and an unsuspend puts it back, so its
+ * flagged dishes would return to the catalogue silently if we stopped counting them.
+ *
+ * Consumers: qualityHealthModel.getHangingFlags (health signal + rail badge +
+ * dashboard row) and menuItemModel.getFlaggedItems (the queue itself). They share this
+ * list so that the establishment-status axis cannot drift between a badge and the screen
+ * it links to.
+ *
+ * This closes ONE of the two axes, not both. The counting functions also filter
+ * `is_hidden_by_admin = FALSE`; getFlaggedItems does not, because the queue has to keep
+ * showing hidden items so a moderator can unhide them. Since hiding never clears
+ * sanity_flag (adminService.hideMenuItem), that residue is permanent and grows with every
+ * hide: a badge reading 12 can open a list of 20. Making the two agree on that axis too
+ * means giving getFlaggedItems an explicit hidden-items parameter and a screen header
+ * that names its own population — deferred to the "Позиции меню" rebuild (stage 7 pass B),
+ * where that screen is redesigned anyway. Until then the client compensates by defaulting
+ * its filter to non-hidden.
+ */
+export const CATALOGUE_TRACK_STATUSES = Object.freeze([
+  'active',
+  'pending',
+  'suspended',
+]);

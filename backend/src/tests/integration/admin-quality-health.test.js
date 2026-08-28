@@ -25,6 +25,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { createAdminAndGetToken, createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import * as qualityHealthModel from '../../models/qualityHealthModel.js';
+import * as qualityHealthService from '../../services/qualityHealthService.js';
 import { checkWorkingHours } from '../../utils/workingHoursSanity.js';
 
 const HEALTH_URL = '/api/v1/admin/quality/health';
@@ -46,6 +47,28 @@ async function addMenuMedia(establishmentId, fileType = 'image') {
 // Create an active establishment (valid baseline) and return its row.
 async function createActive() {
   const { establishment } = await createPartnerWithEstablishment('active');
+  return establishment;
+}
+
+// Establishment in `status` carrying one unactioned flagged menu_item.
+// `agedDays` backdates the item IN SQL — the column is `timestamp without time zone`
+// and node-pg would read a JS-built date as process-local time (three hours off on a
+// developer machine, invisible on Railway where the process is UTC).
+async function createFlaggedIn(status, { agedDays = 0 } = {}) {
+  const { establishment } = await createPartnerWithEstablishment(status);
+  const mediaId = await addMenuMedia(establishment.id);
+  await query(
+    `INSERT INTO menu_items (id, establishment_id, media_id, item_name, sanity_flag, is_hidden_by_admin, created_at)
+     VALUES ($1, $2, $3, $4, $5::jsonb, false, NOW() - ($6 || ' days')::interval)`,
+    [
+      randomUUID(),
+      establishment.id,
+      mediaId,
+      `Блюдо (${status})`,
+      JSON.stringify({ reason: 'low_confidence' }),
+      String(agedDays),
+    ],
+  );
   return establishment;
 }
 
@@ -117,6 +140,21 @@ beforeAll(async () => {
      VALUES ($1, $2, $3, $4, $5::jsonb, false)`,
     [randomUUID(), flagged.id, flaggedMediaId, 'Тестовое блюдо', JSON.stringify({ reason: 'low_confidence' })],
   );
+
+  // 10-13) population of the hanging-flag signal — the SAME flagged item under four
+  // establishment statuses. OCR is enqueued at CREATION (createEstablishment fires jobs
+  // for menu media while status is still 'draft'), so these are not hypothetical rows:
+  // an abandoned draft really does leave flags behind, and they used to be counted.
+  await createFlaggedIn('draft'); // never submitted → out
+  await createFlaggedIn('rejected'); // never will be published → out
+  await createFlaggedIn('pending'); // about to be judged → in
+  await createFlaggedIn('suspended'); // unsuspend puts it back in the catalogue → in
+
+  // 14-15) aged flags on active establishments — one in each age band.
+  // Both bands need an occupant that the OTHER band excludes, otherwise the two counts
+  // would be equal and a mutation collapsing them onto one interval would pass unnoticed.
+  await createFlaggedIn('active', { agedDays: 15 }); // past 7, inside 30
+  await createFlaggedIn('active', { agedDays: 40 }); // past both
 });
 
 afterAll(async () => {
@@ -208,9 +246,46 @@ describe('qualityHealthModel signals', () => {
     expect(r.non_object_count).toBe(1);
   });
 
-  test('F — hanging flags: one unactioned flagged menu item', async () => {
+  test('F — hanging flags: counted only on catalogue-track establishments', async () => {
     const r = await qualityHealthModel.getHangingFlags();
-    expect(r.hanging_count).toBe(1);
+    // 7 flagged items exist. Two of them sit on a draft and a rejected establishment and
+    // must not be counted: nobody can see those prices and nobody will publish them.
+    expect(r.hanging_count).toBe(5);
+  });
+
+  test('F — hanging flags: draft and rejected are the excluded pair, not some other pair',
+    async () => {
+      // The count above would also hold if the join dropped, say, suspended and pending
+      // instead. Pin the membership by flipping ONE establishment's status at a time and
+      // watching the count follow.
+      const { rows } = await query(
+        `SELECT e.id, e.status
+           FROM menu_items mi JOIN establishments e ON e.id = mi.establishment_id
+          WHERE mi.sanity_flag IS NOT NULL AND e.status = 'draft'`,
+      );
+      expect(rows).toHaveLength(1);
+      const draftId = rows[0].id;
+
+      for (const status of ['active', 'pending', 'suspended']) {
+        await query('UPDATE establishments SET status = $2 WHERE id = $1', [draftId, status]);
+        const inScope = await qualityHealthModel.getHangingFlags();
+        expect(inScope.hanging_count).toBe(6);
+      }
+
+      for (const status of ['draft', 'rejected', 'archived']) {
+        await query('UPDATE establishments SET status = $2 WHERE id = $1', [draftId, status]);
+        const outOfScope = await qualityHealthModel.getHangingFlags();
+        expect(outOfScope.hanging_count).toBe(5);
+      }
+
+      await query('UPDATE establishments SET status = $2 WHERE id = $1', [draftId, 'draft']);
+    });
+
+  test('F — hanging flags: the two age bands are distinct intervals', async () => {
+    const r = await qualityHealthModel.getHangingFlags();
+    // 15-day and 40-day items are both older than 7; only the 40-day one is older than 30.
+    expect(r.aged_over_7d).toBe(2);
+    expect(r.aged_over_30d).toBe(1);
   });
 
   test('G — price distribution: deferred stub (statistical, wire at 500)', async () => {
@@ -247,8 +322,180 @@ describe('GET /api/v1/admin/quality/health', () => {
     expect(d.geo_bounds.count).toBe(1);
     expect(d.working_hours.malformed_count).toBe(1);
     expect(d.working_hours.all_closed_count).toBe(1);
-    expect(d.hanging_flags.hanging_count).toBe(1);
+    expect(d.hanging_flags.hanging_count).toBe(5);
+    expect(d.hanging_flags.aged_over_7d).toBe(2);
+    // Reaches the wire, not just the SQL — the client dropped this field until stage 7.
+    expect(d.hanging_flags.aged_over_30d).toBe(1);
     expect(d.attribute_census.non_object_count).toBe(1);
     expect(d.price_distribution.status).toBe('deferred');
   });
+});
+
+// ===========================================================================
+// Snapshot cache — the screen header prints generated_at as "снимок HH:MM",
+// so a cached read is what that header already promises. What must not happen
+// is a refresh button that returns the cached copy.
+// ===========================================================================
+describe('quality-health snapshot cache', () => {
+  let hostId;
+  let hostMediaId;
+
+  beforeAll(async () => {
+    const { rows } = await query(
+      `SELECT mi.establishment_id, mi.media_id
+         FROM menu_items mi JOIN establishments e ON e.id = mi.establishment_id
+        WHERE e.status = 'active' AND mi.sanity_flag IS NOT NULL
+        LIMIT 1`,
+    );
+    hostId = rows[0].establishment_id;
+    hostMediaId = rows[0].media_id;
+  });
+
+  test('a second read inside the TTL returns the snapshot already taken', async () => {
+    const first = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+    const before = first.body.data.hanging_flags.hanging_count;
+
+    const extraId = randomUUID();
+    await query(
+      `INSERT INTO menu_items (id, establishment_id, media_id, item_name, sanity_flag, is_hidden_by_admin)
+       VALUES ($1, $2, $3, 'Свежий флаг', $4::jsonb, false)`,
+      [extraId, hostId, hostMediaId, JSON.stringify({ reason: 'low_confidence' })],
+    );
+
+    try {
+      // The world changed underneath. A cached read must not notice — that is the point,
+      // and it is also the only way to tell caching apart from "the query was just fast".
+      const cached = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+      expect(cached.body.data.hanging_flags.hanging_count).toBe(before);
+      expect(cached.body.data.generated_at).toBe(first.body.data.generated_at);
+
+      const forced = await request(app)
+        .get(`${HEALTH_URL}?refresh=1`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(forced.body.data.hanging_flags.hanging_count).toBe(before + 1);
+    } finally {
+      await query('DELETE FROM menu_items WHERE id = $1', [extraId]);
+    }
+  });
+
+  test('a menu-item write DOES drop the cache — it changes this very number',
+    async () => {
+      // Через настоящий HTTP-путь, а не вызовом invalidateCache из теста. Прежняя
+      // версия дёргала badgesService.invalidateCache() напрямую и была зелёной при
+      // ЛЮБОЙ реализации: кэши — две независимые модульные переменные, они и так не
+      // влияют друг на друга. Тест соглашался сам с собой.
+      const flagId = randomUUID();
+      await query(
+        `INSERT INTO menu_items (id, establishment_id, media_id, item_name, sanity_flag, is_hidden_by_admin)
+         VALUES ($1, $2, $3, 'Позиция под снятие флага', $4::jsonb, false)`,
+        [flagId, hostId, hostMediaId, JSON.stringify({ reason: 'low_confidence' })],
+      );
+
+      // Через ?refresh=1: обычное чтение здесь подхватило бы снимок, оставленный
+      // предыдущим тестом, и countBefore описывал бы прошлое состояние. Совпадало
+      // оно случайно — обе вставки по одной строке.
+      const before = await request(app)
+        .get(`${HEALTH_URL}?refresh=1`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const countBefore = before.body.data.hanging_flags.hanging_count;
+
+      await request(app)
+        .post(`/api/v1/admin/menu-items/${flagId}/dismiss-flag`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const after = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+      expect(after.body.data.hanging_flags.hanging_count).toBe(countBefore - 1);
+      expect(after.body.data.generated_at).not.toBe(before.body.data.generated_at);
+
+      await query('DELETE FROM menu_items WHERE id = $1', [flagId]);
+    });
+
+  test('одобрение заявки кэш НЕ сбрасывает — область не покидается', async () => {
+    // Одобрение ведёт pending → active, оба статуса внутри области счётчика, так
+    // что величина не меняется. Пересчёт стоил бы восьми запросов, три из которых
+    // перебирают весь активный каталог, — и ради нуля изменений.
+    const { establishment } = await createPartnerWithEstablishment('pending');
+
+    const before = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+
+    await request(app)
+      .post(`/api/v1/admin/establishments/${establishment.id}/moderate`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'approve' })
+      .expect(200);
+
+    const after = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+    expect(after.body.data.generated_at).toBe(before.body.data.generated_at);
+
+    // Прибираем за собой: одобренное заведение стало активным и попало бы в
+    // область восьми сигналов, сбив ожидания соседних тестов при перестановке.
+    await query('DELETE FROM establishments WHERE id = $1', [establishment.id]);
+    qualityHealthService.invalidateCache();
+  });
+
+  test('отказ кэш сбрасывает — заведение выходит из области', async () => {
+    // Асимметрия с одобрением не осторожность, а следствие области: отказ ведёт
+    // pending → rejected, то есть ЗА пределы CATALOGUE_TRACK_STATUSES, и все
+    // флагованные позиции этого заведения разом выпадают из счёта. До появления
+    // JOIN по статусу отказ был безвреден — тест сторожит, чтобы прежняя,
+    // ставшая неверной, формулировка не вернулась.
+    const { establishment } = await createPartnerWithEstablishment('pending');
+    const mediaId = await addMenuMedia(establishment.id);
+    await query(
+      `INSERT INTO menu_items (id, establishment_id, media_id, item_name, sanity_flag, is_hidden_by_admin)
+       VALUES ($1, $2, $3, 'Позиция под отказ', $4::jsonb, false)`,
+      [randomUUID(), establishment.id, mediaId, JSON.stringify({ reason: 'low_confidence' })],
+    );
+
+    const before = await request(app)
+      .get(`${HEALTH_URL}?refresh=1`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    const countBefore = before.body.data.hanging_flags.hanging_count;
+
+    await request(app)
+      .post(`/api/v1/admin/establishments/${establishment.id}/moderate`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'reject', moderation_notes: { name: 'не подходит' } })
+      .expect(200);
+
+    // Обычное чтение, не форсированное: проверяется именно сброс.
+    const after = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+    expect(after.body.data.hanging_flags.hanging_count).toBe(countBefore - 1);
+
+    await query('DELETE FROM establishments WHERE id = $1', [establishment.id]);
+    qualityHealthService.invalidateCache();
+  });
+
+  test('сброс не отменяется сборкой, стартовавшей до него', async () => {
+    // Дефект самой правки, найденный вторым ревью: `invalidateCache()` ставит
+    // cache = null, и условие записи, начинавшееся с `!cache`, пропускало любую
+    // летящую сборку — она возвращала дореформенный снимок и получала на него
+    // полную аренду. Здесь это воспроизводится последовательно: снимок взят,
+    // мир изменился, кэш сброшен — обычное чтение обязано увидеть новое.
+    const extraId = randomUUID();
+    await request(app)
+      .get(`${HEALTH_URL}?refresh=1`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    await query(
+      `INSERT INTO menu_items (id, establishment_id, media_id, item_name, sanity_flag, is_hidden_by_admin)
+       VALUES ($1, $2, $3, 'После сброса', $4::jsonb, false)`,
+      [extraId, hostId, hostMediaId, JSON.stringify({ reason: 'low_confidence' })],
+    );
+    qualityHealthService.invalidateCache();
+
+    try {
+      const after = await request(app).get(HEALTH_URL).set('Authorization', `Bearer ${adminToken}`);
+      const expected = await qualityHealthModel.getHangingFlags();
+      expect(after.body.data.hanging_flags.hanging_count).toBe(expected.hanging_count);
+    } finally {
+      await query('DELETE FROM menu_items WHERE id = $1', [extraId]);
+      qualityHealthService.invalidateCache();
+    }
+  });
+
+  // Порядок записи в кэш (медленная ранняя сборка не затирает свежую) проверяется
+  // не здесь, а в `src/tests/unit/qualityHealthService.test.js`: гонку нужно
+  // расставить по шагам, а на живой базе моменты завершения не подчинить.
 });

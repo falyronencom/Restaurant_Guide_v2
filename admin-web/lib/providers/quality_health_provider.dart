@@ -2,13 +2,24 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/services/quality_health_service.dart';
 
-/// State for the Quality Health panel (AI-ops Brick-1, Tier-0 immunity, read-only).
+/// Состояние панели «Здоровье данных» (AI-ops Brick-1, Tier-0, только чтение).
+///
+/// **Два вызывающих, а не один.** Кроме самого экрана снимок запрашивает
+/// панель «Требует внимания» на дашборде: строка «Сигналов здоровья данных»
+/// считается по тому же ответу. Отсюда счётчик поколений и защита от
+/// повторного входа — без них два экрана, открытые подряд, дважды дёргали бы
+/// тяжёлый эндпоинт, а поздний ответ первого запроса перетирал бы ранний
+/// ответ второго.
 class QualityHealthProvider with ChangeNotifier {
   final QualityHealthService _service;
 
   QualityHealthData? _data;
   bool _isLoading = false;
   String? _error;
+
+  /// Растёт на каждый запрос. Ответ, чьё поколение отстало, выбрасывается:
+  /// побеждает отправленный последним, а не ответивший последним.
+  int _generation = 0;
 
   QualityHealthProvider({QualityHealthService? service})
       : _service = service ?? QualityHealthService();
@@ -17,20 +28,40 @@ class QualityHealthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  Future<void> load() async {
+  /// Загрузка снимка.
+  ///
+  /// [force] обходит серверный снимок — это кнопка «Обновить». Обычная
+  /// загрузка при уже летящем запросе не отправляется: ответ один и тот же, и
+  /// второй вызов лишь удвоил бы работу сервера. Принудительная — отправляется
+  /// всегда, иначе нажатие в момент фоновой загрузки осталось бы без ответа, а
+  /// кнопка без отклика читается как поломка.
+  Future<void> load({bool force = false}) async {
+    if (_isLoading && !force) return;
+
+    final generation = ++_generation;
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _data = await _service.getHealth();
+      final data = await _service.getHealth(force: force);
+      if (generation != _generation) return;
+      _data = data;
     } catch (e) {
+      if (generation != _generation) return;
       _error = _extractMessage(e);
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      // Флаг снимается только своим поколением: иначе принудительный запрос,
+      // обогнавший фоновый, снял бы полосу загрузки, пока фоновый ещё летит.
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
+
+  /// Кнопка «Обновить»: перечитать, минуя снимок сервера.
+  Future<void> refresh() => load(force: true);
 
   String _extractMessage(Object error) {
     final msg = error.toString();

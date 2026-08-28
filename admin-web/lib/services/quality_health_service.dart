@@ -17,8 +17,15 @@ class QualityHealthService {
   QualityHealthService.withClient(this._apiClient);
 
   /// GET /api/v1/admin/quality/health
-  Future<QualityHealthData> getHealth() async {
-    final response = await _apiClient.get('/api/v1/admin/quality/health');
+  ///
+  /// [force] добавляет `?refresh=1` — обход снимка на сервере. Без него кнопка
+  /// «Обновить» внутри времени жизни снимка вернула бы то же самое, и нажатие
+  /// осталось бы без всякого следа на экране.
+  Future<QualityHealthData> getHealth({bool force = false}) async {
+    final response = await _apiClient.get(
+      '/api/v1/admin/quality/health',
+      queryParameters: force ? const {'refresh': '1'} : null,
+    );
     final data = response.data as Map<String, dynamic>;
     return QualityHealthData.fromJson(data['data'] as Map<String, dynamic>);
   }

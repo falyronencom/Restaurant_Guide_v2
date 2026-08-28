@@ -88,11 +88,22 @@ void main() {
       await provider.loadFlaggedItems();
     });
 
-    test('no filter returns all items', () {
+    test('по умолчанию скрытые не показываются', () {
+      // Бейдж в рейле и карточка «Флаги без реакции» считают нескрытые. Исходный
+      // отбор `all` открывал бы по клику список длиннее числа на бейдже, и разница
+      // росла бы с каждым скрытием: скрытие не снимает sanity_flag.
+      expect(provider.statusFilter, HiddenStatusFilter.notHidden);
+      expect(provider.items.length, 2);
+      expect(provider.items.every((i) => !i.isHiddenByAdmin), true);
+    });
+
+    test('отбор «Все» показывает и скрытые', () {
+      provider.setStatusFilter(HiddenStatusFilter.all);
       expect(provider.items.length, 3);
     });
 
     test('city filter narrows to matching items', () {
+      provider.setStatusFilter(HiddenStatusFilter.all);
       provider.setCityFilter('Минск');
       expect(provider.items.length, 2);
       expect(provider.items.every((i) => i.establishmentCity == 'Минск'), true);
@@ -147,6 +158,13 @@ void main() {
 
       final ok = await provider.hideItem('1', 'Ошибочная цена');
       expect(ok, true);
+
+      // Скрытая позиция уходит из очереди по умолчанию — так же, как уменьшается
+      // бейдж в рейле. Прежде тест читал `items.first` и молча опирался на то,
+      // что исходный отбор показывает всё подряд.
+      expect(provider.items, isEmpty);
+
+      provider.setStatusFilter(HiddenStatusFilter.all);
       expect(provider.items.first.isHiddenByAdmin, true);
       expect(provider.items.first.hiddenReason, 'Ошибочная цена');
     });

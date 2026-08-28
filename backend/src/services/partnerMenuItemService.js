@@ -16,6 +16,8 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { invalidateCache as invalidateBadges } from './badgesService.js';
+import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 
 /**
  * List parsed menu items for an establishment owned by the partner.
@@ -103,6 +105,13 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   filteredUpdates.sanity_flag = null;
 
   const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
+
+  // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
+  // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
+  // партнёр, а расходятся числа у модератора: без сброса он до полутора минут
+  // видел бы флаг, которого уже нет, и шёл бы разбирать несуществующую работу.
+  invalidateBadges();
+  invalidateHealth();
 
   logger.info('Partner edited menu item', {
     menuItemId,

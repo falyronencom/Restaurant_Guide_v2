@@ -21,6 +21,7 @@ import { upgradeUserToPartner } from './authService.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
+import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 
 /**
  * Get paginated list of pending establishments for the moderation queue
@@ -305,6 +306,19 @@ export const moderateEstablishment = async (establishmentId, params) => {
     // сразу, иначе бейдж до полминуты показывал бы число, которое
     // модератор только что сам и поменял.
     invalidateBadges();
+
+    // Снимок здоровья сбрасывается ТОЛЬКО на отказе, и это не осторожность.
+    // Счётчик «висящих флагов» с этапа 7 ограничен областью
+    // CATALOGUE_TRACK_STATUSES (active + pending + suspended). Одобрение ведёт
+    // pending → active, приостановка и возобновление ходят внутри той же
+    // области — величина не меняется, пересчитывать нечего. А отказ выводит
+    // заведение ЗА область, и все его флагованные позиции разом выпадают из
+    // счёта. До появления этого JOIN отказ был безвреден, поэтому прежняя
+    // формулировка «модерация заведений на здоровье не влияет» верна больше
+    // не является.
+    if (action === 'reject') {
+      invalidateHealth();
+    }
 
     logger.info('Establishment moderation completed', {
       establishmentId,
@@ -1288,6 +1302,12 @@ export const hideMenuItem = async (menuItemId, params) => {
   // сразу, иначе бейдж до полминуты показывал бы число, которое
   // модератор только что сам и поменял.
   invalidateBadges();
+  // Снимок «Здоровья данных» считает ровно ту же величину (hanging_flags).
+  // Без сброса рейл слева показывал бы новое число, а карточка «Флаги без
+  // реакции» справа — прежнее, до двух минут, в одном окне. Модерация
+  // ЗАВЕДЕНИЙ снимок намеренно НЕ сбрасывает: там пересчёт достижимости
+  // всего каталога на каждое одобрение, и это совсем другая цена.
+  invalidateHealth();
 
   logger.info('Menu item hidden by admin', {
     menuItemId,
@@ -1355,6 +1375,12 @@ export const unhideMenuItem = async (menuItemId, params) => {
   // сразу, иначе бейдж до полминуты показывал бы число, которое
   // модератор только что сам и поменял.
   invalidateBadges();
+  // Снимок «Здоровья данных» считает ровно ту же величину (hanging_flags).
+  // Без сброса рейл слева показывал бы новое число, а карточка «Флаги без
+  // реакции» справа — прежнее, до двух минут, в одном окне. Модерация
+  // ЗАВЕДЕНИЙ снимок намеренно НЕ сбрасывает: там пересчёт достижимости
+  // всего каталога на каждое одобрение, и это совсем другая цена.
+  invalidateHealth();
 
   logger.info('Menu item unhidden by admin', {
     menuItemId,
@@ -1410,6 +1436,12 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
   // сразу, иначе бейдж до полминуты показывал бы число, которое
   // модератор только что сам и поменял.
   invalidateBadges();
+  // Снимок «Здоровья данных» считает ровно ту же величину (hanging_flags).
+  // Без сброса рейл слева показывал бы новое число, а карточка «Флаги без
+  // реакции» справа — прежнее, до двух минут, в одном окне. Модерация
+  // ЗАВЕДЕНИЙ снимок намеренно НЕ сбрасывает: там пересчёт достижимости
+  // всего каталога на каждое одобрение, и это совсем другая цена.
+  invalidateHealth();
 
   logger.info('Menu item sanity flag dismissed', {
     menuItemId,

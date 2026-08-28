@@ -5,9 +5,18 @@
  * standing health signal: canon/slug-reachability, menu completeness, geo bounds,
  * working-hours sanity, attribute-key census, and hanging OCR flags.
  *
- * Zero LLM, zero writes, zero new tables (CAT-F-3 heterogeneity). All signals are
- * scoped to status='active' — the live public surface the sitemap/catalog expose
- * and the seed import publishes.
+ * Zero LLM, zero writes, zero new tables (CAT-F-3 heterogeneity).
+ *
+ * Scope is NOT uniform, and pretending otherwise is what the screen header used to do.
+ * The establishment-level signals (A1, A2, B1 empty menus, C, D, E) are scoped to
+ * status='active' — the live public surface the sitemap/catalog expose. Two groups are
+ * deliberately wider, and the screen names each one's population on its own card:
+ *   - B2 (ocr_failed_count / ocr_stuck_count) counts every OCR job regardless of the
+ *     establishment's status. Narrowing it to active would hide the most time-critical
+ *     case there is — a submitted card whose menu failed to parse, now sitting in the
+ *     moderation queue with no menu. That establishment is 'pending', not 'active'.
+ *   - F (hanging flags) uses CATALOGUE_TRACK_STATUSES; see that constant for why an
+ *     abandoned draft's flagged dishes must not be counted.
  *
  * Reuse-not-invent: canon lists, slug helpers and geo bounds are imported from
  * their single sources of truth (urlSlugs.js, establishmentService.js), never
@@ -25,6 +34,7 @@ import {
   CUISINE_SLUG_MAP,
 } from '../constants/urlSlugs.js';
 import { BELARUS_BOUNDS, validateCityCoordinates } from '../services/establishmentService.js';
+import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 import { checkWorkingHours } from '../utils/workingHoursSanity.js';
 
 // Bound the per-signal sample lists returned for admin drill-down.
@@ -307,18 +317,29 @@ export const getAttributeKeyCensus = async () => {
  * menu_items flagged by the OCR sanity checker that no moderator has actioned:
  * sanity_flag still set (dismiss-flag clears it) AND not hidden. Age buckets surface
  * a draining backlog.
+ *
+ * Scoped to CATALOGUE_TRACK_STATUSES — see the constant for why draft/rejected/archived
+ * are excluded (OCR runs at creation, so abandoned drafts accumulate flags forever).
+ * The join makes this the ONE place the population is decided; menuItemModel.getFlaggedItems
+ * reuses the same constant so the badge and the list it links to agree.
+ *
+ * NOTE on scope wording: the health screen's header says "active establishments", and this
+ * signal is deliberately wider than that. The card names its own population.
  */
 export const getHangingFlags = async () => {
   const query = `
     SELECT
       COUNT(*)::int AS hanging_count,
-      COUNT(*) FILTER (WHERE created_at < NOW() - INTERVAL '7 days')::int AS aged_over_7d,
-      COUNT(*) FILTER (WHERE created_at < NOW() - INTERVAL '30 days')::int AS aged_over_30d
-    FROM menu_items
-    WHERE sanity_flag IS NOT NULL AND is_hidden_by_admin = FALSE
+      COUNT(*) FILTER (WHERE mi.created_at < NOW() - INTERVAL '7 days')::int AS aged_over_7d,
+      COUNT(*) FILTER (WHERE mi.created_at < NOW() - INTERVAL '30 days')::int AS aged_over_30d
+    FROM menu_items mi
+    JOIN establishments e ON e.id = mi.establishment_id
+    WHERE mi.sanity_flag IS NOT NULL
+      AND mi.is_hidden_by_admin = FALSE
+      AND e.status = ANY($1::varchar[])
   `;
   try {
-    const { rows } = await pool.query(query);
+    const { rows } = await pool.query(query, [CATALOGUE_TRACK_STATUSES]);
     return rows[0];
   } catch (error) {
     logger.error('Error computing hanging flags', { error: error.message });

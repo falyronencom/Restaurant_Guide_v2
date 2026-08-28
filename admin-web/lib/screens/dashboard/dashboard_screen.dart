@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
 import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
+import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
@@ -45,6 +48,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<DashboardProvider>().loadDashboard();
+      // Строка «Сигналов здоровья данных» считается по тому же снимку, что
+      // рисует экран «Здоровье данных». Отдельного счётчика для неё нет и не
+      // будет: получить «сколько проверок красные» нельзя, не выполнив все
+      // одиннадцать, а вешать это на /admin/badges значило бы пересчитывать
+      // достижимость каталога после каждого действия модератора. Клиентского
+      // кэша у провайдера нет: запрос уходит при каждом монтировании дашборда, а
+      // от повторного скана каталога спасает двухминутный снимок на сервере.
+      context.read<QualityHealthProvider>().load();
     });
   }
 
@@ -194,6 +205,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           context,
                           ov,
                           context.watch<BadgesProvider>().badges,
+                          context.watch<QualityHealthProvider>().data,
                         ),
                       ),
                     ),
@@ -207,18 +219,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Две строки из четырёх, нарисованных в макете.
+  /// Три строки из четырёх, нарисованных в макете.
   ///
-  /// Не хватает «сигналов здоровья данных» и «отзывов на разбор»: ни для того
-  /// ни для другого в коде нет определения, сколько именно требует разбора, —
-  /// это policy-решение, а не порт. Приблизительным значением не заполняем:
-  /// панель существует ради доверия к ней.
+  /// **Строка «Сигналов здоровья данных» получила определение** (решение
+  /// владельца, 27.08.2026): сигнал — это красная карточка экрана «Здоровье
+  /// данных», то есть проверка со счётчиком больше нуля; знаменатель — набор
+  /// карточек того экрана. Форма выбрана так, что число здесь не может
+  /// разойтись с числом там: считает один и тот же список
+  /// `config/quality_signals.dart`. Подпись — первая красная проверка в
+  /// каноническом порядке, ровно как в макете («3 недостижимы в sitemap» при
+  /// том, что двенадцать флагов больше).
+  ///
+  /// **Четвёртой строки — «Отзывов на разбор» — не будет.** Механизма жалоб в
+  /// системе нет: ни таблицы, ни колонки, ни эндпоинта. Косвенная метрика
+  /// вроде «низкая оценка без ответа партнёра» поставила бы перед админом
+  /// список честных единиц и двоек, а действий у него над отзывом ровно два —
+  /// скрыть или удалить. Такая очередь зовёт гасить обратную связь.
   List<AttentionItem> _attention(
     BuildContext context,
     OverviewData ov,
     AdminBadges? badges,
+    QualityHealthData? health,
   ) {
     final oldestDays = ov.moderation.oldestPendingDays;
+    final red = health == null ? const <QualitySignal>[] : redSignals(health);
 
     return <AttentionItem>[
       AttentionItem(
@@ -237,6 +261,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ? '${badges.menuFlagsAgedOver7d} старше 7 дней'
               : null,
           onTap: () => context.go('/moderation/menu-items'),
+        ),
+      // Снимок ещё не пришёл — строки нет вовсе. Ноль в ней читался бы как
+      // «проверено, чисто», а проверено пока ничего.
+      if (health != null)
+        AttentionItem(
+          count: red.length,
+          title: 'Сигналов здоровья данных',
+          note: red.isEmpty ? null : red.first.note(red.first.countOf(health)),
+          tone: AttentionTone.critical,
+          onTap: () => context.go('/quality/health'),
         ),
     ];
   }

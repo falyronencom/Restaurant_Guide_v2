@@ -24,7 +24,20 @@ class MenuItemsModerationProvider with ChangeNotifier {
   // Filters (client-side)
   String? _cityFilter;
   String _searchFilter = '';
-  HiddenStatusFilter _statusFilter = HiddenStatusFilter.all;
+
+  /// По умолчанию — только нескрытые.
+  ///
+  /// Бейдж «Позиции меню» в рейле и карточка «Флаги без реакции» считают
+  /// нескрытые (`getHangingFlags`), а этот список отдаёт и скрытые: их надо
+  /// видеть, чтобы вернуть. Скрытие при этом флаг не снимает, поэтому остаток
+  /// копится навсегда — при `all` бейдж «12» открывался бы списком из двадцати
+  /// без единого слова о том, откуда разница.
+  ///
+  /// Отбор «Все» никуда не делся, он просто перестал быть исходным: так
+  /// нарисовано и в кадре 03, где пилюля «Активные» стоит выбранной.
+  /// Знаменатель «N из M» при этом всё ещё считает скрытых — подпись экрана,
+  /// которая назовёт это вслух, приезжает вместе с перестройкой кадра 03.
+  HiddenStatusFilter _statusFilter = HiddenStatusFilter.notHidden;
 
   // Action state
   bool _isSubmittingAction = false;

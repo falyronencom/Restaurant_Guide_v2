@@ -1,15 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
+import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -103,6 +107,45 @@ class _IdleBadgesProvider extends BadgesProvider {
   Future<void> load() async {}
 }
 
+/// Снимок здоровья данных подаётся готовым: строку «Сигналов здоровья данных»
+/// считает клиент, и сеть для этого не нужна. `null` — снимок ещё не пришёл.
+class _StubHealthProvider extends QualityHealthProvider {
+  final QualityHealthData? _seed;
+
+  _StubHealthProvider(this._seed);
+
+  @override
+  QualityHealthData? get data => _seed;
+
+  @override
+  Future<void> load({bool force = false}) async {}
+}
+
+QualityHealthData _health({
+  int unreachable = 0,
+  int hangingFlags = 0,
+  int emptyMenus = 0,
+}) =>
+    QualityHealthData(
+      scope: 'active',
+      generatedAt: '2026-08-27T09:41:00.000Z',
+      unreachableCount: unreachable,
+      categoryOffCanonCount: 0,
+      cuisineOffCanonCount: 0,
+      emptyMenusCount: emptyMenus,
+      ocrFailedCount: 0,
+      ocrStuckCount: 0,
+      outOfBoundsCount: 0,
+      hoursMalformedCount: 0,
+      hoursAllClosedCount: 0,
+      attributeKeys: const <AttributeKeyCount>[],
+      nonObjectAttributesCount: 0,
+      hangingFlagsCount: hangingFlags,
+      hangingAgedOver7d: 0,
+      hangingAgedOver30d: 0,
+      priceDistributionStatus: 'deferred',
+    );
+
 void main() {
   /// Поднимает экран на подставном сервисе и отдаёт этот сервис тесту.
   ///
@@ -115,7 +158,10 @@ void main() {
   ///
   /// Окно 1180x820: раскладка дашборда рассчитана на рабочий стол, в
   /// дефолтные 800x600 ряд метрик и график не помещаются.
-  Future<_FakeAnalyticsService> pumpDashboard(WidgetTester tester) async {
+  Future<_FakeAnalyticsService> pumpDashboard(
+    WidgetTester tester, {
+    QualityHealthData? health,
+  }) async {
     final fake = _FakeAnalyticsService();
 
     tester.view.physicalSize = const Size(1180, 820);
@@ -131,6 +177,9 @@ void main() {
           // строки, что собираются из overview.
           ChangeNotifierProvider<BadgesProvider>(
             create: (_) => _IdleBadgesProvider(),
+          ),
+          ChangeNotifierProvider<QualityHealthProvider>(
+            create: (_) => _StubHealthProvider(health),
           ),
         ],
         child: MaterialApp(
@@ -252,5 +301,97 @@ void main() {
       find.text('За выбранный период регистраций не было'),
       findsOneWidget,
     );
+  });
+
+  group('строка «Сигналов здоровья данных»', () {
+    testWidgets('считает красные проверки и называет первую по канону',
+        (tester) async {
+      // Ровно случай кадра 02: недостижимых три, флагов двенадцать. Подпись
+      // обязана назвать недостижимых — правило «первая красная по канону», а
+      // не «самая крупная». Правило проверяется здесь, потому что расхождение
+      // между экраном и панелью иначе замечать некому.
+      final fake = await pumpDashboard(
+        tester,
+        health: _health(unreachable: 3, hangingFlags: 12),
+      );
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      expect(find.text('Сигналов здоровья данных'), findsOneWidget);
+      expect(find.text('3 заведения без адреса в каталоге'), findsOneWidget);
+      // Двенадцать флагов на экране есть — но как счётчик своей строки, не как
+      // подпись здоровья.
+      expect(find.textContaining('флагов без реакции'), findsNothing);
+    });
+
+    testWidgets('первая красная меняется вместе с данными', (tester) async {
+      // Обратный расклад: недостижимых нет, флаги есть. Подпись обязана
+      // переехать — иначе она сторожила бы не порядок, а один вход.
+      final fake = await pumpDashboard(
+        tester,
+        health: _health(hangingFlags: 12, emptyMenus: 5),
+      );
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      expect(find.text('12 флагов без реакции'), findsOneWidget);
+    });
+
+    testWidgets('снимок ещё не пришёл — строки нет вовсе, а не ноль',
+        (tester) async {
+      // Ноль в этой строке читается как «проверено, чисто». Пока снимка нет,
+      // проверено ничего.
+      final fake = await pumpDashboard(tester);
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      expect(find.text('Сигналов здоровья данных'), findsNothing);
+      expect(find.text('Заявок на модерации'), findsOneWidget);
+    });
+
+    testWidgets('всё чисто — ноль без подписи, зелёным', (tester) async {
+      final fake = await pumpDashboard(tester, health: _health());
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      final row = tester.widget<AttentionPanel>(find.byType(AttentionPanel));
+      final health = row.items
+          .firstWhere((i) => i.title == 'Сигналов здоровья данных');
+      expect(health.count, 0);
+      expect(health.note, isNull);
+      // Тон запрошен красный, но ноль всегда читается как «разобрано».
+      expect(health.effectiveTone, AttentionTone.clear);
+    });
+
+    testWidgets('подпись помещается в панель 320 без обрезки', (tester) async {
+      // Панель узкая, подпись длинная, а `Text` в ней стоит с
+      // `overflow: ellipsis` — то есть слишком длинная строка не сломает
+      // вёрстку, она молча превратится в многоточие. Мерим фактическую
+      // раскладку, а не смотрим глазами.
+      //
+      // Шрифт в тестах — Ahem, у него каждый глиф в полную ширину кегля, то
+      // есть строка ЗАВЕДОМО шире настоящей. Уложились под Ahem — уложимся и
+      // в бою; обратное неверно, и потому граница здесь с запасом.
+      final fake = await pumpDashboard(
+        tester,
+        health: _health(hangingFlags: 12),
+      );
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.text('12 флагов без реакции'),
+      );
+      expect(
+        paragraph.didExceedMaxLines,
+        isFalse,
+        reason: 'подпись строки 3 не должна уезжать в многоточие',
+      );
+    });
   });
 }
