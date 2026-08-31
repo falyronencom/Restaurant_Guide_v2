@@ -91,6 +91,7 @@ Future<_StubProvider> _pump(WidgetTester tester, FlaggedMenuItem first) async {
   addTearDown(tester.view.reset);
 
   final provider = _StubProvider(first);
+  addTearDown(provider.dispose);
   await tester.pumpWidget(
     MultiProvider(
       providers: [

@@ -131,6 +131,10 @@ Future<MenuItemsModerationProvider> _pump(
   addTearDown(tester.view.reset);
 
   final provider = MenuItemsModerationProvider(service: service);
+  // `.value` не освобождает то, что ему передали, — это делает создатель.
+  // Незакрытый `ChangeNotifier` в стенде отчитывается как течь ТЕСТА и
+  // маскирует проверяемую.
+  addTearDown(provider.dispose);
   if (visibility != MenuItemVisibility.visible) {
     await provider.setVisibility(visibility);
   }
@@ -329,6 +333,7 @@ void main() {
       addTearDown(tester.view.reset);
 
       final provider = MenuItemsModerationProvider(service: service);
+      addTearDown(provider.dispose);
       await tester.pumpWidget(
         MultiProvider(
           providers: [

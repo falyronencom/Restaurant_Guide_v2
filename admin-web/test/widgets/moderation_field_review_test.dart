@@ -16,6 +16,7 @@ import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_r
 
 Future<ModerationProvider> _pumpRow(WidgetTester tester) async {
   final provider = ModerationProvider();
+  addTearDown(provider.dispose);
 
   await tester.pumpWidget(
     MaterialApp(

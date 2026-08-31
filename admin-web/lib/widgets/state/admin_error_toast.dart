@@ -129,7 +129,29 @@ VoidCallback showAdminErrorToast(
     if (removed) return;
     removed = true;
     timer?.cancel();
-    entry?.remove();
+
+    final current = entry;
+    if (current == null) return;
+    // Снять с оверлея и ОСВОБОДИТЬ. `OverlayEntry` — сам `ChangeNotifier` и
+    // требует `dispose`: снятия недостаточно, объект продолжает жить со своими
+    // слушателями.
+    //
+    // Порядок обязателен и БЕЗ проверки `mounted`. `OverlayEntry.mounted`
+    // означает «виджет записи построен» (значение появляется в `initState`
+    // следующего кадра), а вовсе не «запись числится в оверлее»; тем временем
+    // `dispose()` требует `_overlay == null`, и обнуляет его ТОЛЬКО `remove()`.
+    // Условная версия пропускала снятие в двух окнах — до первого кадра после
+    // `insert` и после разбора оверлея вместе с экраном — и падала ассертом в
+    // debug, а в release оставляла запись в оверлее навсегда. Оба окна
+    // достижимы: экраны снимают прежний тост и показывают новый в одном
+    // `addPostFrameCallback`.
+    //
+    // Разбор оверлея вместе с экраном `remove()` переживает сам: он обнуляет
+    // `_overlay` ДО проверки `overlay.mounted`. Вызова до `insert` не бывает —
+    // и таймер, и колбэк, и `onDismiss` появляются уже после него, а повтор
+    // закрыт флагом `removed`.
+    current.remove();
+    current.dispose();
   }
 
   entry = OverlayEntry(

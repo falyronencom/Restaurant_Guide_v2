@@ -71,9 +71,13 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
+      final provider = _StubModerationProvider(items, selected: selected);
+      // `.value` не освобождает переданное — это делает создатель.
+      addTearDown(provider.dispose);
+
       await tester.pumpWidget(
         ChangeNotifierProvider<ModerationProvider>.value(
-          value: _StubModerationProvider(items, selected: selected),
+          value: provider,
           child: MaterialApp(
             theme: AppTheme.lightTheme,
             home: const Scaffold(
@@ -217,6 +221,7 @@ void main() {
   group('Прогресс проверки', () {
     test('состав вкладок — 5 + 6 + 2 + 1 = 14', () {
       final provider = ModerationProvider();
+      addTearDown(provider.dispose);
 
       expect(provider.tabFieldCounts, <int>[5, 6, 2, 1]);
       expect(provider.totalFieldCount, 14);
@@ -228,6 +233,7 @@ void main() {
         ..approveField('legal_name')
         ..approveField('unp')
         ..rejectField('registration_doc', comment: 'нечитаемо');
+      addTearDown(provider.dispose);
 
       // Прогресс шапки, счётчики вкладок и «осталось» — одна арифметика.
       expect(provider.checkedFieldCount, 3);
@@ -238,6 +244,7 @@ void main() {
 
     test('отклонённое поле закрывает одобрение, но не отказ', () {
       final provider = ModerationProvider()..approveField('unp');
+      addTearDown(provider.dispose);
       expect(provider.canApprove, isTrue);
       expect(provider.rejectedFieldCount, 0);
 
@@ -253,6 +260,7 @@ void main() {
     test('комментарий без вердикта проверкой не считается', () {
       final provider = ModerationProvider()
         ..commentField('website', 'сайт не открывается');
+      addTearDown(provider.dispose);
 
       // Заметка написана, но поле не закрыто — иначе прогресс покажет
       // работу, которой не было.

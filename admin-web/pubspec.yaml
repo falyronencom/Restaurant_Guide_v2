@@ -29,6 +29,13 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  # Отслеживание течей на весь сьют (`test/flutter_test_config.dart`). Пакет
+  # приходит и транзитивно с `flutter_test`, но мы импортируем его сами —
+  # значит объявляем явно, иначе `flutter analyze` ругается, а гейт падает.
+  # Версия — `any`, как у самого Flutter для этого пакета: `flutter_test`
+  # пиннит его ТОЧНО (3.0.10), и каретка сломала бы `pub get` на SDK, где
+  # пакет уедет в следующую мажорную.
+  leak_tracker_flutter_testing: any
 
 flutter:
   uses-material-design: true

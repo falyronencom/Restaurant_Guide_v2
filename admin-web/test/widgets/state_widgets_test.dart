@@ -256,6 +256,50 @@ void main() {
       expect(find.byType(AdminErrorToast), findsNothing);
     });
 
+    testWidgets('снимается до первого кадра — и не роняет ассерт оверлея',
+        (tester) async {
+      // Экраны снимают прежний тост и показывают новый в ОДНОМ
+      // `addPostFrameCallback`, поэтому снятие раньше первого кадра записи —
+      // не экзотика, а рабочий путь: две ошибки подряд дают ровно его.
+      //
+      // Ловушка, стоившая BLOCKER: `OverlayEntry.mounted` означает «виджет
+      // записи построен», а не «запись в оверлее». Проверка `if (mounted)`
+      // перед `remove()` пропускала снятие, и `dispose()` падал ассертом
+      // «An OverlayEntry must first be removed…», а в release оставлял тост
+      // висеть навсегда.
+      late VoidCallback dismiss;
+
+      await pump(
+        tester,
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () {
+              dismiss = showAdminErrorToast(
+                context,
+                title: 'Список не обновился',
+                message: 'Сервер отклонил запрос.',
+              );
+              // Ни одного кадра между показом и снятием.
+              dismiss();
+            },
+            child: const Text('вызвать'),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('вызвать'));
+      await tester.pump();
+
+      expect(find.byType(AdminErrorToast), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      // Повторное снятие безвредно: флаг `removed` закрывает второй проход,
+      // иначе `dispose()` бил бы ассертом «уже освобождён».
+      dismiss();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('снимается сам по истечении срока', (tester) async {
       await pump(
         tester,
