@@ -9,6 +9,17 @@
 -- or local dev). For incremental schema evolution use the numbered files
 -- in backend/migrations/ instead.
 --
+-- WARNING - SNAPSHOT IS BEHIND HEAD (verified 2026-09-01, artefact audit).
+-- Migration head is 032; this snapshot covers 001-029 only. A database
+-- bootstrapped from this file ALONE will be missing:
+--     030 category/cuisine Cyrillic canon normalisation + CHECK
+--     031 seed_import_registry
+--     032 password_reset_tokens
+-- After loading this file, apply 030, 031 and 032 in order from
+-- backend/migrations/. Regenerating the snapshot (recipe below) is the proper
+-- fix and is still owed: it needs a pg-test rebuild and a fresh pg_dump, not a
+-- hand edit of this file.
+--
 -- Migrations covered (chronological):
 --   001 token rotation columns           014 audit action index
 --   002 PostGIS extension                 015 oauth_provider_id on users
