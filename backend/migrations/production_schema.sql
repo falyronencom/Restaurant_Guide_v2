@@ -1,36 +1,45 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Includes migrations 001-032. Regenerated 2026-09-01 (artefact audit, slice B)
--- against PostgreSQL 16.4 / PostGIS. This file is the authoritative snapshot
--- used to bootstrap fresh databases (e.g. Railway initial deploy or local dev)
--- and it is now COMPLETE: a database restored from this file alone is at head.
--- For incremental schema evolution use the numbered files in backend/migrations/.
+-- Covers migrations 001-029 + 031 + 032. Regenerated 2026-09-02 (artefact
+-- audit, slice B) against PostgreSQL 16.4 / PostGIS.
 --
--- Previous state (for the record): the snapshot had drifted to 001-029 while
--- head was 032, so a database bootstrapped from it silently lacked the category
--- canon CHECK (030), seed_import_registry (031) and password_reset_tokens (032).
--- The 2026-09-01 audit first added a warning to this header, then regenerated
--- the body. The warning is gone because the condition is gone.
+-- *** 030 IS DELIBERATELY ABSENT. DO NOT "COMPLETE" THIS FILE BY ADDING IT. ***
+-- The canon CHECK on establishments.categories / .cuisines (030, CAT-C-2.9) is
+-- dormant in production: it is applied only AFTER the placeholder-seed wipe at
+-- real-500 import-prep, because placeholder rows carry English tokens that the
+-- constraint rejects (23514). This snapshot's job is to mirror what production
+-- actually runs — not the migration catalogue. Production = 001-029 + 031 + 032.
+--
+-- Baking 030 in also breaks the CI gate, and that is not hypothetical: it was
+-- tried on 2026-09-02 and run 33666684491 went red. `.github/workflows/ci.yml`
+-- builds the test database FROM THIS FILE, then applies 031 and 032 on top;
+-- `src/tests/integration/admin-quality-health.test.js` must INSERT off-canon
+-- rows to prove the quality checker detects them, and the constraint makes that
+-- impossible — the whole suite dies at fixture setup with
+-- "violates check constraint establishments_categories_canon_check".
+-- The canon-check test that DOES need 030 stands up its own scratch database.
+--
+-- Prior state, for the record: this snapshot had drifted to 001-029 while the
+-- migration head was 032, so a database bootstrapped from it silently lacked
+-- seed_import_registry (031) and password_reset_tokens (032). That gap is now
+-- closed; 030's absence is a decision, not a gap.
 --
 -- HOW THIS REGENERATION WAS VERIFIED (not just produced):
---   * 030, 031, 032 applied cleanly in order to a database restored from the
---     prior snapshot — 22 -> 24 tables, both new tables present, both canon
---     CHECK constraints present.
---   * Round-trip: a SECOND clean database was created and restored from THIS
---     dump, then compared to the source database object-for-object —
---     24 tables / 268 columns / 91 constraints / 92 indexes, identical.
---     Producing a dump proves nothing; restoring from it does.
---   * establishments_city_check verified to carry BOTH Могилёв spellings
---     (ё and е) — the ё/е invariant is easy to lose in a regeneration and
---     expensive to notice later.
+--   * The exact CI sequence was replayed locally: restore this file, then apply
+--     031 and 032 on top — both are idempotent, no 42P07.
+--   * Off-canon probe: INSERT with categories ARRAY['restaurant'] SUCCEEDS here
+--     and fails with 23514 against a variant carrying 030. That is the precise
+--     behaviour admin-quality-health depends on.
+--   * Round-trip: a second clean database restored from this file matched the
+--     source object-for-object. Producing a dump proves nothing; restoring does.
+--   * establishments_city_check carries BOTH Могилёв spellings (ё and е) — an
+--     invariant that is easy to lose in a regeneration and expensive to notice.
 --
--- Note on the "Generated via pg_dump against a fresh DB to which all migrations
--- were applied sequentially" phrasing carried by earlier headers: that describes
--- the file's ORIGINAL provenance, not a reproducible procedure. Migrations 001+
--- are ALTER statements against tables that no migration in this directory
--- creates — the base schema exists only inside this snapshot. Read it as history;
--- the maintenance recipe at the bottom of this header is the executable one.
+-- Note on the "all migrations applied sequentially" phrasing in older headers:
+-- that describes the file's ORIGINAL provenance, not a reproducible procedure.
+-- Migrations 001+ are ALTER statements against tables that no migration in this
+-- directory creates — the base schema exists only inside this snapshot.
 --
 -- Migrations covered (chronological):
 --   001 token rotation columns           017 activate partner analytics
@@ -45,12 +54,10 @@
 --   010 audit_log table                  026 email_verification_codes
 --   011 sync test DB columns             027 establishment slug (BGN/PCGN
 --   012 rejected status                      transliteration, auto-suffix on
---   013 analytics indexes                    collision, mutable in pre-approve
---   014 audit action index                   status only — see Brief 0)
---   015 oauth_provider_id on users       028 drop redundant explicit slug index
---   016 notifications table              029 restore Могилёв (ё) variant
---                                        030 category/cuisine Cyrillic canon
---                                            normalisation + CHECK (CAT-C-2.9)
+--   013 analytics indexes                    collision — see Brief 0)
+--   014 audit action index               028 drop redundant explicit slug index
+--   015 oauth_provider_id on users       029 restore Могилёв (ё) variant
+--   016 notifications table              030 — NOT INCLUDED, see above
 --                                        031 seed_import_registry (bulk-import
 --                                            idempotency / resume sidecar)
 --                                        032 password_reset_tokens (SHA-256
@@ -58,17 +65,16 @@
 --
 -- Note on migration 027: applied as three artifacts on the source DB
 -- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
--- because slug generation requires JavaScript transliteration shared with the
--- production service layer. For fresh DB clones this consolidated snapshot
--- already includes the resulting slug column with NOT NULL + UNIQUE
--- constraints, so single-file restore is sufficient.
+-- because slug generation needs the JavaScript transliteration shared with the
+-- service layer. Fresh clones get the resulting column with its constraints
+-- from this snapshot, so a single-file restore is sufficient.
 --
 -- Note on migration 007: it declared check_content_length CHECK (length(content)
 -- >= 20) on reviews, which the live database does NOT carry and this snapshot
--- therefore does not either. That divergence is known, deliberate and tracked
--- (deferred_items «reviews content schema-drift»): the operational floor is the
--- validator (min 1 / max 1000). Do not "restore" it from the migration file —
--- the snapshot is meant to match production, not migration history.
+-- therefore does not either. Deliberate and tracked (deferred_items «reviews
+-- content schema-drift»): the operational floor is the validator (min 1/max 1000).
+-- Do not "restore" it from the migration file — same principle as 030 above:
+-- the snapshot mirrors production, not the migration catalogue.
 --
 -- Regeneration recipe (executable; this is what produced the current body):
 --   1. docker exec pg-test psql -U postgres -c "DROP DATABASE IF EXISTS schema_rebuild;"
@@ -76,15 +82,14 @@
 --   3. Load the existing snapshot (it carries the base schema — no migration does):
 --        docker exec -i pg-test psql -U postgres -d schema_rebuild -v ON_ERROR_STOP=1 \
 --          < production_schema.sql
---      Then apply every migration newer than the snapshot, in order. Where a
---      migration needs a JS backfill, apply pre-data SQL → run the script →
---      apply post-data SQL (e.g. 027a → backfill-slugs.js → 027b).
+--      Then apply every migration that PRODUCTION has and the snapshot lacks —
+--      check what production actually runs before assuming the catalogue head.
 --   4. docker exec pg-test pg_dump -U postgres --schema-only --no-owner \
 --        --no-privileges --no-comments -d schema_rebuild > <new_body>.sql
 --   5. Replace this header block, keep the body.
---   6. VERIFY BY RESTORING: create a second clean database, load the new file,
---        and compare table/column/constraint/index counts against the source.
---        Skipping this step is how a snapshot silently stops bootstrapping.
+--   6. VERIFY BY REPLAYING CI: restore the new file into a clean database, then
+--      apply the migrations ci.yml applies on top, then confirm an off-canon
+--      INSERT still succeeds. Skipping this is how run 33666684491 went red.
 -- =====================================================
 
 
@@ -339,9 +344,7 @@ CREATE TABLE public.establishments (
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
     slug character varying(150) NOT NULL,
-    CONSTRAINT establishments_categories_canon_check CHECK (((categories IS NULL) OR ((categories <> '{}'::character varying[]) AND (categories <@ ARRAY['Ресторан'::character varying, 'Кофейня'::character varying, 'Кафе'::character varying, 'Фаст-фуд'::character varying, 'Бар'::character varying, 'Кондитерская'::character varying, 'Пиццерия'::character varying, 'Пекарня'::character varying, 'Паб'::character varying, 'Столовая'::character varying, 'Кальянная'::character varying, 'Боулинг'::character varying, 'Караоке'::character varying, 'Бильярд'::character varying, 'Клуб'::character varying])))),
     CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Могилёв'::character varying)::text, ('Бобруйск'::character varying)::text]))),
-    CONSTRAINT establishments_cuisines_canon_check CHECK (((cuisines <> '{}'::character varying[]) AND (cuisines <@ ARRAY['Народная'::character varying, 'Авторская'::character varying, 'Азиатская'::character varying, 'Американская'::character varying, 'Вегетарианская'::character varying, 'Японская'::character varying, 'Грузинская'::character varying, 'Итальянская'::character varying, 'Смешанная'::character varying, 'Европейская'::character varying, 'Китайская'::character varying, 'Восточная'::character varying]))),
     CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
     CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
     CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY (ARRAY[('free'::character varying)::text, ('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
