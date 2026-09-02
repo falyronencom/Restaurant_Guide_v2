@@ -1,45 +1,60 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Includes migrations 001-029 (last update: May 2026 — migrations 028
--- redundant-slug-index drop + 029 Могилёв city CHECK restore).
--- Generated via pg_dump --schema-only against a fresh DB to which all
--- migrations were applied sequentially. This file is the authoritative
--- snapshot used to bootstrap fresh databases (e.g. Railway initial deploy
--- or local dev). For incremental schema evolution use the numbered files
--- in backend/migrations/ instead.
+-- Includes migrations 001-032. Regenerated 2026-09-01 (artefact audit, slice B)
+-- against PostgreSQL 16.4 / PostGIS. This file is the authoritative snapshot
+-- used to bootstrap fresh databases (e.g. Railway initial deploy or local dev)
+-- and it is now COMPLETE: a database restored from this file alone is at head.
+-- For incremental schema evolution use the numbered files in backend/migrations/.
 --
--- WARNING - SNAPSHOT IS BEHIND HEAD (verified 2026-09-01, artefact audit).
--- Migration head is 032; this snapshot covers 001-029 only. A database
--- bootstrapped from this file ALONE will be missing:
---     030 category/cuisine Cyrillic canon normalisation + CHECK
---     031 seed_import_registry
---     032 password_reset_tokens
--- After loading this file, apply 030, 031 and 032 in order from
--- backend/migrations/. Regenerating the snapshot (recipe below) is the proper
--- fix and is still owed: it needs a pg-test rebuild and a fresh pg_dump, not a
--- hand edit of this file.
+-- Previous state (for the record): the snapshot had drifted to 001-029 while
+-- head was 032, so a database bootstrapped from it silently lacked the category
+-- canon CHECK (030), seed_import_registry (031) and password_reset_tokens (032).
+-- The 2026-09-01 audit first added a warning to this header, then regenerated
+-- the body. The warning is gone because the condition is gone.
+--
+-- HOW THIS REGENERATION WAS VERIFIED (not just produced):
+--   * 030, 031, 032 applied cleanly in order to a database restored from the
+--     prior snapshot — 22 -> 24 tables, both new tables present, both canon
+--     CHECK constraints present.
+--   * Round-trip: a SECOND clean database was created and restored from THIS
+--     dump, then compared to the source database object-for-object —
+--     24 tables / 268 columns / 91 constraints / 92 indexes, identical.
+--     Producing a dump proves nothing; restoring from it does.
+--   * establishments_city_check verified to carry BOTH Могилёв spellings
+--     (ё and е) — the ё/е invariant is easy to lose in a regeneration and
+--     expensive to notice later.
+--
+-- Note on the "Generated via pg_dump against a fresh DB to which all migrations
+-- were applied sequentially" phrasing carried by earlier headers: that describes
+-- the file's ORIGINAL provenance, not a reproducible procedure. Migrations 001+
+-- are ALTER statements against tables that no migration in this directory
+-- creates — the base schema exists only inside this snapshot. Read it as history;
+-- the maintenance recipe at the bottom of this header is the executable one.
 --
 -- Migrations covered (chronological):
---   001 token rotation columns           014 audit action index
---   002 PostGIS extension                 015 oauth_provider_id on users
---   003 location GEOGRAPHY column         016 notifications table
---   004 rename category -> cuisines       017 activate partner analytics
---   005 denormalised cards columns        018 backfill base_score
---   006 indexing pass                     019 claiming infrastructure
---   007 reviews schema                    020 promotions overhaul
---   008 price_range length fix            021 booking system
---   009 partner responses                 022 push notifications
---   010 audit_log table                   023 file_type on media
---   011 sync test DB columns              024 OCR menu pipeline (pg_trgm)
---   012 rejected status                   025 hidden_reason on menu_items
---   013 analytics indexes                 026 email_verification_codes
---                                         027 establishment slug (BGN/PCGN
---                                             transliteration, auto-suffix on
---                                             collision, mutable in pre-approve
---                                             status only — see Brief 0)
---   028 drop redundant explicit slug index (UNIQUE-backed index suffices)
---   029 restore Могилёв (ё) variant in establishments_city_check
+--   001 token rotation columns           017 activate partner analytics
+--   002 PostGIS extension                018 backfill base_score
+--   003 location GEOGRAPHY column        019 claiming infrastructure
+--   004 rename category -> cuisines      020 promotions overhaul
+--   005 denormalised cards columns       021 booking system
+--   006 indexing pass                    022 push notifications
+--   007 reviews schema                   023 file_type on media
+--   008 price_range length fix           024 OCR menu pipeline (pg_trgm)
+--   009 partner responses                025 hidden_reason on menu_items
+--   010 audit_log table                  026 email_verification_codes
+--   011 sync test DB columns             027 establishment slug (BGN/PCGN
+--   012 rejected status                      transliteration, auto-suffix on
+--   013 analytics indexes                    collision, mutable in pre-approve
+--   014 audit action index                   status only — see Brief 0)
+--   015 oauth_provider_id on users       028 drop redundant explicit slug index
+--   016 notifications table              029 restore Могилёв (ё) variant
+--                                        030 category/cuisine Cyrillic canon
+--                                            normalisation + CHECK (CAT-C-2.9)
+--                                        031 seed_import_registry (bulk-import
+--                                            idempotency / resume sidecar)
+--                                        032 password_reset_tokens (SHA-256
+--                                            hash-at-rest, Email-Channel Slice 1)
 --
 -- Note on migration 027: applied as three artifacts on the source DB
 -- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
@@ -48,17 +63,28 @@
 -- already includes the resulting slug column with NOT NULL + UNIQUE
 -- constraints, so single-file restore is sufficient.
 --
--- Regeneration recipe (Option B from Audit Phase 3 Brief #2; refreshed in
--- Brief #4; re-applied for 028/029):
+-- Note on migration 007: it declared check_content_length CHECK (length(content)
+-- >= 20) on reviews, which the live database does NOT carry and this snapshot
+-- therefore does not either. That divergence is known, deliberate and tracked
+-- (deferred_items «reviews content schema-drift»): the operational floor is the
+-- validator (min 1 / max 1000). Do not "restore" it from the migration file —
+-- the snapshot is meant to match production, not migration history.
+--
+-- Regeneration recipe (executable; this is what produced the current body):
 --   1. docker exec pg-test psql -U postgres -c "DROP DATABASE IF EXISTS schema_rebuild;"
 --   2. docker exec pg-test psql -U postgres -c "CREATE DATABASE schema_rebuild;"
---   3. Load existing snapshot (covers all currently-snapshotted migrations):
---        docker exec -i pg-test psql -U postgres -d schema_rebuild < production_schema.sql
---      For migrations newer than the snapshot, apply pre-data SQL, run backfill
---      script if applicable, then apply post-data SQL (e.g. 027a → backfill → 027b).
+--   3. Load the existing snapshot (it carries the base schema — no migration does):
+--        docker exec -i pg-test psql -U postgres -d schema_rebuild -v ON_ERROR_STOP=1 \
+--          < production_schema.sql
+--      Then apply every migration newer than the snapshot, in order. Where a
+--      migration needs a JS backfill, apply pre-data SQL → run the script →
+--      apply post-data SQL (e.g. 027a → backfill-slugs.js → 027b).
 --   4. docker exec pg-test pg_dump -U postgres --schema-only --no-owner \
---        --no-privileges --no-comments -d schema_rebuild > <new_schema_body>.sql
+--        --no-privileges --no-comments -d schema_rebuild > <new_body>.sql
 --   5. Replace this header block, keep the body.
+--   6. VERIFY BY RESTORING: create a second clean database, load the new file,
+--        and compare table/column/constraint/index counts against the source.
+--        Skipping this step is how a snapshot silently stops bootstrapping.
 -- =====================================================
 
 
@@ -313,7 +339,9 @@ CREATE TABLE public.establishments (
     published_at timestamp without time zone,
     booking_enabled boolean DEFAULT false,
     slug character varying(150) NOT NULL,
-    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY ((ARRAY['Минск'::character varying, 'Гродно'::character varying, 'Брест'::character varying, 'Гомель'::character varying, 'Витебск'::character varying, 'Могилев'::character varying, 'Могилёв'::character varying, 'Бобруйск'::character varying])::text[]))),
+    CONSTRAINT establishments_categories_canon_check CHECK (((categories IS NULL) OR ((categories <> '{}'::character varying[]) AND (categories <@ ARRAY['Ресторан'::character varying, 'Кофейня'::character varying, 'Кафе'::character varying, 'Фаст-фуд'::character varying, 'Бар'::character varying, 'Кондитерская'::character varying, 'Пиццерия'::character varying, 'Пекарня'::character varying, 'Паб'::character varying, 'Столовая'::character varying, 'Кальянная'::character varying, 'Боулинг'::character varying, 'Караоке'::character varying, 'Бильярд'::character varying, 'Клуб'::character varying])))),
+    CONSTRAINT establishments_city_check CHECK (((city)::text = ANY (ARRAY[('Минск'::character varying)::text, ('Гродно'::character varying)::text, ('Брест'::character varying)::text, ('Гомель'::character varying)::text, ('Витебск'::character varying)::text, ('Могилев'::character varying)::text, ('Могилёв'::character varying)::text, ('Бобруйск'::character varying)::text]))),
+    CONSTRAINT establishments_cuisines_canon_check CHECK (((cuisines <> '{}'::character varying[]) AND (cuisines <@ ARRAY['Народная'::character varying, 'Авторская'::character varying, 'Азиатская'::character varying, 'Американская'::character varying, 'Вегетарианская'::character varying, 'Японская'::character varying, 'Грузинская'::character varying, 'Итальянская'::character varying, 'Смешанная'::character varying, 'Европейская'::character varying, 'Китайская'::character varying, 'Восточная'::character varying]))),
     CONSTRAINT establishments_price_range_check CHECK (((price_range)::text = ANY (ARRAY[('$'::character varying)::text, ('$$'::character varying)::text, ('$$$'::character varying)::text, ('$$$$'::character varying)::text]))),
     CONSTRAINT establishments_status_check CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('pending'::character varying)::text, ('active'::character varying)::text, ('rejected'::character varying)::text, ('suspended'::character varying)::text, ('archived'::character varying)::text]))),
     CONSTRAINT establishments_subscription_tier_check CHECK (((subscription_tier)::text = ANY (ARRAY[('free'::character varying)::text, ('basic'::character varying)::text, ('standard'::character varying)::text, ('premium'::character varying)::text])))
@@ -428,6 +456,20 @@ CREATE TABLE public.partner_documents (
 
 
 --
+-- Name: password_reset_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.password_reset_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    expires_at timestamp without time zone NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    used_at timestamp without time zone
+);
+
+
+--
 -- Name: promotions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -489,6 +531,25 @@ CREATE TABLE public.reviews (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5)))
+);
+
+
+--
+-- Name: seed_import_registry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.seed_import_registry (
+    stable_id character varying(64) NOT NULL,
+    establishment_id uuid,
+    batch_id character varying(64) NOT NULL,
+    content_hash character varying(64) NOT NULL,
+    phase character varying(20) DEFAULT 'creating'::character varying NOT NULL,
+    media_state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    coords_source character varying(20),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT chk_seed_registry_coords_source CHECK (((coords_source IS NULL) OR ((coords_source)::text = ANY ((ARRAY['sheet'::character varying, 'geocoded'::character varying, 'city_fallback'::character varying])::text[])))),
+    CONSTRAINT chk_seed_registry_phase CHECK (((phase)::text = ANY ((ARRAY['creating'::character varying, 'created'::character varying, 'media_done'::character varying, 'ocr_enqueued'::character varying, 'activated'::character varying])::text[])))
 );
 
 
@@ -697,6 +758,14 @@ ALTER TABLE ONLY public.partner_documents
 
 
 --
+-- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.password_reset_tokens
+    ADD CONSTRAINT password_reset_tokens_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: promotions promotions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -726,6 +795,22 @@ ALTER TABLE ONLY public.refresh_tokens
 
 ALTER TABLE ONLY public.reviews
     ADD CONSTRAINT reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: seed_import_registry seed_import_registry_establishment_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seed_import_registry
+    ADD CONSTRAINT seed_import_registry_establishment_id_key UNIQUE (establishment_id);
+
+
+--
+-- Name: seed_import_registry seed_import_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seed_import_registry
+    ADD CONSTRAINT seed_import_registry_pkey PRIMARY KEY (stable_id);
 
 
 --
@@ -1020,6 +1105,20 @@ CREATE INDEX idx_partner_docs_partner ON public.partner_documents USING btree (p
 
 
 --
+-- Name: idx_password_reset_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_password_reset_tokens_token_hash ON public.password_reset_tokens USING btree (token_hash);
+
+
+--
+-- Name: idx_password_reset_tokens_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_password_reset_tokens_user_id ON public.password_reset_tokens USING btree (user_id);
+
+
+--
 -- Name: idx_promotions_dates; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1101,6 +1200,20 @@ CREATE INDEX idx_reviews_user ON public.reviews USING btree (user_id);
 --
 
 CREATE UNIQUE INDEX idx_reviews_user_establishment_active ON public.reviews USING btree (user_id, establishment_id) WHERE (is_deleted = false);
+
+
+--
+-- Name: idx_seed_registry_batch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_seed_registry_batch ON public.seed_import_registry USING btree (batch_id);
+
+
+--
+-- Name: idx_seed_registry_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_seed_registry_phase ON public.seed_import_registry USING btree (phase);
 
 
 --
@@ -1366,6 +1479,14 @@ ALTER TABLE ONLY public.partner_documents
 
 
 --
+-- Name: password_reset_tokens password_reset_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.password_reset_tokens
+    ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: promotions promotions_establishment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1419,6 +1540,14 @@ ALTER TABLE ONLY public.reviews
 
 ALTER TABLE ONLY public.reviews
     ADD CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: seed_import_registry seed_import_registry_establishment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seed_import_registry
+    ADD CONSTRAINT seed_import_registry_establishment_id_fkey FOREIGN KEY (establishment_id) REFERENCES public.establishments(id) ON DELETE CASCADE;
 
 
 --
