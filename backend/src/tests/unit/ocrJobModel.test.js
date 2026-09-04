@@ -7,6 +7,7 @@
  *   - enqueue idempotency (active job returned instead of duplicate creation)
  *   - pickNextPending uses FOR UPDATE SKIP LOCKED (concurrency safety)
  *   - markFailed retry logic (returns to pending vs permanent failure)
+ *   - reapStaleProcessingJobs stale sweep (age compared in SQL, same retry rule)
  */
 
 import { jest } from '@jest/globals';
@@ -277,5 +278,58 @@ describe('countDoneJobsSinceEnqueue — batch mates of a failed job', () => {
       establishmentId: ESTABLISHMENT_ID,
       jobId: JOB_ID,
     })).toBe(0);
+  });
+});
+
+describe('reapStaleProcessingJobs — stale sweep', () => {
+  test('settles processing rows older than STALE_PROCESSING_INTERVAL with the markFailed retry rule', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    await Model.reapStaleProcessingJobs();
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('UPDATE ocr_jobs');
+    expect(sql).toContain("WHERE status = 'processing'");
+    // Age compared in SQL — started_at / created_at are DB-generated naive timestamps.
+    expect(sql).toContain('COALESCE(started_at, created_at) < NOW() - $1::interval');
+    // Same retry semantics as markFailed.
+    expect(sql).toContain("WHEN attempts >= max_attempts THEN 'failed'");
+    expect(sql).toContain("ELSE 'pending'");
+    expect(sql).toContain('error_message = $2');
+    expect(sql).toContain('completed_at = CASE');
+    expect(sql).toContain('started_at = CASE');
+    expect(sql).toContain('RETURNING *');
+    expect(sql).toContain('ORDER BY created_at ASC');
+    expect(params).toEqual([Model.STALE_PROCESSING_INTERVAL, Model.STALE_REAP_ERROR_MESSAGE]);
+  });
+
+  test('error message names the interval', () => {
+    expect(Model.STALE_REAP_ERROR_MESSAGE).toBe('stale processing reaped after 1 hour');
+  });
+
+  test('returns the reaped rows', async () => {
+    const rows = [
+      { id: JOB_ID, status: 'pending', attempts: 1 },
+      { id: uuidv4(), status: 'failed', attempts: 3 },
+    ];
+    mockQuery.mockResolvedValueOnce({ rows });
+
+    expect(await Model.reapStaleProcessingJobs()).toEqual(rows);
+  });
+
+  test('markFailed and the reaper share one retry clause', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    await Model.markFailed(JOB_ID, 'x');
+    await Model.reapStaleProcessingJobs();
+
+    // Indentation differs between the two queries — compare the tokens, not the whitespace.
+    const setClauseOf = (sql) => sql
+      .slice(sql.indexOf('SET status = CASE'), sql.indexOf('WHERE'))
+      .replace(/\s+/g, ' ')
+      .trim();
+    const [markFailedSql] = mockQuery.mock.calls[0];
+    const [reaperSql] = mockQuery.mock.calls[1];
+    expect(setClauseOf(markFailedSql).length).toBeGreaterThan(100);
+    expect(setClauseOf(reaperSql)).toBe(setClauseOf(markFailedSql));
   });
 });

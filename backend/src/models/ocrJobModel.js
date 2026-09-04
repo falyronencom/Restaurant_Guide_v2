@@ -8,6 +8,9 @@
  * Status flow: pending → processing → (done | failed)
  * Retry: markFailed returns job to 'pending' if attempts < max_attempts (default 3),
  *        otherwise transitions to 'failed' permanently.
+ * Reaper: reapStaleProcessingJobs applies the same rule to 'processing' rows older
+ *         than STALE_PROCESSING_INTERVAL — a process that died mid-job never settles
+ *         its own row; ocrJobPoller sweeps them.
  */
 
 import pool from '../config/database.js';
@@ -19,6 +22,8 @@ import logger from '../utils/logger.js';
  * Idempotency: if an active (pending/processing) job already exists for this media,
  * return it instead of creating a duplicate. This makes trigger logic in Segment B
  * safe against repeated calls (e.g., partner clicking "re-run OCR" twice).
+ * A 'processing' row orphaned by a dead process would satisfy this check forever;
+ * the poller's stale sweep (reapStaleProcessingJobs) settles it within about an hour.
  *
  * @param {Object} params
  * @param {string} params.establishmentId - UUID
@@ -110,6 +115,28 @@ export const markDone = async (jobId, resultSummary) => {
 };
 
 /**
+ * SET clause that settles a failed attempt — shared by markFailed and
+ * reapStaleProcessingJobs so the retry rule lives in one place: back to
+ * 'pending' while attempts remain (started_at cleared for the next pick),
+ * 'failed' with completed_at once the last attempt is spent (started_at kept
+ * for forensics). attempts was incremented by pickNextPending, so the
+ * comparison is >= max_attempts. Placeholder contract: $2 = error message.
+ */
+const SETTLE_FAILED_ATTEMPT_SET = `SET status = CASE
+           WHEN attempts >= max_attempts THEN 'failed'
+           ELSE 'pending'
+         END,
+         error_message = $2,
+         completed_at = CASE
+           WHEN attempts >= max_attempts THEN NOW()
+           ELSE NULL
+         END,
+         started_at = CASE
+           WHEN attempts >= max_attempts THEN started_at
+           ELSE NULL
+         END`;
+
+/**
  * Mark a job as failed. Retries if attempts < max_attempts, permanently fails otherwise.
  *
  * Note: attempts counter is incremented in pickNextPending, so by the time markFailed
@@ -122,19 +149,7 @@ export const markDone = async (jobId, resultSummary) => {
 export const markFailed = async (jobId, errorMessage) => {
   const result = await pool.query(
     `UPDATE ocr_jobs
-     SET status = CASE
-           WHEN attempts >= max_attempts THEN 'failed'
-           ELSE 'pending'
-         END,
-         error_message = $2,
-         completed_at = CASE
-           WHEN attempts >= max_attempts THEN NOW()
-           ELSE NULL
-         END,
-         started_at = CASE
-           WHEN attempts >= max_attempts THEN started_at
-           ELSE NULL
-         END
+     ${SETTLE_FAILED_ATTEMPT_SET}
      WHERE id = $1
      RETURNING *`,
     [jobId, errorMessage],
@@ -194,12 +209,54 @@ export const hasCompletedJobForMedia = async (mediaId) => {
 
 /**
  * A 'processing' row older than this is a zombie: the process died mid-job
- * (SIGKILL / OOM / redeploy without a graceful stop) and nothing will ever
- * settle it — there is no reaper yet. A legitimate job is minutes at most:
- * one download, one vision call and one structurer call, each capped by a
- * 60 s request timeout. PostgreSQL interval literal.
+ * (SIGKILL / OOM / redeploy without a graceful stop) and nothing else will
+ * ever settle it. A legitimate job is minutes at most: one download (no
+ * explicit abort — bounded by undici's 300 s header/body defaults), one
+ * vision call and one structurer call (60 s aborts).
+ * Two consumers: countActiveJobsForEstablishment ignores such rows so a
+ * zombie cannot mute the batch notification, and reapStaleProcessingJobs
+ * (driven by ocrJobPoller's sweep) settles them. PostgreSQL interval literal.
  */
 export const STALE_PROCESSING_INTERVAL = '1 hour';
+
+/**
+ * error_message written by the reaper. English like the exception messages
+ * markFailed stores; the column is not surfaced to partners or moderators.
+ */
+export const STALE_REAP_ERROR_MESSAGE = `stale processing reaped after ${STALE_PROCESSING_INTERVAL}`;
+
+/**
+ * Settle every zombie: 'processing' rows older than STALE_PROCESSING_INTERVAL.
+ *
+ * Same rule as markFailed — back to 'pending' while attempts remain (the
+ * poller re-picks them; started_at is cleared and set again by
+ * pickNextPending), 'failed' with completed_at once the last attempt is
+ * spent. Left alone, such a row makes enqueue treat the media as active
+ * forever and keeps the establishment out of the admin health signals'
+ * "empty menus" anti-join. The age is compared inside the database —
+ * started_at / created_at are DB-generated naive timestamps — with the
+ * interval bound as a literal, exactly like countActiveJobsForEstablishment.
+ *
+ * Called by ocrJobPoller.sweepStaleJobs, which logs each row and closes the
+ * batch of a permanently failed one. Rows come back oldest first so the
+ * poller closes one batch per establishment deterministically.
+ *
+ * @returns {Promise<Object[]>} Reaped rows, now 'pending' or 'failed'
+ */
+export const reapStaleProcessingJobs = async () => {
+  const result = await pool.query(
+    `WITH reaped AS (
+       UPDATE ocr_jobs
+       ${SETTLE_FAILED_ATTEMPT_SET}
+       WHERE status = 'processing'
+         AND COALESCE(started_at, created_at) < NOW() - $1::interval
+       RETURNING *
+     )
+     SELECT * FROM reaped ORDER BY created_at ASC`,
+    [STALE_PROCESSING_INTERVAL, STALE_REAP_ERROR_MESSAGE],
+  );
+  return result.rows;
+};
 
 /**
  * Count active OCR jobs of an establishment: every 'pending' job plus the

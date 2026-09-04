@@ -30,6 +30,7 @@ const { pool } = await import('../../config/database.js');
 const ocrJobModel = await import('../../models/ocrJobModel.js');
 const menuItemModel = await import('../../models/menuItemModel.js');
 const ocrService = await import('../../services/ocr/ocrService.js');
+const ocrJobPoller = await import('../../services/ocr/ocrJobPoller.js');
 const { createPartnerAndGetToken, createTestEstablishment } = await import('../utils/auth.js');
 
 const OCR_CONFIG = {
@@ -643,6 +644,146 @@ describe('OCR pipeline integration', () => {
       expect(picked.id).toBe(badJob.id);
       expect((await ocrService.processJob(picked.id)).success).toBe(false);
       expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('failed');
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+    });
+  });
+
+  // ── Stale processing sweep (poller reaper) ───────────────────────────────
+  // A 'processing' row whose process died mid-job is settled by nobody:
+  // enqueue keeps returning it ("re-run OCR" is dead for that file) and the
+  // admin health signals count it as in flight. ocrJobPoller.sweepStaleJobs
+  // settles rows older than STALE_PROCESSING_INTERVAL under the markFailed
+  // retry rule. The poller itself never starts under NODE_ENV=test — the
+  // sweep is invoked directly, like processJob.
+
+  describe('stale processing sweep — ocrJobPoller.sweepStaleJobs', () => {
+    /**
+     * A job whose process died `age` ago (PostgreSQL interval literal), with
+     * the row left in 'processing'. Age is written by the database, like
+     * pickNextPending does, so the comparison never crosses the driver.
+     */
+    const insertZombie = async ({ attempts, age, withStartedAt = true }) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const startedAtSql = withStartedAt ? 'NOW() - $4::interval' : 'NULL';
+      const result = await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at)
+         VALUES ($1, $2, 'processing', $3, NOW() - $4::interval, ${startedAtSql})
+         RETURNING *`,
+        [establishment.id, mediaId, attempts, age],
+      );
+      return result.rows[0];
+    };
+
+    /** A batch mate that finished 90 minutes ago and produced `items`. */
+    const insertDoneMate = async (items) => {
+      const mate = await insertTestMedia(establishment.id, 'pdf');
+      await menuItemModel.createMany({
+        establishmentId: establishment.id,
+        mediaId: mate.mediaId,
+        items,
+      });
+      await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, completed_at)
+         VALUES ($1, $2, 'done', 1, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '90 minutes')`,
+        [establishment.id, mate.mediaId],
+      );
+      return mate;
+    };
+
+    /** The sweep is global across the test DB — judge only rows of this establishment. */
+    const ownReaped = (rows) => rows.filter((job) => job.establishment_id === establishment.id);
+
+    test('older than STALE_PROCESSING_INTERVAL with attempts left → back to pending; re-run works again', async () => {
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours' });
+
+      const reaped = ownReaped(await ocrJobPoller.sweepStaleJobs());
+      expect(reaped.map((job) => job.id)).toEqual([zombie.id]);
+
+      const after = await ocrJobModel.getJobStatus(zombie.id);
+      expect(after.status).toBe('pending');
+      expect(after.attempts).toBe(1);
+      expect(after.error_message).toBe('stale processing reaped after 1 hour');
+      expect(after.started_at).toBeNull();
+      expect(after.completed_at).toBeNull();
+
+      // Active again through the normal path: enqueue returns it (no duplicate)
+      // and the poller picks it up for its second attempt.
+      const again = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: zombie.media_id });
+      expect(again.id).toBe(zombie.id);
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.id).toBe(zombie.id);
+      expect(picked.attempts).toBe(2);
+      expect(picked.started_at).not.toBeNull();
+    });
+
+    test('older than the interval with no attempts left → failed with completed_at; the media can be queued anew', async () => {
+      const zombie = await insertZombie({ attempts: 3, age: '2 hours' });
+
+      const reaped = ownReaped(await ocrJobPoller.sweepStaleJobs());
+      expect(reaped.map((job) => job.status)).toEqual(['failed']);
+
+      const after = await ocrJobModel.getJobStatus(zombie.id);
+      expect(after.status).toBe('failed');
+      expect(after.attempts).toBe(3);
+      expect(after.error_message).toBe('stale processing reaped after 1 hour');
+      expect(after.completed_at).not.toBeNull();
+      expect(after.started_at).not.toBeNull();
+
+      // Before the sweep, enqueue would have returned the zombie forever.
+      const fresh = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: zombie.media_id });
+      expect(fresh.id).not.toBe(zombie.id);
+      expect(fresh.status).toBe('pending');
+      expect(fresh.attempts).toBe(0);
+    });
+
+    test('a fresh processing row is untouched', async () => {
+      const inFlight = await insertZombie({ attempts: 1, age: '5 minutes' });
+
+      const reaped = ownReaped(await ocrJobPoller.sweepStaleJobs());
+      expect(reaped).toEqual([]);
+
+      const after = await ocrJobModel.getJobStatus(inFlight.id);
+      expect(after.status).toBe('processing');
+      expect(after.attempts).toBe(1);
+      expect(after.error_message).toBeNull();
+      expect(after.started_at).not.toBeNull();
+      expect(after.completed_at).toBeNull();
+    });
+
+    test('started_at NULL falls back to created_at for the age', async () => {
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours', withStartedAt: false });
+
+      await ocrJobPoller.sweepStaleJobs();
+
+      expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('pending');
+    });
+
+    test('permanently failing the last job of a batch reports what its batch mates recognised', async () => {
+      await insertDoneMate([
+        { item_name: 'Борщ', price_byn: 15, confidence: 0.9, position: 0 },
+        { item_name: 'Салат', price_byn: 12, confidence: 0.9, position: 1 },
+      ]);
+      const zombie = await insertZombie({ attempts: 3, age: '2 hours' });
+
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('failed');
+
+      // The sweep awaits the notification: the row exists the moment it resolves.
+      const rows = await partnerNotifications();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toBe('Меню «Test Restaurant» распознано — 2 позиции');
+    });
+
+    test('a job reaped back to pending keeps the batch open — no notification', async () => {
+      await insertDoneMate([
+        { item_name: 'Борщ', price_byn: 15, confidence: 0.9, position: 0 },
+      ]);
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours' });
+
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('pending');
 
       await settle();
       expect(await partnerNotifications()).toHaveLength(0);

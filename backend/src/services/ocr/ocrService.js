@@ -12,7 +12,7 @@
  *   7. Mark job done (with result_summary) or failed (with retry logic)
  *   8. Notify partner once per upload batch via notifyMenuParsed — when the job
  *      that just settled was the last active one for the establishment
- *      (fire-and-forget, Segment B; see notifyPartnerIfBatchFinished)
+ *      (awaited, errors logged only, Segment B; see notifyPartnerIfBatchFinished)
  */
 
 import logger from '../../utils/logger.js';
@@ -142,7 +142,9 @@ const buildResultSummary = (items, strategy) => {
  * notification, and the text is computed from the whole menu at that moment
  * (notificationService). A 'processing' row older than
  * ocrJobModel.STALE_PROCESSING_INTERVAL is a zombie and does not hold the
- * batch open (see countActiveJobsForEstablishment).
+ * batch open (see countActiveJobsForEstablishment); the poller's stale sweep
+ * settles it later and, when that fails it permanently, closes the batch
+ * through this same function (ocrJobPoller.sweepStaleJobs).
  *
  * The poller runs jobs one at a time, so the "no active jobs left" check that
  * follows markDone / markFailed cannot race with a sibling settling at the
