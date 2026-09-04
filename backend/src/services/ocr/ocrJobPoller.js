@@ -6,9 +6,17 @@
  * sufficient for Phase 1 volumes, easy to scale horizontally later by simply
  * running multiple pollers (FOR UPDATE SKIP LOCKED handles concurrency).
  *
+ * Caveat before adding pollers: the batch-level partner notification in
+ * ocrService (one menu_parsed per upload batch, 2026-09-04) relies on serial
+ * processing — with several pollers two jobs of one establishment settling at
+ * the same instant could both see "no active jobs left" and notify twice
+ * (a duplicate, never silence). Serialise the check per establishment first.
+ *
  * Lifecycle:
  *   - start() begins the polling interval
- *   - stop() stops new pickups and waits for the current job (if any) to finish
+ *   - stop() stops new pickups and waits for the current job (if any) to finish —
+ *     processJob awaits the batch notification, so it is covered by that wait
+ *     and closePool() in server.js cannot cut it off
  *
  * The poller must NOT start in NODE_ENV=test — tests invoke ocrService.processJob
  * directly to avoid timing dependencies.

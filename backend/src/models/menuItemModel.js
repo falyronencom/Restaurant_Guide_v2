@@ -142,6 +142,26 @@ export const getByEstablishmentId = async (establishmentId, { includeHidden = fa
 };
 
 /**
+ * Aggregate counts for the batch-level menu_parsed notification: how many
+ * items the establishment's menu holds and how many menu files they came from.
+ * Items hidden by admin are counted — they were recognised; moderation is a
+ * separate concern.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<{ items: number, files: number }>}
+ */
+export const countByEstablishment = async (establishmentId) => {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS items, COUNT(DISTINCT media_id)::int AS files
+     FROM menu_items
+     WHERE establishment_id = $1`,
+    [establishmentId],
+  );
+  const row = result.rows[0] || {};
+  return { items: row.items ?? 0, files: row.files ?? 0 };
+};
+
+/**
  * Find a single menu item by ID.
  *
  * @param {string} id - UUID

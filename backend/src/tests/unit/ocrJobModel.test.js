@@ -225,3 +225,57 @@ describe('getJobsByEstablishment', () => {
     expect(params).toEqual([ESTABLISHMENT_ID]);
   });
 });
+
+describe('countActiveJobsForEstablishment — batch detection', () => {
+  test('counts pending jobs and fresh processing jobs of the establishment', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ count: 2 }] });
+
+    const result = await Model.countActiveJobsForEstablishment(ESTABLISHMENT_ID);
+
+    expect(result).toBe(2);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('FROM ocr_jobs');
+    expect(sql).toContain('establishment_id = $1');
+    expect(sql).toContain("status = 'pending'");
+    expect(sql).toContain("status = 'processing'");
+    // Zombie guard: a processing row older than the interval is not active.
+    // Age compared in SQL — started_at is a DB-generated naive timestamp.
+    expect(sql).toContain('COALESCE(started_at, created_at) > NOW() - $2::interval');
+    expect(params).toEqual([ESTABLISHMENT_ID, Model.STALE_PROCESSING_INTERVAL]);
+    expect(Model.STALE_PROCESSING_INTERVAL).toBe('1 hour');
+  });
+
+  test('returns 0 when the query yields no row', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    expect(await Model.countActiveJobsForEstablishment(ESTABLISHMENT_ID)).toBe(0);
+  });
+});
+
+describe('countDoneJobsSinceEnqueue — batch mates of a failed job', () => {
+  test('counts done jobs completed since the reference job was enqueued, compared in SQL', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ count: 1 }] });
+
+    const result = await Model.countDoneJobsSinceEnqueue({
+      establishmentId: ESTABLISHMENT_ID,
+      jobId: JOB_ID,
+    });
+
+    expect(result).toBe(1);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('establishment_id = $1');
+    expect(sql).toContain("status = 'done'");
+    // Both timestamps are DB-generated naive values — the comparison must stay in SQL.
+    expect(sql).toContain('completed_at >= (SELECT created_at FROM ocr_jobs WHERE id = $2)');
+    expect(params).toEqual([ESTABLISHMENT_ID, JOB_ID]);
+  });
+
+  test('returns 0 when the query yields no row', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    expect(await Model.countDoneJobsSinceEnqueue({
+      establishmentId: ESTABLISHMENT_ID,
+      jobId: JOB_ID,
+    })).toBe(0);
+  });
+});

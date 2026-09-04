@@ -10,7 +10,9 @@
  *   5. Run sanity checker with previous items as context (delta comparison)
  *   6. Transactionally replace menu_items for this media
  *   7. Mark job done (with result_summary) or failed (with retry logic)
- *   8. Notify partner via notifyMenuParsed (fire-and-forget, Segment B)
+ *   8. Notify partner once per upload batch via notifyMenuParsed — when the job
+ *      that just settled was the last active one for the establishment
+ *      (fire-and-forget, Segment B; see notifyPartnerIfBatchFinished)
  */
 
 import logger from '../../utils/logger.js';
@@ -124,6 +126,73 @@ const buildResultSummary = (items, strategy) => {
 };
 
 /**
+ * Batch-level partner notification (Coordinator decision 2026-09-04, option «б»).
+ *
+ * A job is one menu file, but the partner uploads a menu: N files used to
+ * yield N in-app rows and — once push arrived — N pushes spread over the
+ * serial poller's run. Now the partner hears once, when the job that just
+ * settled left no active (pending/processing) sibling for the establishment.
+ *
+ * A "batch" is therefore the set of jobs of one establishment that overlap in
+ * the queue: whatever is still pending/processing while a job settles belongs
+ * to the same batch. Files uploaded more than a poll cycle plus processing
+ * time apart form separate batches and notify separately — by design, those
+ * are separate uploads. A job that markFailed returned to 'pending' for a
+ * retry keeps the batch open; whichever job settles last sends the
+ * notification, and the text is computed from the whole menu at that moment
+ * (notificationService). A 'processing' row older than
+ * ocrJobModel.STALE_PROCESSING_INTERVAL is a zombie and does not hold the
+ * batch open (see countActiveJobsForEstablishment).
+ *
+ * The poller runs jobs one at a time, so the "no active jobs left" check that
+ * follows markDone / markFailed cannot race with a sibling settling at the
+ * same instant (ocrJobPoller header notes the multi-poller caveat).
+ *
+ * `failedJobId` marks the permanent-failure branch: the batch is reported only
+ * if a batch mate was recognised while the failed job was alive (a 'done' job
+ * completed after it was enqueued). A lone failed upload, or a batch that
+ * failed entirely, stays silent — the retry flow covers it, as before.
+ *
+ * Known edge (accepted): deleting a menu file whose job is still pending
+ * cascades the job away, so a sibling that already deferred never gets its
+ * notification. The partner still sees the recognised items on the menu screen.
+ *
+ * Errors are logged and never reach the job outcome (callers attach .catch).
+ *
+ * @param {string} establishmentId - UUID
+ * @param {Object} [options]
+ * @param {string|null} [options.failedJobId] - Set when a permanent failure settled this job
+ * @returns {Promise<boolean>} Whether the notification was sent
+ */
+const notifyPartnerIfBatchFinished = async (establishmentId, { failedJobId = null } = {}) => {
+  const activeJobs = await ocrJobModel.countActiveJobsForEstablishment(establishmentId);
+  if (activeJobs > 0) {
+    logger.debug('menu_parsed notification deferred: batch still active', {
+      establishmentId,
+      activeJobs,
+    });
+    return false;
+  }
+
+  if (failedJobId) {
+    const doneInBatch = await ocrJobModel.countDoneJobsSinceEnqueue({
+      establishmentId,
+      jobId: failedJobId,
+    });
+    if (doneInBatch === 0) {
+      logger.debug('menu_parsed notification skipped: nothing recognised in the failed batch', {
+        establishmentId,
+        failedJobId,
+      });
+      return false;
+    }
+  }
+
+  await NotificationService.notifyMenuParsed(establishmentId);
+  return true;
+};
+
+/**
  * Run the full OCR pipeline for a job. Called by the poller after pickNextPending,
  * or directly in tests.
  *
@@ -186,9 +255,13 @@ export const processJob = async (jobId) => {
       ...summary,
     });
 
-    // Segment B: notify partner that menu has been parsed. Fire-and-forget —
-    // notification failure must never cause OCR job to be marked failed.
-    NotificationService.notifyMenuParsed(job.establishment_id, flaggedItems.length)
+    // Segment B: notify partner once the whole upload batch has settled.
+    // The job outcome is already persisted above and never depends on this:
+    // errors are caught and logged. It is awaited (not fire-and-forget) so the
+    // poller's in-flight promise — which graceful shutdown waits for before
+    // closing the pool — covers the notification; a redeploy landing on the
+    // last job of a batch must not leave the partner without it.
+    await notifyPartnerIfBatchFinished(job.establishment_id)
       .catch((err) => logger.error('notifyMenuParsed failed', {
         error: err.message,
         establishmentId: job.establishment_id,
@@ -202,10 +275,26 @@ export const processJob = async (jobId) => {
       stack: error.stack,
     });
 
-    await ocrJobModel.markFailed(jobId, error.message);
+    const failedJob = await ocrJobModel.markFailed(jobId, error.message);
+
+    // A permanent failure settles this job too: if it was the last active one,
+    // the partner still hears what the rest of the batch produced. Awaited for
+    // the same shutdown reason as above; errors stay in the log.
+    if (failedJob && failedJob.status === 'failed') {
+      await notifyPartnerIfBatchFinished(job.establishment_id, { failedJobId: jobId })
+        .catch((err) => logger.error('notifyMenuParsed failed after permanent failure', {
+          error: err.message,
+          establishmentId: job.establishment_id,
+        }));
+    }
 
     return { success: false, jobId, error: error.message };
   }
 };
 
-export { buildPdfPageUrls, buildResultSummary, VISION_FALLBACK_PAGE_LIMIT };
+export {
+  buildPdfPageUrls,
+  buildResultSummary,
+  notifyPartnerIfBatchFinished,
+  VISION_FALLBACK_PAGE_LIMIT,
+};

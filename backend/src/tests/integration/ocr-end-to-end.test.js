@@ -81,14 +81,17 @@ describe('OCR → Smart Search → Admin hide — end-to-end', () => {
     const menuItemId = itemRes.rows[0].id;
 
     // Fire the notification helper directly — verify it runs without throwing.
-    await NotificationService.notifyMenuParsed(estId, 1);
+    // Since 2026-09-04 it takes no count: the text is computed from menu_items
+    // (one notification per upload batch, Coordinator decision «б»).
+    await NotificationService.notifyMenuParsed(estId);
 
-    // Partner receives an in-app 'menu_parsed' notification.
+    // Partner receives an in-app 'menu_parsed' notification describing the menu.
     const notifRows = await query(
-      "SELECT id, type FROM notifications WHERE user_id = $1 AND type = 'menu_parsed'",
+      "SELECT id, type, message FROM notifications WHERE user_id = $1 AND type = 'menu_parsed'",
       [partner.user.id],
     );
     expect(notifRows.rows).toHaveLength(1);
+    expect(notifRows.rows[0].message).toContain('1 позиция');
 
     // ── 4. Smart Search with dish: includes our establishment ──────────────
     // We hit searchService.searchWithoutLocation directly through the

@@ -35,6 +35,7 @@ jest.unstable_mockModule('../../models/favoriteModel.js', () => ({
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   findById: jest.fn(),
+  countByEstablishment: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../services/pushService.js', () => ({
@@ -77,6 +78,7 @@ const {
   notifyBookingCancelled,
   notifyPromotionNew,
   notifyMenuParsed,
+  buildMenuParsedMessage,
   notifyMenuItemHidden,
 } = await import('../../services/notificationService.js');
 
@@ -1010,6 +1012,48 @@ describe('notificationService', () => {
   // Segment B: menu-related helpers
   // ═══════════════════════════════════════════════════════════════════════
 
+  describe('buildMenuParsedMessage', () => {
+    test('several files → total across the whole menu with Russian plurals', () => {
+      expect(buildMenuParsedMessage('Кофе Плюс', 143, 12))
+        .toBe('Меню «Кофе Плюс» распознано — всего 143 позиции из 12 файлов');
+    });
+
+    test('one file keeps the pre-batch wording', () => {
+      expect(buildMenuParsedMessage('Кофе Плюс', 5, 1))
+        .toBe('Меню «Кофе Плюс» распознано — 5 позиций');
+    });
+
+    test('no items → «позиций не найдено» whatever the file count', () => {
+      expect(buildMenuParsedMessage('Кофе Плюс', 0, 0))
+        .toBe('Меню «Кофе Плюс» распознано — позиций не найдено');
+      expect(buildMenuParsedMessage('Кофе Плюс', 0, 3))
+        .toBe('Меню «Кофе Плюс» распознано — позиций не найдено');
+    });
+
+    test.each([
+      [1, '1 позиция'],
+      [2, '2 позиции'],
+      [5, '5 позиций'],
+      [11, '11 позиций'],
+      [14, '14 позиций'],
+      [21, '21 позиция'],
+      [22, '22 позиции'],
+      [111, '111 позиций'],
+    ])('items plural: %i → «%s»', (items, expected) => {
+      expect(buildMenuParsedMessage('X', items, 1)).toBe(`Меню «X» распознано — ${expected}`);
+    });
+
+    test.each([
+      [2, 'из 2 файлов'],
+      [5, 'из 5 файлов'],
+      [11, 'из 11 файлов'],
+      [21, 'из 21 файла'],
+      [22, 'из 22 файлов'],
+    ])('files genitive after «из»: %i → «%s»', (files, expected) => {
+      expect(buildMenuParsedMessage('X', 10, files)).toContain(expected);
+    });
+  });
+
   describe('notifyMenuParsed', () => {
     const establishmentId = uuidv4();
     const partnerId = uuidv4();
@@ -1019,58 +1063,57 @@ describe('notificationService', () => {
       // fire-and-forget `.catch` runs on `undefined` and the outer try/catch
       // swallows a TypeError the test never sees.
       PushService.sendPush.mockResolvedValue(undefined);
-    });
-
-    test('creates in-app notification with item count in message', async () => {
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         id: establishmentId,
         partner_id: partnerId,
         name: 'Кофе Плюс',
       });
       NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+      // Batch semantics: the counts come from the whole menu, not from the caller.
+      MenuItemModel.countByEstablishment.mockResolvedValue({ items: 143, files: 12 });
+    });
 
-      await notifyMenuParsed(establishmentId, 42);
+    test('creates ONE in-app notification describing the whole menu, not the last file', async () => {
+      await notifyMenuParsed(establishmentId);
 
+      expect(MenuItemModel.countByEstablishment).toHaveBeenCalledWith(establishmentId);
+      expect(NotificationModel.create).toHaveBeenCalledTimes(1);
       expect(NotificationModel.create).toHaveBeenCalledWith({
         userId: partnerId,
         type: 'menu_parsed',
         title: 'Меню распознано',
-        message: expect.stringContaining('42'),
+        message: 'Меню «Кофе Плюс» распознано — всего 143 позиции из 12 файлов',
         establishmentId,
       });
     });
 
-    test('sends push to the partner (menu category; gate lives in pushService)', async () => {
-      EstablishmentModel.findEstablishmentById.mockResolvedValue({
-        id: establishmentId,
-        partner_id: partnerId,
-        name: 'Кофе Плюс',
-      });
-      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
-      PushService.sendPush.mockResolvedValue(undefined);
-
-      await notifyMenuParsed(establishmentId, 5);
+    test('sends push with the same aggregated text (menu category; gate lives in pushService)', async () => {
+      await notifyMenuParsed(establishmentId);
 
       expect(PushService.sendPush).toHaveBeenCalledWith(
         partnerId,
         expect.objectContaining({
           title: 'Меню распознано',
-          message: expect.stringContaining('5'),
+          message: 'Меню «Кофе Плюс» распознано — всего 143 позиции из 12 файлов',
           data: { type: 'menu_parsed', establishmentId },
         })
       );
     });
 
+    test('single-file menu keeps the short wording', async () => {
+      MenuItemModel.countByEstablishment.mockResolvedValue({ items: 5, files: 1 });
+
+      await notifyMenuParsed(establishmentId);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Меню «Кофе Плюс» распознано — 5 позиций' })
+      );
+    });
+
     test('push rejection is logged, not thrown, and the in-app notification stays', async () => {
-      EstablishmentModel.findEstablishmentById.mockResolvedValue({
-        id: establishmentId,
-        partner_id: partnerId,
-        name: 'Кофе Плюс',
-      });
-      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
       PushService.sendPush.mockRejectedValue(new Error('FCM down'));
 
-      await expect(notifyMenuParsed(establishmentId, 5)).resolves.toBeUndefined();
+      await expect(notifyMenuParsed(establishmentId)).resolves.toBeUndefined();
       // Fire-and-forget: let the rejected promise reach its .catch.
       await new Promise((resolve) => setImmediate(resolve));
 
@@ -1088,15 +1131,24 @@ describe('notificationService', () => {
         name: 'Тест',
       });
 
-      await notifyMenuParsed(establishmentId, 10);
+      await notifyMenuParsed(establishmentId);
 
+      expect(MenuItemModel.countByEstablishment).not.toHaveBeenCalled();
       expect(NotificationModel.create).not.toHaveBeenCalled();
     });
 
     test('does NOT throw on DB error (non-blocking)', async () => {
       EstablishmentModel.findEstablishmentById.mockRejectedValue(new Error('DB down'));
 
-      await expect(notifyMenuParsed(establishmentId, 5)).resolves.toBeUndefined();
+      await expect(notifyMenuParsed(establishmentId)).resolves.toBeUndefined();
+    });
+
+    test('does NOT throw when the menu count query fails, and creates nothing', async () => {
+      MenuItemModel.countByEstablishment.mockRejectedValue(new Error('DB down'));
+
+      await expect(notifyMenuParsed(establishmentId)).resolves.toBeUndefined();
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+      expect(PushService.sendPush).not.toHaveBeenCalled();
     });
   });
 

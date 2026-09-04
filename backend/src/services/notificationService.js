@@ -641,24 +641,65 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
 // ============================================================================
 
 /**
+ * Russian plural form: pluralRu(3, ['позиция', 'позиции', 'позиций']) → 'позиции'.
+ */
+const pluralRu = (n, [one, few, many]) => {
+  const mod100 = Math.abs(n) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 >= 11 && mod100 <= 19) return many;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  if (mod10 === 1) return one;
+  return many;
+};
+
+/**
+ * Message for menu_parsed. The numbers describe the establishment's whole
+ * recognised menu, not the file that finished last — one notification per
+ * upload batch (Coordinator decision 2026-09-04, option «б»).
+ *
+ *   no items      → «Меню «X» распознано — позиций не найдено»
+ *   one file      → «Меню «X» распознано — 12 позиций»   (the pre-batch wording)
+ *   several files → «Меню «X» распознано — всего 143 позиции из 12 файлов»
+ *
+ * @param {string} name - Establishment name
+ * @param {number} items - Recognised items across all menu files
+ * @param {number} files - Menu files those items came from
+ * @returns {string}
+ */
+export const buildMenuParsedMessage = (name, items, files) => {
+  const head = `Меню «${name}» распознано`;
+  if (!(items > 0)) return `${head} — позиций не найдено`;
+
+  const itemsText = `${items} ${pluralRu(items, ['позиция', 'позиции', 'позиций'])}`;
+  if (!(files > 1)) return `${head} — ${itemsText}`;
+
+  // Genitive after «из»: из 21 файла, из 2 файлов, из 12 файлов.
+  const filesText = `${files} ${pluralRu(files, ['файла', 'файлов', 'файлов'])}`;
+  return `${head} — всего ${itemsText} из ${filesText}`;
+};
+
+/**
  * Notify partner that OCR has parsed their establishment's menu.
- * Called from ocrService.processJob on successful completion.
+ *
+ * Called from ocrService once per upload batch — when the job that just
+ * settled was the last active one for the establishment (Coordinator decision
+ * 2026-09-04, option «б»). The counts are read from menu_items at call time,
+ * so the text always describes the current state of the whole menu.
  *
  * In-app + push. Push is gated by menu_push_enabled (migration 033) inside
  * pushService — Coordinator decision 2026-09-04 (artifact audit, Р-3 (б)):
  * the earlier "no push, non-urgent" stance was a gap, not an intention.
  *
  * @param {string} establishmentId
- * @param {number} menuItemsCount - Number of items parsed
  */
-export const notifyMenuParsed = async (establishmentId, menuItemsCount) => {
+export const notifyMenuParsed = async (establishmentId) => {
   try {
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
     if (!establishment || !establishment.partner_id) return;
 
     const name = establishment.name || 'Заведение';
-    const count = Number.isFinite(menuItemsCount) ? menuItemsCount : 0;
-    const message = `Меню «${name}» распознано — ${count} позиций`;
+    const { items, files } = await MenuItemModel.countByEstablishment(establishmentId);
+    const message = buildMenuParsedMessage(name, items, files);
 
     await NotificationModel.create({
       userId: establishment.partner_id,

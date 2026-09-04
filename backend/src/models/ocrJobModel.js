@@ -191,3 +191,70 @@ export const hasCompletedJobForMedia = async (mediaId) => {
   );
   return result.rowCount > 0;
 };
+
+/**
+ * A 'processing' row older than this is a zombie: the process died mid-job
+ * (SIGKILL / OOM / redeploy without a graceful stop) and nothing will ever
+ * settle it — there is no reaper yet. A legitimate job is minutes at most:
+ * one download, one vision call and one structurer call, each capped by a
+ * 60 s request timeout. PostgreSQL interval literal.
+ */
+export const STALE_PROCESSING_INTERVAL = '1 hour';
+
+/**
+ * Count active OCR jobs of an establishment: every 'pending' job plus the
+ * 'processing' jobs younger than STALE_PROCESSING_INTERVAL.
+ *
+ * Batch detection for the partner notification (Coordinator decision
+ * 2026-09-04, option «б» — one menu_parsed per upload batch, not per file):
+ * ocrService notifies only when the job that just settled left no active
+ * sibling behind. A job returned to 'pending' by markFailed for a retry still
+ * counts as active, so the batch stays open until its last attempt settles.
+ * A zombie 'processing' row is ignored — counting it would mute the
+ * notification for this establishment for good. The age is compared inside
+ * the database (started_at is DB-generated, naive timestamp).
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<number>}
+ */
+export const countActiveJobsForEstablishment = async (establishmentId) => {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM ocr_jobs
+     WHERE establishment_id = $1
+       AND (
+         status = 'pending'
+         OR (status = 'processing'
+             AND COALESCE(started_at, created_at) > NOW() - $2::interval)
+       )`,
+    [establishmentId, STALE_PROCESSING_INTERVAL],
+  );
+  return result.rows[0]?.count ?? 0;
+};
+
+/**
+ * Count jobs of an establishment that finished successfully since a given job
+ * was enqueued — the "batch mates" of that job that yielded a result.
+ *
+ * Used when a permanent failure closes a batch: the partner is told what the
+ * other files produced only if at least one of them was recognised while the
+ * failed job was alive. A lone failed upload, or a batch that failed entirely,
+ * stays silent (as it did before batch notifications existed).
+ *
+ * The comparison runs inside the database on two DB-generated naive
+ * timestamps — nothing crosses the driver's timezone boundary.
+ *
+ * @param {Object} params
+ * @param {string} params.establishmentId - UUID
+ * @param {string} params.jobId - UUID of the reference (failed) job
+ * @returns {Promise<number>}
+ */
+export const countDoneJobsSinceEnqueue = async ({ establishmentId, jobId }) => {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM ocr_jobs
+     WHERE establishment_id = $1
+       AND status = 'done'
+       AND completed_at >= (SELECT created_at FROM ocr_jobs WHERE id = $2)`,
+    [establishmentId, jobId],
+  );
+  return result.rows[0]?.count ?? 0;
+};

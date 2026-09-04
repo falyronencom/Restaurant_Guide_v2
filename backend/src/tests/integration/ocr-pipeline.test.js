@@ -100,6 +100,7 @@ describe('OCR pipeline integration', () => {
     await pool.query('DELETE FROM menu_items WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM ocr_jobs WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM establishment_media WHERE establishment_id = $1', [establishment.id]);
+    await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
     originalFetch = global.fetch;
     openrouterModule.getOcrConfig.mockReturnValue(OCR_CONFIG);
   });
@@ -113,7 +114,44 @@ describe('OCR pipeline integration', () => {
     await pool.query('DELETE FROM menu_items WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM ocr_jobs WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM establishment_media WHERE establishment_id = $1', [establishment.id]);
+    await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
   });
+
+  /** menu_parsed rows of the partner, oldest first. */
+  const partnerNotifications = async () => {
+    const result = await pool.query(
+      `SELECT message FROM notifications
+       WHERE user_id = $1 AND type = 'menu_parsed'
+       ORDER BY created_at ASC`,
+      [establishment.partner_id],
+    );
+    return result.rows;
+  };
+
+  /**
+   * processJob notifies fire-and-forget after it has returned — poll the table
+   * until the expected count shows up instead of sleeping a fixed time.
+   */
+  const waitForNotifications = async (expectedCount, timeoutMs = 3000) => {
+    const deadline = Date.now() + timeoutMs;
+    let rows = await partnerNotifications();
+    while (rows.length < expectedCount && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      rows = await partnerNotifications();
+    }
+    return rows;
+  };
+
+  /** Grace period for a negative assertion ("nothing was sent"). */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+  /** fetch mock where both the PDF download and the structurer call fail. */
+  const failingFetch = () => jest.fn(async () => ({
+    ok: false,
+    status: 500,
+    text: async () => 'fail',
+    arrayBuffer: async () => new ArrayBuffer(64),
+  }));
 
   test('end-to-end: pdf with text layer → structured items persisted, job marked done', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
@@ -408,5 +446,206 @@ describe('OCR pipeline integration', () => {
       }),
     });
     expect(items.find((it) => it.item_name === 'Old item removed')).toBeUndefined();
+  });
+
+  // ── Batch-level partner notification ─────────────────────────────────────
+  // Coordinator decision 2026-09-04, option «б»: a job is one file, the
+  // partner uploads a menu — notify once, when the last active job settles,
+  // with totals over the whole menu. Before this, every job produced its own
+  // in-app row and push.
+
+  describe('menu_parsed notification — once per upload batch', () => {
+    const menuText =
+      'Борщ украинский — 15 руб.\nСалат Цезарь — 12 руб.\n' +
+      'Пицца Маргарита — 18 руб.\nКофе эспрессо — 4 руб.\n' +
+      'Вода минеральная — 3 руб.';
+
+    const fiveItems = [
+      { item_name: 'Борщ украинский', price_byn: 15, category_raw: 'Супы', confidence: 0.95 },
+      { item_name: 'Салат Цезарь', price_byn: 12, category_raw: 'Салаты', confidence: 0.9 },
+      { item_name: 'Пицца Маргарита', price_byn: 18, category_raw: 'Пицца', confidence: 0.88 },
+      { item_name: 'Кофе эспрессо', price_byn: 4, category_raw: 'Напитки', confidence: 0.9 },
+      { item_name: 'Вода минеральная', price_byn: 3, category_raw: 'Напитки', confidence: 0.9 },
+    ];
+
+    const threeItems = [
+      { item_name: 'Тирамису', price_byn: 9, category_raw: 'Десерты', confidence: 0.9 },
+      { item_name: 'Чизкейк', price_byn: 8, category_raw: 'Десерты', confidence: 0.9 },
+      { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.9 },
+    ];
+
+    /** Pick the oldest pending job and run it with the given structurer output. */
+    const runNextJobWith = async (items) => {
+      pdfParseModule.default.mockResolvedValue({ text: menuText, numpages: 1 });
+      global.fetch = buildFetchMock(items);
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked).not.toBeNull();
+      const result = await ocrService.processJob(picked.id);
+      expect(result.success).toBe(true);
+      return picked;
+    };
+
+    test('single file → one notification with the per-file wording', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+
+      await runNextJobWith(fiveItems);
+
+      // processJob awaits the notification (graceful-shutdown safety): the row
+      // must exist the moment processJob resolves — no polling here on purpose.
+      const rows = await partnerNotifications();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toBe('Меню «Test Restaurant» распознано — 5 позиций');
+    });
+
+    test('a zombie processing job (older than STALE_PROCESSING_INTERVAL) does not hold the batch open', async () => {
+      // Process died mid-job hours ago: the row stays 'processing' and nothing will settle it.
+      const zombie = await insertTestMedia(establishment.id, 'pdf');
+      await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at)
+         VALUES ($1, $2, 'processing', 1, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours')`,
+        [establishment.id, zombie.mediaId],
+      );
+
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      await runNextJobWith(fiveItems);
+
+      const rows = await partnerNotifications();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toBe('Меню «Test Restaurant» распознано — 5 позиций');
+    });
+
+    test('a fresh processing sibling does hold the batch open', async () => {
+      const sibling = await insertTestMedia(establishment.id, 'pdf');
+      await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, started_at)
+         VALUES ($1, $2, 'processing', 1, NOW())`,
+        [establishment.id, sibling.mediaId],
+      );
+
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      await runNextJobWith(fiveItems);
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+    });
+
+    test('two files queued together → silence after the first job, ONE aggregated notification after the last', async () => {
+      const first = await insertTestMedia(establishment.id, 'pdf');
+      const second = await insertTestMedia(establishment.id, 'pdf');
+
+      // Both files are queued up front — that is what an upload of N files looks like.
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: first.mediaId });
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: second.mediaId });
+
+      const firstJob = await runNextJobWith(fiveItems);
+      expect(firstJob.media_id).toBe(first.mediaId);
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+
+      const secondJob = await runNextJobWith(threeItems);
+      expect(secondJob.media_id).toBe(second.mediaId);
+
+      const rows = await waitForNotifications(1);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toBe(
+        'Меню «Test Restaurant» распознано — всего 8 позиций из 2 файлов',
+      );
+
+      // Nothing more arrives later either.
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(1);
+    });
+
+    test('a retry (failure with attempts left) keeps the batch open; the retried job closes it', async () => {
+      const good = await insertTestMedia(establishment.id, 'pdf');
+      const flaky = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: good.mediaId });
+      const flakyJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: flaky.mediaId });
+
+      await runNextJobWith(fiveItems);
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+
+      // First attempt of the second file fails → back to 'pending' → batch still open.
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const attempt = await ocrJobModel.pickNextPending();
+      expect(attempt.id).toBe(flakyJob.id);
+      expect((await ocrService.processJob(attempt.id)).success).toBe(false);
+      expect((await ocrJobModel.getJobStatus(attempt.id)).status).toBe('pending');
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+
+      // The retry succeeds and is the last active job → one notification, full totals.
+      const retried = await runNextJobWith(threeItems);
+      expect(retried.id).toBe(flakyJob.id);
+
+      const rows = await waitForNotifications(1);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toBe(
+        'Меню «Test Restaurant» распознано — всего 8 позиций из 2 файлов',
+      );
+    });
+
+    test('permanent failure of the last file still reports what the batch recognised', async () => {
+      const good = await insertTestMedia(establishment.id, 'pdf');
+      const bad = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: good.mediaId });
+      const badJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: bad.mediaId });
+      // Last allowed attempt: the next pick drives it to permanent failure.
+      await pool.query('UPDATE ocr_jobs SET attempts = 3 WHERE id = $1', [badJob.id]);
+
+      const goodJob = await runNextJobWith(fiveItems);
+      expect(goodJob.media_id).toBe(good.mediaId);
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.id).toBe(badJob.id);
+      expect((await ocrService.processJob(picked.id)).success).toBe(false);
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('failed');
+
+      const rows = await waitForNotifications(1);
+      expect(rows).toHaveLength(1);
+      // Only the good file yielded items → single-file wording, failed file not mentioned.
+      expect(rows[0].message).toBe('Меню «Test Restaurant» распознано — 5 позиций');
+    });
+
+    test('lone permanent failure with nothing recognised in its batch stays silent', async () => {
+      // An older batch already produced items — must not be mistaken for this one.
+      const old = await insertTestMedia(establishment.id, 'pdf');
+      await menuItemModel.createMany({
+        establishmentId: establishment.id,
+        mediaId: old.mediaId,
+        items: [{ item_name: 'Старая позиция', price_byn: 5, confidence: 0.9, position: 0 }],
+      });
+      await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, completed_at)
+         VALUES ($1, $2, 'done', 1, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day')`,
+        [establishment.id, old.mediaId],
+      );
+
+      const bad = await insertTestMedia(establishment.id, 'pdf');
+      const badJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: bad.mediaId });
+      await pool.query('UPDATE ocr_jobs SET attempts = 3 WHERE id = $1', [badJob.id]);
+
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.id).toBe(badJob.id);
+      expect((await ocrService.processJob(picked.id)).success).toBe(false);
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('failed');
+
+      await settle();
+      expect(await partnerNotifications()).toHaveLength(0);
+    });
   });
 });
