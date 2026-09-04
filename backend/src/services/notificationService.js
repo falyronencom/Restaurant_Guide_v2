@@ -644,7 +644,9 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
  * Notify partner that OCR has parsed their establishment's menu.
  * Called from ocrService.processJob on successful completion.
  *
- * Per directive: no push (non-urgent event, partner will see on next cabinet open).
+ * In-app + push. Push is gated by menu_push_enabled (migration 033) inside
+ * pushService — Coordinator decision 2026-09-04 (artifact audit, Р-3 (б)):
+ * the earlier "no push, non-urgent" stance was a gap, not an intention.
  *
  * @param {string} establishmentId
  * @param {number} menuItemsCount - Number of items parsed
@@ -665,6 +667,15 @@ export const notifyMenuParsed = async (establishmentId, menuItemsCount) => {
       message,
       establishmentId,
     });
+
+    PushService.sendPush(establishment.partner_id, {
+      title: TITLES.menu_parsed,
+      message,
+      data: {
+        type: 'menu_parsed',
+        establishmentId,
+      },
+    }).catch((err) => logger.error('Push failed for menu parsed', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create menu_parsed notification', {
       error: error.message,
@@ -675,9 +686,13 @@ export const notifyMenuParsed = async (establishmentId, menuItemsCount) => {
 
 /**
  * Notify partner that admin hid one of their menu items.
- * Called from adminService.hideMenuItem.
+ * Called from adminService.hideMenuItem (call currently commented out — Phase 1).
  *
- * Per directive: with push — admin action requires partner attention.
+ * NO push by decision (Coordinator, 2026-09-04): silent moderation action, same
+ * class as review_hidden / review_deleted. The sendPush call below is
+ * intentionally inert — `menu_item_hidden_by_admin` is kept OUT of
+ * pushService.TYPE_CATEGORY_MAP and a guard test asserts it stays out.
+ * Do not "fix" this by adding the type to the map.
  *
  * @param {string} menuItemId
  * @param {string} partnerId - Recipient (partner_id of parent establishment)

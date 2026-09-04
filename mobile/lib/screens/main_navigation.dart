@@ -12,6 +12,7 @@ import 'package:restaurant_guide_mobile/screens/profile/profile_screen.dart';
 import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
+import 'package:restaurant_guide_mobile/screens/partner/partner_menu_screen.dart';
 
 /// Main navigation screen with bottom tab bar
 /// Manages tab switching and maintains separate navigation stacks per tab
@@ -122,6 +123,18 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
           if (establishmentId != null) {
             Navigator.of(context, rootNavigator: true).pushNamed(
               '/partner/edit/$establishmentId',
+            );
+          }
+        case 'menu_parsed':
+          // Same destination as the in-app list (notification_list_screen):
+          // the partner's menu section for that establishment.
+          if (establishmentId != null) {
+            Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(
+                builder: (_) => PartnerMenuScreen(
+                  establishmentId: establishmentId,
+                ),
+              ),
             );
           }
         case 'booking_received':

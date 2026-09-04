@@ -45,6 +45,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const {
   sendPush,
   TYPE_CATEGORY_MAP,
+  CATEGORY_PREF_FIELD,
   isPushEnabledForType,
 } = await import('../../services/pushService.js');
 const logger = (await import('../../utils/logger.js')).default;
@@ -67,6 +68,7 @@ describe('pushService', () => {
       booking_push_enabled: true,
       reviews_push_enabled: true,
       promotions_push_enabled: true,
+      menu_push_enabled: true,
     });
   });
 
@@ -186,6 +188,87 @@ describe('pushService', () => {
     });
   });
 
+  // ─── sendPush — menu category (migration 033) ─────────────────────────
+
+  describe('sendPush — menu category', () => {
+    const establishmentId = uuidv4();
+    const menuPayload = {
+      title: 'Меню распознано',
+      message: 'Меню «Test» распознано — 12 позиций',
+      data: { type: 'menu_parsed', establishmentId },
+    };
+
+    test('should send menu_parsed push when menu_push_enabled is true', async () => {
+      mockFindByUserId.mockResolvedValue([{ fcm_token: 'tok' }]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await sendPush(userId, menuPayload);
+
+      expect(mockSendEachForMulticast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: { title: menuPayload.title, body: menuPayload.message },
+          data: { type: 'menu_parsed', establishmentId },
+          tokens: ['tok'],
+        })
+      );
+    });
+
+    test('should skip menu_parsed when user disabled menu push', async () => {
+      mockGetByUserId.mockResolvedValue({
+        booking_push_enabled: true,
+        reviews_push_enabled: true,
+        promotions_push_enabled: true,
+        menu_push_enabled: false,
+      });
+
+      await sendPush(userId, menuPayload);
+
+      expect(mockFindByUserId).not.toHaveBeenCalled();
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalledWith(
+        'Push skipped: disabled by user preferences',
+        expect.objectContaining({ type: 'menu_parsed' })
+      );
+    });
+
+    test('should treat a preferences row without menu_push_enabled as enabled (pre-033 row)', async () => {
+      // Row shape from before migration 033 — the field is simply absent.
+      mockGetByUserId.mockResolvedValue({
+        booking_push_enabled: true,
+        reviews_push_enabled: true,
+        promotions_push_enabled: true,
+      });
+      mockFindByUserId.mockResolvedValue([{ fcm_token: 'tok' }]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true }],
+      });
+
+      await sendPush(userId, menuPayload);
+
+      expect(mockSendEachForMulticast).toHaveBeenCalledTimes(1);
+    });
+
+    test('should never push a type outside the map (menu_item_hidden_by_admin)', async () => {
+      // Silent moderation action: deliberately absent from TYPE_CATEGORY_MAP
+      // (not even null-mapped). The guard fails if someone adds it.
+      expect(TYPE_CATEGORY_MAP).not.toHaveProperty('menu_item_hidden_by_admin');
+
+      await sendPush(userId, {
+        ...menuPayload,
+        data: { type: 'menu_item_hidden_by_admin', establishmentId, menuItemId: uuidv4() },
+      });
+
+      expect(mockFindByUserId).not.toHaveBeenCalled();
+      expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── sendPush — stale token handling ──────────────────────────────────
 
   describe('sendPush — stale tokens', () => {
@@ -285,6 +368,18 @@ describe('pushService', () => {
       expect(TYPE_CATEGORY_MAP['promotion_new']).toBe('promotions');
     });
 
+    test('menu_parsed maps to menu category backed by menu_push_enabled', () => {
+      expect(TYPE_CATEGORY_MAP['menu_parsed']).toBe('menu');
+      expect(CATEGORY_PREF_FIELD['menu']).toBe('menu_push_enabled');
+    });
+
+    test('every mapped category has a preference field', () => {
+      const categories = new Set(Object.values(TYPE_CATEGORY_MAP).filter(Boolean));
+      categories.forEach((category) => {
+        expect(CATEGORY_PREF_FIELD[category]).toMatch(/_push_enabled$/);
+      });
+    });
+
     test('in-app only types map to null', () => {
       expect(TYPE_CATEGORY_MAP['establishment_claimed']).toBeNull();
       expect(TYPE_CATEGORY_MAP['review_hidden']).toBeNull();
@@ -312,6 +407,22 @@ describe('pushService', () => {
 
     test('should default to true for missing preference field', () => {
       expect(isPushEnabledForType('booking_received', {})).toBe(true);
+    });
+
+    test('menu_parsed follows menu_push_enabled', () => {
+      expect(isPushEnabledForType('menu_parsed', { menu_push_enabled: true })).toBe(true);
+      expect(isPushEnabledForType('menu_parsed', { menu_push_enabled: false })).toBe(false);
+      expect(isPushEnabledForType('menu_parsed', {})).toBe(true);
+    });
+
+    test('menu_parsed ignores the reviews toggle (own category, not establishments)', () => {
+      expect(
+        isPushEnabledForType('menu_parsed', { reviews_push_enabled: false, menu_push_enabled: true })
+      ).toBe(true);
+    });
+
+    test('should return false for a type outside the map', () => {
+      expect(isPushEnabledForType('menu_item_hidden_by_admin', { menu_push_enabled: true })).toBe(false);
     });
   });
 });

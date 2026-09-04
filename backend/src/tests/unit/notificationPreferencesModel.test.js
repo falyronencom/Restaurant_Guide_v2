@@ -47,6 +47,7 @@ describe('notificationPreferencesModel', () => {
         booking_push_enabled: true,
         reviews_push_enabled: false,
         promotions_push_enabled: true,
+        menu_push_enabled: false,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -57,6 +58,41 @@ describe('notificationPreferencesModel', () => {
 
       expect(result).toEqual(prefsRow);
       expect(result.reviews_push_enabled).toBe(false);
+      expect(result.menu_push_enabled).toBe(false);
+    });
+
+    test('should fill menu_push_enabled with default for a row from before migration 033', async () => {
+      // Production between backend deploy and manual 033 apply: the column
+      // does not exist yet, SELECT * returns the row without it.
+      const userId = uuidv4();
+      const legacyRow = {
+        id: uuidv4(),
+        user_id: userId,
+        booking_push_enabled: false,
+        reviews_push_enabled: true,
+        promotions_push_enabled: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      mockQuery.mockResolvedValue({ rows: [legacyRow] });
+
+      const result = await NotificationPreferencesModel.getByUserId(userId);
+
+      expect(result).toEqual({ ...legacyRow, menu_push_enabled: true });
+      expect(result.booking_push_enabled).toBe(false);
+      // The read must not name the column — that is what keeps the window safe.
+      expect(mockQuery.mock.calls[0][0]).not.toContain('menu_push_enabled');
+    });
+
+    test('should keep a stored NULL as NULL (pushService reads it as enabled)', async () => {
+      const userId = uuidv4();
+      mockQuery.mockResolvedValue({
+        rows: [{ id: uuidv4(), user_id: userId, menu_push_enabled: null }],
+      });
+
+      const result = await NotificationPreferencesModel.getByUserId(userId);
+
+      expect(result.menu_push_enabled).toBeNull();
     });
 
     test('should return defaults when no row exists', async () => {
@@ -70,6 +106,7 @@ describe('notificationPreferencesModel', () => {
         booking_push_enabled: true,
         reviews_push_enabled: true,
         promotions_push_enabled: true,
+        menu_push_enabled: true,
       });
     });
 
@@ -97,11 +134,61 @@ describe('notificationPreferencesModel', () => {
 
       const result = await NotificationPreferencesModel.upsert(userId, prefs);
 
-      expect(result).toEqual(insertedRow);
+      expect(result).toEqual({ ...insertedRow, menu_push_enabled: true });
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO notification_preferences'),
         [userId, true, false, true]
       );
+    });
+
+    test('should write menu_push_enabled as the fifth parameter when provided', async () => {
+      const userId = uuidv4();
+      const prefs = {
+        booking_push_enabled: true,
+        reviews_push_enabled: false,
+        promotions_push_enabled: true,
+        menu_push_enabled: false,
+      };
+      const insertedRow = { id: uuidv4(), user_id: userId, ...prefs };
+      mockQuery.mockResolvedValue({ rows: [insertedRow] });
+
+      const result = await NotificationPreferencesModel.upsert(userId, prefs);
+
+      expect(result).toEqual(insertedRow);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('menu_push_enabled = $5');
+      expect(params).toEqual([userId, true, false, true, false]);
+    });
+
+    test('menu-only update leaves the three siblings untouched (null → COALESCE keeps current)', async () => {
+      const userId = uuidv4();
+      mockQuery.mockResolvedValue({
+        rows: [{ id: uuidv4(), user_id: userId, menu_push_enabled: false }],
+      });
+
+      await NotificationPreferencesModel.upsert(userId, { menu_push_enabled: false });
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('menu_push_enabled'),
+        [userId, null, null, null, false]
+      );
+    });
+
+    test('a request without menu_push_enabled never references the column (pre-033 client, pre-033 schema)', async () => {
+      const userId = uuidv4();
+      mockQuery.mockResolvedValue({
+        rows: [{ id: uuidv4(), user_id: userId, promotions_push_enabled: false }],
+      });
+
+      const result = await NotificationPreferencesModel.upsert(userId, {
+        promotions_push_enabled: false,
+      });
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).not.toContain('menu_push_enabled');
+      expect(params).toEqual([userId, null, null, false]);
+      // Response contract stays four booleans even when the DB lacks the column.
+      expect(result.menu_push_enabled).toBe(true);
     });
 
     test('should handle partial update — undefined fields passed as null', async () => {

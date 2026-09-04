@@ -42,10 +42,17 @@ const TYPE_CATEGORY_MAP = {
   // Promotions category
   promotion_new: 'promotions',
 
+  // Menu category — OCR finished parsing the partner's uploaded menu.
+  // Gated by menu_push_enabled (migration 033; Coordinator decision 2026-09-04).
+  menu_parsed: 'menu',
+
   // No push — in-app only
   establishment_claimed: null,
   review_hidden: null,
   review_deleted: null,
+  // menu_item_hidden_by_admin is deliberately ABSENT (not even null-mapped):
+  // silent moderation action, same class as review_hidden / review_deleted.
+  // A type outside the map never gets push — pushService.test.js guards it.
 };
 
 /**
@@ -55,6 +62,7 @@ const CATEGORY_PREF_FIELD = {
   booking: 'booking_push_enabled',
   reviews: 'reviews_push_enabled',
   promotions: 'promotions_push_enabled',
+  menu: 'menu_push_enabled',
 };
 
 /**

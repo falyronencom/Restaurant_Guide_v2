@@ -5,10 +5,11 @@ import 'package:restaurant_guide_mobile/providers/notification_preferences_provi
 
 /// Screen for managing push notification preferences.
 ///
-/// Three toggle switches per category:
+/// Four toggle switches per category:
 /// - Бронирование (booking)
 /// - Отзывы и заведения (reviews)
 /// - Акции из избранного (promotions)
+/// - Меню (menu — OCR finished parsing the uploaded menu, migration 033)
 class NotificationPreferencesScreen extends StatefulWidget {
   const NotificationPreferencesScreen({super.key});
 
@@ -134,6 +135,33 @@ class _NotificationPreferencesScreenState
                 activeThumbColor: AppTheme.primaryOrange,
                 onChanged: (value) {
                   prefs.updatePreferences(promotions: value);
+                },
+              ),
+
+              const Divider(height: 1, indent: 16, endIndent: 16),
+
+              // Menu: OCR finished parsing the uploaded menu (menu_parsed)
+              SwitchListTile(
+                title: const Text(
+                  'Меню',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Результат распознавания загруженного меню',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                value: prefs.menuPushEnabled,
+                activeTrackColor: AppTheme.primaryOrange.withValues(alpha: 0.5),
+                activeThumbColor: AppTheme.primaryOrange,
+                onChanged: (value) {
+                  prefs.updatePreferences(menu: value);
                 },
               ),
 

@@ -26,18 +26,29 @@ export const getPreferences = asyncHandler(async (req, res) => {
  * PUT /api/v1/notifications/preferences
  * Create or update notification preferences (UPSERT, partial update)
  *
- * Body: { booking_push_enabled?, reviews_push_enabled?, promotions_push_enabled? }
+ * Body: { booking_push_enabled?, reviews_push_enabled?, promotions_push_enabled?,
+ *         menu_push_enabled? }
+ * Fields left out keep their current value — a client built before
+ * menu_push_enabled existed (migration 033) never resets it.
  */
 export const updatePreferences = asyncHandler(async (req, res) => {
   const userId = req.user.userId;
-  const { booking_push_enabled, reviews_push_enabled, promotions_push_enabled } = req.body;
+  const {
+    booking_push_enabled,
+    reviews_push_enabled,
+    promotions_push_enabled,
+    menu_push_enabled,
+  } = req.body;
+
+  const fields = {
+    booking_push_enabled,
+    reviews_push_enabled,
+    promotions_push_enabled,
+    menu_push_enabled,
+  };
 
   // Validate: at least one field must be provided
-  if (
-    booking_push_enabled === undefined &&
-    reviews_push_enabled === undefined &&
-    promotions_push_enabled === undefined
-  ) {
+  if (Object.values(fields).every((value) => value === undefined)) {
     return res.status(400).json({
       success: false,
       message: 'At least one preference field is required',
@@ -45,7 +56,6 @@ export const updatePreferences = asyncHandler(async (req, res) => {
   }
 
   // Validate: fields must be boolean if provided
-  const fields = { booking_push_enabled, reviews_push_enabled, promotions_push_enabled };
   for (const [key, value] of Object.entries(fields)) {
     if (value !== undefined && typeof value !== 'boolean') {
       return res.status(400).json({
@@ -55,11 +65,7 @@ export const updatePreferences = asyncHandler(async (req, res) => {
     }
   }
 
-  const result = await NotificationPreferencesModel.upsert(userId, {
-    booking_push_enabled,
-    reviews_push_enabled,
-    promotions_push_enabled,
-  });
+  const result = await NotificationPreferencesModel.upsert(userId, fields);
 
   res.json({
     success: true,

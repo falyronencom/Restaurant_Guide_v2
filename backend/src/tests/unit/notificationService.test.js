@@ -1014,6 +1014,13 @@ describe('notificationService', () => {
     const establishmentId = uuidv4();
     const partnerId = uuidv4();
 
+    beforeEach(() => {
+      // resetMocks wipes the factory's mockResolvedValue: without this the
+      // fire-and-forget `.catch` runs on `undefined` and the outer try/catch
+      // swallows a TypeError the test never sees.
+      PushService.sendPush.mockResolvedValue(undefined);
+    });
+
     test('creates in-app notification with item count in message', async () => {
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         id: establishmentId,
@@ -1033,17 +1040,45 @@ describe('notificationService', () => {
       });
     });
 
-    test('does NOT send push (per directive: non-urgent)', async () => {
+    test('sends push to the partner (menu category; gate lives in pushService)', async () => {
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         id: establishmentId,
         partner_id: partnerId,
         name: 'Кофе Плюс',
       });
       NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+      PushService.sendPush.mockResolvedValue(undefined);
 
       await notifyMenuParsed(establishmentId, 5);
 
-      expect(PushService.sendPush).not.toHaveBeenCalled();
+      expect(PushService.sendPush).toHaveBeenCalledWith(
+        partnerId,
+        expect.objectContaining({
+          title: 'Меню распознано',
+          message: expect.stringContaining('5'),
+          data: { type: 'menu_parsed', establishmentId },
+        })
+      );
+    });
+
+    test('push rejection is logged, not thrown, and the in-app notification stays', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        partner_id: partnerId,
+        name: 'Кофе Плюс',
+      });
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+      PushService.sendPush.mockRejectedValue(new Error('FCM down'));
+
+      await expect(notifyMenuParsed(establishmentId, 5)).resolves.toBeUndefined();
+      // Fire-and-forget: let the rejected promise reach its .catch.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(NotificationModel.create).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Push failed for menu parsed',
+        expect.objectContaining({ error: 'FCM down' })
+      );
     });
 
     test('skips when establishment has no partner_id', async () => {

@@ -4,12 +4,18 @@ import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Provider for push notification preferences (ChangeNotifier).
 ///
-/// State: three booleans per category + loading flag.
+/// State: four booleans per category + loading flag.
 /// Uses GET/PUT /api/v1/notifications/preferences with optimistic updates.
+///
+/// `menu_push_enabled` (backend migration 033) may be absent from a response
+/// served by a backend whose schema predates it — read as `true`, the backend
+/// default, so the toggle never flips off on its own.
 class NotificationPreferencesProvider extends ChangeNotifier {
-  final ApiClient _apiClient = ApiClient();
+  final ApiClient _apiClient;
 
-  NotificationPreferencesProvider() {
+  /// [apiClient] is injectable for tests; the app uses the singleton.
+  NotificationPreferencesProvider({ApiClient? apiClient})
+      : _apiClient = apiClient ?? ApiClient() {
     AccountScope.register(resetAccountScope);
   }
 
@@ -19,6 +25,7 @@ class NotificationPreferencesProvider extends ChangeNotifier {
     _bookingPushEnabled = true;
     _reviewsPushEnabled = true;
     _promotionsPushEnabled = true;
+    _menuPushEnabled = true;
     _isLoading = false;
     _isInitialized = false;
     notifyListeners();
@@ -27,12 +34,14 @@ class NotificationPreferencesProvider extends ChangeNotifier {
   bool _bookingPushEnabled = true;
   bool _reviewsPushEnabled = true;
   bool _promotionsPushEnabled = true;
+  bool _menuPushEnabled = true;
   bool _isLoading = false;
   bool _isInitialized = false;
 
   bool get bookingPushEnabled => _bookingPushEnabled;
   bool get reviewsPushEnabled => _reviewsPushEnabled;
   bool get promotionsPushEnabled => _promotionsPushEnabled;
+  bool get menuPushEnabled => _menuPushEnabled;
   bool get isLoading => _isLoading;
 
   /// Fetch current preferences from backend.
@@ -55,6 +64,7 @@ class NotificationPreferencesProvider extends ChangeNotifier {
         _reviewsPushEnabled = prefs['reviews_push_enabled'] as bool? ?? true;
         _promotionsPushEnabled =
             prefs['promotions_push_enabled'] as bool? ?? true;
+        _menuPushEnabled = prefs['menu_push_enabled'] as bool? ?? true;
       }
       _isInitialized = true;
     } catch (e) {
@@ -67,20 +77,25 @@ class NotificationPreferencesProvider extends ChangeNotifier {
   }
 
   /// Update a preference category. Optimistic update with rollback on failure.
+  ///
+  /// Only the categories passed are sent — the backend keeps the rest as is.
   Future<void> updatePreferences({
     bool? booking,
     bool? reviews,
     bool? promotions,
+    bool? menu,
   }) async {
     // Save previous state for rollback
     final prevBooking = _bookingPushEnabled;
     final prevReviews = _reviewsPushEnabled;
     final prevPromotions = _promotionsPushEnabled;
+    final prevMenu = _menuPushEnabled;
 
     // Optimistic update
     if (booking != null) _bookingPushEnabled = booking;
     if (reviews != null) _reviewsPushEnabled = reviews;
     if (promotions != null) _promotionsPushEnabled = promotions;
+    if (menu != null) _menuPushEnabled = menu;
     notifyListeners();
 
     try {
@@ -88,6 +103,7 @@ class NotificationPreferencesProvider extends ChangeNotifier {
       if (booking != null) body['booking_push_enabled'] = booking;
       if (reviews != null) body['reviews_push_enabled'] = reviews;
       if (promotions != null) body['promotions_push_enabled'] = promotions;
+      if (menu != null) body['menu_push_enabled'] = menu;
 
       await _apiClient.put(
         '/api/v1/notifications/preferences',
@@ -98,6 +114,7 @@ class NotificationPreferencesProvider extends ChangeNotifier {
       _bookingPushEnabled = prevBooking;
       _reviewsPushEnabled = prevReviews;
       _promotionsPushEnabled = prevPromotions;
+      _menuPushEnabled = prevMenu;
       notifyListeners();
       debugPrint('Failed to update notification preferences: $e');
     }
