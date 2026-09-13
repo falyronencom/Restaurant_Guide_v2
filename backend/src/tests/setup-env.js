@@ -46,6 +46,17 @@ if (process.env.CLOUDINARY_API_SECRET === undefined) {
   process.env.CLOUDINARY_API_SECRET = 'ci-dummy-no-network-calls-in-tests';
 }
 
+// Чистка refresh_tokens: ключи есть в .env.example, значит попадут в чей-нибудь
+// .env — и оттуда в тестовый процесс, потому что политика резолвится лениво из
+// process.env. Пустая строка = «не задано» для резолвера, то есть тест всегда
+// начинает с умолчаний, а не с настройки разработчика.
+if (process.env.REFRESH_TOKEN_RETENTION_DAYS === undefined) {
+  process.env.REFRESH_TOKEN_RETENTION_DAYS = '';
+}
+if (process.env.REFRESH_TOKEN_PRUNE_INTERVAL_MS === undefined) {
+  process.env.REFRESH_TOKEN_PRUNE_INTERVAL_MS = '';
+}
+
 // Verify we're in test environment
 if (process.env.NODE_ENV !== 'test') {
   console.error('ERROR: Tests must run in NODE_ENV=test environment!');

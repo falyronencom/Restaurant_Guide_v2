@@ -11,6 +11,7 @@ import { rateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
+import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
@@ -155,11 +156,12 @@ app.use(errorHandler);
  *   1. Arm the force-exit timer with the budget from config/shutdown.js. On
  *      Railway that is the drain period minus a margin, so the timer fires
  *      before the platform's SIGKILL, never after it.
- *   2. Stop the OCR poller at once, in parallel with server.close(): the
- *      poller does not need the HTTP server, and stop() waits for the job in
- *      flight (up to ocrService.JOB_DURATION_BOUND_MS) — it must not queue
- *      behind a slow request that is still draining.
- *   3. Once the HTTP connections are gone and the poller has stopped, close
+ *   2. Stop the background loops at once, in parallel with server.close():
+ *      neither needs the HTTP server, and stop() waits for the work in flight
+ *      — the OCR job (up to ocrService.JOB_DURATION_BOUND_MS) and the prune
+ *      batch (one statement) — so they must not queue behind a slow request
+ *      that is still draining.
+ *   3. Once the HTTP connections are gone and both loops have stopped, close
  *      the pool and Redis, then exit.
  * A job that outlives the budget dies with the process as a 'processing'
  * row; ocrJobPoller's stale sweep settles it about an hour later.
@@ -183,13 +185,21 @@ const gracefulShutdown = async (signal) => {
     logger.error('OCR poller stop failed during shutdown', { error: error.message });
   });
 
+  // Same reasoning as the poller, and the same parallelism: the pruner does
+  // not need the HTTP server, and its stop() waits only for the batch in
+  // flight — it must not queue behind a slow request that is still draining.
+  const prunerStopped = refreshTokenPruner.stop().catch((error) => {
+    logger.error('Refresh token pruner stop failed during shutdown', { error: error.message });
+  });
+
   // Stop accepting new connections
   server.close(async () => {
     logger.info('HTTP server closed, closing external connections');
 
     try {
-      // The poller must be idle before the pool goes away
+      // Both background loops must be idle before the pool goes away
       await pollerStopped;
+      await prunerStopped;
 
       // Close database connection pool
       await closePool();
@@ -263,6 +273,19 @@ const startServer = async () => {
 
     // Start OCR background poller (processes pending menu OCR jobs)
     ocrJobPoller.start();
+
+    // Start refresh-token pruner (deletes rows past expiry + retention tail).
+    // Its policy is resolved here rather than at module load so the warnings
+    // land in the startup log next to the other two, and it prunes once
+    // immediately — redeploys can outpace the interval (config/refreshTokenPrune.js).
+    const prunePolicy = refreshTokenPruner.start();
+    logger.info('Refresh token prune policy resolved', {
+      retentionDays: prunePolicy.retentionDays,
+      intervalMs: prunePolicy.intervalMs,
+    });
+    for (const warning of prunePolicy.warnings) {
+      logger.warn(`Refresh token prune policy: ${warning}`);
+    }
 
     // Start HTTP server
     server.listen(PORT, () => {
