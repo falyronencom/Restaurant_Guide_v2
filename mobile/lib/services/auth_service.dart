@@ -442,47 +442,6 @@ class AuthService {
     return accessToken != null && accessToken.isNotEmpty;
   }
 
-  /// Refresh access token using refresh token
-  ///
-  /// Handled automatically by API client interceptor
-  /// This method is provided for manual refresh if needed
-  Future<void> refreshToken() async {
-    try {
-      final refreshToken = await _storage.read(key: 'refresh_token');
-      if (refreshToken == null) {
-        throw Exception('No refresh token available');
-      }
-
-      final response = await _apiClient.post(
-        '/api/v1/auth/refresh',
-        data: {'refresh_token': refreshToken},
-      );
-
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final responseData = data['data'] as Map<String, dynamic>? ?? data;
-
-        // Store new tokens
-        if (responseData.containsKey('access_token')) {
-          await _storage.write(
-            key: 'access_token',
-            value: responseData['access_token'] as String,
-          );
-        }
-        if (responseData.containsKey('refresh_token')) {
-          await _storage.write(
-            key: 'refresh_token',
-            value: responseData['refresh_token'] as String,
-          );
-        }
-      }
-    } catch (e) {
-      // If refresh fails, clear tokens
-      await clearAuthData();
-      rethrow;
-    }
-  }
-
   // ============================================================================
   // User Profile Operations
   // ============================================================================
