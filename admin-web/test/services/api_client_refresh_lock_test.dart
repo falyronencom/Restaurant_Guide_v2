@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_admin_web/config/environment.dart';
 import 'package:restaurant_guide_admin_web/services/session_events.dart';
 
 import '../helpers/wire_stand.dart';
@@ -139,7 +140,13 @@ void main() {
     expect((error as DioException).error,
         'Service temporarily unavailable. Please try again.',
         reason: 'запросу — временная ошибка, а не «войдите снова»');
-    expect(refreshCalls, 4, reason: 'исходное обновление + 3 повтора, не без предела');
+    // Счётчик стережёт ПРОИЗВЕДЕНИЕ двух независимых механизмов: штатная
+    // ветка 5xx повторяет сам запрос обновления трижды (её путь
+    // `/auth/refresh` не исключает — так и задумано, льготное окно бэкенда
+    // покрывает и эти предъявления), а поверх неё владелец замка делает одну
+    // повторную попытку цикла. Четыре на два — восемь.
+    expect(refreshCalls, 2 * (Environment.maxRetryAttempts + 1),
+        reason: 'два цикла по «исходное обновление + 3 повтора», не без предела');
     expect(expired, 0, reason: 'сессия жива — уводить на вход нельзя');
     expect(storage['refresh_token'], 'r1',
         reason: 'ещё действующий refresh-токен нельзя выбрасывать по 502');
@@ -169,5 +176,190 @@ void main() {
     expect(expired, 1, reason: 'провайдер уводит на вход один раз, не дважды');
     expect(storage.containsKey('access_token'), isFalse);
     expect(storage.containsKey('refresh_token'), isFalse);
+  });
+
+  group('Повтор обновления', () {
+    // До 10.09.2026 повтора обновления здесь не было намеренно: бэкенд считал
+    // любое второе предъявление refresh-токена кражей и отзывал все сессии
+    // пользователя. Коммит бэкенда `5ede30c` ввёл льготное окно
+    // (`REFRESH_REUSE_GRACE_SECONDS`): повтор погашенного токена внутри окна
+    // возвращает ТОГО ЖЕ преемника. Запрет снят — владелец замка делает ровно
+    // одну повторную попытку по итогу «не дошло».
+    test('первая попытка не дошла, вторая прошла: запрос доводится до ответа',
+        () async {
+      // Ради этого правка и делалась: раньше временный отказ обновления был
+      // отказом и самому запросу — оператор видел «Service temporarily
+      // unavailable» при живой сессии и ждал, пока не повторит действие сам.
+      //
+      // Обе формы временного отказа лечит одна и та же попытка, и с провода
+      // они неотличимы. Здесь разыгран обрыв связи: запрос не дошёл, ротации
+      // не было, токен жив. Вторая форма — дошёл, ротация случилась, ответ
+      // потерялся — выглядит так же; там повтор предъявляет погашенный токен
+      // и получает того же преемника, пока не истекло окно. Это поведение
+      // сервера, и стережёт его бэкенд.
+      var refreshCalls = 0;
+      final adapter = StubAdapter((o) {
+        if (o.uri.path == '/api/v1/auth/refresh') {
+          refreshCalls++;
+          if (refreshCalls == 1) {
+            throw DioException(
+              requestOptions: o,
+              type: DioExceptionType.connectionError,
+            );
+          }
+          return jsonBody({
+            'success': true,
+            'data': {'accessToken': 'fresh', 'refreshToken': 'r2'},
+          });
+        }
+        if (bearer(o) != 'Bearer fresh') {
+          return jsonBody(
+            rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+            status: 401,
+          );
+        }
+        return jsonBody({'success': true, 'data': {'ok': o.uri.path}});
+      });
+      final api = stubClient(adapter);
+
+      final response = await api
+          .get('/api/v1/admin/badges')
+          .timeout(const Duration(seconds: 5));
+
+      expect(response.statusCode, 200,
+          reason: 'вторая попытка удалась — исходный запрос обязан дойти до '
+              'ответа в том же действии оператора, а не отказать');
+      expect(
+        adapter.requests.map((r) => r.uri.path).toList(),
+        [
+          '/api/v1/admin/badges',
+          '/api/v1/auth/refresh',
+          '/api/v1/auth/refresh',
+          '/api/v1/admin/badges',
+        ],
+      );
+      expect(storage['access_token'], 'fresh');
+      expect(storage['refresh_token'], 'r2');
+      expect(expired, 0, reason: 'сессия жива — сообщать провайдеру нечего');
+    });
+
+    test('сервер отверг токен: повторной попытки нет', () async {
+      // Граница повтора. `rejected` — вердикт о самом токене, и второе
+      // предъявление его не изменит. На 403 `TOKEN_REUSE_DETECTED` повтор ещё
+      // и вреден по существу: сервер уже объявил цепочку скомпрометированной
+      // и отозвал все сессии — повтор лишь допишет вторую «SECURITY ALERT» в
+      // лог без единого шанса на успех.
+      final adapter = StubAdapter((o) => o.uri.path == '/api/v1/auth/refresh'
+          ? jsonBody(
+              rejectedBody(
+                'TOKEN_REUSE_DETECTED',
+                'Token reuse detected. All sessions revoked.',
+              ),
+              status: 403,
+            )
+          : jsonBody(
+              rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+              status: 401,
+            ));
+      final api = stubClient(adapter);
+
+      final error = await api
+          .get('/api/v1/admin/badges')
+          .timeout(const Duration(seconds: 5))
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      expect(error, isA<DioException>());
+      expect((error! as DioException).error,
+          'Authentication failed. Please log in again.');
+      expect(
+        adapter.requests.map((r) => r.uri.path).toList(),
+        ['/api/v1/admin/badges', '/api/v1/auth/refresh'],
+        reason: 'ровно одно обращение к обновлению: вердикт окончателен',
+      );
+    });
+
+    test('не дошло, потом отказ: хоронит вердикт ВТОРОЙ попытки', () async {
+      // Переход, которого до этой правки не существовало вовсе: цикл
+      // начинается «не дошло», а заканчивается приговором. Ровно так выглядит
+      // потерянный после ротации ответ, когда повтор не успел в окно.
+      // Решение о захоронении обязано приниматься по ПОСЛЕДНЕМУ итогу: останься
+      // в силе первый, хранилище осталось бы с мёртвым токеном, а провайдер
+      // «вошедшим», и увести оператора на вход было бы нечем.
+      var refreshCalls = 0;
+      final adapter = StubAdapter((o) {
+        if (o.uri.path == '/api/v1/auth/refresh') {
+          refreshCalls++;
+          if (refreshCalls == 1) {
+            throw DioException(
+              requestOptions: o,
+              type: DioExceptionType.connectionError,
+            );
+          }
+          return jsonBody(
+            rejectedBody(
+              'TOKEN_REUSE_DETECTED',
+              'Token reuse detected. All sessions revoked.',
+            ),
+            status: 403,
+          );
+        }
+        return jsonBody(
+          rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+          status: 401,
+        );
+      });
+      final api = stubClient(adapter);
+
+      final error = await api
+          .get('/api/v1/admin/badges')
+          .timeout(const Duration(seconds: 5))
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      expect(error, isA<DioException>());
+      expect((error! as DioException).error,
+          'Authentication failed. Please log in again.',
+          reason: 'вердикт второй попытки, а не временный отказ первой');
+      expect(refreshCalls, 2,
+          reason: 'приговор пришёл на повторе — третьей попытки не будет');
+      expect(storage.containsKey('access_token'), isFalse);
+      expect(storage.containsKey('refresh_token'), isFalse);
+      expect(expired, 1, reason: 'провайдер уводит на вход ровно один раз');
+    });
+
+    test('вторая попытка тоже не дошла: третьей нет', () async {
+      // Потолок жёсткий: попытка и повтор, дальше запрос отказывает. Обрыв
+      // связи взят намеренно — у него нет ответа, и штатная ветка повторов
+      // 5xx не срабатывает: в счётчике остаётся только повтор цикла, без
+      // множителя предыдущего теста.
+      var refreshCalls = 0;
+      final adapter = StubAdapter((o) {
+        if (o.uri.path == '/api/v1/auth/refresh') {
+          refreshCalls++;
+          throw DioException(
+            requestOptions: o,
+            type: DioExceptionType.connectionError,
+          );
+        }
+        return jsonBody(
+          rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+          status: 401,
+        );
+      });
+      final api = stubClient(adapter);
+
+      final error = await api
+          .get('/api/v1/admin/badges')
+          .timeout(const Duration(seconds: 5))
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      expect(error, isA<DioException>());
+      expect((error! as DioException).error,
+          'Service temporarily unavailable. Please try again.');
+      expect(refreshCalls, 2,
+          reason: 'попытка и ровно один повтор — лестницы попыток нет');
+      expect(storage['refresh_token'], 'r1',
+          reason: 'сессия жива: токен не выброшен');
+      expect(expired, 0);
+    });
   });
 }

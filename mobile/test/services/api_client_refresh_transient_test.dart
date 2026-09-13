@@ -25,11 +25,16 @@ import '../support/wire_stand.dart';
 ///
 /// Та же правка сделана в панели (`admin-web`, `6a632e6`); здесь — mobile.
 ///
-/// **Граница честности.** Правка спасает отказы ДО того, как сервер погасил
-/// токен. Если запрос дошёл, сервер выдал новую пару, а ответ потерялся —
-/// старый токен уже погашен, и следующее обновление даст 403 и выход. Это
-/// лечится льготным окном на бэкенде, а не здесь; автоповтора обновления на
-/// клиенте нет намеренно (повтор погашенным токеном = отзыв всех сессий).
+/// **Прежняя граница честности снята 13.09.2026.** Классификация отказов
+/// спасала только те из них, что случились ДО ротации: если запрос дошёл,
+/// сервер выдал новую пару, а ответ потерялся, старый токен уже погашен.
+/// Автоповтора обновления здесь не было намеренно — при строгой одноразовой
+/// ротации повтор погашенным токеном равнялся отзыву всех сессий. Бэкенд
+/// `5ede30c` ввёл льготное окно (`REFRESH_REUSE_GRACE_SECONDS`): повтор
+/// внутри окна возвращает ТОГО ЖЕ преемника. Запрет снят — владелец замка
+/// делает ровно одну повторную попытку по итогу «не дошло», и она лечит обе
+/// формы: не дошло (токен жив) и дошло, но ответ потерян (окно отдаёт
+/// преемника). Группа «Повтор обновления» ниже — про её границы.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -130,8 +135,15 @@ void main() {
       expect(error.response, isNull,
           reason: 'booking_provider и media_service предпочитают текст из '
               'response.data — приложенное тело показало бы английскую фразу');
-      expect(paths(adapter), ['/api/v1/favorites', '/api/v1/auth/refresh'],
-          reason: 'одна попытка обновления и стоп: автоповтора нет');
+      expect(
+          paths(adapter),
+          [
+            '/api/v1/favorites',
+            '/api/v1/auth/refresh',
+            '/api/v1/auth/refresh',
+          ],
+          reason: 'одна повторная попытка — и стоп; исходный запрос не '
+              'повторяется, обновлять его нечем');
       expectSessionKept();
     });
 
@@ -166,11 +178,12 @@ void main() {
       // трижды с 0,5 / 1 / 1,5 с. Railway при drain 0 с держит 502 дольше —
       // именно этот случай выбрасывал оператора панели на экран входа.
       //
-      // Счётчик закрепляет ФАКТ, а не идеал: ветка повторов 5xx не исключает
-      // путь refresh, и при ответе, потерянном после ротации, повтор
-      // предъявит погашенный токен. Исход тот же, что и без повтора — его же
-      // предъявит следующее действие пользователя; лечится льготным окном на
-      // бэкенде (парный бриф), см. отчёт сессии §6.
+      // Счётчик стережёт ПРОИЗВЕДЕНИЕ двух независимых механизмов: штатная
+      // ветка 5xx повторяет сам запрос обновления (её путь `/auth/refresh`
+      // не исключает — так и задумано, льготное окно бэкенда покрывает и
+      // эти предъявления), а поверх неё владелец замка делает одну повторную
+      // попытку цикла. Четыре на четыре — восемь; расползание любого из
+      // множителей красит этот тест.
       final adapter = StubAdapter(
         (options) => isRefresh(options)
             ? jsonBody({'success': false, 'message': 'Bad Gateway'},
@@ -182,22 +195,25 @@ void main() {
 
       final error = asDio(await failure(
         api.get('/api/v1/favorites'),
-        limit: const Duration(seconds: 15),
+        limit: const Duration(seconds: 20),
       ));
 
       expect(error.error, ApiClient.refreshUnavailableMessage);
       expect(latinChunks('${error.error}'), isEmpty);
-      expect(refreshCount(adapter), Environment.maxRetryAttempts + 1,
-          reason: 'обновление повторяется штатным механизмом 5xx и только '
-              'потом признаётся не дошедшим');
+      expect(refreshCount(adapter), 2 * (Environment.maxRetryAttempts + 1),
+          reason: 'два цикла обновления, в каждом — исходный запрос и три '
+              'штатных повтора 5xx; и только потом «не дошло»');
       expectSessionKept();
     });
 
-    test('два параллельных 401 при 429: одно обновление, оба отказа временные',
+    test('два параллельных 401 при 429: один цикл обновления на двоих',
         () async {
-      // Замок обязан остаться и на этом пути: второе обновление тем же
-      // refresh-токеном сервер считает повторным использованием и гасит все
-      // сессии пользователя.
+      // Замок обязан остаться и на этом пути. Льготное окно бэкенда его не
+      // отменяет: при `REFRESH_REUSE_GRACE_SECONDS=0` сервер по-прежнему
+      // считает второе предъявление кражей и гасит все сессии пользователя,
+      // а длину окна клиент не знает и знать не должен. Повторная попытка
+      // принадлежит ВЛАДЕЛЬЦУ замка — ждавший запрос своей не получает,
+      // иначе два 401 дали бы четыре обращения вместо двух.
       final adapter = StubAdapter(
         (options) => isRefresh(options) ? rateLimited() : expiredAccess(),
         maxRequests: 8,
@@ -213,9 +229,180 @@ void main() {
         expect(asDio(error).error, ApiClient.refreshUnavailableMessage,
             reason: 'ожидающие замка получают тот же итог, что и владелец');
       }
-      expect(refreshCount(adapter), 1,
-          reason: 'второй 401 ждёт первое обновление, а не запускает своё');
-      expect(paths(adapter).length, 3);
+      expect(refreshCount(adapter), 2,
+          reason: 'один цикл на двоих: попытка и её единственный повтор — '
+              'второй 401 ждёт чужое обновление, а не запускает своё');
+      expect(paths(adapter).length, 4);
+      expectSessionKept();
+    });
+  });
+
+  group('Повтор обновления', () {
+    test('первая попытка не дошла, вторая прошла: запрос доводится до ответа',
+        () async {
+      // Ради этого правка и делалась. Раньше временный отказ обновления был
+      // отказом и самому запросу: при живой сессии пользователь видел
+      // «Сервер временно недоступен» и ждал, пока сам не повторит действие.
+      //
+      // Обе формы временного отказа лечит одна и та же попытка, и с провода
+      // они неотличимы. Здесь разыгран обрыв связи: запрос не дошёл, ротации
+      // не было, токен жив, вторая попытка идёт как первая. Вторая форма —
+      // дошёл, ротация случилась, ответ потерялся — на клиенте выглядит так
+      // же; там повтор предъявляет уже погашенный токен и получает ТОГО ЖЕ
+      // преемника, пока не истекло `REFRESH_REUSE_GRACE_SECONDS`. Это
+      // поведение сервера, и стережёт его бэкенд
+      // (`integration/auth-refresh-rotation.test.js`): здесь подделать его
+      // значило бы проверять собственную заглушку.
+      var refreshes = 0;
+      final adapter = StubAdapter(
+        (options) {
+          if (isRefresh(options)) {
+            refreshes++;
+            if (refreshes == 1) {
+              throw DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+              );
+            }
+            return jsonBody({
+              'success': true,
+              'data': {'accessToken': 'fresh', 'refreshToken': 'fresh-r'},
+            });
+          }
+          return options.headers['Authorization'] == 'Bearer fresh'
+              ? jsonBody({
+                  'success': true,
+                  'data': {'ok': true},
+                })
+              : expiredAccess();
+        },
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      final response = await api
+          .get('/api/v1/favorites')
+          .timeout(const Duration(seconds: 3));
+
+      expect(response.statusCode, 200,
+          reason: 'вторая попытка удалась — исходный запрос обязан дойти до '
+              'ответа в том же действии пользователя, а не отказать');
+      expect(paths(adapter), [
+        '/api/v1/favorites',
+        '/api/v1/auth/refresh',
+        '/api/v1/auth/refresh',
+        '/api/v1/favorites',
+      ]);
+      expect(adapter.requests.last.headers['Authorization'], 'Bearer fresh',
+          reason: 'повтор запроса идёт с токеном второй попытки');
+      expect(storage['access_token'], 'fresh');
+      expect(storage['refresh_token'], 'fresh-r');
+      expect(expired, 0, reason: 'сессия жива — сообщать провайдеру нечего');
+    });
+
+    test('сервер отверг токен: повторной попытки нет', () async {
+      // Граница повтора. `rejected` — это вердикт о самом токене, и второе
+      // предъявление его не изменит. На 403 `TOKEN_REUSE_DETECTED` повтор
+      // ещё и вреден по существу: сервер уже объявил цепочку скомпрометиро-
+      // ванной и отозвал все сессии — предъявлять ей тот же токен значит
+      // писать в лог вторую «SECURITY ALERT» без единого шанса на успех.
+      final adapter = StubAdapter(
+        (options) => isRefresh(options)
+            ? jsonBody({
+                'success': false,
+                'error': {
+                  'code': 'TOKEN_REUSE_DETECTED',
+                  'message': 'Token reuse detected. All sessions revoked.',
+                },
+              }, status: 403)
+            : expiredAccess(),
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      // `asDio` здесь — страж против зависания и зацикливания, а не про текст.
+      asDio(await failure(api.get('/api/v1/favorites')));
+
+      // Последствия вердикта (стёртое хранилище, единственный сигнал
+      // провайдеру, русский текст) стережёт «403 TOKEN_REUSE_DETECTED» в
+      // соседней группе — здесь проверяется только число попыток.
+      expect(paths(adapter), ['/api/v1/favorites', '/api/v1/auth/refresh'],
+          reason: 'ровно одно обращение к обновлению: вердикт окончателен');
+    });
+
+    test('не дошло, потом отказ: хоронит вердикт ВТОРОЙ попытки', () async {
+      // Переход, которого до этой правки не существовало вовсе: цикл
+      // начинается «не дошло», а заканчивается приговором. Ровно так выглядит
+      // потерянный после ротации ответ, когда повтор не успел в окно: первая
+      // попытка молчит, вторая приносит 403 и отзыв всех сессий.
+      //
+      // Решение о захоронении обязано приниматься по ПОСЛЕДНЕМУ итогу.
+      // Останься в силе первый — хранилище осталось бы с мёртвым токеном, а
+      // провайдер «вошедшим»: каждый следующий 401 гонял бы обновление
+      // впустую, и выйти на экран входа было бы нечем.
+      var refreshes = 0;
+      final adapter = StubAdapter(
+        (options) {
+          if (isRefresh(options)) {
+            refreshes++;
+            if (refreshes == 1) return rateLimited();
+            return jsonBody({
+              'success': false,
+              'error': {
+                'code': 'TOKEN_REUSE_DETECTED',
+                'message': 'Token reuse detected. All sessions revoked.',
+              },
+            }, status: 403);
+          }
+          return expiredAccess();
+        },
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      final error = asDio(await failure(api.get('/api/v1/favorites')));
+
+      expect(error.error, ApiClient.sessionExpiredMessage,
+          reason: 'вердикт второй попытки — «войдите заново», а не временный '
+              'отказ первой');
+      expect(refreshCount(adapter), 2,
+          reason: 'приговор пришёл на повторе — третьей попытки не будет');
+      expect(storage, isEmpty, reason: 'сессии нет — хранить нечего');
+      expect(expired, 1,
+          reason: 'провайдер узнаёт об истёкшей сессии ровно один раз');
+    });
+
+    test('вторая попытка тоже не дошла: третьей нет, наружу — её отказ',
+        () async {
+      // Потолок жёсткий: попытка и повтор, дальше запрос отказывает. И итог
+      // второй попытки замещает первый целиком — вместе с отказом. Сначала
+      // 429 лимитера (у него общая фраза без тела), затем обрыв связи (у
+      // него свой точный текст): наружу обязан выйти второй.
+      var refreshes = 0;
+      final adapter = StubAdapter(
+        (options) {
+          if (isRefresh(options)) {
+            refreshes++;
+            if (refreshes == 1) return rateLimited();
+            throw DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+            );
+          }
+          return expiredAccess();
+        },
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      final error = asDio(await failure(api.get('/api/v1/favorites')));
+
+      expect(error.error, 'Нет связи. Проверьте подключение к интернету.',
+          reason: 'наружу уходит отказ ПОСЛЕДНЕЙ попытки: первый уже неверно '
+              'описывает положение дел');
+      expect(error.type, DioExceptionType.connectionError);
+      expect(refreshCount(adapter), 2,
+          reason: 'попытка и ровно один повтор — лестницы попыток нет');
       expectSessionKept();
     });
   });
