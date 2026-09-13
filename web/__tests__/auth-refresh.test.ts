@@ -5,6 +5,13 @@
  * guard turns a concurrent multi-tab refresh into REFRESH_TOKEN_REUSE_DETECTED,
  * which invalidates ALL of the user's tokens. The concurrency test asserts the
  * observable invariant — exactly ONE backend refresh under concurrent callers.
+ *
+ * Second fact guarded here since backend `5ede30c` opened the reuse grace
+ * window (SDL CAT-D-2.1): the cycle presents the refresh token TWICE on a
+ * transient failure and never more, and never at all once the server has
+ * judged the token itself. The counts below are the fact, not decoration —
+ * every extra presentation is one more chance to land outside the window and
+ * collect a revocation of every session the user has.
  */
 import { ApiError } from '@/lib/api/types';
 
@@ -35,6 +42,10 @@ const REFRESH_DATA = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks wipes call records but NOT queued `once` implementations: a
+  // test whose last queued answer goes unconsumed would hand it to the next
+  // test, which would then be asserting against someone else's mock.
+  mockFetch.mockReset();
   mockStore.get.mockImplementation((name: string) =>
     name === 'rg_rt' ? { value: 'rt1' } : undefined,
   );
@@ -109,5 +120,90 @@ describe('refreshSession', () => {
     const accessToken = await refreshSession();
     expect(accessToken).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // The cycle's single retry (grace window, backend `5ede30c` / SDL CAT-D-2.1)
+  // -------------------------------------------------------------------------
+
+  it('retries ONCE on a transient failure, and the retry carries the cycle', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(0, 'socket hang up')) // no verdict reached
+      .mockResolvedValueOnce(REFRESH_DATA); // second presentation, inside the window
+
+    const accessToken = await refreshSession();
+
+    // The caller gets its answer instead of the refusal it used to get over a
+    // refresh token that was never actually spent.
+    expect(accessToken).toBe('at2');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls.map((c) => c[0])).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/refresh',
+    ]);
+    // BOTH presentations carry the same token — that identity is the whole
+    // premise of the backend's window (same token in → same successor out).
+    for (const call of mockFetch.mock.calls) {
+      expect((call[1] as RequestInit).body).toBe(
+        JSON.stringify({ refreshToken: 'rt1' }),
+      );
+    }
+    expect(mockStore.set).toHaveBeenCalledWith(
+      'rg_at',
+      'at2',
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    [401, 'INVALID_TOKEN'],
+    [403, 'TOKEN_REUSE_DETECTED'],
+  ])(
+    'does NOT retry a %i: the server judged the token itself, a second presentation would only repeat the refusal',
+    async (statusCode, errorCode) => {
+      mockFetch.mockRejectedValue(
+        new ApiError(statusCode as number, 'rejected', errorCode as string),
+      );
+
+      const accessToken = await refreshSession();
+
+      expect(accessToken).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1); // one presentation, no retry
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/auth/refresh',
+        expect.anything(),
+      );
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_rt'); // session buried
+    },
+  );
+
+  it('stops after the retry: a second transient failure buys no third attempt', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(0, 'socket hang up'))
+      .mockRejectedValueOnce(new ApiError(503, 'bad gateway'))
+      .mockResolvedValue(REFRESH_DATA); // a third attempt would collect THIS
+
+    const accessToken = await refreshSession();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(accessToken).toBeNull(); // null, i.e. the token above was never collected
+  });
+
+  it("the retry's verdict replaces the first: transient, then reuse-detection buries the session", async () => {
+    // The realistic shape of a lost answer: the first request DID arrive and
+    // rotate, its answer was lost, and the retry landed past the window.
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(0, 'socket hang up')) // no verdict
+      .mockRejectedValueOnce(
+        new ApiError(403, 'reuse', 'TOKEN_REUSE_DETECTED'),
+      ); // verdict
+
+    const accessToken = await refreshSession();
+
+    expect(accessToken).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Cleared on the SECOND verdict — a transient first attempt does not make
+    // the cycle forget that the session ended up judged dead.
+    expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
   });
 });

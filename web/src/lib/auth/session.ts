@@ -19,7 +19,8 @@ import {
  *   - authedFetch: inject `Authorization: Bearer <access>` on authenticated
  *     backend calls (favorites, logout), transparently refreshing on expiry.
  *   - refreshSession: single-flight refresh honouring the backend's single-use
- *     rotation (reuse trips REFRESH_TOKEN_REUSE_DETECTED → ALL tokens dead).
+ *     rotation (reuse OUTSIDE the backend's grace window trips
+ *     REFRESH_TOKEN_REUSE_DETECTED → ALL tokens dead; see doRefresh).
  *
  * IMPORTANT: cookies().set/.delete are legal ONLY inside a Server Function
  * (action) or Route Handler — never during RSC render (cookies.md:71-73,80-82).
@@ -187,10 +188,11 @@ export async function persistOAuthSession(
 
 /*
  * In-process dedupe: concurrent callers presenting the SAME refresh token await
- * ONE backend refresh, so the single-use token is consumed exactly once within
- * this instance. Cross-instance races (multi-tab on a multi-instance deploy)
- * can still trip REFRESH_TOKEN_REUSE_DETECTED — handled by accept-and-recover
- * (clearSession → forced re-login), never an error page.
+ * ONE refresh cycle, so within this instance the single-use token is consumed
+ * by that cycle alone (which presents it once, or twice when its single retry
+ * fires — see doRefresh). Cross-instance races (multi-tab on a multi-instance
+ * deploy) can still trip REFRESH_TOKEN_REUSE_DETECTED — handled by
+ * accept-and-recover (clearSession → forced re-login), never an error page.
  */
 const inFlightRefresh = new Map<string, Promise<string | null>>();
 
@@ -209,7 +211,61 @@ export async function refreshSession(): Promise<string | null> {
   return pending;
 }
 
+/**
+ * Verdict of ONE presentation of the refresh token. The two failure kinds are
+ * not interchangeable: `rejected` is the server's judgement on the token
+ * itself (the session is dead), `transient` means no judgement was ever
+ * reached — the token may well still be alive.
+ */
+type RefreshAttempt =
+  | { kind: 'ok'; accessToken: string }
+  | { kind: 'rejected' }
+  | { kind: 'transient' };
+
+/**
+ * ONE refresh cycle: at most TWO presentations of the same refresh token.
+ *
+ * Until 10.09.2026 there was deliberately no retry here — the backend read any
+ * second presentation of a refresh token as theft and revoked every session the
+ * user had, so a retry was more dangerous than the refusal it cured. Backend
+ * `5ede30c` added a grace window (REFRESH_REUSE_GRACE_SECONDS, default 60s):
+ * inside it, re-presenting a spent token returns THE SAME successor instead of
+ * a revocation. With the ban lifted (SDL CAT-D-2.1), one retry cures both
+ * shapes of transient failure — indistinguishable from the wire: the request
+ * never arrived (no rotation happened, the token is still alive) and the
+ * request arrived but the answer was lost (the retry lands inside the window
+ * and collects the same successor). Before this, a live session refused the
+ * user's request and recovery waited for their next action.
+ *
+ * Boundaries. Exactly one extra attempt, no pause and no backoff ladder: the
+ * retry helps only while it is still inside the window, and the window's length
+ * is a SERVER number — it changes without a client rebuild, so it is never
+ * encoded here, as a constant or as a timer. The second attempt's verdict
+ * replaces the first whole. `rejected` is never retried: the server judged the
+ * token itself, a second presentation would only repeat the refusal. The retry
+ * belongs to the owner of the inFlightRefresh entry — waiters share its
+ * result, they do not each get an attempt.
+ *
+ * Worst case is 2 presentations per cycle: serverFetch has no transport retry
+ * ladder of its own (one fetch under an AbortController timeout), and
+ * authedFetch runs at most one refresh cycle per call.
+ */
 async function doRefresh(refreshToken: string): Promise<string | null> {
+  let attempt = await attemptRefresh(refreshToken);
+  if (attempt.kind === 'transient') {
+    // The cycle's single retry: the second verdict replaces the first entirely.
+    attempt = await attemptRefresh(refreshToken);
+  }
+
+  if (attempt.kind === 'rejected') {
+    await clearSession();
+    return null;
+  }
+  return attempt.kind === 'ok' ? attempt.accessToken : null;
+}
+
+/** One presentation of the refresh token. Classifies, never clears cookies. */
+async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
   try {
     const data = await serverFetch<RefreshData>('/api/v1/auth/refresh', {
       method: 'POST',
@@ -234,18 +290,17 @@ async function doRefresh(refreshToken: string): Promise<string | null> {
         role: data.user.role,
       });
     }
-    return data.accessToken;
+    return { kind: 'ok', accessToken: data.accessToken };
   } catch (err) {
     // Only a definitive auth verdict (401 INVALID_TOKEN/TOKEN_EXPIRED, 403
-    // TOKEN_REUSE_DETECTED) means the session is dead → clear. Transient
-    // failures (transport/timeout = ApiError(0), 5xx, 429) must NOT discard a
-    // still-valid refresh token — return null without clearing so a later
-    // attempt can recover.
+    // TOKEN_REUSE_DETECTED) means the session is dead. Transient failures
+    // (transport/timeout = ApiError(0), 5xx, 429) must NOT discard a
+    // still-valid refresh token — the caller retries once, then reports
+    // failure without clearing, so a later attempt can still recover.
     const status = err instanceof ApiError ? err.statusCode : 0;
-    if (status === 401 || status === 403) {
-      await clearSession();
-    }
-    return null;
+    return status === 401 || status === 403
+      ? { kind: 'rejected' }
+      : { kind: 'transient' };
   }
 }
 
