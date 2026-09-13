@@ -77,8 +77,13 @@ const _storageChannel =
 /// при провале обновления — без мока канал не зарегистрирован, и запрос
 /// падает до транспорта. Вызывать из `setUp`; снятие регистрируется через
 /// [addTearDown].
+///
+/// [failOnDelete] разыгрывает отказ защищённого хранилища на стирании: он
+/// приходит уже ПОСЛЕ приговора сервера и вердикт «сессия мертва» отменять
+/// не вправе.
 Map<String, String> installSecureStorageStand({
   Map<String, String> initial = const {},
+  bool failOnDelete = false,
 }) {
   TestWidgetsFlutterBinding.ensureInitialized();
   final storage = <String, String>{...initial};
@@ -93,6 +98,7 @@ Map<String, String> installSecureStorageStand({
         storage[args!['key'] as String] = args['value'] as String;
         return null;
       case 'delete':
+        if (failOnDelete) throw _storageUnavailable;
         storage.remove(args!['key'] as String);
         return null;
       case 'containsKey':
@@ -100,6 +106,7 @@ Map<String, String> installSecureStorageStand({
       case 'readAll':
         return Map<String, String>.of(storage);
       case 'deleteAll':
+        if (failOnDelete) throw _storageUnavailable;
         storage.clear();
         return null;
     }
@@ -108,3 +115,9 @@ Map<String, String> installSecureStorageStand({
   addTearDown(() => messenger.setMockMethodCallHandler(_storageChannel, null));
   return storage;
 }
+
+/// Отказ защищённого хранилища — тот же класс, что приходит из плагина.
+final _storageUnavailable = PlatformException(
+  code: 'Storage',
+  message: 'secure storage unavailable',
+);

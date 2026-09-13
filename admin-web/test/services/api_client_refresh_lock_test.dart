@@ -178,6 +178,78 @@ void main() {
     expect(storage.containsKey('refresh_token'), isFalse);
   });
 
+  test('200 с токеном не той формы: контракт нарушен — сессия мертва',
+      () async {
+    // Обновление дошло, ответ 200 — но распорядиться им не удалось: сервер
+    // провернул ротацию и погасил старый токен, а нового у нас нет. Классом
+    // «не дошло» это было бы вечное «Service temporarily unavailable» с
+    // мёртвым токеном в хранилище: оператор остался бы на мёртвой сессии
+    // навсегда, и каждый его следующий 401 гонял бы обновление впустую.
+    // Выход на экран входа честнее. Той же меркой меряется отказ хранилища
+    // на записи нового токена — ответ получен, распорядиться нечем.
+    final adapter = StubAdapter(
+      (o) => o.uri.path == '/api/v1/auth/refresh'
+          ? jsonBody({
+              'success': true,
+              'data': {'accessToken': 42},
+            })
+          : jsonBody(
+              rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+              status: 401,
+            ),
+    );
+    final api = stubClient(adapter);
+
+    final error = await api
+        .get('/api/v1/admin/badges')
+        .timeout(const Duration(seconds: 5))
+        .then<Object?>((_) => null, onError: (Object e) => e);
+
+    expect(error, isA<DioException>());
+    expect((error! as DioException).error,
+        'Authentication failed. Please log in again.',
+        reason: 'ответ получен, но сессии за ним уже нет');
+    expect(
+      adapter.requests.map((r) => r.uri.path).toList(),
+      ['/api/v1/admin/badges', '/api/v1/auth/refresh'],
+      reason: 'это приговор, а не «не дошло»: повторной попытки цикла нет',
+    );
+    expect(storage.containsKey('access_token'), isFalse);
+    expect(storage.containsKey('refresh_token'), isFalse,
+        reason: 'обновлять больше нечем');
+    expect(expired, 1, reason: 'провайдер обязан увести оператора на вход');
+  });
+
+  test('падение на стирании не отменяет приговор сервера', () async {
+    // Хранилище может отказать на стирании — но сервер к этому моменту уже
+    // сказал, что токен мёртв. Вердикт от этого не меняется: оставить
+    // оператора «вошедшим» над мёртвой сессией хуже, чем оставить в
+    // хранилище мусор. Иначе отказ стирания переписывал бы приговор на
+    // «временно», а `SessionEvents.reportExpired()` не выполнялся бы вовсе.
+    storage = installSecureStorageStand(
+      initial: {'access_token': 'stale', 'refresh_token': 'r1'},
+      failOnDelete: true,
+    );
+    final adapter = StubAdapter((o) => jsonBody(
+          rejectedBody('REFRESH_TOKEN_EXPIRED', 'Refresh token expired'),
+          status: 401,
+        ));
+    final api = stubClient(adapter);
+
+    final error = await api
+        .get('/api/v1/admin/badges')
+        .timeout(const Duration(seconds: 5))
+        .then<Object?>((_) => null, onError: (Object e) => e);
+
+    expect(error, isA<DioException>());
+    expect((error! as DioException).error,
+        'Authentication failed. Please log in again.',
+        reason: 'вердикт выносит сервер, а не защищённое хранилище');
+    expect(expired, 1, reason: 'провайдер обязан узнать об истёкшей сессии');
+    expect(storage['refresh_token'], 'r1',
+        reason: 'стереть не удалось — токен остался мусором в хранилище');
+  });
+
   group('Повтор обновления', () {
     // До 10.09.2026 повтора обновления здесь не было намеренно: бэкенд считал
     // любое второе предъявление refresh-токена кражей и отзывал все сессии
