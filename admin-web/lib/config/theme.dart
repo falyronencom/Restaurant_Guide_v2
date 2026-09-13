@@ -182,8 +182,17 @@ class AppTheme {
   // Вшиты в сборку (admin-web/google_fonts/), из сети не тянутся —
   // GoogleFonts.config.allowRuntimeFetching = false в main.dart.
   // Вшитые начертания: Unbounded 400 · Nunito Sans 400/500/600/700 ·
-  // Onest 600 · Josefin Sans 600. Запрос невшитого начертания пакет
-  // залогирует и откатит на системный шрифт — приложение не упадёт.
+  // Onest 600 · Josefin Sans 600 · JetBrains Mono 400/500.
+  //
+  // Вес обязан стоять в самом вызове пакета, а не только ниже в TextStyle.
+  // Продолжение довода из fontMonoFamily: имя семейства берётся у пакета —
+  // а пакет регистрирует КАЖДОЕ начертание ОТДЕЛЬНЫМ семейством
+  // (JosefinSans_regular, JosefinSans_600) и возвращает имя ровно того
+  // начертания, которое запросили здесь. Запрос невшитого веса при
+  // выключенной загрузке из сети семейство не регистрирует: возвращённое
+  // имя не разрешится, и текст молча уедет на системный шрифт. Вес,
+  // выставленный ниже в TextStyle, этого уже не исправит — имя выдано.
+  // Сторож соответствия — test/config/fonts_bundled_test.dart.
 
   /// Дисплейный: заголовки экранов и числа метрик. В каноне только w400.
   static final String fontDisplayFamily = GoogleFonts.unbounded().fontFamily!;
@@ -192,11 +201,18 @@ class AppTheme {
   static final String fontBodyFamily = GoogleFonts.nunitoSans().fontFamily!;
 
   /// Вордмарк NIRIVIO (латиница). Для кириллицы не применять.
+  ///
+  /// w600 — единственное вшитое начертание Josefin Sans; почему не w700,
+  /// сказано у canonWordmark.
   static final String fontWordmarkFamily =
-      GoogleFonts.josefinSans().fontFamily!;
+      GoogleFonts.josefinSans(fontWeight: FontWeight.w600).fontFamily!;
 
   /// Заголовок карточки-витрины и текст цитаты отзыва.
-  static final String fontCardTitleFamily = GoogleFonts.onest().fontFamily!;
+  ///
+  /// w600 — единственное вшитое начертание Onest; оба применения просят
+  /// тот же вес в своём TextStyle.
+  static final String fontCardTitleFamily =
+      GoogleFonts.onest(fontWeight: FontWeight.w600).fontFamily!;
 
   /// admin-local: моноширинный для табличных данных — id, время, «до/после».
   ///
