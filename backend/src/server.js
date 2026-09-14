@@ -279,12 +279,12 @@ const startServer = async () => {
     // land in the startup log next to the other two, and it prunes once
     // immediately — redeploys can outpace the interval (config/refreshTokenPrune.js).
     const prunePolicy = refreshTokenPruner.start();
-    logger.info('Refresh token prune policy resolved', {
+    logger.info('Refresh token pruner: policy resolved', {
       retentionDays: prunePolicy.retentionDays,
       intervalMs: prunePolicy.intervalMs,
     });
     for (const warning of prunePolicy.warnings) {
-      logger.warn(`Refresh token prune policy: ${warning}`);
+      logger.warn(`Refresh token pruner: policy ${warning}`);
     }
 
     // Start HTTP server
