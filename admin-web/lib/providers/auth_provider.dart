@@ -64,12 +64,23 @@ class AuthProvider with ChangeNotifier {
   // Initialization
   // ============================================================================
 
+  /// Потолок ожидания ответа об авторизации на старте.
+  ///
+  /// Таймауты Dio — 30 с на соединение и 30 с на приём, и до 14.09.2026 это
+  /// никого не держало: пока шла инициализация, роутер уже строил дашборд.
+  /// Теперь до ответа виден кадр инициализации, и его длительность равна
+  /// этому ожиданию — на спящем Railway полминуты вордмарка читались бы как
+  /// зависание. Двенадцать секунд заведомо больше обычного ответа `/auth/me`
+  /// и заведомо меньше порога, за которым экран выглядит мёртвым.
+  static const Duration initializationTimeout = Duration(seconds: 12);
+
   Future<void> _initialize() async {
     try {
       final hasToken = await _authService.isAuthenticated();
       if (hasToken) {
         try {
-          final user = await _authService.getCurrentUser();
+          final user =
+              await _authService.getCurrentUser().timeout(initializationTimeout);
           // Verify the stored session belongs to a panel role
           if (isPanelRole(user.role)) {
             _currentUser = user;
@@ -79,6 +90,16 @@ class AuthProvider with ChangeNotifier {
             await _authService.clearAuthData();
             _status = AuthStatus.unauthenticated;
           }
+        } on TimeoutException {
+          // Ждать перестали — но сессию не хороним и хранилище НЕ чистим:
+          // молчание сети не доказывает, что токен мёртв. Ветка стоит выше
+          // общего `catch` именно поэтому: тот стирает токены на любой
+          // ошибке, и просто медленный Railway выкидывал бы оператора из
+          // живой сессии. Отличать не дошедшее от отвергнутого — то же
+          // правило, что у обновления токена (`transient` против
+          // `rejected`).
+          _status = AuthStatus.unauthenticated;
+          _errorMessage = 'Не удалось проверить сессию — войдите снова';
         } catch (e) {
           // Token invalid or network error — clear and require re-login
           _status = AuthStatus.unauthenticated;
