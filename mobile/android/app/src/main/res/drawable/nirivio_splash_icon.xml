@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icon drawn on the Android 12+ system splash (windowSplashScreenAnimatedIcon).
+
+     Deliberately our own resource instead of letting the platform fall back to
+     @mipmap/ic_launcher. Without this attribute the splash asks the icon
+     provider for the launcher icon, and the shell hands back the *themed*
+     icon: One UI icon themes compose their own plate behind every third-party
+     icon. On the Coordinator's Galaxy A72 the active theme
+     (com.gabriel.SeashellPink.appicon) supplies ic_icon_bg.png — a white
+     rounded square at 50% alpha — which over our beige sheet reads as a pale
+     plate around the cockade, i.e. a visible seam before the Flutter splash
+     takes over. A drawable loaded straight from the window theme skips that
+     composition path.
+
+     The artwork is not duplicated: this reuses the adaptive icon's foreground
+     layer, whose cockade occupies the central 66dp of the 108dp canvas.
+
+     The inset is the scale, not padding. Undrawn, the platform renders that
+     cockade at 189dp on a 411dp-wide screen, while the Flutter splash draws
+     its own cockade at 2·min(0.159·W, 72) = 131dp — so the mark would visibly
+     shrink at the handoff. 15.3% per side scales 189dp down onto 131dp,
+     measured on the A72. A fraction rather than a dimension so the ratio
+     survives a differently sized icon window; the two rules still diverge on
+     very wide screens, where the Flutter side caps at 144dp. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_foreground"
+    android:inset="15.3%" />

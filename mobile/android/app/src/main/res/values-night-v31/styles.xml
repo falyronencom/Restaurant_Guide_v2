@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode twin of values-v31/styles.xml. Required, not redundant:
+         in resource resolution the night qualifier outranks the version
+         qualifier, so on a device with Dark Mode on, values-night/styles.xml
+         wins over values-v31/styles.xml and every Android 12+ splash attribute
+         below would otherwise be silently dropped. The splash itself stays
+         light in both modes — it hands over to the beige Flutter splash. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/nirivio_splash_bg</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/nirivio_splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/nirivio_splash_icon</item>
+    </style>
+</resources>

@@ -3,10 +3,17 @@
     <!-- Android 12+ (API 31) system splash. Paint the full splash and the
          icon-background disc the same beige as the Flutter splash, so the disc
          blends into the screen (no visible circle) and the cockade sits directly
-         on the beige — a seamless system-splash → Flutter-splash handoff. -->
+         on the beige — a seamless system-splash → Flutter-splash handoff.
+
+         windowSplashScreenAnimatedIcon is what makes that hold on skinned
+         devices: without it the platform pulls the launcher icon through the
+         icon provider, where One UI icon themes wrap it in their own plate.
+         See drawable/nirivio_splash_icon.xml. The dark-mode twin lives in
+         values-night-v31/ — the night qualifier outranks v31. -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:windowSplashScreenBackground">@color/nirivio_splash_bg</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/nirivio_splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/nirivio_splash_icon</item>
     </style>
 </resources>
