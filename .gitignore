@@ -76,6 +76,10 @@ devtools_options.yaml
 **/Secrets.xcconfig
 !**/Secrets.xcconfig.example
 
+# Python bytecode — в репозитории есть инструменты на Python (tools/brand/)
+__pycache__/
+*.pyc
+
 # Windows artifacts
 nul
 
