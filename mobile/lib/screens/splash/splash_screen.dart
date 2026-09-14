@@ -1,32 +1,40 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
-import 'package:restaurant_guide_mobile/screens/splash/painters/ornament_painter.dart';
+import 'package:restaurant_guide_mobile/screens/splash/painters/cockade_painter.dart';
+import 'package:restaurant_guide_mobile/screens/splash/splash_easing.dart';
 import 'package:restaurant_guide_mobile/screens/splash/widgets/wordmark_widget.dart';
-
-double _lerp(double a, double b, double t) => a + (b - a) * t;
 
 /// Splash animation phases.
 enum SplashPhase { intro, loop, outro }
 
-/// Animated splash screen — NIRIVIO «Ornament Bloom».
+/// Animated splash screen — the NIRIVIO cockade, grammar **A+** at tempo 0.75×,
+/// gloss material, light stage (SDL CAT-C-1.4, lab «Заставка NIRIVIO» v7).
 ///
-/// A procedural folk ornament blooms layer-by-layer from the center while a
-/// ring of dots rotates continuously around the perimeter; the NIRIVIO wordmark
-/// then reveals with expanding letter-tracking and the «Вкусное рядом» tagline.
-/// Visuals follow the hi-fi design handoff — see [OrnamentPainter].
+/// Three thin rings converge on the centre of a beige stage, land as the
+/// glossy cockade with one haptic impact, a wave leaves the sign, then the
+/// wordmark, the accent rule and the tagline settle in. Visuals: see
+/// [CockadePainter] and [WordmarkWidget]; the numbers live in the brief §10.
 ///
-/// The screen also doubles as the app's load gate (behaviour unchanged from the
-/// previous splash): it watches [AuthProvider.isLoading] to learn when the
-/// session has been restored.
-/// - Intro: the full bloom plays once (~4.3s) — the minimum on-screen time.
-/// - Loop: if data is not ready when the bloom finishes, the ornament holds and
-///   the ring keeps spinning until auth is ready (or the 10s timeout fires).
-/// - Outro: everything fades out, then we navigate to `/home` (authenticated)
-///   or `/auth/method-selection` (guest).
+/// The screen also doubles as the app's load gate (contract unchanged since
+/// the previous splashes): it watches [AuthProvider.isLoading] to learn when
+/// the session has been restored.
+/// - Intro: the choreography plays once (2.8 s) — the minimum on-screen time.
+/// - Loop: if the session is not ready when the intro finishes, the sign holds
+///   while soft waves leave it every 1.1 s until auth is ready (or the 10 s
+///   timeout fires).
+/// - Outro: everything fades out (460 ms), then we navigate to `/home`
+///   (authenticated) or `/auth/method-selection` (guest).
+///
+/// Reduce Motion (`MediaQuery.disableAnimations`): no flight, no impact — the
+/// assembled sign and text appear in one 200 ms fade, the intro lasts 1 s, the
+/// loop holds still; gate and navigation are the same.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -36,43 +44,56 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  // ── OPEN EDIT (agreed with client) ─────────────────────────────────────────
-  // Eyelet colour. Currently the brand orange accent; the client may switch it
-  // to the cornflower petal blue after on-device review. Changing this one line
-  // to AppTheme.ornamentCornflower (or .ornamentCornLite for a softer blue) is
-  // the only edit required.
-  static const Color _eyeletColor = AppTheme.ornamentAccent;
+  // ── Clock: ms from intro start ─────────────────────────────────────────────
+  // The lab is specified in base seconds at 1×; the ratified tempo is 0.75×,
+  // so every lab time is multiplied by 4/3 here (.30 → 400, .85 → 1133 …).
+  static const int _introMs = 2800; // lab 2.10 s
+  static const double _flightStartMs = 400; // .30
+  static const double _landMs = 1133.3; // .85 — the sign is on stage
+  static const double _settleMs = 1320; // .99 — overshoot spent
+  static const double _shadowMs = 1253.3; // .94
+  static const double _flashEndMs = 1466.7; // 1.10
+  static const double _waveStartMs = 1160; // .87
+  static const double _waveEndMs = 2106.7; // 1.58
+  static const double _wordStartMs = 1266.7; // .95
+  static const double _wordEndMs = 1733.3; // 1.30
+  static const double _ruleStartMs = 1546.7; // 1.16
+  static const double _ruleEndMs = 1813.3; // 1.36
+  static const double _tagStartMs = 1706.7; // 1.28
+  static const double _tagEndMs = 2080; // 1.56
+  static const int _loopWaveStartMs = 2107; // 1.58 — gate waves if not ready
 
-  // Reference cycle = 6s ("Динамично" speed); the bloom-in finishes at 72% of
-  // it. The remaining 28% (hold + out) is handled by the phase machine, not the
-  // intro controller, so the controller runs exactly the bloom span.
-  static const int _bloomMs = 4320; // 0.72 * 6000
-  static const int _ringSpinMs = 14000; // one revolution, linear, continuous
-  static const int _outroMs = 700;
+  /// One haptic impact at the landing point. Android is fired a little early:
+  /// its motor lags the visual by roughly that much.
+  static const int _impactMs = 1130;
+  static const int _androidImpactLeadMs = 30;
+
+  static const int _wavePeriodMs = 1100;
+  static const int _reducedIntroMs = 1000; // Reduce Motion: minimum on screen
+  static const int _reducedFadeMs = 200; // Reduce Motion: single fade-in
+  static const int _outroMs = 460;
   static const Duration _timeout = Duration(seconds: 10);
+
+  // ── Geometry: lab grid 390×844, C = (195, 352), R = 62 ─────────────────────
+  static const double _radiusPerWidth = 62 / 390;
+  static const double _radiusCap = 72;
+  static const double _centerPerHeight = 352 / 844;
+  static const double _stageCenterLift = 30; // gradient centre 30 grid px above C
 
   // ── State ───────────────────────────────────────────────────────────────────
   SplashPhase _phase = SplashPhase.intro;
   bool _authReady = false;
   bool _introComplete = false;
   bool _navigated = false;
+  bool _introStarted = false;
+  bool _impactFired = false;
+  bool _reduceMotion = false;
 
   // ── Controllers ───────────────────────────────────────────────────────────────
-  late final AnimationController _introCtrl; // drives the layered bloom
-  late final AnimationController _spinCtrl; // ring rotation, always running
+  late final AnimationController _introCtrl; // drives the whole choreography
+  late final AnimationController _waveCtrl; // waiting-loop waves, 1.1 s period
   late final AnimationController _outroCtrl; // fade-out before navigation
-
-  // ── Per-layer reveals (sub-intervals of the bloom) ──────────────────────────
-  // Interval bounds = design-cycle % ÷ 0.72 (the bloom span end). Each reveal
-  // animates a layer's opacity together with its scale / rotation / tracking.
-  late final Animation<double> _ringReveal; //   6%→22%  ease-in-out
-  late final Animation<double> _outerReveal; //  6%→27%  cubic(.3,.8,.3,1)
-  late final Animation<double> _innerReveal; // 14%→36%  cubic(.3,.8,.3,1)
-  late final Animation<double> _centerReveal; // 24%→42% cubic(.2,1.3,.4,1) overshoot
-  late final Animation<double> _wordReveal; //  46%→62%  cubic(.2,.7,.2,1)
-  late final Animation<double> _lineReveal; //  54%→68%  cubic(.2,.7,.2,1)
-  late final Animation<double> _tagReveal; //   58%→72%  ease-in-out
-  late final Animation<double> _outroFade; //   1→0
+  late final Animation<double> _outroFade; // 1→0
 
   Timer? _timeoutTimer;
   VoidCallback? _authListener;
@@ -86,8 +107,6 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _initControllers();
-    _buildAnimations();
-    _startIntro();
     _startTimeout();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -99,12 +118,19 @@ class _SplashScreenState extends State<SplashScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _authProvider = context.read<AuthProvider>();
+    if (!_introStarted) {
+      _introStarted = true;
+      // Read once, before the first frame: durations, the flight and the
+      // impact all branch on it, so a toggle mid-intro is not honoured.
+      _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      _startIntro();
+    }
   }
 
   @override
   void dispose() {
     _introCtrl.dispose();
-    _spinCtrl.dispose();
+    _waveCtrl.dispose();
     _outroCtrl.dispose();
     _timeoutTimer?.cancel();
     if (_authListener != null) {
@@ -119,39 +145,17 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _initControllers() {
     _introCtrl = AnimationController(
-      duration: const Duration(milliseconds: _bloomMs),
+      duration: const Duration(milliseconds: _introMs),
       vsync: this,
     );
-    _spinCtrl = AnimationController(
-      duration: const Duration(milliseconds: _ringSpinMs),
+    _waveCtrl = AnimationController(
+      duration: const Duration(milliseconds: _wavePeriodMs),
       vsync: this,
-    )..repeat();
+    );
     _outroCtrl = AnimationController(
       duration: const Duration(milliseconds: _outroMs),
       vsync: this,
     );
-  }
-
-  void _buildAnimations() {
-    Animation<double> reveal(double begin, double end, Curve curve) {
-      return CurvedAnimation(
-        parent: _introCtrl,
-        curve: Interval(begin, end, curve: curve),
-      );
-    }
-
-    const Cubic bloomCurve = Cubic(0.3, 0.8, 0.3, 1.0);
-    const Cubic overshoot = Cubic(0.2, 1.3, 0.4, 1.0);
-    const Cubic textCurve = Cubic(0.2, 0.7, 0.2, 1.0);
-
-    _ringReveal = reveal(0.083, 0.306, Curves.easeInOut);
-    _outerReveal = reveal(0.083, 0.375, bloomCurve);
-    _innerReveal = reveal(0.194, 0.500, bloomCurve);
-    _centerReveal = reveal(0.333, 0.583, overshoot);
-    _wordReveal = reveal(0.639, 0.861, textCurve);
-    _lineReveal = reveal(0.750, 0.944, textCurve);
-    _tagReveal = reveal(0.806, 1.000, Curves.easeInOut);
-
     _outroFade = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _outroCtrl, curve: Curves.easeIn),
     );
@@ -162,8 +166,10 @@ class _SplashScreenState extends State<SplashScreen>
   // ══════════════════════════════════════════════════════════════════════════
 
   void _startIntro() {
-    _introCtrl.forward();
-
+    _introCtrl.duration = Duration(
+      milliseconds: _reduceMotion ? _reducedIntroMs : _introMs,
+    );
+    _introCtrl.addListener(_onIntroTick);
     _introCtrl.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _introComplete = true;
@@ -174,12 +180,44 @@ class _SplashScreenState extends State<SplashScreen>
         }
       }
     });
+    _introCtrl.forward();
+  }
+
+  /// Per-frame marks of the intro: the single haptic impact at landing and
+  /// the start of the waiting waves if the session is still loading.
+  void _onIntroTick() {
+    if (_reduceMotion) return;
+    // Exact elapsed time while ticking; on the completing tick the controller
+    // has already stopped and the value (1.0) stands in for it.
+    final Duration? elapsed = _introCtrl.lastElapsedDuration;
+    final double ms = elapsed != null
+        ? elapsed.inMicroseconds / Duration.microsecondsPerMillisecond
+        : _introCtrl.value * _introMs;
+
+    if (!_impactFired && ms >= _impactMark) {
+      _impactFired = true;
+      _fireImpact();
+    }
+    if (!_waveCtrl.isAnimating && !_authReady && ms >= _loopWaveStartMs) {
+      _waveCtrl.repeat();
+    }
+  }
+
+  int get _impactMark => defaultTargetPlatform == TargetPlatform.android
+      ? _impactMs - _androidImpactLeadMs
+      : _impactMs;
+
+  void _fireImpact() {
+    // Fire-and-forget. A system with haptics switched off answers silently;
+    // a platform without the channel must not surface an async error either.
+    unawaited(HapticFeedback.mediumImpact().catchError((Object _) {}));
   }
 
   void _startLoop() {
     if (!mounted) return;
-    // The ornament is fully bloomed; it simply holds while the ring keeps
-    // spinning (driven by _spinCtrl) until auth is ready or the timeout fires.
+    // The sign holds; the waves keep leaving it (driven by _waveCtrl) until
+    // auth is ready or the timeout fires. Reduce Motion holds still.
+    if (!_reduceMotion && !_waveCtrl.isAnimating) _waveCtrl.repeat();
     setState(() => _phase = SplashPhase.loop);
   }
 
@@ -268,75 +306,123 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: DecoratedBox(
-        // Warm beige radial wash (design: radial at 50% 38%).
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0.0, -0.24),
-            radius: 1.0,
-            colors: [
-              AppTheme.splashBgInner,
-              AppTheme.splashBgMid,
-              AppTheme.splashBgOuter,
-            ],
-            stops: [0.0, 0.6, 1.0],
-          ),
-        ),
-        child: SizedBox.expand(
-          child: AnimatedBuilder(
-            animation: Listenable.merge([_introCtrl, _spinCtrl, _outroCtrl]),
-            builder: (context, _) => _buildScene(context),
-          ),
-        ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final Size size = constraints.biggest;
+          return DecoratedBox(
+            decoration: BoxDecoration(gradient: _stageGradient(size)),
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_introCtrl, _waveCtrl, _outroCtrl]),
+              builder: (context, _) => _buildScene(size),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildScene(BuildContext context) {
-    final double screenW = MediaQuery.of(context).size.width;
-    // Ornament diameter ≈ 0.72 of screen width (handoff: 0.7–0.8), capped on
-    // large screens. One viewBox unit (the design's 300-grid) → logical px.
-    final double sceneSide = math.min(screenW * 0.72, 360.0);
-    final double unit = sceneSide / 300.0;
+  static double _radiusFor(Size size) =>
+      math.min(size.width * _radiusPerWidth, _radiusCap);
 
+  /// Warm beige radial wash — lab `bg()`: centred 30 grid px above the sign,
+  /// reaching 0.72·H, stops 0 / .55 / 1.
+  RadialGradient _stageGradient(Size size) {
+    final double shortest = size.shortestSide > 0 ? size.shortestSide : 1;
+    final double height = size.height > 0 ? size.height : 1;
+    final double cy = size.height * _centerPerHeight -
+        _stageCenterLift * _radiusFor(size) / CockadePainter.gridRadius;
+    return RadialGradient(
+      center: Alignment(0, cy / height * 2 - 1),
+      radius: .72 * size.height / shortest,
+      colors: const [
+        AppTheme.splashBgInner,
+        AppTheme.splashBgMid,
+        AppTheme.splashBgOuter,
+      ],
+      stops: const [0, .55, 1],
+    );
+  }
+
+  Widget _buildScene(Size size) {
+    final double radius = _radiusFor(size);
+    final Offset center = Offset(size.width / 2, size.height * _centerPerHeight);
     final double g = _phase == SplashPhase.outro ? _outroFade.value : 1.0;
-    final double centerProgress = _centerReveal.value; // overshoots past 1
 
-    return Align(
-      alignment: const Alignment(0.0, -0.08),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: sceneSide,
-            height: sceneSide,
-            child: CustomPaint(
-              painter: OrnamentPainter(
-                ringOpacity: _ringReveal.value,
-                ringSpin: _spinCtrl.value * 2 * math.pi,
-                outerOpacity: _outerReveal.value,
-                outerScale: _lerp(0.5, 1.0, _outerReveal.value),
-                outerRotation: _lerp(-14, 0, _outerReveal.value) * math.pi / 180,
-                innerOpacity: _innerReveal.value,
-                innerScale: _lerp(0.4, 1.0, _innerReveal.value),
-                innerRotation: _lerp(12, 0, _innerReveal.value) * math.pi / 180,
-                centerOpacity: centerProgress,
-                centerScale: centerProgress,
-                globalOpacity: g,
-                eyeletColor: _eyeletColor,
-              ),
-            ),
+    double? flight;
+    bool landed;
+    double scale;
+    double shadow;
+    double flash;
+    double? wave;
+    double? loopPhase;
+    double opacity;
+    double wordT;
+    double lineT;
+    double tagT;
+
+    if (_reduceMotion) {
+      // No flight: the assembled sign and text fade in together.
+      final double fade = SplashEasing.span(
+          _introCtrl.value * _reducedIntroMs, 0, _reducedFadeMs.toDouble());
+      flight = null;
+      landed = true;
+      scale = 1;
+      shadow = 1;
+      flash = 0;
+      wave = null;
+      loopPhase = null;
+      opacity = fade * g;
+      wordT = 1;
+      lineT = 1;
+      tagT = 1;
+    } else {
+      // Lab `drawSoft(x)` with x in app milliseconds.
+      final double ms = _introCtrl.value * _introMs;
+      double span(double a, double b) => SplashEasing.span(ms, a, b);
+
+      landed = ms >= _landMs;
+      flight = (ms > _flightStartMs && !landed)
+          ? SplashEasing.inOutCubic(span(_flightStartMs, _landMs))
+          : null;
+      final double ip = span(_landMs, _settleMs);
+      scale = ip < 1 ? 1 + .09 * (1 - SplashEasing.outBack(ip)) : 1.0;
+      shadow = span(_landMs, _shadowMs);
+      flash = landed ? 1 - span(_landMs, _flashEndMs) : 0.0;
+      final double wv = span(_waveStartMs, _waveEndMs);
+      wave = (landed && wv > 0 && wv < 1) ? SplashEasing.outCubic(wv) : null;
+      loopPhase = _waveCtrl.isAnimating ? _waveCtrl.value : null;
+      opacity = g;
+      wordT = span(_wordStartMs, _wordEndMs);
+      lineT = span(_ruleStartMs, _ruleEndMs);
+      tagT = span(_tagStartMs, _tagEndMs);
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CustomPaint(
+          painter: CockadePainter(
+            center: center,
+            radius: radius,
+            flight: flight,
+            landed: landed,
+            scale: scale,
+            shadow: shadow,
+            flash: flash,
+            wave: wave,
+            loopPhase: loopPhase,
+            opacity: opacity,
           ),
-          SizedBox(height: 6 * unit),
-          WordmarkWidget(
-            unit: unit,
-            wordT: _wordReveal.value,
-            lineT: _lineReveal.value,
-            tagT: _tagReveal.value,
-            globalOpacity: g,
-          ),
-        ],
-      ),
+        ),
+        WordmarkWidget(
+          center: center,
+          radius: radius,
+          wordT: wordT,
+          lineT: lineT,
+          tagT: tagT,
+          globalOpacity: opacity,
+        ),
+      ],
     );
   }
 }

@@ -59,14 +59,19 @@ class AppTheme {
   static const Color textDark = Color(0xFF3E3E3E);           // Dark text (near-black)
   static const Color accentNavy = Color(0xFF3631C0);         // Navy blue accent
 
-  /// Splash «Ornament Bloom» palette (NIRIVIO splash, hi-fi design handoff).
-  /// Folk «выцінанка» ornament: cornflower blue + warm orange on beige.
-  static const Color ornamentCornflower = Color(0xFF3F63B8); // василёк — large petals, center rosette, dots
-  static const Color ornamentCornLite = Color(0xFF7390D6);   // светлый василёк — small inner petals
-  static const Color ornamentAccent = Color(0xFFE8742B);     // orange — ring dots, eyelet, core, accent line
-  static const Color ornamentWordmark = Color(0xFF283A6B);   // NIRIVIO wordmark + ornament shadow (deep navy)
-  static const Color ornamentTagline = Color(0xFF7A6B52);    // «Вкусное рядом» tagline (warm taupe)
-  static const Color ornamentBgHole = Color(0xFFF1E7D0);     // center "hole" = background tone
+  /// Splash «кокарда» palette (NIRIVIO splash, SDL CAT-C-1.4, lab «Заставка
+  /// NIRIVIO» v7, light stage). The three bands of the launcher cockade on a
+  /// warm beige stage; the light ring is deliberately lighter than the stage
+  /// centre (guard: `test/screens/splash/splash_palette_guard_test.dart`).
+  static const Color cockadeCornflower = Color(0xFF3F63B8); // василёк — outer disc; flight ring
+  static const Color cockadeCornLite = Color(0xFF7390D6);   // светлый василёк — middle ring in flight
+  static const Color cockadeAccent = Color(0xFFE8742B);     // orange — core, accent rule
+  static const Color cockadeRing = Color(0xFFFBF7EE);       // light middle ring — lighter than splashBgInner
+  static const Color cockadeWave = Color(0xFFC0AE8C);       // landing wave + waiting-loop waves
+  static const Color cockadeFlash = Color(0xFFFFFFFF);      // landing flash ring
+  static const Color cockadeShadow = Color(0xFF283A6B);     // sign drop shadow (alpha applied by painter)
+  static const Color splashWordmark = Color(0xFF283A6B);    // NIRIVIO wordmark (deep navy)
+  static const Color splashTagline = Color(0xFF7A6B52);     // «Вкусное рядом» tagline (warm taupe)
   static const Color splashBgInner = Color(0xFFF7F1E2);      // radial gradient — center (lightest)
   static const Color splashBgMid = Color(0xFFF0E7D2);        // radial gradient — mid
   static const Color splashBgOuter = Color(0xFFE9DEC5);      // radial gradient — edge
