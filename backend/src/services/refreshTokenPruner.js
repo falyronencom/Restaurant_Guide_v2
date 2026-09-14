@@ -171,13 +171,25 @@ const runTick = async () => {
     }
   }
 
-  if (deleted > 0) {
-    logger.info('Refresh token pruner: rows deleted', {
-      deleted,
-      cutoff,
-      retentionDays,
-    });
-  }
+  // Unconditional, and that is the whole point: this line is the only proof
+  // the loop is alive. Logging only on a deletion made a healthy idle tick and
+  // a dead interval look identical — both silent — and on this project the
+  // difference is invisible for another reason too: the backend service has no
+  // Railway watch paths, so it redeploys on every commit to main and the
+  // startup line arrives every hour or two whether the timer works or not.
+  // Take the redeploys away (by setting a watch path) and a broken interval
+  // would announce itself only as a growing table.
+  //
+  // info, not debug: LOG_LEVEL is a dashboard variable nobody guards, and a
+  // heartbeat that a routine "quieten the logs" edit switches off silently is
+  // the same failure it exists to catch. The volume argument does not bite —
+  // the uptime monitor alone puts ~288 health lines a day in this stream, next
+  // to which 24 ticks is noise-level.
+  logger.info('Refresh token pruner: tick finished', {
+    deleted,
+    cutoff,
+    retentionDays,
+  });
 
   return deleted;
 };

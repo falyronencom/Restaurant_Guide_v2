@@ -134,10 +134,33 @@ describe('prune cycle', () => {
     expect(mockQuery).toHaveBeenCalledTimes(MAX_BATCHES_PER_TICK);
   });
 
-  test('logs nothing when there was nothing to delete', async () => {
+  test('reports a tick that deleted nothing, so an idle loop is not a silent one', async () => {
+    // The heartbeat. Until 14.09 this line was conditional on a deletion, and
+    // the guard here asserted the opposite — that an empty tick says nothing.
+    // Both were wrong for the same reason: a healthy idle tick and an interval
+    // that never fired produced identical logs, so the only observable proof
+    // the loop runs was the startup line, which arrives on redeploys rather
+    // than on ticks.
     expect(await Pruner.tick()).toBe(0);
 
-    expect(mockLogger.info).not.toHaveBeenCalled();
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Refresh token pruner: tick finished',
+      expect.objectContaining({ deleted: 0 }),
+    );
+  });
+
+  test('reports how many rows a tick actually removed', async () => {
+    // The heartbeat carries the count, so the same line answers both "did it
+    // run" and "did it find anything". Asserting only the message would leave
+    // a hard-coded zero undetected.
+    mockQuery.mockResolvedValueOnce(deleted(7));
+
+    expect(await Pruner.tick()).toBe(7);
+
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Refresh token pruner: tick finished',
+      expect.objectContaining({ deleted: 7, retentionDays: expect.any(Number) }),
+    );
   });
 
   test('a failing batch is logged, not thrown, and ends the cycle', async () => {
