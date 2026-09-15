@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/router.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -24,16 +23,13 @@ import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dar
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Шрифты канона вшиты в сборку (admin-web/google_fonts/) — из сети ничего
-  // не тянем. Забытое начертание пакет напишет в лог (`print`, в release не
-  // вырезается) и откатит на системный шрифт — приложение не упадёт. Но и
-  // тихо это не пройдёт: загрузку пакет вызывает как `loadingFuture.then(...)`
-  // без обработчика ошибки, а сам бросает `Exception` — производный Future
-  // никто не слушает, и в консоли рядом с читаемой строкой встаёт
-  // необработанное `Uncaught {dartException: ...}`. Разобрано 14.09.2026:
-  // именно оно нашлось на экране входа. Соответствие запрошенных начертаний
-  // вшитым держит test/config/fonts_bundled_test.dart.
-  GoogleFonts.config.allowRuntimeFetching = false;
+  // Шрифты канона объявлены семействами в pubspec и подключаются самим
+  // Flutter — настраивать на старте нечего. Здесь прежде выключалась загрузка
+  // google_fonts из сети; сам пакет убран из admin-web 15.09.2026 вместе с
+  // двумя его свойствами: тихой синтетикой поверх семейства с одним
+  // начертанием и необработанным `Uncaught {dartException}` на неудачной
+  // загрузке (разобрано 14.09). Соответствие объявленного тому, что просит
+  // код, держит test/config/fonts_bundled_test.dart.
 
   runApp(const AdminApp());
 }

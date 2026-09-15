@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Канон Nirivio для админ-панели (Flutter Web).
 ///
@@ -179,40 +178,45 @@ class AppTheme {
   // ============================================================================
   // Шрифты
   // ============================================================================
-  // Вшиты в сборку (admin-web/google_fonts/), из сети не тянутся —
-  // GoogleFonts.config.allowRuntimeFetching = false в main.dart.
+  // Вшиты в сборку и ОБЪЯВЛЕНЫ СЕМЕЙСТВАМИ в pubspec (`flutter: fonts:`).
   // Вшитые начертания: Unbounded 400 · Nunito Sans 400/500/600/700 ·
   // Onest 600 · Josefin Sans 600 · JetBrains Mono 400/500.
   //
-  // Вес обязан стоять в самом вызове пакета, а не только ниже в TextStyle.
-  // Продолжение довода из fontMonoFamily: имя семейства берётся у пакета —
-  // а пакет регистрирует КАЖДОЕ начертание ОТДЕЛЬНЫМ семейством
-  // (JosefinSans_regular, JosefinSans_600) и возвращает имя ровно того
-  // начертания, которое запросили здесь. Запрос невшитого веса при
-  // выключенной загрузке из сети семейство не регистрирует: возвращённое
-  // имя не разрешится, и текст молча уедет на системный шрифт. Вес,
-  // выставленный ниже в TextStyle, этого уже не исправит — имя выдано.
-  // Сторож соответствия — test/config/fonts_bundled_test.dart.
+  // Имя семейства здесь — обычная строка, и это НЕ та ошибка, которую чинили
+  // раньше. Ключ в том, кто подбирает файл под вес. Пока шрифты шли через
+  // google_fonts, пакет регистрировал КАЖДОЕ начертание отдельным семейством
+  // (`NunitoSans_regular`, `NunitoSans_600`) и отдавал имя ровно того, что у
+  // него попросили. Семейство с одним начертанием переключаться не умеет:
+  // `fontWeight` в сыром TextStyle поверх него ничего не выбирал — движок
+  // рисовал синтетическое утолщение, а вшитый файл лежал мёртвым грузом. Так
+  // с 11.08 по 15.09.2026 рисовались ВСЕ веса панели, и NunitoSans-Bold.ttf
+  // не использовался ни разу.
+  //
+  // Объявленное в pubspec семейство держит все свои начертания, и файл под
+  // запрошенный вес выбирает Flutter. Поэтому вес можно ставить где угодно —
+  // он дойдёт до своего .ttf. Обратная сторона: опечатка в имени семейства
+  // компилятором не ловится и уводит текст на системный шрифт молча, а вес,
+  // которого у семейства нет, снова даст синтетику. Обе стороны шва стережёт
+  // test/config/fonts_bundled_test.dart.
+  //
+  // Состав канона меняется решением владельца (SDL CAT-C-1.3): новое
+  // начертание = положить .ttf в google_fonts/ И объявить в pubspec.
 
-  /// Дисплейный: заголовки экранов и числа метрик. В каноне только w400.
-  static final String fontDisplayFamily = GoogleFonts.unbounded().fontFamily!;
+  /// Дисплейный: заголовки экранов и числа метрик. Вшит только w400.
+  static const String fontDisplayFamily = 'Unbounded';
 
-  /// Body: весь остальной текст.
-  static final String fontBodyFamily = GoogleFonts.nunitoSans().fontFamily!;
+  /// Body: весь остальной текст. Четыре начертания — 400/500/600/700, то есть
+  /// вес в сыром TextStyle поверх темы попадает в свой файл.
+  static const String fontBodyFamily = 'NunitoSans';
 
-  /// Вордмарк NIRIVIO (латиница). Для кириллицы не применять.
+  /// Вордмарк NIRIVIO (латиница). Для кириллицы не применять — её у Josefin
+  /// Sans нет вовсе.
   ///
-  /// w600 — единственное вшитое начертание Josefin Sans; почему не w700,
-  /// сказано у canonWordmark.
-  static final String fontWordmarkFamily =
-      GoogleFonts.josefinSans(fontWeight: FontWeight.w600).fontFamily!;
+  /// Вшит только w600; почему не w700, сказано у canonWordmark.
+  static const String fontWordmarkFamily = 'JosefinSans';
 
-  /// Заголовок карточки-витрины и текст цитаты отзыва.
-  ///
-  /// w600 — единственное вшитое начертание Onest; оба применения просят
-  /// тот же вес в своём TextStyle.
-  static final String fontCardTitleFamily =
-      GoogleFonts.onest(fontWeight: FontWeight.w600).fontFamily!;
+  /// Заголовок карточки-витрины и текст цитаты отзыва. Вшит только w600.
+  static const String fontCardTitleFamily = 'Onest';
 
   /// admin-local: моноширинный для табличных данных — id, время, «до/после».
   ///
@@ -220,16 +224,14 @@ class AppTheme {
   /// держат на нём даты, id и УНП, и до вшивания там срабатывал системный
   /// моноширинный — на бежевом каноне он читается чужеродно.
   ///
-  /// Имя семейства берётся у пакета, а не пишется строкой. Прежняя строка
-  /// `'JetBrains Mono'` не разрешилась бы: `google_fonts` регистрирует
-  /// семейство под своим именем, и совпадение с написанием через пробел
-  /// ничем не гарантировано. Так же разрешены все четыре других семейства
-  /// канона — это принятый здесь способ, а не исключение для моно.
+  /// Имя пишется БЕЗ пробела — ровно как `family:` в pubspec. Написание
+  /// «JetBrains Mono» не разрешилось бы: Flutter ищет объявленное имя точно,
+  /// и текст ушёл бы на системный моноширинный молча.
   ///
   /// Кириллица проверена по cmap самих файлов, включая белорусские «ў» и «і».
   /// Ни описанию семейства, ни CSS-API на этот счёт верить нельзя — они
   /// говорят о семействе, а вшивается конкретный файл.
-  static final String fontMonoFamily = GoogleFonts.jetBrainsMono().fontFamily!;
+  static const String fontMonoFamily = 'JetBrainsMono';
   static const List<String> fontMonoFallback = <String>[
     'Consolas',
     'Menlo',
@@ -245,7 +247,8 @@ class AppTheme {
     double? letterSpacing,
     double? height,
   }) =>
-      GoogleFonts.unbounded(
+      TextStyle(
+        fontFamily: fontDisplayFamily,
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
@@ -255,13 +258,10 @@ class AppTheme {
 
   /// Моноширинный текст таблиц.
   ///
-  /// Начертание запрашивается у пакета, а не подставляется весом в сырой
-  /// `TextStyle`. Разница не косметическая: `google_fonts` регистрирует
-  /// **каждое** начертание отдельным семейством (`JetBrainsMono_regular`,
-  /// `JetBrainsMono_medium`). Сырой стиль с `fontWeight: w500` поверх
-  /// семейства Regular не подтянул бы вшитый Medium — движок нарисовал бы
-  /// синтетический полужирный, молча, и вшитый файл остался бы лежать
-  /// мёртвым грузом. Ровно этот отказ вшивание и должно было закрыть.
+  /// Вес доходит до своего файла: семейство объявлено в pubspec с обоими
+  /// начертаниями, и .ttf под запрошенный вес выбирает Flutter. Запросить
+  /// вес, которого у семейства нет, всё ещё можно — тогда движок нарисует
+  /// синтетику молча, и ловит это сторож, а не компилятор.
   static TextStyle mono({
     double? fontSize,
     FontWeight? fontWeight,
@@ -269,13 +269,15 @@ class AppTheme {
     double? letterSpacing,
     double? height,
   }) =>
-      GoogleFonts.jetBrainsMono(
+      TextStyle(
+        fontFamily: fontMonoFamily,
+        fontFamilyFallback: fontMonoFallback,
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
         letterSpacing: letterSpacing,
         height: height,
-      ).copyWith(fontFamilyFallback: fontMonoFallback);
+      );
 
   // ============================================================================
   // Канонические применённые стили
@@ -284,7 +286,7 @@ class AppTheme {
   // пересчитан в логические пиксели (em × кегль), как того требует Flutter.
 
   /// Заголовок экрана в хедере 72px: Unbounded 25/w400 чёрный, lh 1.15.
-  static final TextStyle canonScreenTitle = TextStyle(
+  static const TextStyle canonScreenTitle = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 25,
     fontWeight: FontWeight.w400,
@@ -299,7 +301,7 @@ class AppTheme {
   );
 
   /// Заголовок крупной секции: Unbounded 30/w400.
-  static final TextStyle canonSectionHeader = TextStyle(
+  static const TextStyle canonSectionHeader = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 30,
     fontWeight: FontWeight.w400,
@@ -307,7 +309,7 @@ class AppTheme {
   );
 
   /// Заголовок модального окна / шторки: Unbounded 20/w400.
-  static final TextStyle canonSheetTitle = TextStyle(
+  static const TextStyle canonSheetTitle = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 20,
     fontWeight: FontWeight.w400,
@@ -336,7 +338,7 @@ class AppTheme {
 
   /// Число метрики: Unbounded 30/w400, lh 1 — чтобы дельта вставала по базовой
   /// линии числа, а не «плавала» относительно него.
-  static final TextStyle canonMetricValue = TextStyle(
+  static const TextStyle canonMetricValue = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 30,
     fontWeight: FontWeight.w400,
@@ -357,7 +359,7 @@ class AppTheme {
   /// Спека редизайна называет w700, но вшито w600 (JosefinSans-SemiBold) —
   /// решение владельца от 11.08.2026: не тащить новый файл ради одного
   /// начертания. Захотим 700 — добавить JosefinSans-Bold.ttf и поднять вес.
-  static final TextStyle canonWordmark = TextStyle(
+  static const TextStyle canonWordmark = TextStyle(
     fontFamily: fontWordmarkFamily,
     fontSize: 24,
     fontWeight: FontWeight.w600,
@@ -589,29 +591,34 @@ class AppTheme {
 
       // Заголовочные слоты Material остаются на Nunito Sans: канонические
       // заголовки рисуются Unbounded через canon*-стили выше, а не через
-      // textTheme. Жирнее w600 канон не использует — здесь тоже.
-      textTheme: GoogleFonts.nunitoSansTextTheme(
-        const TextTheme(
-          headlineLarge: TextStyle(
-              fontSize: 22, fontWeight: FontWeight.w600, color: textPrimary),
-          headlineMedium: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary),
-          headlineSmall: TextStyle(
-              fontSize: 16, fontWeight: FontWeight.w600, color: textPrimary),
-          titleLarge: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary),
-          titleMedium: TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w600, color: textPrimary),
-          titleSmall: TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, color: textPrimary),
-          bodyLarge: TextStyle(fontSize: 15, color: textPrimary),
-          bodyMedium: TextStyle(fontSize: 14, color: textPrimary),
-          bodySmall: TextStyle(fontSize: 12, color: textSecondary),
-          labelLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          labelMedium: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-          labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-        ),
-      ),
+      // textTheme.
+      //
+      // Семейство ставится одним `.apply()` на всю тему, а не подмешивается
+      // вокруг каждого слота. Прежняя обёртка `GoogleFonts.nunitoSansTextTheme`
+      // давала каждому слоту СВОЁ семейство под его вес — и любой вес,
+      // выставленный поверх слота в коде экрана, упирался в семейство с одним
+      // начертанием. Объявленное семейство держит все четыре, поэтому вес
+      // слота и вес поверх него одинаково находят свой файл.
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(
+            fontSize: 22, fontWeight: FontWeight.w600, color: textPrimary),
+        headlineMedium: TextStyle(
+            fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary),
+        headlineSmall: TextStyle(
+            fontSize: 16, fontWeight: FontWeight.w600, color: textPrimary),
+        titleLarge: TextStyle(
+            fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary),
+        titleMedium: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w600, color: textPrimary),
+        titleSmall: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w600, color: textPrimary),
+        bodyLarge: TextStyle(fontSize: 15, color: textPrimary),
+        bodyMedium: TextStyle(fontSize: 14, color: textPrimary),
+        bodySmall: TextStyle(fontSize: 12, color: textSecondary),
+        labelLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        labelMedium: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ).apply(fontFamily: fontBodyFamily),
 
       cardTheme: CardThemeData(
         elevation: 0,
@@ -691,7 +698,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusLarge),
         ),
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           fontFamily: fontDisplayFamily,
           fontSize: 20,
           fontWeight: FontWeight.w400,

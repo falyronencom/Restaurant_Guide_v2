@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:leak_tracker_flutter_testing/leak_tracker_flutter_testing.dart';
 
 /// Отслеживание течей — на весь сьют admin-web.
@@ -34,5 +37,42 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
         'PanGestureRecognizer',
         'LongPressGestureRecognizer',
       ]);
+  await _loadBundledFonts();
   await testMain();
+}
+
+/// Шрифты сборки грузятся на весь сьют — иначе весь слой геометрии врёт.
+///
+/// `flutter test` объявленные в pubspec семейства САМ не подключает: текст
+/// рисуется подставным шрифтом, у которого каждый глиф — квадрат в кегль.
+/// Метрики такого шрифта не совпадают ни с Nunito Sans, ни с Unbounded, а
+/// половина сторожей панели меряет именно геометрию — переполнения шапки,
+/// высоту панелей, раскладку скелетонов. Без загрузки они сверяли бы вёрстку с
+/// несуществующим шрифтом: и зелёный, и красный значили бы не то.
+///
+/// Это не новая потребность, а восстановление прежнего свойства. Пока шрифты
+/// шли через `google_fonts`, пакет звал `FontLoader` сам, и часть семейств в
+/// сьюте оказывалась настоящей — побочным эффектом, о котором нигде не было
+/// сказано. Переход на объявление в pubspec этот побочный эффект убрал, и
+/// сорок пять тестов геометрии разом поехали. Теперь загрузка явная.
+///
+/// Состав берётся из `FontManifest.json`, то есть из того, что реально попало
+/// в сборку: перечислять семейства здесь значило бы завести второй список,
+/// который разойдётся с pubspec молча.
+Future<void> _loadBundledFonts() async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final manifest = jsonDecode(
+    await rootBundle.loadString('FontManifest.json'),
+  ) as List<dynamic>;
+
+  for (final entry in manifest) {
+    final family = (entry as Map<String, dynamic>)['family'] as String;
+    final loader = FontLoader(family);
+    for (final face in entry['fonts'] as List<dynamic>) {
+      loader.addFont(
+        rootBundle.load((face as Map<String, dynamic>)['asset'] as String),
+      );
+    }
+    await loader.load();
+  }
 }

@@ -315,7 +315,7 @@ class _ChartCard extends StatelessWidget {
           Row(
             spacing: 12,
             children: [
-              Expanded(
+              const Expanded(
                 child: Text(
                   'Регистрации пользователей',
                   style: AppTheme.canonSheetTitle,
