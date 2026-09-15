@@ -685,7 +685,7 @@ class _HideDialogState extends State<_HideDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Скрыть позицию?', style: AppTheme.canonSheetTitle),
+      title: const Text('Скрыть позицию?', style: AppTheme.canonSheetTitle),
       content: SizedBox(
         width: 480,
         child: Column(

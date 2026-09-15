@@ -1,294 +1,353 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 
-/// Сторож шрифтов канона: и состав сборки, и запрошенные у пакета начертания.
+/// Сторож шрифтов канона: объявление, файлы и запрошенные веса.
 ///
-/// **Почему одной проверки состава мало.** Первая группа ниже проверяет, что
-/// перечисленные .ttf попали в AssetManifest. Она смотрит на одну сторону
-/// шва — и остаётся зелёной при дефекте, который до 13.09.2026 жил на проде:
-/// `GoogleFonts.josefinSans()` и `GoogleFonts.onest()` вызывались без веса,
-/// то есть просили Regular, а вшит у обоих только SemiBold. Файлы лежали в
-/// сборке, состав сходился, а вордмарк и заголовки карточек рисовались
-/// системным шрифтом.
+/// **Где здесь шов.** Шрифты объявлены семействами в pubspec (`flutter:
+/// fonts:`), и файл под запрошенный вес выбирает сам Flutter. Ошибиться можно
+/// с трёх сторон, и ни одна не падает — все три уводят текст на чужое
+/// начертание МОЛЧА:
 ///
-/// **Вторая сторона шва — что код у пакета ЗАПРАШИВАЕТ.** `google_fonts`
-/// регистрирует КАЖДОЕ начертание отдельным семейством и возвращает имя
-/// ровно того, которое запросили. При `allowRuntimeFetching = false`
-/// невшитое начертание не регистрируется: возвращённое имя не разрешается,
-/// и текст молча уезжает на системный шрифт — ни падения, ни красного
-/// прогона. Вторая группа сводит стороны: разбирает вызовы пакета в `lib/` и
-/// требует, чтобы каждому запрошенному весу отвечал вшитый файл.
+/// 1. файл лежит в `google_fonts/`, но в pubspec не объявлен — мёртвый груз;
+/// 2. имя семейства в коде разошлось с `family:` в pubspec — опечатку не
+///    поймает компилятор, текст уедет на системный шрифт;
+/// 3. код просит вес, которого у семейства нет, — движок нарисует
+///    синтетическое утолщение поверх ближайшего начертания.
+///
+/// Третий случай — причина, по которой устройство вообще поменяли. Пока
+/// шрифты шли через `google_fonts`, пакет регистрировал каждое начертание
+/// ОТДЕЛЬНЫМ семейством, и любой вес поверх темы упирался в семейство с одним
+/// начертанием: с 11.08 по 15.09.2026 синтетикой рисовались все веса панели, а
+/// `NunitoSans-Bold.ttf` не использовался ни разу. Прежний сторож этого не
+/// видел — он сверял состав сборки, то есть первую сторону шва, и оставался
+/// зелёным.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Состав сборки', () {
-    test('файлы шрифтов канона попали в AssetManifest', () async {
-      // Проверка одной стороны шва: файл лежит в сборке. Что код просит
-      // именно это начертание — проверяет вторая группа.
-      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final assets = manifest.listAssets().toSet();
+  /// Собранное объявление шрифтов: семейство → вес → путь файла.
+  ///
+  /// `FontManifest.json` генерируется из pubspec при сборке, поэтому это
+  /// именно то, что попало в приложение, а не то, что написано в исходнике.
+  Future<Map<String, Map<int, String>>> bundled() async {
+    final raw = await rootBundle.loadString('FontManifest.json');
+    final families = <String, Map<int, String>>{};
+    for (final entry in jsonDecode(raw) as List<dynamic>) {
+      final family = (entry as Map<String, dynamic>)['family'] as String;
+      final faces = <int, String>{};
+      for (final face in entry['fonts'] as List<dynamic>) {
+        final map = face as Map<String, dynamic>;
+        // Начертание без `weight:` в pubspec Flutter считает обычным (400).
+        faces[(map['weight'] as int?) ?? 400] = map['asset'] as String;
+      }
+      families[family] = faces;
+    }
+    return families;
+  }
 
-      const required = <String>[
-        // Дисплейный — заголовки экранов и числа метрик.
-        'google_fonts/Unbounded-Regular.ttf',
-        // Body — четыре начертания.
-        'google_fonts/NunitoSans-Regular.ttf',
-        'google_fonts/NunitoSans-Medium.ttf',
-        'google_fonts/NunitoSans-SemiBold.ttf',
-        'google_fonts/NunitoSans-Bold.ttf',
-        // Заголовок карточки-витрины.
-        'google_fonts/Onest-SemiBold.ttf',
-        // Вордмарк NIRIVIO.
-        'google_fonts/JosefinSans-SemiBold.ttf',
-        // Табличные данные — даты, id, УНП (кадры 11–13, дальше таблицы).
-        'google_fonts/JetBrainsMono-Regular.ttf',
-        'google_fonts/JetBrainsMono-Medium.ttf',
-      ];
+  /// Константы семейств из темы: имя константы → значение.
+  ///
+  /// Берутся разбором исходника, а не перечислением здесь: перечисление
+  /// разошлось бы с темой молча, и новая константа осталась бы без присмотра.
+  Map<String, String> themeFamilyConstants() {
+    final source = File('lib/config/theme.dart').readAsStringSync();
+    final found = <String, String>{};
+    for (final match
+        in RegExp(r"static const String (font\w*Family) = '([^']+)'")
+            .allMatches(source)) {
+      found[match.group(1)!] = match.group(2)!;
+    }
+    return found;
+  }
 
-      for (final font in required) {
+  group('Объявленное против лежащего на диске', () {
+    test('каждый .ttf из google_fonts/ объявлен, и каждое объявление — файл',
+        () async {
+      // Только семейства канона: `MaterialIcons` в манифест кладёт сам Flutter
+      // по `uses-material-design`, его файл лежит не у нас и нас не касается.
+      final ours = themeFamilyConstants().values.toSet();
+      final declared = <String>{};
+      for (final entry in (await bundled()).entries) {
+        if (ours.contains(entry.key)) {
+          declared.addAll(entry.value.values);
+        }
+      }
+      final onDisk = Directory('google_fonts')
+          .listSync()
+          .whereType<File>()
+          .map((file) => file.path.replaceAll(r'\', '/'))
+          .where((path) => path.endsWith('.ttf'))
+          .toSet();
+
+      expect(onDisk, isNotEmpty,
+          reason: 'каталог google_fonts/ пуст — читается не то место');
+      expect(declared, isNotEmpty,
+          reason: 'ни одно семейство канона не нашлось в собранном манифесте');
+
+      expect(
+        declared.difference(onDisk),
+        isEmpty,
+        reason: 'объявлено в pubspec, но файла нет — сборка подставит пустоту',
+      );
+      expect(
+        onDisk.difference(declared),
+        isEmpty,
+        reason: 'файл лежит в google_fonts/, но в pubspec не объявлен: в '
+            'сборку он попадёт, а выбрать его будет нечем — мёртвый груз. '
+            'Либо объявить начертание, либо убрать файл',
+      );
+    });
+  });
+
+  group('Семейства канона объявлены и собраны', () {
+    test('каждая константа font*Family темы отвечает объявленному семейству',
+        () async {
+      final families = await bundled();
+      final constants = themeFamilyConstants();
+
+      expect(constants.length, greaterThanOrEqualTo(5),
+          reason: 'разбор темы почти не нашёл констант семейств — изменилась '
+              'форма объявления, и сторож перестал что-либо стеречь');
+
+      for (final entry in constants.entries) {
         expect(
-          assets,
-          contains(font),
-          reason: '$font не попал в сборку — интерфейс подменит его системным '
-              'молча, без ошибки',
+          families.keys,
+          contains(entry.value),
+          reason: 'AppTheme.${entry.key} = «${entry.value}», а такого '
+              'семейства в сборке нет. Имя в коде ищется ТОЧНО: расхождение с '
+              '`family:` в pubspec компилятор не заметит, а текст молча уедет '
+              'на системный шрифт',
         );
       }
     });
   });
 
-  group('Запрошенное у пакета против вшитого', () {
-    /// Метод пакета → семейство в имени вшитого файла.
-    ///
-    /// Имя файла пакет складывает как `Семейство-Начертание.ttf`
-    /// (`GoogleFontsFamilyWithVariant.toApiFilenamePrefix`) и ищет в
-    /// манифесте сравнением С УЧЁТОМ РЕГИСТРА. Поэтому семейство записано
-    /// так, как его пишет сам пакет, а не выведено из имени метода: вывод
-    /// регистра работает не всегда (`ibmPlexSans` → `IBMPlexSans`).
-    /// Незнакомый метод сторож молча не пропускает.
-    const familyOfCall = <String, String>{
-      'unbounded': 'Unbounded',
-      'nunitoSans': 'NunitoSans',
-      'josefinSans': 'JosefinSans',
-      'onest': 'Onest',
-      'jetBrainsMono': 'JetBrainsMono',
-    };
-
-    /// Вес → часть имени файла, по схеме
-    /// `GoogleFontsVariant.toApiFilenamePart`. w400 в имени зовётся Regular.
-    const variantOfWeight = <int, String>{
-      100: 'Thin',
-      200: 'ExtraLight',
-      300: 'Light',
-      400: 'Regular',
-      500: 'Medium',
-      600: 'SemiBold',
-      700: 'Bold',
-      800: 'ExtraBold',
-      900: 'Black',
-    };
-
-    /// Обёртки `AppTheme`, передающие вес в вызов пакета переменной.
-    ///
-    /// В самом вызове веса не видно — он приходит от вызывающего. Значит по
-    /// вызову пакета такую обёртку не проверить, и разбирать надо её вызовы.
-    /// Ключ — имя обёртки, значение — семейство, которое она просит.
-    const weightForwardingWrappers = <String, String>{
-      'unbounded': 'Unbounded',
-      'mono': 'JetBrainsMono',
-    };
-
-    /// Вес, который обёртка просит, когда вызывающий его не передал.
-    ///
-    /// Читается из объявления параметра, а не записан здесь числом:
-    /// умолчание в сигнатуре — живой факт, оно может уехать. Параметр без
-    /// умолчания (`FontWeight? fontWeight`) отдаёт пакету null, а пакет
-    /// разрешает null в w400 (`textStyle.fontWeight ?? FontWeight.w400`).
-    int wrapperDefaultWeight(String source, String wrapper) {
-      final decl =
-          RegExp('static\\s+TextStyle\\s+$wrapper\\s*\\(').firstMatch(source);
-      expect(
-        decl,
-        isNotNull,
-        reason: 'обёртка $wrapper не найдена в theme.dart — сторож разбирает '
-            'её вызовы, но самой обёртки уже нет',
-      );
-      final params = _argsAt(source, decl!.end - 1);
-      final withDefault =
-          RegExp(r'FontWeight\s+fontWeight\s*=\s*FontWeight\.w([1-9])00')
-              .firstMatch(params);
-      if (withDefault != null) {
-        return int.parse(withDefault.group(1)!) * 100;
+  group('Вес доходит до своего начертания', () {
+    // Проверки выше читают объявления — текст pubspec и текст lib/. Здесь
+    // проверяется поведение: что движок действительно берёт РАЗНЫЕ файлы под
+    // разные веса. Ровно это и было сломано с 11.08 по 15.09.2026, когда
+    // семейство держало одно начертание, а вес поверх него давал синтетику.
+    //
+    // Шрифты в сьюте настоящие: их грузит test/flutter_test_config.dart. Без
+    // загрузки весь замер был бы бессмыслен — подставной шрифт даёт одинаковые
+    // метрики любому весу, и тест зеленел бы, ничего не проверяя.
+    testWidgets('у body-семейства каждое начертание своё, а не одно на всех',
+        (tester) async {
+      final widths = <int, double>{};
+      for (final weight in <FontWeight>[
+        FontWeight.w400,
+        FontWeight.w500,
+        FontWeight.w600,
+        FontWeight.w700,
+      ]) {
+        widths[weight.value] =
+            await _widthOf(tester, AppTheme.fontBodyFamily, weight);
       }
+
       expect(
-        params,
-        contains('FontWeight? fontWeight'),
-        reason: 'у $wrapper параметр fontWeight изменил форму — умолчание '
-            'больше не выводится, и сторож пойдёт по неверному весу',
+        widths.values.toSet().length,
+        widths.length,
+        reason: 'веса ${widths.keys.toList()} дали совпадающие ширины '
+            '($widths) — значит начертание было взято ОДНО, а разницу движок '
+            'дорисовал синтетикой. Так выглядел дефект, ради которого шрифты '
+            'перевели на объявление семейств в pubspec',
       );
-      return 400;
-    }
+    });
 
-    /// Исходники `lib/`, по которым идёт разбор.
-    List<File> libSources() => Directory('lib')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((entity) => entity.path.endsWith('.dart'))
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
+    testWidgets('семейство с одним начертанием на вес не отзывается',
+        (tester) async {
+      // Контроль к проверке выше: она обязана уметь показать и обратное.
+      // Onest вшит одним начертанием (w600) сознательно — значит его ширины
+      // на разных весах совпадают, и это НЕ дефект, а верхняя граница того,
+      // что вообще может дать одно начертание.
+      final atRegular =
+          await _widthOf(tester, AppTheme.fontCardTitleFamily, FontWeight.w400);
+      final atSemiBold =
+          await _widthOf(tester, AppTheme.fontCardTitleFamily, FontWeight.w600);
 
-    /// Все запросы начертаний, собранные с исходников `lib/`.
+      expect(atRegular, atSemiBold,
+          reason: 'у ${AppTheme.fontCardTitleFamily} появилось второе '
+              'начертание — контроль устарел, проверить состав канона');
+    });
+  });
+
+  group('Запрошенные веса против объявленных начертаний', () {
+    /// Вес, приписанный месту в коде, и семейство, которому он достанется.
     ///
-    /// Разбор по тексту: спросить у собранного приложения, какие начертания
-    /// оно попросит, сторож не может — вызовы происходят при первом
-    /// обращении к экранам, а не в тесте.
-    List<_Request> collectRequests() {
-      final theme = _stripped(File('lib/config/theme.dart').readAsStringSync());
-      final defaults = <String, int>{
-        for (final wrapper in weightForwardingWrappers.keys)
-          wrapper: wrapperDefaultWeight(theme, wrapper),
-      };
-
+    /// Семейство определяется так: у помощника оно своё; у `TextStyle` с явным
+    /// `fontFamily:` — названное; у `TextStyle` без него — body, потому что
+    /// именно его тема раздаёт всему тексту.
+    List<_Request> collectRequests(Map<String, String> constants) {
       final requests = <_Request>[];
-      for (final file in libSources()) {
+      for (final file in _libSources()) {
         final source = _stripped(file.readAsStringSync());
         final path = file.path.replaceAll(r'\', '/');
 
-        for (final call in _callPattern.allMatches(source)) {
-          final packageCall = call.group(2);
-          final wrapperCall = call.group(3);
-          final args = _argsAt(source, call.end - 1);
+        for (final match in _blockPattern.allMatches(source)) {
+          final helper = match.group(1);
+          final args = _argsAt(source, match.end - 1);
           final line =
-              '\n'.allMatches(source.substring(0, call.start)).length + 1;
+              '\n'.allMatches(source.substring(0, match.start)).length + 1;
           final at = '$path:$line';
 
           final weights = _weightPattern
               .allMatches(args)
-              .map((match) => _weightOf(match.group(1)!))
+              .map((m) => _weightOf(m.group(1)!))
               .toSet();
-
-          if (packageCall == null) {
-            final family = weightForwardingWrappers[wrapperCall]!;
-            for (final weight
-                in weights.isEmpty ? {defaults[wrapperCall]!} : weights) {
-              requests.add(_Request(family, weight, at));
-            }
+          if (weights.isEmpty) {
+            // Вес не выставлен (или передан переменной — тогда он придёт от
+            // вызывающего, и разобран будет там). Требовать нечего.
             continue;
           }
 
-          // `nunitoSansTextTheme` — тот же вызов пакета, только сразу по всем
-          // слотам TextTheme: веса берутся из переданного литерала, слот без
-          // веса просит w400.
-          final method = packageCall.endsWith('TextTheme')
-              ? packageCall.substring(
-                  0, packageCall.length - 'TextTheme'.length)
-              : packageCall;
-          final family = familyOfCall[method];
-          expect(
-            family,
-            isNotNull,
-            reason: 'вызов GoogleFonts.$packageCall в $at просит семейство, '
-                'которого сторож не знает: впишите его в familyOfCall так, '
-                'как имя пишет сам пакет, и вшейте нужные .ttf',
-          );
-
-          if (weights.isEmpty && args.contains('fontWeight:')) {
-            // Вес передан выражением — из вызова его не видно. Так можно
-            // только в обёртках, чьи вызовы сторож разбирает отдельно; иначе
-            // начертания этого вызова не проверяет никто.
-            final wrapper = _enclosingStyleHelper(source, call.start);
-            expect(
-              weightForwardingWrappers.keys,
-              contains(wrapper),
-              reason: 'в $at вес уходит в пакет выражением из «$wrapper» — '
-                  'научите сторожа этой обёртке (weightForwardingWrappers и '
-                  'разбор её вызовов), иначе её начертания без присмотра',
-            );
-            continue;
+          final String family;
+          if (helper != null) {
+            family = helper == 'mono'
+                ? constants['fontMonoFamily']!
+                : constants['fontDisplayFamily']!;
+          } else {
+            final named = RegExp(r'fontFamily:\s*(?:AppTheme\.)?(font\w*Family)')
+                .firstMatch(args);
+            family = named == null
+                ? constants['fontBodyFamily']!
+                : constants[named.group(1)!]!;
           }
 
-          for (final weight in weights.isEmpty ? const {400} : weights) {
-            requests.add(_Request(family!, weight, at));
+          for (final weight in weights) {
+            requests.add(_Request(family, weight, at));
           }
         }
       }
       return requests;
     }
 
-    test('разбор находит вызовы, а не зеленеет на пустом месте', () {
+    test('разбор находит места, а не зеленеет на пустом месте', () {
       // Сканирующий тест зеленеет и от сломанного поиска: не тот каталог, не
-      // та форма вызова — находок ноль, требований ноль, прогон зелёный.
-      // Якорь держит сам поиск, а не итог сверки, поэтому при невшитом
-      // начертании он остаётся зелёным — краснеет сверка ниже.
-      final sources = libSources();
+      // та форма — находок ноль, требований ноль, прогон зелёный. Якорь держит
+      // сам поиск, а не итог сверки, поэтому при невшитом весе он остаётся
+      // зелёным: краснеет сверка ниже.
+      final sources = _libSources();
       expect(sources.length, greaterThan(20),
           reason: 'обход lib/ почти ничего не прочитал');
 
+      final requests = collectRequests(themeFamilyConstants());
+      expect(requests.length, greaterThan(50),
+          reason: 'разбор нашёл подозрительно мало мест с весом — изменилась '
+              'форма записи стилей, и сторож перестал что-либо стеречь');
       expect(
-        collectRequests().map((request) => request.family).toSet(),
-        containsAll(familyOfCall.values),
-        reason: 'разбор не нашёл вызовов части семейств канона — изменилась '
-            'форма вызова, и сторож перестал что-либо стеречь',
+        requests.map((request) => request.family).toSet(),
+        containsAll(<String>[AppTheme.fontBodyFamily, AppTheme.fontMonoFamily]),
+        reason: 'разбор не приписал ни одного веса body или моно — сломалось '
+            'определение семейства',
       );
-
-      final all = sources.map((file) => file.readAsStringSync()).join();
-      for (final wrapper in weightForwardingWrappers.keys) {
-        expect(
-          RegExp('AppTheme\\.$wrapper\\s*\\(').hasMatch(all),
-          isTrue,
-          reason: 'вызовов AppTheme.$wrapper не найдено — либо обёртка мертва '
-              'и строку надо снять, либо разбор её вызовов сломан',
-        );
-      }
     });
 
-    test('каждому запрошенному начертанию отвечает вшитый файл', () async {
-      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final assets = manifest.listAssets().toSet();
+    test('вес нигде не приходит через copyWith — иначе разбор его не увидит',
+        () {
+      // Разбор приписывает вес семейству по месту, где стиль СОЗДАЁТСЯ.
+      // `copyWith(fontWeight: ...)` меняет вес у готового стиля, то есть у
+      // чужого семейства, и такому месту сторож семейство назвать не может.
+      // Сегодня таких мест нет; появится — пусть прогон об этом скажет, а не
+      // промолчит.
+      final offenders = <String>[];
+      for (final file in _libSources()) {
+        final source = _stripped(file.readAsStringSync());
+        for (final match in RegExp(r'\.copyWith\s*\(').allMatches(source)) {
+          final args = _argsAt(source, match.end - 1);
+          if (_weightPattern.hasMatch(args)) {
+            final line =
+                '\n'.allMatches(source.substring(0, match.start)).length + 1;
+            offenders.add('${file.path.replaceAll(r'\', '/')}:$line');
+          }
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason: 'здесь вес выставляется поверх готового стиля: $offenders. '
+            'Сторож не может назвать семейство такому месту — либо создавать '
+            'стиль с нужным весом сразу, либо научить разбор этой форме',
+      );
+    });
 
-      for (final request in collectRequests()) {
-        final variant = variantOfWeight[request.weight];
+    test('каждому запрошенному весу отвечает объявленное начертание', () async {
+      final families = await bundled();
+
+      for (final request in collectRequests(themeFamilyConstants())) {
+        final faces = families[request.family];
+        expect(faces, isNotNull,
+            reason: 'семейство ${request.family} из ${request.where} не '
+                'объявлено');
         expect(
-          variant,
-          isNotNull,
-          reason: 'вес ${request.weight} в ${request.where} не из шкалы '
-              'google_fonts',
-        );
-        final asset = 'google_fonts/${request.family}-$variant.ttf';
-        expect(
-          assets,
-          contains(asset),
-          reason: '${request.where} просит у пакета ${request.family} '
-              'w${request.weight}, а $asset в сборку не вшит. При '
-              'allowRuntimeFetching = false пакет это начертание не '
-              'зарегистрирует: имя семейства не разрешится, и текст молча '
-              'уедет на системный шрифт. Либо просить вшитый вес, либо — с '
-              'решения владельца — вшить .ttf и назвать его в первой группе',
+          faces!.keys,
+          contains(request.weight),
+          reason: '${request.where} просит у семейства ${request.family} вес '
+              'w${request.weight}, а объявлены только '
+              '${faces.keys.toList()..sort()}. Flutter возьмёт ближайшее '
+              'начертание и дорисует разницу синтетикой — молча, без ошибки. '
+              'Либо просить объявленный вес, либо — с решения владельца — '
+              'вшить .ttf и объявить его в pubspec',
         );
       }
     });
   });
 }
 
-/// Один запрос начертания у `google_fonts`.
+/// Ширина строки, набранной семейством [family] с весом [weight].
+///
+/// Мера косвенная, но прямой нет: спросить у движка, какой файл он взял,
+/// нельзя. Зато разные начертания одного семейства различаются метриками —
+/// значит совпадение ширин означает, что начертание было одно.
+Future<double> _widthOf(
+  WidgetTester tester,
+  String family,
+  FontWeight weight,
+) async {
+  const sample = 'Заведения Могилёв 1234';
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Center(
+        child: Text(
+          sample,
+          style:
+              TextStyle(fontFamily: family, fontSize: 24, fontWeight: weight),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return tester.getSize(find.text(sample)).width;
+}
+
+/// Один запрос веса у семейства.
 class _Request {
   const _Request(this.family, this.weight, this.where);
 
-  /// Семейство так, как пишет его пакет: `JosefinSans`, `NunitoSans`.
+  /// Семейство так, как оно объявлено в pubspec: `NunitoSans`, `Onest`.
   final String family;
 
   /// Числовой вес: 400, 600, …
   final int weight;
 
-  /// Место вызова, `файл:строка` — чтобы отчёт указывал на код.
+  /// Место, `файл:строка` — чтобы отчёт указывал на код.
   final String where;
 }
 
-/// Вызовы, доносящие вес до пакета: сам пакет и обёртки `AppTheme`,
-/// передающие вес переменной.
-final RegExp _callPattern =
-    RegExp(r'(GoogleFonts\.([A-Za-z0-9]+)|AppTheme\.(unbounded|mono))\s*\(');
+/// Исходники `lib/`, по которым идёт разбор.
+List<File> _libSources() => Directory('lib')
+    .listSync(recursive: true)
+    .whereType<File>()
+    .where((entity) => entity.path.endsWith('.dart'))
+    .toList()
+  ..sort((a, b) => a.path.compareTo(b.path));
+
+/// Места, где стиль создаётся: помощники темы и сырой `TextStyle`.
+final RegExp _blockPattern =
+    RegExp(r'AppTheme\.(unbounded|mono)\s*\(|TextStyle\s*\(');
 
 /// Литерал веса. `FontWeight.normal` и `.bold` — те же 400 и 700.
 final RegExp _weightPattern = RegExp(r'FontWeight\.(w[1-9]00|normal|bold)\b');
@@ -312,24 +371,13 @@ String _argsAt(String source, int open) {
   return '';
 }
 
-/// Имя ближайшего объявления `static TextStyle <имя>(` выше позиции.
-String? _enclosingStyleHelper(String source, int index) {
-  String? last;
-  for (final match in RegExp(r'static\s+TextStyle\s+(\w+)\s*\(')
-      .allMatches(source)) {
-    if (match.start > index) break;
-    last = match.group(1);
-  }
-  return last;
-}
-
 /// Исходник без комментариев и строковых литералов, с сохранением переводов
 /// строк.
 ///
 /// Разбор идёт по скобкам, а скобка внутри строки или комментария закрыла бы
 /// список аргументов раньше времени — вес за ней сторож бы не увидел и
-/// промолчал. Комментарии убираются и затем, чтобы разобранный пример вызова
-/// в документации не попал в находки.
+/// промолчал. Комментарии убираются и затем, чтобы разобранный пример стиля в
+/// документации не попал в находки.
 String _stripped(String source) {
   final out = StringBuffer();
   var i = 0;

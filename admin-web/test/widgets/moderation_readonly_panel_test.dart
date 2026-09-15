@@ -145,17 +145,18 @@ void main() {
         Definition(label: 'Название', value: 'Кухмістр'),
       ]);
 
-      // Семейство именно моноширинное. Сверяем по префиксу, а не по
-      // AppTheme.fontMonoFamily: google_fonts регистрирует каждое начертание
-      // отдельным семейством, и у веса 500 имя своё — JetBrainsMono_500.
+      // Семейство именно моноширинное. Сверяем ТОЧНО с AppTheme.fontMonoFamily:
+      // семейство объявлено в pubspec целиком, и имя у него одно на все
+      // начертания. Прежде здесь стоял startsWith — google_fonts давал весу
+      // 500 своё имя JetBrainsMono_500, и точное сравнение было невозможно.
       expect(
         tester.widget<Text>(find.text('191482073')).style?.fontFamily,
-        startsWith('JetBrainsMono'),
+        AppTheme.fontMonoFamily,
       );
       // А проза — нет: тип данных различается шрифтом, не цветом.
       expect(
         tester.widget<Text>(find.text('Кухмістр')).style?.fontFamily,
-        isNot(startsWith('JetBrainsMono')),
+        isNot(AppTheme.fontMonoFamily),
       );
     });
   });

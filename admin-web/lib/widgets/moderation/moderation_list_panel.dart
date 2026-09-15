@@ -208,7 +208,7 @@ class _CardBody extends StatelessWidget {
         children: [
           Text(
             item.name,
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: AppTheme.fontCardTitleFamily,
               fontSize: 17,
               fontWeight: FontWeight.w600,
