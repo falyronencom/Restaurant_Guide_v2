@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/widgets/filter_icon_button.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_bar.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_suggestions.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_preview.dart';
@@ -26,7 +27,6 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
 
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
-  static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _greyText = AppTheme.textGrey;
   static const Color _greyStroke = AppTheme.strokeGrey;
 
@@ -628,53 +628,9 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
         ),
         const SizedBox(width: 25),
         // Filter button with badge
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        FilterIconButton(
+          activeCount: provider.activeFilterCount,
           onTap: _openFilters,
-          child: Stack(
-            children: [
-              Container(
-                width: 53,
-                height: 43,
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  border: Border.all(color: _backgroundColor, width: 1),
-                ),
-                child: const Icon(
-                  Icons.tune,
-                  color: _backgroundColor,
-                  size: 20,
-                ),
-              ),
-              // Badge for active filters
-              if (provider.activeFilterCount > 0)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: _primaryOrange,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      '${provider.activeFilterCount}',
-                      style: const TextStyle(
-                        color: AppTheme.textOnPrimary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ),
       ],
     );
