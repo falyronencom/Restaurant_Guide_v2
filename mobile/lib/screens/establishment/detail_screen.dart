@@ -26,6 +26,8 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
+import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
+import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -637,51 +639,34 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         // Status (Open/Closed)
         _buildStatusLine(),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
 
-        // Address
-        GestureDetector(
-          onTap: _showAddressSheet,
-          child: Text(
-            _establishment!.address,
-            style: const TextStyle(
-              fontSize: 16,
-              color: _backgroundColor,
-              decoration: TextDecoration.underline,
+        // Адрес, телефон и сайт — одним языком чипов. Подчёркнутый текст
+        // кнопкой не читался: тестировщики тапали мимо, хотя тап там был.
+        // Wrap, а не Column: короткий адрес и телефон встают в одну строку,
+        // длинный адрес занимает свою.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            GlassActionChip(
+              icon: Icons.place_outlined,
+              label: _establishment!.address,
+              onTap: _showAddressSheet,
+              maxLines: 2,
             ),
-          ),
+            if (_establishment!.phone != null &&
+                _establishment!.phone!.isNotEmpty)
+              GlassActionChip(
+                icon: Icons.phone,
+                label: _establishment!.phone!,
+                onTap: () => _launchPhoneCall(_establishment!.phone!),
+              ),
+            if (_establishment!.website != null &&
+                _establishment!.website!.isNotEmpty)
+              _buildSocialChip(_establishment!.website!),
+          ],
         ),
-
-        const SizedBox(height: 8),
-
-        // Phone (tappable — opens dialer and tracks call event)
-        if (_establishment!.phone != null && _establishment!.phone!.isNotEmpty)
-          GestureDetector(
-            onTap: () => _launchPhoneCall(_establishment!.phone!),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.phone, size: 16, color: _backgroundColor),
-                const SizedBox(width: 6),
-                Text(
-                  _establishment!.phone!,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: _backgroundColor,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // Social link chip (Booking-style)
-        if (_establishment!.website != null &&
-            _establishment!.website!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: _buildSocialChip(_establishment!.website!),
-          ),
       ],
     );
   }
@@ -689,31 +674,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// Build social link chip (Booking-style — tappable, opens URL)
   Widget _buildSocialChip(String url) {
     final info = _parseSocialLink(url);
-    return GestureDetector(
+    return GlassActionChip(
+      icon: info.$1,
+      label: info.$2,
       onTap: () => _showLinkSheet(url),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(info.$1, size: 16, color: _backgroundColor),
-            const SizedBox(width: 6),
-            Text(
-              info.$2,
-              style: const TextStyle(
-                fontSize: 14,
-                color: _backgroundColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -815,15 +779,15 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     _showActionSheet([
       if (hasCoords)
         (
-          icon: Icons.map_outlined,
-          label: 'Яндекс.Карты',
-          onTap: () => _launchYandexMaps(lat, lng, address),
+          icon: Icons.navigation_outlined,
+          label: 'Маршрут в Яндекс.Картах',
+          onTap: () => _launchYandexRoute(lat, lng),
         ),
       if (hasCoords)
         (
-          icon: Icons.public,
-          label: 'Google Карты',
-          onTap: () => _launchGoogleMaps(lat, lng),
+          icon: Icons.navigation_outlined,
+          label: 'Маршрут в Google Картах',
+          onTap: () => _launchGoogleRoute(lat, lng),
         ),
       (
         icon: Icons.copy_outlined,
@@ -853,31 +817,43 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     ]);
   }
 
-  /// Открыть адрес в Яндекс.Картах (приложение → geo: → браузер).
-  Future<void> _launchYandexMaps(
-      double? lat, double? lng, String address) async {
+  /// Маршрут в Яндекс.Картах: приложение → веб-карты.
+  ///
+  /// `rtext` — единственный параметр Яндекса, который берёт широту ПЕРВОЙ
+  /// (в отличие от `pt`/`ll`); `~` вместо точки старта значит «старт не задан»,
+  /// и Яндекс подставляет текущее положение. Ссылка та же, что на веб-витрине
+  /// (`web/src/lib/establishment-helpers.ts`), чтобы обе площадки вели в одно
+  /// место. Прежний `pt=` показывал точку на карте, а не строил маршрут.
+  ///
+  /// Схема `yandexmaps` объявлена в `AndroidManifest.xml` (`<queries>`) и в
+  /// `Info.plist` (`LSApplicationQueriesSchemes`) — без объявления обе
+  /// платформы отвечают на [canLaunchUrl] отказом, и ветка приложения
+  /// недостижима.
+  Future<void> _launchYandexRoute(double? lat, double? lng) async {
     if (lat == null || lng == null) return;
-    final yandexUrl = Uri.parse(
-        'yandexmaps://maps.yandex.ru/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(address)}');
-    final geoUrl =
-        Uri.parse('geo:$lat,$lng?q=${Uri.encodeComponent(address)}');
-    final webUrl = Uri.parse(
-        'https://yandex.by/maps/?pt=$lng,$lat&z=17&text=${Uri.encodeComponent(address)}');
-    if (await canLaunchUrl(yandexUrl)) {
-      await launchUrl(yandexUrl);
-    } else if (await canLaunchUrl(geoUrl)) {
-      await launchUrl(geoUrl);
+    final appUrl =
+        Uri.parse('yandexmaps://maps.yandex.ru/?rtext=~$lat,$lng&rtt=auto');
+    final webUrl =
+        Uri.parse('https://yandex.by/maps/?rtext=~$lat,$lng&rtt=auto');
+    if (await canLaunchUrl(appUrl)) {
+      await launchUrl(appUrl);
     } else {
       await launchUrl(webUrl, mode: LaunchMode.externalApplication);
     }
   }
 
-  /// Открыть адрес в Google Картах (браузер/приложение).
-  Future<void> _launchGoogleMaps(double? lat, double? lng) async {
+  /// Маршрут в Google Картах: схема приложения → универсальная ссылка.
+  Future<void> _launchGoogleRoute(double? lat, double? lng) async {
     if (lat == null || lng == null) return;
-    final url = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+    final appUrl = Uri.parse(
+        'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving');
+    final webUrl = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    if (await canLaunchUrl(appUrl)) {
+      await launchUrl(appUrl);
+    } else {
+      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+    }
   }
 
   /// Скопировать текст в буфер обмена + подтверждение.
@@ -1452,59 +1428,16 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header with address
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: const BoxDecoration(
-            color: _backgroundColor,
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(30),
-              bottomRight: Radius.circular(30),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title
-              Text(
-                'Карта',
-                style: TextStyle(
-                  fontFamily: AppTheme.fontDisplayFamily,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w400,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Distance (dynamic) - uses Consumer to rebuild when location updates
-              Consumer<EstablishmentsProvider>(
-                builder: (context, provider, _) {
-                  final distanceText = _getDistanceText();
-                  if (distanceText == null) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Text(
-                      distanceText,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: _secondaryOrange,
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // Address
-              Text(
-                '${_establishment!.address},\n${_establishment!.city}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ],
+        // Заголовок, расстояние, адрес и переход в навигатор.
+        // Consumer снаружи блока: расстояние приезжает позже координат.
+        Consumer<EstablishmentsProvider>(
+          builder: (context, provider, _) => EstablishmentLocationBlock(
+            address: _establishment!.address,
+            city: _establishment!.city,
+            distanceText: _getDistanceText(),
+            showRouteButton: _establishment!.latitude != null &&
+                _establishment!.longitude != null,
+            onAddressTap: _showAddressSheet,
           ),
         ),
 

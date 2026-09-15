@@ -70,6 +70,15 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Схемы, которые карточка заведения спрашивает у системы перед переходом.
+	     Без этого списка iOS отвечает отказом на canOpenURL (то есть на
+	     canLaunchUrl), ветка приложения-навигатора недостижима, и маршрут
+	     всегда уходил в Safari. tel/http/https системе объявлять не нужно. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>yandexmaps</string>
+		<string>comgooglemaps</string>
+	</array>
 	<!-- Location permissions for finding nearby restaurants -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>

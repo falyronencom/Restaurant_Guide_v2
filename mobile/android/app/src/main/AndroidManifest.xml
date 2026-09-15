@@ -63,5 +63,26 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- Внешние переходы карточки заведения: маршрут в навигатор, звонок,
+             сайт и соцсети. Начиная с Android 11 (API 30) не объявленные здесь
+             приложения невидимы, canLaunchUrl отвечает отказом, и переход
+             молча не случается. Список — из README url_launcher. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="yandexmaps"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="comgooglemaps"/>
+        </intent>
     </queries>
 </manifest>
