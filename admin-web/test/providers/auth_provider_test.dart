@@ -25,8 +25,17 @@ class _FakeAuthService implements AuthService {
   @override
   Future<bool> isAuthenticated() async => storedSession;
 
+  /// Чем ответить на `/auth/me`, если задано вместо [storedUser].
+  ///
+  /// Нужен, чтобы отличать причины отказа: старт обязан по-разному
+  /// распоряжаться хранилищем при «не дошло» и при приговоре сервера.
+  Object? currentUserError;
+
   @override
-  Future<User> getCurrentUser() async => storedUser!;
+  Future<User> getCurrentUser() async {
+    if (currentUserError != null) throw currentUserError!;
+    return storedUser!;
+  }
 
   @override
   Future<AuthResponse> login({
@@ -204,6 +213,50 @@ void main() {
 
       expect(auth.isAuthenticated, isFalse);
       expect(service.clearCalls, 1);
+    });
+  });
+
+  group('Старт: отказ, который НЕ приговор сессии', () {
+    // Хоронит сессию тот, кто получил приговор, — транспорт: отвергнутое
+    // обновление токена он чистит сам (OSB-M I5). До `catch` в `_initialize`
+    // доходит «не дошло», и стирание там выкидывало оператора из ЖИВОЙ
+    // сессии на коротком обрыве сети. Разобрать по коду ответа нельзя:
+    // ветки 401 пересобирают `DioException` БЕЗ `response` — у обеих
+    // заготовок ниже статуса нет, и это не упущение стенда, а свойство
+    // транспорта, ради которого правило заменило разбор.
+    //
+    // Случай «чужая роль» — приговор, вынесенный здесь, и он чистит
+    // по-прежнему; проверен выше и повторно не дублируется.
+
+    test('временная недоступность — сессия остаётся в хранилище', () async {
+      service.storedSession = true;
+      service.currentUserError = DioException(
+        requestOptions: RequestOptions(path: '/api/v1/auth/me'),
+        type: DioExceptionType.badResponse,
+        error: 'Service temporarily unavailable. Please try again.',
+      );
+
+      final auth = await provider();
+
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.errorMessage, 'Не удалось проверить сессию — войдите снова',
+          reason: 'иначе оператор видит экран входа без объяснения');
+      expect(service.clearCalls, 0,
+          reason: 'молчание сети не доказывает, что токен мёртв');
+    });
+
+    test('обрыв сети — сессия остаётся в хранилище', () async {
+      service.storedSession = true;
+      service.currentUserError = DioException(
+        requestOptions: RequestOptions(path: '/api/v1/auth/me'),
+        type: DioExceptionType.connectionError,
+        error: 'No internet connection. Please check your network.',
+      );
+
+      final auth = await provider();
+
+      expect(auth.isAuthenticated, isFalse);
+      expect(service.clearCalls, 0);
     });
   });
 
