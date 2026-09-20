@@ -45,6 +45,10 @@ class EstablishmentLocationBlock extends StatelessWidget {
   /// `false` — у заведения нет координат, маршрут прокладывать некуда.
   final bool showRouteButton;
 
+  /// Оптический сдвиг пина влево, чтобы его видимый край встал на ту же
+  /// вертикаль, что и цифра расстояния над ним (замер — в [_buildAddressLine]).
+  static const double _pinOpticalInset = 2;
+
   /// Зона тапа единственного контрола блока.
   ///
   /// Своим ограничением она НЕ задаётся: `ElevatedButton` по умолчанию идёт с
@@ -106,9 +110,15 @@ class EstablishmentLocationBlock extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 2),
-          child: Icon(
+        // Сдвиг оптический, а не отступ: коробки строки расстояния и этой
+        // строки начинаются в одной точке, но глиф пина уже своей 18-точечной
+        // коробки и потому визуально стоит правее цифры. Замер на устройстве
+        // 20.09.2026: левый край «8.0» — 59 px, левый край пина — 65 px при
+        // dpr 3, то есть ровно 2 dp. `Transform` не трогает раскладку, поэтому
+        // текст адреса остаётся на месте.
+        Transform.translate(
+          offset: const Offset(-_pinOpticalInset, 2),
+          child: const Icon(
             Icons.place_outlined,
             size: 18,
             color: AppTheme.primaryOrange,
