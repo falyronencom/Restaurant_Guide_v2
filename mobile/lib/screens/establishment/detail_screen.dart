@@ -75,6 +75,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   static const Color _navyBlue = AppTheme.accentNavy;
   static const Color _greyText = AppTheme.textGrey;
 
+  /// На столько чипы под статусом отступают справа, чтобы не уехать под
+  /// правую колонку героя: ширина бейджа рейтинга (50) + его отступ от края
+  /// (24) + зазор (8) − собственный отступ оверлея (17).
+  static const double _rightStackGutter = 50 + 24 + 8 - 17;
+
   @override
   void initState() {
     super.initState();
@@ -645,27 +650,36 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         // кнопкой не читался: тестировщики тапали мимо, хотя тап там был.
         // Wrap, а не Column: короткий адрес и телефон встают в одну строку,
         // длинный адрес занимает свою.
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            GlassActionChip(
-              icon: Icons.place_outlined,
-              label: _establishment!.address,
-              onTap: _showAddressSheet,
-              maxLines: 2,
-            ),
-            if (_establishment!.phone != null &&
-                _establishment!.phone!.isNotEmpty)
+        //
+        // Отступ справа обязателен. Оверлей растянут до `right: 17`, а поверх
+        // его нижней части стоит ОТДЕЛЬНОЙ позицией правая колонка — рейтинг,
+        // ценник, сердечко. Прежние адрес и телефон были короткими строками и
+        // до неё не доставали; строка чипов достаёт, и телефон уезжал под
+        // бейдж рейтинга (поймано на устройстве 20.09.2026).
+        Padding(
+          padding: const EdgeInsets.only(right: _rightStackGutter),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
               GlassActionChip(
-                icon: Icons.phone,
-                label: _establishment!.phone!,
-                onTap: () => _launchPhoneCall(_establishment!.phone!),
+                icon: Icons.place_outlined,
+                label: _establishment!.address,
+                onTap: _showAddressSheet,
+                maxLines: 2,
               ),
-            if (_establishment!.website != null &&
-                _establishment!.website!.isNotEmpty)
-              _buildSocialChip(_establishment!.website!),
-          ],
+              if (_establishment!.phone != null &&
+                  _establishment!.phone!.isNotEmpty)
+                GlassActionChip(
+                  icon: Icons.phone,
+                  label: _establishment!.phone!,
+                  onTap: () => _launchPhoneCall(_establishment!.phone!),
+                ),
+              if (_establishment!.website != null &&
+                  _establishment!.website!.isNotEmpty)
+                _buildSocialChip(_establishment!.website!),
+            ],
+          ),
         ),
       ],
     );
