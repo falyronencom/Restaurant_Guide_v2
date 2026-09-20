@@ -7,24 +7,22 @@ import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dar
 ///
 /// Тестировщики 15.09.2026: под заголовком «Карта» адрес выглядел как место,
 /// по которому логично тапнуть, чтобы уехать в навигатор, — и не делал ничего.
-/// Кликабельной была только мини-карта под блоком, и ведёт она на внутренний
-/// экран карты, а не в навигатор.
+/// Кликабельной была только мини-карта, и ведёт она на внутренний экран карты.
 ///
-/// Тесты пиннят разведение намерений: адресная строка и кнопка «Как добраться»
-/// ведут в один и тот же выбор карт, а без координат кнопки нет вовсе.
+/// Первая правка дала блоку ДВА контрола: строку-кнопку с адресом и кнопку
+/// «Как добраться», обе в один и тот же выбор карт. На устройстве 20.09 стало
+/// видно, что это хуже дубля: шеврон на строке обещает «перейти куда-то ещё»,
+/// а приводит туда же, куда кнопка. Контрол оставлен один.
+///
+/// Отсюда форма проверок: адрес обязан БЫТЬ и обязан НЕ БЫТЬ кнопкой.
 void main() {
   setUp(() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
-  /// Строка адреса — ближайшая к тексту адреса коробка `Container`.
-  Finder addressRowOf(String text) => find
-      .ancestor(of: find.text(text), matching: find.byType(Container))
-      .first;
-
   Future<void> pumpBlock(
     WidgetTester tester, {
-    VoidCallback? onAddressTap,
+    VoidCallback? onRouteTap,
     String? distanceText,
     bool showRouteButton = true,
     String address = 'Козлова, 2',
@@ -41,7 +39,7 @@ void main() {
             city: 'Минск',
             distanceText: distanceText,
             showRouteButton: showRouteButton,
-            onAddressTap: onAddressTap ?? () {},
+            onRouteTap: onRouteTap ?? () {},
           ),
         ),
       ),
@@ -49,53 +47,56 @@ void main() {
   }
 
   group('EstablishmentLocationBlock', () {
-    testWidgets('тап по строке адреса ведёт в навигатор', (tester) async {
+    testWidgets('кнопка «Как добраться» ведёт в навигатор', (tester) async {
       var taps = 0;
-      await pumpBlock(tester, onAddressTap: () => taps++);
-
-      await tester.tap(find.text('Козлова, 2, Минск'));
-
-      expect(taps, 1, reason: 'адрес под «Картой» был мёртвым текстом');
-    });
-
-    testWidgets('кнопка «Как добраться» ведёт туда же', (tester) async {
-      var taps = 0;
-      await pumpBlock(tester, onAddressTap: () => taps++);
+      await pumpBlock(tester, onRouteTap: () => taps++);
 
       await tester.tap(find.text('Как добраться'));
 
       expect(taps, 1);
     });
 
-    testWidgets('строка адреса не ниже зоны тапа', (tester) async {
-      // Адрес намеренно короткий: шрифт widget-тестов квадратный, каждый знак
-      // шириной в кегль, и «Козлова, 2, Минск» переносится на вторую строку —
-      // высота набралась бы содержимым, а проверка зоны тапа зеленела бы
-      // независимо от того, задана она или нет.
-      await pumpBlock(tester, address: 'Мира, 1');
-
-      final row = tester.getRect(addressRowOf('Мира, 1, Минск'));
-
-      expect(row.height,
-          greaterThanOrEqualTo(EstablishmentLocationBlock.minTapHeight),
-          reason: 'на устройстве строка в одну линию — 40 dp без запаса');
-    });
-
-    testWidgets('без координат кнопки нет, адрес остаётся кликабельным',
-        (tester) async {
+    testWidgets('адрес показан, но кнопкой не является', (tester) async {
       var taps = 0;
-      await pumpBlock(
-        tester,
-        onAddressTap: () => taps++,
-        showRouteButton: false,
-      );
+      await pumpBlock(tester, onRouteTap: () => taps++);
 
-      expect(find.text('Как добраться'), findsNothing,
-          reason:
-              'маршрут прокладывать некуда — кнопка обещала бы несбыточное');
+      expect(find.text('Козлова, 2, Минск'), findsOneWidget,
+          reason: 'адрес — содержание блока, без него «Карта» не говорит, где');
 
       await tester.tap(find.text('Козлова, 2, Минск'));
-      expect(taps, 1, reason: 'адрес всё ещё ведёт к копированию');
+      await tester.pump();
+
+      expect(taps, 0,
+          reason: 'второй контрол в то же действие возвращает расхождение '
+              'обещания с результатом — ради этого его и убрали');
+      expect(find.byIcon(Icons.chevron_right), findsNothing,
+          reason: 'шеврон обещает переход, которого нет');
+    });
+
+    testWidgets('кнопка маршрута не ниже зоны тапа', (tester) async {
+      await pumpBlock(tester);
+
+      // `ElevatedButton.icon` строит ПОДКЛАСС, а `byType` сверяет тип
+      // точно — отсюда предикат.
+      final button = tester.getRect(
+        find.byWidgetPredicate(
+          (w) => w is ElevatedButton,
+          description: 'ElevatedButton, включая .icon',
+        ),
+      );
+
+      expect(button.height,
+          greaterThanOrEqualTo(EstablishmentLocationBlock.minTapHeight),
+          reason: 'единственный контрол блока держит зону тапа сам');
+    });
+
+    testWidgets('без координат кнопки нет, адрес остаётся', (tester) async {
+      await pumpBlock(tester, showRouteButton: false);
+
+      expect(find.text('Как добраться'), findsNothing,
+          reason: 'маршрут прокладывать некуда — кнопка обещала бы несбыточное');
+      expect(find.text('Козлова, 2, Минск'), findsOneWidget,
+          reason: 'адрес от отсутствия координат не пропадает');
     });
 
     testWidgets('расстояние рисуется только когда известно', (tester) async {

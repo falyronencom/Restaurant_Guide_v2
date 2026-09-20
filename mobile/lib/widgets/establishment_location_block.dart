@@ -4,11 +4,19 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 /// Шапка блока «Карта» на карточке заведения: заголовок, расстояние, адрес и
 /// переход в навигатор.
 ///
-/// Адрес здесь был обычным текстом: тестировщики тапали по нему и не получали
-/// ничего — единственным кликабельным местом блока была мини-карта, а она ведёт
-/// на внутренний экран карты, а не в навигатор. Теперь намерения разведены явно:
-/// строка адреса и кнопка «Как добраться» ведут в навигатор, мини-карта под
-/// блоком — по-прежнему «посмотреть, что рядом».
+/// Адрес здесь был обычным текстом, и тестировщики тапали по нему впустую:
+/// единственным кликабельным местом блока была мини-карта, а она ведёт на
+/// внутренний экран карты, а не в навигатор. Действие появилось — кнопка
+/// «Как добраться»; мини-карта под блоком осталась «посмотреть, что рядом».
+///
+/// **Адрес намеренно НЕ кликабелен, и это решение, а не недоделка.** Сначала он
+/// был сделан строкой-кнопкой (подложка, рамка, шеврон) и вёл в тот же выбор
+/// карт, что и кнопка. На устройстве 20.09.2026 стало видно, в чём беда: два
+/// соседних контрола делают одно и то же, но обещают РАЗНОЕ — шеврон на всех
+/// остальных экранах означает «перейти куда-то ещё». Оставлен один контрол;
+/// адрес вернулся к роли подписи, но с пином, который привязывает его к метке
+/// на карте. Если снова захочется сделать строку кликабельной — сначала убрать
+/// кнопку, иначе вернётся то же расхождение обещания с результатом.
 ///
 /// Формулировка кнопки взята с веб-витрины (`web/src/components/establishment/
 /// Location.tsx`), чтобы одно действие называлось одинаково на обеих площадках.
@@ -20,7 +28,7 @@ class EstablishmentLocationBlock extends StatelessWidget {
     super.key,
     required this.address,
     required this.city,
-    required this.onAddressTap,
+    required this.onRouteTap,
     this.distanceText,
     this.showRouteButton = true,
   });
@@ -28,8 +36,8 @@ class EstablishmentLocationBlock extends StatelessWidget {
   final String address;
   final String city;
 
-  /// Тот же выбор карт, что и у чипа адреса на фронте карточки.
-  final VoidCallback onAddressTap;
+  /// Выбор карт — тот же, что и у чипа адреса на фронте карточки.
+  final VoidCallback onRouteTap;
 
   /// `null` — геолокация не получена, строка расстояния не рисуется.
   final String? distanceText;
@@ -37,7 +45,13 @@ class EstablishmentLocationBlock extends StatelessWidget {
   /// `false` — у заведения нет координат, маршрут прокладывать некуда.
   final bool showRouteButton;
 
-  /// Минимальная высота строки адреса как зоны тапа.
+  /// Зона тапа единственного контрола блока.
+  ///
+  /// Своим ограничением она НЕ задаётся: `ElevatedButton` по умолчанию идёт с
+  /// `MaterialTapTargetSize.padded`, и тот уже добивает высоту до 48 — замер
+  /// даёт ровно 48.0. Явный `minimumSize` здесь стоял и был снят как мёртвый:
+  /// мутация «убрать его» тест не красила. Константа живёт ради теста, который
+  /// падает, если у кнопки отнимут padded-цель или ужмут отступы.
   static const double minTapHeight = 48;
 
   @override
@@ -76,7 +90,7 @@ class EstablishmentLocationBlock extends StatelessWidget {
                 ),
               ),
             ),
-          _buildAddressRow(),
+          _buildAddressLine(),
           if (showRouteButton) ...[
             const SizedBox(height: 14),
             _buildRouteButton(),
@@ -86,44 +100,31 @@ class EstablishmentLocationBlock extends StatelessWidget {
     );
   }
 
-  /// Строка адреса — кликабельная целиком, а не по буквам текста.
-  Widget _buildAddressRow() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onAddressTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: minTapHeight),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppTheme.backgroundPrimary,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          border: Border.all(color: AppTheme.strokeGrey),
+  /// Адрес — подпись к блоку, а не контрол: ни подложки, ни рамки, ни шеврона,
+  /// ни тапа. Пин оставлен — он привязывает подпись к метке на карте ниже.
+  Widget _buildAddressLine() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Icon(
+            Icons.place_outlined,
+            size: 18,
+            color: AppTheme.primaryOrange,
+          ),
         ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.place_outlined,
-              size: 18,
-              color: AppTheme.primaryOrange,
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '$address, $city',
+            style: const TextStyle(
+              fontSize: 16,
+              color: AppTheme.textPrimary,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '$address, $city',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: AppTheme.textGrey,
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -131,7 +132,7 @@ class EstablishmentLocationBlock extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: ElevatedButton.icon(
-        onPressed: onAddressTap,
+        onPressed: onRouteTap,
         icon: const Icon(Icons.navigation_outlined, size: 18),
         label: const Text('Как добраться'),
         style: ElevatedButton.styleFrom(

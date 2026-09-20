@@ -1451,7 +1451,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             distanceText: _getDistanceText(),
             showRouteButton: _establishment!.latitude != null &&
                 _establishment!.longitude != null,
-            onAddressTap: _showAddressSheet,
+            onRouteTap: _showAddressSheet,
           ),
         ),
 
