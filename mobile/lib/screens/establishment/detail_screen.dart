@@ -648,19 +648,22 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         // Адрес, телефон и сайт — одним языком чипов. Подчёркнутый текст
         // кнопкой не читался: тестировщики тапали мимо, хотя тап там был.
-        // Wrap, а не Column: короткий адрес и телефон встают в одну строку,
-        // длинный адрес занимает свою.
+        //
+        // Каждый чип — на своей строке, по одной левой вертикали. Сначала
+        // здесь был Wrap, и раскладку решала длина текста, а не макет: у
+        // одного заведения телефон и «Сайт» вставали рядом, у другого
+        // «Instagram» уже не помещался — и карточки выглядели по-разному
+        // (решение Координатора 21.09.2026, вариант A: столбик, ширина чипа
+        // по содержимому).
         //
         // Отступ справа обязателен. Оверлей растянут до `right: 17`, а поверх
         // его нижней части стоит ОТДЕЛЬНОЙ позицией правая колонка — рейтинг,
-        // ценник, сердечко. Прежние адрес и телефон были короткими строками и
-        // до неё не доставали; строка чипов достаёт, и телефон уезжал под
-        // бейдж рейтинга (поймано на устройстве 20.09.2026).
+        // ценник, сердечко. Длинный адрес без отступа уезжает ей под низ
+        // (поймано на устройстве 20.09.2026).
         Padding(
           padding: const EdgeInsets.only(right: _rightStackGutter),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GlassActionChip(
                 icon: Icons.place_outlined,
@@ -669,15 +672,19 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                 maxLines: 2,
               ),
               if (_establishment!.phone != null &&
-                  _establishment!.phone!.isNotEmpty)
+                  _establishment!.phone!.isNotEmpty) ...[
+                const SizedBox(height: 8),
                 GlassActionChip(
                   icon: Icons.phone,
                   label: _establishment!.phone!,
                   onTap: () => _launchPhoneCall(_establishment!.phone!),
                 ),
+              ],
               if (_establishment!.website != null &&
-                  _establishment!.website!.isNotEmpty)
+                  _establishment!.website!.isNotEmpty) ...[
+                const SizedBox(height: 8),
                 _buildSocialChip(_establishment!.website!),
+              ],
             ],
           ),
         ),
