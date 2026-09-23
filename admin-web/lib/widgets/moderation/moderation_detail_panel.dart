@@ -304,7 +304,11 @@ class ModerationEntityActions extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusControl),
         ),
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
       );
 
   @override
@@ -340,8 +344,11 @@ class ModerationEntityActions extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppTheme.radiusControl),
                 ),
-                textStyle:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontBodyFamily,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           if (onClaim != null)

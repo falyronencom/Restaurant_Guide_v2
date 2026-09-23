@@ -317,7 +317,8 @@ class AppTheme {
   );
 
   /// Подсекция / заголовок карточки: Nunito 18/w600.
-  /// Жирнее w600 канон не использует.
+  /// Вес Nunito Sans в каноне — 400–700 (SDL CAT-C-1.3, Amendment
+  /// 2026-09-22): у каждого веса свой вшитый файл.
   static const TextStyle canonSubsectionHeader = TextStyle(
     fontSize: 18,
     fontWeight: FontWeight.w600,
@@ -482,7 +483,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusMedium),
         ),
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
       );
 
   /// Вторичная CTA: та же геометрия, outline 1.5px тем же цветом.
@@ -495,7 +500,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusMedium),
         ),
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
       );
 
   /// Компактная кнопка слота действий в хедере: высота 40, r10, рамка strokeGrey.
@@ -507,7 +516,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusControl),
         ),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
       );
 
   // ============================================================================
@@ -564,8 +577,15 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.light,
 
-      // Семейство по умолчанию — для поверхностей, которые не читают textTheme
-      // (тултипы, снекбары, системные диалоги).
+      // Это поле питает только типографику по умолчанию — textTheme и
+      // primaryTextTheme: здесь оно отдаёт Nunito Sans слотам display*,
+      // которых в textTheme ниже нет (`.apply()` их не касается). Тултипы,
+      // снекбары и диалоги читают textTheme и получают семейство через него.
+      // Кнопки, вкладки и чипы читают textTheme только в стиле по умолчанию:
+      // стиль подписи, заданный в их темах ниже (и в canonCta*,
+      // canonHeaderAction), ЗАМЕНЯЕТ его целиком, а не сливается с ним, —
+      // поэтому в этих стилях семейство названо явно. Сторож —
+      // test/config/theme_text_families_test.dart.
       fontFamily: fontBodyFamily,
 
       colorScheme: const ColorScheme.light(
@@ -641,7 +661,11 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radiusControl),
           ),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: fontBodyFamily,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
 
@@ -660,9 +684,16 @@ class AppTheme {
       tabBarTheme: TabBarThemeData(
         labelColor: primaryOrangeDark,
         unselectedLabelColor: textDark,
-        labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        labelStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
         indicatorColor: primaryOrange,
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: borderLight,
@@ -674,7 +705,11 @@ class AppTheme {
         backgroundColor: backgroundPrimary,
         selectedColor: brandTint(0.08),
         side: const BorderSide(color: strokeGrey),
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        labelStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusPill),

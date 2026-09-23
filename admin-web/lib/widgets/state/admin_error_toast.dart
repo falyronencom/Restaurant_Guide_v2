@@ -95,6 +95,7 @@ class AdminErrorToast extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                   textStyle: const TextStyle(
+                    fontFamily: AppTheme.fontBodyFamily,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
