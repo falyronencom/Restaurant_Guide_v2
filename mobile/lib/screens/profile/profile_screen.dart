@@ -72,7 +72,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        Text(
+                        const Text(
                           'Профиль',
                           style: TextStyle(
                             fontFamily: AppTheme.fontDisplayFamily,
@@ -751,7 +751,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          Text(
+          const Text(
             'Ваш профиль',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

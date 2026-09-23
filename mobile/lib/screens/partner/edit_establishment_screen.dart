@@ -218,7 +218,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          const Text(
             'Редактирование',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,
@@ -419,6 +419,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             ),
             textStyle: const TextStyle(
+              fontFamily: AppTheme.fontBodyFamily,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),

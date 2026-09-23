@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
@@ -89,12 +88,12 @@ class SplashStand {
   void release() => service.gate?.complete(service.storedSession);
 }
 
-/// Общий `setUp` тестов заставки: шины и кэши аккаунта в исходном состоянии,
-/// шрифты только вшитые.
+/// Общий `setUp` тестов заставки: шины и кэши аккаунта в исходном состоянии.
+/// Шрифты сборки — настоящие: их на весь сьют грузит
+/// test/flutter_test_config.dart.
 void resetSplashStand() {
   SessionEvents.debugReset();
   AccountScope.debugReset();
-  GoogleFonts.config.allowRuntimeFetching = false;
 }
 
 /// Поднимает заставку под `MaterialApp` с подставными маршрутами.

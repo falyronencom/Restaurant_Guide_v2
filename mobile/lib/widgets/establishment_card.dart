@@ -309,9 +309,12 @@ class EstablishmentCard extends StatelessWidget {
     final isOpen = establishment.isCurrentlyOpen;
     final closingTime = establishment.todayClosingTime;
 
+    // RichText, в отличие от Text, стиль темы НЕ наследует: у корневого
+    // TextSpan без семейства строка рисуется системным шрифтом.
     return RichText(
       text: TextSpan(
         style: const TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
           fontSize: 14,
           fontWeight: FontWeight.w500,
           height: 20 / 14,

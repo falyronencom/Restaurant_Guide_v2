@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/screens/splash/widgets/wordmark_widget.dart';
 
 import 'splash_stand.dart';
@@ -91,7 +92,10 @@ void main() {
     // им «рисовался» системным шрифтом на устройстве и пустотой в рендере.
     // Слоган — Nunito Sans, как в лаборатории; семейство вшито.
     final tagStyle = tester.widget<Text>(find.text('Вкусное рядом')).style!;
-    expect(tagStyle.fontFamily, startsWith('NunitoSans'),
+    // Равенство, а не «начинается с»: пока шрифты шли через google_fonts,
+    // имя было `NunitoSans_regular`; с 23.09.2026 семейство объявлено в
+    // pubspec, и любое другое написание уже не разрешится.
+    expect(tagStyle.fontFamily, AppTheme.fontBodyFamily,
         reason: 'слоган обязан идти семейством с кириллицей');
   });
 

@@ -65,7 +65,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
+                const Text(
                   'Уведомления',
                   style: TextStyle(
                     fontFamily: AppTheme.fontDisplayFamily,

@@ -275,7 +275,7 @@ class _AddressStepState extends State<AddressStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'Заполните адрес',
           style: TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
@@ -375,7 +375,10 @@ class _AddressStepState extends State<AddressStep> {
               color: _greyText,
             ),
           ),
+          // style у DropdownButton ЗАМЕНЯЕТ стиль темы (и у подсказки, и у
+          // пунктов меню) — без семейства всё это рисовалось системным шрифтом.
           style: const TextStyle(
+            fontFamily: AppTheme.fontBodyFamily,
             fontSize: 16,
             color: AppTheme.textPrimary,
           ),

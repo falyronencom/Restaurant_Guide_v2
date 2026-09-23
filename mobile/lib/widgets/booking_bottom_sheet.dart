@@ -240,7 +240,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Бронирование столика', style: AppTheme.canonSheetTitle),
+              const Text('Бронирование столика', style: AppTheme.canonSheetTitle),
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child:

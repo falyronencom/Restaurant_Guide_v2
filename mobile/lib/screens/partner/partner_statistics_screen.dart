@@ -154,7 +154,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             child: const Icon(Icons.chevron_left, size: 28, color: AppTheme.textPrimary),
           ),
           const SizedBox(width: 8),
-          Text(
+          const Text(
             'Статистика',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

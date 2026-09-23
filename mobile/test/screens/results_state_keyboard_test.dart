@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/search/results_list_screen.dart';
@@ -28,7 +27,6 @@ void main() {
   setUp(() {
     AccountScope.debugReset();
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    GoogleFonts.config.allowRuntimeFetching = false;
   });
 
   /// Поднимает экран результатов в состоянии ошибки на узком окне.

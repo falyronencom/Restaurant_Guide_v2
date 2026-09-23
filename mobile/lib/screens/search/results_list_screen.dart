@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -206,9 +205,10 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                           ),
                         ),
                       ),
-                      Text(
+                      const Text(
                         'Местоположение',
-                        style: GoogleFonts.nunitoSans(
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontBodyFamily,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
@@ -34,7 +33,6 @@ void main() {
     SharedPreferences.setMockInitialValues(
       <String, Object>{BelarusCities.persistenceKey: 'Минск'},
     );
-    GoogleFonts.config.allowRuntimeFetching = false;
   });
 
   testWidgets('индикатор выходит за кнопку, и ни один предок его не режет',

@@ -335,7 +335,7 @@ class _EstablishmentPreviewScreenState
         // Name
         Text(
           data.name ?? 'Название заведения',
-          style: TextStyle(
+          style: const TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 50,
             fontWeight: FontWeight.w400,
@@ -428,7 +428,7 @@ class _EstablishmentPreviewScreenState
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(
                 children: [
-                  Text(
+                  const Text(
                     'Описание',
                     style: TextStyle(
                       fontFamily: AppTheme.fontDisplayFamily,
@@ -538,9 +538,13 @@ class _EstablishmentPreviewScreenState
       }
     }
 
+    // RichText стиль темы не наследует — семейство названо явно.
     return RichText(
       text: TextSpan(
-        style: const TextStyle(fontSize: 18),
+        style: const TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
+          fontSize: 18,
+        ),
         children: [
           TextSpan(
             text: statusText.split('/').first,
@@ -603,7 +607,7 @@ class _EstablishmentPreviewScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          Text(
+          const Text(
             'Меню',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,
@@ -776,8 +780,8 @@ class _EstablishmentPreviewScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
@@ -885,7 +889,7 @@ class _EstablishmentPreviewScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Title
-              Text(
+              const Text(
                 'Карта',
                 style: TextStyle(
                   fontFamily: AppTheme.fontDisplayFamily,

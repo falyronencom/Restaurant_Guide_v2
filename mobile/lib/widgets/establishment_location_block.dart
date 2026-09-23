@@ -72,7 +72,7 @@ class EstablishmentLocationBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Карта',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,
@@ -153,7 +153,11 @@ class EstablishmentLocationBlock extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           ),
           elevation: 0,
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontFamily: AppTheme.fontBodyFamily,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

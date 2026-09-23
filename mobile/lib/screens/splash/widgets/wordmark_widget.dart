@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/screens/splash/splash_easing.dart';
 
@@ -15,7 +14,7 @@ import 'package:restaurant_guide_mobile/screens/splash/splash_easing.dart';
 /// motion — the wordmark drop, letter-tracking, rule width — goes through
 /// `outCubic`, exactly as in the lab's `drawSoft`.
 ///
-/// Fonts are the bundled ones only (`google_fonts/`, runtime fetching off):
+/// Fonts are the bundled families declared in pubspec (`AppTheme.font*Family`):
 /// Josefin Sans SemiBold for the wordmark (the lab's Regular cut is not
 /// bundled and is not added), Nunito Sans Regular for the tagline — as in the
 /// lab. Josefin Sans has no Cyrillic at all, so the previous Josefin Light
@@ -84,7 +83,8 @@ class WordmarkWidget extends StatelessWidget {
           spacing: wordSpacing,
           text: Text(
             'NIRIVIO',
-            style: GoogleFonts.josefinSans(
+            style: TextStyle(
+              fontFamily: AppTheme.fontWordmarkFamily,
               fontSize: _wordSize * u,
               fontWeight: FontWeight.w600,
               color: AppTheme.splashWordmark,
@@ -116,7 +116,8 @@ class WordmarkWidget extends StatelessWidget {
           spacing: tagSpacing,
           text: Text(
             'Вкусное рядом',
-            style: GoogleFonts.nunitoSans(
+            style: TextStyle(
+              fontFamily: AppTheme.fontBodyFamily,
               fontSize: _tagSize * u,
               fontWeight: FontWeight.w400,
               color: AppTheme.splashTagline,

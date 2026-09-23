@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Application theme configuration
 /// Implements design specifications from Figma mockups
@@ -90,27 +89,33 @@ class AppTheme {
   // ============================================================================
   // Font Families
   // ============================================================================
+  //
+  // Семейства объявлены в pubspec (`flutter: fonts:`, SDL CAT-C-1.3), и
+  // объявленное семейство держит все свои начертания: файл под запрошенный вес
+  // выбирает Flutter. Поэтому вес можно ставить где угодно — он дойдёт до своего
+  // .ttf. Обратная сторона: опечатка в имени компилятором не ловится и уводит
+  // текст на системный шрифт молча, а вес, которого у семейства нет, движок
+  // дорисует синтетикой. Обе стороны шва стережёт
+  // test/config/fonts_bundled_test.dart.
+  //
+  // Имя пишется ровно как `family:` в pubspec и объявляется `static const
+  // String` — эту форму ищет сторож.
 
-  /// Display/accent font for headings and titles (Figma: Unbounded)
-  static final String fontDisplayFamily = GoogleFonts.unbounded().fontFamily!;
+  /// Дисплейный: заголовки экранов, шторок и секций (Figma: Unbounded).
+  /// Вшит только w400.
+  static const String fontDisplayFamily = 'Unbounded';
 
-  /// Helper to create Unbounded (display) TextStyle via GoogleFonts
-  static TextStyle unbounded({
-    double? fontSize,
-    FontWeight? fontWeight,
-    Color? color,
-    double? letterSpacing,
-    double? height,
-    TextDecoration? decoration,
-  }) =>
-      GoogleFonts.unbounded(
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: color,
-        letterSpacing: letterSpacing,
-        height: height,
-        decoration: decoration,
-      );
+  /// Body: весь остальной текст — тема раздаёт его всем слотам textTheme.
+  /// Четыре начертания 400/500/600/700, поэтому вес поверх темы попадает в
+  /// свой файл.
+  static const String fontBodyFamily = 'NunitoSans';
+
+  /// Вордмарк NIRIVIO (латиница). Для кириллицы не применять — её у Josefin
+  /// Sans нет вовсе: буквы молча уйдут в системный шрифт.
+  static const String fontWordmarkFamily = 'JosefinSans';
+
+  /// Заголовок карточки-витрины (список результатов). Вшит только w600.
+  static const String fontCardTitleFamily = 'Onest';
 
   // ============================================================================
   // Typography
@@ -234,7 +239,7 @@ class AppTheme {
   /// Заголовок AppBar: Unbounded 25/w400 тёмно-оранжевый.
   /// Применять через CanonAppBar (widgets/canon_app_bar.dart).
   /// Образцы: login_screen, edit_establishment_screen.
-  static final TextStyle canonAppBarTitle = TextStyle(
+  static const TextStyle canonAppBarTitle = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 25,
     fontWeight: FontWeight.w400,
@@ -242,7 +247,7 @@ class AppTheme {
   );
 
   /// Заголовок страницы/шага внутри тела экрана: Unbounded 25/w400 чёрный.
-  static final TextStyle canonPageTitle = TextStyle(
+  static const TextStyle canonPageTitle = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 25,
     fontWeight: FontWeight.w400,
@@ -250,7 +255,7 @@ class AppTheme {
   );
 
   /// Заголовок крупной секции: Unbounded 30/w400 («Наше меню» в detail_screen).
-  static final TextStyle canonSectionHeader = TextStyle(
+  static const TextStyle canonSectionHeader = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 30,
     fontWeight: FontWeight.w400,
@@ -258,7 +263,7 @@ class AppTheme {
   );
 
   /// Заголовок модальной шторки: Unbounded 20/w400.
-  static final TextStyle canonSheetTitle = TextStyle(
+  static const TextStyle canonSheetTitle = TextStyle(
     fontFamily: fontDisplayFamily,
     fontSize: 20,
     fontWeight: FontWeight.w400,
@@ -266,7 +271,8 @@ class AppTheme {
   );
 
   /// Подсекция / заголовок карточки / секция списка: Nunito 18/w600.
-  /// В каноне жирнее w600 не используется.
+  /// Вес Nunito Sans в каноне — 400–700 (SDL CAT-C-1.3, Amendment
+  /// 2026-09-22): у каждого веса свой вшитый файл.
   static const TextStyle canonSubsectionHeader = TextStyle(
     fontSize: 18,
     fontWeight: FontWeight.w600,
@@ -277,7 +283,8 @@ class AppTheme {
   /// стильный дисплейный шрифт у́же Unbounded, с поддержкой кириллицы. Выбран
   /// сравнением на устройстве среди Comfortaa · Rubik · Onest (Quicksand отклонён —
   /// нет кириллического покрытия: latin/latin-ext/vietnamese).
-  static final TextStyle canonCardTitle = GoogleFonts.onest(
+  static const TextStyle canonCardTitle = TextStyle(
+    fontFamily: fontCardTitleFamily,
     fontSize: 20,
     fontWeight: FontWeight.w600,
     color: textPrimary,
@@ -315,7 +322,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusMedium),
         ),
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
       );
 
   /// CTA-кнопка M (списочные действия): высота 47, r8, label 15/w500.
@@ -330,7 +341,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusSmall),
         ),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        textStyle: const TextStyle(
+          fontFamily: fontBodyFamily,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
       );
 
   // ============================================================================
@@ -342,6 +357,19 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+
+      // Семейство тела — всем пятнадцати слотам textTheme. Слотов title* в
+      // textTheme ниже нет: их берёт типографика Material по умолчанию, и
+      // Nunito Sans им отдаёт только это поле. `.apply(fontFamily:)` на
+      // TextTheme ниже их бы не коснулся, и подписи кнопок входа
+      // (textTheme.titleMedium) ушли бы на системный шрифт.
+      //
+      // Дальше textTheme это поле не доходит. Кнопки, заголовок AppBar и чипы
+      // читают textTheme только в стиле по умолчанию: стиль подписи, заданный
+      // в их темах ниже (и в canonCta*), ЗАМЕНЯЕТ его целиком, а не сливается
+      // с ним, — поэтому в этих стилях семейство названо явно. Сторож —
+      // test/config/theme_text_families_test.dart.
+      fontFamily: fontBodyFamily,
 
       // Color scheme
       colorScheme: const ColorScheme.light(
@@ -373,6 +401,7 @@ class AppTheme {
         foregroundColor: textOnPrimary,
         centerTitle: false,
         titleTextStyle: TextStyle(
+          fontFamily: fontBodyFamily,
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: textOnPrimary,
@@ -400,6 +429,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
           ),
           textStyle: const TextStyle(
+            fontFamily: fontBodyFamily,
             fontSize: 16,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -417,6 +447,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
           ),
           textStyle: const TextStyle(
+            fontFamily: fontBodyFamily,
             fontSize: 16,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -433,6 +464,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
           ),
           textStyle: const TextStyle(
+            fontFamily: fontBodyFamily,
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -490,7 +522,7 @@ class AppTheme {
         selectedColor: primaryOrangeLight,
         secondarySelectedColor: successGreenLight,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        labelStyle: const TextStyle(fontSize: 14),
+        labelStyle: const TextStyle(fontFamily: fontBodyFamily, fontSize: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -520,8 +552,9 @@ class AppTheme {
         elevation: 8,
       ),
 
-      // Typography theme — Nunito Sans as default body font (replaces Avenir Next)
-      textTheme: GoogleFonts.nunitoSansTextTheme(const TextTheme(
+      // Typography theme — Nunito Sans as default body font (replaces Avenir
+      // Next). Семейство слотам отдаёт `fontFamily:` в начале темы.
+      textTheme: const TextTheme(
         displayLarge: displayLarge,
         displayMedium: displayMedium,
         displaySmall: displaySmall,
@@ -534,7 +567,7 @@ class AppTheme {
         labelLarge: labelLarge,
         labelMedium: labelMedium,
         labelSmall: labelSmall,
-      )),
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@
 // (мини-карточка в кабинете партнёра).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
@@ -120,28 +121,55 @@ void main() {
         (tester) async {
       // Ширина подобрана так, чтобы «Осмоловка» влезла в одну строку только
       // после уменьшения кегля: при базовом её разорвало бы на «Осмоловк / а».
+      // Подбор зависит от метрик шрифта, поэтому предпосылка проверяется
+      // первой: прежние 520 после перехода на настоящий Onest (23.09.2026)
+      // давали колонку 250 dp, слово в 109 dp влезало на базовом кегле, и
+      // тест зеленел, не проверяя уменьшения вовсе.
+      const width = 372.0;
       await _pump(
         tester,
         EstablishmentCard(establishment: _establishment()),
-        width: 520,
+        width: width,
+      );
+
+      // Ширина колонки: карточка − поля(26) − фото(172) − паддинги(29) − резерв(43)
+      const available = width - 26 - 172 - 14 - 15 - 43;
+
+      // Мерить тем стилем, каким слово НАРИСОВАНО: `Text` сливает стиль с
+      // `DefaultTextStyle` экрана, и межбуквенный интервал оттуда меняет
+      // ширину на доли dp на знак — ровно на них и ошибался AdaptiveTitle до
+      // 21.09 («МонеМан / е»). Замер «голым» стилем этот откат не увидел бы.
+      final drawn = tester
+          .renderObject<RenderParagraph>(find.text('Осмоловка'))
+          .text
+          .style!;
+
+      double widthAt(double fontSize) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: 'Осмоловка',
+            style: drawn.copyWith(fontSize: fontSize),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final measured = painter.width;
+        painter.dispose();
+        return measured;
+      }
+
+      expect(
+        widthAt(AppTheme.canonCardTitle.fontSize!),
+        greaterThan(available),
+        reason: 'предпосылка: на базовом кегле слово в колонку НЕ влезает — '
+            'иначе тест не проверяет уменьшения',
       );
 
       final title = tester.widget<Text>(find.text('Осмоловка'));
-      final style = AppTheme.canonCardTitle
-          .copyWith(fontSize: title.style!.fontSize);
-      final painter = TextPainter(
-        text: TextSpan(text: 'Осмоловка', style: style),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      // Ширина колонки: карточка − поля(26) − фото(172) − паддинги(29) − резерв(43)
-      const available = 520 - 26 - 172 - 14 - 15 - 43;
       expect(
-        painter.width,
-        lessThanOrEqualTo(available.toDouble()),
+        widthAt(title.style!.fontSize!),
+        lessThanOrEqualTo(available),
         reason: 'слово целиком должно помещаться в строку',
       );
-      painter.dispose();
     });
 
     testWidgets('адрес не заезжает под сердечко', (tester) async {

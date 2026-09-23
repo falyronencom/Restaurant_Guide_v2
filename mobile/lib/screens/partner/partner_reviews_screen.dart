@@ -230,7 +230,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          const Text(
             'Отзывы',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 
 /// Блок «Карта» на карточке заведения.
@@ -16,10 +15,6 @@ import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dar
 ///
 /// Отсюда форма проверок: адрес обязан БЫТЬ и обязан НЕ БЫТЬ кнопкой.
 void main() {
-  setUp(() {
-    GoogleFonts.config.allowRuntimeFetching = false;
-  });
-
   Future<void> pumpBlock(
     WidgetTester tester, {
     VoidCallback? onRouteTap,

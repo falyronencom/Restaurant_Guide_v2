@@ -9,27 +9,27 @@ class NewsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
-      appBar: const CanonAppBar(title: 'Новости'),
+      appBar: CanonAppBar(title: 'Новости'),
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.newspaper,
                 size: 80,
                 color: AppTheme.primaryOrange,
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
               Text(
                 'Новости и акции',
                 style: AppTheme.canonSheetTitle,
               ),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              Text(
                 'Актуальные новости от заведений\nи специальные предложения',
                 style: TextStyle(fontSize: 15, color: AppTheme.textGrey),
                 textAlign: TextAlign.center,

@@ -156,7 +156,7 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Title
-        Text(
+        const Text(
           'Ваши данные',
           style: TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,

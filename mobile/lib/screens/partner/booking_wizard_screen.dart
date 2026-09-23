@@ -141,7 +141,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Основные настройки', style: AppTheme.canonPageTitle),
+          const Text('Основные настройки', style: AppTheme.canonPageTitle),
           const SizedBox(height: 8),
           const Text(
             'Укажите максимальное количество гостей на одну бронь',
@@ -176,7 +176,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Время бронирования', style: AppTheme.canonPageTitle),
+          const Text('Время бронирования', style: AppTheme.canonPageTitle),
           const SizedBox(height: 24),
 
           // Days ahead
@@ -264,7 +264,7 @@ class _BookingWizardScreenState extends State<BookingWizardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Подтверждение', style: AppTheme.canonPageTitle),
+              const Text('Подтверждение', style: AppTheme.canonPageTitle),
               const SizedBox(height: 8),
               Text(
                 'Проверьте настройки бронирования для «${widget.establishmentName}»',

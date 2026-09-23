@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
@@ -19,15 +18,10 @@ import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 ///
 /// **Всё здесь меряется настоящим шрифтом.** По умолчанию `flutter test`
 /// рисует квадратным подстановочным шрифтом, и у него свои ширины: промах в
-/// 0.8 dp на нём не воспроизводится вовсе. Onest SemiBold грузится из вшитого
-/// ассета под тем же именем семейства, что даёт `GoogleFonts.onest(w600)`.
+/// 0.8 dp на нём не воспроизводится вовсе. Шрифты сборки, Onest SemiBold в
+/// том числе, на весь сьют грузит test/flutter_test_config.dart — под именами
+/// семейств из pubspec, теми же, что называет тема.
 void main() {
-  setUpAll(() async {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    GoogleFonts.config.allowRuntimeFetching = false;
-    await _loadOnest(AppTheme.canonCardTitle.fontFamily!);
-  });
-
   group('карточка списка на разных ширинах экрана', () {
     testWidgets('iPhone mini: «МонеМане» не рвётся по буквам', (tester) async {
       await _pumpCard(tester, name: 'МонеМане', screenWidth: 375);
@@ -62,8 +56,8 @@ void main() {
   group('AdaptiveTitle', () {
     testWidgets('пересчитывает кегль, когда догрузился шрифт', (tester) async {
       // Семейство, которого ещё нет: первый замер идёт подстановочным
-      // шрифтом — ровно как на холодном старте, пока google_fonts поднимает
-      // вшитый шрифт.
+      // шрифтом — так бывает, когда шрифт приходит после первой раскладки
+      // (загрузка через FontLoader в рантайме, смена системных шрифтов).
       const style = TextStyle(
         fontFamily: 'OnestLateLoad',
         fontFamilyFallback: <String>[],
@@ -109,7 +103,7 @@ void main() {
     testWidgets('на минимальном кегле — одна строка с многоточием, не разрыв',
         (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: Center(
               child: SizedBox(

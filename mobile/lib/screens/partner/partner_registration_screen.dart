@@ -130,7 +130,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          Text(
+          const Text(
             'Ваше заведение',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

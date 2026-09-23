@@ -250,7 +250,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          Text(
+          const Text(
             'Написать отзыв',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

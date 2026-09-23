@@ -609,7 +609,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         AdaptiveTitle(
           text: _establishment!.name,
           minFontSize: 30,
-          style: TextStyle(
+          style: const TextStyle(
             fontFamily: AppTheme.fontDisplayFamily,
             fontSize: 50,
             fontWeight: FontWeight.w400,
@@ -895,9 +895,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     final isOpen = _establishment!.isCurrentlyOpen;
     final closingTime = _establishment!.todayClosingTime;
 
+    // RichText стиль темы не наследует — семейство названо явно.
     return RichText(
       text: TextSpan(
-        style: const TextStyle(fontSize: 18),
+        style: const TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
+          fontSize: 18,
+        ),
         children: [
           TextSpan(
             text: isOpen ? 'Открыто' : 'Закрыто',
@@ -1051,7 +1055,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          Text(
+          const Text(
             'Меню',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,
@@ -1305,7 +1309,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(
                 children: [
-                  Text(
+                  const Text(
                     'Описание',
                     style: TextStyle(
                       fontFamily: AppTheme.fontDisplayFamily,
@@ -1380,8 +1384,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Атрибуты',
               style: TextStyle(
@@ -1605,7 +1609,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Text(
+                const Text(
                   'Отзывы',
                   style: TextStyle(
                     fontFamily: AppTheme.fontDisplayFamily,
@@ -1784,7 +1788,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                       review.userName.isNotEmpty
                           ? review.userName[0].toUpperCase()
                           : 'A',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: AppTheme.fontDisplayFamily,
                         fontSize: 25,
                         color: _backgroundColor,
@@ -2228,7 +2232,7 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               Text(
                 promotion.title,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontFamily: AppTheme.fontDisplayFamily,
                   color: Colors.white,
                   fontSize: 22,

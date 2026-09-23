@@ -232,7 +232,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
           ),
           const SizedBox(width: 8),
           // Title
-          Text(
+          const Text(
             'Все отзывы',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,
@@ -423,7 +423,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
                       review.userName.isNotEmpty
                           ? review.userName[0].toUpperCase()
                           : 'A',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: AppTheme.fontDisplayFamily,
                         fontSize: 25,
                         color: _creamColor,
@@ -633,7 +633,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Сортировка',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

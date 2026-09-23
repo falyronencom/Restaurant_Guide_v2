@@ -247,7 +247,10 @@ class _PromotionHubScreenState extends State<PromotionHubScreen> {
               onPressed: _navigateToWizard,
               style: TextButton.styleFrom(
                 foregroundColor: AppTheme.textDark,
-                textStyle: const TextStyle(fontSize: 14),
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontBodyFamily,
+                  fontSize: 14,
+                ),
               ),
               child: const Text('Настройки'),
             ),

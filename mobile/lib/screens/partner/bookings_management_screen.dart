@@ -356,7 +356,10 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
               onPressed: () => _markNoShow(booking),
               style: TextButton.styleFrom(
                 foregroundColor: AppTheme.textDark,
-                textStyle: const TextStyle(fontSize: 13),
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontBodyFamily,
+                  fontSize: 13,
+                ),
               ),
               child: const Text('Не пришёл'),
             ),

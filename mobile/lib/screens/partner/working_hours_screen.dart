@@ -89,7 +89,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          const Text(
             'Ваше заведение',
             style: TextStyle(
               fontFamily: AppTheme.fontDisplayFamily,

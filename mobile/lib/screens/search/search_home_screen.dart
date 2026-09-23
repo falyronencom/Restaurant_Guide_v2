@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -138,9 +137,10 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         ),
                       ),
                       // Title (center)
-                      Text(
+                      const Text(
                         'Местоположение',
-                        style: GoogleFonts.nunitoSans(
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontBodyFamily,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary,
@@ -454,7 +454,8 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                         AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
-                          style: GoogleFonts.josefinSans(
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontWordmarkFamily,
                             fontSize: compact ? 32 : 48,
                             fontWeight: FontWeight.w600,
                             color: AppTheme.textOnPrimary,
@@ -586,15 +587,20 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
     );
   }
 
-  /// Build tagline text
+  /// Слоган «Вкусное рядом» — Nunito Sans, как слоган заставки. До
+  /// 23.09.2026 он был набран Josefin Sans ExtraLight, а кириллицы в Josefin
+  /// нет вовсе: буквы брались из системного шрифта. Nunito вшит без
+  /// ExtraLight, поэтому вес — Regular, как на заставке; размер и разрядка
+  /// прежние. Страж — test/screens/search_home_tagline_test.dart.
   Widget _buildTagline() {
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: Text(
         'Вкусное рядом',
-        style: GoogleFonts.josefinSans(
+        style: TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
           fontSize: 16,
-          fontWeight: FontWeight.w200,
+          fontWeight: FontWeight.w400,
           color: Colors.white.withValues(alpha: 0.85),
           letterSpacing: 16 * 0.3,
         ),

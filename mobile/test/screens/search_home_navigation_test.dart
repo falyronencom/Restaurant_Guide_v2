@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -36,8 +35,6 @@ void main() {
     SharedPreferences.setMockInitialValues(
       <String, Object>{BelarusCities.persistenceKey: 'Минск'},
     );
-    // Шрифты вшиты в сборку; в тесте гасим попытку сходить за ними в сеть.
-    GoogleFonts.config.allowRuntimeFetching = false;
   });
 
   Future<StubAdapter> pumpHome(WidgetTester tester) async {
