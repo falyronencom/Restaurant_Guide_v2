@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
@@ -247,7 +248,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
         if (!didPop) {
           final shouldPop = await _onWillPop();
           if (shouldPop && context.mounted) {
-            Navigator.of(context).pop();
+            // Выход из приложения, а не закрытие этого экрана. Главная —
+            // единственный маршрут корневого навигатора (заставка, вход и
+            // регистрация приходят сюда через pushNamedAndRemoveUntil), и
+            // Navigator.pop() оставлял навигатор пустым: чёрный экран, глухой
+            // к касаниям (A72, 23.09.2026). SystemNavigator.pop — то же, что
+            // Flutter делает сам, когда «Назад» некому обработать: на Android
+            // активити закрывается, следующий запуск идёт с заставки. На iOS
+            // системной «Назад» нет, а вызов там игнорируется.
+            SystemNavigator.pop();
           }
         }
       },
