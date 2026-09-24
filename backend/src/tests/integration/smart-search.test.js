@@ -753,3 +753,144 @@ describe('Smart Search - фильтры экрана в теле запроса'
     expect(filtered.body.data.pagination.total).toBe(0);
   });
 });
+
+// --- Разводка разбора (А1, 24.09.2026) --------------------------------------
+//
+// Разборы прежнего промпта живут в кэше до часа после выкатки, поэтому здесь
+// сеется именно их форма: без dish_variants, «Рядом со мной» в location, кухня,
+// додуманная к блюду. Нормализация при чтении из кэша обязана их исправить.
+// Фикстура — европейское кафе с разделами «ЗАВТРАКИ» и «СУШИ» в меню: ни тип,
+// ни кухня, ни описание этих слов не содержат — найти его можно только по меню.
+
+describe('Smart Search - разводка разбора (А1)', () => {
+  const seededHashes = new Set();
+
+  beforeAll(async () => {
+    if (!redisClient.isOpen) {
+      await connectRedis();
+    }
+  });
+
+  afterAll(async () => {
+    for (const hash of seededHashes) {
+      await deleteKey(`smartsearch:${hash}`).catch(() => {});
+    }
+  });
+
+  beforeEach(async () => {
+    const est = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Утреннее кафе', gen_random_uuid()::text, 'Кафе у парка', 'Минск', 'ул. Парковая 3', 53.93, 27.6, ARRAY['Кафе'], ARRAY['Европейская'], 'active', $2::jsonb, '$$', NOW(), NOW())
+      RETURNING id
+    `, [partnerId, defaultWorkingHours]);
+    const estId = est.rows[0].id;
+    const media = await query(
+      `INSERT INTO establishment_media
+         (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+       VALUES ($1, 'menu', 'pdf', 'http://test/morning.pdf', 'http://test/t.png', 'http://test/p.png')
+       RETURNING id`,
+      [estId],
+    );
+    await query(
+      `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, is_hidden_by_admin, position)
+       VALUES ($1, $2, 'Сырники со сметаной', 9.00, 'ЗАВТРАКИ', FALSE, 0),
+              ($1, $2, 'Филадельфия', 24.00, 'СУШИ', FALSE, 1)`,
+      [estId, media.rows[0].id],
+    );
+  });
+
+  async function seedIntent(queryText, intent) {
+    expect(redisClient.isOpen).toBe(true);
+    const hash = intentCacheHash(queryText);
+    seededHashes.add(hash);
+    await smartSearchService.cacheIntent(hash, intent, 60);
+    // Посев обязан лечь, иначе запрос уйдёт на запасной путь и проверки ниже
+    // будут мерить не тот путь.
+    expect(await smartSearchService.getCachedIntent(hash)).toEqual(intent);
+  }
+
+  /** Форма разбора прежнего промпта — без dish_variants. */
+  function oldPromptIntent(extra = {}) {
+    return {
+      cuisine: null, category: null, dish: null, meal_type: null, price_max: null,
+      location: null, sort: null, tags: [], error: null, ...extra,
+    };
+  }
+
+  test('«Рядом со мной» в location — не город: выдача по городу контекста, intent отдаёт сортировку по расстоянию', async () => {
+    // Прод 24.09: фраза становилась фильтром города — 0 заведений из 26.
+    await seedIntent('рядом со мной', oldPromptIntent({ location: 'Рядом со мной' }));
+
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'Рядом со мной', city: 'Минск' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.fallback).toBe(false);
+    expect(response.body.data.establishments.map(e => e.name).sort())
+      .toEqual(['Бургер Хаус', 'Итальяно', 'Кофе Тайм', 'Утреннее кафе']);
+    expect(response.body.data.intent.location).toBeNull();
+    expect(response.body.data.intent.sort).toBe('distance');
+  });
+
+  test('«Завтрак» — приём пищи ищется в меню словом «завтрак» и находит раздел «ЗАВТРАКИ»', async () => {
+    // Прежний промпт клал «завтрак» ещё и в теги — как фильтр карточки тег
+    // обнулял выдачу, а сам meal_type отбрасывался (прод 24.09: 0).
+    await seedIntent('завтрак', oldPromptIntent({ meal_type: 'breakfast', tags: ['завтрак'] }));
+
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'Завтрак', city: 'Минск' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.fallback).toBe(false);
+    expect(response.body.data.establishments.map(e => e.name)).toEqual(['Утреннее кафе']);
+  });
+
+  test('«Суши» с кухней, додуманной прежним промптом, — кухня не режет: суши в меню европейского кафе найдены', async () => {
+    // Прод 24.09: «Суши» → cuisine «Японская» по И с меню — 1 заведение из 5.
+    await seedIntent('суши', oldPromptIntent({ dish: 'суши', cuisine: ['Японская'], tags: ['суши'] }));
+
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'Суши', city: 'Минск' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.fallback).toBe(false);
+    expect(response.body.data.establishments.map(e => e.name)).toEqual(['Утреннее кафе']);
+  });
+
+  test('ответ несёт поля intent, которые читает mobile, и добавочное dish_variants', async () => {
+    await seedIntent('роллы', {
+      category: null, cuisine: null, dish: 'ролл', dish_variants: ['суши', 'sushi'], meal_type: null,
+      price_max: null, location: null, sort: null, tags: [], error: null,
+    });
+
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'роллы', city: 'Минск' });
+
+    expect(response.status).toBe(200);
+    const { intent } = response.body.data;
+    // SmartSearchIntent.fromJson (mobile/lib/services/smart_search_service.dart)
+    // читает ровно эти ключи; пропавший ключ там молча станет null.
+    for (const key of ['category', 'cuisine', 'dish', 'meal_type', 'price_max', 'location', 'sort', 'tags']) {
+      expect(intent).toHaveProperty(key);
+    }
+    expect(intent.dish).toBe('ролл');
+    expect(intent.dish_variants).toEqual(['суши', 'sushi']);
+  });
+
+  test('разбор чужой формы в кэше — промах кэша, а не выдача всего города', async () => {
+    // Без модели (в тестах её нет) промах кэша уходит на запасной путь.
+    await seedIntent('битый кэш', { dish: 'суши' });
+
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'битый кэш', city: 'Минск' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.fallback).toBe(true);
+    expect(response.body.data.intent).toBeNull();
+  });
+});

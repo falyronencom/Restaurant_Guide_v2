@@ -30,12 +30,17 @@ export const isAvailable = () => {
 /**
  * Get OpenRouter configuration for Smart Search intent parsing.
  * Reads env vars lazily to ensure dotenv has loaded.
+ *
+ * Умолчание — модель, выбранная замером 24.09.2026 вместе с промптом разбора
+ * (SDL CAT-C-2.2, поправка 24.09): у прежней google/gemini-2.5-flash-lite в
+ * каталоге OpenRouter срок 2026-10-20. Модель и промпт меняются и проверяются
+ * вместе. У OCR своё умолчание (getOcrConfig), от этого не зависящее.
  * @returns {{ apiKey: string, baseUrl: string, model: string }}
  */
 export const getConfig = () => ({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-  model: process.env.AI_MODEL || 'google/gemini-2.5-flash-lite',
+  model: process.env.AI_MODEL || 'google/gemini-3.5-flash-lite',
 });
 
 /**

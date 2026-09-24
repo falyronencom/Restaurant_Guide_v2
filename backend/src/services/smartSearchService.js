@@ -2,10 +2,11 @@
  * Smart Search Service
  *
  * AI-powered intent parsing for natural language restaurant search queries.
- * Uses OpenRouter API (Gemini 2.5 Flash-Lite, fallback DeepSeek V3) to parse
- * user intent, then delegates to existing searchService for SQL execution.
+ * Uses OpenRouter (model from AI_MODEL, default Gemini 3.5 Flash-Lite — SDL
+ * CAT-C-2.2, amended 24.09.2026) to parse user intent, then delegates to the
+ * existing searchService for SQL execution.
  *
- * Pipeline: parseIntent → validate (Zod) → buildFilters → searchByRadius/searchWithoutLocation
+ * Pipeline: parseIntent → normalizeIntent (Zod) → buildFilters → searchByRadius/searchWithoutLocation
  * Fallback: raw query → existing ILIKE + SEARCH_SYNONYMS (transparent to user)
  */
 
@@ -17,58 +18,180 @@ import redisClient from '../config/redis.js';
 import * as searchService from './searchService.js';
 import logger from '../utils/logger.js';
 // Canon shared with the write-path + DB CHECK (CAT-C-2.9). DB stores Cyrillic
-// directly; these drive the AI prompt and Zod enum validation.
-import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+// directly; these drive the AI prompt and the intent normalization.
+import {
+  VALID_CATEGORIES,
+  VALID_CUISINES,
+  isValidCategory,
+  isValidCuisine,
+} from '../constants/establishmentVocab.js';
 
 /**
- * Zod schema for AI response validation.
- * Invalid responses trigger fallback to ILIKE search.
+ * Города, которые разбор вправе вернуть в `location`. Написание и порядок —
+ * как в промпте, на котором мерили модели 24.09.2026. Сравнение
+ * (canonicalCity) не различает регистр и ё/е: «могилев» → «Могилёв»; обе
+ * формы Могилёва searchService разворачивает сам (expandCityForQuery).
+ */
+const PROMPT_CITIES = Object.freeze(['Минск', 'Гродно', 'Брест', 'Гомель', 'Витебск', 'Могилёв', 'Бобруйск']);
+
+/** Сортировки, которые умеет разбор (у экрана их больше — там свой парсер). */
+const INTENT_SORTS = new Set(['distance', 'rating', 'price_asc']);
+
+/**
+ * «Рядом» — не город, а просьба сортировать по расстоянию. Прод 24.09.2026:
+ * фраза «Рядом со мной» уходила в `location`, становилась фильтром города и
+ * давала 0 заведений из 26.
+ */
+const NEARBY_RE = /рядом|поблизости|недалеко|около меня|возле меня|near/i;
+
+/**
+ * Приём пищи, который меню называют разделом. На проде 24.09.2026 раздел
+ * «ЗАВТРАКИ» есть у 12 заведений из 26 (в том числе у обоих, где есть
+ * «БРАНЧ»), «ланч» — у двух. Ужина отдельным разделом в меню нет — его не
+ * ищем. `variants` уходят дальше как dishVariants: их прочтёт сопоставление с
+ * меню после сессии А2, сегодня searchService их не видит.
+ */
+const MEAL_MENU_TERMS = new Map([
+  ['breakfast', { term: 'завтрак', variants: ['бранч'] }],
+  ['lunch', { term: 'ланч', variants: [] }],
+]);
+
+/** Потолок вариантов названия блюда — столько же просит промпт. */
+const MAX_DISH_VARIANTS = 5;
+
+/** Ключ сравнения: регистр и ё/е не различаются. */
+const foldKey = (s) => s.toLowerCase().replace(/ё/g, 'е');
+
+/** Пустая строка у моделей значит «нет значения». */
+const trimToNull = (v) => (v == null || v.trim() === '' ? null : v.trim());
+
+const CITY_BY_KEY = new Map(PROMPT_CITIES.map((city) => [foldKey(city), city]));
+
+/**
+ * Город из списка в каноническом написании — или null для всего остального
+ * («рядом со мной», улица, район, пустая строка).
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function canonicalCity(value) {
+  if (typeof value !== 'string') return null;
+  return CITY_BY_KEY.get(foldKey(value.trim())) ?? null;
+}
+
+/**
+ * Варианты названия блюда: только строки, без пустых, без повторов и без
+ * самого блюда, не больше MAX_DISH_VARIANTS. Без блюда варианты ничего не
+ * значат. Негодная форма поля (не массив) — пустой список, а не отказ разбора:
+ * поле добавочное, из-за него запрос не должен уходить на запасной путь.
+ * @param {unknown} value
+ * @param {string|null} dish
+ * @returns {string[]}
+ */
+function cleanDishVariants(value, dish) {
+  if (!dish || !Array.isArray(value)) return [];
+  const seen = new Set([foldKey(dish)]);
+  const variants = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const variant = item.trim();
+    if (!variant || seen.has(foldKey(variant))) continue;
+    seen.add(foldKey(variant));
+    variants.push(variant);
+    if (variants.length === MAX_DISH_VARIANTS) break;
+  }
+  return variants;
+}
+
+/**
+ * Схема ответа модели — она же нормализатор разбора.
  *
- * `dish` (Segment B): specific dish/drink the user is looking for. Distinct
- * from `category` (establishment type). Empty string is coerced to null to
- * tolerate LLMs that return "" instead of null.
+ * Значения вне словаря отбрасываются ПОШТУЧНО: кухня, тип, сортировка.
+ * Раньше enum в схеме ронял весь разбор — одна кухня вне списка уводила запрос
+ * на запасной путь без меню. Форма ответа (ключи, типы) по-прежнему
+ * обязательна: пустой или чужой объект — это отказ, а не «ничего не просили»,
+ * иначе мусор от модели превращался бы в выдачу всего города.
+ *
+ * `dish` (Segment B) — блюдо или напиток, отдельно от `category` (тип
+ * заведения); пустая строка = null. `dish_variants` — добавочное поле промпта
+ * P1 и потому необязательное: разборы прежнего промпта в кэше его не несут.
+ * `location` на выходе — город из списка или null; «рядом» вместо города
+ * становится сортировкой по расстоянию, если сортировку не назвали.
  */
 const intentSchema = z.object({
-  cuisine: z.array(z.enum(VALID_CUISINES)).nullable(),
-  category: z.enum(VALID_CATEGORIES).nullable(),
-  dish: z
-    .string()
-    .nullable()
-    .transform((v) => (v == null || v.trim() === '' ? null : v.trim())),
-  meal_type: z.string().nullable(),
+  cuisine: z.union([z.array(z.string()), z.string()]).nullable()
+    .transform((value) => {
+      const kept = [...new Set([value ?? []].flat().filter((c) => isValidCuisine(c)))];
+      return kept.length > 0 ? kept : null;
+    }),
+  category: z.string().nullable().transform((v) => (isValidCategory(v) ? v : null)),
+  dish: z.string().nullable().transform(trimToNull),
+  dish_variants: z.unknown().optional(),
+  meal_type: z.string().nullable().transform((v) => trimToNull(v)?.toLowerCase() ?? null),
   price_max: z.number().positive().nullable(),
   location: z.string().nullable(),
-  sort: z.enum(['distance', 'rating', 'price_asc']).nullable(),
-  tags: z.array(z.string()).nullable().transform(v => v ?? []),
+  sort: z.string().nullable().transform((v) => (INTENT_SORTS.has(v) ? v : null)),
+  tags: z.array(z.string()).nullable().transform((v) => v ?? []),
   error: z.string().nullable(),
+}).transform((intent) => {
+  const city = canonicalCity(intent.location);
+  const nearby = city == null
+    && typeof intent.location === 'string'
+    && NEARBY_RE.test(intent.location);
+  return {
+    ...intent,
+    dish_variants: cleanDishVariants(intent.dish_variants, intent.dish),
+    location: city,
+    sort: intent.sort ?? (nearby ? 'distance' : null),
+  };
 });
+
+/**
+ * Разбор → нормализованный intent, или null, если форма не та.
+ * Применяется и к ответу модели, и к разбору из кэша: разборы прежнего промпта
+ * живут в Redis до часа после выкатки и обязаны пройти те же правила
+ * («Рядом со мной» в `location`, кухня вне списка). Идемпотентна.
+ * @param {unknown} raw
+ * @returns {object|null}
+ */
+export function normalizeIntent(raw) {
+  const result = intentSchema.safeParse(raw);
+  return result.success ? result.data : null;
+}
 
 /** Cache TTL: 1 hour */
 const CACHE_TTL_SECONDS = 3600;
 
-/** OpenRouter API timeout (20s — cold model startup via OpenRouter can be 10-15s) */
+/**
+ * Бюджет времени на разбор фразы — один на обе попытки (20 с: холодный старт
+ * модели через OpenRouter бывает 10–15 с). Повтор не удлиняет худшее ожидание.
+ */
 const API_TIMEOUT_MS = 20000;
 
+/** Попыток на одну фразу: первая и один повтор. */
+const MAX_ATTEMPTS = 2;
+
 /**
- * System prompt for AI intent parsing.
- * Pre-built once at module load to avoid repeated string construction.
+ * Промпт разбора — P1 из замера 24.09.2026 байт в байт
+ * (docs/handoffs/smart_search_recall_20260924/bench_prompts.cjs). Модель и
+ * промпт выбирались и проверяются вместе (SDL CAT-C-2.2, поправка 24.09): правка
+ * текста без перепрогона замера — это непроверенная связка.
+ * Отличия от прежнего: тип и кухня — только названные вслух, не додуманные по
+ * блюду; блюдо — в словарной форме, с исправленной опечаткой и переводом
+ * латиницы; `dish_variants`; город — только из списка; «рядом» — сортировка.
  */
-const SYSTEM_PROMPT = [
-  'Parse restaurant search query into JSON.',
-  `Categories (establishment types): ${VALID_CATEGORIES.join(', ')}`,
-  `Cuisines: ${VALID_CUISINES.join(', ')}`,
-  '',
-  'IMPORTANT — distinguish ESTABLISHMENT TYPE from DISH NAME:',
-  '- "кофейня рядом" → category="Кофейня", dish=null (user wants a coffee shop)',
-  '- "кофе рядом" → category=null, dish="кофе" (user wants coffee as a drink)',
-  '- "пиццерия на Немиге" → category="Пиццерия", dish=null',
-  '- "пицца до 15 рублей" → category=null, dish="пицца"',
-  '- "бар с дешёвым виски" → category="Бар", dish="виски"',
-  '- "кафе с завтраками" → category="Кафе", dish=null, meal_type="breakfast"',
-  'If the query contains BOTH a type and a dish, fill both fields.',
-  '',
-  'Output JSON: {"category":"one or null","cuisine":["array or null"],"dish":"specific dish or null","meal_type":"breakfast/lunch/dinner/snack or null","price_max":number_or_null,"location":"city or null","sort":"distance/rating/price_asc or null","tags":["keywords"],"error":null}',
-  'Use EXACT category/cuisine names from lists above. Respond with JSON only.',
+export const SYSTEM_PROMPT = [
+  'You parse a restaurant-search query typed by a user in Belarus (Russian or Belarusian, sometimes English, sometimes with typos) into JSON. Respond with JSON only.',
+  'Fields:',
+  `- category: establishment TYPE, only if the user names a type. One of: ${VALID_CATEGORIES.join(', ')}. Never infer it from a dish ("пицца" is a dish, not "Пиццерия").`,
+  `- cuisine: only if the user names a cuisine or a diet explicitly ("грузинская кухня", "вегетарианское"). One or more of: ${VALID_CUISINES.join(', ')}. Never infer a cuisine from a dish ("суши" → cuisine=null, "драники" → cuisine=null).`,
+  '- dish: the food or drink the user wants — in Russian, dictionary form (nominative), spelling corrected, without generic words and prepositions: "каппучино" → "капучино", "дранники" → "драники", "салат цезарь" → "цезарь", "с лососем" → "лосось", "latte" → "латте", "cheesecake" → "чизкейк". null if the query names no food or drink.',
+  '- dish_variants: up to 5 other names under which the SAME dish appears on menus: the English/Latin name, the Belarusian spelling, its common kinds or equivalent names ("суши" → ["ролл","сашими","нигири","sushi"]; "курица" → ["цыплёнок","chicken"]; "капучино" → ["cappuccino"]; "драники" → ["дранікі"]). Never add a different dish. [] if none.',
+  '- meal_type: "breakfast", "lunch", "dinner" or null. "завтрак", "позавтракать", "бранч" → breakfast; "бизнес-ланч", "ланч", "обед" → lunch; "ужин", "поужинать" → dinner.',
+  '- price_max: a number in BYN if the user states a budget ("до 20 рублей" → 20), else null.',
+  `- location: a city name only, one of: ${PROMPT_CITIES.join(', ')}; otherwise null. "рядом", "рядом со мной", "поблизости", a street or a district are NOT a location → location=null.`,
+  '- sort: "distance" if the user wants something near ("рядом", "поблизости", "рядом со мной"); "price_asc" for "дешевле всего"; "rating" for "лучшие"; else null.',
+  '- tags: other requirements that are not a dish, type, cuisine, meal, price, place or sort ("терраса", "детская комната", "живая музыка"); [] if none. Never repeat the dish or the meal here.',
+  'Output exactly this shape: {"category":null,"cuisine":null,"dish":null,"dish_variants":[],"meal_type":null,"price_max":null,"location":null,"sort":null,"tags":[],"error":null}',
 ].join('\n');
 
 /**
@@ -121,10 +244,115 @@ export async function cacheIntent(queryHash, intent, ttl = CACHE_TTL_SECONDS) {
 }
 
 /**
- * Call OpenRouter API to parse user intent.
+ * Одна попытка разбора: запрос к OpenRouter и разбор ответа.
+ *
+ * Возвращает `{ intent, model }` или `{ retry, reason, ... }`. Повтор — только
+ * когда ответ пришёл, но им нельзя воспользоваться (пусто, оборван, не JSON,
+ * не по схеме): это сбой поставщика на одном ответе, замер 24.09.2026 ловил
+ * `finish_reason: "error"` с JSON на полуслове у разных моделей. Ошибка HTTP,
+ * таймаут и отказ сети не повторяются: повтор удвоил бы ожидание при низких
+ * шансах. / Retry only an answer that arrived unusable; HTTP errors, timeouts
+ * and network failures are not retried.
+ *
+ * @param {string} query
+ * @param {{ apiKey: string, baseUrl: string, model: string }} config
+ * @param {AbortSignal} signal - общий на обе попытки
+ * @returns {Promise<object>}
+ */
+async function requestIntent(query, config, signal) {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://restaurantguidev2-production.up.railway.app',
+      'X-Title': 'Restaurant Guide Belarus',
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: query },
+      ],
+      temperature: 0.1,
+      // Ответ по замеру — до 106 токенов; запас на случай, если поставщик всё
+      // же потратит часть бюджета на рассуждение, а не оборвёт JSON.
+      max_tokens: 1000,
+      response_format: { type: 'json_object' },
+      // gemini-3.5-flash-lite отвергает effort "none" ответом 400; с "minimal"
+      // служебных токенов 0 (замер 24.09, 111 ответов из 111). Модель в
+      // AI_MODEL обязана принимать этот параметр — иначе каждый вызов даст 400
+      // и поиск молча уйдёт на запасной путь (текст отказа пишется в лог ниже).
+      reasoning: { effort: 'minimal', exclude: true },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    // Текст отказа нужен в логе: неверный AI_MODEL, неподдержанный параметр,
+    // снятая с каталога модель — всё это 4xx, и без текста они неразличимы.
+    // Истёкший бюджет при чтении тела — это таймаут, а не «ошибка API»:
+    // пробрасывается, чтобы лог назвал его своим именем.
+    const detail = await response.text().catch((error) => {
+      if (error.name === 'AbortError') throw error;
+      return '';
+    });
+    logger.error('OpenRouter API error', {
+      status: response.status,
+      statusText: response.statusText,
+      model: config.model,
+      detail: detail.slice(0, 300),
+    });
+    return { retry: false, reason: `http_${response.status}` };
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    return { retry: true, reason: 'envelope_not_json' };
+  }
+
+  const choice = data.choices?.[0];
+  const finishReason = choice?.finish_reason ?? null;
+  let content = choice?.message?.content;
+
+  if (!content) {
+    return { retry: true, reason: 'empty_content', finishReason };
+  }
+
+  // Strip markdown code fences if model wraps JSON in ```json ... ```
+  content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+  // Extract JSON object if surrounded by extra text
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return { retry: true, reason: 'no_json_object', finishReason, content: content.slice(0, 200) };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return { retry: true, reason: 'invalid_json', finishReason, content: content.slice(0, 200) };
+  }
+  logger.debug('AI raw parsed response', { query, parsed });
+
+  const validated = intentSchema.safeParse(parsed);
+  if (!validated.success) {
+    return { retry: true, reason: 'schema', finishReason, issues: validated.error.issues };
+  }
+
+  return { intent: validated.data, model: data.model || config.model };
+}
+
+/**
+ * Call OpenRouter API to parse user intent: one attempt plus one retry for an
+ * unusable answer, both inside one 20 s budget.
  *
  * @param {string} query - User's natural language search query
- * @returns {Promise<object|null>} Parsed intent or null on failure
+ * @returns {Promise<object|null>} Normalized intent or null on failure
  */
 export async function parseIntent(query) {
   if (!isAvailable()) {
@@ -133,83 +361,47 @@ export async function parseIntent(query) {
   }
 
   const config = getConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const outcome = await requestIntent(query, config, controller.signal);
 
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://restaurantguidev2-production.up.railway.app',
-        'X-Title': 'Restaurant Guide Belarus',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: query },
-        ],
-        temperature: 0.1,
-        max_tokens: 300,
-        response_format: { type: 'json_object' },
-      }),
-      signal: controller.signal,
-    });
+      if (outcome.intent) {
+        // Фраза и разбор отсюда убраны: их несла аналитическая строка
+        // (`smart_search_query`), и на успешном пути это был второй экземпляр
+        // тех же слов. Строчкой выше при `debug` уже пишется сырой разбор — для
+        // локальной отладки этого достаточно. Модель оставляем: она меняется
+        // независимо от запроса (маршрутизация OpenRouter). / The phrase and
+        // the parsed intent are gone from here — they duplicated the analytics line.
+        logger.info('AI intent parsed successfully', {
+          model: outcome.model,
+          attempt,
+        });
+        return outcome.intent;
+      }
 
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      logger.error('OpenRouter API error', {
-        status: response.status,
-        statusText: response.statusText,
-      });
-      return null;
+      const willRetry = outcome.retry && attempt < MAX_ATTEMPTS;
+      if (outcome.retry) {
+        // Отказ модели — одно из мест, где фраза в логе по делу: без неё дыру
+        // не воспроизвести (см. buildSearchQueryLog).
+        logger.warn('AI intent response unusable', {
+          query,
+          reason: outcome.reason,
+          attempt,
+          willRetry,
+          finishReason: outcome.finishReason,
+          content: outcome.content,
+          issues: outcome.issues,
+        });
+      }
+      if (!willRetry) return null;
     }
-
-    const data = await response.json();
-    let content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
-      logger.warn('OpenRouter returned empty content');
-      return null;
-    }
-
-    // Strip markdown code fences if model wraps JSON in ```json ... ```
-    content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-
-    // Extract JSON object if surrounded by extra text
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.warn('No JSON object found in AI response', { query, content: content.slice(0, 200) });
-      return null;
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    logger.debug('AI raw parsed response', { query, parsed });
-    const validated = intentSchema.parse(parsed);
-
-    // Фраза и разбор отсюда убраны: их несла аналитическая строка
-    // (`smart_search_query`), и на успешном пути это был второй экземпляр тех
-    // же слов. Строчкой выше при `debug` уже пишется сырой разбор — для
-    // локальной отладки этого достаточно. Модель оставляем: она меняется
-    // независимо от запроса (маршрутизация OpenRouter). / The phrase and the
-    // parsed intent are gone from here — they duplicated the analytics line.
-    logger.info('AI intent parsed successfully', {
-      model: data.model || config.model,
-    });
-
-    return validated;
+    return null;
   } catch (error) {
     if (error.name === 'AbortError') {
       logger.warn('OpenRouter API timeout', { query, timeoutMs: API_TIMEOUT_MS });
-    } else if (error instanceof z.ZodError) {
-      logger.warn('AI response failed Zod validation', {
-        query,
-        errors: error.errors,
-      });
     } else {
       logger.error('AI intent parsing failed', {
         query,
@@ -217,6 +409,8 @@ export async function parseIntent(query) {
       });
     }
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -233,7 +427,12 @@ export async function parseIntent(query) {
  * Explicit filters come from visible controls, inferred ones from the phrase;
  * within one dimension the control wins, across dimensions both apply.
  *
- * @param {object} intent - Validated intent from parseIntent()
+ * Разводка полей разбора (А1, 24.09.2026): блюдо — или приём пищи, который меню
+ * называют разделом, — ищется в меню, и тогда тип и кухня из фразы не режут
+ * выдачу; город — только из списка; варианты блюда уходят дальше как
+ * `dishVariants` (сопоставление с меню прочтёт их после А2).
+ *
+ * @param {object} intent - Normalized intent (normalizeIntent / parseIntent)
  * @param {{ latitude?: number, longitude?: number, city?: string }} context - User context
  * @param {object} explicitFilters - Фильтры экрана из тела запроса (уже разобраны
  *   utils/searchFilterParams.js; ключи с null отброшены). / Screen filters,
@@ -243,17 +442,27 @@ export async function parseIntent(query) {
 export function buildSmartSearchFilters(intent, context = {}, explicitFilters = {}) {
   const filters = {};
 
-  // Category — явные категории экрана заменяют выведенную из фразы
+  // Что искать в меню: блюдо, а без него — приём пищи, который меню называют
+  // разделом («Завтрак» → «ЗАВТРАКИ»). Блюдо сильнее: «сырники на завтрак» ищут
+  // сырники. До 24.09 meal_type отбрасывался, и «Завтрак», «Бизнес-ланч»,
+  // «бранч» давали 0 при таких разделах в меню у 12 заведений из 26.
+  const meal = intent.dish ? null : MEAL_MENU_TERMS.get(intent.meal_type) ?? null;
+  const menuTerm = intent.dish || meal?.term || null;
+
+  // Category — явные категории экрана заменяют выведенную из фразы. Тип и
+  // кухня из фразы — догадки разбора, и при слове для меню они не применяются:
+  // меню точнее, а догадка режет выдачу по И («Суши» → «Японская» оставляла
+  // 1 заведение из 5, прод 24.09) — тот же класс, что теги при блюде 07.09.
   if (explicitFilters.categories) {
     filters.categories = explicitFilters.categories;
-  } else if (intent.category) {
+  } else if (intent.category && !menuTerm) {
     filters.categories = [intent.category];
   }
 
   // Cuisines — та же размерность, то же правило
   if (explicitFilters.cuisines) {
     filters.cuisines = explicitFilters.cuisines;
-  } else if (intent.cuisine && intent.cuisine.length > 0) {
+  } else if (intent.cuisine && intent.cuisine.length > 0 && !menuTerm) {
     filters.cuisines = intent.cuisine;
   }
 
@@ -262,28 +471,38 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
   // rides as an OR-alternative at establishment level (ILIKE + SEARCH_SYNONYMS
   // via `dishOrSearch`): a pizzeria whose menu is not parsed yet still surfaces
   // for «пицца», and for the same word — absent other intent filters
-  // (category/cuisine/location/city still AND-narrow) — the smart path never
-  // finds less than the classic ?search= path. With a budget (price_max) the
-  // match must be menu-verified — the user asked for a price we can only read
-  // from a menu.
+  // (location/city still AND-narrow) — the smart path never finds less than
+  // the classic ?search= path. With a budget (price_max) the match must be
+  // menu-verified — the user asked for a price we can only read from a menu.
   if (intent.dish) {
     filters.dish = intent.dish;
     if (intent.price_max == null) {
       filters.dishOrSearch = intent.dish;
     }
+    if (Array.isArray(intent.dish_variants) && intent.dish_variants.length > 0) {
+      filters.dishVariants = [...intent.dish_variants];
+    }
+  } else if (meal) {
+    // Приём пищи — только по меню, без dishOrSearch: синонимы карточки про
+    // «завтрак» ничего не знают, а ILIKE по названию и описанию дал бы шум.
+    filters.dish = meal.term;
+    if (meal.variants.length > 0) {
+      filters.dishVariants = [...meal.variants];
+    }
   }
 
   // Price mapping:
-  //  - If dish is present, price_max is a literal BYN ceiling on menu_items.price_byn
-  //    (routed through searchService as `priceMaxByn`). price_range is NOT applied,
-  //    because the user stated an actual money budget for a specific dish.
-  //  - If no dish, fall back to the legacy subjective tier mapping to price_range.
+  //  - With a menu term (dish or meal), price_max is a literal BYN ceiling on
+  //    menu_items.price_byn (routed through searchService as `priceMaxByn`):
+  //    «бизнес-ланч до 20 рублей» is a lunch under 20 BYN. price_range is NOT
+  //    applied, because the user stated an actual money budget for the item.
+  //  - Without one, fall back to the legacy subjective tier mapping to price_range.
   //  - Явный ярус с экрана заменяет ярусную подстановку, но НЕ отменяет
   //    priceMaxByn: «пицца за 20 рублей» с включённой карточкой «$$» — это
   //    позиция дешевле 20 BYN в заведении класса «$$». / An explicit tier
   //    replaces the inferred tier but coexists with a dish budget.
   if (intent.price_max != null) {
-    if (intent.dish) {
+    if (menuTerm) {
       filters.priceMaxByn = intent.price_max;
     } else if (!explicitFilters.priceRange) {
       if (intent.price_max <= 15) {
@@ -309,30 +528,27 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
     filters.sortBy = (context.latitude && context.longitude) ? 'distance' : 'rating';
   }
 
-  // Location from AI (city override)
-  if (intent.location) {
-    filters.city = intent.location;
+  // Город из фразы — только город из списка, и тогда он сильнее города
+  // контекста (названный вслух тоже явный). Всё прочее («Рядом со мной»,
+  // улица, район) игнорируется: как фильтр города оно давало 0 (прод 24.09).
+  // Разбор уже нормализован; проверка здесь — страховка для любого вызова.
+  const phraseCity = canonicalCity(intent.location);
+  if (phraseCity) {
+    filters.city = phraseCity;
   } else if (context.city) {
     filters.city = context.city;
   }
 
   // Tags → search text for existing ILIKE + SEARCH_SYNONYMS — only without a
-  // dish. The parser restates the dish word in tags ("пицца" → dish="пицца",
-  // tags=["пицца"]); as an establishment-level filter AND-ed with the menu
-  // match it returned zero rows for every dish outside SEARCH_SYNONYMS
-  // («капучино») — prod, 07.09.2026. With a dish, tags are dropped rather than
-  // AND-ed — accepting the loss of the rare non-dish tag («терраса») instead of
-  // keeping a filter that zeroes the common case; joined multi-tag patterns
-  // («пицца терраса») matched nothing anyway.
-  if (!intent.dish && intent.tags && intent.tags.length > 0) {
+  // menu term. The parser restates the dish word in tags ("пицца" → dish="пицца",
+  // tags=["пицца"]; «Завтрак» → tags=["завтрак"]); as an establishment-level
+  // filter AND-ed with the menu match it returned zero rows for every dish
+  // outside SEARCH_SYNONYMS («капучино») — prod, 07.09.2026. With a menu term,
+  // tags are dropped rather than AND-ed — accepting the loss of the rare non-dish
+  // tag («терраса») instead of keeping a filter that zeroes the common case;
+  // joined multi-tag patterns («пицца терраса») matched nothing anyway.
+  if (!menuTerm && intent.tags && intent.tags.length > 0) {
     filters.search = intent.tags.join(' ');
-  }
-
-  // meal_type — logged for future use, not applied as filter
-  if (intent.meal_type) {
-    logger.debug('meal_type detected but not applied (Phase 1)', {
-      mealType: intent.meal_type,
-    });
   }
 
   // Размерности, которых разбор фразы не касается вовсе, — прямой проброс.
@@ -374,8 +590,10 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
   const normalized = normalizeQuery(query);
   const queryHash = generateQueryHash(normalized);
 
-  // 1. Check Redis cache
-  let intent = await getCachedIntent(queryHash);
+  // 1. Check Redis cache. Разбор из кэша проходит ту же нормализацию, что и
+  // свежий: разборы прежнего промпта живут там до часа после выкатки. Негодная
+  // форма считается промахом — фразу разберёт модель заново.
+  let intent = normalizeIntent(await getCachedIntent(queryHash));
   let fromCache = false;
 
   if (intent) {

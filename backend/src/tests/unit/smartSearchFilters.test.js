@@ -323,3 +323,137 @@ describe('buildSmartSearchFilters — явное сильнее выведенн
     expect('features' in withEmpty).toBe(false);
   });
 });
+
+// ─── Разводка полей разбора (А1, 24.09.2026) ─────────────────────────────────
+//
+// Прод 24.09: из 995 ожидаемых пар «запрос × заведение» найдено 58 %. Слой
+// разводки терял запросы целиком: «Рядом со мной» становилось фильтром города,
+// meal_type выбрасывался («Завтрак» = 0 при разделе «ЗАВТРАКИ» у 12 заведений),
+// кухня, додуманная к блюду, резала выдачу по И («Суши» → «Японская»: 1 из 5).
+
+describe('buildSmartSearchFilters — разводка полей разбора (А1)', () => {
+  const minsk = { city: 'Минск', latitude: 53.9, longitude: 27.56 };
+
+  test('«Рядом со мной» в location не становится городом — город берётся из контекста', () => {
+    const filters = buildSmartSearchFilters(intentOf({ location: 'Рядом со мной' }), minsk);
+
+    expect(filters.city).toBe('Минск');
+  });
+
+  test('не-город без города в контексте — фильтра города нет вовсе', () => {
+    const filters = buildSmartSearchFilters(intentOf({ location: 'на Немиге' }), {});
+
+    expect('city' in filters).toBe(false);
+  });
+
+  test('город из списка — в каноническом написании, регистр и «е» вместо «ё» не мешают', () => {
+    const filters = buildSmartSearchFilters(intentOf({ location: 'МОГИЛЕВ' }), minsk);
+
+    expect(filters.city).toBe('Могилёв');
+  });
+
+  test('breakfast без блюда — поиск по меню словом «завтрак», вариант «бранч», без dishOrSearch', () => {
+    // Прежний промпт клал приём пищи ещё и в теги — как фильтр карточки тег
+    // обнулил бы выдачу, поэтому при слове для меню теги отброшены.
+    const filters = buildSmartSearchFilters(
+      intentOf({ meal_type: 'breakfast', tags: ['завтрак'] }),
+      minsk,
+    );
+
+    expect(filters.dish).toBe('завтрак');
+    expect(filters.dishVariants).toEqual(['бранч']);
+    expect(filters.dishOrSearch).toBeUndefined();
+    expect(filters.search).toBeUndefined();
+  });
+
+  test('lunch без блюда — слово «ланч», вариантов нет', () => {
+    const filters = buildSmartSearchFilters(intentOf({ meal_type: 'lunch' }), minsk);
+
+    expect(filters.dish).toBe('ланч');
+    expect('dishVariants' in filters).toBe(false);
+    expect(filters.dishOrSearch).toBeUndefined();
+  });
+
+  test('ужина разделом в меню нет — меню по нему не ищется', () => {
+    const filters = buildSmartSearchFilters(intentOf({ meal_type: 'dinner' }), minsk);
+
+    expect(filters.dish).toBeUndefined();
+    expect('dishVariants' in filters).toBe(false);
+  });
+
+  test('блюдо сильнее приёма пищи: «сырники на завтрак» ищут сырники', () => {
+    const filters = buildSmartSearchFilters(
+      intentOf({ dish: 'сырники', meal_type: 'breakfast' }),
+      minsk,
+    );
+
+    expect(filters.dish).toBe('сырники');
+    expect(filters.dishOrSearch).toBe('сырники');
+    expect('dishVariants' in filters).toBe(false);
+  });
+
+  test('бюджет при приёме пищи — цена позиции меню, а не ярус заведения', () => {
+    // «бизнес-ланч до 20 рублей» — ланч дешевле 20 BYN.
+    const filters = buildSmartSearchFilters(intentOf({ meal_type: 'lunch', price_max: 20 }), minsk);
+
+    expect(filters.priceMaxByn).toBe(20);
+    expect(filters.priceRange).toBeUndefined();
+  });
+
+  test('при блюде тип и кухня из фразы не применяются', () => {
+    const filters = buildSmartSearchFilters(
+      intentOf({ dish: 'суши', cuisine: ['Японская'], category: 'Ресторан' }),
+      minsk,
+    );
+
+    expect(filters.dish).toBe('суши');
+    expect(filters.cuisines).toBeUndefined();
+    expect(filters.categories).toBeUndefined();
+  });
+
+  test('при приёме пищи тип и кухня из фразы тоже не применяются', () => {
+    const filters = buildSmartSearchFilters(
+      intentOf({ meal_type: 'breakfast', category: 'Кафе', cuisine: ['Европейская'] }),
+      minsk,
+    );
+
+    expect(filters.categories).toBeUndefined();
+    expect(filters.cuisines).toBeUndefined();
+  });
+
+  test('явные тип и кухня экрана при блюде применяются, как раньше', () => {
+    const filters = buildSmartSearchFilters(
+      intentOf({ dish: 'суши', cuisine: ['Японская'] }),
+      minsk,
+      { categories: ['Бар'], cuisines: ['Азиатская'] },
+    );
+
+    expect(filters.categories).toEqual(['Бар']);
+    expect(filters.cuisines).toEqual(['Азиатская']);
+  });
+
+  test('варианты блюда уходят дальше как dishVariants', () => {
+    const filters = buildSmartSearchFilters(
+      intentOf({ dish: 'суши', dish_variants: ['ролл', 'сашими'] }),
+      minsk,
+    );
+
+    expect(filters.dishVariants).toEqual(['ролл', 'сашими']);
+  });
+
+  test('пустые варианты не добавляют ключа dishVariants', () => {
+    const filters = buildSmartSearchFilters(intentOf({ dish: 'кофе', dish_variants: [] }), minsk);
+
+    expect('dishVariants' in filters).toBe(false);
+  });
+
+  test('варианты приёма пищи — копия: правка выдачи одного запроса не протекает в следующий', () => {
+    // Список «бранч» живёт в модуле; отдай его ссылкой — и любой, кто
+    // допишет в filters.dishVariants, изменит его для всех последующих запросов.
+    const first = buildSmartSearchFilters(intentOf({ meal_type: 'breakfast' }), minsk);
+    first.dishVariants.push('чужое');
+
+    const second = buildSmartSearchFilters(intentOf({ meal_type: 'breakfast' }), minsk);
+    expect(second.dishVariants).toEqual(['бранч']);
+  });
+});
