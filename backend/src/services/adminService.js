@@ -290,7 +290,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
       );
     }
 
-    // Record audit log (non-blocking)
+    // Record audit log — awaited; createAuditLog swallows its own errors
     await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: `moderate_${action}`,
@@ -305,8 +305,12 @@ export const moderateEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
-    // Notify partner (non-blocking)
-    NotificationService.notifyEstablishmentStatusChange(
+    // Notify partner — awaited, like the audit log: the in-app notification
+    // exists by the time the moderator sees the response, and no tail is left
+    // running after it (such a tail deadlocked the next test's TRUNCATE, and a
+    // restart could drop it). The notifier swallows its own errors and keeps
+    // the push in the background, so this cannot fail the moderation.
+    await NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
       newStatus,
       action === 'reject' ? (moderation_notes || null) : null,
@@ -563,8 +567,9 @@ export const suspendEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
-    // Notify partner (non-blocking)
-    NotificationService.notifyEstablishmentStatusChange(
+    // Notify partner — awaited for the same reasons as in moderateEstablishment;
+    // the notifier swallows its own errors, so this cannot fail the suspension.
+    await NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
       'suspended',
       reason,
@@ -666,8 +671,10 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       user_agent: userAgent,
     });
 
-    // Notify partner (non-blocking) — distinct unsuspend notification
-    NotificationService.notifyEstablishmentStatusChange(
+    // Notify partner — distinct unsuspend notification, awaited for the same
+    // reasons as in moderateEstablishment; the notifier swallows its own
+    // errors, so this cannot fail the reactivation.
+    await NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
       'unsuspended',
     ).catch(() => {});
@@ -817,7 +824,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
       { latitude, longitude },
     );
 
-    // Audit log (non-blocking)
+    // Audit log — awaited; createAuditLog swallows its own errors
     await AuditLogModel.createAuditLog({
       user_id: adminUserId,
       action: 'admin_update_coordinates',
@@ -1178,7 +1185,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
     client.release();
   }
 
-  // 4. Audit log (non-blocking, outside transaction)
+  // 4. Audit log — awaited, outside transaction; createAuditLog swallows its own errors
   await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'claim_establishment',
@@ -1190,8 +1197,11 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
     user_agent: req.get('User-Agent'),
   });
 
-  // 5. Notify new partner (non-blocking)
-  NotificationService.notifyEstablishmentClaimed(
+  // 5. Notify new partner — awaited for the same reasons as in
+  // moderateEstablishment. The notifier swallows its own errors; keep the
+  // .catch anyway — claim has no enclosing try/catch, so it is the only guard
+  // that stops a notification failure from failing the claim.
+  await NotificationService.notifyEstablishmentClaimed(
     establishmentId,
     targetUserId,
   ).catch(() => {});
@@ -1245,7 +1255,7 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
   // Upgrade role (idempotent — safe for already-partner users)
   const updatedUser = await upgradeUserToPartner(targetUserId);
 
-  // Audit log (non-blocking)
+  // Audit log — awaited; createAuditLog swallows its own errors
   await AuditLogModel.createAuditLog({
     user_id: adminUserId,
     action: 'upgrade_user_to_partner',
@@ -1273,7 +1283,8 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 /**
  * Hide a parsed menu item from user-facing search.
  * Parallel to suspendEstablishment: validate reason, guard state, update,
- * write audit log non-blocking. Phase 1: no partner notification.
+ * write audit log (awaited; it swallows its own errors). Phase 1: no partner
+ * notification.
  *
  * @param {string} menuItemId - UUID
  * @param {Object} params

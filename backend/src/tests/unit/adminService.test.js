@@ -857,6 +857,101 @@ describe('claimEstablishment', () => {
 });
 
 // ============================================================================
+// Partner notification is written before the action returns
+// ============================================================================
+//
+// These four actions used to fire the partner notification without awaiting
+// it: the HTTP response went out while the INSERT was still in flight, and
+// that tail deadlocked the next integration test's TRUNCATE ... CASCADE
+// (admin-moderation flake, 2026-09-24). Each case parks the notifier on a
+// promise the test releases by hand.
+
+describe('partner notification is written before the action returns', () => {
+  const activeUser = { id: TARGET_USER_ID, role: 'user', is_active: true };
+  const actor = { adminUserId: ADMIN_ID, ipAddress: '127.0.0.1', userAgent: 'TestAgent/1.0' };
+
+  const cases = [
+    {
+      name: 'approve',
+      notifier: 'notifyEstablishmentStatusChange',
+      arrange: () => {
+        const result = baseEstablishment({ status: 'active' });
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+        EstablishmentModel.moderateEstablishment.mockResolvedValue(result);
+        return result;
+      },
+      act: () => moderateEstablishment(EST_ID, { ...actor, action: 'approve', moderation_notes: {} }),
+    },
+    {
+      name: 'suspend',
+      notifier: 'notifyEstablishmentStatusChange',
+      arrange: () => {
+        const result = baseEstablishment({ status: 'suspended' });
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(
+          baseEstablishment({ status: 'active' }),
+        );
+        EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(result);
+        return result;
+      },
+      act: () => suspendEstablishment(EST_ID, { ...actor, reason: 'Нарушение правил' }),
+    },
+    {
+      name: 'unsuspend',
+      notifier: 'notifyEstablishmentStatusChange',
+      arrange: () => {
+        const result = baseEstablishment({ status: 'active' });
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(
+          baseEstablishment({ status: 'suspended' }),
+        );
+        EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(result);
+        return result;
+      },
+      act: () => unsuspendEstablishment(EST_ID, actor),
+    },
+    {
+      name: 'claim',
+      notifier: 'notifyEstablishmentClaimed',
+      arrange: () => {
+        const result = baseEstablishment({ partner_id: TARGET_USER_ID });
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+        DB.query.mockResolvedValue({ rows: [activeUser] });
+        EstablishmentModel.claimEstablishment.mockResolvedValue(result);
+        DB.getClient.mockResolvedValue(buildMockClient());
+        return result;
+      },
+      act: () => claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    },
+  ];
+
+  test.each(cases)('$name does not return until the notification is written', async ({ notifier, arrange, act }) => {
+    const expected = arrange();
+    let releaseNotification;
+    NotificationService[notifier].mockReturnValue(
+      new Promise((resolve) => { releaseNotification = resolve; }),
+    );
+
+    let returned = null;
+    const action = act().then((value) => { returned = value; });
+    await flushPromises();
+
+    // The action has reached the notifier and is parked on it.
+    expect(NotificationService[notifier]).toHaveBeenCalledTimes(1);
+    expect(returned).toBeNull();
+
+    releaseNotification();
+    await action;
+    expect(returned).toBe(expected);
+  });
+
+  test.each(cases)('$name still succeeds when the notification write fails', async ({ notifier, arrange, act }) => {
+    const expected = arrange();
+    NotificationService[notifier].mockRejectedValue(new Error('notifications table unavailable'));
+
+    await expect(act()).resolves.toBe(expected);
+  });
+});
+
+// ============================================================================
 // adminUpgradeUserToPartner — Tier 1
 // ============================================================================
 
