@@ -357,11 +357,12 @@ class EstablishmentCard extends StatelessWidget {
 
   /// Build address with underline (Figma design)
   /// Правый отступ резервирует место под иконку избранного в правом-нижнем
-  /// углу — иначе длинный адрес заходит под неё.
+  /// углу — иначе длинный адрес заходит под неё. Переносится адрес только
+  /// между словами — см. [_WholeWordText].
   Widget _buildAddress() {
     return Padding(
       padding: const EdgeInsets.only(right: _favoriteReserve),
-      child: Text(
+      child: _WholeWordText(
         establishment.address,
         style: const TextStyle(
           fontSize: 14,
@@ -371,7 +372,6 @@ class EstablishmentCard extends StatelessWidget {
           height: 20 / 14,
         ),
         maxLines: 2,
-        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -406,6 +406,99 @@ class EstablishmentCard extends StatelessWidget {
     return categoryLabels[category.toLowerCase()] ?? category;
   }
 
+}
+
+/// Текст в узкой колонке, который переносится только между словами.
+///
+/// На 360 dp колонке адреса достаётся 96 dp, и слово вроде «Независимости,»
+/// или «Революционная,» в неё целиком не входит. `Text` с `maxLines: 2` рвёт
+/// такое слово по буквам («проспект Нез / ависимости, …»): многоточие
+/// Flutter ставит только на последней строке. Поэтому решение принимается до
+/// отрисовки: каждое слово помещается в ширину — до [maxLines] строк с
+/// переносом между словами; хоть одно не помещается — одна строка с
+/// многоточием. Кегль не уменьшается: полный адрес есть на детальной.
+///
+/// «Слово» здесь — кусок, внутри которого переносить нельзя, и границы кусков
+/// определяет сам движок строк, а не деление по пробелам: составное слово он
+/// переносит после дефиса («Юрово-» / «Завальная,»), а «« Независимости» с
+/// пробелом после кавычки или скобки не делит вовсе. Регулярное выражение
+/// повторило бы эти правила Unicode не целиком, и там, где оно разошлось бы
+/// с движком, слово снова порвалось бы по буквам.
+///
+/// Замер — как у [AdaptiveTitle]: тем же стилем, каким рисует `Text` (слияние
+/// с `DefaultTextStyle`: тема приносит межбуквенный интервал 0.1, и на 375 dp
+/// «Революционная,» из-за него шире колонки на 0.06 dp), с масштабом текста из
+/// `MediaQuery` и по ширине, которую колонка отдаёт на самом деле
+/// (`LayoutBuilder`). Пересчёта при смене шрифта, как у [AdaptiveTitle], здесь
+/// нет: семейство тела вшито и объявлено в pubspec — оно есть с первого
+/// кадра, а шрифтов в рантайме приложение не грузит.
+class _WholeWordText extends StatelessWidget {
+  const _WholeWordText(
+    this.text, {
+    required this.style,
+    required this.maxLines,
+  });
+
+  final String text;
+  final TextStyle style;
+  final int maxLines;
+
+  /// Стиль, которым `Text` будет рисовать на самом деле — той же сборкой, что
+  /// и в `Text.build`: слияние с `DefaultTextStyle` и системный «жирный текст».
+  TextStyle _renderedStyle(BuildContext context) {
+    var effective = style;
+    if (effective.inherit) {
+      effective = DefaultTextStyle.of(context).style.merge(effective);
+    }
+    if (MediaQuery.boldTextOf(context)) {
+      effective = effective.merge(const TextStyle(fontWeight: FontWeight.bold));
+    }
+    return effective;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rendered = _renderedStyle(context);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wrap = _everyWordFits(
+            rendered, constraints.maxWidth, textScaler, direction);
+        return Text(
+          text,
+          style: style,
+          maxLines: wrap ? maxLines : 1,
+          softWrap: wrap,
+          overflow: TextOverflow.ellipsis,
+        );
+      },
+    );
+  }
+
+  bool _everyWordFits(
+    TextStyle rendered,
+    double maxWidth,
+    TextScaler textScaler,
+    TextDirection direction,
+  ) {
+    if (maxWidth <= 0 || !maxWidth.isFinite) return true;
+
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: rendered),
+      textDirection: direction,
+      textScaler: textScaler,
+    )..layout();
+    try {
+      // Минимальная собственная ширина абзаца — ширина самого широкого куска,
+      // который движок не вправе разорвать. Колонка у́же — он порвёт его по
+      // буквам.
+      return painter.minIntrinsicWidth <= maxWidth;
+    } finally {
+      painter.dispose();
+    }
+  }
 }
 
 /// Custom clipper for image with rounded LEFT corners (Figma design - "bathtub" shape)
