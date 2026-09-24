@@ -10,8 +10,8 @@
  * baseline and clearAllData stay complete — the drift this list prevents was
  * the root of the historical isolation debt (F1/F2).
  *
- * Order is not load-bearing: callers truncate under
- * session_replication_role = replica with CASCADE, so FK direction is handled.
+ * Order is not load-bearing: callers truncate each table with CASCADE, which
+ * takes every referencing table along, so FK direction is handled.
  */
 export const TEST_STATE_TABLES = [
   'audit_log',

@@ -50,12 +50,11 @@ export default async function globalSetup() {
     await pool.query('SELECT 1');
     console.log('✅ Database:', process.env.DB_NAME);
 
-    // One clean global baseline (FK triggers off + CASCADE → order-independent).
-    await pool.query('SET session_replication_role = replica;');
+    // One clean global baseline (CASCADE → order-independent; no session
+    // state, same as clearAllData in tests/utils/database.js).
     for (const table of TEST_STATE_TABLES) {
       await pool.query(`TRUNCATE TABLE ${table} CASCADE`);
     }
-    await pool.query('SET session_replication_role = DEFAULT;');
     console.log(`✅ Global baseline cleared (${TEST_STATE_TABLES.length} tables)`);
   } finally {
     await pool.end();

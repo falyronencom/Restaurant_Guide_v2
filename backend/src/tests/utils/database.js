@@ -16,6 +16,15 @@ import { TEST_STATE_TABLES } from '../testTables.js';
  * Clear all test data from database
  * Uses TRUNCATE CASCADE to remove all related data
  *
+ * Sets no session state: every statement goes through the shared pool, which
+ * does not pin one call to one connection — a saturated pool hands a released
+ * connection to its oldest waiter, often a fire-and-forget write of the
+ * previous test. The `session_replication_role = replica` / reset pair that
+ * used to wrap the loop split that way and left a connection with FK checks
+ * and triggers off (integration/clear-all-data-pool.test.js). It was never
+ * needed: CASCADE takes every referencing table along, and replica does not
+ * relax TRUNCATE's own FK check.
+ *
  * WARNING: This deletes ALL data. Only use in test environment!
  */
 export async function clearAllData() {
@@ -24,16 +33,10 @@ export async function clearAllData() {
   }
 
   try {
-    // Disable FK triggers so truncation order is not load-bearing.
-    await pool.query('SET session_replication_role = replica;');
-
     // Truncate every state-bearing table (shared list — see testTables.js).
     for (const table of TEST_STATE_TABLES) {
       await pool.query(`TRUNCATE TABLE ${table} CASCADE`);
     }
-
-    // Re-enable triggers
-    await pool.query('SET session_replication_role = DEFAULT;');
 
     logger.debug('All test data cleared');
   } catch (error) {
