@@ -427,18 +427,26 @@ describe('searchService', () => {
       expect(params).not.toContainEqual(['Итальянская']);
     });
 
-    test('dishOrSearch: menu match OR establishment ILIKE + SEARCH_SYNONYMS, glued to the EXISTS (not AND-ed), in main and count queries', async () => {
+    // С А2 (27.09.2026) синонимы карточки — альтернатива меню только для
+    // заведения без видимого меню: у 26 карточек прода меню распознано у всех,
+    // и ветка «для всех» давала «пиво» → любой бар, «паста» → любой итальянский
+    // ресторан. Форма: (EXISTS меню) OR (NOT EXISTS видимой позиции AND карточка).
+    const CARD_ONLY_WITHOUT_MENU = new RegExp(
+      '\\)\\s*OR\\s*\\(NOT EXISTS \\( SELECT 1 FROM menu_items vm WHERE vm\\.establishment_id = e\\.id '
+      + 'AND vm\\.is_hidden_by_admin = FALSE \\) AND \\(e\\.name ILIKE'
+    );
+
+    test('dishOrSearch: menu match OR establishment ILIKE + SEARCH_SYNONYMS for establishments without a visible menu, in main and count queries', async () => {
       await searchWithoutLocation({ dish: 'пицца', dishOrSearch: 'пицца' });
 
       const [query, params] = pool.query.mock.calls[0];
       const [countQuery, countParams] = pool.query.mock.calls[1];
 
       for (const q of [query, countQuery]) {
-        const idx = q.indexOf('e.name ILIKE');
-        expect(idx).toBeGreaterThan(-1);
-        // Immediately before the establishment-level ILIKE must come the closing
-        // paren of the EXISTS and an OR — the alternative widens, never narrows.
-        expect(q.slice(0, idx).trimEnd()).toMatch(/\)\s*OR$/);
+        const flat = q.replace(/\s+/g, ' ');
+        // The alternative is OR-ed to the menu EXISTS — it widens, never
+        // narrows — and only where no visible menu item exists.
+        expect(flat).toMatch(CARD_ONLY_WITHOUT_MENU);
         expect(q).toContain('e.categories && $');
         expect(q).toContain('e.cuisines && $');
       }
@@ -454,10 +462,130 @@ describe('searchService', () => {
       await searchByRadius({ ...validParams, dish: 'пицца', dishOrSearch: 'пицца' });
 
       const [query, params] = pool.query.mock.calls[0];
-      const idx = query.indexOf('e.name ILIKE');
-      expect(idx).toBeGreaterThan(-1);
-      expect(query.slice(0, idx).trimEnd()).toMatch(/\)\s*OR$/);
+      expect(query.replace(/\s+/g, ' ')).toMatch(CARD_ONLY_WITHOUT_MENU);
       expect(params).toContainEqual(['Итальянская']);
+    });
+  });
+
+  // --- А2 (27.09.2026): сопоставление блюда с меню по словам -----------------
+  //
+  // Умный поиск передаёт dishMatch: 'lenient'. Здесь — форма SQL и параметров;
+  // что эта форма находит на настоящей базе, держит integration/smart-search.test.js
+  // (блок «сопоставление с меню по словам (А2)»).
+  describe('dish matched by words on the smart path (dishMatch: lenient, А2)', () => {
+    beforeEach(() => {
+      pool.query.mockResolvedValue({ rows: [{ total: '0' }], rowCount: 1 });
+    });
+
+    /** Строковые параметры после $1 (статус 'active') — слова, которые ушли в сопоставление. */
+    const textParams = (params) => params.slice(1).filter((p) => typeof p === 'string');
+
+    test('без dishMatch сопоставление прежнее: подстрока ILIKE, варианты не читаются', async () => {
+      await searchWithoutLocation({ dish: 'суши', dishVariants: ['ролл'] });
+
+      const [query, params] = pool.query.mock.calls[0];
+      expect(query).toContain("mi.item_name ILIKE '%' || $");
+      expect(query).not.toContain('ts_lexize');
+      expect(query).not.toContain('word_similarity');
+      expect(params).toContain('суши');
+      expect(params).not.toContain('ролл');
+    });
+
+    test('lenient: начало слова по основе в тексте позиции (название + раздел, нижний регистр, ё/і/ў → е/и/у), без ILIKE', async () => {
+      await searchWithoutLocation({ dish: 'Креветка', dishMatch: 'lenient' });
+
+      const [query, params] = pool.query.mock.calls[0];
+      const flat = query.replace(/\s+/g, ' ');
+      expect(flat).toContain(
+        "CROSS JOIN LATERAL (SELECT translate(lower(mi.item_name || ' ' || coalesce(mi.category_raw, '')), 'ёіў', 'еиу') AS folded OFFSET 0) item_text"
+      );
+      expect(flat).toContain("item_text.folded ~ ('(^|[^а-яa-z0-9])' || left($");
+      expect(flat).toContain("ts_lexize('russian_stem', $");
+      expect(query).not.toContain('ILIKE');
+      expect(textParams(params)).toEqual(['креветка']);
+    });
+
+    test('lenient: основа не короче четырёх букв слова, у слова из четырёх — трёх; слово до трёх букв — целиком', async () => {
+      await searchWithoutLocation({ dish: 'лосось', dishVariants: ['утка', 'суп'], dishMatch: 'lenient' });
+
+      const flat = pool.query.mock.calls[0][0].replace(/\s+/g, ' ');
+      const params = pool.query.mock.calls[0][1];
+      const at = (word) => `$${params.indexOf(word) + 1}::text`;
+      // «лосось»: стеммер отдаёт «лос», начало берётся не короче 4 букв → «лосо».
+      expect(flat).toContain(`greatest(length(coalesce((ts_lexize('russian_stem', ${at('лосось')}))[1], ${at('лосось')})), 4)`);
+      // «утка»: основа «утк» (3) допустима — иначе «утки», «уткой» не найти.
+      expect(flat).toContain(`greatest(length(coalesce((ts_lexize('russian_stem', ${at('утка')}))[1], ${at('утка')})), 3)`);
+      // «суп»: целиком, без стеммера.
+      expect(flat).toContain(`item_text.folded ~ ('(^|[^а-яa-z0-9])' || ${at('суп')})`);
+      expect(flat).not.toContain(`ts_lexize('russian_stem', ${at('суп')})`);
+    });
+
+    test('lenient: нечёткое совпадение только у кириллических слов от пяти букв, порог 0.65', async () => {
+      await searchWithoutLocation({ dish: 'тирамису', dishVariants: ['tiramisu', 'торт'], dishMatch: 'lenient' });
+
+      const [query, params] = pool.query.mock.calls[0];
+      const similarity = query.match(/word_similarity\(\$(\d+)::text, item_text\.folded\) >= ([\d.]+)/g) || [];
+      expect(similarity).toHaveLength(1);
+      expect(similarity[0]).toBe(`word_similarity($${params.indexOf('тирамису') + 1}::text, item_text.folded) >= 0.65`);
+    });
+
+    test('lenient: регистр и ё/і/ў свёрнуты, предлоги и однобуквенные слова отброшены', async () => {
+      await searchWithoutLocation({ dish: 'Сырнікі со сметаной', dishVariants: ['Зелёный чай с мёдом', 'Ўзвар'], dishMatch: 'lenient' });
+
+      const params = pool.query.mock.calls[0][1];
+      expect(textParams(params)).toEqual(['сырники', 'сметаной', 'зеленый', 'чай', 'медом', 'узвар']);
+    });
+
+    test('lenient: не больше шести названий и четырёх слов в названии, повторы одного названия не множат SQL', async () => {
+      await searchWithoutLocation({
+        dish: 'пицца четыре сыра с грушей и мёдом',
+        dishVariants: ['Пицца четыре сыра с грушей и медом', 'один', 'два', 'три', 'четыре', 'пять', 'шесть'],
+        dishMatch: 'lenient',
+      });
+
+      const params = pool.query.mock.calls[0][1];
+      // Шесть названий: блюдо (4 слова), его повтор (пропущен) и четыре варианта;
+      // «пять» и «шесть» — седьмое и восьмое название — отрезаны.
+      expect(textParams(params)).toEqual(['пицца', 'четыре', 'сыра', 'грушей', 'один', 'два', 'три', 'четыре']);
+    });
+
+    test('lenient: символы регулярного выражения до шаблона не доходят — слова только из букв и цифр', async () => {
+      await searchWithoutLocation({ dish: 'пицца.*', dishVariants: ['(кофе|чай)', '7up+'], dishMatch: 'lenient' });
+
+      const params = pool.query.mock.calls[0][1];
+      expect(textParams(params)).toEqual(['пицца', 'кофе', 'чай', '7up']);
+      for (const p of textParams(params)) expect(p).toMatch(/^[a-zа-я0-9]+$/);
+    });
+
+    test('lenient: без единого слова для поиска меню не отвечает ничем (FALSE), а не всем', async () => {
+      await searchWithoutLocation({ dish: 'с', dishMatch: 'lenient' });
+
+      const [query, params] = pool.query.mock.calls[0];
+      expect(query.replace(/\s+/g, ' ')).toContain('AND mi.is_hidden_by_admin = FALSE AND FALSE AND');
+      expect(textParams(params)).toEqual([]);
+    });
+
+    test('lenient: скрытые модератором позиции и бюджет — как у строгого сопоставления; счёт идёт с теми же параметрами', async () => {
+      await searchWithoutLocation({ dish: 'стейк', priceMaxByn: 50, dishMatch: 'lenient' });
+
+      const [query, params] = pool.query.mock.calls[0];
+      const [countQuery, countParams] = pool.query.mock.calls[1];
+      for (const q of [query, countQuery]) {
+        const flat = q.replace(/\s+/g, ' ');
+        expect(flat).toContain('AND mi.is_hidden_by_admin = FALSE AND');
+        expect(flat).toContain('OR mi.price_byn <= $');
+        expect(flat).toContain('AND p.discount_price_byn <= $');
+      }
+      expect(params).toContain(50);
+      expect(countParams).toEqual(params.slice(0, -2));
+    });
+
+    test('searchByRadius передаёт dishMatch и dishVariants так же', async () => {
+      await searchByRadius({ latitude: 53.9, longitude: 27.5, radius: 10, dish: 'суши', dishVariants: ['ролл'], dishMatch: 'lenient' });
+
+      const [query, params] = pool.query.mock.calls[0];
+      expect(query).toContain("ts_lexize('russian_stem', $");
+      expect(textParams(params)).toEqual(expect.arrayContaining(['суши', 'ролл']));
     });
   });
 

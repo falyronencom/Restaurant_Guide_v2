@@ -39,6 +39,24 @@ const defaultWorkingHours = JSON.stringify({
   sunday: { open: '11:00', close: '22:00' },
 });
 
+/**
+ * Лимитеры считают запросы в Redis по IP, а под supertest он один на весь файл.
+ * `/search/smart` пускает 30 запросов в минуту (ratelimit:smart_search:*), и с
+ * подключённым Redis включается общий лимит 300 в час (ratelimit:ip:*). После
+ * подключения Redis (блок Caching) файл делает больше 30 запросов, а прогоны
+ * подряд в один час копят общий счётчик — без чистки середина файла ловит 429
+ * вместо проверок. Как в promotions.test.js и auth-password-reset.test.js.
+ */
+async function clearRateLimitKeys() {
+  if (!redisClient.isOpen) return;
+  for (const pattern of ['ratelimit:smart_search:*', 'ratelimit:ip:*']) {
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+    }
+  }
+}
+
 beforeAll(async () => {
   const partner = await createUserAndGetTokens({
     ...testUsers.partner,
@@ -50,6 +68,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await clearAllData();
+  await clearRateLimitKeys();
   await query(
     'INSERT INTO users (id, email, password_hash, name, role, auth_method) VALUES ($1, $2, $3, $4, $5, $6)',
     [partnerId, PARTNER_EMAIL, 'hash', 'Partner', 'partner', 'email']
@@ -892,5 +911,190 @@ describe('Smart Search - разводка разбора (А1)', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.fallback).toBe(true);
     expect(response.body.data.intent).toBeNull();
+  });
+});
+
+// --- Сопоставление с меню по словам (А2, 27.09.2026) -------------------------
+//
+// Буквальный ILIKE по фразе находил 79,1 % пар «запрос × заведение» на копии
+// меню прода: «лосось» не находил «лосося», «драники» — «Дранікі», «суши» —
+// ролл-бар. Умный поиск теперь сопоставляет по словам (dishMatch: 'lenient'):
+// основа слова с начала слова, нечёткое совпадение от 0,65, ё/і/ў, варианты
+// названия от модели как ИЛИ. Синонимы карточки остались только заведениям без
+// видимого меню. Разборы сеются в Redis под ключ кэша (модели в тестах нет).
+//
+// У каждой фикстуры своя ловушка: «Котлета из лосятины» начинается с той же
+// основы «лос», что даёт стеммер для «лосось»; «Лимонно-медовая заправка»
+// похожа на «лимонад» на 0,625 — ниже порога; «Зелёный салат» и «Чай чёрный»
+// несут оба слова «зелёного чая», но в разных позициях.
+
+describe('Smart Search - сопоставление с меню по словам (А2)', () => {
+  const seededHashes = new Set();
+
+  beforeAll(async () => {
+    if (!redisClient.isOpen) {
+      await connectRedis();
+    }
+  });
+
+  afterAll(async () => {
+    for (const hash of seededHashes) {
+      await deleteKey(`smartsearch:${hash}`).catch(() => {});
+    }
+  });
+
+  async function establishmentWithMenu(name, categories, cuisines, description, items) {
+    const est = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $3, gen_random_uuid()::text, $6, 'Минск', 'ул. Тестовая 9', 53.93, 27.6, $4::varchar[], $5::varchar[], 'active', $2::jsonb, '$$', NOW(), NOW())
+      RETURNING id
+    `, [partnerId, defaultWorkingHours, name, categories, cuisines, description]);
+    const estId = est.rows[0].id;
+    const media = await query(
+      `INSERT INTO establishment_media
+         (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+       VALUES ($1, 'menu', 'pdf', 'http://test/a2.pdf', 'http://test/t.png', 'http://test/p.png')
+       RETURNING id`,
+      [estId],
+    );
+    for (const [position, [itemName, section, price, hidden = false]] of items.entries()) {
+      await query(
+        `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, is_hidden_by_admin, position)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [estId, media.rows[0].id, itemName, price, section, hidden, position],
+      );
+    }
+  }
+
+  beforeEach(async () => {
+    await establishmentWithMenu('Рыбный дом', ['Ресторан'], ['Европейская'], 'Ресторан у реки', [
+      ['Стейк из лосося', 'ГОРЯЧЕЕ', 35.00],
+      ['Салат с курицей', 'САЛАТЫ', 16.00],
+      ['Гребешки с соусом', 'ГОРЯЧЕЕ', 42.00],
+      ['Чай зелёный', 'НАПИТКИ', 5.00],
+      ['Тирамису', 'ДЕСЕРТЫ', 12.00],
+      ['Устрицы Фин де Клер', 'ЗАКУСКИ', 30.00, true],
+    ]);
+    await establishmentWithMenu('Охотничий двор', ['Ресторан'], ['Европейская'], 'Дичь и соленья', [
+      ['Котлета из лосятины', 'ГОРЯЧЕЕ', 28.00],
+      ['Салат с уткой', 'САЛАТЫ', 17.00],
+      ['Лимонно-медовая заправка', 'СОУСЫ', 3.00],
+      ['Зелёный салат', 'САЛАТЫ', 11.00],
+      ['Чай чёрный', 'НАПИТКИ', 4.00],
+      ['Морс барбарисовый', 'НАПИТКИ', 4.50],
+      ['Дранікі са смятанай', 'СТРАВЫ З БУЛЬБЫ', 14.00],
+    ]);
+    await establishmentWithMenu('Ролл-бар', ['Кафе'], ['Европейская'], 'Кафе на углу', [
+      ['Ролл Филадельфия', 'РОЛЛЫ', 24.00],
+      ['Устрицы Жилардо', 'ЗАКУСКИ', 9.00],
+      ['Рис с овощами', 'ГАРНИРЫ', 6.00],
+    ]);
+    // Итальянский ресторан с распознанным меню, где пасты нет: синонимы
+    // карточки («паста» → Ресторан/Итальянская) его больше не приводят.
+    await establishmentWithMenu('Траттория Уно', ['Ресторан'], ['Итальянская'], 'Итальянский ресторан', [
+      ['Капучино', 'НАПИТКИ', 6.00],
+    ]);
+    // Меню есть, но все позиции скрыты модератором — для выдачи это «без меню».
+    await establishmentWithMenu('Закрытая кухня', ['Ресторан'], ['Итальянская'], 'Итальянский ресторан', [
+      ['Капучино', 'НАПИТКИ', 6.00, true],
+    ]);
+    // Меню загружено, но ещё не распознано: файл есть, позиций нет — тоже «без меню».
+    await establishmentWithMenu('Остерия', ['Ресторан'], ['Итальянская'], 'Итальянский ресторан', []);
+  });
+
+  async function seedIntent(queryText, intent) {
+    expect(redisClient.isOpen).toBe(true);
+    const hash = intentCacheHash(queryText);
+    seededHashes.add(hash);
+    await smartSearchService.cacheIntent(hash, intent, 60);
+    // Посев обязан лечь, иначе запрос уйдёт на запасной путь и проверки ниже
+    // будут мерить не тот путь.
+    expect(await smartSearchService.getCachedIntent(hash)).toEqual(intent);
+  }
+
+  /** Разбор в форме промпта P1 (А1): блюдо, его варианты, остальное пусто. */
+  function p1Intent(dish, extra = {}) {
+    return {
+      category: null, cuisine: null, dish, dish_variants: [], meal_type: null,
+      price_max: null, location: null, sort: null, tags: [], error: null, ...extra,
+    };
+  }
+
+  /** Умный поиск по засеянному разбору → имена заведений по алфавиту. */
+  async function smartNames(queryText, intent) {
+    await seedIntent(queryText, intent);
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: queryText, city: 'Минск' });
+    expect(response.status).toBe(200);
+    expect(response.body.data.fallback).toBe(false);
+    const names = response.body.data.establishments.map(e => e.name).sort();
+    expect(response.body.data.pagination.total).toBe(names.length);
+    return names;
+  }
+
+  test('словоформа по основе: «утка» находит «Салат с уткой», «курица» — «Салат с курицей»', async () => {
+    // «утка» короче пяти букв — нечёткое совпадение её не спасает, «уткой»
+    // находит только основа «утк». «курица» ~ «курицей» ещё и похожи (0,714).
+    expect(await smartNames('утка', p1Intent('утка'))).toEqual(['Охотничий двор']);
+    expect(await smartNames('курица', p1Intent('курица'))).toEqual(['Рыбный дом']);
+  });
+
+  test('основа не короче четырёх букв: «лосось» находит «Стейк из лосося», но не «Котлету из лосятины»', async () => {
+    // Стеммер режет «лосось» до «лос» — с него начинается и «лосятина».
+    expect(await smartNames('лосось', p1Intent('лосось'))).toEqual(['Рыбный дом']);
+  });
+
+  test('нечёткое совпадение от 0,65: опечатка и беглая гласная находятся, «лимонно-» для «лимонада» — нет', async () => {
+    // «тирамиссу» ~ «Тирамису» 0,727; «гребешок» ~ «Гребешки» 0,667;
+    // «лимонад» ~ «Лимонно-медовая заправка» 0,625.
+    expect(await smartNames('тирамиссу', p1Intent('тирамиссу'))).toEqual(['Рыбный дом']);
+    expect(await smartNames('гребешок', p1Intent('гребешок'))).toEqual(['Рыбный дом']);
+    expect(await smartNames('лимонад', p1Intent('лимонад'))).toEqual([]);
+  });
+
+  test('варианты от модели — ИЛИ: «суши» с вариантом «ролл» находят ролл-бар, без варианта — нет', async () => {
+    expect(await smartNames('суши', p1Intent('суши', { dish_variants: ['ролл'] }))).toEqual(['Ролл-бар']);
+    expect(await smartNames('просто суши', p1Intent('суши'))).toEqual([]);
+  });
+
+  test('два слова — в одной позиции, в любом порядке, «ё» = «е»: «зеленый чай» находит «Чай зелёный», а не «Зелёный салат» + «Чай чёрный»', async () => {
+    expect(await smartNames('зеленый чай', p1Intent('зеленый чай'))).toEqual(['Рыбный дом']);
+  });
+
+  test('белорусское «і»: «драники» находят «Дранікі са смятанай»', async () => {
+    expect(await smartNames('драники', p1Intent('драники'))).toEqual(['Охотничий двор']);
+  });
+
+  test('синонимы карточки — только у заведений без видимого меню: «паста» не приводит рестораны, в чьём меню пасты нет', async () => {
+    // «Остерия» — меню загружено, но не распознано (позиций нет); «Закрытая
+    // кухня» — все позиции скрыты; «Итальяно» — без меню из общего beforeEach
+    // файла. «Траттория Уно» (меню без пасты), «Рыбный дом» и «Охотничий двор»
+    // (тоже рестораны) судятся по меню.
+    expect(await smartNames('паста', p1Intent('паста'))).toEqual(['Закрытая кухня', 'Итальяно', 'Остерия']);
+  });
+
+  test('бюджет проверяется на совпавшей позиции: «лосось до 30 рублей» — пусто (35 BYN), «до 40» — находит', async () => {
+    expect(await smartNames('лосось до 30 рублей', p1Intent('лосось', { price_max: 30 }))).toEqual([]);
+    expect(await smartNames('лосось до 40 рублей', p1Intent('лосось', { price_max: 40 }))).toEqual(['Рыбный дом']);
+  });
+
+  test('скрытая модератором позиция не находится и при сопоставлении по словам', async () => {
+    // «Устрицы Фин де Клер» в «Рыбном доме» скрыты, «Устрицы Жилардо» — нет.
+    expect(await smartNames('устрицы', p1Intent('устрицы'))).toEqual(['Ролл-бар']);
+  });
+
+  test('начало слова, а не середина: «рис» находит «Рис с овощами», но не «Морс барбарисовый»', async () => {
+    expect(await smartNames('рис', p1Intent('рис'))).toEqual(['Ролл-бар']);
+  });
+
+  test('одиночный dish вне умного поиска остаётся строгим: «лосось» — подстрокой, по словам — только явным dishMatch', async () => {
+    const { searchWithoutLocation } = await import('../../services/searchService.js');
+
+    const strict = await searchWithoutLocation({ dish: 'лосось', city: 'Минск' });
+    const lenient = await searchWithoutLocation({ dish: 'лосось', city: 'Минск', dishMatch: 'lenient' });
+
+    expect(strict.establishments.map(e => e.name)).toEqual([]);
+    expect(lenient.establishments.map(e => e.name)).toEqual(['Рыбный дом']);
   });
 });

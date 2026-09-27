@@ -111,48 +111,193 @@ function addSearchConditions(search, conditions, params, paramIndex) {
 }
 
 /**
+ * Сопоставление с меню «по словам» (dishMatch: 'lenient') — путь умного
+ * поиска, сессия А2 (27.09.2026). Буквальный ILIKE по фразе находил 79,1 %
+ * пар «запрос × заведение» на копии меню прода: без словоформ («креветка» не
+ * находит «креветками»), без ё/і/ў, фразой целиком. Правила ниже измерены
+ * на той же копии (docs/handoffs/smart_search_recall_20260924/, lab_match.cjs)
+ * и дают 94,9 %.
+ *
+ * Названия — блюдо и его варианты от модели (dishVariants), каждое — ИЛИ.
+ * Слова одного названия — И, и все в ОДНОЙ позиции меню. Слово совпадает,
+ * если текст позиции (название + раздел, в нижнем регистре, ё/і/ў → е/и/у)
+ * содержит слово, начинающееся с его основы, или похож на него (опечатка,
+ * беглая гласная «гребешок» → «гребешки»).
+ */
+
+/** Предлоги и служебные слова фразы — в меню их не ищем. */
+const DISH_STOP_WORDS = new Set([
+  'с', 'со', 'и', 'в', 'во', 'на', 'из', 'для', 'без', 'до', 'по',
+  'где', 'что', 'нибудь', 'рублей', 'руб', 'byn', 'a', 'the', 'with',
+]);
+
+/** Названий на одно блюдо: оно само и до пяти вариантов (столько отдаёт разбор). */
+const MAX_DISH_TERMS = 6;
+
+/** Слов в одном названии — дальше SQL растёт, а совпадений не прибавляется. */
+const MAX_WORDS_PER_TERM = 4;
+
+/**
+ * Нечёткое совпадение (pg_trgm word_similarity) — только для кириллических
+ * слов от пяти букв: короткие слова похожи на что угодно, а латиница в меню
+ * редка, и её варианты модель пишет сама.
+ */
+const FUZZY_MIN_LENGTH = 5;
+
+/**
+ * Порог нечёткого совпадения — решение Координатора 27.09.2026. На копии меню
+ * прода беглая гласная и опечатка дают 0,667 и выше («гребешок» ~ «гребешки»,
+ * «тирамиссу» ~ «тирамису» 0,727), а ложные соседи — 0,625 («лимонад» ~
+ * «лимонно-медовая», «медовик» ~ «медовый»). При 0,6 та же полнота и на 8
+ * лишних пар больше. Неустранимые порогом: «тартар» ~ «тарталетка» (0,83),
+ * «холодник» ~ «холодный» (0,667).
+ */
+const FUZZY_THRESHOLD = 0.65;
+
+/**
+ * Текст позиции для сопоставления: название и раздел меню (OCR кладёт
+ * «Маргарита» под раздел «Пицца»), нижний регистр, ё/і/ў → е/и/у —
+ * белорусское меню пишет «Дранікі». lower() сворачивает кириллицу только под
+ * не-C локалью (pg-test и прод — en_US.utf8, сторож в smart-search.test.js).
+ */
+const MENU_TEXT_SQL = `translate(lower(mi.item_name || ' ' || coalesce(mi.category_raw, '')), 'ёіў', 'еиу')`;
+
+/**
+ * Заведение без видимого меню: позиций нет или все скрыты модератором.
+ * Только такому синонимы карточки заменяют проверку по меню (dishOrSearch).
+ */
+const NO_VISIBLE_MENU_SQL = `NOT EXISTS (
+        SELECT 1 FROM menu_items vm
+        WHERE vm.establishment_id = e.id
+          AND vm.is_hidden_by_admin = FALSE
+      )`;
+
+/**
+ * Слова названия для сопоставления: нижний регистр, ё/і/ў → е/и/у, разрезано
+ * по всему, что не буква и не цифра, — поэтому в слове не бывает символов
+ * регулярного выражения, и в шаблон оно идёт как есть. Слова из одной буквы
+ * и служебные отброшены.
+ * @param {string} term
+ * @returns {string[]}
+ */
+function menuTermWords(term) {
+  return term.toLowerCase()
+    .replace(/ё/g, 'е').replace(/і/g, 'и').replace(/ў/g, 'у')
+    .split(/[^a-zа-я0-9]+/)
+    .filter((word) => word.length >= 2 && !DISH_STOP_WORDS.has(word))
+    .slice(0, MAX_WORDS_PER_TERM);
+}
+
+/**
+ * Условие «слово есть в позиции» над item_text.folded (см. addDishCondition).
+ *
+ * Начало слова: слово до трёх букв — целиком («суп», «чай»); длиннее —
+ * русская основа (snowball `russian_stem`), но не короче четырёх букв слова
+ * (у слова из четырёх — трёх): стеммер режет «лосось» до «лос» и «рамен» до
+ * «рам», а с «лос» начинается и «лосятина». Берётся начало САМОГО слова длиной
+ * основы, поэтому шаблон состоит только из букв и цифр.
+ * @returns {{ sql: string, paramIndex: number }}
+ */
+function menuWordCondition(word, params, paramIndex) {
+  const w = `$${paramIndex}::text`;
+  params.push(word);
+  paramIndex++;
+
+  const prefix = word.length <= 3
+    ? w
+    : `left(${w}, greatest(length(coalesce((ts_lexize('russian_stem', ${w}))[1], ${w})), ${Math.min(4, word.length - 1)}))`;
+  const startsWord = `item_text.folded ~ ('(^|[^а-яa-z0-9])' || ${prefix})`;
+
+  if (word.length < FUZZY_MIN_LENGTH || !/^[а-я]+$/.test(word)) {
+    return { sql: startsWord, paramIndex };
+  }
+  return {
+    sql: `(${startsWord} OR word_similarity(${w}, item_text.folded) >= ${FUZZY_THRESHOLD})`,
+    paramIndex,
+  };
+}
+
+/**
+ * Совпадение позиции с блюдом или одним из вариантов (ИЛИ по названиям, И по
+ * словам названия). Названия без единого слова пропускаются; если слов нет
+ * совсем — FALSE: меню такому запросу не отвечает, а не отвечает всем.
+ * @returns {{ sql: string, paramIndex: number }}
+ */
+function lenientItemMatch(dish, dishVariants, params, paramIndex) {
+  const names = [dish, ...(Array.isArray(dishVariants) ? dishVariants : [])]
+    .filter((name) => typeof name === 'string')
+    .slice(0, MAX_DISH_TERMS);
+
+  const seen = new Set();
+  const alternatives = [];
+  for (const name of names) {
+    const words = menuTermWords(name);
+    const key = words.join(' ');
+    if (words.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+
+    const parts = [];
+    for (const word of words) {
+      const condition = menuWordCondition(word, params, paramIndex);
+      paramIndex = condition.paramIndex;
+      parts.push(condition.sql);
+    }
+    alternatives.push(`(${parts.join(' AND ')})`);
+  }
+
+  return {
+    sql: alternatives.length > 0 ? `(${alternatives.join(' OR ')})` : 'FALSE',
+    paramIndex,
+  };
+}
+
+/**
  * Helper: Segment B dish-level filter via menu_items — one implementation for
  * searchByRadius and searchWithoutLocation.
  *
- * EXISTS keeps establishments with at least one non-hidden menu item whose
- * name OR menu section (category_raw) contains `dish`. The section matters:
- * OCR'd menus name pizzas «Маргарита»/«Пепперони» under the section «Пицца»,
- * so item_name alone found nothing for the most common dish query (prod,
- * 07.09.2026). ILIKE folds Cyrillic case only under a non-C locale — verified
- * on pg-test (en_US.utf8) and on prod through the public search API
- * (`?search=СОРРЕНТО` finds «Сорренто»).
+ * EXISTS keeps establishments with at least one non-hidden menu item that
+ * matches the dish. Two matchers:
+ *  - `dishMatch` 'strict' (default): name OR menu section (category_raw)
+ *    contains `dish` as a substring (ILIKE). The section matters: OCR'd menus
+ *    name pizzas «Маргарита»/«Пепперони» under the section «Пицца», so
+ *    item_name alone found nothing for the most common dish query (prod,
+ *    07.09.2026). ILIKE folds Cyrillic case only under a non-C locale —
+ *    verified on pg-test (en_US.utf8) and on prod through the public search
+ *    API (`?search=СОРРЕНТО` finds «Сорренто»). `dishVariants` are ignored.
+ *  - `dishMatch` 'lenient' (smart search): by words — word forms, typos,
+ *    ё/і/ў, and `dishVariants` as OR-alternatives (lenientItemMatch). The
+ *    item text is computed once per item: `OFFSET 0` keeps the lateral
+ *    subquery from being inlined, otherwise lower()/translate() would run
+ *    again for every word — measured 25–30 % of the query on a 20× copy.
  *
  * When priceMaxByn is provided, either the regular price or an active,
  * in-time-window promotion's discount price must satisfy the budget.
  *
  * `dishOrSearch` (optional) widens the condition to «menu match OR
  * establishment-level free-text match» (ILIKE + SEARCH_SYNONYMS for that text,
- * see buildSearchOrParts). Smart search passes the dish term itself when no
- * budget was stated, so a pizzeria whose menu is not parsed yet still surfaces
- * for «пицца». Callers that need strictly menu-verified rows (a price ceiling,
- * the admin-hide flow) leave it out — `dish` alone stays strict.
+ * see buildSearchOrParts) — only for establishments WITHOUT a visible menu:
+ * a pizzeria whose menu is not parsed yet still surfaces for «пицца», while a
+ * restaurant whose menu is known is judged by its menu (А2, decision of the
+ * Coordinator 27.09.2026: with every card's menu parsed, «пиво» used to return
+ * any bar and «паста» any Italian restaurant). Callers that need strictly
+ * menu-verified rows (a price ceiling, the admin-hide flow) leave it out —
+ * `dish` alone stays strict.
  *
- * @param {{ dish: string, priceMaxByn: number|null, dishOrSearch: string|null }} dishFilter
+ * @param {{ dish: string, priceMaxByn: number|null, dishOrSearch: string|null,
+ *   dishVariants: string[]|null, dishMatch: string }} dishFilter
  * @param {Array} conditions - Existing WHERE conditions array (mutated)
  * @param {Array} params - Existing params array (mutated)
  * @param {number} paramIndex - Current parameter index
  * @returns {number} Updated paramIndex
  */
-function addDishCondition({ dish, priceMaxByn, dishOrSearch }, conditions, params, paramIndex) {
-  const dishParam = paramIndex++;
+function addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishMatch }, conditions, params, paramIndex) {
+  const lenient = dishMatch === 'lenient';
+  const dishParam = lenient ? null : paramIndex++;
   const priceParam = paramIndex++;
-  params.push(dish);
+  if (!lenient) params.push(dish);
   params.push(priceMaxByn);
 
-  const menuMatch = `EXISTS (
-      SELECT 1 FROM menu_items mi
-      WHERE mi.establishment_id = e.id
-        AND mi.is_hidden_by_admin = FALSE
-        AND (
-          mi.item_name ILIKE '%' || $${dishParam} || '%'
-          OR mi.category_raw ILIKE '%' || $${dishParam} || '%'
-        )
-        AND (
+  const budget = `(
           $${priceParam}::numeric IS NULL
           OR mi.price_byn <= $${priceParam}::numeric
           OR EXISTS (
@@ -166,13 +311,37 @@ function addDishCondition({ dish, priceMaxByn, dishOrSearch }, conditions, param
               AND p.discount_price_byn IS NOT NULL
               AND p.discount_price_byn <= $${priceParam}::numeric
           )
-        )
+        )`;
+
+  let menuMatch;
+  if (lenient) {
+    const itemMatch = lenientItemMatch(dish, dishVariants, params, paramIndex);
+    paramIndex = itemMatch.paramIndex;
+    menuMatch = `EXISTS (
+      SELECT 1 FROM menu_items mi
+      CROSS JOIN LATERAL (SELECT ${MENU_TEXT_SQL} AS folded OFFSET 0) item_text
+      WHERE mi.establishment_id = e.id
+        AND mi.is_hidden_by_admin = FALSE
+        AND ${itemMatch.sql}
+        AND ${budget}
     )`;
+  } else {
+    menuMatch = `EXISTS (
+      SELECT 1 FROM menu_items mi
+      WHERE mi.establishment_id = e.id
+        AND mi.is_hidden_by_admin = FALSE
+        AND (
+          mi.item_name ILIKE '%' || $${dishParam} || '%'
+          OR mi.category_raw ILIKE '%' || $${dishParam} || '%'
+        )
+        AND ${budget}
+    )`;
+  }
 
   if (dishOrSearch) {
     const alternative = buildSearchOrParts(dishOrSearch, params, paramIndex);
     paramIndex = alternative.paramIndex;
-    conditions.push(`(${menuMatch} OR ${alternative.orParts.join(' OR ')})`);
+    conditions.push(`(${menuMatch} OR (${NO_VISIBLE_MENU_SQL} AND (${alternative.orParts.join(' OR ')})))`);
   } else {
     conditions.push(menuMatch);
   }
@@ -327,7 +496,9 @@ async function enrichWithPromotions(establishments) {
  * @param {string} params.search - Free text: ILIKE on name/description/categories/cuisines + SEARCH_SYNONYMS (AND-ed)
  * @param {string} params.dish - Dish/drink term matched against menu_items (item name OR menu section)
  * @param {number} params.priceMaxByn - Budget ceiling for the dish in BYN (regular or active promo price)
- * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match (see addDishCondition)
+ * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match for establishments without a visible menu (see addDishCondition)
+ * @param {string[]} params.dishVariants - Other names of the same dish, OR-alternatives; read only with dishMatch 'lenient'
+ * @param {string} params.dishMatch - 'strict' (default: substring ILIKE) or 'lenient' (by words: forms, typos, variants — smart search)
  * @returns {Promise<Object>} Search results with establishments and pagination
  */
 export async function searchByRadius({
@@ -350,6 +521,8 @@ export async function searchByRadius({
   dish = null,
   priceMaxByn = null,
   dishOrSearch = null,
+  dishVariants = null,
+  dishMatch = 'strict',
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -510,10 +683,11 @@ export async function searchByRadius({
     paramIndex = addSearchConditions(search, conditions, params, paramIndex);
   }
 
-  // Segment B: dish-level filter via menu_items (name OR section, optional
-  // budget, optional OR-alternative) — see addDishCondition.
+  // Segment B: dish-level filter via menu_items (substring or, on the smart
+  // path, by words; optional budget; card-level OR-alternative only for
+  // establishments without a visible menu) — see addDishCondition.
   if (dish) {
-    paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch }, conditions, params, paramIndex);
+    paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishMatch }, conditions, params, paramIndex);
   }
 
   const whereClause = conditions.join(' AND ');
@@ -654,7 +828,9 @@ export async function searchByRadius({
  * @param {string} params.search - Free text: ILIKE on name/description/categories/cuisines + SEARCH_SYNONYMS (AND-ed)
  * @param {string} params.dish - Dish/drink term matched against menu_items (item name OR menu section)
  * @param {number} params.priceMaxByn - Budget ceiling for the dish in BYN (regular or active promo price)
- * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match (see addDishCondition)
+ * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match for establishments without a visible menu (see addDishCondition)
+ * @param {string[]} params.dishVariants - Other names of the same dish, OR-alternatives; read only with dishMatch 'lenient'
+ * @param {string} params.dishMatch - 'strict' (default: substring ILIKE) or 'lenient' (by words: forms, typos, variants — smart search)
  * @returns {Promise<Object>} Search results sorted by rating
  */
 export async function searchWithoutLocation({
@@ -673,6 +849,8 @@ export async function searchWithoutLocation({
   dish = null,
   priceMaxByn = null,
   dishOrSearch = null,
+  dishVariants = null,
+  dishMatch = 'strict',
 }) {
   // Validate pagination. Max 500 to support /api/v1/public/establishments/map
   // (Brief 1 default 200, max 500). Mobile clients historically used max 100
@@ -815,10 +993,11 @@ export async function searchWithoutLocation({
     paramIndex = addSearchConditions(search, conditions, params, paramIndex);
   }
 
-  // Segment B: dish-level filter via menu_items (name OR section, optional
-  // budget, optional OR-alternative) — see addDishCondition.
+  // Segment B: dish-level filter via menu_items (substring or, on the smart
+  // path, by words; optional budget; card-level OR-alternative only for
+  // establishments without a visible menu) — see addDishCondition.
   if (dish) {
-    paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch }, conditions, params, paramIndex);
+    paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishMatch }, conditions, params, paramIndex);
   }
 
   const whereClause = conditions.join(' AND ');

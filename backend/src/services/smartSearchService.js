@@ -48,8 +48,8 @@ const NEARBY_RE = /рядом|поблизости|недалеко|около �
  * Приём пищи, который меню называют разделом. На проде 24.09.2026 раздел
  * «ЗАВТРАКИ» есть у 12 заведений из 26 (в том числе у обоих, где есть
  * «БРАНЧ»), «ланч» — у двух. Ужина отдельным разделом в меню нет — его не
- * ищем. `variants` уходят дальше как dishVariants: их прочтёт сопоставление с
- * меню после сессии А2, сегодня searchService их не видит.
+ * ищем. `variants` уходят дальше как dishVariants — сопоставление с меню
+ * читает их как ИЛИ-альтернативы (А2).
  */
 const MEAL_MENU_TERMS = new Map([
   ['breakfast', { term: 'завтрак', variants: ['бранч'] }],
@@ -430,7 +430,8 @@ export async function parseIntent(query) {
  * Разводка полей разбора (А1, 24.09.2026): блюдо — или приём пищи, который меню
  * называют разделом, — ищется в меню, и тогда тип и кухня из фразы не режут
  * выдачу; город — только из списка; варианты блюда уходят дальше как
- * `dishVariants` (сопоставление с меню прочтёт их после А2).
+ * `dishVariants`. Сопоставление с меню — по словам (`dishMatch: 'lenient'`, А2,
+ * 27.09.2026): словоформы, опечатки, варианты как ИЛИ.
  *
  * @param {object} intent - Normalized intent (normalizeIntent / parseIntent)
  * @param {{ latitude?: number, longitude?: number, city?: string }} context - User context
@@ -469,10 +470,11 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
   // Dish (Segment B): routes the query to the menu_items EXISTS in searchService
   // (item name OR menu section). Without a stated budget the dish term also
   // rides as an OR-alternative at establishment level (ILIKE + SEARCH_SYNONYMS
-  // via `dishOrSearch`): a pizzeria whose menu is not parsed yet still surfaces
-  // for «пицца», and for the same word — absent other intent filters
-  // (location/city still AND-narrow) — the smart path never finds less than
-  // the classic ?search= path. With a budget (price_max) the match must be
+  // via `dishOrSearch`) for establishments WITHOUT a visible menu: a pizzeria
+  // whose menu is not parsed yet still surfaces for «пицца». An establishment
+  // with a menu is judged by its menu (А2, 27.09.2026) — so the smart path can
+  // now find less than the classic ?search= path: «пиво» no longer returns a
+  // bar whose menu has no beer. With a budget (price_max) the match must be
   // menu-verified — the user asked for a price we can only read from a menu.
   if (intent.dish) {
     filters.dish = intent.dish;
@@ -489,6 +491,13 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
     if (meal.variants.length > 0) {
       filters.dishVariants = [...meal.variants];
     }
+  }
+
+  // Слово для меню сопоставляется по словам: основа, опечатка, ё/і/ў, варианты
+  // (А2). Одиночный `dish` у searchService строгий — его зовут не только
+  // отсюда (сценарий «модератор скрыл позицию — заведение пропало»).
+  if (filters.dish) {
+    filters.dishMatch = 'lenient';
   }
 
   // Price mapping:

@@ -457,3 +457,36 @@ describe('buildSmartSearchFilters — разводка полей разбора
     expect(second.dishVariants).toEqual(['бранч']);
   });
 });
+
+// --- А2 (27.09.2026): сопоставление с меню по словам ------------------------
+//
+// Слово для меню умный поиск сопоставляет по словам (основа, опечатка, ё/і/ў,
+// варианты) — searchService включает это только по явному dishMatch: 'lenient'.
+// Одиночный dish там строгий: его зовут и помимо умного поиска.
+
+describe('buildSmartSearchFilters — сопоставление с меню по словам (А2)', () => {
+  const minsk = { city: 'Минск', latitude: 53.9, longitude: 27.56 };
+
+  test('при блюде сопоставление по словам включено — и с бюджетом тоже', () => {
+    const plain = buildSmartSearchFilters(intentOf({ dish: 'лосось' }), minsk);
+    const budget = buildSmartSearchFilters(intentOf({ dish: 'лосось', price_max: 30 }), minsk);
+
+    expect(plain.dishMatch).toBe('lenient');
+    expect(budget.dishMatch).toBe('lenient');
+    expect(budget.priceMaxByn).toBe(30);
+  });
+
+  test('при приёме пищи — тоже: «завтрак» находит раздел «ЗАВТРАКИ» основой слова', () => {
+    const filters = buildSmartSearchFilters(intentOf({ meal_type: 'breakfast' }), minsk);
+
+    expect(filters.dish).toBe('завтрак');
+    expect(filters.dishMatch).toBe('lenient');
+  });
+
+  test('без слова для меню ключа dishMatch нет', () => {
+    const filters = buildSmartSearchFilters(intentOf({ category: 'Кофейня', tags: ['терраса'] }), minsk);
+
+    expect('dish' in filters).toBe(false);
+    expect('dishMatch' in filters).toBe(false);
+  });
+});
