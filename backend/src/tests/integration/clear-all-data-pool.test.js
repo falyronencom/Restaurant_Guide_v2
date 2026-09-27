@@ -4,16 +4,20 @@
  * clearAllData keeps no session state on pooled connections
  * clearAllData не оставляет состояния сессии на соединениях пула
  *
- * clearAllData sends every statement through the shared app pool, and one
- * call is not pinned to one connection. While the pool has free connections
- * it hands the call back the connection it has just released (LIFO, before
- * any other I/O callback runs), so a background tail returning its connection
- * mid-call lands underneath and changes nothing. Once the pool is saturated,
- * a released connection goes straight to the oldest waiter — typically a
- * fire-and-forget write of the previous test — and the call carries on over
- * another connection.
+ * clearAllData sends its statements through the shared app pool, and a call
+ * of several statements is not pinned to one connection. While the pool has
+ * free connections it hands the call back the connection it has just released
+ * (LIFO, before any other I/O callback runs), so a background tail returning
+ * its connection mid-call lands underneath and changes nothing. Once the pool
+ * is saturated, a released connection goes straight to the oldest waiter —
+ * typically a fire-and-forget write of the previous test — and the call
+ * carries on over another connection.
  *
- * That broke the pair clearAllData used to wrap its TRUNCATEs in
+ * Since 2026-09-25 clearAllData is a single TRUNCATE, so nothing is left to
+ * split: this test guards against session state coming back around it. With
+ * one statement the checkout sequence below is just [tail, tail].
+ *
+ * The split broke the pair clearAllData used to wrap its twenty TRUNCATEs in
  * (`SET session_replication_role = replica` … `= DEFAULT`): the waiter ran on
  * the connection the SET had just switched to replica — FK checks and user
  * triggers off — and kept it so after the reset went elsewhere, for every

@@ -10,22 +10,28 @@
  * baseline and clearAllData stay complete — the drift this list prevents was
  * the root of the historical isolation debt (F1/F2).
  *
- * Order is not load-bearing: callers truncate each table with CASCADE, which
- * takes every referencing table along, so FK direction is handled.
+ * Order is load-bearing: every FK child comes before its parent. Both callers
+ * truncate the whole list in ONE statement, and PostgreSQL locks the tables in
+ * list order and holds them until COMMIT. A fire-and-forget INSERT of the
+ * previous test holds its own table and asks for the parents only on its FK
+ * check — for every FK of the table, even when the column is NULL. A parent
+ * listed first closes a ring with it: `deadlock detected`, and the next test's
+ * hook fails. Place a new table before every table it references.
+ * Guard: integration/clear-all-data-lock-order.test.js.
  */
 export const TEST_STATE_TABLES = [
   'audit_log',
-  'establishment_media',
   'favorites',
-  'reviews',
   'bookings',
   'booking_settings',
-  'menu_items',
   'promotions',
+  'menu_items',
+  'ocr_jobs',
+  'establishment_media',
   'notifications',
+  'reviews',
   'device_tokens',
   'notification_preferences',
-  'ocr_jobs',
   'partner_documents',
   'subscriptions',
   'establishment_analytics',
