@@ -1,0 +1,87 @@
+name: Сроки моделей OpenRouter
+
+# Сторож сроков моделей прода на OpenRouter (чип сессии «модель OCR»,
+# 28.09.2026; логика и причины — backend/scripts/model-expiry/watch.js).
+#
+# Зачем. Модели на OpenRouter живут месяцы: 24.09.2026 срок 2026-10-20 нашёлся
+# сразу у обеих моделей прода (google/gemini-2.5-flash и 2.5-flash-lite) — и
+# нашёлся случайно. Публичный каталог https://openrouter.ai/api/v1/models
+# отдаёт у модели поле expiration_date. Раз в неделю этот workflow сверяет с
+# ним умолчания backend/src/config/openrouter.js и зеркало переменных Railway
+# (backend/scripts/model-expiry/railway-models.js) и краснеет, если срок
+# ближе 45 дней или прошёл, модели нет в каталоге или сторож ослеп (каталог
+# недоступен, поле пропало). Красный прогон по расписанию — уведомление
+# GitHub тому, кто последним менял строку cron.
+#
+# Почему не в ci.yml и без push / pull_request. Гейт не должен зависеть от
+# чужой сети — сбой OpenRouter красил бы каждый PR. И второе: «Wait for CI» у
+# Railway смотрит на ВСЕ проверки коммита, упавший workflow пропускает
+# выкатку. Запуск на push положил бы красного сторожа на тот самый коммит,
+# который надо выкатить, — в неделю тревоги это как раз замена модели.
+# Тест backend/src/tests/unit/modelExpiryWatch.test.js валится, если сюда
+# добавят push или pull_request.
+#
+# Почему понедельник 02:17 UTC (05:17 Минска). Расписание запускается на
+# последнем коммите main; если там ещё идёт CI свежего push, красный сторож
+# сорвал бы его выкатку. За 24.08–28.09.2026 (84 push) в 00–04 UTC не было ни
+# одного, CI идёт 4–6 минут; :17 — мимо пиковой нагрузки начала часа
+# (расписание GitHub в пики запаздывает). Время — не гарантия: сам скрипт
+# откладывает провал, если на коммите ещё идёт или только что закончился
+# другой прогон (защита выкатки, поэтому actions: read).
+#
+# Ручной запуск (Actions → «Сроки моделей OpenRouter» → Run workflow)
+# принимает дополнительные модели. google/gemini-2.5-flash (срок 2026-10-20)
+# даёт нарочно красный прогон — так проверяется, что уведомление доходит.
+# Уведомление о ручном запуске получает запустивший.
+#
+# В публичном репозитории GitHub выключает расписание после 60 дней без
+# активности — после долгой паузы включить его в Actions вручную.
+
+on:
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      extra_models:
+        description: 'Дополнительные модели через запятую (google/gemini-2.5-flash — нарочно красный прогон)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  expiry:
+    name: Сроки моделей OpenRouter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Установить зависимости
+        # Умолчания моделей скрипт берёт из самого config/openrouter.js, а тот
+        # тянет logger → winston, поэтому нужны зависимости backend; dev — нет.
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Сверить сроки моделей
+        # Ввод передаётся переменной окружения, не подстановкой в команду:
+        # текст из формы не исполняется оболочкой. Форма github.event.inputs,
+        # а не inputs: контекст inputs документирован только для ручного
+        # запуска и повторно используемых workflow, а по расписанию полей
+        # формы нет — github.event.inputs тогда пуст, и строка пустая
+        # (ревью 28.09.2026; тест держит эту форму).
+        working-directory: backend
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXTRA_MODELS: ${{ github.event.inputs.extra_models }}
+        run: node scripts/model-expiry/check.js
