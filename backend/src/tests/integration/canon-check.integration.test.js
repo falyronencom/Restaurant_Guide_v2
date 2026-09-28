@@ -6,6 +6,11 @@
  * end-to-end without touching the shared restaurant_guide_test schema (which
  * correctly mirrors current prod, where 030/031 are not yet applied).
  *
+ * Имя служебной базы выводится из DB_NAME прогона (`<DB_NAME>__canon`,
+ * tests/testDatabases.js): при фиксированном имени два одновременных прогона
+ * из разных сессий делили одну служебную базу, и beforeAll одного рвал
+ * соединения и удалял базу под другим.
+ *
  * Verifies the constraint semantics that guard Cyrillic-canon-at-rest:
  *   - canon values accepted; non-canon / empty / NULL-element rejected;
  *     NULL categories accepted (nullable column);
@@ -25,10 +30,11 @@ import pg from 'pg';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { canonScratchDbName } from '../testDatabases.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../migrations');
-const SCRATCH_DB = 'seed_canon_itest';
+const SCRATCH_DB = canonScratchDbName(process.env.DB_NAME);
 
 const CONN = {
   host: process.env.DB_HOST || 'localhost',

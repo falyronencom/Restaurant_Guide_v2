@@ -11,6 +11,7 @@
     "test:watch": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:coverage": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "test:verbose": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --verbose",
+    "test:isolated": "node scripts/test-isolated",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write \"src/**/*.js\"",
     "seed": "node scripts/seed-establishments.js",
