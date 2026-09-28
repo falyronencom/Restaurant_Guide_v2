@@ -18,6 +18,12 @@
  *
  * Model override mechanics: `model` is passed straight into the request body,
  * so no env mutation, no child processes, zero diff in backend/src/.
+ *
+ * Reasoning: production sends no `reasoning` field (2026-09-28). A spec with
+ * an effort (models.js parseModelSpec) adds `reasoning: {effort, exclude:true}`
+ * — the shape smartSearchService sends — to measure the configuration the
+ * OCR adapters would need; without an effort the body is exactly what this
+ * harness sent before (production's shape plus the usage accounting flag).
  */
 
 import { readFileSync } from 'fs';
@@ -45,12 +51,19 @@ export function toDataUri(abspath, mime) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The `reasoning` request field for an effort, or null for «as production». */
+export const reasoningField = (effort) => (effort ? { effort, exclude: true } : null);
+
 /**
  * POST /chat/completions with timeout + one retry on transient failures
  * (timeout, 429, 5xx). Non-transient HTTP errors (e.g. a model rejecting
  * data: URIs with 400) surface immediately.
  *
- * @returns {Promise<{ content: string, usage: object|null, ms: number }>}
+ * `attempts` is returned (and set on a thrown error): a call that timed out
+ * once and then succeeded is invisible otherwise — in production each such
+ * try burns one of the job's three attempts.
+ *
+ * @returns {Promise<{ content: string, usage: object|null, ms: number, attempts: number }>}
  */
 async function postChat(body) {
   const config = getOcrConfig();
@@ -59,7 +72,8 @@ async function postChat(body) {
   }
 
   let lastError;
-  for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
+  let attempt = 0;
+  for (; attempt <= TRANSIENT_RETRIES; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAY_MS);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -83,22 +97,24 @@ async function postChat(body) {
           lastError = error;
           continue; // transient — retry once
         }
-        throw error;
+        throw error; // attempts is set in the catch below
       }
 
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content || '';
-      return { content, usage: data?.usage || null, ms };
+      return { content, usage: data?.usage || null, ms, attempts: attempt + 1 };
     } catch (e) {
       if (e.name === 'AbortError') {
         lastError = new Error(`OpenRouter call timed out after ${REQUEST_TIMEOUT_MS}ms`);
         continue; // transient — retry once
       }
+      e.attempts ??= attempt + 1;
       throw e;
     } finally {
       clearTimeout(timeoutId);
     }
   }
+  lastError.attempts = attempt;
   throw lastError;
 }
 
@@ -107,9 +123,10 @@ async function postChat(body) {
  *
  * @param {string[]} imageDataUris
  * @param {string} model
- * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms }>}
+ * @param {string|null} [effort] - reasoning effort; null = as production
+ * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms, attempts }>}
  */
-export async function visionExtract(imageDataUris, model) {
+export async function visionExtract(imageDataUris, model, effort = null) {
   const messages = [
     { role: 'system', content: VISION_SYSTEM_PROMPT },
     {
@@ -121,16 +138,19 @@ export async function visionExtract(imageDataUris, model) {
     },
   ];
 
-  const { content, usage, ms } = await postChat({
+  const reasoning = reasoningField(effort);
+  const { content, usage, ms, attempts } = await postChat({
     model,
     messages,
     temperature: 0,
+    ...(reasoning && { reasoning }),
     usage: { include: true },
   });
 
   // Same coarse heuristic the production adapter records (visionOcrAdapter.js:84).
   const confidenceHeuristic = content.length < 50 ? 0.3 : 0.85;
-  return { rawText: content, confidenceHeuristic, usage, ms };
+  // sentReasoning: what actually went into the body — the dump proves the configuration.
+  return { rawText: content, confidenceHeuristic, usage, ms, attempts, sentReasoning: reasoning };
 }
 
 /**
@@ -140,16 +160,18 @@ export async function visionExtract(imageDataUris, model) {
  *
  * @param {string} rawText
  * @param {string} model
- * @returns {Promise<{ items, parseOk, zodOk, zodError, usage, ms }>}
+ * @param {string|null} [effort] - reasoning effort; null = as production
+ * @returns {Promise<{ items, parseOk, zodOk, zodError, usage, ms, attempts }>}
  */
-export async function structureText(rawText, model) {
+export async function structureText(rawText, model, effort = null) {
   if (!rawText || rawText.trim().length === 0) {
     // ms stays null — no API call happened, and a phantom 0 would flatter
     // exactly the models that return empty OCR text (latency averages).
-    return { items: [], parseOk: true, zodOk: true, zodError: null, usage: null, ms: null };
+    return { items: [], parseOk: true, zodOk: true, zodError: null, usage: null, ms: null, attempts: 0, sentReasoning: null };
   }
 
-  const { content, usage, ms } = await postChat({
+  const reasoning = reasoningField(effort);
+  const { content, usage, ms, attempts } = await postChat({
     model,
     messages: [
       { role: 'system', content: STRUCTURER_SYSTEM_PROMPT },
@@ -157,14 +179,16 @@ export async function structureText(rawText, model) {
     ],
     temperature: 0,
     response_format: { type: 'json_object' },
+    ...(reasoning && { reasoning }),
     usage: { include: true },
   });
 
+  const sent = { usage, ms, attempts, sentReasoning: reasoning };
   let parsed;
   try {
     parsed = JSON.parse(content);
   } catch {
-    return { items: [], parseOk: false, zodOk: false, zodError: null, usage, ms };
+    return { items: [], parseOk: false, zodOk: false, zodError: null, ...sent };
   }
 
   const validated = ResponseSchema.safeParse(parsed);
@@ -174,10 +198,9 @@ export async function structureText(rawText, model) {
       parseOk: true,
       zodOk: false,
       zodError: String(validated.error?.message || '').slice(0, 500),
-      usage,
-      ms,
+      ...sent,
     };
   }
 
-  return { items: validated.data.items, parseOk: true, zodOk: true, zodError: null, usage, ms };
+  return { items: validated.data.items, parseOk: true, zodOk: true, zodError: null, ...sent };
 }

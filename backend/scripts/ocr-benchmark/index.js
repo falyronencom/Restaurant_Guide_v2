@@ -18,7 +18,8 @@
  * Flags:
  *   --photos=<dir>      flat folder of menu images (jpg/jpeg/png/webp)
  *   --media-root=<dir>  seed-import media root; only <stable_id>/menu/* is read
- *   --models=a,b,c      override the default candidate set
+ *   --models=a,b,c      override the default candidate set; id@<none|minimal|low|medium|high>
+ *                       adds a reasoning effort to both calls (no suffix = as production: no field)
  *   --limit=N           cap the number of photos (smoke runs)
  *   --out=<dir>         output dir (default: scripts/ocr-benchmark/runs/<timestamp>)
  *   --list-models       verify candidates against the OpenRouter catalog and exit
@@ -35,7 +36,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // overwrites vars already present in the environment.
 dotenv.config({ path: join(__dirname, '../../.env') });
 
-import { DEFAULT_MODELS, fetchCatalog, verifyModels, computeCostUsd } from './models.js';
+import { DEFAULT_MODELS, parseModelSpec, fetchCatalog, verifyModels, computeCostUsd } from './models.js';
 import { discoverPhotos } from './discover.js';
 import { toDataUri, visionExtract, structureText } from './caller.js';
 import { writeManifest, writeDump, writeResults, buildSummary, writeSummary } from './report.js';
@@ -75,17 +76,24 @@ async function main() {
     if (requestedModels.length === 0) fail('--models is empty');
   }
 
+  let specs;
+  try {
+    specs = requestedModels.map(parseModelSpec);
+  } catch (e) {
+    fail(e.message);
+  }
+
   // ── Catalog verification (also serves --list-models) ──────────────────────
   console.log('Verifying candidates against the OpenRouter catalog…');
   const catalog = await fetchCatalog();
   if (!catalog) {
     console.warn('⚠ OpenRouter catalog unreachable — running unverified, cost fallback unavailable.');
   }
-  const { usable, skipped } = verifyModels(requestedModels, catalog);
+  const { usable, skipped } = verifyModels(specs, catalog);
   for (const s of skipped) console.warn(`⚠ skipping ${s.id}: ${s.reason}`);
   for (const u of usable) {
     const price = u.pricing ? `$${u.pricing.prompt}/tok in, $${u.pricing.completion}/tok out` : 'pricing unknown';
-    console.log(`  ✔ ${u.id} (${price})`);
+    console.log(`  ✔ ${u.spec} (${price})`);
   }
   if (args['list-models']) return;
   if (usable.length === 0) fail('no usable candidate models');
@@ -118,8 +126,11 @@ async function main() {
   if (args.out && existsSync(join(runDir, 'dumps'))) {
     console.warn('⚠ --out already contains dumps from a previous run — stale dumps will sit beside fresh ones unless every model×photo pair is regenerated. Prefer a clean dir.');
   }
-  const pricingByModel = new Map(usable.map((u) => [u.id, u.pricing]));
-  const models = usable.map((u) => u.id);
+  // A run label is the spec (id@effort) — dumps, SUMMARY and the scorer keep
+  // «as production» and «with an effort» of one model apart.
+  const pricingByModel = new Map(usable.map((u) => [u.spec, u.pricing]));
+  const specBy = new Map(usable.map((u) => [u.spec, u]));
+  const models = usable.map((u) => u.spec);
 
   writeManifest(runDir, {
     startedAt,
@@ -131,36 +142,45 @@ async function main() {
 
   const results = [];
   for (const model of models) {
+    const { id: modelId, effort } = specBy.get(model);
     console.log(`\n=== ${model} ===`);
     for (const unit of units) {
       const result = {
         unitId: unit.id,
         model,
-        vision: { ms: null, usage: null, rawTextChars: 0, confidenceHeuristic: null, rawText: '' },
-        structurer: { ms: null, usage: null, parseOk: null, zodOk: null, zodError: null },
+        modelId,
+        reasoningEffort: effort,
+        vision: { ms: null, usage: null, rawTextChars: 0, confidenceHeuristic: null, rawText: '', attempts: null },
+        structurer: { ms: null, usage: null, parseOk: null, zodOk: null, zodError: null, attempts: null },
         items: [],
         metrics: { itemsCount: 0, needsCaution: 0, empty: true, costUsd: null },
         error: null,
       };
+      let stage = 'vision';
       try {
         const dataUri = toDataUri(unit.abspath, unit.mime);
 
-        const vision = await visionExtract([dataUri], model);
+        const vision = await visionExtract([dataUri], modelId, effort);
         result.vision = {
           ms: vision.ms,
           usage: vision.usage,
           rawTextChars: vision.rawText.length,
           confidenceHeuristic: vision.confidenceHeuristic,
           rawText: vision.rawText,
+          attempts: vision.attempts,
+          sentReasoning: vision.sentReasoning,
         };
 
-        const structured = await structureText(vision.rawText, model);
+        stage = 'structurer';
+        const structured = await structureText(vision.rawText, modelId, effort);
         result.structurer = {
           ms: structured.ms,
           usage: structured.usage,
           parseOk: structured.parseOk,
           zodOk: structured.zodOk,
           zodError: structured.zodError,
+          attempts: structured.attempts,
+          sentReasoning: structured.sentReasoning,
         };
 
         // Production sanity rules on equal footing; no previous items on a
@@ -179,6 +199,9 @@ async function main() {
         };
       } catch (e) {
         result.error = e.message;
+        // Only a failed call carries attempts; a later throw (sanity, cost)
+        // must not wipe what the structurer already recorded.
+        if (e.attempts != null) result[stage].attempts = e.attempts;
         // Spend already incurred before the failure still counts — recompute
         // cost from whatever usage blocks were captured, so SUMMARY totals
         // reflect real money, not just error-free rows.

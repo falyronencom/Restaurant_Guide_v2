@@ -5,7 +5,8 @@
  * production model as the baseline, its fuller sibling, the 2026 flagship
  * flash (catalog-verified 2026-07-13), plus one strong non-Gemini vision
  * model for a cross-family signal (optional per BENCHMARK_BRIEF — drop it
- * via --models). Override the whole set with --models=id1,id2,…
+ * via --models). Override the whole set with --models=id1,id2,… — an id may
+ * carry a reasoning effort, id@minimal (parseModelSpec).
  *
  * Every candidate is re-verified against the LIVE catalog at run time —
  * model names are the most perishable part of the AI stack, so existence,
@@ -20,6 +21,32 @@ export const DEFAULT_MODELS = [
   'qwen/qwen3.5-flash-02-23', // cross-family vision signal
   'google/gemini-3.1-flash-lite', // gen-3.1 successor of the baseline lite (Coordinator, 2026-07-13)
 ];
+
+/** OpenRouter `reasoning.effort` values accepted in a spec suffix. */
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'];
+
+/**
+ * A candidate spec is a catalog id, optionally with a reasoning effort:
+ * `google/gemini-3.8-flash@minimal`. No suffix = no `reasoning` field in the
+ * request, which is what production sends today — the model's own default
+ * (2026-07: gemini-3.5-flash thought by default, 98k reasoning tokens on 24
+ * photos, ×10 cost). The suffix measures the configuration production would
+ * get only after the OCR adapters learn to send the field.
+ *
+ * @param {string} spec
+ * @returns {{ spec: string, id: string, effort: string|null }}
+ * @throws {Error} on an effort outside REASONING_EFFORTS
+ */
+export function parseModelSpec(spec) {
+  const at = spec.lastIndexOf('@');
+  if (at === -1) return { spec, id: spec, effort: null };
+  const id = spec.slice(0, at);
+  const effort = spec.slice(at + 1);
+  if (!id || !REASONING_EFFORTS.includes(effort)) {
+    throw new Error(`bad model spec "${spec}" — expected <id> or <id>@<${REASONING_EFFORTS.join('|')}>`);
+  }
+  return { spec, id, effort };
+}
 
 const CATALOG_URL = 'https://openrouter.ai/api/v1/models';
 const CATALOG_TIMEOUT_MS = 30000;
@@ -56,28 +83,31 @@ export async function fetchCatalog() {
 /**
  * Verify candidates against the catalog. A usable candidate must exist,
  * accept image input, and support response_format (the structurer sends
- * response_format:{type:'json_object'} — llmStructurer.js:83).
+ * response_format:{type:'json_object'} — llmStructurer.js:83); a spec with
+ * an effort suffix also needs the `reasoning` parameter.
  *
- * @param {string[]} ids
+ * @param {Array<{spec, id, effort}>} specs - from parseModelSpec()
  * @param {Map|null} catalog - from fetchCatalog(); null = unverifiable
- * @returns {{ usable: Array<{id, pricing}>, skipped: Array<{id, reason}> }}
+ * @returns {{ usable: Array<{spec, id, effort, pricing}>, skipped: Array<{id, reason}> }}
  */
-export function verifyModels(ids, catalog) {
+export function verifyModels(specs, catalog) {
   if (!catalog) {
-    return { usable: ids.map((id) => ({ id, pricing: null })), skipped: [] };
+    return { usable: specs.map((s) => ({ ...s, pricing: null })), skipped: [] };
   }
   const usable = [];
   const skipped = [];
-  for (const id of ids) {
-    const entry = catalog.get(id);
+  for (const s of specs) {
+    const entry = catalog.get(s.id);
     if (!entry) {
-      skipped.push({ id, reason: 'not found in OpenRouter catalog' });
+      skipped.push({ id: s.spec, reason: 'not found in OpenRouter catalog' });
     } else if (!entry.inputModalities.includes('image')) {
-      skipped.push({ id, reason: `no image input (modalities: ${entry.inputModalities.join(',')})` });
+      skipped.push({ id: s.spec, reason: `no image input (modalities: ${entry.inputModalities.join(',')})` });
     } else if (!entry.supportedParameters.includes('response_format')) {
-      skipped.push({ id, reason: 'response_format not supported (structurer requires json_object)' });
+      skipped.push({ id: s.spec, reason: 'response_format not supported (structurer requires json_object)' });
+    } else if (s.effort && !entry.supportedParameters.includes('reasoning')) {
+      skipped.push({ id: s.spec, reason: 'reasoning parameter not supported' });
     } else {
-      usable.push({ id, pricing: entry.pricing });
+      usable.push({ ...s, pricing: entry.pricing });
     }
   }
   return { usable, skipped };

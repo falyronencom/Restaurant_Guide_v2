@@ -57,6 +57,14 @@ function aggregate(model, rows) {
   );
   const costKnown = rows.map((r) => r.metrics.costUsd).filter((c) => c != null);
   const cost = costKnown.length ? costKnown.reduce((a, b) => a + b, 0) : null;
+  // Reasoning tokens are billed inside completion tokens — the July ×10 of
+  // gemini-3.5-flash was exactly this column. Retries: a try that timed out
+  // costs a job attempt in production even when the retry succeeds.
+  const reasoningOf = (u) => u?.completion_tokens_details?.reasoning_tokens || 0;
+  const tokensReasoning = rows.reduce((a, r) => a + reasoningOf(r.vision.usage) + reasoningOf(r.structurer.usage), 0);
+  const retries = rows.reduce(
+    (a, r) => a + Math.max(0, (r.vision.attempts || 1) - 1) + Math.max(0, (r.structurer.attempts || 1) - 1), 0,
+  );
   return {
     model,
     menus: ok.length,
@@ -68,6 +76,8 @@ function aggregate(model, rows) {
     cautionPct: fmtPct(caution, itemsTotal),
     tokensIn,
     tokensOut,
+    tokensReasoning,
+    retries,
     cost,
     avgVisionMs: avg(ok.map((r) => r.vision.ms).filter((m) => m != null)),
     avgStructMs: avg(ok.map((r) => r.structurer.ms).filter((m) => m != null)),
@@ -102,12 +112,12 @@ export function buildSummary(meta, models, results) {
 
   lines.push('## Сводка по моделям');
   lines.push('');
-  lines.push('| Модель | Меню OK | Ошибки | Позиций всего | Ср. позиций/меню | Пустые | JSON-fail | needs_caution | Токены in/out | Стоимость | Ср. vision, мс | Ср. structurer, мс |');
-  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  lines.push('| Модель | Меню OK | Ошибки | Позиций всего | Ср. позиций/меню | Пустые | JSON-fail | needs_caution | Токены in/out | из них рассуждения | Повторы | Стоимость | Ср. vision, мс | Ср. structurer, мс |');
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     const a = aggregate(model, byModel.get(model));
     lines.push(
-      `| \`${a.model}\` | ${a.menus} | ${a.errors} | ${a.itemsTotal} | ${a.avgItems} | ${a.empty} | ${a.parseFails} | ${a.cautionPct} | ${a.tokensIn}/${a.tokensOut} | ${fmtCost(a.cost)} | ${fmtMs(a.avgVisionMs)} | ${fmtMs(a.avgStructMs)} |`,
+      `| \`${a.model}\` | ${a.menus} | ${a.errors} | ${a.itemsTotal} | ${a.avgItems} | ${a.empty} | ${a.parseFails} | ${a.cautionPct} | ${a.tokensIn}/${a.tokensOut} | ${a.tokensReasoning} | ${a.retries} | ${fmtCost(a.cost)} | ${fmtMs(a.avgVisionMs)} | ${fmtMs(a.avgStructMs)} |`,
     );
   }
   lines.push('');
