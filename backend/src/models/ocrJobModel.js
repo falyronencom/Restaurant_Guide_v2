@@ -210,9 +210,9 @@ export const hasCompletedJobForMedia = async (mediaId) => {
 /**
  * A 'processing' row older than this is a zombie: the process died mid-job
  * (SIGKILL / OOM / redeploy without a graceful stop) and nothing else will
- * ever settle it. A legitimate job is minutes at most: one PDF download, one
- * vision call and one structurer call, each aborted after 60 s
- * (ocrService.JOB_DURATION_BOUND_MS = 180 s).
+ * ever settle it. A legitimate job is minutes at most: its PDF download,
+ * vision and structurer calls each abort after 60 s, and the job as a whole
+ * stays within ocrService.JOB_DURATION_BOUND_MS = 180 s.
  * Two consumers: countActiveJobsForEstablishment ignores such rows so a
  * zombie cannot mute the batch notification, and reapStaleProcessingJobs
  * (driven by ocrJobPoller's sweep) settles them. PostgreSQL interval literal.
