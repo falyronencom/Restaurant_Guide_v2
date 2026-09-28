@@ -18,8 +18,9 @@
  * Flags:
  *   --photos=<dir>      flat folder of menu images (jpg/jpeg/png/webp)
  *   --media-root=<dir>  seed-import media root; only <stable_id>/menu/* is read
- *   --models=a,b,c      override the default candidate set; id@<none|minimal|low|medium|high>
- *                       adds a reasoning effort to both calls (no suffix = as production: no field)
+ *   --models=a,b,c      override the default candidate set; a plain id sends what production
+ *                       sends (getOcrConfig().reasoning), id@default sends no reasoning field,
+ *                       id@<none|minimal|low|medium|high> sends that effort — both calls
  *   --limit=N           cap the number of photos (smoke runs)
  *   --out=<dir>         output dir (default: scripts/ocr-benchmark/runs/<timestamp>)
  *   --list-models       verify candidates against the OpenRouter catalog and exit
@@ -149,7 +150,7 @@ async function main() {
         unitId: unit.id,
         model,
         modelId,
-        reasoningEffort: effort,
+        reasoningEffort: effort ?? 'production',
         vision: { ms: null, usage: null, rawTextChars: 0, confidenceHeuristic: null, rawText: '', attempts: null },
         structurer: { ms: null, usage: null, parseOk: null, zodOk: null, zodError: null, attempts: null },
         items: [],

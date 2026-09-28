@@ -19,11 +19,13 @@
  * Model override mechanics: `model` is passed straight into the request body,
  * so no env mutation, no child processes, zero diff in backend/src/.
  *
- * Reasoning: production sends no `reasoning` field (2026-09-28). A spec with
- * an effort (models.js parseModelSpec) adds `reasoning: {effort, exclude:true}`
- * — the shape smartSearchService sends — to measure the configuration the
- * OCR adapters would need; without an effort the body is exactly what this
- * harness sent before (production's shape plus the usage accounting flag).
+ * Reasoning mirrors production the same way the prompts do: a plain model id
+ * sends what getOcrConfig().reasoning says production sends (since
+ * 2026-09-28: effort "minimal"). `id@default` omits the field — the model's
+ * own default; `id@none|minimal|…` sends that effort (models.js
+ * parseModelSpec). Before 2026-09-28 production sent no field at all, and a
+ * benchmark «as production» that silently differed from production is how
+ * the July ×10 cost of gemini-3.5-flash went unexplained.
  */
 
 import { readFileSync } from 'fs';
@@ -51,8 +53,15 @@ export function toDataUri(abspath, mime) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The `reasoning` request field for an effort, or null for «as production». */
-export const reasoningField = (effort) => (effort ? { effort, exclude: true } : null);
+/**
+ * The `reasoning` request field for a spec's effort: null (plain id) → what
+ * production sends; 'default' → no field; otherwise {effort, exclude:true}.
+ */
+export const reasoningField = (effort) => {
+  if (effort == null) return getOcrConfig().reasoning ?? null;
+  if (effort === 'default') return null;
+  return { effort, exclude: true };
+};
 
 /**
  * POST /chat/completions with timeout + one retry on transient failures
@@ -123,8 +132,8 @@ async function postChat(body) {
  *
  * @param {string[]} imageDataUris
  * @param {string} model
- * @param {string|null} [effort] - reasoning effort; null = as production
- * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms, attempts }>}
+ * @param {string|null} [effort] - reasoning effort; null = as production, 'default' = no field
+ * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms, attempts, sentReasoning }>}
  */
 export async function visionExtract(imageDataUris, model, effort = null) {
   const messages = [
@@ -160,8 +169,8 @@ export async function visionExtract(imageDataUris, model, effort = null) {
  *
  * @param {string} rawText
  * @param {string} model
- * @param {string|null} [effort] - reasoning effort; null = as production
- * @returns {Promise<{ items, parseOk, zodOk, zodError, usage, ms, attempts }>}
+ * @param {string|null} [effort] - reasoning effort; null = as production, 'default' = no field
+ * @returns {Promise<{ items, parseOk, zodOk, zodError, usage, ms, attempts, sentReasoning }>}
  */
 export async function structureText(rawText, model, effort = null) {
   if (!rawText || rawText.trim().length === 0) {

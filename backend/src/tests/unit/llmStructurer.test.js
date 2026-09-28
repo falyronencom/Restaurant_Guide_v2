@@ -135,6 +135,28 @@ describe('llmStructurer', () => {
     await expect(structureMenu('x')).rejects.toThrow(/empty content/);
   });
 
+  test('шлёт reasoning из конфига OCR (28.09.2026: minimal)', async () => {
+    openrouterMock.getOcrConfig.mockReturnValue({ ...DEFAULT_OCR_CONFIG, reasoning: { effort: 'minimal', exclude: true } });
+    const fetchMock = jest.fn().mockResolvedValue(buildFetchResponse('{"items":[]}'));
+    global.fetch = fetchMock;
+
+    await structureMenu('Борщ 15');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reasoning).toEqual({ effort: 'minimal', exclude: true });
+    expect(body.response_format).toEqual({ type: 'json_object' });
+  });
+
+  test('без reasoning в конфиге поля в запросе нет', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(buildFetchResponse('{"items":[]}'));
+    global.fetch = fetchMock;
+
+    await structureMenu('Борщ 15');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(Object.keys(body)).toEqual(['model', 'messages', 'temperature', 'response_format']);
+  });
+
   test('accepts empty items array as valid gibberish response', async () => {
     const empty = JSON.stringify({ items: [] });
     global.fetch = jest.fn().mockResolvedValue(buildFetchResponse(empty));

@@ -46,14 +46,25 @@ export const getConfig = () => ({
 /**
  * Get OpenRouter configuration for OCR menu pipeline (Этап 2).
  *
- * Shares apiKey and baseUrl with intent parsing — different model tuned for
- * vision + structured extraction tasks. Falls back to the intent default if
- * AI_OCR_MODEL is not set (Gemini Flash Lite supports vision input).
+ * Shares apiKey and baseUrl with intent parsing; model and reasoning are
+ * OCR's own. Умолчание — модель, выбранная замером 28.09.2026 по эталону
+ * 480 строк меню (`backend/session_reports/ocr_model_swap_2026_report.md`):
+ * у прежних google/gemini-2.5-flash и 2.5-flash-lite в каталоге OpenRouter
+ * срок 2026-10-20.
  *
- * @returns {{ apiKey: string, baseUrl: string, model: string }}
+ * reasoning — обе стадии (vision и структурер) шлют его в запросе.
+ * gemini-3.8-flash без поля рассуждает на medium: ≈ 2,9 тыс. служебных
+ * токенов на фото, ×1,7 цены и хуже качество (2 сбоя JSON на 24 фото);
+ * с minimal — 0 служебных токенов и лучший результат замера. Модель в
+ * AI_OCR_MODEL обязана принимать effort "minimal", иначе каждый вызов даст
+ * 400. У gemini-2.5-flash "minimal" рассуждения ВКЛЮЧАЕТ (структурер 44 с
+ * при таймауте 60 с) — возвращать её с этим кодом нельзя.
+ *
+ * @returns {{ apiKey: string, baseUrl: string, model: string, reasoning: { effort: string, exclude: boolean } }}
  */
 export const getOcrConfig = () => ({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-  model: process.env.AI_OCR_MODEL || 'google/gemini-2.5-flash-lite',
+  model: process.env.AI_OCR_MODEL || 'google/gemini-3.8-flash',
+  reasoning: { effort: 'minimal', exclude: true },
 });

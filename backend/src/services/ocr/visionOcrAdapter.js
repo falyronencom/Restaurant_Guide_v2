@@ -66,6 +66,8 @@ export const extractFromImages = async (cloudinaryUrls) => {
         model: config.model,
         messages,
         temperature: 0,
+        // Уровень рассуждений — из getOcrConfig (там же почему minimal).
+        ...(config.reasoning && { reasoning: config.reasoning }),
       }),
       signal: controller.signal,
     });

@@ -2,12 +2,13 @@
  * Unit — OCR benchmark harness: model spec with a reasoning effort, catalog
  * verification, request body, attempts (scripts/ocr-benchmark/*).
  *
- * Why it matters (2026-09-28, OCR model swap): production OCR sends no
- * `reasoning` field. A candidate measured WITH an effort would be measured in
- * a configuration production does not run — so «no suffix» must keep the
- * request free of the field, and «@minimal» must put exactly the shape
- * smartSearchService sends. Attempts: a call that timed out once and then
- * succeeded is otherwise invisible, while in production it burns a job attempt.
+ * Why it matters (2026-09-28, OCR model swap): a benchmark «as production»
+ * that silently differs from production measures the wrong thing. A plain id
+ * must send exactly the `reasoning` production sends (getOcrConfig — since
+ * 28.09 effort "minimal"), `@default` must send no field (the model's own
+ * default), and «@minimal» the shape smartSearchService sends. Attempts: a
+ * call that timed out once and then succeeded is otherwise invisible, while
+ * in production it burns a job attempt.
  *
  * OpenRouter is not called: global.fetch is a mock, the key a stub.
  */
@@ -59,6 +60,12 @@ describe('parseModelSpec', () => {
   test('none и minimal входят в допустимые', () => {
     expect(REASONING_EFFORTS).toEqual(expect.arrayContaining(['none', 'minimal']));
   });
+
+  test('@default — отдельный суффикс «без поля»', () => {
+    expect(parseModelSpec('google/gemini-2.5-flash@default')).toEqual({
+      spec: 'google/gemini-2.5-flash@default', id: 'google/gemini-2.5-flash', effort: 'default',
+    });
+  });
 });
 
 describe('verifyModels', () => {
@@ -79,10 +86,10 @@ describe('verifyModels', () => {
     expect(usable).toEqual([{ spec: 'a/full@minimal', id: 'a/full', effort: 'minimal', pricing: { prompt: '0.0000003', completion: '0.0000025' } }]);
   });
 
-  test('effort при модели без параметра reasoning — пропуск с причиной; без effort — годна', () => {
-    const { usable, skipped } = verifyModels(specs('a/noreason@minimal', 'a/noreason'), catalog);
+  test('effort при модели без параметра reasoning — пропуск с причиной; без effort и @default — годна', () => {
+    const { usable, skipped } = verifyModels(specs('a/noreason@minimal', 'a/noreason', 'a/noreason@default'), catalog);
     expect(skipped).toEqual([{ id: 'a/noreason@minimal', reason: 'reasoning parameter not supported' }]);
-    expect(usable.map((u) => u.spec)).toEqual(['a/noreason']);
+    expect(usable.map((u) => u.spec)).toEqual(['a/noreason', 'a/noreason@default']);
   });
 
   test('нет в каталоге, нет картинок, нет JSON-режима — пропуск', () => {
@@ -98,12 +105,25 @@ describe('verifyModels', () => {
 });
 
 describe('тело запроса и попытки', () => {
-  test('без effort тела обеих стадий — ровно прежние: без reasoning', async () => {
+  test('без суффикса — как в проде: обе стадии шлют reasoning из getOcrConfig', async () => {
     global.fetch = jest.fn()
       .mockResolvedValueOnce(ok('Меню: борщ 5'))
       .mockResolvedValueOnce(ok('{"items":[]}'));
-    const vision = await visionExtract(['data:image/jpeg;base64,AAAA'], 'google/gemini-2.5-flash');
-    await structureText(vision.rawText, 'google/gemini-2.5-flash');
+    const vision = await visionExtract(['data:image/jpeg;base64,AAAA'], 'google/gemini-3.8-flash');
+    await structureText(vision.rawText, 'google/gemini-3.8-flash');
+    const [v, s] = global.fetch.mock.calls.map(bodyOf);
+    // Прод с 28.09.2026 шлёт minimal (config/openrouter.js).
+    expect(v.reasoning).toEqual({ effort: 'minimal', exclude: true });
+    expect(s.reasoning).toEqual({ effort: 'minimal', exclude: true });
+    expect(vision.sentReasoning).toEqual({ effort: 'minimal', exclude: true });
+  });
+
+  test('@default — поля reasoning нет: умолчание самой модели', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(ok('Меню: борщ 5'))
+      .mockResolvedValueOnce(ok('{"items":[]}'));
+    const vision = await visionExtract(['data:image/jpeg;base64,AAAA'], 'google/gemini-2.5-flash', 'default');
+    await structureText(vision.rawText, 'google/gemini-2.5-flash', 'default');
     const [v, s] = global.fetch.mock.calls.map(bodyOf);
     expect(Object.keys(v)).toEqual(['model', 'messages', 'temperature', 'usage']);
     expect(v).toMatchObject({ model: 'google/gemini-2.5-flash', temperature: 0, usage: { include: true } });
@@ -126,7 +146,7 @@ describe('тело запроса и попытки', () => {
     // Дамп несёт то, что ушло в запрос, — доказательство конфигурации прогона.
     expect(vision.sentReasoning).toEqual({ effort: 'minimal', exclude: true });
     expect(structured.sentReasoning).toEqual({ effort: 'minimal', exclude: true });
-    expect(reasoningField(null)).toBeNull();
+    expect(reasoningField('default')).toBeNull();
   });
 
   test('успех с первого раза — одна попытка', async () => {

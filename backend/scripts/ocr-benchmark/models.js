@@ -1,12 +1,10 @@
 /**
  * Candidate model registry + OpenRouter catalog verification.
  *
- * The default set is fixed by DIRECTIVE_benchmark (2026-07-12): the current
- * production model as the baseline, its fuller sibling, the 2026 flagship
- * flash (catalog-verified 2026-07-13), plus one strong non-Gemini vision
- * model for a cross-family signal (optional per BENCHMARK_BRIEF — drop it
- * via --models). Override the whole set with --models=id1,id2,… — an id may
- * carry a reasoning effort, id@minimal (parseModelSpec).
+ * The default set was fixed by DIRECTIVE_benchmark (2026-07-12) and renewed
+ * by the OCR model swap (2026-09-28) — see DEFAULT_MODELS. Override the
+ * whole set with --models=id1,id2,… — an id may carry a reasoning suffix,
+ * id@default / id@minimal (parseModelSpec).
  *
  * Every candidate is re-verified against the LIVE catalog at run time —
  * model names are the most perishable part of the AI stack, so existence,
@@ -14,36 +12,41 @@
  * assumed. A failing candidate is skipped and reported, not fatal.
  */
 
+// Set of the 2026-09-28 swap: the production choice as production sends it,
+// the same model at its own default, the env-only alternative, and a
+// cross-family signal (gpt-6-luna: good prices, but invented dish
+// descriptions on a readable menu in 3 runs of 3). The July set
+// (2.5-flash-lite, 2.5-flash, qwen3.5-flash) leaves the catalog 2026-10-20.
 export const DEFAULT_MODELS = [
-  'google/gemini-2.5-flash-lite', // baseline — current prod fallback (never deliberately chosen for OCR)
-  'google/gemini-2.5-flash',
-  'google/gemini-3.5-flash',
-  'qwen/qwen3.5-flash-02-23', // cross-family vision signal
-  'google/gemini-3.1-flash-lite', // gen-3.1 successor of the baseline lite (Coordinator, 2026-07-13)
+  'google/gemini-3.8-flash', // production since 2026-09-28 (reasoning minimal)
+  'google/gemini-3.8-flash@default', // same model, no reasoning field — medium
+  'google/gemini-3.5-flash-lite', // env-only alternative, Google's recommended 2.5 replacement
+  'openai/gpt-6-luna', // cross-family signal, cheapest
 ];
 
 /** OpenRouter `reasoning.effort` values accepted in a spec suffix. */
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'];
 
 /**
- * A candidate spec is a catalog id, optionally with a reasoning effort:
- * `google/gemini-3.8-flash@minimal`. No suffix = no `reasoning` field in the
- * request, which is what production sends today — the model's own default
- * (2026-07: gemini-3.5-flash thought by default, 98k reasoning tokens on 24
- * photos, ×10 cost). The suffix measures the configuration production would
- * get only after the OCR adapters learn to send the field.
+ * A candidate spec is a catalog id, optionally with a reasoning suffix:
+ * - `google/gemini-3.8-flash` — as production: the `reasoning` field that
+ *   getOcrConfig says production sends (caller.js reasoningField);
+ * - `…@default` — no field at all, the model's own default (2026-07:
+ *   gemini-3.5-flash thought by default, 98k reasoning tokens on 24 photos,
+ *   ×10 cost; 2026-09: gemini-3.8-flash defaults to medium);
+ * - `…@none|minimal|low|medium|high` — that effort.
  *
  * @param {string} spec
  * @returns {{ spec: string, id: string, effort: string|null }}
- * @throws {Error} on an effort outside REASONING_EFFORTS
+ * @throws {Error} on a suffix outside REASONING_EFFORTS and 'default'
  */
 export function parseModelSpec(spec) {
   const at = spec.lastIndexOf('@');
   if (at === -1) return { spec, id: spec, effort: null };
   const id = spec.slice(0, at);
   const effort = spec.slice(at + 1);
-  if (!id || !REASONING_EFFORTS.includes(effort)) {
-    throw new Error(`bad model spec "${spec}" — expected <id> or <id>@<${REASONING_EFFORTS.join('|')}>`);
+  if (!id || !(REASONING_EFFORTS.includes(effort) || effort === 'default')) {
+    throw new Error(`bad model spec "${spec}" — expected <id> or <id>@<default|${REASONING_EFFORTS.join('|')}>`);
   }
   return { spec, id, effort };
 }
@@ -84,7 +87,9 @@ export async function fetchCatalog() {
  * Verify candidates against the catalog. A usable candidate must exist,
  * accept image input, and support response_format (the structurer sends
  * response_format:{type:'json_object'} — llmStructurer.js:83); a spec with
- * an effort suffix also needs the `reasoning` parameter.
+ * an explicit effort suffix also needs the `reasoning` parameter (a plain id
+ * that production's reasoning cannot serve fails with 400 — as production
+ * would).
  *
  * @param {Array<{spec, id, effort}>} specs - from parseModelSpec()
  * @param {Map|null} catalog - from fetchCatalog(); null = unverifiable
@@ -104,7 +109,7 @@ export function verifyModels(specs, catalog) {
       skipped.push({ id: s.spec, reason: `no image input (modalities: ${entry.inputModalities.join(',')})` });
     } else if (!entry.supportedParameters.includes('response_format')) {
       skipped.push({ id: s.spec, reason: 'response_format not supported (structurer requires json_object)' });
-    } else if (s.effort && !entry.supportedParameters.includes('reasoning')) {
+    } else if (s.effort && s.effort !== 'default' && !entry.supportedParameters.includes('reasoning')) {
       skipped.push({ id: s.spec, reason: 'reasoning parameter not supported' });
     } else {
       usable.push({ ...s, pricing: entry.pricing });

@@ -81,6 +81,8 @@ export const structureMenu = async (rawText) => {
         ],
         temperature: 0,
         response_format: { type: 'json_object' },
+        // Уровень рассуждений — из getOcrConfig (там же почему minimal).
+        ...(config.reasoning && { reasoning: config.reasoning }),
       }),
       signal: controller.signal,
     });
