@@ -73,8 +73,10 @@ const JOB_DURATION_BOUND_MS = pdfTextExtractor.PDF_FETCH_TIMEOUT_MS +
  * a price in 84–100 % of their items (the lowest, Zalkind at 84 %, is set menus
  * whose dishes have no price of their own), the broken one in 0 %; read as
  * images the same PDFs give 90–100 %. The cut sits more than 30 points from
- * either side and still catches a PDF broken on most of its pages. Change it
- * only with the same kind of data.
+ * either side and still catches a PDF broken on most of its pages.
+ * Coordinator decision 2026-09-29, option A of three (B — only when no item
+ * has a price: misses a PDF broken on one page of two; C — below 80 %: set
+ * menus at 84 % sit on the edge). Change it only with the same kind of data.
  */
 const PDF_TEXT_MIN_PRICED_SHARE = 0.5;
 
