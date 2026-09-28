@@ -950,21 +950,15 @@ function generateSixDigitCode() {
 }
 
 /**
- * Issue (or re-issue) an email verification code for a user.
- *
- * Flow:
- *   1. Validate user exists, is active, has email, not already verified.
- *   2. Enforce rate limit: max 5 sends per hour per user.
- *   3. Invalidate any prior active codes (only latest is valid).
- *   4. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
- *   5. Persist code in email_verification_codes.
- *   6. Send email via Resend (degrades gracefully if not configured).
+ * Write a fresh email verification code for a user — steps 1–5 of the flow
+ * documented on sendEmailVerificationCode, shared by both senders. Resolves
+ * once the code row exists.
  *
  * @param {string} userId
- * @returns {Promise<{sent: boolean, expiresAt: Date}>}
+ * @returns {Promise<{user: Object, code: string, expiresAt: Date}>}
  * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
  */
-export async function sendEmailVerificationCode(userId) {
+async function writeEmailVerificationCode(userId) {
   const userQuery = `
     SELECT id, email, name, email_verified
     FROM users
@@ -1002,6 +996,29 @@ export async function sendEmailVerificationCode(userId) {
 
   await createVerificationCode(userId, code, expiresAt);
 
+  return { user, code, expiresAt };
+}
+
+/**
+ * Issue (or re-issue) an email verification code for a user and email it,
+ * waiting for the provider — the resend endpoint reports whether the email
+ * went out.
+ *
+ * Flow:
+ *   1. Validate user exists, is active, has email, not already verified.
+ *   2. Enforce rate limit: max 5 sends per hour per user.
+ *   3. Invalidate any prior active codes (only latest is valid).
+ *   4. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
+ *   5. Persist code in email_verification_codes.
+ *   6. Send email via Resend (degrades gracefully if not configured).
+ *
+ * @param {string} userId
+ * @returns {Promise<{sent: boolean, expiresAt: Date}>}
+ * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
+ */
+export async function sendEmailVerificationCode(userId) {
+  const { user, code, expiresAt } = await writeEmailVerificationCode(userId);
+
   // Send email — failure here does not roll back code creation, user can resend
   const result = await sendVerificationCodeEmail(user.email, code, user.name);
 
@@ -1012,6 +1029,45 @@ export async function sendEmailVerificationCode(userId) {
   });
 
   return { sent: result.sent, expiresAt };
+}
+
+/**
+ * Issue the first verification code at registration: steps 1–5 of
+ * sendEmailVerificationCode are awaited, the email (step 6) goes out in the
+ * background.
+ *
+ * Registration must not wait for the mail provider, and the code write must
+ * not outlive the response either. Written after the response, it could land
+ * after a quick resend had already invalidated the user's codes and leave two
+ * codes active (auth-email-verification flake, 2026-09-28); a restart on
+ * deploy could drop it altogether. Now only the network send runs on.
+ *
+ * @param {string} userId
+ * @returns {Promise<{expiresAt: Date}>}
+ * @throws {Error} as sendEmailVerificationCode — always before anything is sent
+ */
+export async function issueEmailVerificationCode(userId) {
+  const { user, code, expiresAt } = await writeEmailVerificationCode(userId);
+
+  // Fire-and-forget: the network send only. sendVerificationCodeEmail handles
+  // provider failures itself; this .catch keeps anything else from becoming an
+  // unhandled rejection, which shuts the server down (server.js).
+  sendVerificationCodeEmail(user.email, code, user.name)
+    .then((result) => {
+      logger.info('Email verification code issued', {
+        userId,
+        expiresAt,
+        sent: result.sent,
+      });
+    })
+    .catch((err) => {
+      logger.error('Failed to send verification code email', {
+        userId,
+        error: err.message,
+      });
+    });
+
+  return { expiresAt };
 }
 
 /**

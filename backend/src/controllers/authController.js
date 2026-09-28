@@ -102,11 +102,13 @@ export async function register(req, res, next) {
     // Generate token pair for immediate login
     const tokens = await authService.generateTokenPair(user);
 
-    // Fire-and-forget: send email verification code for email-based registrations.
-    // Failure here must not block registration — user can request resend later.
+    // Email registrations get their first verification code before the
+    // response; only the email itself goes out in the background, so
+    // registration never waits for the mail provider. A failure here must not
+    // fail the registration — the user can request a new code.
     if (user.email && authMethod === 'email') {
-      authService.sendEmailVerificationCode(user.id).catch((err) => {
-        logger.warn('Failed to send verification code after registration', {
+      await authService.issueEmailVerificationCode(user.id).catch((err) => {
+        logger.warn('Failed to issue verification code after registration', {
           userId: user.id,
           error: err.message,
         });

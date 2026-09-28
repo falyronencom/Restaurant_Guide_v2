@@ -5,7 +5,8 @@
  *
  * Covers POST /api/v1/auth/send-verification-code and
  * POST /api/v1/auth/verify-email-code end-to-end:
- *   - Register user → automatic verification code issued (fire-and-forget)
+ *   - Register user → first verification code written before the response
+ *     (only the email goes out in the background)
  *   - Manually issue code → row exists in email_verification_codes
  *   - Verify with correct code → users.email_verified becomes true
  *   - Verify with wrong code → INVALID_CODE + attempts increments
@@ -62,6 +63,25 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await clearAllData();
+});
+
+describe('POST /api/v1/auth/register', () => {
+  test('writes the verification code before responding', async () => {
+    // Warm the pool first. With one open connection the read below waits for
+    // a new one, and a write left behind the response would finish meanwhile:
+    // this test passed against a controller without the await.
+    await Promise.all([query('SELECT 1'), query('SELECT 1'), query('SELECT 1')]);
+    const { user } = await registerUser();
+
+    // One read, no waiting: the code must already be there. Until 2026-09-28
+    // it was written after the response, and a quick resend could leave two
+    // codes active.
+    const codeRow = await getLatestCodeForUser(user.id);
+    expect(codeRow).not.toBeNull();
+    expect(codeRow.code).toMatch(/^\d{6}$/);
+    expect(codeRow.used_at).toBeNull();
+    expect(codeRow.attempts).toBe(0);
+  });
 });
 
 describe('POST /api/v1/auth/send-verification-code', () => {
@@ -202,17 +222,10 @@ describe('POST /api/v1/auth/verify-email-code', () => {
   });
 
   test('returns 410 INVALID_OR_EXPIRED_CODE when no active code', async () => {
-    const { user, accessToken } = await registerUser();
+    const { accessToken } = await registerUser();
 
-    // The register endpoint fires sendEmailVerificationCode() asynchronously
-    // (fire-and-forget). Wait briefly for it to complete before wiping codes,
-    // otherwise the row may be inserted AFTER our DELETE, causing the next
-    // verify request to find an active code.
-    for (let i = 0; i < 20; i += 1) {
-      const row = await getLatestCodeForUser(user.id);
-      if (row) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
+    // Registration writes its code before responding (see the register test
+    // above), so nothing lands after this DELETE.
     await query('DELETE FROM email_verification_codes');
 
     const response = await request(app)
