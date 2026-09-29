@@ -157,6 +157,62 @@ describe('llmStructurer', () => {
     expect(Object.keys(body)).toEqual(['model', 'messages', 'temperature', 'response_format']);
   });
 
+  // Составные меню (29.09.2026): раздел блюда сета — название сета, и оно
+  // бывает длинным («Шеф-ужин "МИР НА ВКУС. ЭХО ЦИВИЛИЗАЦИЙ"…»). Лишний
+  // символ сверх колонки (menu_items: item_name 255, category_raw 100) не
+  // должен ронять ответ — вместе с ним терялась вся страница меню.
+  describe('поля длиннее колонки базы обрезаются, а не роняют страницу', () => {
+    const respond = (item) => {
+      global.fetch = jest.fn().mockResolvedValue(buildFetchResponse(JSON.stringify({
+        items: [item, { item_name: 'Борщ', price_byn: 15, category_raw: 'Супы', confidence: 0.9 }],
+      })));
+    };
+
+    test('раздел в 101 символ — первые 100, остальные позиции страницы на месте', async () => {
+      respond({ item_name: 'Сет', price_byn: 280, category_raw: 'Ш'.repeat(101), confidence: 0.9 });
+
+      const items = await structureMenu('x');
+
+      expect(items.map((i) => i.item_name)).toEqual(['Сет', 'Борщ']);
+      expect(items[0].category_raw).toBe('Ш'.repeat(100));
+    });
+
+    test('название в 256 символов — первые 255', async () => {
+      respond({ item_name: 'Б'.repeat(256), price_byn: null, category_raw: null, confidence: 0.9 });
+
+      const [item] = await structureMenu('x');
+
+      expect(item.item_name).toBe('Б'.repeat(255));
+    });
+
+    test('ровно по ширине колонки — без изменений', async () => {
+      respond({ item_name: 'Б'.repeat(255), price_byn: null, category_raw: 'Ш'.repeat(100), confidence: 0.9 });
+
+      const [item] = await structureMenu('x');
+
+      expect(item.item_name).toBe('Б'.repeat(255));
+      expect(item.category_raw).toBe('Ш'.repeat(100));
+    });
+
+    test('символы считаются как в PostgreSQL — по кодовым точкам, не по UTF-16', async () => {
+      // «🍷» — два UTF-16 знака, но один символ VARCHAR: 99 букв + 🍷 = 100 символов.
+      const category = `${'Ш'.repeat(99)}🍷`;
+      respond({ item_name: 'Сет', price_byn: 280, category_raw: category, confidence: 0.9 });
+
+      const [item] = await structureMenu('x');
+
+      expect(item.category_raw).toBe(category);
+    });
+
+    test('пробел на месте среза не остаётся хвостом', async () => {
+      respond({ item_name: 'Сет', price_byn: 280, category_raw: `${'Ш'.repeat(99)} ВИНО`, confidence: 0.9 });
+
+      const [item] = await structureMenu('x');
+
+      expect(item.category_raw).toBe('Ш'.repeat(99));
+    });
+  });
+
   test('accepts empty items array as valid gibberish response', async () => {
     const empty = JSON.stringify({ items: [] });
     global.fetch = jest.fn().mockResolvedValue(buildFetchResponse(empty));

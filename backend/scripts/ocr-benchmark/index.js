@@ -23,6 +23,9 @@
  *                       id@<none|minimal|low|medium|high> sends that effort — both calls
  *   --limit=N           cap the number of photos (smoke runs)
  *   --out=<dir>         output dir (default: scripts/ocr-benchmark/runs/<timestamp>)
+ *   --text-from=<dir>   structurer only: take each photo's text from that run's dump of the
+ *                       same model label instead of calling vision — a structurer prompt is
+ *                       compared on the same text, at half the price
  *   --list-models       verify candidates against the OpenRouter catalog and exit
  */
 
@@ -40,7 +43,7 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 import { DEFAULT_MODELS, parseModelSpec, fetchCatalog, verifyModels, computeCostUsd } from './models.js';
 import { discoverPhotos } from './discover.js';
 import { toDataUri, visionExtract, structureText } from './caller.js';
-import { writeManifest, writeDump, writeResults, buildSummary, writeSummary } from './report.js';
+import { writeManifest, writeDump, writeResults, buildSummary, writeSummary, readSavedVision } from './report.js';
 import { check as sanityCheck } from '../../src/services/ocr/sanityChecker.js';
 
 function parseArgs(argv) {
@@ -106,6 +109,13 @@ async function main() {
   if (mediaRoot && !existsSync(mediaRoot)) fail(`--media-root not found: ${mediaRoot}`);
   if (photosDir && !existsSync(photosDir)) fail(`--photos not found: ${photosDir}`);
 
+  let textFrom = null;
+  if (args['text-from'] !== undefined) {
+    if (args['text-from'] === true) fail('--text-from requires a value: --text-from=<run dir>');
+    textFrom = resolve(String(args['text-from']));
+    if (!existsSync(join(textFrom, 'dumps'))) fail(`--text-from has no dumps/: ${textFrom}`);
+  }
+
   if (!process.env.OPENROUTER_API_KEY) {
     fail('OPENROUTER_API_KEY is empty — set it in backend/.env (a local/dev key is fine; the harness never touches prod)');
   }
@@ -119,7 +129,7 @@ async function main() {
   const units = allUnits.slice(0, limit);
   for (const w of warnings) console.warn(`⚠ ${w}`);
   if (units.length === 0) fail('no benchmark photos found');
-  console.log(`Photos: ${units.length}${allUnits.length !== units.length ? ` (of ${allUnits.length}, --limit)` : ''} · Models: ${usable.length} · Calls ≈ ${units.length * usable.length * 2}`);
+  console.log(`Photos: ${units.length}${allUnits.length !== units.length ? ` (of ${allUnits.length}, --limit)` : ''} · Models: ${usable.length} · Calls ≈ ${units.length * usable.length * (textFrom ? 1 : 2)}${textFrom ? ` · text from ${textFrom}` : ''}`);
 
   // ── Run ────────────────────────────────────────────────────────────────────
   const startedAt = runTimestamp();
@@ -138,7 +148,7 @@ async function main() {
     models,
     skippedModels: skipped,
     photos: units.map((u) => ({ id: u.id, bytes: u.bytes })),
-    sources: { mediaRoot: mediaRoot || null, photosDir: photosDir || null },
+    sources: { mediaRoot: mediaRoot || null, photosDir: photosDir || null, textFrom },
   });
 
   const results = [];
@@ -159,9 +169,11 @@ async function main() {
       };
       let stage = 'vision';
       try {
-        const dataUri = toDataUri(unit.abspath, unit.mime);
-
-        const vision = await visionExtract([dataUri], modelId, effort);
+        // A saved text costs nothing now: usage and ms stay null, so cost
+        // and latency count the structurer alone.
+        const vision = textFrom
+          ? { ...readSavedVision(textFrom, model, unit.id), usage: null, ms: null, attempts: 0 }
+          : await visionExtract([toDataUri(unit.abspath, unit.mime)], modelId, effort);
         result.vision = {
           ms: vision.ms,
           usage: vision.usage,
@@ -171,6 +183,7 @@ async function main() {
           attempts: vision.attempts,
           sentReasoning: vision.sentReasoning,
           finishReason: vision.finishReason,
+          ...(textFrom && { textFrom }),
         };
 
         stage = 'structurer';
@@ -225,7 +238,7 @@ async function main() {
       }
       const status = result.error
         ? `ERR ${result.error.slice(0, 120)}`
-        : `${result.metrics.itemsCount} items${result.metrics.needsCaution ? ` (⚠${result.metrics.needsCaution})` : ''} · ${result.vision.ms + (result.structurer.ms || 0)}ms`;
+        : `${result.metrics.itemsCount} items${result.metrics.needsCaution ? ` (⚠${result.metrics.needsCaution})` : ''} · ${(result.vision.ms || 0) + (result.structurer.ms || 0)}ms`;
       console.log(`  ${unit.id}: ${status}`);
       results.push(result);
     }

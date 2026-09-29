@@ -16,7 +16,10 @@
 import { jest } from '@jest/globals';
 import { parseModelSpec, verifyModels, REASONING_EFFORTS } from '../../../scripts/ocr-benchmark/models.js';
 import { visionExtract, structureText, reasoningField } from '../../../scripts/ocr-benchmark/caller.js';
-import { buildSummary } from '../../../scripts/ocr-benchmark/report.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { buildSummary, readSavedVision } from '../../../scripts/ocr-benchmark/report.js';
 
 const ok = (content, usage = { prompt_tokens: 10, completion_tokens: 5 }) => ({
   ok: true,
@@ -224,5 +227,36 @@ describe('SUMMARY', () => {
     expect(md).toContain('| JSON-fail | Обрывы vision | needs_caution |');
     // Меню OK 3, ошибок 0, позиций 0, в среднем 0.0, пустых 3, JSON-fail 0, обрывов 1 (только 'length').
     expect(md).toContain('| `x` | 3 | 0 | 0 | 0.0 | 3 | 0 | 1 | — |');
+  });
+});
+
+// --text-from (29.09.2026, составные меню): итерации инструкции структурера
+// идут по тексту, уже прочитанному с фото, — без повторного vision.
+describe('readSavedVision — текст фото из прошлого прогона', () => {
+  let runDir;
+  const saveDump = (model, unit, vision) => {
+    const dir = join(runDir, 'dumps', model);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, unit), JSON.stringify({ unitId: 'x', vision }), 'utf8');
+  };
+  beforeEach(() => { runDir = mkdtempSync(join(tmpdir(), 'ocr-bench-')); });
+  afterEach(() => { rmSync(runDir, { recursive: true, force: true }); });
+
+  test('отдаёт блок vision дампа той же метки модели и того же фото', () => {
+    const vision = { rawText: 'Борщ 15', usage: { prompt_tokens: 1 }, finishReason: 'stop' };
+    saveDump('google--gemini-3.8-flash@minimal', 'Zalkind Kitchen__pdf1_p02.png.json', vision);
+    saveDump('google--gemini-3.8-flash@minimal', 'IMG_1.jpg.json', { rawText: 'чужое фото', usage: {} });
+    saveDump('google--gemini-3.8-flash', 'Zalkind Kitchen__pdf1_p02.png.json', { rawText: 'чужая метка', usage: {} });
+
+    expect(readSavedVision(runDir, 'google/gemini-3.8-flash@minimal', 'Zalkind Kitchen/pdf1_p02.png')).toEqual(vision);
+  });
+
+  test('дампа нет — ошибка, а не пустой текст', () => {
+    expect(() => readSavedVision(runDir, 'm', 'IMG_1.jpg')).toThrow(/no saved text/);
+  });
+
+  test('vision того прогона упал — ошибка: пустой текст выдал бы себя за «позиций нет»', () => {
+    saveDump('m', 'IMG_1.jpg.json', { rawText: '', usage: null });
+    expect(() => readSavedVision(runDir, 'm', 'IMG_1.jpg')).toThrow(/did not complete/);
   });
 });

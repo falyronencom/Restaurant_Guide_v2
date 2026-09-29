@@ -10,7 +10,7 @@
  *   SUMMARY.md                        — side-by-side comparison + manual-notes section
  */
 
-import { mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 /** Windows-safe path fragments. OpenRouter variant suffixes (:free, :nitro)
@@ -28,6 +28,21 @@ export function writeDump(runDir, result) {
   const dir = join(runDir, 'dumps', slugModel(result.model));
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${slugUnit(result.unitId)}.json`), JSON.stringify(result, null, 2), 'utf8');
+}
+
+/**
+ * The text a previous run read from one photo (--text-from): the vision block
+ * of its dump. Throws when the dump is missing or its vision call failed —
+ * an empty text there would pass for «the structurer found nothing».
+ */
+export function readSavedVision(runDir, model, unitId) {
+  const file = join(runDir, 'dumps', slugModel(model), `${slugUnit(unitId)}.json`);
+  if (!existsSync(file)) throw new Error(`no saved text: ${file}`);
+  const dump = JSON.parse(readFileSync(file, 'utf8'));
+  if (dump.vision?.usage == null || typeof dump.vision.rawText !== 'string') {
+    throw new Error(`no saved text: the vision call of ${file} did not complete`);
+  }
+  return dump.vision;
 }
 
 export function writeResults(runDir, results) {
