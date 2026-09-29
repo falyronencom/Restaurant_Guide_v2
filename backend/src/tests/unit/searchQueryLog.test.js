@@ -88,10 +88,27 @@ describe('buildSearchQueryLog — форма разбора', () => {
       priceMax: 15,
       sort: 'price_asc',
       tagCount: 2,
+      features: [],
     });
     // Блюдо и теги — слова пользователя, поэтому сведены к признаку и счётчику.
     expect(JSON.stringify(line.intentShape)).not.toContain('капучино');
     expect(JSON.stringify(line.intentShape)).not.toContain('рядом');
+  });
+
+  test('удобства из тегов — ключами канона, сами слова тегов в строку не попадают', () => {
+    // С 29.09.2026 «уютное место» даёт выдачу, а не ноль, и фразы в логе больше
+    // нет. Спрос на слова обстановки остаётся виден без слов: tagCount больше,
+    // чем удобств, понятых из тегов.
+    const line = buildSearchQueryLog({
+      ...base,
+      intent: intentOf({ tags: ['уютное', 'с террасой'] }),
+      resultCount: 19,
+    });
+
+    expect(line.intentShape.tagCount).toBe(2);
+    expect(line.intentShape.features).toEqual(['terrace']);
+    expect(JSON.stringify(line)).not.toContain('уютное');
+    expect(JSON.stringify(line)).not.toContain('террас');
   });
 
   test('без разбора (отказ AI) форма пустая, счётчики на месте', () => {

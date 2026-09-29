@@ -8,7 +8,8 @@
  *   - Without dish: price_max → priceRange (legacy subjective tier mapping)
  */
 
-import { buildSmartSearchFilters } from '../../services/smartSearchService.js';
+import { buildSmartSearchFilters, tagsToAttributes } from '../../services/smartSearchService.js';
+import { ATTRIBUTE_CANON } from '../../constants/establishmentVocab.js';
 
 describe('buildSmartSearchFilters — dish routing', () => {
   test('sets filters.dish when intent.dish is non-empty', () => {
@@ -182,10 +183,14 @@ describe('buildSmartSearchFilters — tags alongside dish (prod defect 07.09.202
     expect(filters.search).toBeUndefined();
   });
 
-  test('without dish, tags still become the legacy search text (unchanged path)', () => {
+  test('without dish, amenity tags become the amenity filter — never card text search (29.09.2026)', () => {
+    // Until 29.09 this asserted search = 'терраса wifi': an ILIKE over the card
+    // text that no prod card could satisfy (no descriptions; amenities live in
+    // attributes) — every tag phrase returned zero rows.
     const filters = buildSmartSearchFilters({ ...base, dish: null, tags: ['терраса', 'wifi'] });
 
-    expect(filters.search).toBe('терраса wifi');
+    expect(filters.features).toEqual(['wifi', 'terrace']);
+    expect(filters.search).toBeUndefined();
     expect(filters.dish).toBeUndefined();
     expect(filters.dishOrSearch).toBeUndefined();
   });
@@ -488,5 +493,199 @@ describe('buildSmartSearchFilters — сопоставление с меню п�
 
     expect('dish' in filters).toBe(false);
     expect('dishMatch' in filters).toBe(false);
+  });
+});
+
+// --- Теги: удобства → фильтр, прочие слова не режут (29.09.2026) -------------
+//
+// Прод 29.09: 28 фраз из 28, где разбор положил слово в tags, дали ноль
+// заведений. Теги искались текстом карточки (название, описание, тип, кухня) по
+// И, а описаний нет ни у одной из 26 карточек, удобства же лежат в attributes:
+// «с террасой» — ноль при террасе у 19. Решение Координатора 29.09: удобство из
+// фразы — фильтр удобств, как кнопка экрана, и при блюде тоже; прочие слова
+// («уютное», «с видом») выдачу не режут.
+
+describe('buildSmartSearchFilters — теги: удобства → фильтр, прочее не режет', () => {
+  const minsk = { city: 'Минск', latitude: 53.9, longitude: 27.56 };
+
+  test('«с террасой» — фильтр удобства terrace, а не поиск по тексту карточки', () => {
+    const filters = buildSmartSearchFilters(intentOf({ tags: ['терраса'] }), minsk);
+
+    expect(filters.features).toEqual(['terrace']);
+    expect('search' in filters).toBe(false);
+  });
+
+  test('слово обстановки не фильтрует: «уютное место» — те же фильтры, что у пустого разбора', () => {
+    // До 29.09 — ILIKE '%уютное%' по И: ноль заведений на проде.
+    const cozy = buildSmartSearchFilters(intentOf({ tags: ['уютное'] }), minsk);
+
+    expect(cozy).toEqual(buildSmartSearchFilters(intentOf(), minsk));
+    expect('search' in cozy).toBe(false);
+    expect('features' in cozy).toBe(false);
+  });
+
+  test('обстановка рядом с удобством — фильтр только по удобству', () => {
+    const filters = buildSmartSearchFilters(intentOf({ tags: ['уютное', 'живая музыка'] }), minsk);
+
+    expect(filters.features).toEqual(['live_music']);
+    expect('search' in filters).toBe(false);
+  });
+
+  test('тип из фразы и удобство складываются: «кофейня с wifi»', () => {
+    const filters = buildSmartSearchFilters(intentOf({ category: 'Кофейня', tags: ['wifi'] }), minsk);
+
+    expect(filters.categories).toEqual(['Кофейня']);
+    expect(filters.features).toEqual(['wifi']);
+  });
+
+  test('удобство из фразы складывается с кнопками экрана, повтор схлопывается', () => {
+    // Не «явное сильнее выведенного»: удобства — требования по И, а не выбор
+    // одного из вариантов. Фраза просит террасу, кнопка — Wi-Fi: нужны оба.
+    const both = buildSmartSearchFilters(intentOf({ tags: ['терраса'] }), minsk, { features: ['wifi'] });
+    const same = buildSmartSearchFilters(intentOf({ tags: ['летняя веранда'] }), minsk, { features: ['terrace'] });
+
+    expect(both.features).toEqual(['wifi', 'terrace']);
+    expect(same.features).toEqual(['terrace']);
+  });
+
+  test('кнопки экрана без удобства во фразе — прежний проброс', () => {
+    const filters = buildSmartSearchFilters(intentOf({ tags: ['уютное'] }), minsk, { features: ['parking'] });
+
+    expect(filters.features).toEqual(['parking']);
+  });
+
+  test('массив кнопок экрана не меняется и не отдаётся по ссылке', () => {
+    const explicit = { features: ['wifi'] };
+    const filters = buildSmartSearchFilters(intentOf({ tags: ['доставка'] }), minsk, explicit);
+    filters.features.push('чужое');
+
+    expect(explicit.features).toEqual(['wifi']);
+  });
+
+  test('удобство действует и при блюде: «пицца с доставкой» — пиццерии с доставкой', () => {
+    // До 29.09 теги при блюде отбрасывались целиком — «доставка» молча терялась.
+    const filters = buildSmartSearchFilters(intentOf({ dish: 'пицца', tags: ['доставка'] }), minsk);
+
+    expect(filters.dish).toBe('пицца');
+    expect(filters.dishOrSearch).toBe('пицца');
+    expect(filters.dishMatch).toBe('lenient');
+    expect(filters.features).toEqual(['delivery']);
+    expect('search' in filters).toBe(false);
+  });
+
+  test('и при приёме пищи: «завтрак на террасе»', () => {
+    const filters = buildSmartSearchFilters(intentOf({ meal_type: 'breakfast', tags: ['терраса'] }), minsk);
+
+    expect(filters.dish).toBe('завтрак');
+    expect(filters.features).toEqual(['terrace']);
+  });
+
+  test('слово блюда, повторённое в тегах, фильтром не становится (класс дефекта 07.09)', () => {
+    // Весь класс держат ловушки словаря ниже (курица, курёнок, хот-дог…) и
+    // сверка словаря с меню прода: ни одна из 2 350 позиций и 326 разделов не
+    // отображается на удобство (docs/handoffs/smart_search_tags_20260929/).
+    for (const [dish, tags] of [['пицца', ['пицца']], ['курёнок', ['курёнок гриль']], ['хот-дог', ['hot dog']]]) {
+      const filters = buildSmartSearchFilters(intentOf({ dish, tags }), minsk);
+
+      expect('features' in filters).toBe(false);
+      expect('search' in filters).toBe(false);
+    }
+  });
+
+  test('«ресторан без курения» — не фильтр курения, выдача по типу', () => {
+    const filters = buildSmartSearchFilters(intentOf({ category: 'Ресторан', tags: ['без курения'] }), minsk);
+
+    expect(filters.categories).toEqual(['Ресторан']);
+    expect('features' in filters).toBe(false);
+  });
+});
+
+describe('tagsToAttributes — слово тега → ключ канона удобств', () => {
+  // Фраза — как её кладёт разбор (прод 29.09: «с террасой» и «летняя веранда»
+  // → "терраса", «где можно покурить» → "курить"), ключ — канон AF1 (SDL
+  // CAT-C-3.15). Словоформы — причина, по которой правила состоят из основ.
+  // У каждой альтернативы каждого правила — своя строка с настоящим словом:
+  // опечатка в основе иначе прошла бы молча.
+  const CASES = [
+    ['доставка', 'delivery'], ['с доставкой', 'delivery'], ['доставляют домой', 'delivery'], ['delivery', 'delivery'],
+    ['wifi', 'wifi'], ['Wi‑Fi', 'wifi'], ['wi fi', 'wifi'], ['вай-фай', 'wifi'], ['с вайфаем', 'wifi'], ['с интернетом', 'wifi'],
+    ['терраса', 'terrace'], ['с террасой', 'terrace'], ['терасса', 'terrace'], ['летняя веранда', 'terrace'],
+    ['летник', 'terrace'], ['летняя площадка', 'terrace'], ['на свежем воздухе', 'terrace'], ['terrace', 'terrace'],
+    ['парковка', 'parking'], ['с парковкой', 'parking'], ['парковочное место', 'parking'], ['паркинг', 'parking'],
+    ['где припарковаться', 'parking'], ['parking', 'parking'],
+    ['живая музыка', 'live_music'], ['с живой музыкой', 'live_music'], ['живой звук', 'live_music'], ['live music', 'live_music'],
+    ['детская комната', 'kids_zone'], ['детская зона', 'kids_zone'], ['детская площадка', 'kids_zone'],
+    ['детский уголок', 'kids_zone'], ['игровая комната', 'kids_zone'], ['игровая зона', 'kids_zone'],
+    ['kids room', 'kids_zone'], ['kids zone', 'kids_zone'], ['playroom', 'kids_zone'],
+    ['банкетный зал', 'banquet'], ['banquet hall', 'banquet'],
+    ['можно с собакой', 'pets_allowed'], ['с собачкой', 'pets_allowed'], ['домашние животные', 'pets_allowed'],
+    ['для животных', 'pets_allowed'], ['с животными', 'pets_allowed'], ['с питомцем', 'pets_allowed'],
+    ['pet-friendly', 'pets_allowed'], ['dog friendly', 'pets_allowed'], ['petfriendly', 'pets_allowed'],
+    ['dogfriendly', 'pets_allowed'],
+    ['курить', 'smoking'], ['зал для курения', 'smoking'], ['для курящих', 'smoking'], ['где покурить', 'smoking'],
+    ['курилка', 'smoking'], ['smoking area', 'smoking'],
+    ['доступная среда', 'accessible_environment'], ['доступность среды', 'accessible_environment'],
+    ['в доступной среде', 'accessible_environment'], ['доступную среду', 'accessible_environment'],
+    ['с доступной средой', 'accessible_environment'], ['для колясочников', 'accessible_environment'],
+    ['пандус', 'accessible_environment'], ['безбарьерный вход', 'accessible_environment'],
+    ['для инвалидов', 'accessible_environment'],
+  ];
+
+  test.each(CASES)('«%s» → %s', (tag, key) => {
+    expect(tagsToAttributes([tag])).toEqual([key]);
+  });
+
+  test('словарь покрывает весь канон удобств и не выходит за него', () => {
+    // Новый ключ канона без слов или опечатка в ключе правила — красный здесь,
+    // а не фильтр по несуществующему ключу, обнуляющий выдачу на проде.
+    const produced = new Set(CASES.flatMap(([tag]) => tagsToAttributes([tag])));
+
+    expect([...produced].sort()).toEqual([...ATTRIBUTE_CANON].sort());
+  });
+
+  test.each([
+    ['детское меню'], ['kids menu'], ['курица'], ['куриный суп'], ['курёнок'], ['курёнок гриль'],
+    ['у парка'], ['парковая зона'], ['доступные цены'], ['доступный средний чек'], ['доступно по средам'],
+    ['животный белок'], ['хот-дог'], ['hot dog'], ['smoked salmon'], ['живое пиво'],
+  ])('ловушка «%s» — не удобство', (tag) => {
+    expect(tagsToAttributes([tag])).toEqual([]);
+  });
+
+  test.each([
+    ['без курения'], ['не курить'], ['нельзя курить'], ['курение запрещено'], ['non-smoking'], ['no smoking'],
+    ['без собак'], ['без животных'], ['без живой музыки'], ['без детской комнаты'], ['некурящий зал'],
+  ])('отрицание «%s» — не удобство: иначе фильтр выбрал бы ровно противоположное', (tag) => {
+    // Ревью 29.09: «без курения» становилось фильтром smoking — единственное
+    // место прода, где курить можно. Исключающего фильтра нет: отсутствие
+    // удобства в карточке значит «не отмечено», а не «нет».
+    expect(tagsToAttributes([tag])).toEqual([]);
+  });
+
+  test('отрицание гасит только свой тег: «без курения» + «терраса» — терраса', () => {
+    expect(tagsToAttributes(['без курения', 'терраса'])).toEqual(['terrace']);
+  });
+
+  test.each([['уютное'], ['с видом'], ['романтический'], ['тихое место'], ['для большой компании']])(
+    'слово обстановки «%s» — не удобство',
+    (tag) => {
+      expect(tagsToAttributes([tag])).toEqual([]);
+    },
+  );
+
+  test('ключи — в порядке канона и без повторов, как бы ни шли слова', () => {
+    expect(tagsToAttributes(['живая музыка', 'уютное', 'терраса', 'доставка', 'с террасой']))
+      .toEqual(['delivery', 'terrace', 'live_music']);
+  });
+
+  test('основы одного правила ищутся в одном теге, а не по всей фразе', () => {
+    // «детское» из одного тега и «зона» из другого — не детская зона.
+    expect(tagsToAttributes(['детское меню', 'зона барбекю'])).toEqual([]);
+  });
+
+  test('негодная форма тегов — пустой список, а не исключение', () => {
+    expect(tagsToAttributes(null)).toEqual([]);
+    expect(tagsToAttributes(undefined)).toEqual([]);
+    expect(tagsToAttributes('терраса')).toEqual([]);
+    expect(tagsToAttributes([null, 5, 'wifi'])).toEqual(['wifi']);
   });
 });

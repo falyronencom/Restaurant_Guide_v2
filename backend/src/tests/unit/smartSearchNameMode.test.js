@@ -42,6 +42,12 @@ describe('isIntentEmpty', () => {
   test('пустые списки кухонь и тегов условием не считаются', () => {
     expect(isIntentEmpty(intentOf({ cuisine: [], tags: [] }))).toBe(true);
   });
+
+  test('слово обстановки в тегах условием не считается — выдачу оно не режет (29.09.2026)', () => {
+    expect(isIntentEmpty(intentOf({ tags: ['уютное'] }))).toBe(true);
+    expect(isIntentEmpty(intentOf({ tags: ['уютное', 'с видом'] }))).toBe(true);
+    expect(isIntentEmpty(intentOf({ tags: ['уютное', 'терраса'] }))).toBe(false);
+  });
 });
 
 describe('nameMatchMode — название целиком', () => {
@@ -60,6 +66,12 @@ describe('nameMatchMode — название целиком', () => {
 
   test('фраза просит ещё что-то словами (теги: «терраса» при заведении «Терраса») — первыми, а не вместо всех террас', () => {
     expect(nameMatchMode(full, { intent: intentOf({ tags: ['терраса'] }), hasMenuTerm: false })).toBe('first');
+  });
+
+  test('слово обстановки («уютный Tiden») ничего не просит — только совпавшие', () => {
+    // С 29.09.2026 «уютное» выдачу не режет: «первыми» показало бы после TIDEN
+    // весь город.
+    expect(nameMatchMode(full, { intent: intentOf({ tags: ['уютное'] }), hasMenuTerm: false })).toBe('only');
   });
 
   test('название — общее слово («Бар» на «бар») — первыми, а не вместо всех баров', () => {
@@ -90,6 +102,10 @@ describe('nameMatchMode — начало названия и опечатка', 
 
   test('модель не ответила — спасение от пустой выдачи', () => {
     expect(nameMatchMode(prefix, { intent: null, hasMenuTerm: false })).toBe('rescue');
+  });
+
+  test.each([['начало', prefix], ['опечатка', typo]])('%s при одном слове обстановки в тегах — как при пустом разборе, только совпавшие', (_, match) => {
+    expect(nameMatchMode(match, { intent: intentOf({ tags: ['уютное'] }), hasMenuTerm: false })).toBe('only');
   });
 });
 

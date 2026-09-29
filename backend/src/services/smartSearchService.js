@@ -52,9 +52,11 @@ const NEARBY_RE = /рядом|поблизости|недалеко|около �
 /**
  * Приём пищи, который меню называют разделом. На проде 24.09.2026 раздел
  * «ЗАВТРАКИ» есть у 12 заведений из 26 (в том числе у обоих, где есть
- * «БРАНЧ»), «ланч» — у двух. Ужина отдельным разделом в меню нет — его не
- * ищем. `variants` уходят дальше как dishVariants — сопоставление с меню
- * читает их как ИЛИ-альтернативы (А2).
+ * «БРАНЧ»), «ланч» — у двух. Ужин в меню не ищем (решение Координатора
+ * 29.09.2026): слово «ужин» там — 3 позиции у 2 заведений из 26 (сет
+ * «Шеф-ужин», блюдо «Большой утиный ужин»), и поиск по меню сузил бы «ужин»
+ * с 26 мест до этих двух. `variants` уходят дальше как dishVariants —
+ * сопоставление с меню читает их как ИЛИ-альтернативы (А2).
  */
 const MEAL_MENU_TERMS = new Map([
   ['breakfast', { term: 'завтрак', variants: ['бранч'] }],
@@ -105,6 +107,107 @@ function cleanDishVariants(value, dish) {
     if (variants.length === MAX_DISH_VARIANTS) break;
   }
   return variants;
+}
+
+/**
+ * Удобства, которые фраза называет словом, — ключи канона AF1 (SDL CAT-C-3.15,
+ * `ATTRIBUTE_CANON`): «с террасой» → terrace. Разбор кладёт такие слова в
+ * `tags` («терраса», «живая музыка», «детская комната» — примеры самого
+ * промпта), а заведение хранит их в `attributes`; фильтр по ним тот же, что у
+ * кнопки удобства на экране.
+ *
+ * Правило — набор основ, и каждая должна начинать какое-нибудь слово ОДНОГО
+ * тега: так ловятся словоформы («террасой», «живой музыкой», «с собакой»).
+ * Основы длинные или парные ради ловушек: «детское меню» — не детская зона
+ * (нужна «комната», «зона», «площадка» или «уголок»), «курица» и «курёнок» —
+ * не курение («курит», «курени», не «кур»), «парковая» — не парковка
+ * («парковк»), «доступные цены», «средний чек» и «по средам» — не доступная
+ * среда (нужна «среда» в своих формах, словом целиком: основа с «$» на конце
+ * совпадает только с целым словом), «животный белок» — не животные (только
+ * формы множественного числа и «с животным»), «hot dog» — не «dog friendly»,
+ * «smoked» — не «smoking». «Терасса» — написание кнопки удобства в самом
+ * mobile. Слова вне правил (обстановка: «уютное», «с видом») не фильтруют.
+ * Порядок правил — порядок канона, поэтому ключи на выходе не зависят от
+ * порядка слов во фразе. Слово еды в теге удобством не становится: ни одна из
+ * 2 350 видимых позиций и 326 разделов меню прода и ни одно блюдо стенда
+ * полноты — 2 772 разных текста — не отображается ни на что (29.09.2026,
+ * `docs/handoffs/smart_search_tags_20260929/collision_check.mjs`).
+ */
+const TAG_ATTRIBUTE_RULES = Object.freeze([
+  ['delivery', [['доставк'], ['доставля'], ['delivery']]],
+  ['wifi', [['wifi'], ['вайфа'], ['интернет']]],
+  ['terrace', [['террас'], ['терас'], ['веранд'], ['летник'], ['летн', 'площадк'], ['свеж', 'воздух'], ['terrace']]],
+  ['parking', [['парковк'], ['парковоч'], ['паркинг'], ['припарк'], ['parking']]],
+  ['live_music', [['жив', 'музык'], ['жив', 'звук'], ['live', 'music']]],
+  ['kids_zone', [
+    ['детск', 'комнат'], ['детск', 'зон'], ['детск', 'площадк'], ['детск', 'угол'],
+    ['игров', 'комнат'], ['игров', 'зон'], ['kids', 'room'], ['kids', 'zone'], ['playroom'],
+  ]],
+  ['banquet', [['банкет'], ['banquet']]],
+  ['pets_allowed', [
+    ['собак'], ['собач'], ['животные'], ['животных'], ['животным'], ['питом'],
+    ['pet', 'friendly'], ['dog', 'friendly'], ['petfriendly'], ['dogfriendly'],
+  ]],
+  ['smoking', [['курит'], ['курени'], ['курящ'], ['покур'], ['курилк'], ['smoking']]],
+  ['accessible_environment', [
+    ['доступн', 'среда$'], ['доступн', 'среды$'], ['доступн', 'среде$'], ['доступн', 'среду$'], ['доступн', 'средой$'],
+    ['колясоч'], ['пандус'], ['безбарьер'], ['инвалид'],
+  ]],
+]);
+
+/** Слово подходит под основу: начинается с неё, а основа с «$» — равна ему. */
+const matchesStem = (word, stem) => (stem.endsWith('$') ? word === stem.slice(0, -1) : word.startsWith(stem));
+
+/**
+ * Отрицание в теге: «без курения», «не курить», «курение запрещено», «no
+ * smoking», «без собак». Такой тег удобством не становится — иначе «без
+ * курения» выбрало бы ровно курящие места (ревью Phase 3.5, 29.09.2026).
+ * Исключающего фильтра нет: отсутствие удобства в карточке значит «не
+ * отмечено», а не «нет», — тег просто не фильтрует. Слитное «некурящий» —
+ * одно слово, ни на что не отображается.
+ */
+const NEGATION_WORDS = new Set(['без', 'не', 'нет', 'ни', 'нельзя', 'кроме', 'no', 'non', 'not', 'without']);
+const NEGATION_PREFIXES = Object.freeze(['запрещ', 'запрет', 'никак']);
+
+/** В словах тега есть отрицание. */
+const isNegated = (words) => words.some(
+  (word) => NEGATION_WORDS.has(word) || NEGATION_PREFIXES.some((prefix) => word.startsWith(prefix)),
+);
+
+/**
+ * Слова тега для сопоставления: нижний регистр, «ё» = «е»; «Wi‑Fi», «wi fi»,
+ * «вай-фай», «вайфаем» — одно слово. Делит по всему, что не буква и не цифра
+ * (дефис тоже: «pet-friendly» — два слова).
+ * @param {string} tag
+ * @returns {string[]}
+ */
+function tagWords(tag) {
+  return tag.toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/wi[^\p{L}\p{N}]*fi/gu, 'wifi')
+    .replace(/вай[^\p{L}\p{N}]*фа/gu, 'вайфа')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/**
+ * Удобства, названные в тегах разбора, — ключи канона в его порядке, без
+ * повторов. Тег с отрицанием пропускается. Негодная форма (не массив, не
+ * строки) — пустой список, а не отказ: теги добавочные.
+ * @param {unknown} tags
+ * @returns {string[]}
+ */
+export function tagsToAttributes(tags) {
+  if (!Array.isArray(tags)) return [];
+  const tagWordLists = tags
+    .filter((tag) => typeof tag === 'string')
+    .map(tagWords)
+    .filter((words) => !isNegated(words));
+  return TAG_ATTRIBUTE_RULES
+    .filter(([, alternatives]) => tagWordLists.some((words) => alternatives.some(
+      (stems) => stems.every((stem) => words.some((word) => matchesStem(word, stem))),
+    )))
+    .map(([key]) => key);
 }
 
 /**
@@ -431,6 +534,8 @@ export async function parseIntent(query) {
  * заведения — разные величины, обе остаются в силе. /
  * Explicit filters come from visible controls, inferred ones from the phrase;
  * within one dimension the control wins, across dimensions both apply.
+ * Исключение — удобства: кнопки экрана и слова фразы складываются (см. ниже,
+ * у тегов), потому что это требования по И, а не выбор одного из вариантов.
  *
  * Разводка полей разбора (А1, 24.09.2026): блюдо — или приём пищи, который меню
  * называют разделом, — ищется в меню, и тогда тип и кухня из фразы не режут
@@ -553,23 +658,36 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
     filters.city = context.city;
   }
 
-  // Tags → search text for existing ILIKE + SEARCH_SYNONYMS — only without a
-  // menu term. The parser restates the dish word in tags ("пицца" → dish="пицца",
-  // tags=["пицца"]; «Завтрак» → tags=["завтрак"]); as an establishment-level
-  // filter AND-ed with the menu match it returned zero rows for every dish
-  // outside SEARCH_SYNONYMS («капучино») — prod, 07.09.2026. With a menu term,
-  // tags are dropped rather than AND-ed — accepting the loss of the rare non-dish
-  // tag («терраса») instead of keeping a filter that zeroes the common case;
-  // joined multi-tag patterns («пицца терраса») matched nothing anyway.
-  if (!menuTerm && intent.tags && intent.tags.length > 0) {
-    filters.search = intent.tags.join(' ');
+  // Теги: удобство, названное словом, — фильтр удобств; прочие слова
+  // («уютное», «с видом», «романтический») выдачу не режут. До 29.09.2026 теги
+  // без слова для меню уходили в текстовый поиск по карточке (ILIKE по
+  // названию, описанию, типу и кухне + синонимы) по И, а данных для них в
+  // тексте карточки нет: описания пусты у всех 26 карточек прода, удобства
+  // лежат в `attributes`. Прод 29.09: 28 фраз из 28 с тегами — ноль заведений,
+  // в том числе примеры самого промпта («терраса» при террасе у 19 из 26).
+  // Слово блюда, повторённое в тегах («пицца» → tags ["пицца"], дефект 07.09),
+  // ни в какое удобство не превращается и тоже ничего не режет.
+  //
+  // Удобства складываются с кнопками экрана, а не уступают им: это требования
+  // по И, а не выбор одного из вариантов, как ярус цены или тип. Фраза просит
+  // террасу, кнопка — Wi‑Fi: нужны оба. Действуют и при слове для меню:
+  // «пицца с доставкой» — пиццерии с доставкой (решение Координатора
+  // 29.09.2026). / Amenities named in the phrase join the screen's amenity
+  // chips (AND semantics), with or without a menu term; other tag words never
+  // filter.
+  const features = [...new Set([
+    ...(explicitFilters.features ?? []),
+    ...tagsToAttributes(intent.tags),
+  ])];
+  if (features.length > 0) {
+    filters.features = features;
   }
 
   // Размерности, которых разбор фразы не касается вовсе, — прямой проброс.
-  // Спорить не с чем: у intent нет ни часов работы, ни удобств, ни рейтинга,
-  // ни расстояния. / Dimensions the intent parser never produces: passed
+  // Спорить не с чем: у intent нет ни часов работы, ни рейтинга, ни
+  // расстояния. / Dimensions the intent parser never produces: passed
   // straight through, nothing to arbitrate.
-  for (const key of ['hoursFilter', 'features', 'minRating', 'maxDistance', 'radius']) {
+  for (const key of ['hoursFilter', 'minRating', 'maxDistance', 'radius']) {
     if (explicitFilters[key] != null) {
       filters[key] = explicitFilters[key];
     }
@@ -606,7 +724,9 @@ const GENERIC_NAME_SKELETONS = new Set(
 
 /**
  * Разбор без единого условия выдачи. Сортировка условием не считается: «Tiden
- * рядом» — всё ещё название.
+ * рядом» — всё ещё название. Теги — условие, только если в них названо
+ * удобство: слово обстановки («уютное») выдачу не режет (29.09.2026), значит,
+ * и условием не считается.
  * @param {object} intent - Normalized intent
  * @returns {boolean}
  */
@@ -617,7 +737,7 @@ export function isIntentEmpty(intent) {
     && !intent.meal_type
     && intent.price_max == null
     && !intent.location
-    && !(Array.isArray(intent.tags) && intent.tags.length > 0);
+    && tagsToAttributes(intent.tags).length === 0;
 }
 
 /**
@@ -632,9 +752,10 @@ export function isIntentEmpty(intent) {
  * разбор модели в этом случае — шум от слов самого названия («urban dzen cafe»
  * → тип «Кафе», «SFB Minsk» → город; прод 29.09). Поэтому — только совпавшие.
  * Кроме четырёх случаев, где совпавшие идут первыми: фраза просит блюдо или
- * приём пищи («underdog пицца», «Tiden завтрак»), просит ещё что-то словами
+ * приём пищи («underdog пицца», «Tiden завтрак»), просит удобство словом
  * (теги: «терраса» при заведении «Терраса» — это и заведение, и все террасы),
- * название — общее слово («Кафе»), модель не ответила (запасной путь).
+ * название — общее слово («Кафе»), модель не ответила (запасной путь). Слово
+ * обстановки в тегах («уютный Tiden») ничего не просит: выдачу оно не режет.
  *
  * Начало названия и опечатка (уровни 2 и 1) — сигнал слабее: только совпавшие —
  * лишь когда модель во фразе ничего не нашла («tid», «tidem»). Иначе фраза
@@ -649,7 +770,7 @@ export function isIntentEmpty(intent) {
 export function nameMatchMode(nameMatch, { intent, hasMenuTerm }) {
   if (!nameMatch || !nameMatch.level) return null;
   if (nameMatch.level === 3) {
-    const asksMore = hasMenuTerm || (Array.isArray(intent?.tags) && intent.tags.length > 0);
+    const asksMore = hasMenuTerm || tagsToAttributes(intent?.tags).length > 0;
     return intent && !asksMore && !nameMatch.generic ? 'only' : 'first';
   }
   return intent && isIntentEmpty(intent) ? 'only' : 'rescue';
@@ -938,8 +1059,14 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
  *
  * `intentShape` не содержит свободного текста: категория и кухня из закрытых
  * словарей, сортировка из трёх значений, блюдо и теги сведены к признаку и
- * счётчику. Полный разбор повторяет фразу дословно (`tags: ["пицца за 20
- * рублей"]`, прод 07.09) — поэтому целиком он идёт только рядом с самой фразой.
+ * счётчику, удобства из тегов — ключами канона. Полный разбор повторяет фразу
+ * дословно (`tags: ["пицца за 20 рублей"]`, прод 07.09) — поэтому целиком он
+ * идёт только рядом с самой фразой.
+ *
+ * `features` рядом с `tagCount` — чтобы спрос на слова обстановки оставался
+ * виден без самих слов: с 29.09.2026 «уютное место» даёт выдачу, а не ноль, и
+ * фразы в лог больше не попадает. Строка с `tagCount > 0` и пустыми
+ * `features` — запрос, где тег не стал фильтром.
  *
  * `nameMatch` — совпадение с названием заведения без названий и без слов:
  * уровень, режим и сколько совпавших заведений попало в выдачу.
@@ -970,6 +1097,7 @@ export function buildSearchQueryLog({
         priceMax: intent.price_max,
         sort: intent.sort,
         tagCount: intent.tags?.length ?? 0,
+        features: tagsToAttributes(intent.tags),
       }
       : null,
     nameMatch: nameMatch
