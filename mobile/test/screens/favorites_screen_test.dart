@@ -207,9 +207,9 @@ void main() {
             reason: 'ListView прибавил отступ статус-бара — сердце съехало');
       });
 
-      // Обложка отдельно от списка: при ×2 переполняется уже сама карточка
-      // заведения (EstablishmentCard — вне этой правки), и её ошибка
-      // раскладки заслонила бы проверку обложки.
+      // Список при ×2 целиком — тест ниже. Обложка проверяется отдельно:
+      // до 29.09.2026 при ×2 переполнялась сама карточка заведения, и её
+      // ошибка раскладки заслоняла проверку обложки.
       for (final collapse in [0.0, 1.0]) {
         testWidgets(
             'крупный системный шрифт не загоняет заголовок под статус-бар '
@@ -244,6 +244,25 @@ void main() {
               greaterThanOrEqualTo(statusBar));
         });
       }
+
+      // Сценарий дефекта 29.09.2026: при системном шрифте ×2 карточка
+      // заведения давала «RenderFlex overflowed by 130 pixels on the bottom».
+      // 130 — число этой обвязки: она без темы приложения, и текст без
+      // семейства меряется подставным шрифтом; проверка — только «без
+      // ошибок». Масштаб задаётся через платформу — тем же путём, что на
+      // телефоне.
+      testWidgets('системный шрифт ×2: список без ошибок раскладки',
+          (tester) async {
+        withStatusBar(tester);
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        envelope = () => favoritesEnvelope(
+            favorites: [for (var i = 0; i < 3; i++) _row(i)]);
+        await pump(tester, signedIn: true);
+
+        expect(find.byType(EstablishmentCard), findsWidgets);
+        expect(tester.takeException(), isNull);
+      });
     });
 
     testWidgets(

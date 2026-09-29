@@ -29,6 +29,8 @@ class EstablishmentCard extends StatelessWidget {
   static const Color _greyText = Color(0xFFAAAAAA);
 
   // Figma dimensions
+  /// Высота по макету — она же наименьшая: выше карточка становится, только
+  /// когда содержимое в неё не помещается (см. [build]).
   static const double _cardHeight = 291.0;
   static const double _imageWidth = 172.0;
   static const double _ratingSize = 31.0;
@@ -59,20 +61,57 @@ class EstablishmentCard extends StatelessWidget {
   /// Пол подбора кегля заголовка: ниже — многоточие вместо уменьшения.
   static const double _titleMinFontSize = 15.0;
 
+  /// Предел системного размера шрифта внутри карточки.
+  ///
+  /// Высоту карточка добирает сама (см. [build]), а ширина задана макетом и
+  /// от шрифта не зависит: колонка текста ≈163 dp на 390-dp телефоне,
+  /// квадрат рейтинга [_ratingSize]. Настройка телефона «Размер шрифта»
+  /// увеличивает буквы, а не их коробки, и без предела (замер 29.09.2026
+  /// шрифтами сборки на 360 и 390 dp) рейтинг обрезался с ×1,35 на любой
+  /// карточке («4,5» → «4,»), кухня рвалась посреди слова (самая длинная в
+  /// справочнике, «Вегетарианская», на 360 dp — с ×1,25). ×1,2 — наибольший
+  /// шаг, при котором целы и рейтинг, и слова; заодно предел держит в рамках
+  /// рост высоты. Наезд длинных категории и кухни на цену у 360-dp телефонов
+  /// предел НЕ снимает: он начинается с ×1,1, а «Вегетарианская» при «$$$$»
+  /// подходит под цену уже при ×1,0 — это вёрстка правой колонки, не шрифт.
+  /// Полный размер текста — на странице заведения. Обложка «Избранного»
+  /// ограничена так же, своим пределом.
+  static const double _maxTextScale = 1.2;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: _cardHeight,
-        margin: const EdgeInsets.symmetric(horizontal: 13, vertical: 15),
-        child: Row(
-          children: [
-            // Left: Image with custom shape + optional promotion badge
-            _buildImageWithBadge(),
-            // Right: Content area
-            Expanded(child: _buildContentArea()),
-          ],
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: _maxTextScale,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          // Не ниже макета; выше — только когда содержимое не помещается.
+          // Название и адрес в две строки вместе с расстоянием и «Онлайн
+          // бронь» не помещались в макетную высоту уже при обычном шрифте.
+          constraints: const BoxConstraints(minHeight: _cardHeight),
+          margin: const EdgeInsets.symmetric(horizontal: 13, vertical: 15),
+          // Высоту задаёт колонка текста, фото тянется за ней сверху донизу.
+          // Row так не умеет: растянуть фото по соседу он может только через
+          // IntrinsicHeight, а заголовок и адрес построены на LayoutBuilder,
+          // который собственных размеров не сообщает.
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              // Left: Image with custom shape + optional promotion badge
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: _imageWidth,
+                child: _buildImageWithBadge(),
+              ),
+              // Right: Content area
+              Padding(
+                padding: const EdgeInsets.only(left: _imageWidth),
+                child: _buildContentArea(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -82,44 +121,41 @@ class EstablishmentCard extends StatelessWidget {
   Widget _buildImageWithBadge() {
     if (!establishment.hasPromotion) return _buildImage();
 
-    return SizedBox(
-      width: _imageWidth,
-      height: _cardHeight,
-      child: Stack(
-        children: [
-          _buildImage(),
-          Positioned(
-            bottom: 12,
-            left: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _orangeHeart,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text(
-                'АКЦИЯ',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
+    // Размер задаёт карточка: фото с плашкой тянется на всю её высоту.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildImage(),
+        Positioned(
+          bottom: 12,
+          left: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _orangeHeart,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'АКЦИЯ',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   /// Build image with rounded corners mask (Figma design)
+  /// Размер задаёт карточка: ширина [_imageWidth], высота — вся карточка.
   Widget _buildImage() {
     return ClipPath(
       clipper: _ImageClipper(),
-      child: SizedBox(
-        width: _imageWidth,
-        height: _cardHeight,
+      child: SizedBox.expand(
         child: establishment.thumbnailUrl != null
             ? CachedNetworkImage(
                 imageUrl: establishment.thumbnailUrl!,
@@ -310,31 +346,38 @@ class EstablishmentCard extends StatelessWidget {
     final closingTime = establishment.todayClosingTime;
 
     // RichText, в отличие от Text, стиль темы НЕ наследует: у корневого
-    // TextSpan без семейства строка рисуется системным шрифтом.
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(
-          fontFamily: AppTheme.fontBodyFamily,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          height: 20 / 14,
-        ),
-        children: [
-          TextSpan(
-            text: isOpen ? 'Открыто' : 'Закрыто',
-            style: TextStyle(
-              color: isOpen ? _greenColor : Colors.red,
-            ),
+    // TextSpan без семейства строка рисуется системным шрифтом. И размер
+    // шрифта из настроек телефона он сам не читает — без явного textScaler
+    // строка оставалась мелкой при любом системном шрифте. Масштаб берётся
+    // из контекста ПОД пределом карточки (отсюда Builder): контекст самой
+    // карточки лежит выше предела, и строка росла бы без ограничения.
+    return Builder(
+      builder: (context) => RichText(
+        textScaler: MediaQuery.textScalerOf(context),
+        text: TextSpan(
+          style: const TextStyle(
+            fontFamily: AppTheme.fontBodyFamily,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 20 / 14,
           ),
-          if (closingTime != null && isOpen)
+          children: [
             TextSpan(
-              text: '/до $closingTime',
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
-                fontWeight: FontWeight.w400,
+              text: isOpen ? 'Открыто' : 'Закрыто',
+              style: TextStyle(
+                color: isOpen ? _greenColor : Colors.red,
               ),
             ),
-        ],
+            if (closingTime != null && isOpen)
+              TextSpan(
+                text: '/до $closingTime',
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
