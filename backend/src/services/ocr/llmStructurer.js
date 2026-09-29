@@ -55,11 +55,14 @@ const CATEGORY_RAW_MAX = 100;
  * Cut a string to the column width instead of rejecting it. A rejected field
  * fails the whole response — every item of the page is lost for one long set
  * name — while a cut name still finds the dish. Counted in code points, as
- * PostgreSQL counts VARCHAR characters.
+ * PostgreSQL counts VARCHAR characters. The trailing space of the cut goes,
+ * unless nothing else is left (an empty name would pass NOT NULL).
  */
 const cutTo = (max) => (value) => {
   const chars = Array.from(value);
-  return chars.length > max ? chars.slice(0, max).join('').trimEnd() : value;
+  if (chars.length <= max) return value;
+  const cut = chars.slice(0, max).join('');
+  return cut.trimEnd() || cut;
 };
 
 const ItemSchema = z.object({

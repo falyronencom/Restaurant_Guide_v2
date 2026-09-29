@@ -255,6 +255,12 @@ describe('readSavedVision — текст фото из прошлого прог
     expect(() => readSavedVision(runDir, 'm', 'IMG_1.jpg')).toThrow(/no saved text/);
   });
 
+  test('прогон --text-from сам годится в источник: vision не вызывался, текст взят из дампа', () => {
+    const vision = { rawText: 'Борщ 15', usage: null, ms: null, textFrom: 'C:/runs/B' };
+    saveDump('m', 'IMG_1.jpg.json', vision);
+    expect(readSavedVision(runDir, 'm', 'IMG_1.jpg')).toEqual(vision);
+  });
+
   test('vision того прогона упал — ошибка: пустой текст выдал бы себя за «позиций нет»', () => {
     saveDump('m', 'IMG_1.jpg.json', { rawText: '', usage: null });
     expect(() => readSavedVision(runDir, 'm', 'IMG_1.jpg')).toThrow(/did not complete/);

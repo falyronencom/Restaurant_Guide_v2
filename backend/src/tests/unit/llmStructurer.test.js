@@ -204,6 +204,14 @@ describe('llmStructurer', () => {
       expect(item.category_raw).toBe(category);
     });
 
+    test('название из одних пробелов после среза не становится пустым', async () => {
+      respond({ item_name: ' '.repeat(300), price_byn: null, category_raw: null, confidence: 0.1 });
+
+      const [item] = await structureMenu('x');
+
+      expect(item.item_name).toBe(' '.repeat(255));
+    });
+
     test('пробел на месте среза не остаётся хвостом', async () => {
       respond({ item_name: 'Сет', price_byn: 280, category_raw: `${'Ш'.repeat(99)} ВИНО`, confidence: 0.9 });
 
