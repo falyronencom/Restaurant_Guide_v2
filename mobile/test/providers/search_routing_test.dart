@@ -510,4 +510,119 @@ void main() {
       expect(est.hoursFilter, HoursFilter.until22);
     });
   });
+
+  /// Решение Координатора 29.09.2026 (вариант 2Б): с фразой в строке поиска
+  /// карта показывает ровно выдачу списка. До него карта искала фразу своим,
+  /// прежним движком, и на «завтрак» список находил 14 заведений, карта — 0.
+  /// Совпадение держится одним местом вызова: если тело запроса карты
+  /// разойдётся с телом списка, разойдутся и выдачи.
+  group('Карта с фразой берёт выдачу тем же вызовом, что и список', () {
+    test('тело запроса карты — тело списка, отличается только размер страницы',
+        () async {
+      final adapter = installWireStand((_) => jsonBody(smartSearchEnvelope()));
+
+      final provider = EstablishmentsProvider();
+      addTearDown(provider.dispose);
+      provider.setSearchQuery('underdog');
+      provider.setCity('Минск');
+      provider.setPriceFilters({PriceRange.medium});
+      provider.setHoursFilter(HoursFilter.until22);
+      provider.toggleCategoryFilter('Пиццерия');
+      provider.toggleCuisineFilter('Итальянская');
+      provider.toggleAmenityFilter('wifi');
+
+      await provider.searchEstablishments();
+      await provider.smartSearchWithScreenFilters(query: 'underdog', limit: 100);
+
+      expect(adapter.requests, hasLength(2));
+      final map = adapter.requests[1];
+      expect(map.method, 'POST');
+      expect(map.path, '/api/v1/search/smart');
+
+      final listBody = Map<String, dynamic>.of(bodyOf(adapter.requests[0]));
+      final mapBody = Map<String, dynamic>.of(bodyOf(map));
+      expect(listBody['limit'], 20);
+      expect(mapBody['limit'], 100);
+      listBody.remove('limit');
+      mapBody.remove('limit');
+      expect(mapBody, listBody);
+      // Фильтры действительно ушли — сравнение пустых тел ничего бы не доказало.
+      expect(mapBody['categories'], ['Пиццерия']);
+      expect(mapBody['hours_filter'], HoursFilter.until22.apiValue);
+    });
+  });
+
+  group('Отпечаток фильтров экрана — по нему карта решает, загружать ли пины', () {
+    test('равные наборы — равный отпечаток; смена любого фильтра — другой',
+        () async {
+      installWireStand((_) => jsonBody(searchEnvelope()));
+
+      final provider = EstablishmentsProvider();
+      addTearDown(provider.dispose);
+      final initial = provider.screenFilters.fingerprint;
+      expect(provider.screenFilters.fingerprint, initial);
+
+      final changes = <String, void Function()>{
+        'город': () => provider.setCity('Минск'),
+        'цена': () => provider.setPriceFilters({PriceRange.medium}),
+        'часы': () => provider.setHoursFilter(HoursFilter.until22),
+        'тип': () => provider.toggleCategoryFilter('Кафе'),
+        'кухня': () => provider.toggleCuisineFilter('Японская'),
+        'удобства': () => provider.toggleAmenityFilter('wifi'),
+      };
+      final seen = <String>{initial};
+      for (final entry in changes.entries) {
+        entry.value();
+        final next = provider.screenFilters.fingerprint;
+        expect(seen.contains(next), isFalse, reason: entry.key);
+        seen.add(next);
+      }
+
+      // Снять и снова поставить тип среди нескольких — набор тот же, и
+      // отпечаток тот же, хотя порядок выбора сменился.
+      provider.toggleCategoryFilter('Бар');
+      final withAll = provider.screenFilters.fingerprint;
+      provider.toggleCategoryFilter('Кафе');
+      expect(provider.screenFilters.fingerprint, isNot(withAll));
+      provider.toggleCategoryFilter('Кафе');
+      expect(provider.categoryFilters.toList(), ['Бар', 'Кафе']);
+      expect(provider.screenFilters.fingerprint, withAll);
+    });
+
+    test('сортировка, которую человек не выбирал, отпечаток не меняет; выбранная — меняет', () {
+      // Ревью 29.09: после GPS умолчание становится «по расстоянию», но в
+      // запрос умного поиска оно не уходит — карта из-за него не перезагружается.
+      const byRating = ScreenFilters(city: 'Минск', sortBy: 'rating');
+      const byDistance = ScreenFilters(city: 'Минск', sortBy: 'distance');
+      const chosen = ScreenFilters(city: 'Минск', sortBy: 'distance', sortTouched: true);
+
+      expect(byDistance.fingerprint, byRating.fingerprint);
+      expect(chosen.fingerprint, isNot(byRating.fingerprint));
+    });
+
+    test('отпечаток карты без фразы — только то, что уходит в /search/map', () {
+      // Город, сортировка, расстояние и удобства в запрос карты без фразы не
+      // уходят — их смена её не перезагружает (ревью 29.09: лишние запросы).
+      const base = ScreenFilters(categories: ['Кафе'], hoursFilter: 'until_22');
+      const noise = ScreenFilters(
+        city: 'Гродно',
+        categories: ['Кафе'],
+        hoursFilter: 'until_22',
+        sortBy: 'price_asc',
+        sortTouched: true,
+        maxDistance: 1000,
+        features: ['wifi'],
+      );
+      expect(noise.areaFingerprint, base.areaFingerprint);
+
+      for (final changed in const [
+        ScreenFilters(categories: ['Бар'], hoursFilter: 'until_22'),
+        ScreenFilters(categories: ['Кафе'], cuisines: ['Японская'], hoursFilter: 'until_22'),
+        ScreenFilters(categories: ['Кафе'], priceRanges: ['\$\$'], hoursFilter: 'until_22'),
+        ScreenFilters(categories: ['Кафе'], hoursFilter: '24_hours'),
+      ]) {
+        expect(changed.areaFingerprint, isNot(base.areaFingerprint));
+      }
+    });
+  });
 }

@@ -267,9 +267,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
             _buildTabNavigator(0, const SearchHomeScreen()),
             _buildTabNavigator(1, const NewsScreen()),
             // Lazy load MapScreen - only create when user visits the tab
-            // This prevents Yandex Maps from blocking the main thread at startup
+            // This prevents Yandex Maps from blocking the main thread at startup.
+            // TickerMode — признак видимости для карты: IndexedStack тикеры
+            // скрытых вкладок не гасит, а карта с фразой поиска, пока её не
+            // видно, не перезагружает пины на смену фильтров (MapFetchGate).
             _visitedTabs.contains(2)
-                ? _buildTabNavigator(2, const MapScreen())
+                ? TickerMode(
+                    enabled: _currentIndex == 2,
+                    child: _buildTabNavigator(2, const MapScreen()),
+                  )
                 : const SizedBox.shrink(),
             _buildTabNavigator(3, const FavoritesScreen()),
             _buildTabNavigator(4, const ProfileScreen()),

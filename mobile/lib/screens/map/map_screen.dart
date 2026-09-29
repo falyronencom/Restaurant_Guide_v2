@@ -13,6 +13,7 @@ import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_clustering.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_search_plaque.dart';
 
 /// Map screen displaying establishments on Yandex Map
 /// Users can explore restaurants geographically and tap markers for previews
@@ -74,6 +75,31 @@ class _MapScreenState extends State<MapScreen> {
   String? _errorMessage;
   final MapMarkerGenerator _markerGenerator = MapMarkerGenerator();
 
+  /// Сколько заведений по фразе поиска берётся на карту. Умный поиск отдаёт
+  /// не больше 100 за раз; на 29.09 в каталоге 26 заведений.
+  static const int _phraseFetchLimit = 100;
+
+  /// Фраза поиска, чья выдача сейчас на карте (null — карта без поиска, пины
+  /// видимой области). См. [activeMapPhrase].
+  String? _mapPhrase;
+
+  /// Сколько найдено по фразе всего (на карте — не больше [_phraseFetchLimit]).
+  int _phraseTotal = 0;
+
+  /// Сколько из найденного стало пинами (заведения с координатами).
+  int _phraseShown = 0;
+
+  /// Фраза, снятая с карты крестиком: пока в строке поиска она же, карта
+  /// показывает все заведения.
+  String? _dismissedPhrase;
+
+  /// Когда загружать пины заново — см. [MapFetchGate].
+  final MapFetchGate _gate = MapFetchGate();
+
+  /// Номер загрузки: ответ устаревшей загрузки (фразу сменили, пока шёл
+  /// запрос) не перезаписывает свежий.
+  int _fetchGeneration = 0;
+
   /// Currently selected establishment for inline preview (replaces modal bottom sheet)
   Establishment? _selectedEstablishment;
 
@@ -96,10 +122,28 @@ class _MapScreenState extends State<MapScreen> {
           // Yandex Map
           _map,
 
+          // Search phrase plaque (вариант 2Б): карта показывает выдачу фразы
+          if (_mapPhrase != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 12,
+              // Кнопка «назад» (40 dp слева) — плашка её не накрывает
+              left: Navigator.of(context).canPop() ? 64 : 16,
+              right: Navigator.of(context).canPop() ? 64 : 16,
+              child: Center(
+                child: MapSearchPlaque(
+                  phrase: _mapPhrase!,
+                  shown: _phraseShown,
+                  total: _phraseTotal,
+                  onClear: _clearMapPhrase,
+                ),
+              ),
+            ),
+
           // Loading indicator
           if (_isLoading)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
+              top: MediaQuery.of(context).padding.top +
+                  (_mapPhrase != null ? 64 : 16),
               left: 0,
               right: 0,
               child: Center(
@@ -160,28 +204,34 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ],
                 ),
-                child: const Column(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.location_off_outlined,
                       size: 36,
                       color: AppTheme.textGrey,
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     Text(
-                      'В этой области нет заведений',
-                      style: TextStyle(
+                      // С фразой пустая карта — это пустая выдача поиска, а
+                      // не пустая местность: сдвиг карты тут не поможет.
+                      _mapPhrase != null
+                          ? 'По запросу «$_mapPhrase» ничего не найдено'
+                          : 'В этой области нет заведений',
+                      style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: Colors.black87,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
-                      'Попробуйте изменить масштаб карты или переместиться в другую область',
-                      style: TextStyle(
+                      _mapPhrase != null
+                          ? 'Нажмите ✕ на плашке сверху, чтобы показать все заведения'
+                          : 'Попробуйте изменить масштаб карты или переместиться в другую область',
+                      style: const TextStyle(
                         fontSize: 13,
                         color: AppTheme.textGrey,
                       ),
@@ -230,7 +280,9 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: _fetchEstablishmentsForCurrentBounds,
+                      // Мимо привратника: ошибка ключ не сбрасывает, и
+                      // заново грузит только эта кнопка (см. MapFetchGate).
+                      onTap: () => _fetchEstablishmentsForCurrentBounds(force: true),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
@@ -303,26 +355,73 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Провайдер, на который подписан экран. Запомнен в [initState]: в
+  /// [dispose] искать его через context уже нельзя — элемент отмонтирован
+  /// (в отладочной сборке это assertion, и отписка не случалась).
+  late final EstablishmentsProvider _provider;
+
   @override
   void initState() {
     super.initState();
     _initMarkers();
     // Listen for city changes to re-center map when user switches city
     // and returns to the map tab
+    _provider = context.read<EstablishmentsProvider>();
+    _lastCity = _provider.selectedCity;
+    _provider.addListener(_onProviderChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Видимость карты. Скрытую вкладку main_navigation оборачивает в
+    // TickerMode сам (IndexedStack тикеры скрытых вкладок не гасит), карту под
+    // другим экраном гасит Overlay. Карту снова видно — пины обновляются, если
+    // фраза или фильтры сменились, пока её не было видно.
+    final visible = TickerMode.of(context);
+    if (visible == _gate.visible) return;
     final provider = context.read<EstablishmentsProvider>();
-    _lastCity = provider.selectedCity;
-    provider.addListener(_onProviderChanged);
+    if (_gate.onVisibilityChanged(
+        visible, _fetchKey(provider, _currentPhrase(provider)))) {
+      _scheduleFetch();
+    }
   }
 
   @override
   void dispose() {
-    context.read<EstablishmentsProvider>().removeListener(_onProviderChanged);
+    _provider.removeListener(_onProviderChanged);
     super.dispose();
   }
 
-  /// React to provider changes — fly to new city when selectedCity changes
+  /// Загрузка после текущего кадра: несколько уведомлений подряд (фраза и
+  /// город одним действием) дают одну загрузку — повторные отсечёт
+  /// [MapFetchGate.isStale].
+  void _scheduleFetch() {
+    if (!_initialCameraReady || _mapController == null) return;
+    Future.microtask(() {
+      if (mounted) _fetchEstablishmentsForCurrentBounds();
+    });
+  }
+
+  /// React to provider changes — fly to new city when selectedCity changes;
+  /// reload the pins when the search phrase or the screen's filters change.
   void _onProviderChanged() {
     final provider = context.read<EstablishmentsProvider>();
+
+    // Крестик снимает с карты только ту фразу, что была: новая фраза в строке
+    // поиска снова показывается на карте.
+    if (_dismissedPhrase != null &&
+        (provider.searchQuery?.trim() ?? '') != _dismissedPhrase) {
+      _dismissedPhrase = null;
+    }
+
+    // Фраза или фильтры сменились, пока карту видно, — пины обновляются сразу.
+    // Пока не видно — ждут, когда карту покажут (didChangeDependencies);
+    // уведомления без смены (загрузка списка, избранное) запроса не делают.
+    if (_gate.onProviderChanged(_fetchKey(provider, _currentPhrase(provider)))) {
+      _scheduleFetch();
+    }
+
     final currentCity = provider.selectedCity;
     if (currentCity != _lastCity && _mapController != null) {
       _lastCity = currentCity;
@@ -438,15 +537,53 @@ class _MapScreenState extends State<MapScreen> {
 
     // Only fetch when camera movement finished
     if (finished) {
-      _fetchEstablishmentsForCurrentBounds();
+      _fetchEstablishmentsForCurrentBounds(cameraMoved: true);
     }
   }
 
-  Future<void> _fetchEstablishmentsForCurrentBounds() async {
+  /// Фраза, выдачу которой карта должна показывать сейчас (см. [activeMapPhrase]).
+  String? _currentPhrase(EstablishmentsProvider provider) => activeMapPhrase(
+        searchQuery: provider.searchQuery,
+        dismissedPhrase: _dismissedPhrase,
+        focused: widget.focusedEstablishment != null,
+      );
+
+  /// Что карта показала бы сейчас: режим, фраза и фильтры — те, что уходят в
+  /// запрос этого режима (умный поиск получает все фильтры экрана,
+  /// `/search/map` — только типы, кухни, цены и часы).
+  String _fetchKey(EstablishmentsProvider provider, String? phrase) {
+    final filters = provider.screenFilters;
+    return phrase == null
+        ? 'area|${filters.areaFingerprint}'
+        : 'phrase:$phrase|${filters.fingerprint}';
+  }
+
+  /// [cameraMoved] — вызов с остановки камеры; [force] — «Повторить», мимо
+  /// привратника (см. [MapFetchGate]).
+  Future<void> _fetchEstablishmentsForCurrentBounds({
+    bool cameraMoved = false,
+    bool force = false,
+  }) async {
     if (_mapController == null) return;
 
     // Get current filters from provider BEFORE async operations
     final provider = context.read<EstablishmentsProvider>();
+    final phrase = _currentPhrase(provider);
+    final key = _fetchKey(provider, phrase);
+    if (!force) {
+      final go = cameraMoved
+          ? _gate.onCameraStopped(key, phraseMode: phrase != null)
+          : _gate.isStale(key);
+      if (!go) return;
+    }
+    _gate.started(key);
+    final generation = ++_fetchGeneration;
+
+    if (phrase != null) {
+      await _fetchPhraseResults(provider, phrase, generation);
+      return;
+    }
+
     final List<String>? apiCategories = provider.categoryFilters.isNotEmpty
         ? provider.categoryFilters.toList()
         : null;
@@ -456,13 +593,14 @@ class _MapScreenState extends State<MapScreen> {
     final List<String>? apiPriceRanges = provider.priceFilters.isNotEmpty
         ? provider.priceFilters.map((p) => p.apiValue).toList()
         : null;
-    final String? apiSearch = provider.searchQuery;
     final String? apiHoursFilter = provider.hoursFilter?.apiValue;
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
       _isEmpty = false;
+      // Без фразы плашки нет: пины видимой области
+      _mapPhrase = null;
     });
 
     try {
@@ -480,7 +618,9 @@ class _MapScreenState extends State<MapScreen> {
       final double east = visibleRegion.topRight.longitude + lonSpan * bufferRatio;
       final double west = visibleRegion.bottomLeft.longitude - lonSpan * bufferRatio;
 
-      // Fetch establishments within buffered bounds with filters
+      // Fetch establishments within buffered bounds with filters. Текста
+      // поиска здесь нет: фразу карта показывает выдачей умного поиска
+      // ([_fetchPhraseResults]), а без фразы — все заведения области.
       final establishments = await _establishmentsService.searchByMapBounds(
         north: north,
         south: south,
@@ -490,27 +630,105 @@ class _MapScreenState extends State<MapScreen> {
         categories: apiCategories,
         cuisines: apiCuisines,
         priceRanges: apiPriceRanges,
-        search: apiSearch,
         hoursFilter: apiHoursFilter,
       );
 
-      if (!mounted) return;
-      // Most refetches (one per camera stop) bring back the pins already on
-      // the map; the map widget then stays as it is (see [_map]).
-      final pinsChanged = !listEquals(_mapPins, pinContent(establishments));
-      setState(() {
-        _establishments = establishments;
-        if (pinsChanged) _rebuildMap();
-        _isLoading = false;
-        _isEmpty = establishments.isEmpty;
-      });
+      if (!mounted || generation != _fetchGeneration) return;
+      _showPins(establishments);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Не удалось загрузить заведения';
-      });
+      if (!mounted || generation != _fetchGeneration) return;
+      _showFetchError();
     }
+  }
+
+  /// Выдача фразы поиска на карте — тот же умный поиск и те же фильтры экрана,
+  /// что у списка ([EstablishmentsProvider.smartSearchWithScreenFilters]).
+  /// Разбор фразы к этому времени обычно уже в кэше сервера — отдельного
+  /// вызова модели запрос карты не стоит.
+  Future<void> _fetchPhraseResults(
+    EstablishmentsProvider provider,
+    String phrase,
+    int generation,
+  ) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _isEmpty = false;
+      _mapPhrase = phrase;
+      // Счёт прежней фразы под новой не показываем — до ответа только фраза.
+      _phraseTotal = 0;
+      _phraseShown = 0;
+    });
+
+    try {
+      final result = await provider.smartSearchWithScreenFilters(
+        query: phrase,
+        limit: _phraseFetchLimit,
+      );
+      if (!mounted || generation != _fetchGeneration) return;
+      _phraseTotal = result.total;
+      _phraseShown = result.results
+          .where((e) => e.latitude != null && e.longitude != null)
+          .length;
+      _showPins(result.results);
+      _fitCameraTo(result.results);
+    } catch (e) {
+      if (!mounted || generation != _fetchGeneration) return;
+      _showFetchError();
+    }
+  }
+
+  void _showPins(List<Establishment> establishments) {
+    // Most refetches (one per camera stop) bring back the pins already on
+    // the map; the map widget then stays as it is (see [_map]).
+    final pinsChanged = !listEquals(_mapPins, pinContent(establishments));
+    setState(() {
+      _establishments = establishments;
+      if (pinsChanged) _rebuildMap();
+      _isLoading = false;
+      _isEmpty = establishments.isEmpty;
+    });
+  }
+
+  void _showFetchError() {
+    // Ключ неудачной загрузки остаётся: уведомления провайдера её не
+    // повторяют, повторяет только «Повторить» (force).
+    setState(() {
+      _isLoading = false;
+      _errorMessage = 'Не удалось загрузить заведения';
+    });
+  }
+
+  /// Камера — на найденное: одно заведение — в центр крупно (как карта из
+  /// карточки заведения), несколько — в рамку вокруг всех.
+  void _fitCameraTo(List<Establishment> establishments) {
+    final points = [
+      for (final e in establishments)
+        if (e.latitude != null && e.longitude != null)
+          Point(latitude: e.latitude!, longitude: e.longitude!),
+    ];
+    if (points.isEmpty || _mapController == null) return;
+    final CameraUpdate update = points.length == 1
+        ? CameraUpdate.newCameraPosition(
+            CameraPosition(target: points.single, zoom: kFocusZoom),
+          )
+        : CameraUpdate.newGeometry(
+            Geometry.fromBoundingBox(clusterExtent(points)!),
+          );
+    _mapController!.moveCamera(
+      update,
+      animation: const MapAnimation(
+        type: MapAnimationType.smooth,
+        duration: 0.8,
+      ),
+    );
+  }
+
+  /// Крестик на плашке: поиск снимается с карты (список его сохраняет), карта
+  /// показывает все заведения области.
+  void _clearMapPhrase() {
+    _dismissedPhrase = _mapPhrase;
+    _fetchEstablishmentsForCurrentBounds();
   }
 
   /// A new map widget carrying the current pins (see [_map]).
