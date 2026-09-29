@@ -10,8 +10,9 @@
  * One photo = one benchmark unit. This mirrors production granularity: the
  * pipeline enqueues one ocr_job per menu media (seed-import pipeline.js
  * ensureOcr / mediaService), so a multi-photo menu is processed photo-by-photo
- * in production too. PDF menus are out of scope — the benchmark targets the
- * vision-OCR path, not the pdf-parse text layer.
+ * in production too. PDF menus enter only as page PNGs (the digital set) —
+ * production reads PDF pages as images as well (since 2026-09-29); the
+ * pdf-parse text layer is only its last-attempt backup.
  */
 
 import { readdirSync, statSync, existsSync } from 'fs';

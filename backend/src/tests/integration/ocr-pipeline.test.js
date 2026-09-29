@@ -27,10 +27,10 @@ const pdfParseModule = await import('pdf-parse/lib/pdf-parse.js');
 const openrouterModule = await import('../../config/openrouter.js');
 
 const { pool } = await import('../../config/database.js');
-const { default: logger } = await import('../../utils/logger.js');
 const ocrJobModel = await import('../../models/ocrJobModel.js');
 const menuItemModel = await import('../../models/menuItemModel.js');
 const ocrService = await import('../../services/ocr/ocrService.js');
+const pdfTextExtractor = await import('../../services/ocr/pdfTextExtractor.js');
 const ocrJobPoller = await import('../../services/ocr/ocrJobPoller.js');
 const { createPartnerAndGetToken, createTestEstablishment } = await import('../utils/auth.js');
 
@@ -95,39 +95,6 @@ describe('JOB_DURATION_BOUND_MS', () => {
   // where the real module (not a mock) is imported.
   test('is the finite sum of the three stage timeouts: PDF download + vision + structurer = 180 s', () => {
     expect(ocrService.JOB_DURATION_BOUND_MS).toBe(60000 + 60000 + 60000);
-  });
-
-  test('the price fallback starts no later than 60 s into the job: bound − vision − structurer', () => {
-    // A later start would let text path + vision + second structurer outrun the bound.
-    expect(ocrService.PRICE_FALLBACK_START_DEADLINE_MS).toBe(180000 - 60000 - 60000);
-  });
-});
-
-describe('lacksPrices — text-layer items "almost without prices" (price share < 0.5)', () => {
-  /** n structured items, the first `priced` of them with a price. */
-  const items = (n, priced) => Array.from({ length: n }, (_, i) => ({
-    item_name: `Блюдо ${i}`,
-    price_byn: i < priced ? 10 : null,
-    category_raw: null,
-    confidence: 0.9,
-  }));
-
-  test('no price at all (Charlie: 0 of 73) → fallback', () => {
-    expect(ocrService.lacksPrices(items(73, 0))).toBe(true);
-  });
-
-  test('49 of 100 priced → fallback; exactly half (50 of 100) → no fallback', () => {
-    expect(ocrService.lacksPrices(items(100, 49))).toBe(true);
-    expect(ocrService.lacksPrices(items(100, 50))).toBe(false);
-  });
-
-  test('healthy text layers of 28.09 (Zalkind 56 of 67 — set menus; SFB 48 of 49) → no fallback', () => {
-    expect(ocrService.lacksPrices(items(67, 56))).toBe(false);
-    expect(ocrService.lacksPrices(items(49, 48))).toBe(false);
-  });
-
-  test('no items → no fallback (nothing to price-check)', () => {
-    expect(ocrService.lacksPrices([])).toBe(false);
   });
 });
 
@@ -197,7 +164,7 @@ describe('OCR pipeline integration', () => {
     arrayBuffer: async () => new ArrayBuffer(64),
   }));
 
-  test('end-to-end: pdf with text layer → structured items persisted, job marked done', async () => {
+  test('end-to-end: pdf → pages read as images, structured items persisted, job marked done', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
 
     // pdf-parse returns a realistic menu text → hasTextLayer=true
@@ -238,16 +205,10 @@ describe('OCR pipeline integration', () => {
     expect(finalJob.completed_at).not.toBeNull();
     expect(finalJob.error_message).toBeNull();
     expect(finalJob.result_summary).toMatchObject({
-      strategy: 'pdf_text_layer',
+      strategy: 'vision_pdf',
       items_count: 5,
       flagged_count: 2,
     });
-
-    // Prices are in place → the pages are not read again as images: one
-    // OpenRouter call (the structurer), no price_fallback in the summary.
-    const chatCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/chat/completions'));
-    expect(chatCalls).toHaveLength(1);
-    expect(finalJob.result_summary).not.toHaveProperty('price_fallback');
 
     // Menu items persisted with sanity flags applied
     const persistedItems = await menuItemModel.getByEstablishmentId(establishment.id, {
@@ -268,7 +229,7 @@ describe('OCR pipeline integration', () => {
     expect(Number(byName['Борщ украинский'].price_byn)).toBe(15);
   });
 
-  test('pdf-parse returns scanned PDF (no text layer) → vision fallback path', async () => {
+  test('scanned PDF (no text layer) → pages read as images (vision_pdf)', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
 
     // pdf-parse returns short garbage text → hasTextLayer=false
@@ -320,7 +281,7 @@ describe('OCR pipeline integration', () => {
     expect(result.success).toBe(true);
     const finalJob = await ocrJobModel.getJobStatus(picked.id);
     expect(finalJob.status).toBe('done');
-    expect(finalJob.result_summary.strategy).toBe('vision_pdf_fallback');
+    expect(finalJob.result_summary.strategy).toBe('vision_pdf');
     expect(chatCallCount).toBe(2);
   });
 
@@ -383,7 +344,7 @@ describe('OCR pipeline integration', () => {
     expect(persistedItems[0].media_id).toBe(mediaId);
   });
 
-  test('structurer throws → markFailed returns job to pending (retry)', async () => {
+  test('OpenRouter failing (vision and structurer) → markFailed returns job to pending (retry)', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
 
     pdfParseModule.default.mockResolvedValue({
@@ -498,34 +459,43 @@ describe('OCR pipeline integration', () => {
     expect(items.find((it) => it.item_name === 'Old item removed')).toBeUndefined();
   });
 
-  // ── Text layer without prices → pages read as images ────────────────────
-  // 2026-09-28, re-OCR on gemini-3.8-flash: Charlie's PDF keeps its prices in
-  // a separate column of the text layer; the structurer gave 73 items without
-  // a single price, while the same pages read as images gave all prices.
+  // ── PDF menus: page images first, the text layer only as a backup ────────
+  // 2026-09-29: a text layer keeps the words but not the layout. Where a menu
+  // sets its prices in a column apart from the dish names, the text carries
+  // them as a separate block and the structurer guesses the pairing: Charlie's
+  // breakfast menu came out with 15 prices of 35 on the wrong dishes, SFB Minsk
+  // with 17 on an active card. The same pages read as images gave the right
+  // prices — every PDF is now read as images, its text layer is the backup.
 
-  describe('text-layer PDF almost without prices → page images (price fallback)', () => {
-    // Names first, the price column after them — the layout of Charlie's text layer.
-    const CHARLIE_TEXT_LAYER =
-      'СУПЫ\nБиск из лобстера с морепродуктами 310 гр\nЛуковый суп 320 гр\n' +
-      'Окрошка с ростбифом 400 гр\nХОЛОДНЫЕ ЗАКУСКИ\nТартар из лосося с авокадо 180 гр\n' +
-      '59\n38\n37\n46';
-    const CHARLIE_TEXT_ITEMS = [
-      { item_name: 'Биск из лобстера с морепродуктами', price_byn: null, category_raw: 'СУПЫ', confidence: 0.9 },
-      { item_name: 'Луковый суп', price_byn: null, category_raw: 'СУПЫ', confidence: 0.9 },
-      { item_name: 'Окрошка с ростбифом', price_byn: null, category_raw: 'СУПЫ', confidence: 0.9 },
-      { item_name: 'Тартар из лосося с авокадо', price_byn: null, category_raw: 'ХОЛОДНЫЕ ЗАКУСКИ', confidence: 0.9 },
+  describe('PDF menus: page images first, the text layer only as a backup', () => {
+    // Charlie's breakfast page as its text layer carries it (29.09): the
+    // prices first, as one block, the dish names after them.
+    const TEXT_LAYER =
+      '20\n46\n38\n39\n' +
+      'ХЛЕБ\nБриошь, джем, масло 180 г\nЯЙЦА\nБенедикт с лососем и красной икрой 270 г\n' +
+      'Оладьи из цукини с яйцом пашот 360 г\nЯйца пашот с ростбифом и сальсой 300 г';
+    // What the structurer made of that text on 29.09: prices on the wrong dishes.
+    const TEXT_LAYER_ITEMS = [
+      { item_name: 'Бриошь, джем, масло', price_byn: 20, category_raw: 'ХЛЕБ', confidence: 0.9 },
+      { item_name: 'Бенедикт с лососем и красной икрой', price_byn: 46, category_raw: 'ЯЙЦА', confidence: 0.9 },
+      { item_name: 'Оладьи из цукини с яйцом пашот', price_byn: 38, category_raw: 'ЯЙЦА', confidence: 0.9 },
+      { item_name: 'Яйца пашот с ростбифом и сальсой', price_byn: 39, category_raw: 'ЯЙЦА', confidence: 0.9 },
     ];
-    const CHARLIE_VISION_TEXT =
-      '--- PAGE 1 ---\nСУПЫ\nБиск из лобстера с морепродуктами 310 гр 59\nЛуковый суп 320 гр 38\n' +
-      'Окрошка с ростбифом 400 гр 37\n--- PAGE 2 ---\nХОЛОДНЫЕ ЗАКУСКИ\n' +
-      'Тартар из лосося с авокадо 180 гр 46\nСевиче из сибаса 165 гр 62';
-    const CHARLIE_VISION_ITEMS = [
-      { item_name: 'Биск из лобстера с морепродуктами', price_byn: 59, category_raw: 'СУПЫ', confidence: 0.95 },
-      { item_name: 'Луковый суп', price_byn: 38, category_raw: 'СУПЫ', confidence: 0.95 },
-      { item_name: 'Окрошка с ростбифом', price_byn: 37, category_raw: 'СУПЫ', confidence: 0.95 },
-      { item_name: 'Тартар из лосося с авокадо', price_byn: 46, category_raw: 'ХОЛОДНЫЕ ЗАКУСКИ', confidence: 0.95 },
-      { item_name: 'Севиче из сибаса', price_byn: 62, category_raw: 'ХОЛОДНЫЕ ЗАКУСКИ', confidence: 0.95 },
+    // The same page read as an image: each price next to its dish (checked by eye).
+    const PAGE_IMAGE_TEXT =
+      'ХЛЕБ\nБриошь, джем, масло 180 г 9\nЯЙЦА\nБенедикт с лососем и красной икрой 270 г 38\n' +
+      'Оладьи из цукини с яйцом пашот 360 г 37\nЯйца пашот с ростбифом и сальсой 300 г 38';
+    const PAGE_IMAGE_ITEMS = [
+      { item_name: 'Бриошь, джем, масло', price_byn: 9, category_raw: 'ХЛЕБ', confidence: 0.95 },
+      { item_name: 'Бенедикт с лососем и красной икрой', price_byn: 38, category_raw: 'ЯЙЦА', confidence: 0.95 },
+      { item_name: 'Оладьи из цукини с яйцом пашот', price_byn: 37, category_raw: 'ЯЙЦА', confidence: 0.95 },
+      { item_name: 'Яйца пашот с ростбифом и сальсой', price_byn: 38, category_raw: 'ЯЙЦА', confidence: 0.95 },
     ];
+    const ITEMS_BY_TEXT = new Map([[TEXT_LAYER, TEXT_LAYER_ITEMS], [PAGE_IMAGE_TEXT, PAGE_IMAGE_ITEMS]]);
+
+    /** Cloudinary rendering of page n of the test PDF (generatePdfPageImageUrl). */
+    const page = (n) =>
+      `https://res.cloudinary.com/test/image/upload/pg_${n}/v1/establishments/${establishment.id}/menu_pdf/test.jpg`;
 
     const chatResponse = (content) => ({
       ok: true,
@@ -534,8 +504,6 @@ describe('OCR pipeline integration', () => {
       text: async () => '',
     });
 
-    const upstreamFailure = { ok: false, status: 500, text: async () => 'upstream failure' };
-
     /**
      * fetch mock routed by request shape, not by call order: a vision request
      * (image_url parts) answers `visionText` — or HTTP 500 with `visionFails`;
@@ -543,7 +511,7 @@ describe('OCR pipeline integration', () => {
      * or HTTP 500 when its input is `failStructurerOn`.
      * `calls` records the image URLs of each vision call and each structurer input.
      */
-    const routedFetch = ({ visionText = '', visionFails = false, failStructurerOn = null, itemsByText }) => {
+    const routedFetch = ({ visionText = PAGE_IMAGE_TEXT, visionFails = false, failStructurerOn = null } = {}) => {
       const calls = { vision: [], structurer: [] };
       const fetchMock = jest.fn(async (url, init) => {
         if (!url.includes('/chat/completions')) {
@@ -552,20 +520,30 @@ describe('OCR pipeline integration', () => {
         const userContent = JSON.parse(init.body).messages[1].content;
         if (Array.isArray(userContent)) {
           calls.vision.push(userContent.filter((part) => part.type === 'image_url').map((part) => part.image_url.url));
-          return visionFails ? upstreamFailure : chatResponse(visionText);
+          return visionFails
+            ? { ok: false, status: 500, text: async () => 'upstream failure' }
+            : chatResponse(visionText);
         }
         calls.structurer.push(userContent);
-        if (userContent === failStructurerOn) return upstreamFailure;
-        const items = itemsByText.get(userContent);
+        if (userContent === failStructurerOn) {
+          return { ok: false, status: 500, text: async () => 'upstream failure' };
+        }
+        const items = ITEMS_BY_TEXT.get(userContent);
         if (!items) throw new Error(`unexpected structurer input: ${userContent.slice(0, 40)}`);
         return chatResponse(JSON.stringify({ items }));
       });
       return { fetchMock, calls };
     };
 
-    /** Enqueue, pick and run a job for `mediaId`; returns the settled job row. */
-    const runJob = async (mediaId) => {
-      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+    /**
+     * Enqueue, pick and run a job for `mediaId`; returns the result and the
+     * settled job row. `lastAttempt` makes this pick the job's last allowed one.
+     */
+    const runJob = async (mediaId, { lastAttempt = false } = {}) => {
+      const enqueued = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      if (lastAttempt) {
+        await pool.query('UPDATE ocr_jobs SET attempts = max_attempts - 1 WHERE id = $1', [enqueued.id]);
+      }
       const picked = await ocrJobModel.pickNextPending();
       const result = await ocrService.processJob(picked.id);
       return { result, job: await ocrJobModel.getJobStatus(picked.id) };
@@ -578,218 +556,122 @@ describe('OCR pipeline integration', () => {
         .map((it) => [it.item_name, it.price_byn == null ? null : Number(it.price_byn)]);
     };
 
-    test('Charlie: no prices in the text layer → pages read as images, the priced result is saved', async () => {
+    test('a PDF with a text layer is read as page images — its text layer never reaches the structurer', async () => {
       const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
-      pdfParseModule.default.mockResolvedValue({ text: CHARLIE_TEXT_LAYER, numpages: 3 });
-      const { fetchMock, calls } = routedFetch({
-        visionText: CHARLIE_VISION_TEXT,
-        itemsByText: new Map([
-          [CHARLIE_TEXT_LAYER, CHARLIE_TEXT_ITEMS],
-          [CHARLIE_VISION_TEXT, CHARLIE_VISION_ITEMS],
-        ]),
-      });
-      global.fetch = fetchMock;
-      const infoSpy = jest.spyOn(logger, 'info');
-
-      let result;
-      let job;
-      try {
-        ({ result, job } = await runJob(mediaId));
-        // Both outcomes reach the log too — the job's completion line carries the summary.
-        expect(infoSpy).toHaveBeenCalledWith('OCR job completed', expect.objectContaining({
-          strategy: 'vision_pdf_price_fallback',
-          price_fallback: expect.objectContaining({
-            text_layer: { items_count: 4, priced_count: 0 },
-            vision: { items_count: 5, priced_count: 5 },
-          }),
-        }));
-      } finally {
-        infoSpy.mockRestore();
-      }
-
-      expect(result).toMatchObject({ success: true, itemCount: 5 });
-      expect(job.status).toBe('done');
-      expect(job.result_summary).toEqual({
-        strategy: 'vision_pdf_price_fallback',
-        items_count: 5,
-        flagged_count: 0,
-        confidence_avg: 0.95,
-        price_fallback: {
-          outcome: 'vision',
-          text_layer: { items_count: 4, priced_count: 0 },
-          vision: { items_count: 5, priced_count: 5 },
-        },
-      });
-
-      // Every page of the PDF (pdf-parse counted 3), rendered by Cloudinary — in one vision call.
-      const page = (n) =>
-        `https://res.cloudinary.com/test/image/upload/pg_${n}/v1/establishments/${establishment.id}/menu_pdf/test.jpg`;
-      expect(calls.vision).toEqual([[page(1), page(2), page(3)]]);
-      expect(calls.structurer).toEqual([CHARLIE_TEXT_LAYER, CHARLIE_VISION_TEXT]);
-
-      expect(await persistedByPosition()).toEqual([
-        ['Биск из лобстера с морепродуктами', 59],
-        ['Луковый суп', 38],
-        ['Окрошка с ростбифом', 37],
-        ['Тартар из лосося с авокадо', 46],
-        ['Севиче из сибаса', 62],
-      ]);
-    });
-
-    test('menu honestly without prices: images give more items but no more prices → text-layer items kept', async () => {
-      const wineText =
-        'ВИННАЯ КАРТА\nШардоне Бургундия 2021 0,75 л — по запросу\n' +
-        'Кьянти Классико 2019 0,75 л — по запросу\nРислинг Мозель 2022 0,75 л — по запросу';
-      const wineVisionText =
-        'ВИННАЯ КАРТА\nШардоне, Бургундия 2021 — по запросу\nКьянти 2019 — по запросу\n' +
-        'Рислинг 2022 — по запросу\nМерло — по запросу';
-      const textItems = [
-        { item_name: 'Шардоне Бургундия 2021', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.9 },
-        { item_name: 'Кьянти Классико 2019', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.9 },
-        { item_name: 'Рислинг Мозель 2022', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.9 },
-      ];
-      // One item more than the text layer, none priced: the choice goes by prices, not by items.
-      const visionItems = [
-        { item_name: 'Шардоне, Бургундия', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.85 },
-        { item_name: 'Кьянти', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.85 },
-        { item_name: 'Рислинг', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.85 },
-        { item_name: 'Мерло', price_byn: null, category_raw: 'ВИННАЯ КАРТА', confidence: 0.85 },
-      ];
-      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
-      pdfParseModule.default.mockResolvedValue({ text: wineText, numpages: 1 });
-      const { fetchMock, calls } = routedFetch({
-        visionText: wineVisionText,
-        itemsByText: new Map([[wineText, textItems], [wineVisionText, visionItems]]),
-      });
+      pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 3 });
+      const { fetchMock, calls } = routedFetch();
       global.fetch = fetchMock;
 
       const { result, job } = await runJob(mediaId);
 
-      expect(result).toMatchObject({ success: true, itemCount: 3 });
-      expect(calls.vision).toHaveLength(1);
-      expect(job.result_summary).toMatchObject({
-        strategy: 'pdf_text_layer',
-        items_count: 3,
-        price_fallback: {
-          outcome: 'vision_not_better',
-          text_layer: { items_count: 3, priced_count: 0 },
-          vision: { items_count: 4, priced_count: 0 },
-        },
+      // Premise: the text layer is usable — without that this would test a scan.
+      expect(pdfTextExtractor.hasUsableTextLayer(TEXT_LAYER, 3)).toBe(true);
+      expect(result).toMatchObject({ success: true, itemCount: 4 });
+      expect(job.status).toBe('done');
+      // Every page of the PDF (pdf-parse counted 3), in one vision call.
+      expect(calls.vision).toEqual([[page(1), page(2), page(3)]]);
+      expect(calls.structurer).toEqual([PAGE_IMAGE_TEXT]);
+      expect(job.result_summary).toEqual({
+        strategy: 'vision_pdf',
+        items_count: 4,
+        flagged_count: 0,
+        confidence_avg: 0.95,
       });
       expect(await persistedByPosition()).toEqual([
-        ['Шардоне Бургундия 2021', null],
-        ['Кьянти Классико 2019', null],
-        ['Рислинг Мозель 2022', null],
+        ['Бриошь, джем, масло', 9],
+        ['Бенедикт с лососем и красной икрой', 38],
+        ['Оладьи из цукини с яйцом пашот', 37],
+        ['Яйца пашот с ростбифом и сальсой', 38],
       ]);
     });
 
     test.each([
-      ['the vision call', { visionFails: true }, 1, /OpenRouter vision call failed: 500/],
-      ['the second structurer call', { failStructurerOn: CHARLIE_VISION_TEXT }, 2, /OpenRouter structurer call failed: 500/],
-    ])('%s fails → text-layer items kept, the job is done (not failed, not retried)', async (
-      _failingCall, failure, structurerCalls, errorPattern,
+      ['fails (HTTP 500)', { visionFails: true }, /OpenRouter vision call failed: 500/],
+      ['returns empty text', { visionText: '  \n ' }, /vision OCR returned empty text/],
+    ])('last attempt: image read %s → the text layer stands in, the job is done', async (_how, visionMock, errorPattern) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 1 });
+      const { fetchMock, calls } = routedFetch(visionMock);
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId, { lastAttempt: true });
+
+      expect(result).toMatchObject({ success: true, itemCount: 4 });
+      expect(job.status).toBe('done');
+      expect(job.error_message).toBeNull();
+      expect(calls.vision).toEqual([[page(1)]]);
+      expect(calls.structurer).toEqual([TEXT_LAYER]);
+      expect(job.result_summary).toMatchObject({ strategy: 'pdf_text_layer', items_count: 4 });
+      expect(job.result_summary.vision_error).toMatch(errorPattern);
+      expect(await persistedByPosition()).toEqual(TEXT_LAYER_ITEMS.map((it) => [it.item_name, it.price_byn]));
+    });
+
+    test('earlier attempt: image read fails → back to the queue for a retry, the text layer is not used yet', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 1 });
+      const { fetchMock, calls } = routedFetch({ visionFails: true });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId);
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe('pending');
+      expect(job.attempts).toBe(1);
+      expect(job.error_message).toMatch(/OpenRouter vision call failed: 500/);
+      expect(calls.structurer).toEqual([]);
+      expect(await persistedByPosition()).toEqual([]);
+    });
+
+    test('last attempt, scanned PDF (no usable text layer): image read fails → the job fails for good', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 2 });
+      const { fetchMock, calls } = routedFetch({ visionFails: true });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId, { lastAttempt: true });
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe('failed');
+      expect(job.error_message).toMatch(/OpenRouter vision call failed: 500/);
+      expect(calls.vision).toEqual([[page(1), page(2)]]);
+      expect(calls.structurer).toEqual([]);
+    });
+
+    test.each([
+      ['earlier attempt → back to the queue', false, 'pending'],
+      ['last attempt → failed', true, 'failed'],
+    ])('image text read, structurer fails: %s — never a second structurer call on the text layer', async (
+      _when, lastAttempt, status,
     ) => {
       const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
-      pdfParseModule.default.mockResolvedValue({ text: CHARLIE_TEXT_LAYER, numpages: 2 });
-      const { fetchMock, calls } = routedFetch({
-        visionText: CHARLIE_VISION_TEXT,
-        ...failure,
-        itemsByText: new Map([
-          [CHARLIE_TEXT_LAYER, CHARLIE_TEXT_ITEMS],
-          [CHARLIE_VISION_TEXT, CHARLIE_VISION_ITEMS],
-        ]),
-      });
+      pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 1 });
+      const { fetchMock, calls } = routedFetch({ failStructurerOn: PAGE_IMAGE_TEXT });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId, { lastAttempt });
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe(status);
+      expect(job.error_message).toMatch(/OpenRouter structurer call failed: 500/);
+      expect(calls.vision).toHaveLength(1);
+      // One structurer call, on the image text: a second one would break JOB_DURATION_BOUND_MS.
+      expect(calls.structurer).toEqual([PAGE_IMAGE_TEXT]);
+    });
+
+    test.each([
+      ['pdf-parse fails', () => pdfParseModule.default.mockRejectedValue(new Error('bad XRef entry'))],
+      ['pdf-parse counts 0 pages', () => pdfParseModule.default.mockResolvedValue({ text: '', numpages: 0 })],
+    ])('%s → the first two pages are read as images (vision_pdf_no_metadata)', async (_how, arrangePdfParse) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      arrangePdfParse();
+      const { fetchMock, calls } = routedFetch();
       global.fetch = fetchMock;
 
       const { result, job } = await runJob(mediaId);
 
       expect(result).toMatchObject({ success: true, itemCount: 4 });
-      expect(job.status).toBe('done');
-      expect(job.error_message).toBeNull();
-      expect(calls.vision).toHaveLength(1);
-      expect(calls.structurer).toHaveLength(structurerCalls);
-      expect(job.result_summary).toMatchObject({
-        strategy: 'pdf_text_layer',
-        items_count: 4,
-        price_fallback: {
-          outcome: 'vision_failed',
-          text_layer: { items_count: 4, priced_count: 0 },
-        },
-      });
-      expect(job.result_summary.price_fallback.error).toMatch(errorPattern);
-      expect(await persistedByPosition()).toEqual(CHARLIE_TEXT_ITEMS.map((it) => [it.item_name, null]));
-    });
-
-    test.each([
-      ['the PDF download', (url) => !url.includes('/chat/completions')],
-      ['the text-layer structurer call', (url) => url.includes('/chat/completions')],
-    ])('61 s spent in %s → past the start deadline: no vision call, text-layer items kept', async (
-      _slowStage, isSlowStage,
-    ) => {
-      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
-      pdfParseModule.default.mockResolvedValue({ text: CHARLIE_TEXT_LAYER, numpages: 2 });
-      const { fetchMock, calls } = routedFetch({
-        visionText: CHARLIE_VISION_TEXT,
-        itemsByText: new Map([
-          [CHARLIE_TEXT_LAYER, CHARLIE_TEXT_ITEMS],
-          [CHARLIE_VISION_TEXT, CHARLIE_VISION_ITEMS],
-        ]),
-      });
-      // The slow stage "takes" 61 s: from its first request on, the clock runs
-      // 61 s ahead of the job's start. Both stages must count — the job's
-      // clock starts before the download, not after it.
-      let skewMs = 0;
-      const realNow = Date.now.bind(Date);
-      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
-      global.fetch = jest.fn(async (url, init) => {
-        if (isSlowStage(url)) skewMs = 61000;
-        return fetchMock(url, init);
-      });
-
-      try {
-        const { result, job } = await runJob(mediaId);
-
-        expect(result).toMatchObject({ success: true, itemCount: 4 });
-        expect(calls.vision).toHaveLength(0);
-        expect(job.result_summary).toMatchObject({
-          strategy: 'pdf_text_layer',
-          price_fallback: {
-            outcome: 'no_budget',
-            text_layer: { items_count: 4, priced_count: 0 },
-          },
-        });
-        expect(job.result_summary.price_fallback.elapsed_ms).toBeGreaterThan(60000);
-        expect(await persistedByPosition()).toEqual(CHARLIE_TEXT_ITEMS.map((it) => [it.item_name, null]));
-      } finally {
-        nowSpy.mockRestore();
-      }
-    });
-
-    test.each([
-      ['menu photo', 'image', 'vision_image'],
-      ['scanned PDF (no text layer)', 'pdf', 'vision_pdf_fallback'],
-    ])('%s without prices is not re-read — the fallback belongs to the text layer only', async (
-      _kind, fileType, strategy,
-    ) => {
-      const { mediaId } = await insertTestMedia(establishment.id, fileType);
-      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 2 });
-      const visionText = 'Чай чёрный\nЧай зелёный';
-      const { fetchMock, calls } = routedFetch({
-        visionText,
-        itemsByText: new Map([[visionText, [
-          { item_name: 'Чай чёрный', price_byn: null, category_raw: null, confidence: 0.9 },
-          { item_name: 'Чай зелёный', price_byn: null, category_raw: null, confidence: 0.9 },
-        ]]]),
-      });
-      global.fetch = fetchMock;
-
-      const { result, job } = await runJob(mediaId);
-
-      expect(result).toMatchObject({ success: true, itemCount: 2 });
-      expect(calls.vision).toHaveLength(1);
-      expect(calls.structurer).toHaveLength(1);
-      expect(job.result_summary.strategy).toBe(strategy);
-      expect(job.result_summary).not.toHaveProperty('price_fallback');
+      expect(calls.vision).toEqual([[page(1), page(2)]]);
+      expect(job.result_summary.strategy).toBe('vision_pdf_no_metadata');
     });
   });
 

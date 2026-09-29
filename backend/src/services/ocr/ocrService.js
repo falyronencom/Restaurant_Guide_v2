@@ -3,12 +3,11 @@
  *
  * Executes the full OCR pipeline for a single job:
  *   1. Fetch job + associated media
- *   2. For PDFs: try pdf-parse text extraction; if no usable text layer, fall back
- *      to vision OCR on each page via Cloudinary pg_N URLs
+ *   2. For PDFs: read the pages as images (Cloudinary pg_N URLs → vision OCR);
+ *      pdf-parse supplies the page count and the text layer, which is used only
+ *      when the image read fails (extractRawText)
  *   3. For photos (file_type='image' with type='menu'): go directly to vision OCR
  *   4. Run the LLM structurer on raw text → array of menu items
- *   4a. A text layer whose items came out almost without prices is read again as
- *      page images, and the result with more prices is kept (readPricesFromPageImages)
  *   5. Run sanity checker with previous items as context (delta comparison)
  *   6. Transactionally replace menu_items for this media
  *   7. Mark job done (with result_summary) or failed (with retry logic)
@@ -39,73 +38,23 @@ const VISION_FALLBACK_PAGE_LIMIT = 2;
  * Upper bound of one job's wall-clock time, from the stage timeouts: the PDF
  * download (pdfTextExtractor.PDF_FETCH_TIMEOUT_MS), one vision call — all
  * pages go in a single request — and one structurer call; pdf-parse and the
- * DB writes are seconds at most. A download timeout falls back to vision OCR
- * (extractRawText — hence the sum includes the fallback path); a vision or
- * structurer timeout fails the job right there (markFailed) — except inside
- * the price fallback of a text-layer PDF, which keeps the text-layer items
- * instead. That fallback (download + structurer, then vision + a second
- * structurer call) fits the same sum only because it starts no later than
- * PRICE_FALLBACK_START_DEADLINE_MS into the job. Either way a job
+ * DB writes are seconds at most. A download failure still leaves the image
+ * read (without the page count), and on the job's last attempt an image-read
+ * failure on a PDF with a text layer falls back to that text layer — both
+ * inside the same sum (extractRawText). A structurer timeout, or an image-read
+ * failure with nothing to fall back to, fails the job right there (markFailed). Either way a job
  * settles — done or failed — within this bound. server.js measures the
  * graceful-shutdown budget against it
  * (config/shutdown.js): ocrJobPoller.stop() waits for the job in flight, and
  * a job that outlives the budget dies with the process as a 'processing'
  * zombie for the stale sweep. Observed on production, July–August 2026
- * (84 jobs): p50 6.7 s, p99 30 s, max 38 s.
+ * (84 jobs): p50 6.7 s, p99 30 s, max 38 s. The largest PDF on production read
+ * as images (Zalkind, 9 pages → 128 items, measured 2026-09-29): vision 32 s,
+ * structurer 41 s — on big menus the structurer is the tightest stage.
  */
 const JOB_DURATION_BOUND_MS = pdfTextExtractor.PDF_FETCH_TIMEOUT_MS +
   visionOcrAdapter.REQUEST_TIMEOUT_MS +
   llmStructurer.REQUEST_TIMEOUT_MS;
-
-/**
- * A PDF with a text layer whose structured items carry a price in fewer than
- * this share of positions is read again as page images (readPricesFromPageImages).
- *
- * Why (2026-09-28, re-OCR on gemini-3.8-flash): Charlie's PDF keeps its prices
- * in a separate column of the text layer, apart from the dish names. The text
- * came out as 73 items without a single price; the same pages read as images
- * gave 41 + 35 items, all priced. The model it replaced had paired the column
- * with the names at an offset — 57 prices, and all 50 that could be checked
- * against the images were wrong — so "no prices" is the honest reading of
- * that text, and only the image carries the layout.
- *
- * Why 0.5, from the data of 28.09: healthy text-layer PDFs on production carry
- * a price in 84–100 % of their items (the lowest, Zalkind at 84 %, is set menus
- * whose dishes have no price of their own), the broken one in 0 %; read as
- * images the same PDFs give 90–100 %. The cut sits more than 30 points from
- * either side and still catches a PDF broken on most of its pages.
- * Coordinator decision 2026-09-29, option A of three (B — only when no item
- * has a price: misses a PDF broken on one page of two; C — below 80 %: set
- * menus at 84 % sit on the edge). Change it only with the same kind of data.
- */
-const PDF_TEXT_MIN_PRICED_SHARE = 0.5;
-
-/**
- * The price fallback — one vision call plus a second structurer call — starts
- * only if the job has run no longer than this, so that the whole job still
- * fits JOB_DURATION_BOUND_MS. Later than that the text-layer items are kept
- * (outcome 'no_budget'). The text path takes 5–17 s on production (28.09).
- */
-const PRICE_FALLBACK_START_DEADLINE_MS = JOB_DURATION_BOUND_MS -
-  visionOcrAdapter.REQUEST_TIMEOUT_MS -
-  llmStructurer.REQUEST_TIMEOUT_MS;
-
-/**
- * @param {Object[]} items - Structurer output
- * @returns {number} How many items carry a price
- */
-const countPriced = (items) => items.filter((it) => it.price_byn != null).length;
-
-/**
- * Whether structured text-layer items are "almost without prices" — below
- * PDF_TEXT_MIN_PRICED_SHARE. An empty result is not: nothing to price-check,
- * and no evidence yet that a text layer yields no items at all.
- *
- * @param {Object[]} items - Structurer output for the text layer
- * @returns {boolean}
- */
-const lacksPrices = (items) => items.length > 0 &&
-  countPriced(items) < items.length * PDF_TEXT_MIN_PRICED_SHARE;
 
 /**
  * Build the list of image URLs to send to vision OCR, given a PDF media record.
@@ -129,38 +78,74 @@ const buildPdfPageUrls = (media, knownPageCount) => {
 /**
  * Extract raw text from a media record by choosing the right strategy.
  *
+ * PDFs are read as page images first — with or without a text layer. A text
+ * layer keeps the words but not the layout: where a menu sets its prices in a
+ * column apart from the dish names, the text carries the prices as a separate
+ * block, and the structurer can only guess which price is whose. Production,
+ * September 2026: Charlie's PDF came out with no prices at all (28.09) and, on
+ * another upload, with 15 prices of 35 on the wrong dishes (29.09); SFB Minsk
+ * showed 17 wrong prices on an active card. Read as images, the same pages
+ * gave the right prices on every file checked (29.09: Charlie 71/73 and 32/32,
+ * SFB 47/47, MARBL 54/55, Charlie 9/9 against the verified image read).
+ *
+ * pdf-parse still runs first: its page count decides how many pages are
+ * rendered (unknown → VISION_FALLBACK_PAGE_LIMIT, strategy
+ * 'vision_pdf_no_metadata'), and its text layer is the last resort. An image
+ * read that fails — an error, a timeout or empty text — fails the attempt
+ * like any other error, and the retry usually reads the pages; only on the
+ * job's last attempt (`textLayerBackup`) does a usable text layer stand in
+ * (strategy 'pdf_text_layer', the error in visionError, logged as an error —
+ * its prices may sit on the wrong dishes). Without a text layer the last
+ * attempt fails the job, as before.
+ *
+ * Accepted risk, not covered: the structurer call on the image text has no
+ * backup — a second structurer call would break JOB_DURATION_BOUND_MS. On big
+ * menus it is the tightest stage (Zalkind: 41 s of the 60 s timeout for 128
+ * items); structuring page by page is the way past that ceiling.
+ *
  * @param {Object} media - establishment_media row
- * @returns {Promise<{ rawText: string, confidenceOverall: number | null, strategy: string, pageCount?: number }>}
- *   pageCount — only for 'pdf_text_layer': the price fallback renders these pages
+ * @param {Object} [options]
+ * @param {boolean} [options.textLayerBackup=false] - Last attempt: a failed
+ *   image read of a PDF falls back to its text layer
+ * @returns {Promise<{ rawText: string, confidenceOverall: number | null, strategy: string, visionError?: string }>}
  */
-const extractRawText = async (media) => {
+const extractRawText = async (media, { textLayerBackup = false } = {}) => {
   if (media.file_type === 'pdf') {
     let parseResult = null;
     try {
       parseResult = await pdfTextExtractor.extractText(media.url);
     } catch (error) {
-      logger.warn('pdf-parse failed, falling back to vision OCR', {
+      logger.warn('pdf-parse failed, reading PDF pages as images without the page count', {
         mediaId: media.id,
         error: error.message,
       });
     }
 
-    if (parseResult && parseResult.hasTextLayer) {
+    const pageUrls = buildPdfPageUrls(media, parseResult?.pageCount || 0);
+    try {
+      const visionResult = await visionOcrAdapter.extractFromImages(pageUrls);
+      if (!visionResult.rawText || visionResult.rawText.trim().length === 0) {
+        throw new Error('vision OCR returned empty text');
+      }
+      return {
+        rawText: visionResult.rawText,
+        confidenceOverall: visionResult.confidenceOverall,
+        strategy: parseResult?.pageCount > 0 ? 'vision_pdf' : 'vision_pdf_no_metadata',
+      };
+    } catch (error) {
+      if (!textLayerBackup || !parseResult?.hasTextLayer) throw error;
+      logger.error('Reading PDF pages as images failed on the last attempt — falling back to the text layer', {
+        mediaId: media.id,
+        pageCount: parseResult.pageCount,
+        error: error.message,
+      });
       return {
         rawText: parseResult.text,
         confidenceOverall: 0.95,
         strategy: 'pdf_text_layer',
-        pageCount: parseResult.pageCount,
+        visionError: error.message,
       };
     }
-
-    const pageUrls = buildPdfPageUrls(media, parseResult?.pageCount || 0);
-    const visionResult = await visionOcrAdapter.extractFromImages(pageUrls);
-    return {
-      rawText: visionResult.rawText,
-      confidenceOverall: visionResult.confidenceOverall,
-      strategy: parseResult ? 'vision_pdf_fallback' : 'vision_pdf_no_metadata',
-    };
   }
 
   if (media.file_type === 'image') {
@@ -176,88 +161,15 @@ const extractRawText = async (media) => {
 };
 
 /**
- * Price fallback of a text-layer PDF (see PDF_TEXT_MIN_PRICED_SHARE): the
- * same pages go through vision OCR and the structurer again, and the result
- * with more priced items is kept. Equal or fewer — the text-layer items stay:
- * a menu without prices ("по запросу") reads no better as an image, and the
- * text layer spells names exactly. The text-layer items are already a valid
- * result, so the fallback never fails the job: a vision or structurer error
- * keeps them, as does a job too far into its time bound to afford the calls.
- *
- * Every outcome lands in result_summary.price_fallback and in the log:
- *   'vision'            — page images gave more prices; strategy becomes
- *                         'vision_pdf_price_fallback'
- *   'vision_not_better' — images gave no more prices; text-layer items kept
- *   'vision_failed'     — vision or structurer call threw; text-layer items kept
- *   'no_budget'         — past PRICE_FALLBACK_START_DEADLINE_MS; not attempted
- *
- * @param {Object} params
- * @param {Object} params.media - establishment_media row (file_type='pdf')
- * @param {number} params.pageCount - Page count from pdf-parse
- * @param {Object[]} params.textItems - Structurer output for the text layer
- * @param {number} params.jobStartedAt - Date.now() at the start of processJob
- * @param {string} params.jobId - For the log
- * @returns {Promise<{ items: Object[], strategy: string, priceFallback: Object }>}
- */
-const readPricesFromPageImages = async ({ media, pageCount, textItems, jobStartedAt, jobId }) => {
-  const textLayer = { items_count: textItems.length, priced_count: countPriced(textItems) };
-  const keepTextLayer = (outcome, details) => ({
-    items: textItems,
-    strategy: 'pdf_text_layer',
-    priceFallback: { outcome, text_layer: textLayer, ...details },
-  });
-
-  logger.warn('PDF text layer is almost without prices — price fallback via page images', {
-    jobId,
-    mediaId: media.id,
-    pageCount,
-    ...textLayer,
-  });
-
-  const elapsedMs = Date.now() - jobStartedAt;
-  if (elapsedMs > PRICE_FALLBACK_START_DEADLINE_MS) {
-    logger.warn('Price fallback skipped: no time left in the job bound', {
-      jobId,
-      mediaId: media.id,
-      elapsedMs,
-      deadlineMs: PRICE_FALLBACK_START_DEADLINE_MS,
-    });
-    return keepTextLayer('no_budget', { elapsed_ms: elapsedMs });
-  }
-
-  let visionItems;
-  try {
-    const visionResult = await visionOcrAdapter.extractFromImages(buildPdfPageUrls(media, pageCount));
-    visionItems = await llmStructurer.structureMenu(visionResult.rawText);
-  } catch (error) {
-    logger.warn('Price fallback failed, text-layer items kept', {
-      jobId,
-      mediaId: media.id,
-      error: error.message,
-    });
-    return keepTextLayer('vision_failed', { error: error.message.slice(0, 200) });
-  }
-
-  const vision = { items_count: visionItems.length, priced_count: countPriced(visionItems) };
-  if (vision.priced_count > textLayer.priced_count) {
-    return {
-      items: visionItems,
-      strategy: 'vision_pdf_price_fallback',
-      priceFallback: { outcome: 'vision', text_layer: textLayer, vision },
-    };
-  }
-  return keepTextLayer('vision_not_better', { vision });
-};
-
-/**
  * Compute result_summary metadata for admin observability.
  *
  * @param {Object[]} items - Items with sanity_flag applied
  * @param {string} strategy - Which extraction path was used
- * @param {Object|null} [priceFallback] - readPricesFromPageImages outcome, when it ran
+ * @param {string|null} [visionError] - Why the image read of a PDF failed, when
+ *   its text layer was used instead (strategy 'pdf_text_layer')
  * @returns {Object}
  */
-const buildResultSummary = (items, strategy, priceFallback = null) => {
+const buildResultSummary = (items, strategy, visionError = null) => {
   const totalCount = items.length;
   const flaggedCount = items.filter((it) => it.sanity_flag !== null).length;
 
@@ -273,7 +185,7 @@ const buildResultSummary = (items, strategy, priceFallback = null) => {
     items_count: totalCount,
     flagged_count: flaggedCount,
     confidence_avg: confidenceAvg,
-    ...(priceFallback && { price_fallback: priceFallback }),
+    ...(visionError && { vision_error: visionError.slice(0, 200) }),
   };
 };
 
@@ -357,7 +269,6 @@ const notifyPartnerIfBatchFinished = async (establishmentId, { failedJobId = nul
  * @returns {Promise<{ success: boolean, jobId: string, itemCount?: number, error?: string }>}
  */
 export const processJob = async (jobId) => {
-  const jobStartedAt = Date.now();
   const job = await ocrJobModel.getJobStatus(jobId);
   if (!job) {
     logger.error('processJob called with unknown jobId', { jobId });
@@ -370,26 +281,17 @@ export const processJob = async (jobId) => {
       throw new Error(`Media not found: ${job.media_id}`);
     }
 
-    const extracted = await extractRawText(media);
-    const { rawText } = extracted;
-    let { strategy } = extracted;
+    // The text layer of a PDF is the last resort: an image read that fails on
+    // an earlier attempt goes back to the queue (markFailed) and is retried.
+    const { rawText, strategy, visionError } = await extractRawText(media, {
+      textLayerBackup: job.attempts >= job.max_attempts,
+    });
 
     if (!rawText || rawText.trim().length === 0) {
       throw new Error(`OCR produced empty text via strategy=${strategy}`);
     }
 
-    let rawItems = await llmStructurer.structureMenu(rawText);
-    let priceFallback = null;
-
-    if (strategy === 'pdf_text_layer' && lacksPrices(rawItems)) {
-      ({ items: rawItems, strategy, priceFallback } = await readPricesFromPageImages({
-        media,
-        pageCount: extracted.pageCount,
-        textItems: rawItems,
-        jobStartedAt,
-        jobId,
-      }));
-    }
+    const rawItems = await llmStructurer.structureMenu(rawText);
 
     if (rawItems.length === 0) {
       logger.warn('LLM structurer returned 0 items', {
@@ -413,7 +315,7 @@ export const processJob = async (jobId) => {
       newItems: flaggedItems,
     });
 
-    const summary = buildResultSummary(flaggedItems, strategy, priceFallback);
+    const summary = buildResultSummary(flaggedItems, strategy, visionError);
 
     await ocrJobModel.markDone(jobId, summary);
 
@@ -463,9 +365,7 @@ export const processJob = async (jobId) => {
 export {
   buildPdfPageUrls,
   buildResultSummary,
-  lacksPrices,
   notifyPartnerIfBatchFinished,
   JOB_DURATION_BOUND_MS,
-  PRICE_FALLBACK_START_DEADLINE_MS,
   VISION_FALLBACK_PAGE_LIMIT,
 };

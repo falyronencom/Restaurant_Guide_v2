@@ -3,9 +3,9 @@
 /**
  * Unit Tests: pdfTextExtractor.js
  *
- * Focus: hasUsableTextLayer heuristic — the decision gate that determines
- * whether the orchestrator uses pdf-parse output directly or falls back to
- * vision OCR. Testing this in isolation avoids real PDF I/O.
+ * Focus: hasUsableTextLayer heuristic — whether a PDF's text layer may stand
+ * in when reading its pages as images fails on the job's last attempt
+ * (ocrService.extractRawText). Testing this in isolation avoids real PDF I/O.
  *
  * Plus the download timeout: the PDF fetch is the one OCR stage with no
  * timeout of its own, so it must carry an AbortSignal that fires after

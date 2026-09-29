@@ -1,9 +1,11 @@
 /**
  * PDF Text Extractor
  *
- * Wraps pdf-parse for extracting text from PDFs that have a text layer.
- * When the heuristic indicates the PDF is image-only (scanned), the orchestrator
- * falls back to vision OCR via pg_N URL transformations on Cloudinary.
+ * Wraps pdf-parse: the page count of a PDF and its text layer. The orchestrator
+ * reads PDF pages as images first (vision OCR via pg_N URL transformations on
+ * Cloudinary) — the page count decides how many pages it renders, and a text
+ * layer the heuristic below finds usable is the backup when the image read
+ * fails (ocrService.extractRawText).
  *
  * Uses deep import (pdf-parse/lib/pdf-parse.js) to bypass the package's index.js
  * which attempts to read a debug test file on load — a known quirk of pdf-parse.
@@ -28,8 +30,9 @@ const MIN_PRINTABLE_RATIO = 0.7;
  * outlive the graceful-shutdown budget (config/shutdown.js); the vision and
  * structurer calls already abort after their REQUEST_TIMEOUT_MS. A 60 MB menu
  * from Cloudinary downloads in seconds. A timeout surfaces as "This operation
- * was aborted" and the orchestrator falls back to vision OCR, as for any
- * download failure. Same pattern as visionOcrAdapter (controller + timer).
+ * was aborted" and the orchestrator reads the pages as images without the
+ * page count, as for any download failure. Same pattern as visionOcrAdapter
+ * (controller + timer).
  */
 const PDF_FETCH_TIMEOUT_MS = 60000;
 
@@ -105,8 +108,8 @@ const hasUsableTextLayer = (text, pageCount) => {
 
 /**
  * Extract text from a PDF URL. Returns the text, page count, and whether the text
- * layer is usable. Caller decides whether to proceed with text-based structuring
- * or fall back to vision OCR.
+ * layer is usable — the caller renders that many pages for vision OCR and keeps
+ * a usable text layer as the backup for a failed image read.
  *
  * Never throws on "no text layer" — that's an expected signal for scanned PDFs.
  * Only throws on fetch or parse failures.

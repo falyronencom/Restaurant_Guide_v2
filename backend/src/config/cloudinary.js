@@ -572,8 +572,9 @@ export const generatePdfPreviewUrl = (publicId) => {
 /**
  * Generate full-resolution image URL for a specific PDF page.
  *
- * Used by the OCR pipeline when a PDF has no text layer and needs vision-based
- * extraction: each page is fetched as an image via pg_N transformation.
+ * Used by the OCR pipeline, which reads every PDF menu as page images
+ * (ocrService.extractRawText): each page is fetched as an image via pg_N
+ * transformation.
  *
  * Unlike thumbnail/preview helpers, this produces the page at its native
  * resolution (no width/height crop) — Vision models need readable text.
