@@ -10,8 +10,13 @@
  * prices with the old ones (a >3× change is flagged price_delta_anomaly and
  * lands in the moderation queue). The partner of each card gets one
  * «menu parsed» push per settled batch. Hence:
- * - media with a human touch (hidden by admin, or updated after OCR) are
- *   SKIPPED unless --include-touched;
+ * - media with a human touch are SKIPPED unless --include-touched: an item
+ *   hidden by admin now, or updated after OCR where the last change is an
+ *   unhide (a partner may have edited it before the hide) or has no audit
+ *   entry to explain it (likely a partner edit). An item whose last change
+ *   is a dismissed sanity flag is not touched (Coordinator, 2026-09-29) — the
+ *   rule, its 1 s window and the principle it rests on live in
+ *   reocr-menus/plan.js, which also prints the report;
  * - --apply requires --backup=<file>: every menu_item of the targeted media
  *   (all columns) is written there BEFORE any job is inserted;
  * - media with a pending/processing job are skipped (no double work).
@@ -27,6 +32,7 @@ import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { formatPlan, planReocr } from './reocr-menus/plan.js';
 
 const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,52 +54,14 @@ const backupPath = arg('backup');
 const statuses = (arg('statuses') || 'active,draft').split(',').map((s) => s.trim()).filter(Boolean);
 if (apply && !backupPath) { console.error('❌ --apply requires --backup=<file>'); process.exit(1); }
 
-// Mirrors requeue-menu-ocr.js / config/cloudinary.js.
-const fileExtension = (url) => {
-  const base = String(url || '').split('?')[0];
-  const seg = base.slice(base.lastIndexOf('/') + 1);
-  const dot = seg.lastIndexOf('.');
-  return dot === -1 ? '' : seg.slice(dot + 1).toLowerCase();
-};
-const OCRABLE_EXTENSIONS = ['', 'pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'jfif'];
-
 const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 async function main() {
   await client.connect();
 
-  const media = await client.query(`
-    SELECT m.id AS media_id, m.establishment_id, m.url, m.file_type, e.name, e.status,
-           (SELECT COUNT(*) FROM menu_items mi WHERE mi.media_id = m.id)::int AS items,
-           EXISTS (SELECT 1 FROM menu_items mi WHERE mi.media_id = m.id
-                    AND (mi.is_hidden_by_admin OR mi.updated_at > mi.created_at + interval '1 second')) AS touched,
-           EXISTS (SELECT 1 FROM ocr_jobs j WHERE j.media_id = m.id
-                    AND j.status IN ('pending', 'processing')) AS in_flight
-      FROM establishment_media m
-      JOIN establishments e ON e.id = m.establishment_id
-     WHERE m.type = 'menu' AND e.status = ANY($1)
-     ORDER BY e.name, m.position`, [statuses]);
-
-  const targets = [];
-  for (const row of media.rows) {
-    const reason = !OCRABLE_EXTENSIONS.includes(fileExtension(row.url)) ? 'формат не читается'
-      : row.in_flight ? 'задача уже в очереди'
-        : row.touched && !includeTouched ? 'есть правки людей (--include-touched)'
-          : null;
-    if (reason) console.log(`✗ skip  ${row.name} [${row.status}]  media=${row.media_id}  items=${row.items}  — ${reason}`);
-    else targets.push(row);
-  }
-
-  const byCard = new Map();
-  for (const t of targets) {
-    const c = byCard.get(t.name) || { status: t.status, media: 0, items: 0 };
-    c.media += 1;
-    c.items += t.items;
-    byCard.set(t.name, c);
-  }
-  console.log('\nК перераспознаванию:');
-  for (const [name, c] of byCard) console.log(`  ${name} [${c.status}] — файлов ${c.media}, позиций сейчас ${c.items}`);
-  console.log(`\nИтого: ${targets.length} файлов меню, ${byCard.size} карточек, позиций будет заменено ${targets.reduce((a, t) => a + t.items, 0)}.`);
+  const plan = await planReocr(client, { statuses, includeTouched });
+  console.log(formatPlan(plan));
+  const { targets } = plan;
 
   if (backupPath) {
     const ids = targets.map((t) => t.media_id);
