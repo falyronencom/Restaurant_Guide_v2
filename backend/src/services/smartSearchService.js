@@ -8,6 +8,10 @@
  *
  * Pipeline: parseIntent → normalizeIntent (Zod) → buildFilters → searchByRadius/searchWithoutLocation
  * Fallback: raw query → existing ILIKE + SEARCH_SYNONYMS (transparent to user)
+ * Name match (29.09.2026): in parallel with the parse, the phrase is matched
+ * against establishment names in the DB (utils/establishmentNameMatch.js);
+ * nameMatchMode decides whether the matches are the whole result, go first,
+ * or only rescue an empty result.
  */
 
 import { z } from 'zod';
@@ -17,6 +21,7 @@ import { setWithExpiry } from '../config/redis.js';
 import redisClient from '../config/redis.js';
 import * as searchService from './searchService.js';
 import logger from '../utils/logger.js';
+import { nameSkeleton, pickNameMatches } from '../utils/establishmentNameMatch.js';
 // Canon shared with the write-path + DB CHECK (CAT-C-2.9). DB stores Cyrillic
 // directly; these drive the AI prompt and the intent normalization.
 import {
@@ -580,6 +585,281 @@ export function buildSmartSearchFilters(intent, context = {}, explicitFilters = 
 }
 
 /**
+ * Совпадений по названию берётся не больше — страница выдачи с запасом.
+ */
+const MAX_NAME_MATCHES = 50;
+
+/** Приём пищи словами фразы — для «общих слов» ниже. */
+const MEAL_WORDS = Object.freeze(['завтрак', 'завтраки', 'бранч', 'ланч', 'бизнес-ланч', 'обед', 'ужин']);
+
+/**
+ * «Общие слова»: тип заведения, кухня, город, приём пищи, слово словаря
+ * синонимов. Заведение с таким названием («Кафе», «Пицца», «Минск») при
+ * совпадении названия целиком поднимается первым, но не заменяет выдачу:
+ * набравший «кафе» ищет кафе, а не одно заведение с этим названием.
+ */
+const GENERIC_NAME_SKELETONS = new Set(
+  [...VALID_CATEGORIES, ...VALID_CUISINES, ...PROMPT_CITIES, ...MEAL_WORDS, ...searchService.SEARCH_SYNONYM_TERMS]
+    .map(nameSkeleton)
+    .filter(Boolean),
+);
+
+/**
+ * Разбор без единого условия выдачи. Сортировка условием не считается: «Tiden
+ * рядом» — всё ещё название.
+ * @param {object} intent - Normalized intent
+ * @returns {boolean}
+ */
+export function isIntentEmpty(intent) {
+  return !intent.category
+    && !(Array.isArray(intent.cuisine) && intent.cuisine.length > 0)
+    && !intent.dish
+    && !intent.meal_type
+    && intent.price_max == null
+    && !intent.location
+    && !(Array.isArray(intent.tags) && intent.tags.length > 0);
+}
+
+/**
+ * Что делать с совпадениями по названию (решение Координатора 29.09.2026). /
+ * What to do with name matches.
+ *
+ *  - 'only'   — выдача состоит из совпавших заведений;
+ *  - 'first'  — совпавшие первыми, дальше обычная выдача без повторов;
+ *  - 'rescue' — обычная выдача, а совпавшие — только если она пуста.
+ *
+ * Название целиком (уровень 3) — сильный сигнал: человек набрал название, а
+ * разбор модели в этом случае — шум от слов самого названия («urban dzen cafe»
+ * → тип «Кафе», «SFB Minsk» → город; прод 29.09). Поэтому — только совпавшие.
+ * Кроме четырёх случаев, где совпавшие идут первыми: фраза просит блюдо или
+ * приём пищи («underdog пицца», «Tiden завтрак»), просит ещё что-то словами
+ * (теги: «терраса» при заведении «Терраса» — это и заведение, и все террасы),
+ * название — общее слово («Кафе»), модель не ответила (запасной путь).
+ *
+ * Начало названия и опечатка (уровни 2 и 1) — сигнал слабее: только совпавшие —
+ * лишь когда модель во фразе ничего не нашла («tid», «tidem»). Иначе фраза
+ * значит своё («кафе» — тип, «минск» — город), и совпадение по названию лишь
+ * спасает от пустой выдачи («андердог» модель принимает за блюдо — в меню его
+ * нет — находим underdog).
+ *
+ * @param {{ level: number, generic: boolean }|null} nameMatch
+ * @param {{ intent: object|null, hasMenuTerm: boolean }} parse
+ * @returns {'only'|'first'|'rescue'|null}
+ */
+export function nameMatchMode(nameMatch, { intent, hasMenuTerm }) {
+  if (!nameMatch || !nameMatch.level) return null;
+  if (nameMatch.level === 3) {
+    const asksMore = hasMenuTerm || (Array.isArray(intent?.tags) && intent.tags.length > 0);
+    return intent && !asksMore && !nameMatch.generic ? 'only' : 'first';
+  }
+  return intent && isIntentEmpty(intent) ? 'only' : 'rescue';
+}
+
+/**
+ * Разбор для ответа, когда выдача — только совпадения по названию: догадки
+ * модели (тип, кухня, блюдо, цена, теги) к ней не применялись, и заголовок
+ * превью mobile («Кафе» над кофейней urban dzen cafe) говорил бы неправду.
+ * Город и сортировка применены — остаются.
+ * @param {object|null} intent
+ * @returns {object|null}
+ */
+function nameOnlyIntent(intent) {
+  if (!intent) return null;
+  return {
+    ...intent,
+    category: null,
+    cuisine: null,
+    dish: null,
+    dish_variants: [],
+    meal_type: null,
+    price_max: null,
+    tags: [],
+  };
+}
+
+/**
+ * Заведения, чьё название совпало с фразой (лучший уровень), или null. Сверка —
+ * добавка к поиску, не условие: сбой базы здесь не роняет выдачу.
+ * @param {string} query
+ * @returns {Promise<{ level: number, ids: string[], generic: boolean }|null>}
+ */
+async function findNameMatches(query) {
+  try {
+    const picked = pickNameMatches(query, await searchService.listActiveEstablishmentNames());
+    if (!picked) return null;
+    const matches = picked.matches.slice(0, MAX_NAME_MATCHES);
+    return {
+      level: picked.level,
+      ids: matches.map((match) => match.id),
+      generic: matches.some((match) => GENERIC_NAME_SKELETONS.has(nameSkeleton(match.name))),
+    };
+  } catch (error) {
+    logger.warn('Smart search name lookup failed', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Разборы в работе: одна фраза — один вызов модели. Список и карта mobile
+ * (карта с фразой, вариант 2Б, 29.09.2026) спрашивают новую фразу почти
+ * одновременно; без общего ожидания оба промахнулись бы мимо кэша и позвали
+ * модель дважды, а стоимостная модель CAT-C-2.2 держится на «один разбор на
+ * фразу в час». Действует в пределах процесса; запись удаляется, как только
+ * разбор готов (или не удался), — дальше работает кэш.
+ */
+const pendingParses = new Map();
+
+/**
+ * Разбор фразы: кэш, иначе модель (и в кэш). Разбор из кэша проходит ту же
+ * нормализацию, что и свежий: разборы прежнего промпта живут там до часа после
+ * выкатки. Негодная форма считается промахом — фразу разберёт модель заново.
+ * @returns {Promise<{ intent: object|null, fromCache: boolean }>}
+ */
+async function resolveIntent(query, queryHash) {
+  const cached = normalizeIntent(await getCachedIntent(queryHash));
+  if (cached) {
+    logger.debug('Smart search cache hit', { queryHash });
+    return { intent: cached, fromCache: true };
+  }
+  // Разбор этой фразы уже идёт — ждать его: модель второй раз не зовём, и для
+  // аналитики это то же, что попадание в кэш (fromCache: вызова не было).
+  const shared = pendingParses.get(queryHash);
+  if (shared) {
+    return { intent: await shared, fromCache: true };
+  }
+  const pending = (async () => {
+    try {
+      const intent = await parseIntent(query);
+      if (intent) {
+        await cacheIntent(queryHash, intent);
+      }
+      return intent;
+    } finally {
+      pendingParses.delete(queryHash);
+    }
+  })();
+  pendingParses.set(queryHash, pending);
+  return { intent: await pending, fromCache: false };
+}
+
+/**
+ * Запасной путь без разбора: сырая фраза через ILIKE + SEARCH_SYNONYMS.
+ * Фильтры экрана идут и здесь — иначе экран результатов при недоступном AI
+ * показал бы выдачу шире выбранных фильтров.
+ */
+function buildFallbackFilters(query, context, explicitFilters) {
+  const filters = {
+    ...explicitFilters,
+    search: query,
+    city: context.city || null,
+    sortBy: explicitFilters.sortBy
+      || ((context.latitude && context.longitude) ? 'distance' : 'rating'),
+  };
+  if (context.latitude && context.longitude) {
+    filters.latitude = context.latitude;
+    filters.longitude = context.longitude;
+  }
+  return filters;
+}
+
+/** С координатами — поиск по радиусу, без них — без расстояния. */
+function runSearch(params) {
+  return params.latitude && params.longitude
+    ? searchService.searchByRadius(params)
+    : searchService.searchWithoutLocation(params);
+}
+
+/**
+ * Радиус поиска по названию без города и без выбранного расстояния, км — вся
+ * страна (потолок searchByRadius). Иначе действовал бы скрытый радиус 10 км, и
+ * названное заведение в 12 км не нашлось бы — ровно исходный дефект.
+ */
+const NAME_MATCH_RADIUS_KM = 1000;
+
+/**
+ * Запрос совпавших по названию: город и фильтры экрана — как у всей выдачи,
+ * догадки разбора (тип, кухня, блюдо, цена, теги) — нет: «urban dzen cafe»
+ * не должна пропасть оттого, что модель увидела в названии тип «Кафе».
+ */
+function nameMatchParams(filters, explicitFilters, ids) {
+  const params = { includeIds: ids, city: filters.city ?? null, sortBy: filters.sortBy };
+  for (const key of ['categories', 'cuisines', 'priceRange', 'hoursFilter', 'features', 'minRating', 'maxDistance', 'radius']) {
+    if (explicitFilters[key] != null) {
+      params[key] = explicitFilters[key];
+    }
+  }
+  if (filters.latitude && filters.longitude) {
+    params.latitude = filters.latitude;
+    params.longitude = filters.longitude;
+    if (!params.city && params.maxDistance == null && params.radius == null) {
+      params.radius = NAME_MATCH_RADIUS_KM;
+    }
+  }
+  return params;
+}
+
+function paginationOf(total, page, limit) {
+  const totalPages = Math.ceil(total / limit);
+  return { page, limit, total, totalPages, hasNext: page < totalPages, hasPrevious: page > 1 };
+}
+
+/**
+ * Выдача с учётом совпадений по названию.
+ *
+ * Совпавшие выбираются одним запросом (их не больше MAX_NAME_MATCHES) и стоят
+ * в начале общего списка; страницы режутся по общему списку: в режиме
+ * 'first' на странице p позиции [(p−1)·limit, p·limit) берутся сперва из
+ * совпавших, остаток — из основной выдачи со сдвигом на их число; основная
+ * выдача исключает совпавших (`excludeIds`), `total` — сумма. Если фильтры
+ * экрана отсекли все совпавшие — обычная выдача.
+ *
+ * @returns {Promise<{ establishments: object[], pagination: object, nameOnly: boolean, shown: number }>}
+ */
+async function searchWithNameMatches({ mode, nameMatch, filters, explicitFilters, page, limit, offset }) {
+  const plain = async () => ({ ...(await runSearch({ ...filters, limit, offset, page })), nameOnly: false, shown: 0 });
+  if (!mode) return plain();
+
+  let main = null;
+  if (mode === 'rescue') {
+    main = await plain();
+    if (main.pagination.total > 0) return main;
+  }
+
+  const named = await runSearch({
+    ...nameMatchParams(filters, explicitFilters, nameMatch.ids),
+    limit: MAX_NAME_MATCHES,
+    offset: 0,
+    page: 1,
+  });
+  const hits = named.establishments;
+  if (hits.length === 0) return main ?? plain();
+
+  if (mode !== 'first') {
+    return {
+      establishments: hits.slice(offset, offset + limit),
+      pagination: paginationOf(hits.length, page, limit),
+      nameOnly: true,
+      shown: hits.length,
+    };
+  }
+
+  const head = hits.slice(offset, offset + limit);
+  const rest = await runSearch({
+    ...filters,
+    excludeIds: hits.map((e) => e.id),
+    limit: Math.max(1, limit - head.length),
+    offset: Math.max(0, offset - hits.length),
+    page,
+  });
+  return {
+    establishments: [...head, ...rest.establishments.slice(0, limit - head.length)],
+    pagination: paginationOf(hits.length + rest.pagination.total, page, limit),
+    nameOnly: false,
+    shown: hits.length,
+  };
+}
+
+/**
  * Execute smart search: AI parse → build filters → existing search pipeline.
  *
  * @param {string} query - Natural language query
@@ -599,69 +879,25 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
   const normalized = normalizeQuery(query);
   const queryHash = generateQueryHash(normalized);
 
-  // 1. Check Redis cache. Разбор из кэша проходит ту же нормализацию, что и
-  // свежий: разборы прежнего промпта живут там до часа после выкатки. Негодная
-  // форма считается промахом — фразу разберёт модель заново.
-  let intent = normalizeIntent(await getCachedIntent(queryHash));
-  let fromCache = false;
+  // 1–2. Разбор фразы (кэш → модель) и сверка с названиями заведений не
+  // зависят друг от друга и идут параллельно; сверка — один запрос к базе,
+  // вызовов модели она не добавляет.
+  const [{ intent, fromCache }, nameMatch] = await Promise.all([
+    resolveIntent(query, queryHash),
+    findNameMatches(query),
+  ]);
 
-  if (intent) {
-    fromCache = true;
-    logger.debug('Smart search cache hit', { queryHash });
-  } else {
-    // 2. Call AI
-    intent = await parseIntent(query);
-
-    // 3. Cache on success
-    if (intent) {
-      await cacheIntent(queryHash, intent);
-    }
-  }
-
-  // 4. Build filters or fallback
+  // 3. Фильтры из разбора — или запасной путь по сырой фразе.
   const isFallback = !intent;
+  const filters = intent
+    ? buildSmartSearchFilters(intent, context, explicitFilters)
+    : buildFallbackFilters(query, context, explicitFilters);
 
-  let searchResult;
-
-  if (intent) {
-    // AI-parsed path
-    const filters = buildSmartSearchFilters(intent, context, explicitFilters);
-
-    const searchParams = {
-      ...filters,
-      limit,
-      offset,
-      page,
-    };
-
-    if (filters.latitude && filters.longitude) {
-      searchResult = await searchService.searchByRadius(searchParams);
-    } else {
-      searchResult = await searchService.searchWithoutLocation(searchParams);
-    }
-  } else {
-    // Fallback: raw query through existing ILIKE + SEARCH_SYNONYMS.
-    // Фильтры экрана идут и здесь — иначе экран результатов при недоступном AI
-    // показал бы выдачу шире выбранных фильтров.
-    const fallbackParams = {
-      ...explicitFilters,
-      search: query,
-      city: context.city || null,
-      sortBy: explicitFilters.sortBy
-        || ((context.latitude && context.longitude) ? 'distance' : 'rating'),
-      limit,
-      offset,
-      page,
-    };
-
-    if (context.latitude && context.longitude) {
-      fallbackParams.latitude = context.latitude;
-      fallbackParams.longitude = context.longitude;
-      searchResult = await searchService.searchByRadius(fallbackParams);
-    } else {
-      searchResult = await searchService.searchWithoutLocation(fallbackParams);
-    }
-  }
+  // 4. Выдача с учётом совпадений по названию (nameMatchMode).
+  const mode = nameMatchMode(nameMatch, { intent, hasMenuTerm: Boolean(filters.dish) });
+  const searchResult = await searchWithNameMatches({
+    mode, nameMatch, filters, explicitFilters, page, limit, offset,
+  });
 
   // Log for analytics
   logSearchQuery({
@@ -672,10 +908,11 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
     isFallback,
     fromCache,
     hasExplicitFilters: Object.keys(explicitFilters).length > 0,
+    nameMatch: nameMatch ? { level: nameMatch.level, mode, shown: searchResult.shown } : null,
   });
 
   return {
-    intent: intent || null,
+    intent: searchResult.nameOnly ? nameOnlyIntent(intent) : (intent || null),
     results: searchResult.establishments || [],
     pagination: searchResult.pagination || { total: 0, page, limit, totalPages: 0 },
     fallback: isFallback,
@@ -703,6 +940,9 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
  * словарей, сортировка из трёх значений, блюдо и теги сведены к признаку и
  * счётчику. Полный разбор повторяет фразу дословно (`tags: ["пицца за 20
  * рублей"]`, прод 07.09) — поэтому целиком он идёт только рядом с самой фразой.
+ *
+ * `nameMatch` — совпадение с названием заведения без названий и без слов:
+ * уровень, режим и сколько совпавших заведений попало в выдачу.
  */
 export function buildSearchQueryLog({
   rawQuery,
@@ -712,6 +952,7 @@ export function buildSearchQueryLog({
   isFallback,
   fromCache,
   hasExplicitFilters = false,
+  nameMatch = null,
 }) {
   const foundNothing = resultCount === 0;
 
@@ -730,6 +971,9 @@ export function buildSearchQueryLog({
         sort: intent.sort,
         tagCount: intent.tags?.length ?? 0,
       }
+      : null,
+    nameMatch: nameMatch
+      ? { level: nameMatch.level, mode: nameMatch.mode ?? null, shown: nameMatch.shown ?? 0 }
       : null,
     // Слова — только на пустой выдаче, вместе с полным разбором: чинить дыру
     // без них нельзя.

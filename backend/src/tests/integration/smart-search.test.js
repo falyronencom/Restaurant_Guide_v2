@@ -1098,3 +1098,212 @@ describe('Smart Search - сопоставление с меню по слова�
     expect(lenient.establishments.map(e => e.name)).toEqual(['Рыбный дом']);
   });
 });
+
+// --- Поиск заведения по названию (решение Координатора 29.09.2026) -----------
+//
+// Прод 29.09: с промпта P1 (24.09) название не доходило до поиска — «Tiden»
+// давал весь город, «urban dzen cafe» (разбор «Кафе») — чужую карточку,
+// «андердог» (разбор «блюдо») — ноль. Теперь фраза сверяется с названиями в
+// базе. Разборы сеются в кэш Redis в той форме, какую давал прод, — модель в
+// тестах недоступна. Каждая фикстура несёт ловушку для прежнего кода: у
+// «Итальяно» рейтинг выше, чем у underdog, «Ромашка» — единственное кафе.
+
+describe('Smart Search - поиск по названию заведения', () => {
+  const seededHashes = new Set();
+
+  beforeAll(async () => {
+    if (!redisClient.isOpen) {
+      await connectRedis();
+    }
+  });
+
+  afterAll(async () => {
+    for (const hash of seededHashes) {
+      await deleteKey(`smartsearch:${hash}`).catch(() => {});
+    }
+  });
+
+  async function establishment(name, categories, cuisines, city = 'Минск') {
+    const est = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $3, gen_random_uuid()::text, 'Описание без подсказок', $6, 'ул. Тестовая 11', 53.9, 27.56, $4::varchar[], $5::varchar[], 'active', $2::jsonb, '$$', NOW(), NOW())
+      RETURNING id
+    `, [partnerId, defaultWorkingHours, name, categories, cuisines, city]);
+    return est.rows[0].id;
+  }
+
+  beforeEach(async () => {
+    await establishment('TIDEN', ['Кофейня'], ['Вегетарианская']);
+    await establishment('urban dzen cafe', ['Кофейня'], ['Авторская']);
+    await establishment('Ромашка', ['Кафе'], ['Европейская']);
+    await establishment('SFB Minsk', ['Бар'], ['Смешанная']);
+    // Заведение, названное общим словом: на «бар» — первым, но бары остаются.
+    await establishment('Бар', ['Бар'], ['Европейская']);
+    // underdog — пиццерия с распознанным меню: пицца есть в разделе «Пицца».
+    const underdogId = await establishment('underdog', ['Пиццерия'], ['Итальянская']);
+    const media = await query(
+      `INSERT INTO establishment_media
+         (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+       VALUES ($1, 'menu', 'pdf', 'http://test/underdog.pdf', 'http://test/t.png', 'http://test/p.png')
+       RETURNING id`,
+      [underdogId],
+    );
+    await query(
+      `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, is_hidden_by_admin, position)
+       VALUES ($1, $2, 'Маргарита', 21.00, 'Пицца', FALSE, 0)`,
+      [underdogId, media.rows[0].id],
+    );
+    // «Итальяно» (общий beforeEach файла, без меню, пиццу даёт синоним) —
+    // с высоким рейтингом: по обычной сортировке он выше underdog.
+    await query(`UPDATE establishments SET average_rating = 5.0, review_count = 20 WHERE name = 'Итальяно'`);
+  });
+
+  async function seedIntent(queryText, intent) {
+    expect(redisClient.isOpen).toBe(true);
+    const hash = intentCacheHash(queryText);
+    seededHashes.add(hash);
+    await smartSearchService.cacheIntent(hash, intent, 60);
+    // Посев обязан лечь, иначе запрос уйдёт на запасной путь.
+    expect(await smartSearchService.getCachedIntent(hash)).toEqual(intent);
+  }
+
+  /** Разбор в форме промпта P1; пустой — как прод отвечал на названия 29.09. */
+  function p1Intent(extra = {}) {
+    return {
+      category: null, cuisine: null, dish: null, dish_variants: [], meal_type: null,
+      price_max: null, location: null, sort: null, tags: [], error: null, ...extra,
+    };
+  }
+
+  async function smart(queryText, intent, body = {}) {
+    if (intent) await seedIntent(queryText, intent);
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: queryText, city: 'Минск', ...body });
+    expect(response.status).toBe(200);
+    return response.body.data;
+  }
+
+  const namesOf = (data) => data.establishments.map(e => e.name);
+
+  /** Активные заведения Минска в этом блоке: 3 из общего beforeEach + 6 здесь. */
+  const MINSK_TOTAL = 9;
+
+  test('название как есть: «Tiden» при пустом разборе — одна карточка TIDEN, а не весь город', async () => {
+    const data = await smart('Tiden', p1Intent());
+
+    expect(data.fallback).toBe(false);
+    expect(namesOf(data)).toEqual(['TIDEN']);
+    expect(data.pagination.total).toBe(1);
+    expect(data.pagination.totalPages).toBe(1);
+  });
+
+  test('другое письмо: «Тиден» находит TIDEN', async () => {
+    const data = await smart('Тиден', p1Intent());
+
+    expect(namesOf(data)).toEqual(['TIDEN']);
+  });
+
+  test('название, в котором модель увидела тип: «urban dzen cafe» — эта кофейня, а не кафе «Ромашка»; догадка «Кафе» из ответа убрана', async () => {
+    const data = await smart('urban dzen cafe', p1Intent({ category: 'Кафе' }));
+
+    expect(namesOf(data)).toEqual(['urban dzen cafe']);
+    expect(data.pagination.total).toBe(1);
+    // Заголовок превью mobile не должен писать «Кафе» над кофейней.
+    expect(data.intent.category).toBeNull();
+  });
+
+  test('название и блюдо: «underdog пицца» — underdog первым, дальше остальная пицца, хотя по рейтингу «Итальяно» выше', async () => {
+    const data = await smart('underdog пицца', p1Intent({ dish: 'пицца', dish_variants: ['pizza'] }));
+
+    expect(namesOf(data)).toEqual(['underdog', 'Итальяно']);
+    expect(data.pagination.total).toBe(2);
+    // Разбор применён ко всей выдаче после underdog — в ответе он целиком.
+    expect(data.intent.dish).toBe('пицца');
+  });
+
+  test('страницы при «первыми»: underdog на первой, «Итальяно» на второй, без повторов, total один на обеих', async () => {
+    await seedIntent('underdog пицца', p1Intent({ dish: 'пицца' }));
+
+    const page = async (n) => (await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'underdog пицца', city: 'Минск', limit: 1, page: n })).body.data;
+
+    const first = await page(1);
+    const second = await page(2);
+    const third = await page(3);
+
+    expect(namesOf(first)).toEqual(['underdog']);
+    expect(namesOf(second)).toEqual(['Итальяно']);
+    expect(namesOf(third)).toEqual([]);
+    for (const data of [first, second, third]) {
+      expect(data.pagination.total).toBe(2);
+      expect(data.pagination.totalPages).toBe(2);
+    }
+    expect(first.pagination.hasNext).toBe(true);
+    expect(second.pagination.hasNext).toBe(false);
+  });
+
+  test('модель приняла название за блюдо: «андердог» — в меню его нет, выдача не пустая, а underdog', async () => {
+    const data = await smart('андердог', p1Intent({ dish: 'андердог' }));
+
+    expect(namesOf(data)).toEqual(['underdog']);
+    expect(data.intent.dish).toBeNull();
+  });
+
+  test('модель недоступна: «Тиден» на запасном пути находит TIDEN (ILIKE по сырой фразе его не видит)', async () => {
+    // Тест выше посеял разбор этой фразы — без удаления запрос взял бы его из кэша.
+    await deleteKey(`smartsearch:${intentCacheHash('Тиден')}`);
+    expect(await smartSearchService.getCachedIntent(intentCacheHash('Тиден'))).toBeNull();
+
+    const data = await smart('Тиден', null);
+
+    expect(data.fallback).toBe(true);
+    expect(data.intent).toBeNull();
+    expect(namesOf(data)).toEqual(['TIDEN']);
+  });
+
+  test('слово-тип не превращается в поиск по названию: «кафе» — кафе «Ромашка», urban dzen cafe не поднимается', async () => {
+    const data = await smart('кафе', p1Intent({ category: 'Кафе' }));
+
+    expect(namesOf(data)).toEqual(['Ромашка']);
+  });
+
+  test('город во фразе — не название: «минск» — весь город, а не одна SFB Minsk', async () => {
+    const data = await smart('минск', p1Intent({ location: 'Минск' }));
+
+    expect(data.pagination.total).toBe(MINSK_TOTAL);
+  });
+
+  test('заведение с общим словом в названии: «бар» — «Бар» первым, SFB Minsk (тоже бар) остаётся', async () => {
+    const data = await smart('бар', p1Intent({ category: 'Бар' }));
+
+    expect(namesOf(data)).toEqual(['Бар', 'SFB Minsk']);
+  });
+
+  test('фильтры экрана действуют и на совпадение по названию: «Tiden» с фильтром «Кафе» — TIDEN (кофейня) не показывается', async () => {
+    const data = await smart('Tiden', p1Intent(), { categories: ['Кафе'] });
+
+    expect(namesOf(data)).toEqual(['Ромашка']);
+  });
+
+  test('выбранный город действует: «Tiden» в Гомеле — TIDEN (Минск) не показывается', async () => {
+    const data = await smart('Tiden', p1Intent(), { city: 'Гомель' });
+
+    expect(namesOf(data)).toEqual(['Хинкальная']);
+  });
+
+  test('без города и без выбранного расстояния — вся страна: «Tiden» из Гомеля (≈ 300 км) находится, скрытые 10 км не режут', async () => {
+    // Город не прислан, есть только координаты: обычная выдача ограничена
+    // 10 км вокруг человека, а названное заведение ищется везде.
+    const data = await smart('Tiden', p1Intent(), { city: undefined, latitude: 52.4, longitude: 31.0 });
+
+    expect(namesOf(data)).toEqual(['TIDEN']);
+  });
+
+  test('расплывчатая фраза без совпадения названий — как прежде, весь город', async () => {
+    const data = await smart('что-нибудь вкусное', p1Intent());
+
+    expect(data.pagination.total).toBe(MINSK_TOTAL);
+  });
+});

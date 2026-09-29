@@ -51,6 +51,13 @@ const SEARCH_SYNONYMS = {
 };
 
 /**
+ * Слова словаря синонимов. Умный поиск держит их среди «общих слов»: заведение,
+ * названное таким словом («Пицца», «Кофе»), по этому слову поднимается первым,
+ * но не заменяет собой всю выдачу (smartSearchService, nameMatchMode).
+ */
+export const SEARCH_SYNONYM_TERMS = Object.freeze(Object.keys(SEARCH_SYNONYMS));
+
+/**
  * Helper: OR-parts for a free-text search — ILIKE on name/description/
  * categories/cuisines plus SEARCH_SYNONYMS expansion. Pushes its params and
  * returns the parts with the next param index. Shared by the AND-ed `search`
@@ -108,6 +115,32 @@ function addSearchConditions(search, conditions, params, paramIndex) {
   const { orParts, paramIndex: nextIndex } = buildSearchOrParts(search, params, paramIndex);
   conditions.push(`(${orParts.join(' OR ')})`);
   return nextIndex;
+}
+
+/**
+ * Helper: «только эти заведения» / «кроме этих» — для поиска по названию
+ * (smartSearchService): совпавшие по названию заведения выбираются отдельным
+ * запросом под теми же фильтрами экрана, а основная выдача их исключает, чтобы
+ * не показать дважды. Пустой список `includeIds` — ноль строк, а не «все».
+ *
+ * @param {{ includeIds: string[]|null, excludeIds: string[]|null }} ids
+ * @param {Array} conditions - Existing WHERE conditions array (mutated)
+ * @param {Array} params - Existing params array (mutated)
+ * @param {number} paramIndex - Current parameter index
+ * @returns {number} Updated paramIndex
+ */
+function addIdConditions({ includeIds, excludeIds }, conditions, params, paramIndex) {
+  if (Array.isArray(includeIds)) {
+    conditions.push(`e.id = ANY($${paramIndex}::uuid[])`);
+    params.push(includeIds);
+    paramIndex++;
+  }
+  if (Array.isArray(excludeIds) && excludeIds.length > 0) {
+    conditions.push(`NOT (e.id = ANY($${paramIndex}::uuid[]))`);
+    params.push(excludeIds);
+    paramIndex++;
+  }
+  return paramIndex;
 }
 
 /**
@@ -499,6 +532,8 @@ async function enrichWithPromotions(establishments) {
  * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match for establishments without a visible menu (see addDishCondition)
  * @param {string[]} params.dishVariants - Other names of the same dish, OR-alternatives; read only with dishMatch 'lenient'
  * @param {string} params.dishMatch - 'strict' (default: substring ILIKE) or 'lenient' (by words: forms, typos, variants — smart search)
+ * @param {string[]} params.includeIds - Only these establishments (name matches of smart search)
+ * @param {string[]} params.excludeIds - None of these establishments (already shown as name matches)
  * @returns {Promise<Object>} Search results with establishments and pagination
  */
 export async function searchByRadius({
@@ -523,6 +558,8 @@ export async function searchByRadius({
   dishOrSearch = null,
   dishVariants = null,
   dishMatch = 'strict',
+  includeIds = null,
+  excludeIds = null,
 }) {
   // Validate coordinates (use strict null check to allow 0 values)
   if (latitude == null || longitude == null) {
@@ -690,6 +727,9 @@ export async function searchByRadius({
     paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishMatch }, conditions, params, paramIndex);
   }
 
+  // Name matches of smart search: only these / none of these
+  paramIndex = addIdConditions({ includeIds, excludeIds }, conditions, params, paramIndex);
+
   const whereClause = conditions.join(' AND ');
 
   // Determine if we should filter by distance:
@@ -831,6 +871,8 @@ export async function searchByRadius({
  * @param {string} params.dishOrSearch - Free text applied as an OR-alternative to the dish match for establishments without a visible menu (see addDishCondition)
  * @param {string[]} params.dishVariants - Other names of the same dish, OR-alternatives; read only with dishMatch 'lenient'
  * @param {string} params.dishMatch - 'strict' (default: substring ILIKE) or 'lenient' (by words: forms, typos, variants — smart search)
+ * @param {string[]} params.includeIds - Only these establishments (name matches of smart search)
+ * @param {string[]} params.excludeIds - None of these establishments (already shown as name matches)
  * @returns {Promise<Object>} Search results sorted by rating
  */
 export async function searchWithoutLocation({
@@ -851,6 +893,8 @@ export async function searchWithoutLocation({
   dishOrSearch = null,
   dishVariants = null,
   dishMatch = 'strict',
+  includeIds = null,
+  excludeIds = null,
 }) {
   // Validate pagination. Max 500 to support /api/v1/public/establishments/map
   // (Brief 1 default 200, max 500). Mobile clients historically used max 100
@@ -999,6 +1043,9 @@ export async function searchWithoutLocation({
   if (dish) {
     paramIndex = addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishMatch }, conditions, params, paramIndex);
   }
+
+  // Name matches of smart search: only these / none of these
+  paramIndex = addIdConditions({ includeIds, excludeIds }, conditions, params, paramIndex);
 
   const whereClause = conditions.join(' AND ');
 
@@ -1256,6 +1303,23 @@ export async function searchByBounds({
     establishments,
     total: establishments.length,
   };
+}
+
+/**
+ * Названия всех активных заведений — для сверки фразы умного поиска с
+ * названием (utils/establishmentNameMatch.js). Город и фильтры экрана здесь не
+ * применяются: совпавшие заведения потом выбираются обычным поиском с
+ * `includeIds` под теми же фильтрами, что и вся выдача. Каталог — десятки, на
+ * seed-500 сотни строк; индекс не нужен.
+ *
+ * @returns {Promise<Array<{ id: string, name: string }>>}
+ */
+export async function listActiveEstablishmentNames() {
+  const result = await pool.query(
+    'SELECT id, name FROM establishments WHERE status = $1',
+    ['active'],
+  );
+  return result.rows;
 }
 
 /**

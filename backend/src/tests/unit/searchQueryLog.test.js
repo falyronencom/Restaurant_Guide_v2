@@ -104,6 +104,25 @@ describe('buildSearchQueryLog — форма разбора', () => {
     expect(line.query).toBeUndefined();
   });
 
+  test('совпадение по названию — уровень, режим и число совпавших, без названий и без слов', () => {
+    const line = buildSearchQueryLog({
+      ...base,
+      rawQuery: 'Tiden',
+      intent: intentOf(),
+      resultCount: 1,
+      nameMatch: { level: 3, mode: 'only', shown: 1 },
+    });
+
+    expect(line.nameMatch).toEqual({ level: 3, mode: 'only', shown: 1 });
+    expect(JSON.stringify(line).toLowerCase()).not.toContain('tiden');
+  });
+
+  test('без совпадения по названию поле есть и равно null', () => {
+    const line = buildSearchQueryLog({ ...base, resultCount: 3 });
+
+    expect(line.nameMatch).toBeNull();
+  });
+
   test('счётчики и флаги остаются при любой выдаче — аналитика не пострадала', () => {
     for (const resultCount of [0, 12]) {
       const line = buildSearchQueryLog({ ...base, resultCount, fromCache: true });
