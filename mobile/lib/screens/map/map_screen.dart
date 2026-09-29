@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
@@ -9,7 +10,9 @@ import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_clustering.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
 
 /// Map screen displaying establishments on Yandex Map
 /// Users can explore restaurants geographically and tap markers for previews
@@ -33,6 +36,15 @@ class _MapScreenState extends State<MapScreen> {
   static const Point _defaultCenter = Point(latitude: 53.9006, longitude: 27.5590);
   static const double _defaultZoom = 13.0;
 
+  // One request covers the whole visible city. At the old 100 a city view
+  // with more cards than that silently lost the lowest-rated ones, and a
+  // bubble would under-count its group. 500 is the backend's ceiling for
+  // /search/map (searchService.searchByBounds) and the web map's FETCH_LIMIT.
+  static const int _fetchLimit = 500;
+
+  static const MapObjectId _clusterCollectionId =
+      MapObjectId('establishment_clusters');
+
   // Colors
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _creamBackground = AppTheme.backgroundWarm;
@@ -42,7 +54,21 @@ class _MapScreenState extends State<MapScreen> {
   final EstablishmentsService _establishmentsService = EstablishmentsService();
 
   List<Establishment> _establishments = [];
-  List<PlacemarkMapObject> _placemarks = [];
+
+  /// The map widget, kept between builds and replaced only when the pins
+  /// change ([_rebuildMap]). Every update of a YandexMap re-hashes all its
+  /// pins, image bytes included (the plugin diffs map objects through
+  /// equatable, which does not cache hashCode): a fresh widget on each build
+  /// would pay that on every frame of dragging the preview card.
+  late Widget _map = _buildMap();
+
+  /// What the pins on the map show: [pinContent] as of the last
+  /// [_rebuildMap]. A refetch is compared with this, not with the previous
+  /// list — open state comes from the clock, so both lists evaluated now
+  /// would always agree, and a place that opened or closed since the pins
+  /// were drawn would keep its old colour.
+  List<Object?> _mapPins = const [];
+
   bool _isLoading = false;
   bool _isEmpty = false;
   String? _errorMessage;
@@ -68,11 +94,7 @@ class _MapScreenState extends State<MapScreen> {
       body: Stack(
         children: [
           // Yandex Map
-          YandexMap(
-            onMapCreated: _onMapCreated,
-            onCameraPositionChanged: _onCameraPositionChanged,
-            mapObjects: _placemarks,
-          ),
+          _map,
 
           // Loading indicator
           if (_isLoading)
@@ -328,7 +350,8 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _initMarkers() async {
     final dpr = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
     await _markerGenerator.ensureInitialized(dpr);
-    if (mounted) setState(() {});
+    // Pins built before the bitmaps were ready carry the fallback icon.
+    if (mounted) setState(_rebuildMap);
   }
 
   void _onMapCreated(YandexMapController controller) async {
@@ -343,12 +366,13 @@ class _MapScreenState extends State<MapScreen> {
     final double initialZoom;
 
     if (focused != null && focused.latitude != null && focused.longitude != null) {
-      // Center on focused establishment with closer zoom
+      // Center on focused establishment with closer zoom — above the
+      // clustering threshold, so its pin is never inside a bubble
       initialTarget = Point(
         latitude: focused.latitude!,
         longitude: focused.longitude!,
       );
-      initialZoom = 15.0; // Closer zoom for focused view
+      initialZoom = kFocusZoom;
     } else {
       // Check selected city from provider
       final selectedCity = context.read<EstablishmentsProvider>().selectedCity;
@@ -462,6 +486,7 @@ class _MapScreenState extends State<MapScreen> {
         south: south,
         east: east,
         west: west,
+        limit: _fetchLimit,
         categories: apiCategories,
         cuisines: apiCuisines,
         priceRanges: apiPriceRanges,
@@ -469,18 +494,96 @@ class _MapScreenState extends State<MapScreen> {
         hoursFilter: apiHoursFilter,
       );
 
+      if (!mounted) return;
+      // Most refetches (one per camera stop) bring back the pins already on
+      // the map; the map widget then stays as it is (see [_map]).
+      final pinsChanged = !listEquals(_mapPins, pinContent(establishments));
       setState(() {
         _establishments = establishments;
-        _placemarks = _createPlacemarks(establishments);
+        if (pinsChanged) _rebuildMap();
         _isLoading = false;
         _isEmpty = establishments.isEmpty;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = 'Не удалось загрузить заведения';
       });
     }
+  }
+
+  /// A new map widget carrying the current pins (see [_map]).
+  Widget _buildMap() {
+    return YandexMap(
+      onMapCreated: _onMapCreated,
+      onCameraPositionChanged: _onCameraPositionChanged,
+      mapObjects: [_buildClusterCollection()],
+    );
+  }
+
+  void _rebuildMap() {
+    _mapPins = pinContent(_establishments);
+    _map = _buildMap();
+  }
+
+  /// All pins go into one collection that MapKit clusters by screen distance
+  /// (see map_clustering.dart). The collection stays on the map for the
+  /// screen's lifetime, empty or not — only its pins change. Removing it would
+  /// hit a plugin defect on Android: the removal notice is sent under a key
+  /// the Dart side does not read.
+  ClusterizedPlacemarkCollection _buildClusterCollection() {
+    return ClusterizedPlacemarkCollection(
+      mapId: _clusterCollectionId,
+      placemarks: _createPlacemarks(_establishments),
+      radius: kClusterRadius,
+      minZoom: kClusterMaxZoom,
+      onClusterAdded: _styleCluster,
+      onClusterTap: _zoomIntoCluster,
+    );
+  }
+
+  /// Gives a new bubble its image: the group's count in a brand circle.
+  /// Without it MapKit shows a bare placemark at half opacity (the plugin's
+  /// default for a cluster's appearance).
+  Future<Cluster?> _styleCluster(
+    ClusterizedPlacemarkCollection self,
+    Cluster cluster,
+  ) async {
+    final image = _markerGenerator.getClusterImage(cluster.size);
+    if (image == null) return null;
+    final Uint8List bytes;
+    try {
+      bytes = await image;
+    } catch (_) {
+      // An error here would reach MapKit as a failed callback, and the bubble
+      // would lose its tap listener. Plain appearance until the next clustering.
+      return null;
+    }
+    return cluster.copyWith(
+      appearance: cluster.appearance.copyWith(
+        opacity: 1.0,
+        icon: PlacemarkIcon.single(
+          PlacemarkIconStyle(
+            image: BitmapDescriptor.fromBytes(bytes),
+            scale: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A tap on a bubble zooms into its members, as on the web.
+  void _zoomIntoCluster(ClusterizedPlacemarkCollection self, Cluster cluster) {
+    final extent = clusterExtent(cluster.placemarks.map((p) => p.point));
+    if (extent == null) return;
+    _mapController?.moveCamera(
+      CameraUpdate.newGeometry(Geometry.fromBoundingBox(extent)),
+      animation: const MapAnimation(
+        type: MapAnimationType.smooth,
+        duration: 0.5,
+      ),
+    );
   }
 
   List<PlacemarkMapObject> _createPlacemarks(List<Establishment> establishments) {
@@ -505,18 +608,23 @@ class _MapScreenState extends State<MapScreen> {
         isSelected: selected,
       );
 
-      return PlacemarkMapObject(
+      return EstablishmentPin(
         mapId: MapObjectId('marker_${establishment.id}'),
         point: Point(
           latitude: establishment.latitude!,
           longitude: establishment.longitude!,
         ),
         zIndex: selected ? 1.0 : 0.0,
+        // The tap belongs to the topmost pin. Without this MapKit hands it on
+        // to the other objects under the finger (plugin docs), so on
+        // overlapping pins more than one would answer.
+        consumeTapEvents: true,
         icon: markerBytes != null
             ? PlacemarkIcon.single(
                 PlacemarkIconStyle(
                   image: BitmapDescriptor.fromBytes(markerBytes),
                   scale: 1.0,
+                  anchor: MapMarkerPainter.anchor,
                 ),
               )
             : PlacemarkIcon.single(
@@ -527,24 +635,32 @@ class _MapScreenState extends State<MapScreen> {
               ),
         opacity: 1.0,
         onTap: (PlacemarkMapObject self, Point point) {
-          _showEstablishmentPreview(establishment);
+          _onPinTap(establishment.id);
         },
       );
     }).toList();
+  }
+
+  /// A pin carries only its establishment's id: pins outlive the list they
+  /// were built from (a refetch with the same pins keeps them), so the
+  /// establishment is read from the current list at tap time.
+  void _onPinTap(String id) {
+    final establishment = _establishments.where((e) => e.id == id).firstOrNull;
+    if (establishment != null) _showEstablishmentPreview(establishment);
   }
 
   void _showEstablishmentPreview(Establishment establishment) {
     setState(() {
       _selectedEstablishment = establishment;
       _previewDragOffset = 0.0;
-      _placemarks = _createPlacemarks(_establishments);
+      _rebuildMap();
     });
   }
 
   void _dismissPreview() {
     setState(() {
       _selectedEstablishment = null;
-      _placemarks = _createPlacemarks(_establishments);
+      _rebuildMap();
     });
   }
 
@@ -804,7 +920,7 @@ class _MapScreenState extends State<MapScreen> {
               latitude: position.latitude,
               longitude: position.longitude,
             ),
-            zoom: 15,
+            zoom: kFocusZoom,
           ),
         ),
         animation: const MapAnimation(
