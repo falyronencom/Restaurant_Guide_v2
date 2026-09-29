@@ -99,7 +99,15 @@ export function MenuBlock({
                       aria-hidden='true'
                       className='-translate-y-[3px] flex-1 border-b border-dotted border-[#CFC8BC]'
                     />
-                    <span className='whitespace-nowrap text-[15px] font-semibold text-foreground'>
+                    {/* No price (a dish inside a set) — a grey dash, so it does
+                        not read as a price of its own (Design, 29.09.2026). */}
+                    <span
+                      className={`whitespace-nowrap text-[15px] font-semibold ${
+                        item.price_byn == null
+                          ? 'text-figma-text-grey'
+                          : 'text-foreground'
+                      }`}
+                    >
                       {formatPrice(item.price_byn)}
                     </span>
                   </li>

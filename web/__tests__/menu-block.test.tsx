@@ -203,4 +203,28 @@ describe('MenuBlock — empty-state / PDF fallback', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(parseJsonLd(container)).toBeNull();
   });
+
+  it('no price (a dish inside a set): a grey dash, not a price in the price colour', () => {
+    // Составные меню (29.09.2026): блюда сета приходят без цены под
+    // названием сета. Правило Design — прочерк цветом #ABABAB
+    // (figma-text-grey): прочерк цветом цены читался как цена самого блюда.
+    render(
+      <MenuBlock
+        menuItems={[
+          item({ id: 's1', item_name: 'Сет без сопровождения вина', price_byn: 280, category_raw: 'Шеф-ужин' }),
+          item({ id: 's2', item_name: 'Севиче из сибаса', price_byn: null, category_raw: 'Шеф-ужин', position: 1 }),
+        ]}
+        menuPhotos={[]}
+        pdfFallbacks={[]}
+        establishmentName='Zalkind'
+      />,
+    );
+
+    const dash = screen.getByText('—');
+    expect(dash).toHaveClass('text-figma-text-grey');
+    expect(dash).not.toHaveClass('text-foreground');
+    const price = screen.getByText('280 BYN');
+    expect(price).toHaveClass('text-foreground');
+    expect(price).not.toHaveClass('text-figma-text-grey');
+  });
 });
