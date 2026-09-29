@@ -111,7 +111,8 @@ async function postChat(body) {
 
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content || '';
-      return { content, usage: data?.usage || null, ms, attempts: attempt + 1 };
+      const finishReason = data?.choices?.[0]?.finish_reason ?? null;
+      return { content, usage: data?.usage || null, ms, attempts: attempt + 1, finishReason };
     } catch (e) {
       if (e.name === 'AbortError') {
         lastError = new Error(`OpenRouter call timed out after ${REQUEST_TIMEOUT_MS}ms`);
@@ -133,7 +134,7 @@ async function postChat(body) {
  * @param {string[]} imageDataUris
  * @param {string} model
  * @param {string|null} [effort] - reasoning effort; null = as production, 'default' = no field
- * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms, attempts, sentReasoning }>}
+ * @returns {Promise<{ rawText, confidenceHeuristic, usage, ms, attempts, sentReasoning, finishReason }>}
  */
 export async function visionExtract(imageDataUris, model, effort = null) {
   const messages = [
@@ -148,7 +149,7 @@ export async function visionExtract(imageDataUris, model, effort = null) {
   ];
 
   const reasoning = reasoningField(effort);
-  const { content, usage, ms, attempts } = await postChat({
+  const { content, usage, ms, attempts, finishReason } = await postChat({
     model,
     messages,
     temperature: 0,
@@ -156,10 +157,14 @@ export async function visionExtract(imageDataUris, model, effort = null) {
     usage: { include: true },
   });
 
-  // Same coarse heuristic the production adapter records (visionOcrAdapter.js:84).
+  // Same coarse heuristic the production adapter records (visionOcrAdapter.extractFromImages).
   const confidenceHeuristic = content.length < 50 ? 0.3 : 0.85;
   // sentReasoning: what actually went into the body — the dump proves the configuration.
-  return { rawText: content, confidenceHeuristic, usage, ms, attempts, sentReasoning: reasoning };
+  // finishReason: since 2026-09-29 production fails a vision answer that did
+  // not end with 'stop' (visionOcrAdapter) — the stand records it instead of
+  // failing, and SUMMARY counts such answers: a candidate model whose answers
+  // end otherwise would fail every production job.
+  return { rawText: content, confidenceHeuristic, usage, ms, attempts, sentReasoning: reasoning, finishReason };
 }
 
 /**

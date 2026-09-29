@@ -5,7 +5,7 @@
  * reads PDF pages as images first (vision OCR via pg_N URL transformations on
  * Cloudinary) — the page count decides how many pages it renders, and a text
  * layer the heuristic below finds usable is the backup when the image read
- * fails (ocrService.extractRawText).
+ * fails (ocrService.extractPageTexts).
  *
  * Uses deep import (pdf-parse/lib/pdf-parse.js) to bypass the package's index.js
  * which attempts to read a debug test file on load — a known quirk of pdf-parse.

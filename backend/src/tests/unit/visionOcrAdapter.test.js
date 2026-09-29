@@ -57,4 +57,42 @@ describe('visionOcrAdapter', () => {
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(Object.keys(body)).toEqual(['model', 'messages', 'temperature']);
   });
+
+  // 29.09.2026: страницы PDF читаются по одной. Ответ, оборванный не самой
+  // моделью, — часть страницы: позиции из недочитанных строк пропали бы молча.
+  const answerEndingWith = (finishReason, nativeFinishReason) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{
+        message: { content: 'Борщ 15 руб\nСалат' },
+        ...(finishReason !== undefined && { finish_reason: finishReason }),
+        ...(nativeFinishReason !== undefined && { native_finish_reason: nativeFinishReason }),
+      }],
+    }),
+  });
+
+  test.each([
+    ['length', 'MAX_TOKENS', 'vision OCR answer cut short: finish_reason=length (MAX_TOKENS)'],
+    ['content_filter', 'RECITATION', 'vision OCR answer cut short: finish_reason=content_filter (RECITATION)'],
+    ['length', undefined, 'vision OCR answer cut short: finish_reason=length'],
+  ])('ответ оборван (finish_reason %s, %s) — ошибка, страница неполная', async (finishReason, nativeFinishReason, message) => {
+    openrouterMock.getOcrConfig.mockReturnValue(BASE_CONFIG);
+    global.fetch = jest.fn().mockResolvedValue(answerEndingWith(finishReason, nativeFinishReason));
+
+    await expect(extractFromImages(URLS)).rejects.toHaveProperty('message', message);
+  });
+
+  test.each([
+    ['stop', 'STOP'],
+    [undefined, undefined],
+    [null, null],
+  ])('ответ закончен моделью (finish_reason %s) или поля нет — текст принимается', async (finishReason, nativeFinishReason) => {
+    openrouterMock.getOcrConfig.mockReturnValue(BASE_CONFIG);
+    global.fetch = jest.fn().mockResolvedValue(answerEndingWith(finishReason, nativeFinishReason));
+
+    const result = await extractFromImages(URLS);
+
+    expect(result.rawText).toBe('Борщ 15 руб\nСалат');
+  });
 });

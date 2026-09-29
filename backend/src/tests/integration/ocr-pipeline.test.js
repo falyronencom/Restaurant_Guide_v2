@@ -98,6 +98,48 @@ describe('JOB_DURATION_BOUND_MS', () => {
   });
 });
 
+describe('carryCategoriesAcrossPages — the section open at a page break', () => {
+  // The pages as the structurer returns them one by one; processJob joins
+  // them (see "PDF menus" below for the whole path).
+  const item = (name, category) => ({ item_name: name, price_byn: 10, category_raw: category, confidence: 0.9 });
+  const joined = (pages) => {
+    const { items, categoriesCarried } = ocrService.carryCategoriesAcrossPages(pages);
+    return { categories: items.map((it) => [it.item_name, it.category_raw]), categoriesCarried };
+  };
+
+  test('a menu without headings has nothing to carry', () => {
+    expect(joined([[item('Борщ', null)], [item('Чай', null)]])).toEqual({
+      categories: [['Борщ', null], ['Чай', null]],
+      categoriesCarried: 0,
+    });
+  });
+
+  test('a page without a heading of its own continues the open section to its end', () => {
+    expect(joined([[item('Шардоне', 'Вино')], [item('Рислинг', null), item('Мерло', null)]])).toEqual({
+      categories: [['Шардоне', 'Вино'], ['Рислинг', 'Вино'], ['Мерло', 'Вино']],
+      categoriesCarried: 2,
+    });
+  });
+
+  test('a null at the end of a page stays null and does not close the section for the next page', () => {
+    expect(joined([
+      [item('Борщ', 'Супы'), item('Хлеб', null)],
+      [item('Солянка', null), item('Цезарь', 'Салаты')],
+    ])).toEqual({
+      categories: [['Борщ', 'Супы'], ['Хлеб', null], ['Солянка', 'Супы'], ['Цезарь', 'Салаты']],
+      categoriesCarried: 1,
+    });
+  });
+
+  test('a blank category is none: carried over at the top of a page, never opening a section', () => {
+    // The response schema lets category_raw be '' — it must not pass for a section name.
+    expect(joined([[item('Борщ', 'Супы')], [item('Солянка', '  ')], [item('Уха', null)]])).toEqual({
+      categories: [['Борщ', 'Супы'], ['Солянка', 'Супы'], ['Уха', 'Супы']],
+      categoriesCarried: 2,
+    });
+  });
+});
+
 describe('OCR pipeline integration', () => {
   let establishment;
   let originalFetch;
@@ -242,24 +284,25 @@ describe('OCR pipeline integration', () => {
       { item_name: 'Scanned Dish', price_byn: 10, category_raw: null, confidence: 0.85 },
     ];
 
-    // Two OpenRouter calls happen: vision extract + structurer. For this test we
-    // return the same mock for both — vision gets "raw text", structurer gets items.
+    // OpenRouter calls: a vision call per page (the request carries the page
+    // image), then a structurer call per page with text. Page 1 has the dish,
+    // page 2 is blank — it costs no structurer call.
     let chatCallCount = 0;
-    global.fetch = jest.fn(async (url) => {
+    global.fetch = jest.fn(async (url, init) => {
       if (url.includes('/chat/completions')) {
         chatCallCount++;
-        if (chatCallCount === 1) {
-          // Vision call — return raw text
+        const userContent = JSON.parse(init.body).messages[1].content;
+        if (Array.isArray(userContent)) {
+          const isFirstPage = userContent.some((part) => part.image_url?.url.includes('/pg_1/'));
           return {
             ok: true,
             status: 200,
             json: async () => ({
-              choices: [{ message: { content: 'Scanned Dish — 10 руб' } }],
+              choices: [{ message: { content: isFirstPage ? 'Scanned Dish — 10 руб' : '' } }],
             }),
             text: async () => '',
           };
         }
-        // Structurer call
         return {
           ok: true,
           status: 200,
@@ -279,10 +322,11 @@ describe('OCR pipeline integration', () => {
     const result = await ocrService.processJob(picked.id);
 
     expect(result.success).toBe(true);
+    expect(result.itemCount).toBe(1);
     const finalJob = await ocrJobModel.getJobStatus(picked.id);
     expect(finalJob.status).toBe('done');
     expect(finalJob.result_summary.strategy).toBe('vision_pdf');
-    expect(chatCallCount).toBe(2);
+    expect(chatCallCount).toBe(3);
   });
 
   test('menu photo (file_type=image) → vision_image strategy, items persisted', async () => {
@@ -466,8 +510,14 @@ describe('OCR pipeline integration', () => {
   // breakfast menu came out with 15 prices of 35 on the wrong dishes, SFB Minsk
   // with 17 on an active card. The same pages read as images gave the right
   // prices — every PDF is now read as images, its text layer is the backup.
+  //
+  // Same day, later: page by page. One vision call for every page and one
+  // structurer call for the whole menu were the ceiling on big menus — the
+  // structurer timed out at 60 s on Сорренто (161 items) and the vision call
+  // returned Zalkind's pages out of order. Now each page has its own vision
+  // call and its own structurer call, and the pages of a stage run at once.
 
-  describe('PDF menus: page images first, the text layer only as a backup', () => {
+  describe('PDF menus: read and structured page by page, the text layer only as a backup', () => {
     // Charlie's breakfast page as its text layer carries it (29.09): the
     // prices first, as one block, the dish names after them.
     const TEXT_LAYER =
@@ -493,46 +543,113 @@ describe('OCR pipeline integration', () => {
     ];
     const ITEMS_BY_TEXT = new Map([[TEXT_LAYER, TEXT_LAYER_ITEMS], [PAGE_IMAGE_TEXT, PAGE_IMAGE_ITEMS]]);
 
+    // A menu whose sections run on across pages, as Facktory Bar's did
+    // (29.09): structured one page at a time, the top of a page does not see
+    // the heading of its section. Page 3 is a picture with nothing to read.
+    const SEAM_PAGE_1 = 'SNACKS\nBEEF TARTARE 33\nBACON WRAPPED SHRIMP 32';
+    const SEAM_PAGE_2 =
+      'TURKEY CARPACCIO 28\nMIXED BRUSCHETTA SET 43\nSALADS\nAVOCADO SALMON SALAD 33\nMAIN DISH\nGRILLED TUNA 55';
+    const SEAM_PAGE_4 = 'KENTUCKY CUTLET 45\nBURGERS\nCHICKEN BURGER 30\nСоус к бургерам 3';
+    const seamItem = (itemName, priceByn, categoryRaw) =>
+      ({ item_name: itemName, price_byn: priceByn, category_raw: categoryRaw, confidence: 0.95 });
+    // What the structurer returns for each page on its own: the items at the
+    // top of pages 2 and 4 carry no category.
+    const SEAM_ITEMS = new Map([
+      [SEAM_PAGE_1, [seamItem('BEEF TARTARE', 33, 'SNACKS'), seamItem('BACON WRAPPED SHRIMP', 32, 'SNACKS')]],
+      [SEAM_PAGE_2, [
+        seamItem('TURKEY CARPACCIO', 28, null),
+        seamItem('MIXED BRUSCHETTA SET', 43, null),
+        seamItem('AVOCADO SALMON SALAD', 33, 'SALADS'),
+        seamItem('GRILLED TUNA', 55, 'MAIN DISH'),
+      ]],
+      [SEAM_PAGE_4, [
+        seamItem('KENTUCKY CUTLET', 45, null),
+        seamItem('CHICKEN BURGER', 30, 'BURGERS'),
+        seamItem('Соус к бургерам', 3, null),
+      ]],
+    ]);
+
     /** Cloudinary rendering of page n of the test PDF (generatePdfPageImageUrl). */
     const page = (n) =>
       `https://res.cloudinary.com/test/image/upload/pg_${n}/v1/establishments/${establishment.id}/menu_pdf/test.jpg`;
 
-    const chatResponse = (content) => ({
+    const chatResponse = (content, { finishReason = 'stop', nativeFinishReason = 'STOP' } = {}) => ({
       ok: true,
       status: 200,
-      json: async () => ({ choices: [{ message: { content } }] }),
+      json: async () => ({
+        choices: [{ message: { content }, finish_reason: finishReason, native_finish_reason: nativeFinishReason }],
+      }),
       text: async () => '',
     });
 
     /**
-     * fetch mock routed by request shape, not by call order: a vision request
-     * (image_url parts) answers `visionText` — or HTTP 500 with `visionFails`;
-     * a structurer request answers the items registered for its input text —
-     * or HTTP 500 when its input is `failStructurerOn`.
-     * `calls` records the image URLs of each vision call and each structurer input.
+     * fetch mock routed by request shape, not by call order. A vision request
+     * carries one page image and answers the text `pageTexts` registers for
+     * that page — a page not listed is blank — or HTTP 500 for every page with
+     * `visionFails`; `pageFaults` overrides single pages: `{ status }` fails
+     * the call, `{ finishReason, nativeFinishReason }` ends the answer early.
+     * A structurer request answers the items `itemsByText` registers for its
+     * input text, or HTTP 500 when its input is `failStructurerOn`.
+     * `delaysMs` (keyed by page URL or by structurer input) holds single calls
+     * back; `callDelayMs` holds back every call.
+     * Records: `calls` — the image URLs of each vision call and each
+     * structurer input; `events` — the start and the end of every call, in
+     * order; `inFlight` (live) and `maxInFlight` — calls under way, per kind.
      */
-    const routedFetch = ({ visionText = PAGE_IMAGE_TEXT, visionFails = false, failStructurerOn = null } = {}) => {
+    const routedFetch = ({
+      pageTexts = { [page(1)]: PAGE_IMAGE_TEXT },
+      visionFails = false,
+      pageFaults = {},
+      itemsByText = ITEMS_BY_TEXT,
+      failStructurerOn = null,
+      delaysMs = {},
+      callDelayMs = 0,
+    } = {}) => {
       const calls = { vision: [], structurer: [] };
+      const events = [];
+      const inFlight = { vision: 0, structurer: 0 };
+      const maxInFlight = { vision: 0, structurer: 0 };
+
+      const answer = (kind, key) => {
+        if (kind === 'vision') {
+          const fault = pageFaults[key] ?? {};
+          if (visionFails || fault.status) {
+            return { ok: false, status: fault.status ?? 500, text: async () => 'upstream failure' };
+          }
+          return chatResponse(pageTexts[key] ?? '', fault);
+        }
+        if (key === failStructurerOn) {
+          return { ok: false, status: 500, text: async () => 'upstream failure' };
+        }
+        const items = itemsByText.get(key);
+        if (!items) throw new Error(`unexpected structurer input: ${key.slice(0, 40)}`);
+        return chatResponse(JSON.stringify({ items }));
+      };
+
       const fetchMock = jest.fn(async (url, init) => {
         if (!url.includes('/chat/completions')) {
           return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(64) };
         }
         const userContent = JSON.parse(init.body).messages[1].content;
-        if (Array.isArray(userContent)) {
-          calls.vision.push(userContent.filter((part) => part.type === 'image_url').map((part) => part.image_url.url));
-          return visionFails
-            ? { ok: false, status: 500, text: async () => 'upstream failure' }
-            : chatResponse(visionText);
+        const kind = Array.isArray(userContent) ? 'vision' : 'structurer';
+        const images = kind === 'vision'
+          ? userContent.filter((part) => part.type === 'image_url').map((part) => part.image_url.url)
+          : null;
+        const key = kind === 'vision' ? images[0] : userContent;
+        calls[kind].push(kind === 'vision' ? images : userContent);
+        events.push(`${kind}:start`);
+        inFlight[kind] += 1;
+        maxInFlight[kind] = Math.max(maxInFlight[kind], inFlight[kind]);
+        try {
+          const delay = delaysMs[key] ?? callDelayMs;
+          if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+          return answer(kind, key);
+        } finally {
+          inFlight[kind] -= 1;
+          events.push(`${kind}:end`);
         }
-        calls.structurer.push(userContent);
-        if (userContent === failStructurerOn) {
-          return { ok: false, status: 500, text: async () => 'upstream failure' };
-        }
-        const items = ITEMS_BY_TEXT.get(userContent);
-        if (!items) throw new Error(`unexpected structurer input: ${userContent.slice(0, 40)}`);
-        return chatResponse(JSON.stringify({ items }));
       });
-      return { fetchMock, calls };
+      return { fetchMock, calls, events, inFlight, maxInFlight };
     };
 
     /**
@@ -549,16 +666,21 @@ describe('OCR pipeline integration', () => {
       return { result, job: await ocrJobModel.getJobStatus(picked.id) };
     };
 
-    const persistedByPosition = async () => {
+    /** Persisted items by position: [name, price] or, withCategory, [name, price, category]. */
+    const persistedByPosition = async ({ withCategory = false } = {}) => {
       const items = await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true });
       return [...items]
         .sort((a, b) => a.position - b.position)
-        .map((it) => [it.item_name, it.price_byn == null ? null : Number(it.price_byn)]);
+        .map((it) => {
+          const row = [it.item_name, it.price_byn == null ? null : Number(it.price_byn)];
+          return withCategory ? [...row, it.category_raw] : row;
+        });
     };
 
-    test('a PDF with a text layer is read as page images — its text layer never reaches the structurer', async () => {
+    test('a PDF with a text layer is read as page images, a call per page — its text layer never reaches the structurer', async () => {
       const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
       pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 3 });
+      // Page 1 carries the menu; pages 2 and 3 are pictures with nothing to read.
       const { fetchMock, calls } = routedFetch();
       global.fetch = fetchMock;
 
@@ -568,14 +690,17 @@ describe('OCR pipeline integration', () => {
       expect(pdfTextExtractor.hasUsableTextLayer(TEXT_LAYER, 3)).toBe(true);
       expect(result).toMatchObject({ success: true, itemCount: 4 });
       expect(job.status).toBe('done');
-      // Every page of the PDF (pdf-parse counted 3), in one vision call.
-      expect(calls.vision).toEqual([[page(1), page(2), page(3)]]);
+      // Every page of the PDF (pdf-parse counted 3), each in a vision call of its own.
+      expect(calls.vision).toEqual([[page(1)], [page(2)], [page(3)]]);
+      // A blank page costs no structurer call.
       expect(calls.structurer).toEqual([PAGE_IMAGE_TEXT]);
       expect(job.result_summary).toEqual({
         strategy: 'vision_pdf',
         items_count: 4,
         flagged_count: 0,
         confidence_avg: 0.95,
+        pages_count: 3,
+        categories_carried: 0,
       });
       expect(await persistedByPosition()).toEqual([
         ['Бриошь, джем, масло', 9],
@@ -585,13 +710,139 @@ describe('OCR pipeline integration', () => {
       ]);
     });
 
+    test('pages are structured one by one and joined in page order; the top of a page continues the section open at the page break', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 4 });
+      // Page 1 finishes last in both stages: the pages join in page order,
+      // not in the order the answers arrive.
+      const { fetchMock, calls } = routedFetch({
+        pageTexts: { [page(1)]: SEAM_PAGE_1, [page(2)]: SEAM_PAGE_2, [page(4)]: SEAM_PAGE_4 },
+        itemsByText: SEAM_ITEMS,
+        delaysMs: { [page(1)]: 80, [SEAM_PAGE_1]: 80 },
+      });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId);
+
+      expect(result).toMatchObject({ success: true, itemCount: 9 });
+      expect(calls.vision).toEqual([[page(1)], [page(2)], [page(3)], [page(4)]]);
+      expect(calls.structurer).toEqual([SEAM_PAGE_1, SEAM_PAGE_2, SEAM_PAGE_4]);
+      expect(await persistedByPosition({ withCategory: true })).toEqual([
+        ['BEEF TARTARE', 33, 'SNACKS'],
+        ['BACON WRAPPED SHRIMP', 32, 'SNACKS'],
+        // The top of page 2, before its first heading: the section of page 1 goes on.
+        ['TURKEY CARPACCIO', 28, 'SNACKS'],
+        ['MIXED BRUSCHETTA SET', 43, 'SNACKS'],
+        ['AVOCADO SALMON SALAD', 33, 'SALADS'],
+        ['GRILLED TUNA', 55, 'MAIN DISH'],
+        // Over the blank page 3: the last section opened before it, not the first one of page 2.
+        ['KENTUCKY CUTLET', 45, 'MAIN DISH'],
+        ['CHICKEN BURGER', 30, 'BURGERS'],
+        // Further down a page, a null is the model's reading and stays.
+        ['Соус к бургерам', 3, null],
+      ]);
+      expect(job.result_summary).toEqual({
+        strategy: 'vision_pdf',
+        items_count: 9,
+        flagged_count: 0,
+        confidence_avg: 0.95,
+        pages_count: 4,
+        categories_carried: 3,
+      });
+    });
+
+    test('the pages of a stage run at the same time; structuring starts once every page has been read', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 3 });
+      const { fetchMock, events, maxInFlight } = routedFetch({
+        pageTexts: { [page(1)]: SEAM_PAGE_1, [page(2)]: SEAM_PAGE_2, [page(3)]: SEAM_PAGE_4 },
+        itemsByText: SEAM_ITEMS,
+        callDelayMs: 30,
+      });
+      global.fetch = fetchMock;
+
+      const { result } = await runJob(mediaId);
+
+      expect(result).toMatchObject({ success: true, itemCount: 9 });
+      // Calls one after another would bring their own few seconds each: Zalkind
+      // took 60.5 s that way against 15 s at once (29.09).
+      expect(maxInFlight).toEqual({ vision: 3, structurer: 3 });
+      // JOB_DURATION_BOUND_MS counts one vision timeout, then one structurer timeout.
+      expect(events.lastIndexOf('vision:end')).toBeLessThan(events.indexOf('structurer:start'));
+    });
+
+    test('a page read that fails fails the attempt — the first failed page in page order, reported once every read has settled; no page is structured', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 4 });
+      // Page 3 fails at once, page 2 a little later; page 4, after both of
+      // them, reads slowest of all.
+      const { fetchMock, calls, inFlight } = routedFetch({
+        pageTexts: { [page(1)]: SEAM_PAGE_1, [page(4)]: SEAM_PAGE_4 },
+        pageFaults: { [page(2)]: { status: 500 }, [page(3)]: { status: 503 } },
+        delaysMs: { [page(2)]: 150, [page(4)]: 600 },
+        itemsByText: SEAM_ITEMS,
+      });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId);
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe('pending');
+      expect(job.error_message).toBe('page 2 of 4: OpenRouter vision call failed: 500 upstream failure');
+      // No request of the job is still under way when it settles.
+      expect(inFlight).toEqual({ vision: 0, structurer: 0 });
+      expect(calls.vision).toHaveLength(4);
+      expect(calls.structurer).toEqual([]);
+      expect(await persistedByPosition()).toEqual([]);
+    });
+
+    test('a page read cut short (finish_reason other than stop) fails the attempt like an error', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 2 });
+      const { fetchMock, calls } = routedFetch({
+        pageTexts: { [page(1)]: SEAM_PAGE_1, [page(2)]: SEAM_PAGE_2 },
+        pageFaults: { [page(2)]: { finishReason: 'length', nativeFinishReason: 'MAX_TOKENS' } },
+        itemsByText: SEAM_ITEMS,
+      });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId);
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe('pending');
+      expect(job.error_message).toBe('page 2 of 2: vision OCR answer cut short: finish_reason=length (MAX_TOKENS)');
+      expect(calls.structurer).toEqual([]);
+      expect(await persistedByPosition()).toEqual([]);
+    });
+
+    test('a page whose structuring fails fails the attempt, reported once every page has settled; nothing is saved', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 3 });
+      const { fetchMock, calls, inFlight } = routedFetch({
+        pageTexts: { [page(1)]: SEAM_PAGE_1, [page(2)]: SEAM_PAGE_2, [page(3)]: SEAM_PAGE_4 },
+        itemsByText: SEAM_ITEMS,
+        failStructurerOn: SEAM_PAGE_2,
+        delaysMs: { [SEAM_PAGE_4]: 400 },
+      });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId);
+
+      expect(result.success).toBe(false);
+      expect(job.status).toBe('pending');
+      expect(job.error_message).toBe('page 2 of 3: OpenRouter structurer call failed: 500 upstream failure');
+      expect(inFlight).toEqual({ vision: 0, structurer: 0 });
+      expect(calls.structurer).toEqual([SEAM_PAGE_1, SEAM_PAGE_2, SEAM_PAGE_4]);
+      expect(await persistedByPosition()).toEqual([]);
+    });
+
     test.each([
-      ['fails (HTTP 500)', { visionFails: true }, /OpenRouter vision call failed: 500/],
-      ['returns empty text', { visionText: '  \n ' }, /vision OCR returned empty text/],
+      ['fails (HTTP 500)', () => ({ visionFails: true }), /OpenRouter vision call failed: 500/],
+      ['returns empty text', () => ({ pageTexts: { [page(1)]: '  \n ' } }), /vision OCR returned empty text/],
     ])('last attempt: image read %s → the text layer stands in, the job is done', async (_how, visionMock, errorPattern) => {
       const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
       pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 1 });
-      const { fetchMock, calls } = routedFetch(visionMock);
+      const { fetchMock, calls } = routedFetch(visionMock());
       global.fetch = fetchMock;
 
       const { result, job } = await runJob(mediaId, { lastAttempt: true });
@@ -601,9 +852,38 @@ describe('OCR pipeline integration', () => {
       expect(job.error_message).toBeNull();
       expect(calls.vision).toEqual([[page(1)]]);
       expect(calls.structurer).toEqual([TEXT_LAYER]);
-      expect(job.result_summary).toMatchObject({ strategy: 'pdf_text_layer', items_count: 4 });
+      expect(job.result_summary).toMatchObject({
+        strategy: 'pdf_text_layer',
+        items_count: 4,
+        pages_count: 1,
+        categories_carried: 0,
+      });
       expect(job.result_summary.vision_error).toMatch(errorPattern);
       expect(await persistedByPosition()).toEqual(TEXT_LAYER_ITEMS.map((it) => [it.item_name, it.price_byn]));
+    });
+
+    test('last attempt, several pages: one page read fails → the text layer stands in for the whole PDF, in one structurer call', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: TEXT_LAYER, numpages: 3 });
+      const { fetchMock, calls } = routedFetch({ pageFaults: { [page(2)]: { status: 500 } } });
+      global.fetch = fetchMock;
+
+      const { result, job } = await runJob(mediaId, { lastAttempt: true });
+
+      expect(result).toMatchObject({ success: true, itemCount: 4 });
+      expect(job.status).toBe('done');
+      expect(calls.vision).toEqual([[page(1)], [page(2)], [page(3)]]);
+      // Page 1 was read, but a failed page fails the image read as a whole.
+      expect(calls.structurer).toEqual([TEXT_LAYER]);
+      expect(job.result_summary).toEqual({
+        strategy: 'pdf_text_layer',
+        items_count: 4,
+        flagged_count: 0,
+        confidence_avg: 0.9,
+        vision_error: 'page 2 of 3: OpenRouter vision call failed: 500 upstream failure',
+        pages_count: 3,
+        categories_carried: 0,
+      });
     });
 
     test('earlier attempt: image read fails → back to the queue for a retry, the text layer is not used yet', async () => {
@@ -617,7 +897,8 @@ describe('OCR pipeline integration', () => {
       expect(result.success).toBe(false);
       expect(job.status).toBe('pending');
       expect(job.attempts).toBe(1);
-      expect(job.error_message).toMatch(/OpenRouter vision call failed: 500/);
+      // A single page is not named: the message is the call's own.
+      expect(job.error_message).toMatch(/^OpenRouter vision call failed: 500/);
       expect(calls.structurer).toEqual([]);
       expect(await persistedByPosition()).toEqual([]);
     });
@@ -632,8 +913,8 @@ describe('OCR pipeline integration', () => {
 
       expect(result.success).toBe(false);
       expect(job.status).toBe('failed');
-      expect(job.error_message).toMatch(/OpenRouter vision call failed: 500/);
-      expect(calls.vision).toEqual([[page(1), page(2)]]);
+      expect(job.error_message).toBe('page 1 of 2: OpenRouter vision call failed: 500 upstream failure');
+      expect(calls.vision).toEqual([[page(1)], [page(2)]]);
       expect(calls.structurer).toEqual([]);
     });
 
@@ -652,7 +933,8 @@ describe('OCR pipeline integration', () => {
 
       expect(result.success).toBe(false);
       expect(job.status).toBe(status);
-      expect(job.error_message).toMatch(/OpenRouter structurer call failed: 500/);
+      // A single page is not named: the message is the call's own.
+      expect(job.error_message).toMatch(/^OpenRouter structurer call failed: 500/);
       expect(calls.vision).toHaveLength(1);
       // One structurer call, on the image text: a second one would break JOB_DURATION_BOUND_MS.
       expect(calls.structurer).toEqual([PAGE_IMAGE_TEXT]);
@@ -670,8 +952,8 @@ describe('OCR pipeline integration', () => {
       const { result, job } = await runJob(mediaId);
 
       expect(result).toMatchObject({ success: true, itemCount: 4 });
-      expect(calls.vision).toEqual([[page(1), page(2)]]);
-      expect(job.result_summary.strategy).toBe('vision_pdf_no_metadata');
+      expect(calls.vision).toEqual([[page(1)], [page(2)]]);
+      expect(job.result_summary).toMatchObject({ strategy: 'vision_pdf_no_metadata', pages_count: 2 });
     });
   });
 

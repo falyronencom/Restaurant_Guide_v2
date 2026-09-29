@@ -26,7 +26,8 @@ const REQUEST_TIMEOUT_MS = 60000;
  *
  * @param {string[]} cloudinaryUrls - Image URLs (PDF pages via pg_N or direct photos)
  * @returns {Promise<{ rawText: string, confidenceOverall: number }>}
- * @throws {Error} on network / API / missing API key
+ * @throws {Error} on network / API / missing API key, or an answer cut short
+ *   (finish_reason other than 'stop')
  */
 export const extractFromImages = async (cloudinaryUrls) => {
   if (!cloudinaryUrls || cloudinaryUrls.length === 0) {
@@ -78,7 +79,20 @@ export const extractFromImages = async (cloudinaryUrls) => {
     }
 
     const data = await response.json();
-    const rawText = data?.choices?.[0]?.message?.content || '';
+    const choice = data?.choices?.[0];
+    const rawText = choice?.message?.content || '';
+
+    // An answer that did not end on its own — cut at the output limit
+    // ('length') or by a filter ('content_filter') — is part of a page: the
+    // items in its missing lines would vanish without a trace. Fail the call
+    // instead; the job goes back to the queue like on any other error. Every
+    // call measured on 2026-09-29 ended with 'stop'; an answer without the
+    // field is taken as it is.
+    const finishReason = choice?.finish_reason;
+    if (finishReason != null && finishReason !== 'stop') {
+      const nativeReason = choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : '';
+      throw new Error(`vision OCR answer cut short: finish_reason=${finishReason}${nativeReason}`);
+    }
 
     // OpenRouter does not expose a per-call confidence score for vision. Use a
     // coarse heuristic based on output length — empty or very short output

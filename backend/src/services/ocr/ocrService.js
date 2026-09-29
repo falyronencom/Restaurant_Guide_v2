@@ -3,11 +3,14 @@
  *
  * Executes the full OCR pipeline for a single job:
  *   1. Fetch job + associated media
- *   2. For PDFs: read the pages as images (Cloudinary pg_N URLs → vision OCR);
- *      pdf-parse supplies the page count and the text layer, which is used only
- *      when the image read fails (extractRawText)
- *   3. For photos (file_type='image' with type='menu'): go directly to vision OCR
- *   4. Run the LLM structurer on raw text → array of menu items
+ *   2. For PDFs: read every page as an image — one vision call per page
+ *      (Cloudinary pg_N URLs), all pages at once; pdf-parse supplies the page
+ *      count and the text layer, which is used only when the image read fails
+ *      (extractPageTexts)
+ *   3. For photos (file_type='image' with type='menu'): one vision call
+ *   4. Run the LLM structurer on the text of each page — one call per page,
+ *      all pages at once — and join the pages into one array of menu items
+ *      (structurePages)
  *   5. Run sanity checker with previous items as context (delta comparison)
  *   6. Transactionally replace menu_items for this media
  *   7. Mark job done (with result_summary) or failed (with retry logic)
@@ -36,21 +39,27 @@ const VISION_FALLBACK_PAGE_LIMIT = 2;
 
 /**
  * Upper bound of one job's wall-clock time, from the stage timeouts: the PDF
- * download (pdfTextExtractor.PDF_FETCH_TIMEOUT_MS), one vision call — all
- * pages go in a single request — and one structurer call; pdf-parse and the
- * DB writes are seconds at most. A download failure still leaves the image
- * read (without the page count), and on the job's last attempt an image-read
- * failure on a PDF with a text layer falls back to that text layer — both
- * inside the same sum (extractRawText). A structurer timeout, or an image-read
- * failure with nothing to fall back to, fails the job right there (markFailed). Either way a job
- * settles — done or failed — within this bound. server.js measures the
+ * download (pdfTextExtractor.PDF_FETCH_TIMEOUT_MS), the image read and the
+ * structuring; pdf-parse and the DB writes are seconds at most. Every page has
+ * its own vision call and its own structurer call, and the pages of a stage
+ * run at the same time: the image read ends when its slowest page settles —
+ * within one vision timeout — and only then does structuring start, which
+ * ends within one structurer timeout (readPagesAsImages, structurePages). A
+ * download failure still leaves the image read (without the page count), and
+ * on the job's last attempt an image-read failure on a PDF with a text layer
+ * falls back to that text layer, structured in one call — both inside the same
+ * sum (extractPageTexts). A structurer failure, or an image-read failure with
+ * nothing to fall back to, fails the job right there (markFailed). Either way
+ * a job settles — done or failed — within this bound. server.js measures the
  * graceful-shutdown budget against it
  * (config/shutdown.js): ocrJobPoller.stop() waits for the job in flight, and
  * a job that outlives the budget dies with the process as a 'processing'
  * zombie for the stale sweep. Observed on production, July–August 2026
- * (84 jobs): p50 6.7 s, p99 30 s, max 38 s. The largest PDF on production read
- * as images (Zalkind, 9 pages → 128 items, measured 2026-09-29): vision 32 s,
- * structurer 41 s — on big menus the structurer is the tightest stage.
+ * (84 jobs): p50 6.7 s, p99 30 s, max 38 s. Big PDFs, measured 2026-09-29
+ * with one call per stage: Zalkind (9 pages → 128 items) vision 27–32 s,
+ * structurer 40–41 s; Сорренто (3 pages → 161 items) — the structurer timed
+ * out at 60 s. Page by page the same menus read in ≈ 7 s and structured in
+ * 15 s and 23 s.
  */
 const JOB_DURATION_BOUND_MS = pdfTextExtractor.PDF_FETCH_TIMEOUT_MS +
   visionOcrAdapter.REQUEST_TIMEOUT_MS +
@@ -75,8 +84,64 @@ const buildPdfPageUrls = (media, knownPageCount) => {
   return urls;
 };
 
+/** @param {string|null|undefined} text */
+const isBlank = (text) => !text || text.trim().length === 0;
+
 /**
- * Extract raw text from a media record by choosing the right strategy.
+ * The failure of the first failed page in page order (not the first to fail
+ * in time — the report does not depend on timing). When there is more than
+ * one page, its message names the page: "page 2 of 9: OpenRouter vision call
+ * failed: 500 …".
+ *
+ * @param {PromiseSettledResult[]} settled - One result per page, in page order
+ * @returns {*} The failure to throw, or null when every page succeeded
+ */
+const firstPageFailure = (settled) => {
+  const index = settled.findIndex((result) => result.status === 'rejected');
+  if (index === -1) return null;
+  const { reason } = settled[index];
+  if (settled.length === 1) return reason;
+  return new Error(`page ${index + 1} of ${settled.length}: ${reason?.message ?? String(reason)}`, {
+    cause: reason,
+  });
+};
+
+/**
+ * Read PDF pages as images: one vision call per page, all pages at once.
+ *
+ * One call for the whole document grew with the text of every page (Zalkind,
+ * 9 pages: 27–32 s of the 60 s timeout, 2026-09-29) and did not always keep
+ * the page order — the same Zalkind came back as pages 2, 3, 1, 4, 9, 5…, and
+ * its card listed the menu in that order. A call per page keeps the order and
+ * takes as long as the slowest page (≈ 7 s for those 9 pages).
+ *
+ * Every call is awaited to its end even when another fails (allSettled): the
+ * job leaves no request running behind it — graceful shutdown waits for the
+ * job, not for stray calls.
+ *
+ * @param {string[]} pageUrls - Page images, in page order
+ * @returns {Promise<string[]>} Text of every page, in page order; a page with
+ *   nothing to read (a cover, a picture) is blank
+ * @throws {Error} the first failed page (firstPageFailure); 'vision OCR
+ *   returned empty text' when every page came back blank
+ */
+const readPagesAsImages = async (pageUrls) => {
+  const reads = await Promise.allSettled(
+    pageUrls.map((url) => visionOcrAdapter.extractFromImages([url])),
+  );
+  const failure = firstPageFailure(reads);
+  if (failure) throw failure;
+
+  const pageTexts = reads.map((read) => read.value.rawText);
+  if (pageTexts.every(isBlank)) {
+    throw new Error('vision OCR returned empty text');
+  }
+  return pageTexts;
+};
+
+/**
+ * Extract the text of a media record, page by page, by choosing the right
+ * strategy.
  *
  * PDFs are read as page images first — with or without a text layer. A text
  * layer keeps the words but not the layout: where a menu sets its prices in a
@@ -91,25 +156,30 @@ const buildPdfPageUrls = (media, knownPageCount) => {
  * pdf-parse still runs first: its page count decides how many pages are
  * rendered (unknown → VISION_FALLBACK_PAGE_LIMIT, strategy
  * 'vision_pdf_no_metadata'), and its text layer is the last resort. An image
- * read that fails — an error, a timeout or empty text — fails the attempt
- * like any other error, and the retry usually reads the pages; only on the
- * job's last attempt (`textLayerBackup`) does a usable text layer stand in
- * (strategy 'pdf_text_layer', the error in visionError, logged as an error —
- * its prices may sit on the wrong dishes). Without a text layer the last
- * attempt fails the job, as before.
+ * read that fails — an error or a timeout on any page, or every page blank —
+ * fails the attempt like any other error, and the retry usually reads the
+ * pages; only on the job's last attempt (`textLayerBackup`) does a usable text
+ * layer stand in (strategy 'pdf_text_layer', the error in visionError, logged
+ * as an error — its prices may sit on the wrong dishes). Without a text layer
+ * the last attempt fails the job, as before.
  *
- * Accepted risk, not covered: the structurer call on the image text has no
- * backup — a second structurer call would break JOB_DURATION_BOUND_MS. On big
- * menus it is the tightest stage (Zalkind: 41 s of the 60 s timeout for 128
- * items); structuring page by page is the way past that ceiling.
+ * Accepted risks, not covered: the structurer on the image text has no backup
+ * — a second round would break JOB_DURATION_BOUND_MS; it runs page by page
+ * (structurePages), so its ceiling is the largest page, not the whole menu.
+ * The text layer comes as one text for the whole PDF and is structured in one
+ * call, which on a very big menu can still time out — it is the last
+ * attempt's last resort.
  *
  * @param {Object} media - establishment_media row
  * @param {Object} [options]
  * @param {boolean} [options.textLayerBackup=false] - Last attempt: a failed
  *   image read of a PDF falls back to its text layer
- * @returns {Promise<{ rawText: string, confidenceOverall: number | null, strategy: string, visionError?: string }>}
+ * @returns {Promise<{ pageTexts: string[], strategy: string, pagesCount?: number, visionError?: string }>}
+ *   pageTexts — one text per page read as an image (a photo is one page), or
+ *   the whole text layer as one text; pagesCount — PDFs only: the pages read
+ *   as images, or the pages the text layer covers
  */
-const extractRawText = async (media, { textLayerBackup = false } = {}) => {
+const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
   if (media.file_type === 'pdf') {
     let parseResult = null;
     try {
@@ -123,14 +193,10 @@ const extractRawText = async (media, { textLayerBackup = false } = {}) => {
 
     const pageUrls = buildPdfPageUrls(media, parseResult?.pageCount || 0);
     try {
-      const visionResult = await visionOcrAdapter.extractFromImages(pageUrls);
-      if (!visionResult.rawText || visionResult.rawText.trim().length === 0) {
-        throw new Error('vision OCR returned empty text');
-      }
       return {
-        rawText: visionResult.rawText,
-        confidenceOverall: visionResult.confidenceOverall,
+        pageTexts: await readPagesAsImages(pageUrls),
         strategy: parseResult?.pageCount > 0 ? 'vision_pdf' : 'vision_pdf_no_metadata',
+        pagesCount: pageUrls.length,
       };
     } catch (error) {
       if (!textLayerBackup || !parseResult?.hasTextLayer) throw error;
@@ -140,9 +206,9 @@ const extractRawText = async (media, { textLayerBackup = false } = {}) => {
         error: error.message,
       });
       return {
-        rawText: parseResult.text,
-        confidenceOverall: 0.95,
+        pageTexts: [parseResult.text],
         strategy: 'pdf_text_layer',
+        pagesCount: parseResult.pageCount,
         visionError: error.message,
       };
     }
@@ -150,14 +216,87 @@ const extractRawText = async (media, { textLayerBackup = false } = {}) => {
 
   if (media.file_type === 'image') {
     const visionResult = await visionOcrAdapter.extractFromImages([media.url]);
-    return {
-      rawText: visionResult.rawText,
-      confidenceOverall: visionResult.confidenceOverall,
-      strategy: 'vision_image',
-    };
+    return { pageTexts: [visionResult.rawText], strategy: 'vision_image' };
   }
 
   throw new Error(`Unsupported file_type for OCR: ${media.file_type}`);
+};
+
+/** A section name the structurer gave an item; null or a blank string is none. */
+const hasCategory = (item) => typeof item.category_raw === 'string' && item.category_raw.trim().length > 0;
+
+/**
+ * Join the items of consecutive pages, carrying a section across a page break.
+ *
+ * A page structured on its own does not see the heading of a section that
+ * began on an earlier page: the items at its top come back without a category
+ * (category_raw null). On a menu whose sections run on across pages (Facktory
+ * Bar, 6 pages, measured 2026-09-29) that was 12 items of 69; the one-call
+ * structurer had put every one of them in the section they continue. So the
+ * items at the top of a page without a category take the category of the last
+ * item that had one before them — the section still open at the page break —
+ * and the first item with a category of its own ends the carry. An item
+ * without a category further down a page is the model's reading of that page
+ * and stays; a menu without headings has nothing to carry.
+ *
+ * Not repaired: an item cut by the page break itself — its description at the
+ * top of the next page can come back as an item of its own, without a price
+ * (Facktory Bar: 1 of 69); and a heading left alone at the bottom of a page,
+ * its first items on the next one — they take the section before that heading,
+ * which only one call over both pages would have seen.
+ *
+ * @param {Object[][]} pages - Structured items of each page, in page order
+ * @returns {{ items: Object[], categoriesCarried: number }}
+ */
+const carryCategoriesAcrossPages = (pages) => {
+  const items = [];
+  let openCategory = null;
+  let categoriesCarried = 0;
+
+  pages.forEach((pageItems, pageIndex) => {
+    let atPageTop = pageIndex > 0;
+    for (const item of pageItems) {
+      if (hasCategory(item)) atPageTop = false;
+      if (atPageTop && openCategory != null) {
+        items.push({ ...item, category_raw: openCategory });
+        categoriesCarried += 1;
+      } else {
+        items.push(item);
+      }
+      if (hasCategory(item)) openCategory = item.category_raw;
+    }
+  });
+
+  return { items, categoriesCarried };
+};
+
+/**
+ * Structure a menu page by page: one structurer call per page, all pages at
+ * once, the items joined in page order (carryCategoriesAcrossPages).
+ *
+ * The structurer's time grows with the items it writes out — about 3 s per
+ * call plus the JSON of every item — and one call for a whole big menu ran
+ * into the 60 s timeout (Сорренто, 161 items, 2026-09-29; the same menu had
+ * passed on 28.09 — the model's speed varies from day to day). Calls one
+ * after another would not help: each brings its own few seconds, and Zalkind
+ * took 60.5 s that way against 39.5 s in one call. At the same time the stage
+ * lasts as long as its largest page (Zalkind 15 s, Сорренто 23 s).
+ *
+ * A blank page costs no call (structureMenu returns [] for it). As in the
+ * image read, every call is awaited to its end, and the failure reported is
+ * the first failed page.
+ *
+ * @param {string[]} pageTexts - Text of each page, in page order
+ * @returns {Promise<{ items: Object[], categoriesCarried: number }>}
+ */
+const structurePages = async (pageTexts) => {
+  const results = await Promise.allSettled(
+    pageTexts.map((text) => llmStructurer.structureMenu(text)),
+  );
+  const failure = firstPageFailure(results);
+  if (failure) throw failure;
+
+  return carryCategoriesAcrossPages(results.map((result) => result.value));
 };
 
 /**
@@ -165,11 +304,15 @@ const extractRawText = async (media, { textLayerBackup = false } = {}) => {
  *
  * @param {Object[]} items - Items with sanity_flag applied
  * @param {string} strategy - Which extraction path was used
- * @param {string|null} [visionError] - Why the image read of a PDF failed, when
- *   its text layer was used instead (strategy 'pdf_text_layer')
- * @returns {Object}
+ * @param {Object} [details]
+ * @param {string|null} [details.visionError] - Why the image read of a PDF
+ *   failed, when its text layer was used instead (strategy 'pdf_text_layer')
+ * @param {number} [details.pagesCount] - PDFs: pages read (extractPageTexts)
+ * @param {number} [details.categoriesCarried] - PDFs: items whose section was
+ *   carried over a page break (carryCategoriesAcrossPages)
+ * @returns {Object} pages_count and categories_carried appear for PDFs only
  */
-const buildResultSummary = (items, strategy, visionError = null) => {
+const buildResultSummary = (items, strategy, { visionError = null, pagesCount, categoriesCarried } = {}) => {
   const totalCount = items.length;
   const flaggedCount = items.filter((it) => it.sanity_flag !== null).length;
 
@@ -186,6 +329,7 @@ const buildResultSummary = (items, strategy, visionError = null) => {
     flagged_count: flaggedCount,
     confidence_avg: confidenceAvg,
     ...(visionError && { vision_error: visionError.slice(0, 200) }),
+    ...(pagesCount != null && { pages_count: pagesCount, categories_carried: categoriesCarried }),
   };
 };
 
@@ -283,22 +427,22 @@ export const processJob = async (jobId) => {
 
     // The text layer of a PDF is the last resort: an image read that fails on
     // an earlier attempt goes back to the queue (markFailed) and is retried.
-    const { rawText, strategy, visionError } = await extractRawText(media, {
+    const { pageTexts, strategy, pagesCount, visionError } = await extractPageTexts(media, {
       textLayerBackup: job.attempts >= job.max_attempts,
     });
 
-    if (!rawText || rawText.trim().length === 0) {
+    if (pageTexts.every(isBlank)) {
       throw new Error(`OCR produced empty text via strategy=${strategy}`);
     }
 
-    const rawItems = await llmStructurer.structureMenu(rawText);
+    const { items: rawItems, categoriesCarried } = await structurePages(pageTexts);
 
     if (rawItems.length === 0) {
       logger.warn('LLM structurer returned 0 items', {
         jobId,
         mediaId: media.id,
         strategy,
-        rawTextLength: rawText.length,
+        rawTextLength: pageTexts.reduce((sum, text) => sum + (text?.length ?? 0), 0),
       });
     }
 
@@ -315,7 +459,7 @@ export const processJob = async (jobId) => {
       newItems: flaggedItems,
     });
 
-    const summary = buildResultSummary(flaggedItems, strategy, visionError);
+    const summary = buildResultSummary(flaggedItems, strategy, { visionError, pagesCount, categoriesCarried });
 
     await ocrJobModel.markDone(jobId, summary);
 
@@ -365,6 +509,7 @@ export const processJob = async (jobId) => {
 export {
   buildPdfPageUrls,
   buildResultSummary,
+  carryCategoriesAcrossPages,
   notifyPartnerIfBatchFinished,
   JOB_DURATION_BOUND_MS,
   VISION_FALLBACK_PAGE_LIMIT,

@@ -170,6 +170,7 @@ async function main() {
           rawText: vision.rawText,
           attempts: vision.attempts,
           sentReasoning: vision.sentReasoning,
+          finishReason: vision.finishReason,
         };
 
         stage = 'structurer';

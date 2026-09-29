@@ -178,6 +178,17 @@ describe('тело запроса и попытки', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  test('finish_reason ответа vision — в результате: прод с 29.09 отвергает всё, кроме stop', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Меню' }, finish_reason: 'length' }] }),
+      })
+      .mockResolvedValueOnce(ok('Меню'));
+    expect((await visionExtract(['data:image/jpeg;base64,AAAA'], 'm')).finishReason).toBe('length');
+    // Ответ без поля — null, а не 'stop': стенд не додумывает.
+    expect((await visionExtract(['data:image/jpeg;base64,AAAA'], 'm')).finishReason).toBeNull();
+  });
+
   test('пустой текст OCR — структурер не зовётся, попыток ноль', async () => {
     global.fetch = jest.fn();
     const s = await structureText('   ', 'm', 'minimal');
@@ -196,5 +207,22 @@ describe('SUMMARY', () => {
     };
     const md = buildSummary({ startedAt: 't', photoCount: 1, sources: ['s'], skippedModels: [], warnings: [] }, ['x@minimal'], [r]);
     expect(md).toContain('| 15/57 | 43 | 1 | $0.0010 |');
+  });
+
+  test('обрывы vision — отдельным столбцом: ответы, которые прод отверг бы', () => {
+    const row = (unitId, finishReason) => ({
+      unitId, model: 'x', error: null, items: [],
+      vision: { ms: 100, attempts: 1, finishReason, usage: null },
+      structurer: { ms: 50, attempts: 1, parseOk: true, zodOk: true, usage: null },
+      metrics: { itemsCount: 0, needsCaution: 0, empty: true, costUsd: null },
+    });
+    const md = buildSummary(
+      { startedAt: 't', photoCount: 3, sources: ['s'], skippedModels: [], warnings: [] },
+      ['x'],
+      [row('A.jpg', 'stop'), row('B.jpg', 'length'), row('C.jpg', null)],
+    );
+    expect(md).toContain('| JSON-fail | Обрывы vision | needs_caution |');
+    // Меню OK 3, ошибок 0, позиций 0, в среднем 0.0, пустых 3, JSON-fail 0, обрывов 1 (только 'length').
+    expect(md).toContain('| `x` | 3 | 0 | 0 | 0.0 | 3 | 0 | 1 | — |');
   });
 });

@@ -24,8 +24,8 @@
  * back to 'pending' (attempts left) or to 'failed' (last attempt spent) under
  * the same retry rule as markFailed, and a permanent failure closes the upload
  * batch exactly as processJob does. The job in flight in this process is never
- * that old (the PDF download, the vision call and the structurer call each
- * abort after 60 s — ocrService.JOB_DURATION_BOUND_MS is 180 s, far below the
+ * that old (the PDF download and every vision and structurer call abort
+ * after 60 s — ocrService.JOB_DURATION_BOUND_MS is 180 s, far below the
  * interval; see STALE_PROCESSING_INTERVAL in the model), so the sweep and the
  * running job touch disjoint rows.
  *

@@ -49,6 +49,9 @@ function aggregate(model, rows) {
   const caution = ok.reduce((a, r) => a + r.metrics.needsCaution, 0);
   const empty = ok.filter((r) => r.metrics.itemsCount === 0).length;
   const parseFails = ok.filter((r) => !r.structurer.parseOk || !r.structurer.zodOk).length;
+  // A vision answer that did not end with 'stop' fails the attempt in
+  // production since 2026-09-29 (visionOcrAdapter); the stand keeps its items.
+  const cutShort = ok.filter((r) => r.vision.finishReason != null && r.vision.finishReason !== 'stop').length;
   const tokensIn = rows.reduce(
     (a, r) => a + (r.vision.usage?.prompt_tokens || 0) + (r.structurer.usage?.prompt_tokens || 0), 0,
   );
@@ -73,6 +76,7 @@ function aggregate(model, rows) {
     avgItems: ok.length ? (itemsTotal / ok.length).toFixed(1) : '—',
     empty,
     parseFails,
+    cutShort,
     cautionPct: fmtPct(caution, itemsTotal),
     tokensIn,
     tokensOut,
@@ -112,12 +116,12 @@ export function buildSummary(meta, models, results) {
 
   lines.push('## Сводка по моделям');
   lines.push('');
-  lines.push('| Модель | Меню OK | Ошибки | Позиций всего | Ср. позиций/меню | Пустые | JSON-fail | needs_caution | Токены in/out | из них рассуждения | Повторы | Стоимость | Ср. vision, мс | Ср. structurer, мс |');
-  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  lines.push('| Модель | Меню OK | Ошибки | Позиций всего | Ср. позиций/меню | Пустые | JSON-fail | Обрывы vision | needs_caution | Токены in/out | из них рассуждения | Повторы | Стоимость | Ср. vision, мс | Ср. structurer, мс |');
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const model of models) {
     const a = aggregate(model, byModel.get(model));
     lines.push(
-      `| \`${a.model}\` | ${a.menus} | ${a.errors} | ${a.itemsTotal} | ${a.avgItems} | ${a.empty} | ${a.parseFails} | ${a.cautionPct} | ${a.tokensIn}/${a.tokensOut} | ${a.tokensReasoning} | ${a.retries} | ${fmtCost(a.cost)} | ${fmtMs(a.avgVisionMs)} | ${fmtMs(a.avgStructMs)} |`,
+      `| \`${a.model}\` | ${a.menus} | ${a.errors} | ${a.itemsTotal} | ${a.avgItems} | ${a.empty} | ${a.parseFails} | ${a.cutShort} | ${a.cautionPct} | ${a.tokensIn}/${a.tokensOut} | ${a.tokensReasoning} | ${a.retries} | ${fmtCost(a.cost)} | ${fmtMs(a.avgVisionMs)} | ${fmtMs(a.avgStructMs)} |`,
     );
   }
   lines.push('');
