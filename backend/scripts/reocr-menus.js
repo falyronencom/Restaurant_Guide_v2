@@ -26,13 +26,14 @@
  *   node scripts/reocr-menus.js --backup=<file>                   # report + backup, no writes
  *   node scripts/reocr-menus.js --backup=<file> --apply           # backup, then insert pending jobs
  *   … --statuses=active,draft (default)  … --include-touched
+ *   … --media=<id>[,<id>…]   only these menu files (e.g. one card after a prompt change)
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
 import pg from 'pg';
 import dotenv from 'dotenv';
-import { formatPlan, planReocr } from './reocr-menus/plan.js';
+import { formatPlan, onlyMedia, planReocr } from './reocr-menus/plan.js';
 
 const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,8 @@ const apply = process.argv.includes('--apply');
 const includeTouched = process.argv.includes('--include-touched');
 const backupPath = arg('backup');
 const statuses = (arg('statuses') || 'active,draft').split(',').map((s) => s.trim()).filter(Boolean);
+const mediaIds = arg('media')?.split(',').map((s) => s.trim()).filter(Boolean);
+if (mediaIds && mediaIds.length === 0) { console.error('❌ --media is empty'); process.exit(1); }
 if (apply && !backupPath) { console.error('❌ --apply requires --backup=<file>'); process.exit(1); }
 
 const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -59,7 +62,10 @@ const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnautho
 async function main() {
   await client.connect();
 
-  const plan = await planReocr(client, { statuses, includeTouched });
+  const fullPlan = await planReocr(client, { statuses, includeTouched });
+  const plan = mediaIds ? onlyMedia(fullPlan, mediaIds) : fullPlan;
+  if (mediaIds) console.log(`Только файлы --media: ${mediaIds.join(', ')}
+`);
   console.log(formatPlan(plan));
   const { targets } = plan;
 

@@ -135,6 +135,29 @@ export const planReocr = async (client, { statuses, includeTouched = false }) =>
   return { targets, skipped };
 };
 
+/**
+ * Только названные файлы (--media): остальные не попадают ни в отчёт, ни в
+ * бэкап, ни в очередь. Файл остаётся под теми же правилами пропуска.
+ * Неизвестный id — ошибка: опечатка иначе дала бы молча пустой план.
+ *
+ * @param {{targets: Object[], skipped: Object[]}} plan - результат planReocr
+ * @param {string[]} mediaIds - id файлов меню (establishment_media.id)
+ * @returns {{targets: Object[], skipped: Object[]}}
+ * @throws {Error} если id нет среди файлов плана
+ */
+export const onlyMedia = ({ targets, skipped }, mediaIds) => {
+  const known = new Set([...targets, ...skipped].map((row) => row.media_id));
+  const unknown = mediaIds.filter((id) => !known.has(id));
+  if (unknown.length > 0) {
+    throw new Error(`--media: нет среди файлов меню заведений с этими статусами: ${unknown.join(', ')}`);
+  }
+  const wanted = new Set(mediaIds);
+  return {
+    targets: targets.filter((row) => wanted.has(row.media_id)),
+    skipped: skipped.filter((row) => wanted.has(row.media_id)),
+  };
+};
+
 const fileLine = (row) => `${row.name} [${row.status}]  media=${row.media_id}  items=${row.items}`;
 
 /** Правки людей в файле — строка на категорию, только непустые. */
