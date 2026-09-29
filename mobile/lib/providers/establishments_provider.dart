@@ -290,6 +290,34 @@ class EstablishmentsProvider with ChangeNotifier {
   // Search Operations
   // ============================================================================
 
+  /// Умная выдача по фразе с фильтрами экрана и местоположением — тот самый
+  /// вызов, которым собирается список. Карта с фразой в строке поиска
+  /// (вариант 2Б, 29.09.2026) берёт свою выдачу отсюда же, со своим [limit]:
+  /// иначе фильтр доехал бы до одного вызова и потерялся в другом, и список с
+  /// картой снова разошлись бы (см. [screenFilters]).
+  Future<SmartSearchResult> smartSearchWithScreenFilters({
+    required String query,
+    int page = 1,
+    required int limit,
+  }) {
+    final f = screenFilters;
+    return _smartSearchService.searchSmart(
+      query: query,
+      latitude: _userLatitude,
+      longitude: _userLongitude,
+      city: f.city,
+      categories: f.categories,
+      cuisines: f.cuisines,
+      priceRanges: f.priceRanges,
+      maxDistance: f.maxDistance,
+      sortBy: f.explicitSortBy,
+      hoursFilter: f.hoursFilter,
+      features: f.features,
+      page: page,
+      limit: limit,
+    );
+  }
+
   /// Search establishments with current filters
   /// [retriedAfterEmptyPage] — служебный флаг, не для экранов: он
   /// предохраняет от бесконечного возврата, если и пересчитанная
@@ -332,18 +360,8 @@ class EstablishmentsProvider with ChangeNotifier {
       // the screen's filters travel with both.
       final PaginatedEstablishments result;
       if (queryText.isNotEmpty) {
-        final smart = await _smartSearchService.searchSmart(
+        final smart = await smartSearchWithScreenFilters(
           query: queryText,
-          latitude: latitude,
-          longitude: longitude,
-          city: f.city,
-          categories: f.categories,
-          cuisines: f.cuisines,
-          priceRanges: f.priceRanges,
-          maxDistance: f.maxDistance,
-          sortBy: f.explicitSortBy,
-          hoursFilter: f.hoursFilter,
-          features: f.features,
           page: page,
           limit: _pageSize,
         );

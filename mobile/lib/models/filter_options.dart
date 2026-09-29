@@ -233,4 +233,34 @@ class ScreenFilters {
 
   /// Сортировка для умного поиска: только выбранная человеком.
   String? get explicitSortBy => sortTouched ? sortBy : null;
+
+  /// Отпечаток того, что уходит в умный поиск: равные наборы — равные строки,
+  /// любое отличие — другая строка; порядок выбора внутри списка не в счёт.
+  /// Сортировка — только выбранная человеком ([explicitSortBy]): смена
+  /// умолчания (рейтинг → расстояние после GPS) в запрос не уходит. Карта с
+  /// фразой сравнивает отпечаток, чтобы перезагружать пины на смену фильтров,
+  /// а не на каждое уведомление провайдера.
+  String get fingerprint => [
+        city,
+        _sortedJoin(categories),
+        _sortedJoin(cuisines),
+        _sortedJoin(priceRanges),
+        maxDistance,
+        explicitSortBy,
+        hoursFilter,
+        _sortedJoin(features),
+      ].join('|');
+
+  /// Отпечаток того, что уходит в запрос карты без фразы (`/search/map`):
+  /// типы, кухни, цены, часы. Город, сортировка, расстояние и удобства туда не
+  /// уходят — их смена карту без фразы не перезагружает.
+  String get areaFingerprint => [
+        _sortedJoin(categories),
+        _sortedJoin(cuisines),
+        _sortedJoin(priceRanges),
+        hoursFilter,
+      ].join('|');
+
+  static String? _sortedJoin(List<String>? values) =>
+      values == null ? null : ([...values]..sort()).join(',');
 }

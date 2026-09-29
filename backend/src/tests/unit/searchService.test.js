@@ -589,6 +589,67 @@ describe('searchService', () => {
     });
   });
 
+  // --- Поиск по названию (29.09.2026): «только эти» / «кроме этих» ----------
+  //
+  // Умный поиск выбирает совпавшие по названию заведения запросом с
+  // includeIds, а основную выдачу — с excludeIds, чтобы не показать дважды.
+  describe('includeIds / excludeIds — совпадения по названию', () => {
+    beforeEach(() => {
+      pool.query.mockResolvedValue({ rows: [{ total: '0' }], rowCount: 1 });
+    });
+
+    test('includeIds: только эти заведения — в основном запросе и в счёте', async () => {
+      await searchWithoutLocation({ includeIds: ['id-1', 'id-2'] });
+
+      const [query, params] = pool.query.mock.calls[0];
+      const [countQuery, countParams] = pool.query.mock.calls[1];
+      const at = `$${params.findIndex((p) => Array.isArray(p) && p[0] === 'id-1') + 1}`;
+      for (const q of [query, countQuery]) {
+        expect(q).toContain(`e.id = ANY(${at}::uuid[])`);
+        expect(q).not.toContain('NOT (e.id');
+      }
+      expect(params).toContainEqual(['id-1', 'id-2']);
+      expect(countParams).toEqual(params.slice(0, -2));
+    });
+
+    test('excludeIds: кроме этих — в основном запросе и в счёте', async () => {
+      await searchWithoutLocation({ excludeIds: ['id-3'] });
+
+      const [query, params] = pool.query.mock.calls[0];
+      const [countQuery] = pool.query.mock.calls[1];
+      const at = `$${params.findIndex((p) => Array.isArray(p) && p[0] === 'id-3') + 1}`;
+      for (const q of [query, countQuery]) {
+        expect(q).toContain(`NOT (e.id = ANY(${at}::uuid[]))`);
+      }
+    });
+
+    test('пустой includeIds — ноль строк, а не все; пустой excludeIds условия не добавляет', async () => {
+      await searchWithoutLocation({ includeIds: [], excludeIds: [] });
+
+      const [query, params] = pool.query.mock.calls[0];
+      expect(query).toContain('e.id = ANY($');
+      expect(query).not.toContain('NOT (e.id');
+      expect(params).toContainEqual([]);
+    });
+
+    test('без параметров условий по id нет — прежний SQL', async () => {
+      await searchWithoutLocation({});
+
+      const [query] = pool.query.mock.calls[0];
+      expect(query).not.toContain('e.id = ANY');
+    });
+
+    test('searchByRadius принимает оба параметра так же', async () => {
+      await searchByRadius({ latitude: 53.9, longitude: 27.5, radius: 10, includeIds: ['id-1'], excludeIds: ['id-2'] });
+
+      const [query, params] = pool.query.mock.calls[0];
+      expect(query).toContain('e.id = ANY($');
+      expect(query).toContain('NOT (e.id = ANY($');
+      expect(params).toContainEqual(['id-1']);
+      expect(params).toContainEqual(['id-2']);
+    });
+  });
+
   describe('searchByBounds', () => {
     test('should search establishments within map bounds', async () => {
       const mockEstablishments = [createMockEstablishment()];
