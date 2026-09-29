@@ -30,15 +30,28 @@ class MapMarkerPainter extends CustomPainter {
   static const double shadowBlur = 8.0;
   static const double shadowOffsetY = 3.0;
 
+  /// How far the pointer reaches up into the circle's border.
+  static const double pointerOverlap = 1.0;
+
   /// Total canvas size needed (circle + pointer + shadow padding)
   static const double canvasWidth = circleDiameter + shadowBlur * 2;
   static const double canvasHeight =
       circleDiameter + pointerHeight + shadowBlur * 2 + shadowOffsetY;
 
-  // Open state colors (warm orange gradient)
-  static const Color _openGradientStart = Color(0xFFFF8A5C);
-  static const Color _openGradientEnd = Color(0xFFE8622B);
-  static const Color _openShadowColor = Color(0x59E8622B); // ~0.35 alpha
+  /// Canvas row of the pointer tip — the point of the marker that stands for
+  /// the establishment's coordinates.
+  static const double tipY =
+      shadowBlur + circleDiameter - pointerOverlap + pointerHeight;
+
+  /// Placemark anchor, as fractions of the canvas: the pointer tip. MapKit's
+  /// default (0.5, 0.5) put the coordinates at the canvas centre, so the tip
+  /// pointed a third of the marker's height south of the establishment.
+  static const Offset anchor = Offset(0.5, tipY / canvasHeight);
+
+  // Open state colors (warm orange gradient) — cluster bubbles use them too
+  static const Color openGradientStart = Color(0xFFFF8A5C);
+  static const Color openGradientEnd = Color(0xFFE8622B);
+  static const Color openShadowColor = Color(0x59E8622B); // ~0.35 alpha
 
   // Closed state colors (muted grey gradient)
   static const Color _closedGradientStart = Color(0xFFB0BEC5);
@@ -60,7 +73,7 @@ class MapMarkerPainter extends CustomPainter {
     final shadowPaint = Paint()
       ..color = isSelected
           ? _selectedShadowColor
-          : (isOpen ? _openShadowColor : _closedShadowColor)
+          : (isOpen ? openShadowColor : _closedShadowColor)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, shadowBlur / 2);
     canvas.drawCircle(
       Offset(cx, cy + shadowOffsetY),
@@ -83,7 +96,7 @@ class MapMarkerPainter extends CustomPainter {
         isSelected
             ? [_selectedGradientStart, _selectedGradientEnd]
             : (isOpen
-                ? [_openGradientStart, _openGradientEnd]
+                ? [openGradientStart, openGradientEnd]
                 : [_closedGradientStart, _closedGradientEnd]),
       )
       ..style = PaintingStyle.fill;
@@ -169,8 +182,9 @@ class MapMarkerPainter extends CustomPainter {
 
   /// Draw the white pointer triangle below the circle.
   void _drawPointer(Canvas canvas, double cx, double circleBottom) {
-    // The pointer visually overlaps the circle border slightly
-    final double pointerTop = circleBottom - 1.0;
+    // The pointer visually overlaps the circle border slightly; its tip lands
+    // on [tipY], where [anchor] pins the marker to the map.
+    final double pointerTop = circleBottom - pointerOverlap;
 
     final pointerPath = Path()
       ..moveTo(cx - pointerWidth / 2, pointerTop)

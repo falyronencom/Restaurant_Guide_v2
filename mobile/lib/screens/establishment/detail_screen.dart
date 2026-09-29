@@ -24,6 +24,7 @@ import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/pdf_viewer_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
@@ -2391,6 +2392,7 @@ class _EstablishmentMiniMapState extends State<_EstablishmentMiniMap> {
                       image: BitmapDescriptor.fromBytes(_markerGenerator
                           .getMarkerImage(isOpen: widget.isOpen)!),
                       scale: 1.0,
+                      anchor: MapMarkerPainter.anchor,
                     ),
                   )
                 : PlacemarkIcon.single(

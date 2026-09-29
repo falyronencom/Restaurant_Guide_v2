@@ -10,6 +10,7 @@ import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/services/geocoding_service.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
 
 /// Step 5: Address Step
 /// Allows partner to enter establishment address: city, street, building, corpus
@@ -528,6 +529,8 @@ class _AddressStepState extends State<AddressStep> {
                 PlacemarkIconStyle(
                   image: BitmapDescriptor.fromBytes(markerBytes),
                   scale: 1.0,
+                  // The tip lands where the partner tapped.
+                  anchor: MapMarkerPainter.anchor,
                 ),
               )
             : PlacemarkIcon.single(
