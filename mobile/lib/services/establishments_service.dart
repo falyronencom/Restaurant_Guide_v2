@@ -388,46 +388,72 @@ class EstablishmentsService {
   // Favorites Operations (requires authentication)
   // ============================================================================
 
-  /// Get user's favorite establishments
+  /// Размер страницы избранного — потолок бэкенда (`favoriteController`,
+  /// `Math.min(limit, 50)`). Без явного `limit` бэкенд отдаёт 10, и до
+  /// 29.09.2026 приложение показывало только первые 10 сохранённых мест:
+  /// одиннадцатое молча не доходило ни до списка, ни до счётчика.
+  static const int favoritesPageSize = 50;
+
+  /// Предохранитель от зацикливания: 40 страниц по 50 = 2000 мест.
+  /// Если бэкенд вечно отвечает `hasNext: true`, цикл остановится здесь,
+  /// а не будет крутить запросы до бесконечности.
+  static const int favoritesMaxPages = 40;
+
+  /// Get user's favorite establishments — все страницы, не только первую.
   Future<List<Establishment>> getFavorites() async {
-    try {
-      final response = await _apiClient.get('/api/v1/favorites');
+    // По id, а не списком: бэкенд листает смещением, и снятое между
+    // страницами сердечко сдвигает выдачу — место пришло бы дважды.
+    final result = <String, Establishment>{};
+    for (var page = 1; page <= favoritesMaxPages; page++) {
+      final response = await _apiClient.get(
+        '/api/v1/favorites',
+        queryParameters: {'page': page, 'limit': favoritesPageSize},
+      );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        // Backend returns: { data: { favorites: [...], pagination: {...} } }
-        final innerData = data['data'] as Map<String, dynamic>;
-        final favorites = innerData['favorites'] as List;
-
-        return favorites.map((fav) {
-          final f = fav as Map<String, dynamic>;
-          // Transform flat structure to Establishment format
-          // Backend returns establishment_name, establishment_city, etc.
-          return Establishment.fromJson({
-            'id': f['establishment_id'],
-            'name': f['establishment_name'],
-            'description': f['establishment_description'],
-            'city': f['establishment_city'],
-            'address': f['establishment_address'],
-            'latitude': f['establishment_latitude'],
-            'longitude': f['establishment_longitude'],
-            'categories': f['establishment_categories'],
-            'cuisines': f['establishment_cuisines'],
-            'price_range': f['establishment_price_range'],
-            'average_rating': f['establishment_average_rating'],
-            'status': f['establishment_status'] ?? 'active',
-            'working_hours': f['establishment_working_hours'],
-            'thumbnail_url': f['establishment_primary_image'],
-            'created_at': f['created_at'] ?? DateTime.now().toIso8601String(),
-            'updated_at': f['created_at'] ?? DateTime.now().toIso8601String(),
-          });
-        }).toList();
-      } else {
+      if (response.statusCode != 200 ||
+          response.data is! Map<String, dynamic>) {
         throw Exception('Unexpected response format');
       }
-    } catch (e) {
-      rethrow;
+      final data = response.data as Map<String, dynamic>;
+      // Backend returns: { data: { favorites: [...], pagination: {...} } }
+      final innerData = data['data'] as Map<String, dynamic>;
+      final favorites = innerData['favorites'] as List;
+      for (final fav in favorites) {
+        final e = _favoriteFromRow(fav as Map<String, dynamic>);
+        result.putIfAbsent(e.id, () => e);
+      }
+
+      // Бэкенд (favoriteService.getUserFavorites) кладёт в pagination
+      // `hasNext`. Нет поля или пустая страница — дальше не идём.
+      final pagination = innerData['pagination'];
+      final hasNext =
+          pagination is Map<String, dynamic> && pagination['hasNext'] == true;
+      if (!hasNext || favorites.isEmpty) break;
     }
+    return result.values.toList();
+  }
+
+  /// Transform flat favorites row to Establishment format.
+  /// Backend returns establishment_name, establishment_city, etc.
+  Establishment _favoriteFromRow(Map<String, dynamic> f) {
+    return Establishment.fromJson({
+      'id': f['establishment_id'],
+      'name': f['establishment_name'],
+      'description': f['establishment_description'],
+      'city': f['establishment_city'],
+      'address': f['establishment_address'],
+      'latitude': f['establishment_latitude'],
+      'longitude': f['establishment_longitude'],
+      'categories': f['establishment_categories'],
+      'cuisines': f['establishment_cuisines'],
+      'price_range': f['establishment_price_range'],
+      'average_rating': f['establishment_average_rating'],
+      'status': f['establishment_status'] ?? 'active',
+      'working_hours': f['establishment_working_hours'],
+      'thumbnail_url': f['establishment_primary_image'],
+      'created_at': f['created_at'] ?? DateTime.now().toIso8601String(),
+      'updated_at': f['created_at'] ?? DateTime.now().toIso8601String(),
+    });
   }
 
   /// Add establishment to favorites

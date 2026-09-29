@@ -256,21 +256,35 @@ Map<String, dynamic> favoriteRow({
     };
 
 /// Конверт `/api/v1/favorites`: `{ data: { favorites, pagination } }`.
+///
+/// Блок `pagination` повторяет `favoriteService.getUserFavorites` буквально:
+/// `page`, `limit`, `total`, `pages`, `hasNext`, `hasPrevious`. Клиент
+/// листает страницы по `hasNext` — переименуй поле здесь, и тест на
+/// «все страницы» покажет одну.
 Map<String, dynamic> favoritesEnvelope({
   List<Map<String, dynamic>>? favorites,
-}) =>
-    <String, dynamic>{
-      'success': true,
-      'data': <String, dynamic>{
-        'favorites': favorites ?? [favoriteRow()],
-        'pagination': <String, dynamic>{
-          'page': 1,
-          'limit': 20,
-          'total': (favorites ?? [favoriteRow()]).length,
-          'totalPages': 1,
-        },
+  int page = 1,
+  int limit = 50,
+  int? total,
+  bool hasNext = false,
+}) {
+  final rows = favorites ?? [favoriteRow()];
+  final count = total ?? rows.length;
+  return <String, dynamic>{
+    'success': true,
+    'data': <String, dynamic>{
+      'favorites': rows,
+      'pagination': <String, dynamic>{
+        'page': page,
+        'limit': limit,
+        'total': count,
+        'pages': (count / limit).ceil(),
+        'hasNext': hasNext,
+        'hasPrevious': page > 1,
       },
-    };
+    },
+  };
+}
 
 /// Копия карты без указанного ключа — «поле пропало из проекции».
 Map<String, dynamic> without(Map<String, dynamic> row, String key) {

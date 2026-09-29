@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_cover.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 
 /// Favorites screen - shows user's favorite establishments
 /// Displays different states: loading, empty (unauth/auth), error, data
+///
+/// Сверху во всех состояниях — обложка [FavoritesCover] (макет `2b`,
+/// 29.09.2026). В списке она сжимается при скролле; в остальных состояниях
+/// стоит полной, без чипа сортировки — сортировать нечего.
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
 
@@ -18,8 +24,6 @@ class FavoritesScreen extends StatefulWidget {
 }
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
-  // Figma colors
-  static const Color _orangeMain = AppTheme.primaryOrange;
   static const Color _backgroundColor = AppTheme.backgroundWarm;
 
   // Local sort state for favorites
@@ -90,187 +94,108 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          'Избранное',
-          style: TextStyle(
-            color: _orangeMain,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        backgroundColor: AppTheme.backgroundPrimary,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(44),
-          child: _buildSortRow(),
-        ),
-      ),
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, child) {
-          // Unauthenticated state - show login prompt
-          if (!authProvider.isAuthenticated) {
-            return _buildUnauthenticatedState(theme);
-          }
+    // Статус-бар лежит на тёмной обложке — значки светлые.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: _backgroundColor,
+        body: Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
+            // Unauthenticated state - show login prompt
+            if (!authProvider.isAuthenticated) {
+              return _withStaticCover(_buildUnauthenticatedState());
+            }
 
-          // Authenticated - show favorites with provider
-          return Consumer<EstablishmentsProvider>(
-            builder: (context, provider, child) {
-              // Loading state
-              if (provider.isFavoritesLoading &&
-                  provider.favoriteEstablishments.isEmpty) {
-                return const Center(
-                  child: CircularProgressIndicator(),
-                );
-              }
+            // Authenticated - show favorites with provider
+            return Consumer<EstablishmentsProvider>(
+              builder: (context, provider, child) {
+                // Loading state
+                if (provider.isFavoritesLoading &&
+                    provider.favoriteEstablishments.isEmpty) {
+                  return _withStaticCover(
+                    const Center(child: CircularProgressIndicator()),
+                  );
+                }
 
-              // Error state
-              if (provider.favoritesError != null &&
-                  provider.favoriteEstablishments.isEmpty) {
-                return _buildErrorState(theme, provider);
-              }
+                // Error state
+                if (provider.favoritesError != null &&
+                    provider.favoriteEstablishments.isEmpty) {
+                  return _withStaticCover(_buildErrorState(theme, provider));
+                }
 
-              // Empty state (authenticated)
-              if (!provider.isFavoritesLoading &&
-                  provider.favoriteEstablishments.isEmpty) {
-                return _buildEmptyAuthenticatedState(theme);
-              }
+                // Empty state (authenticated)
+                if (!provider.isFavoritesLoading &&
+                    provider.favoriteEstablishments.isEmpty) {
+                  return _withStaticCover(_buildEmptyAuthenticatedState());
+                }
 
-              // Data state - sort row + count + list of favorites
-              final sortedList = _sortedFavorites(provider.favoriteEstablishments);
-
-              return Column(
-                children: [
-                  // Results count
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Результаты: ${provider.favoriteEstablishments.length}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // List of favorites
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: () => provider.refreshFavorites(),
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppDimensions.paddingS,
-                        ),
-                        itemCount: sortedList.length,
-                        itemBuilder: (context, index) {
-                          final establishment = sortedList[index];
-                          final isFavorite = provider.isFavorite(establishment.id);
-
-                          // Calculate distance if user location available
-                          double? distanceKm = establishment.distance;
-                          if (distanceKm == null &&
-                              provider.hasRealLocation &&
-                              establishment.latitude != null &&
-                              establishment.longitude != null) {
-                            distanceKm = LocationService().calculateDistance(
-                              provider.userLatitude!,
-                              provider.userLongitude!,
-                              establishment.latitude!,
-                              establishment.longitude!,
-                            );
-                          }
-
-                          return EstablishmentCard(
-                            establishment: establishment,
-                            isFavorite: isFavorite,
-                            onTap: () => _navigateToDetail(establishment.id),
-                            onFavoriteToggle: () => _toggleFavorite(establishment.id),
-                            distanceKm: distanceKm,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  /// Build unauthenticated state - login prompt
-  Widget _buildUnauthenticatedState(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimensions.paddingL),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.favorite_border,
-              size: 64,
-              color: theme.colorScheme.secondary,
-            ),
-            const SizedBox(height: AppDimensions.spacingM),
-            Text(
-              'Войдите, чтобы сохранять любимые заведения',
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppDimensions.spacingL),
-            FilledButton(
-              onPressed: _navigateToLogin,
-              child: const Text('Войти'),
-            ),
-          ],
+                return _buildList(provider);
+              },
+            );
+          },
         ),
       ),
     );
   }
 
-  /// Build empty state for authenticated user
-  Widget _buildEmptyAuthenticatedState(ThemeData theme) {
+  /// Полная обложка без чипов над телом состояния.
+  Widget _withStaticCover(Widget body) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Column(
+      children: [
+        SizedBox(
+          height: topInset + FavoritesCover.expandedBodyHeight,
+          child: FavoritesCover(topInset: topInset),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  /// Data state: сжимающаяся обложка + список карточек.
+  ///
+  /// Строки «Результаты: N» больше нет — счётчик живёт в подзаголовке
+  /// обложки.
+  Widget _buildList(EstablishmentsProvider provider) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final favorites = provider.favoriteEstablishments;
+    final sortedList = _sortedFavorites(favorites, provider);
+
     return RefreshIndicator(
-      onRefresh: () => context.read<EstablishmentsProvider>().refreshFavorites(),
-      child: ListView(
-        children: [
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppDimensions.paddingL),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.favorite_border,
-                      size: 64,
-                      color: theme.colorScheme.secondary,
-                    ),
-                    const SizedBox(height: AppDimensions.spacingM),
-                    Text(
-                      'У вас пока нет избранных заведений',
-                      style: theme.textTheme.titleMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppDimensions.spacingS),
-                    Text(
-                      'Нажмите \u2661 на карточке заведения,\nчтобы добавить его сюда',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.secondary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+      // Индикатор тянется из-под полной обложки, а не из-под статус-бара.
+      edgeOffset: topInset + FavoritesCover.expandedBodyHeight,
+      onRefresh: () => provider.refreshFavorites(),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: FavoritesCoverHeaderDelegate(
+              topInset: topInset,
+              subtitle: favoritesSubtitle(
+                  favorites.map((e) => e.city).toList()),
+              sortLabel: _currentSort.displayLabel,
+              onSortTap: _showSortOptions,
+            ),
+          ),
+          SliverPadding(
+            // Карточка сама несёт внешний отступ 15.
+            padding: const EdgeInsets.only(
+              top: AppDimensions.paddingXs,
+              bottom: AppDimensions.paddingS,
+            ),
+            sliver: SliverList.builder(
+              itemCount: sortedList.length,
+              itemBuilder: (context, index) {
+                final establishment = sortedList[index];
+                return EstablishmentCard(
+                  establishment: establishment,
+                  isFavorite: provider.isFavorite(establishment.id),
+                  onTap: () => _navigateToDetail(establishment.id),
+                  onFavoriteToggle: () => _toggleFavorite(establishment.id),
+                  distanceKm: _distanceKm(establishment, provider),
+                );
+              },
             ),
           ),
         ],
@@ -278,8 +203,106 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
+  /// Расстояние до заведения, если известна настоящая позиция пользователя.
+  double? _distanceKm(
+      Establishment establishment, EstablishmentsProvider provider) {
+    final known = establishment.distance;
+    if (known != null) return known;
+    if (!provider.hasRealLocation ||
+        establishment.latitude == null ||
+        establishment.longitude == null) {
+      return null;
+    }
+    return LocationService().calculateDistance(
+      provider.userLatitude!,
+      provider.userLongitude!,
+      establishment.latitude!,
+      establishment.longitude!,
+    );
+  }
+
+  /// Гость: пригласить войти.
+  Widget _buildUnauthenticatedState() {
+    return _buildEmptyMessage(
+      subtitle: 'Войдите, чтобы сохранять любимые заведения',
+      action: SizedBox(
+        width: 136,
+        child: ElevatedButton(
+          style: AppTheme.canonCtaM(),
+          onPressed: _navigateToLogin,
+          child: const Text('Войти'),
+        ),
+      ),
+    );
+  }
+
+  /// Build empty state for authenticated user
+  Widget _buildEmptyAuthenticatedState() {
+    return RefreshIndicator(
+      onRefresh: () => context.read<EstablishmentsProvider>().refreshFavorites(),
+      child: LayoutBuilder(
+        builder: (context, constraints) => ListView(
+          // Без явного нуля ListView сам прибавит отступ статус-бара (AppBar,
+          // который его раньше съедал, заменён обложкой): сердце уезжало бы
+          // вниз, а пустой экран — прокручивался.
+          padding: EdgeInsets.zero,
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: constraints.maxHeight,
+              child: _buildEmptyMessage(
+                subtitle:
+                    'Нажмите ♡ на карточке заведения,\nчтобы добавить его сюда',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Сердце, заголовок, подпись и — у гостя — кнопка входа.
+  Widget _buildEmptyMessage({required String subtitle, Widget? action}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimensions.paddingL),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.favorite,
+              size: 64,
+              color: AppTheme.primaryOrange,
+            ),
+            const SizedBox(height: AppDimensions.spacingM),
+            const Text(
+              'Здесь будут ваши места',
+              style: AppTheme.canonSheetTitle,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppDimensions.spacingS),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontFamily: AppTheme.fontBodyFamily,
+                fontSize: 15,
+                color: AppTheme.gray600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (action != null) ...[
+              const SizedBox(height: AppDimensions.spacingL),
+              action,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Sort favorites locally by selected option
-  List<Establishment> _sortedFavorites(List<Establishment> favorites) {
+  List<Establishment> _sortedFavorites(
+      List<Establishment> favorites, EstablishmentsProvider provider) {
     final sorted = List<Establishment>.from(favorites);
     switch (_currentSort) {
       case SortOption.rating:
@@ -289,45 +312,25 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       case SortOption.priceDesc:
         sorted.sort((a, b) => (b.priceRange ?? '').compareTo(a.priceRange ?? ''));
       case SortOption.distance:
-        break; // No distance data for favorites
+        // Чип обложки теперь называет выбранный порядок вслух — «По
+        // расстоянию» обязан сортировать. Места без расстояния (нет позиции
+        // или координат) — в конце, в прежнем порядке.
+        // List.sort нестабилен — прежний порядок держит индекс.
+        final keyed = [
+          for (var i = 0; i < sorted.length; i++)
+            (i, _distanceKm(sorted[i], provider), sorted[i]),
+        ];
+        keyed.sort((a, b) {
+          final (ia, da, _) = a;
+          final (ib, db, _) = b;
+          if (da != null && db != null && da != db) return da.compareTo(db);
+          if (da == null && db != null) return 1;
+          if (da != null && db == null) return -1;
+          return ia.compareTo(ib);
+        });
+        return [for (final (_, _, e) in keyed) e];
     }
     return sorted;
-  }
-
-  /// Build sort row (like search results, adapted for light bg)
-  Widget _buildSortRow() {
-    return Container(
-      color: AppTheme.backgroundPrimary,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: _showSortOptions,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.rotate(
-                  angle: 1.5708, // 90 degrees
-                  child: const Icon(
-                    Icons.compare_arrows,
-                    size: 22,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Сортировка',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Show sort options bottom sheet (same design as search results)
