@@ -664,3 +664,105 @@ describe('Search System - Могилёв: два написания одного
     expect(names).toEqual(['Не Могилёв']);
   });
 });
+
+describe('Search System - удобство: значение не true не роняет поиск и не считается отметкой', () => {
+  // Кнопка удобства в mobile — `features` в /search/establishments. Фильтр
+  // приводил значение ключа к boolean — `(attributes->>ключ)::boolean = true`, —
+  // и первая же карточка со значением, которого Postgres не читает как boolean
+  // («да», массив, объект, 2, пустая строка), роняла ВЕСЬ запрос: ошибка на
+  // любом поиске с этим удобством у всех, а не выпадение одной карточки
+  // (клиенту 400 INVALID_FORMAT — так обработчик переводит код Postgres 22P02;
+  // в логе — ошибка уровня 500). Запись значения не проверяет (валидатор знает
+  // только isObject).
+  //
+  // Отмечено = JSON true: так удобство рисуют все экраны карточки (web
+  // `=== true`, mobile и admin-web `== true`), так записан канон AF1 (SDL
+  // CAT-C-3.15: «true или ключа нет»). Любое другое значение — «не отмечено»,
+  // без ошибки (решение Координатора 30.09.2026).
+  //
+  // Каждый тест проходит гео-дверь тремя запросами: координаты без города
+  // (searchByRadius, фильтр радиуса), координаты с городом — так шлёт mobile
+  // (searchByRadius, ветка города: у счёта другой срез параметров), город без
+  // координат (searchWithoutLocation).
+  const CARDS = [
+    ['Терраса true', { terrace: true }],
+    ['Терраса «да»', { terrace: 'да' }],
+    ['Терраса массивом', { terrace: [1] }],
+    ['Терраса объектом', { terrace: { value: true } }],
+    ['Терраса числом 2', { terrace: 2 }],
+    ['Терраса пустой строкой', { terrace: '' }],
+    ['Терраса false', { terrace: false }],
+    ['Терраса null', { terrace: null }],
+    ['Без удобств', {}],
+  ];
+
+  async function insertCard(name, attributes) {
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, attributes, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $3::jsonb, $4::jsonb, NOW(), NOW())
+    `, [partnerId, name, defaultWorkingHours, JSON.stringify(attributes)]);
+  }
+
+  beforeEach(async () => {
+    for (const [name, attributes] of CARDS) {
+      await insertCard(name, attributes);
+    }
+  });
+
+  /** Один фильтр удобств через три пути гео-двери: статус, имена, счёт. */
+  async function searchGeoDoor(features) {
+    const outcome = (response) => ({
+      status: response.status,
+      names: (response.body.data?.establishments ?? []).map((e) => e.name).sort(),
+      total: response.body.data?.pagination?.total,
+    });
+    const byRadius = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 10, features });
+    const byRadiusInCity = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, city: 'Минск', features });
+    const byCity = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ city: 'Минск', features });
+    return {
+      byRadius: outcome(byRadius),
+      byRadiusInCity: outcome(byRadiusInCity),
+      byCity: outcome(byCity),
+    };
+  }
+
+  /** Одинаковый ожидаемый исход на всех трёх путях. */
+  const onEveryPath = (expected) => ({ byRadius: expected, byRadiusInCity: expected, byCity: expected });
+
+  test('«Терраса»: 200 и только карточка с true — «да», массив, объект, 2, пустая строка не роняют запрос', async () => {
+    expect(await searchGeoDoor('terrace'))
+      .toEqual(onEveryPath({ status: 200, names: ['Терраса true'], total: 1 }));
+  });
+
+  test('«yes», строка «true» и число 1 — не отметка: карточка их не рисует, фильтр не считает', async () => {
+    // Postgres прочёл бы их как boolean true, и прежний код такие карточки
+    // находил. Но экран карточки удобство при таком значении не рисует —
+    // гость нашёл бы по «Терраса» карточку без террасы.
+    //
+    // Остаются только карточки, которые прежний код читал без ошибки: иначе на
+    // старом коде тест падал бы на 400 от «да» и массива, а не на смысле.
+    await query(`DELETE FROM establishments WHERE name NOT IN ('Терраса true', 'Терраса false', 'Терраса null', 'Без удобств')`);
+    await insertCard('Терраса «yes»', { terrace: 'yes' });
+    await insertCard('Терраса «true» строкой', { terrace: 'true' });
+    await insertCard('Терраса числом 1', { terrace: 1 });
+
+    expect(await searchGeoDoor('terrace'))
+      .toEqual(onEveryPath({ status: 200, names: ['Терраса true'], total: 1 }));
+  });
+
+  test('ключ вне канона с массивом (так правка карточки кладёт `features`) — 200 и пусто', async () => {
+    // Гео-дверь и умный поиск берут ключи удобств без белого списка, а
+    // updateEstablishment складывает в `attributes.features` массив. Прежний
+    // код отвечал на `features=features` ошибкой (клиенту 400).
+    await query(`UPDATE establishments SET attributes = '{"features": ["Wi-Fi", "Парковка"]}'::jsonb WHERE name = 'Без удобств'`);
+
+    expect(await searchGeoDoor('features'))
+      .toEqual(onEveryPath({ status: 200, names: [], total: 0 }));
+  });
+});

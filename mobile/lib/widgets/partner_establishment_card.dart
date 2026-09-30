@@ -41,125 +41,184 @@ class PartnerEstablishmentCard extends StatelessWidget {
   // Dimensions
   // ============================================================================
 
-  /// Высота карточки. Верхний блок (фото → имя → тип → кухня → счётчики →
-  /// адрес) растёт от top: 125 вниз вместе с текстом, нижний (шкала заполненности
-  /// и кнопка «Продвижение») прижат к низу. Высоты хватает, чтобы блоки не
-  /// встретились даже на самых «высоких» метриках шрифта.
+  /// Высота карточки по макету — она же наименьшая: выше карточка становится,
+  /// только когда содержимое в неё не помещается (см. [build]).
   static const double _cardHeight = 310.0;
+
+  /// Место кнопки «Продвижение» в нижнем ряду. По макету шкала заполненности
+  /// идёт от левого поля до 160 dp от правого края карточки, а кнопка стоит
+  /// в этих 160 dp, в 10 от края. Шире место становится, только когда
+  /// кнопке с крупным шрифтом тесно, — тогда уступает шкала.
+  static const double _buttonSlotWidth = 150.0;
+
+  /// Наименьший зазор между шкалой и кнопкой «Продвижение».
+  static const double _barButtonGap = 8.0;
+
+  /// Наименьший зазор между адресом и нижним рядом — тот, что остаётся между
+  /// ними по макету при обычном шрифте.
+  static const double _contentBottomGap = 3.0;
+
+  /// Предел системного размера шрифта — тот же, что у карточки заведения в
+  /// поиске, и на всю карточку вместе со строками под ней («Редактировать»,
+  /// статус, комментарий модератора): решение Координатора 30.09.2026.
+  ///
+  /// Высоту карточка добирает сама (см. [build]), а ширина задана экраном:
+  /// нижний ряд делят шкала заполненности и кнопка «Продвижение», и кнопка
+  /// растёт вместе с буквами. Без предела (замер 30.09.2026 шрифтами сборки)
+  /// на 360-dp телефоне при ×2 шкале оставалось меньше 60 dp, а при самом
+  /// крупном тексте iPhone (×3,1) кнопка выходила шире нижнего ряда.
+  static const double _maxTextScale = 1.2;
 
   @override
   Widget build(BuildContext context) {
     final isPremium = establishment.isPremium;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Main card
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: double.infinity,
-            height: _cardHeight,
-            decoration: BoxDecoration(
-              color: isPremium ? _cardDarkBg : _backgroundColor,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: const Offset(4, 4),
-                ),
-                BoxShadow(
-                  color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                  offset: const Offset(-4, -4),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                // Image section (top portion with mask)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 120,
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(10),
-                      topRight: Radius.circular(10),
-                      bottomLeft: Radius.circular(60),
-                      bottomRight: Radius.circular(60),
-                    ),
-                    child: _buildImage(),
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: _maxTextScale,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Main card
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: double.infinity,
+              // Не ниже макета; выше — только когда содержимое не помещается.
+              constraints: const BoxConstraints(minHeight: _cardHeight),
+              decoration: BoxDecoration(
+                color: isPremium ? _cardDarkBg : _backgroundColor,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(4, 4),
                   ),
-                ),
-
-                // Content section (name + stats + address below)
-                // Адрес идёт последним в этом же потоке, а не абсолютной
-                // позицией от низа карточки: иначе при более высоком блоке
-                // имени/типа/кухни он наезжал на строку счётчиков.
-                Positioned(
-                  left: 18,
-                  top: 125,
-                  right: 10,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  BoxShadow(
+                    color: AppTheme.primaryOrangeShadow.withValues(alpha: 0.08),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(-4, -4),
+                  ),
+                ],
+              ),
+              // Фото, текст и нижний ряд — один поток. Прежде текст рос от
+              // top: 125, а шкала и кнопка были прибиты к низу карточки
+              // фиксированной высоты, и адрес молча заходил на них — с
+              // крупным шрифтом, а на 320-dp экране с тремя кухнями и при
+              // обычном: наезд ошибки раскладки не даёт. Под наименьшей
+              // высотой колонка растягивается до неё, и остаток места
+              // встаёт между текстом и нижним рядом — нижний ряд прижат к
+              // низу, как в макете.
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildEstablishmentInfo(isPremium),
-                      const SizedBox(height: 6),
-                      _buildStats(isPremium),
-                      const SizedBox(height: 6),
-                      _buildAddress(isPremium),
+                      // Image section (top portion with mask)
+                      SizedBox(
+                        height: 120,
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(10),
+                            topRight: Radius.circular(10),
+                            bottomLeft: Radius.circular(60),
+                            bottomRight: Radius.circular(60),
+                          ),
+                          child: _buildImage(),
+                        ),
+                      ),
+
+                      // Content section (name + stats + address below)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 18,
+                          top: 5,
+                          right: 10,
+                          bottom: _contentBottomGap,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildEstablishmentInfo(isPremium),
+                            const SizedBox(height: 6),
+                            _buildStats(isPremium),
+                            const SizedBox(height: 6),
+                            _buildAddress(isPremium),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                ),
-
-                // Completeness progress bar (bottom, only when < 100%)
-                if (establishment.baseScore < 100)
-                  Positioned(
-                    left: 18,
-                    right: 160,
-                    bottom: 10,
-                    child: _buildCompletenessBar(isPremium),
-                  ),
-
-                // Promotion button (bottom right)
-                Positioned(
-                  right: 10,
-                  bottom: 18,
-                  child: _buildPromotionButton(),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // Edit link
-        GestureDetector(
-          onTap: onEditTap,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              'Редактировать',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppTheme.textPrimary,
-                decoration: TextDecoration.underline,
+                  _buildBottomRow(isPremium),
+                ],
               ),
             ),
           ),
-        ),
 
-        const SizedBox(height: 8),
+          const SizedBox(height: 8),
 
-        // Status badge
-        _buildStatusBadge(),
-      ],
+          // Edit link
+          GestureDetector(
+            onTap: onEditTap,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                'Редактировать',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textPrimary,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Status badge
+          _buildStatusBadge(),
+        ],
+      ),
+    );
+  }
+
+  /// Нижний ряд карточки: шкала заполненности (пока данные заполнены не
+  /// полностью) и кнопка «Продвижение».
+  ///
+  /// Низы — как в макете: шкала в 10 dp от низа карточки, кнопка в 18.
+  /// Шкала занимает всё, что оставляет ей место кнопки ([_buttonSlotWidth]
+  /// или шире, если кнопке тесно), поэтому они не сходятся ни при каком
+  /// размере шрифта.
+  Widget _buildBottomRow(bool isPremium) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 18, right: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: establishment.baseScore < 100
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _buildCompletenessBar(isPremium),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: _buttonSlotWidth),
+            child: Padding(
+              padding: const EdgeInsets.only(left: _barButtonGap, bottom: 18),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _buildPromotionButton(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -199,8 +258,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name — одна строка: перенос сдвинул бы весь блок вниз, на адрес
-        // и шкалу заполненности
+        // Name — одна строка, как в макете: длинное уходит в многоточие
         Text(
           establishment.name,
           maxLines: 1,
@@ -305,7 +363,8 @@ class PartnerEstablishmentCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Одна строка: перенос подписи поднял бы весь нижний блок вверх, на адрес
+        // Одна строка: на узкой шкале (экран 320 dp, или крупный шрифт, когда
+        // шкала уступает место кнопке) подпись сокращается многоточием
         Text(
           'Заполненность данных',
           maxLines: 1,

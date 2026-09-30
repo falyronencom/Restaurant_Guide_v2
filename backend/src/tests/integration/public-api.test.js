@@ -381,7 +381,7 @@ describe('Public API — GET /api/v1/public/establishments?hours_filter', () => 
 
 describe('Public API — GET /api/v1/public/establishments?features', () => {
   // Attribute filtering reuses searchWithoutLocation's existing WHERE branch
-  // ((e.attributes->>key)::boolean = true), now forwarded through the public
+  // (addFeatureConditions: the key's value is JSON true), now forwarded through the public
   // catalog path (publicController → publicService → searchWithoutLocation).
   // Multiple keys are AND-ed (each adds its own condition). The valid keys are
   // the REAL data canon (9 reader/writer keys), NOT the geo-search validator —
@@ -466,6 +466,23 @@ describe('Public API — GET /api/v1/public/establishments?features', () => {
     expect(n).toContain('Wifi And Parking');
     expect(n).toContain('Wifi Only');
     expect(n).not.toContain('No Attributes');
+  });
+
+  test('a non-true value («да») does not break the catalog — 200, that card is simply not marked', async () => {
+    // The filter used to cast the value to boolean, so ONE card storing «да»
+    // instead of true turned every catalog request with this facet into an
+    // error (the client got 400 INVALID_FORMAT — Postgres 22P02).
+    // Marked = JSON true, exactly what the detail page renders (=== true).
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, attributes, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Wifi Da', 'wifi-da', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, '{"wifi": "да"}'::jsonb, NOW(), NOW())
+    `, [partnerId, defaultWorkingHours]);
+
+    const res = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ features: 'wifi' })
+      .expect(200);
+    expect(names(res).sort()).toEqual(['Wifi And Parking', 'Wifi Only']);
   });
 });
 

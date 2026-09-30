@@ -144,6 +144,38 @@ function addIdConditions({ includeIds, excludeIds }, conditions, params, paramIn
 }
 
 /**
+ * Helper: удобства экрана (`features`) — по И, каждое своим условием.
+ * Удобство отмечено, когда значение его ключа в `attributes` — JSON `true`:
+ * так его рисуют все экраны карточки (web `=== true`, mobile и admin-web
+ * `== true`), так записан канон AF1 (SDL CAT-C-3.15 — «true или ключа нет»).
+ *
+ * Сравнение jsonb с jsonb, без приведения типа (решение Координатора
+ * 30.09.2026). Прежнее `(e.attributes->>ключ)::boolean = true` падало на первом
+ * значении, которого Postgres не читает как boolean («да», массив, объект, 2,
+ * пустая строка), и одна такая карточка роняла весь запрос у всех (22P02 —
+ * клиенту 400). Значения на записи не проверяются (валидатор знает только
+ * isObject), а ключ приходит от клиента без белого списка
+ * (/search/establishments, /search/smart), поэтому условие выдерживает любое
+ * значение под любым ключом: всё, что не `true`, — «не отмечено». «yes», «1»
+ * и 1 тоже не отметка — карточка их не рисует.
+ *
+ * @param {string[]|null} features - Ключи удобств
+ * @param {Array} conditions - Existing WHERE conditions array (mutated)
+ * @param {Array} params - Existing params array (mutated)
+ * @param {number} paramIndex - Current parameter index
+ * @returns {number} Updated paramIndex
+ */
+function addFeatureConditions(features, conditions, params, paramIndex) {
+  if (!features || features.length === 0) return paramIndex;
+  for (const feature of features) {
+    conditions.push(`(e.attributes -> $${paramIndex}) = 'true'::jsonb`);
+    params.push(feature);
+    paramIndex++;
+  }
+  return paramIndex;
+}
+
+/**
  * Сопоставление с меню «по словам» (dishMatch: 'lenient') — путь умного
  * поиска, сессия А2 (27.09.2026). Буквальный ILIKE по фразе находил 79,1 %
  * пар «запрос × заведение» на копии меню прода: без словоформ («креветка» не
@@ -706,14 +738,8 @@ export async function searchByRadius({
     }
   }
 
-  // Add features filter (check attributes JSONB)
-  if (features && features.length > 0) {
-    features.forEach((feature) => {
-      conditions.push(`(e.attributes->>$${paramIndex})::boolean = true`);
-      params.push(feature);
-      paramIndex++;
-    });
-  }
+  // Add features filter (attributes JSONB: the key's value is JSON true)
+  paramIndex = addFeatureConditions(features, conditions, params, paramIndex);
 
   // Add text search filter (ILIKE + synonyms)
   if (search) {
@@ -1023,14 +1049,8 @@ export async function searchWithoutLocation({
     }
   }
 
-  // Add features filter
-  if (features && features.length > 0) {
-    features.forEach((feature) => {
-      conditions.push(`(e.attributes->>$${paramIndex})::boolean = true`);
-      params.push(feature);
-      paramIndex++;
-    });
-  }
+  // Add features filter (attributes JSONB: the key's value is JSON true)
+  paramIndex = addFeatureConditions(features, conditions, params, paramIndex);
 
   // Add text search filter (ILIKE + synonyms)
   if (search) {
