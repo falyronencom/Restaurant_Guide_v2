@@ -261,17 +261,29 @@ const preflight = async ({ root, apply, runId, databaseUrl, cloud, localPg }) =>
 
 // ───────────────────────── снимок ─────────────────────────
 
+/**
+ * Прошлый прогон для дифа — последний, у которого есть index.json и хотя бы одна
+ * успешная проверка: verify.json от --apply ИЛИ verify-<время>.json от --verify
+ * (прогон 1 30.09.2026 прошёл проверку только повторной — после правки белого списка).
+ */
 const findPreviousIndex = (root, runId) => {
-  const candidates = listRunDirs(root)
-    .filter((d) => basename(d) < runId)
-    .filter((d) => existsSync(join(d, 'index.json')) && existsSync(join(d, 'verify.json')))
-    .sort();
-  for (const d of candidates.reverse()) {
+  const verified = (d) => readdirSync(d).filter((n) => /^verify(-.+)?\.json$/.test(n)).some((n) => {
     try {
-      const v = JSON.parse(readFileSync(join(d, 'verify.json'), 'utf8'));
-      if (v.ok) return JSON.parse(readFileSync(join(d, 'index.json'), 'utf8'));
+      return JSON.parse(readFileSync(join(d, n), 'utf8')).ok === true;
     } catch {
-      // битый прошлый прогон — ищем раньше
+      return false;
+    }
+  });
+  const candidates = listRunDirs(root)
+    .filter((d) => basename(d) < runId && existsSync(join(d, 'index.json')))
+    .sort()
+    .reverse();
+  for (const d of candidates) {
+    if (!verified(d)) continue;
+    try {
+      return JSON.parse(readFileSync(join(d, 'index.json'), 'utf8'));
+    } catch {
+      // битый индекс — ищем раньше
     }
   }
   return null;
