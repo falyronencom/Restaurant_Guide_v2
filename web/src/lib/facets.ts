@@ -52,7 +52,7 @@ export const HOURS_OPTIONS: readonly FacetOption[] = [
 
 /**
  * Attribute (amenity) facet. Multi-select, AND-between (the backend adds one
- * (attributes->>key)::boolean=true condition per key). Keys + order match the
+ * condition per key: its value in `attributes` is JSON true). Keys + order match the
  * web reader canon (establishment-helpers ATTRIBUTE_ORDER) so the facet labels
  * agree with what the detail page shows; the public catalog backend validates
  * exactly these keys (publicController VALID_FEATURES).
