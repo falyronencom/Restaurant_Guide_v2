@@ -469,7 +469,7 @@ const snapshot = async ({ root, apply }) => {
     console.log(`  папка прогона: ${runDir}\\ (время в имени — время запуска)`);
     console.log(`  архив: ${archiveName} ≈ ${fmtBytes(media)} медиа + дамп (≤ ${fmtBytes(dbUpper)}, -Fc сжимает)`);
     console.log(`  пик на диске ≈ 3 объёма архива ≈ ${fmtBytes(3 * (media + dbUpper))}; свободно ${fmtBytes(pre.free)}`);
-    console.log('  пароль: три окна pinentry — задать, повторить, проверочная расшифровка (--no-symkey-cache: агент не помнит)');
+    console.log('  пароль: два окна pinentry — задать (один раз), проверочная расшифровка (--no-symkey-cache: агент не помнит); перед вводом — раскладка ENG/РУС');
     console.log(`  учебное восстановление: база ${verifyDbName()}… в ${VERIFY_CONTAINER}, после проверок удаляется`);
     console.log(`  диф к прошлому прогону: ${previous ? previous.run_id : 'прошлого прогона нет — это первый'}`);
     if (3 * (media + dbUpper) > pre.free) warn('места на диске может не хватить');
@@ -586,7 +586,7 @@ const snapshot = async ({ root, apply }) => {
   if (tr.code !== 0) throw new Error(`tar: ${lastLines(tr.stderr)}`);
   const tarSha = await sha256File(join(runDir, tarName));
   ok(`tar: ${fmtBytes(statSync(join(runDir, tarName)).size)}`);
-  console.log('  → сейчас откроется окно pinentry: введите пароль архива из менеджера паролей, затем ещё раз для подтверждения.');
+  console.log('  → сейчас откроется окно pinentry: введите пароль архива ОДИН раз (проверьте раскладку ENG/РУС); подтвердит его проверочная расшифровка.');
   const er = await gpgEncrypt(pre.gpg.path, join(runDir, tarName), join(runDir, gpgName));
   if (er.code !== 0) throw new Error(`gpg --symmetric: ${lastLines(er.stderr)}`);
   const format = describePacketFormat(await readPacketHeaders(join(runDir, gpgName)));
@@ -631,15 +631,24 @@ const verifyArchive = async ({ gpg, archivePath, workDir, localPg, runId, expect
   const tarName = basename(archivePath).replace(/\.gpg$/, '');
 
   console.log('\nПроверочная расшифровка');
-  console.log('  → окно pinentry: введите тот же пароль (агент его не запомнил — так проверяется сохранённый пароль).');
+  console.log('  → окно pinentry: введите тот же пароль из менеджера паролей (агент его не запомнил — так проверяется сохранённый пароль; раскладка ENG/РУС).');
   const t0 = Date.now();
-  const dr = await gpgDecrypt(gpg.path, archivePath, join(tmp, tarName));
+  // Две попытки: опечатка или раскладка при проверке — ещё не повод выбрасывать
+  // архив и качать всё заново. Вторая неудача — пароль архива не тот, что сохранён.
+  let dr;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    attempts = attempt;
+    dr = await gpgDecrypt(gpg.path, archivePath, join(tmp, tarName));
+    if (dr.code === 0 || state.aborted) break;
+    if (attempt < 2) warn(`не расшифровалось (${lastLines(dr.stderr, 1)}) — вторая попытка: окно pinentry откроется снова`);
+  }
   if (dr.code !== 0) {
-    result.decryption = { ok: false, error: lastLines(dr.stderr) };
+    result.decryption = { ok: false, attempts, error: lastLines(dr.stderr) };
     return result;
   }
   const sha = await sha256File(join(tmp, tarName));
-  result.decryption = { ok: expectedTarSha ? sha === expectedTarSha : true, tar_sha256: sha, expected_tar_sha256: expectedTarSha ?? null };
+  result.decryption = { ok: expectedTarSha ? sha === expectedTarSha : true, attempts, tar_sha256: sha, expected_tar_sha256: expectedTarSha ?? null };
   if (!result.decryption.ok) return result;
   ok(expectedTarSha ? 'sha256 расшифрованного tar совпал с исходным' : 'расшифровано (эталона sha256 нет — сверка по манифесту ниже)');
   if (onDecrypted) await onDecrypted();
@@ -776,7 +785,7 @@ const pinentryCheck = async (root) => {
     const plain = join(dir, 'trial.bin');
     await writeFile(plain, randomBytes(4096));
     const sha = await sha256File(plain);
-    console.log('→ окно pinentry: введите ПРОБНЫЙ пароль (не настоящий), затем ещё раз.');
+    console.log('→ окно pinentry: введите ПРОБНЫЙ пароль (не настоящий) один раз; раскладка — ENG/РУС на панели задач.');
     const er = await gpgEncrypt(gpg.path, plain, `${plain}.gpg`);
     if (er.code !== 0) throw new Error(`шифрование не удалось: ${lastLines(er.stderr)}`);
     const format = describePacketFormat(await readPacketHeaders(`${plain}.gpg`));

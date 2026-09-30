@@ -49,9 +49,19 @@ export const tarVersion = async () => {
 export const tarCreate = (cwd, tarName, dirName) => run('tar', ['-cf', tarName, dirName], { cwd });
 export const tarExtract = (cwd, tarName) => run('tar', ['-xf', tarName], { cwd });
 
-/** Симметричное шифрование: AES-256, S2K SHA-512 с максимумом итераций, без сжатия (медиа и -Fc уже сжаты). */
+/**
+ * Симметричное шифрование: AES-256, S2K SHA-512 с максимумом итераций, без
+ * сжатия (медиа и -Fc уже сжаты).
+ *
+ * --passphrase-repeat 0 — пароль вводится ОДИН раз. Окно «повторите пароль»
+ * pinentry-w32 1.3.3 после первого несовпадения больше не принимает повтор:
+ * поля повтора не видно, OK не закрывает окно (прогон 1, 30.09.2026 — ввод
+ * зациклился, прогон прерван). Подтверждение пароля делает проверочная
+ * расшифровка: до неё открытые данные не удаляются.
+ */
 export const GPG_ENCRYPT_ARGS = Object.freeze([
   '--no-tty', '--yes', '--no-symkey-cache',
+  '--passphrase-repeat', '0',
   '--symmetric',
   '--cipher-algo', 'AES256',
   '--s2k-cipher-algo', 'AES256',
