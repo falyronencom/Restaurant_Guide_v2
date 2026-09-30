@@ -154,6 +154,20 @@ describe('целое слово названия — тот же уровень,
       matches: [{ id: 'a', name: 'Le Pigeon', kind: 'word' }, { id: 'b', name: 'Pigeonnier', kind: 'prefix' }],
     });
   });
+
+  test('целые слова впереди начал при любом порядке каталога — срез списка сверху их не отрежет', () => {
+    // Порядок строк каталога не задан (запрос без ORDER BY), а smartSearchService
+    // берёт первые 50 совпадений: 60 начал перед целым словом не должны его вытеснить.
+    const catalog = [
+      ...Array.from({ length: 60 }, (_, i) => ({ id: `p${i}`, name: `Pigeonnier ${i}` })),
+      { id: 'a', name: 'Le Pigeon' },
+    ];
+    const picked = pickNameMatches('Pigeon', catalog);
+    expect(picked.level).toBe(2);
+    expect(picked.matches).toHaveLength(61);
+    expect(picked.matches[0]).toEqual({ id: 'a', name: 'Le Pigeon', kind: 'word' });
+    expect(picked.matches.slice(1).every((match) => match.kind === 'prefix')).toBe(true);
+  });
 });
 
 describe('опечатка — от четырёх букв, похожесть не ниже порога', () => {

@@ -201,7 +201,11 @@ export function scoreNameMatch(query, name) {
 
 /**
  * Заведения, чьё название совпало с фразой, — только лучшего уровня: если
- * есть название целиком, начала и опечатки не считаются.
+ * есть название целиком, начала и опечатки не считаются. На уровне 2 целые
+ * слова стоят впереди начал: вызывающий режет список сверху (smartSearchService,
+ * не больше 50), и заведение с целым словом не должно уступить место началам
+ * (ревью 30.09.2026: на большом каталоге «Pigeon» может начинать десятки
+ * названий).
  * @param {string} query
  * @param {Array<{ id: string, name: string }>} rows — активные заведения
  * @returns {{ level: number, matches: Array<{ id: string, name: string, kind: string }> }|null}
@@ -221,5 +225,7 @@ export function pickNameMatches(query, rows) {
     }
     matches.push({ id: row.id, name: row.name, kind: score.kind });
   }
-  return level > 0 ? { level, matches } : null;
+  if (level === 0) return null;
+  const words = matches.filter((match) => match.kind === 'word');
+  return { level, matches: [...words, ...matches.filter((match) => match.kind !== 'word')] };
 }

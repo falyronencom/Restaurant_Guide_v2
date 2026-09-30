@@ -22,7 +22,7 @@ import { setWithExpiry } from '../config/redis.js';
 import redisClient from '../config/redis.js';
 import * as searchService from './searchService.js';
 import logger from '../utils/logger.js';
-import { nameSkeleton, pickNameMatches } from '../utils/establishmentNameMatch.js';
+import { nameSkeleton, pickNameMatches, textSkeletons } from '../utils/establishmentNameMatch.js';
 // Canon shared with the write-path + DB CHECK (CAT-C-2.9). DB stores Cyrillic
 // directly; these drive the AI prompt and the intent normalization.
 import {
@@ -724,6 +724,20 @@ const GENERIC_NAME_SKELETONS = new Set(
 );
 
 /**
+ * Фраза из общих слов — целиком («бизнес-ланч») или каждое слово по
+ * отдельности («кафе минск»). Такую фразу ищут как тип, кухню, город или
+ * блюдо, а не как название: иначе «кафе минск» подняло бы первым заведение
+ * «Кафе Минск Сити» (ревью 30.09.2026).
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function isGenericPhrase(query) {
+  const words = textSkeletons(query);
+  return words.length > 0
+    && (GENERIC_NAME_SKELETONS.has(words.join('')) || words.every((word) => GENERIC_NAME_SKELETONS.has(word)));
+}
+
+/**
  * Разбор без единого условия выдачи. Сортировка условием не считается: «Tiden
  * рядом» — всё ещё название. Теги — условие, только если в них названо
  * удобство: слово обстановки («уютное») выдачу не режет (29.09.2026), значит,
@@ -817,7 +831,7 @@ function nameOnlyIntent(intent) {
  * `wordIds` — те из совпавших, в чьём названии фраза — целое слово или
  * несколько слов подряд (вид 'word'); первыми при непустом разборе
  * поднимаются только они, а не все, чьё название с фразы начинается.
- * `wordGeneric` — сама фраза общее слово («cafe», «Minsk»).
+ * `wordGeneric` — фраза из общих слов («cafe», «Minsk», «кафе минск»).
  * @param {string} query
  * @returns {Promise<{ level: number, ids: string[], generic: boolean, wordIds: string[], wordGeneric: boolean }|null>}
  */
@@ -831,7 +845,7 @@ async function findNameMatches(query) {
       ids: matches.map((match) => match.id),
       generic: matches.some((match) => GENERIC_NAME_SKELETONS.has(nameSkeleton(match.name))),
       wordIds: matches.filter((match) => match.kind === 'word').map((match) => match.id),
-      wordGeneric: GENERIC_NAME_SKELETONS.has(nameSkeleton(query)),
+      wordGeneric: isGenericPhrase(query),
     };
   } catch (error) {
     logger.warn('Smart search name lookup failed', { error: error.message });

@@ -10,7 +10,7 @@
  * integration/smart-search.test.js, блок «поиск по названию заведения».
  */
 
-import { isIntentEmpty, nameMatchMode } from '../../services/smartSearchService.js';
+import { isGenericPhrase, isIntentEmpty, nameMatchMode } from '../../services/smartSearchService.js';
 
 const intentOf = (extra = {}) => ({
   category: null, cuisine: null, dish: null, dish_variants: [], meal_type: null,
@@ -141,6 +141,21 @@ describe('nameMatchMode — целое слово названия (решени
 
   test('начало без целого слова («Pige») при том же разборе — по-прежнему только спасение', () => {
     expect(nameMatchMode(prefix, { intent: intentOf({ dish: 'голубь' }), hasMenuTerm: true })).toBe('rescue');
+  });
+});
+
+describe('isGenericPhrase — фраза из общих слов (тип, кухня, город, приём пищи, синонимы)', () => {
+  test.each([
+    ['кафе'], ['минск'], ['Minsk'], ['cafe'], ['кофе'], ['бургер'], ['бизнес-ланч'], ['Бизнес ланч'],
+    ['кафе минск'], ['бар Минск'], ['пицца кафе'],
+  ])('«%s» — общая', (query) => {
+    expect(isGenericPhrase(query)).toBe(true);
+  });
+
+  test.each([
+    ['Pigeon'], ['Zalkind'], ['Brasserie'], ['urban dzen'], ['urban кафе'], ['Pigeon кафе'], [''], ['!!!'],
+  ])('«%s» — не общая', (query) => {
+    expect(isGenericPhrase(query)).toBe(false);
   });
 });
 
