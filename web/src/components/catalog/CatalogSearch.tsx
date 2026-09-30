@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 
 import { CitySheet } from '@/components/home/CitySheet';
+import { SearchSubmitButton } from '@/components/home/SearchSubmitButton';
 import type { MetadataSlug } from '@/lib/api/types';
 import type { SearchParams } from '@/lib/catalog-params';
 import type { FacetOption } from '@/lib/facets';
@@ -64,6 +65,9 @@ export function CatalogSearch({
   const initial =
     typeof searchParams.search === 'string' ? searchParams.search : '';
   const [term, setTerm] = useState(initial);
+  // Navigation is a transition: isPending holds while the server renders the
+  // new results (a fresh phrase takes 1–2 s at the smart endpoint).
+  const [isPending, startTransition] = useTransition();
 
   function navigate(city: string, search: string | undefined) {
     const params = new URLSearchParams();
@@ -77,7 +81,7 @@ export function CatalogSearch({
     params.delete('page'); // a new search / city always returns to page 1
     const qs = params.toString();
     const base = categorySlug ? `/${city}/${categorySlug}` : `/${city}`;
-    router.push(qs ? `${base}?${qs}` : base);
+    startTransition(() => router.push(qs ? `${base}?${qs}` : base));
   }
 
   return (
@@ -119,13 +123,10 @@ export function CatalogSearch({
           aria-label="Поиск заведения"
           className="min-w-0 flex-1 bg-transparent px-5 py-3.5 text-body-l text-foreground outline-none placeholder:text-text-tertiary"
         />
-        <button
-          type="submit"
-          aria-label="Найти"
-          className="flex items-center justify-center bg-brand px-[22px] text-[22px] text-white transition-colors hover:bg-brand-dark"
-        >
-          ›
-        </button>
+        <SearchSubmitButton
+          pending={isPending}
+          className="px-[22px] text-[22px]"
+        />
       </form>
     </div>
   );

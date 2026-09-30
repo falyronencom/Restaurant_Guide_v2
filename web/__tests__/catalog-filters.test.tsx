@@ -30,7 +30,9 @@ import {
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
+import { smartSearch } from '@/lib/api/endpoints/search';
 import { FilterShelf } from '@/components/catalog/FilterShelf';
+import { ResultsView } from '@/components/catalog/ResultsView';
 
 const mockPush = jest.fn();
 
@@ -50,6 +52,9 @@ jest.mock('@/lib/api/endpoints/metadata', () => ({
   getMetadata: jest.fn(),
   validateCitySlug: jest.fn(),
   validateCategorySlug: jest.fn(),
+}));
+jest.mock('@/lib/api/endpoints/search', () => ({
+  smartSearch: jest.fn(),
 }));
 
 const META = {
@@ -118,6 +123,72 @@ describe('CategoryPage — searchParam → getCatalog mapping', () => {
     expect(arg.cuisines).toBeUndefined();
     expect(arg.priceRange).toBeUndefined();
     expect(arg.hours_filter).toBeUndefined();
+  });
+
+  it('a search phrase is answered by the smart endpoint, with the page’s category as a filter', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: null,
+      establishments: [],
+      pagination: EMPTY_CATALOG.pagination,
+      fallback: false,
+    });
+
+    await CategoryPage({
+      params: P(),
+      searchParams: SP({ search: 'пицца', features: 'terrace' }),
+    });
+
+    expect(getCatalog).not.toHaveBeenCalled();
+    expect(smartSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: 'пицца',
+        city: 'Минск',
+        categories: ['Рестораны'],
+        features: ['terrace'],
+      }),
+    );
+  });
+
+  it('hands the phrase’s understanding and order to the results view', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: {
+        category: null,
+        cuisine: null,
+        dish: 'пицца',
+        meal_type: null,
+        price_max: 20,
+        location: null,
+        sort: 'rating',
+        tags: [],
+      },
+      establishments: [],
+      pagination: EMPTY_CATALOG.pagination,
+      fallback: false,
+    });
+
+    const ui = await CategoryPage({
+      params: P(),
+      searchParams: SP({ search: 'лучшая пицца до 20 рублей' }),
+    });
+
+    // The page is not rendered — find the ResultsView element in its tree.
+    const find = (node: unknown): { props: Record<string, unknown> } | null => {
+      if (!node || typeof node !== 'object') return null;
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          const hit = find(child);
+          if (hit) return hit;
+        }
+        return null;
+      }
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (el.type === ResultsView) return el as { props: Record<string, unknown> };
+      return find(el.props?.children);
+    };
+    expect(find(ui)?.props).toMatchObject({
+      understood: 'пицца · до 20 BYN · лучшие',
+      sortFromPhrase: 'rating',
+    });
   });
 });
 

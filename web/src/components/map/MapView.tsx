@@ -44,10 +44,15 @@ import { MapPreviewCard } from './MapPreviewCard';
  * hover/committed element refs stay valid). If the module fails to load we fall
  * back to the pre-clustering path: every marker rendered flat.
  *
+ * Search phrase: the list above is answered by the smart endpoint, so the map
+ * shows the same set — the route handler takes the phrase's whole result set
+ * instead of a viewport box, and the island stops re-querying on camera moves
+ * (buildFilters / markersQuery / the YMapListener guard; api/map/route.ts).
+ *
  * Deferred: open/closed marker state (needs working_hours on the marker
  * projection); spiderfy for coincident coordinates. The `features` attribute
- * facet is not honored — searchByBounds (the bounds backend) does not accept it
- * (known gap).
+ * facet is not honored without a phrase — searchByBounds (the bounds backend)
+ * does not accept it (known gap).
  */
 
 // [lon, lat] — Yandex v3 takes longitude first.
@@ -171,6 +176,10 @@ type MapFilters = {
   minRating?: number;
   hours_filter?: 'until_22' | 'until_morning' | '24_hours';
   search?: string;
+  /** Phrase map only: the smart endpoint needs the city (a bounds box implies it). */
+  city?: string;
+  /** Phrase map only: the smart endpoint honours amenities; the bounds backend does not. */
+  features?: string[];
 };
 
 type Status = 'loading' | 'ready' | 'error';
@@ -209,7 +218,7 @@ export default function MapView({
 
   // Latest filters in a ref so the once-created camera listener reads current
   // values; a primitive key drives the refetch-on-change effect.
-  const filters = buildFilters(categorySlug, searchParams);
+  const filters = buildFilters(citySlug, categorySlug, searchParams);
   const filterKey = JSON.stringify(filters);
   const filtersRef = useRef(filters);
   // Tunes the empty-state hint: only suggest "change filters" when a facet is
@@ -505,6 +514,11 @@ export default function MapView({
         map.addChild(
           new YMapListener({
             onUpdate: () => {
+              // A phrase map holds the phrase's whole result set (the smart
+              // endpoint has no viewport box), so a camera move changes
+              // nothing it would fetch — and every refetch would spend the
+              // site-wide smart-search limit. Filter changes still refetch.
+              if (filtersRef.current.search) return;
               clearTimeout(debounceTimer);
               debounceTimer = setTimeout(() => void refetch(), REFETCH_DEBOUNCE_MS);
             },
@@ -625,13 +639,19 @@ export default function MapView({
         {status === 'ready' && dataStatus === 'idle' && count === 0 && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center px-m">
             <div className="pointer-events-auto max-w-[16rem] rounded-card bg-white/95 px-5 py-4 text-center shadow-lg">
+              {/* Under a phrase the map holds the phrase's whole set — moving
+                  the camera cannot find more, so do not suggest it. */}
               <p className="text-body-m text-foreground">
-                В этой области ничего не найдено
+                {filters.search
+                  ? 'По этому запросу ничего не найдено'
+                  : 'В этой области ничего не найдено'}
               </p>
               <p className="mt-1 text-body-s text-muted-foreground">
-                {hasActiveFilters
-                  ? 'Измените фильтры или сместите карту'
-                  : 'Сместите или приблизьте карту'}
+                {filters.search
+                  ? 'Измените запрос или фильтры'
+                  : hasActiveFilters
+                    ? 'Измените фильтры или сместите карту'
+                    : 'Сместите или приблизьте карту'}
               </p>
             </div>
           </div>
@@ -650,19 +670,24 @@ export default function MapView({
   );
 }
 
-function buildFilters(
+export function buildFilters(
+  citySlug: string,
   categorySlug: string | undefined,
   sp: SearchParams = {},
 ): MapFilters {
   // Mirror the catalog's param parsing exactly (same helpers) so list and map
-  // agree. `features` is intentionally omitted — the bounds backend lacks it.
+  // agree. Without a phrase `features` is omitted — the bounds backend lacks
+  // it. With a phrase the map is answered by the smart endpoint, like the
+  // list, so it carries the city and the amenities the list is filtered by.
+  const search = asString(sp.search);
   return {
     category: categorySlug,
     cuisines: asList(sp.cuisine),
     priceRange: asList(sp.priceRange),
     minRating: asFloat(sp.minRating),
     hours_filter: asHours(sp.hours),
-    search: asString(sp.search),
+    search,
+    ...(search ? { city: citySlug, features: asList(sp.features) } : {}),
   };
 }
 
@@ -684,6 +709,19 @@ async function fetchMarkers(
   box: Box,
   filters: MapFilters,
 ): Promise<PublicEstablishmentMapMarker[]> {
+  const res = await fetch(`/api/map?${markersQuery(box, filters)}`);
+  // Throw (not return []) so the caller can tell a fetch failure apart from a
+  // genuine empty viewport: the former drives the error panel + retry, the
+  // latter the "nothing here" empty state. A network failure rejects already.
+  if (!res.ok) throw new Error(`Map fetch failed: ${res.status}`);
+  const data = (await res.json()) as {
+    establishments?: PublicEstablishmentMapMarker[];
+  };
+  return data.establishments ?? [];
+}
+
+/** The /api/map query for a viewport box + the active filters. */
+export function markersQuery(box: Box, filters: MapFilters): string {
   const qs = new URLSearchParams({
     swLat: String(box.swLat),
     neLat: String(box.neLat),
@@ -698,16 +736,11 @@ async function fetchMarkers(
   if (filters.minRating != null) qs.set('minRating', String(filters.minRating));
   if (filters.hours_filter) qs.set('hours_filter', filters.hours_filter);
   if (filters.search) qs.set('search', filters.search);
-
-  const res = await fetch(`/api/map?${qs.toString()}`);
-  // Throw (not return []) so the caller can tell a fetch failure apart from a
-  // genuine empty viewport: the former drives the error panel + retry, the
-  // latter the "nothing here" empty state. A network failure rejects already.
-  if (!res.ok) throw new Error(`Map fetch failed: ${res.status}`);
-  const data = (await res.json()) as {
-    establishments?: PublicEstablishmentMapMarker[];
-  };
-  return data.establishments ?? [];
+  // Phrase map only (buildFilters sets them only with a phrase): without one
+  // the query stays exactly what the bounds backend has always received.
+  if (filters.city) qs.set('city', filters.city);
+  if (filters.features?.length) qs.set('features', filters.features.join(','));
+  return qs.toString();
 }
 
 /*
