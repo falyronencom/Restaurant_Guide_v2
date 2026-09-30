@@ -95,7 +95,7 @@ const clearRateLimitKeys = async () => {
 };
 
 beforeAll(async () => {
-  if (!redisClient.isOpen) {
+  if (!redisClient.isReady) {
     const connected = await connectRedis();
     if (!connected) {
       throw new Error('Redis connection is required for rate limit tests');

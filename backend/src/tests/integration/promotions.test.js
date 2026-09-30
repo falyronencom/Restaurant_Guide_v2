@@ -105,7 +105,7 @@ beforeAll(async () => {
   const poolModule = await import('../../config/database.js');
   pool = poolModule.default;
   cloudinary = await import('../../config/cloudinary.js');
-  if (!redisClient.isOpen) {
+  if (!redisClient.isReady) {
     const connected = await connectRedis();
     if (!connected) {
       throw new Error('Redis connection is required for rate limit tests');

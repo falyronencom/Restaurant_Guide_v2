@@ -690,7 +690,7 @@ describe('Reviews System - Daily Quota', () => {
   };
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       redisReady = await connectRedis();
     } else {
       redisReady = true;

@@ -48,7 +48,7 @@ const defaultWorkingHours = JSON.stringify({
  * вместо проверок. Как в promotions.test.js и auth-password-reset.test.js.
  */
 async function clearRateLimitKeys() {
-  if (!redisClient.isOpen) return;
+  if (!redisClient.isReady) return;
   for (const pattern of ['ratelimit:smart_search:*', 'ratelimit:ip:*']) {
     const keys = await redisClient.keys(pattern);
     if (keys.length > 0) {
@@ -416,7 +416,7 @@ describe('Smart Search - Caching', () => {
   let redisReady = false;
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       redisReady = await connectRedis();
     } else {
       redisReady = true;
@@ -486,7 +486,7 @@ describe('Smart Search - Dish path (intent replayed from cache)', () => {
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -524,7 +524,7 @@ describe('Smart Search - Dish path (intent replayed from cache)', () => {
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);
@@ -604,7 +604,7 @@ describe('Smart Search - фильтры экрана в теле запроса'
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -616,7 +616,7 @@ describe('Smart Search - фильтры экрана в теле запроса'
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);
@@ -788,7 +788,7 @@ describe('Smart Search - разводка разбора (А1)', () => {
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -822,7 +822,7 @@ describe('Smart Search - разводка разбора (А1)', () => {
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);
@@ -935,7 +935,7 @@ describe('Smart Search - сопоставление с меню по слова�
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -1006,7 +1006,7 @@ describe('Smart Search - сопоставление с меню по слова�
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);
@@ -1115,7 +1115,7 @@ describe('Smart Search - поиск по названию заведения', (
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -1180,7 +1180,7 @@ describe('Smart Search - поиск по названию заведения', (
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);
@@ -1422,7 +1422,7 @@ describe('Smart Search - удобства из фразы', () => {
   const seededHashes = new Set();
 
   beforeAll(async () => {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
       await connectRedis();
     }
   });
@@ -1462,7 +1462,7 @@ describe('Smart Search - удобства из фразы', () => {
   });
 
   async function seedIntent(queryText, intent) {
-    expect(redisClient.isOpen).toBe(true);
+    expect(redisClient.isReady).toBe(true);
     const hash = intentCacheHash(queryText);
     seededHashes.add(hash);
     await smartSearchService.cacheIntent(hash, intent, 60);

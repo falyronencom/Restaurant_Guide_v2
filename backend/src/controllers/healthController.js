@@ -1,5 +1,5 @@
 import pool from '../config/database.js';
-import redisClient from '../config/redis.js';
+import redisClient, { withRedisDeadline } from '../config/redis.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -52,10 +52,15 @@ export const healthCheck = async (req, res) => {
     logger.error('Database health check failed', { error: error.message });
   }
 
-  // Check Redis connectivity
+  // Check Redis connectivity. While the client reconnects it is open but not
+  // ready — answer 503 at once instead of queueing a PING; a ready client that
+  // does not answer (half-open connection) is bounded by the call deadline.
   try {
+    if (!redisClient.isReady) {
+      throw new Error('Redis client is not ready (reconnecting)');
+    }
     const redisStartTime = Date.now();
-    await redisClient.ping();
+    await withRedisDeadline(redisClient.ping());
     health.checks.redis = {
       status: 'healthy',
       responseTime: Date.now() - redisStartTime,

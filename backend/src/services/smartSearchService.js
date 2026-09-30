@@ -18,8 +18,7 @@
 import { z } from 'zod';
 import crypto from 'crypto';
 import { getConfig, isAvailable } from '../config/openrouter.js';
-import { setWithExpiry } from '../config/redis.js';
-import redisClient from '../config/redis.js';
+import redisClient, { setWithExpiry, withRedisDeadline } from '../config/redis.js';
 import * as searchService from './searchService.js';
 import logger from '../utils/logger.js';
 import { nameSkeleton, pickNameMatches, textSkeletons } from '../utils/establishmentNameMatch.js';
@@ -323,13 +322,18 @@ function generateQueryHash(normalizedQuery) {
 
 /**
  * Get cached intent from Redis.
+ *
+ * Кэш необязателен: пока клиент переподключается (открыт, но не готов), чтение
+ * пропускается сразу, а молчащий Redis держит его не дольше потолка обращения.
+ * Запись — так же (cacheIntent): её ждёт общий разбор фразы (resolveIntent), и
+ * зависшая запись держала бы все одновременные запросы этой фразы.
  * @param {string} queryHash
  * @returns {Promise<object|null>}
  */
 export async function getCachedIntent(queryHash) {
   try {
-    if (!redisClient.isOpen) return null;
-    const cached = await redisClient.get(`smartsearch:${queryHash}`);
+    if (!redisClient.isReady) return null;
+    const cached = await withRedisDeadline(redisClient.get(`smartsearch:${queryHash}`));
     return cached ? JSON.parse(cached) : null;
   } catch (error) {
     logger.warn('Smart search cache read failed', { error: error.message });
@@ -345,7 +349,7 @@ export async function getCachedIntent(queryHash) {
  */
 export async function cacheIntent(queryHash, intent, ttl = CACHE_TTL_SECONDS) {
   try {
-    if (!redisClient.isOpen) return;
+    if (!redisClient.isReady) return;
     await setWithExpiry(`smartsearch:${queryHash}`, JSON.stringify(intent), ttl);
   } catch (error) {
     logger.warn('Smart search cache write failed', { error: error.message });
