@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -71,12 +74,34 @@ class EstablishmentCard extends StatelessWidget {
   /// карточке («4,5» → «4,»), кухня рвалась посреди слова (самая длинная в
   /// справочнике, «Вегетарианская», на 360 dp — с ×1,25). ×1,2 — наибольший
   /// шаг, при котором целы и рейтинг, и слова; заодно предел держит в рамках
-  /// рост высоты. Наезд длинных категории и кухни на цену у 360-dp телефонов
-  /// предел НЕ снимает: он начинается с ×1,1, а «Вегетарианская» при «$$$$»
-  /// подходит под цену уже при ×1,0 — это вёрстка правой колонки, не шрифт.
+  /// рост высоты. Наезд длинных типа и кухни на цену на узких экранах — дело
+  /// не шрифта, а вёрстки правой колонки («{Вегетарианская}» при «$$$»
+  /// касалась цены уже при ×1,0): его снимает [_CardHeader].
   /// Полный размер текста — на странице заведения. Обложка «Избранного»
   /// ограничена так же, своим пределом.
   static const double _maxTextScale = 1.2;
+
+  /// Тип заведения и кухня (Avenir Next по макету, 13px) и цена под
+  /// рейтингом. Кегли нужны и раскладке верха: по ним она находит, где буквы
+  /// строк и цены (см. [_CardHeader]).
+  static const TextStyle _categoryStyle = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    color: AppTheme.textPrimary,
+    height: 20 / 13,
+  );
+  static const TextStyle _cuisineStyle = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    color: _greyText,
+    height: 20 / 13,
+  );
+  static const TextStyle _priceStyle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w400,
+    color: AppTheme.textPrimary,
+    height: 25 / 15,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -210,13 +235,8 @@ class EstablishmentCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Name
-              _buildName(),
-              const SizedBox(height: 2),
-              // Category (type)
-              _buildCategory(),
-              // Cuisine in brackets
-              _buildCuisine(),
+              // Name, category, cuisine; rating badge and price (top right)
+              _buildHeader(),
               const SizedBox(height: 20),
               // Status with closing time
               _buildStatus(),
@@ -238,12 +258,6 @@ class EstablishmentCard extends StatelessWidget {
                 ),
             ],
           ),
-          // Rating badge (top right)
-          Positioned(
-            top: 0,
-            right: 0,
-            child: _buildRatingAndPrice(),
-          ),
           // Favorite button (bottom right) — по одной вертикали с рейтингом
           Positioned(
             bottom: 0,
@@ -252,6 +266,22 @@ class EstablishmentCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Верх карточки: название, тип и кухня слева, бейдж рейтинга с ценой под
+  /// ним — справа. Тип и кухня уступают цене место, только если их буквы с
+  /// ней сходятся, — см. [_CardHeader].
+  Widget _buildHeader() {
+    return _CardHeader(
+      title: _buildName(),
+      category: _buildCategory(),
+      cuisine: _buildCuisine(),
+      rating: _buildRatingBadge(),
+      price: _buildPrice(),
+      categoryFontSize: _categoryStyle.fontSize!,
+      cuisineFontSize: _cuisineStyle.fontSize!,
+      priceFontSize: _priceStyle.fontSize!,
     );
   }
 
@@ -272,72 +302,54 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build category/type (Avenir Next, 13px)
+  /// Одной строкой: упёрлась в цену — многоточие (см. [_CardHeader]).
   Widget _buildCategory() {
     return Text(
       _getCategoryLabel(establishment.category),
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: AppTheme.textPrimary,
-        height: 20 / 13,
-      ),
+      style: _categoryStyle,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
   /// Build cuisine in brackets (Avenir Next, 13px, grey)
-  Widget _buildCuisine() {
-    if (establishment.cuisine == null) return const SizedBox.shrink();
+  /// Одной строкой: упёрлась в цену — многоточие внутри скобок.
+  Widget? _buildCuisine() {
+    final cuisine = establishment.cuisine;
+    if (cuisine == null) return null;
+    return _BracedText(cuisine, style: _cuisineStyle);
+  }
 
-    return Text(
-      '{${establishment.cuisine}}',
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: _greyText,
-        height: 20 / 13,
+  /// Build rating badge (Figma design)
+  Widget? _buildRatingBadge() {
+    final rating = establishment.rating;
+    if (rating == null) return null;
+    return Container(
+      width: _ratingSize,
+      height: _ratingSize,
+      decoration: BoxDecoration(
+        color: _greenColor,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        rating.toStringAsFixed(1).replaceAll('.', ','),
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          color: _backgroundColor,
+          height: 25 / 16,
+        ),
       ),
     );
   }
 
-  /// Build rating badge and price (Figma design)
-  Widget _buildRatingAndPrice() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Rating badge
-        if (establishment.rating != null)
-          Container(
-            width: _ratingSize,
-            height: _ratingSize,
-            decoration: BoxDecoration(
-              color: _greenColor,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              establishment.rating!.toStringAsFixed(1).replaceAll('.', ','),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
-                color: _backgroundColor,
-                height: 25 / 16,
-              ),
-            ),
-          ),
-        const SizedBox(height: 6),
-        // Price range
-        if (establishment.priceRange != null)
-          Text(
-            establishment.priceRange!,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w400,
-              color: AppTheme.textPrimary,
-              height: 25 / 15,
-            ),
-          ),
-      ],
-    );
+  /// Build price range under the rating badge (Figma design)
+  Widget? _buildPrice() {
+    final priceRange = establishment.priceRange;
+    if (priceRange == null) return null;
+    return Text(priceRange, style: _priceStyle);
   }
 
   /// Build status with closing time (Figma design)
@@ -451,6 +463,441 @@ class EstablishmentCard extends StatelessWidget {
 
 }
 
+/// Стиль, которым `Text` рисует на самом деле, — той же сборкой, что и в
+/// `Text.build`: слияние с `DefaultTextStyle` и системный «жирный текст».
+/// Замер «влезет ли» голым стилем промахивается: тема приносит межбуквенный
+/// интервал 0.1 dp на знак.
+TextStyle _renderedStyle(BuildContext context, TextStyle style) {
+  var effective = style;
+  if (effective.inherit) {
+    effective = DefaultTextStyle.of(context).style.merge(effective);
+  }
+  if (MediaQuery.boldTextOf(context)) {
+    effective = effective.merge(const TextStyle(fontWeight: FontWeight.bold));
+  }
+  return effective;
+}
+
+/// Места верха карточки.
+enum _HeaderSlot { title, category, cuisine, rating, price }
+
+/// Верх карточки: название, тип заведения и кухня слева, бейдж рейтинга с
+/// ценой под ним — справа.
+///
+/// Зачем своя раскладка. Колонка «рейтинг над ценой» стоит поверх текста, и
+/// место под неё отведено только названию. Тип и кухня оказываются рядом с
+/// ценой, когда название уместилось в одну строку, а сколько у него строк,
+/// известно лишь после его раскладки. Поэтому раскладка общая: сначала
+/// колонка и название, потом каждая строка на своём месте — и только строка,
+/// которая в колонку упирается, получает ширину до неё. Постоянный отступ
+/// справа у типа и кухни резал бы их и под колонкой, где место есть
+/// (название в две строки).
+///
+/// «Упирается» — по буквам, а не по коробкам. Коробка строки выше её букв на
+/// межстрочный интервал, и коробки кухни и цены пересекаются и там, где буквы
+/// расходятся на 5–10 dp: кухня проходит под ценой. Строка, чьи буквы
+/// сходятся с буквами цены или с квадратом рейтинга (как именно — у
+/// [_RenderCardHeader._nearBy]), кончается многоточием перед ними (решение
+/// Координатора 30.09.2026). Строка, чья коробка в колонку не заходит, не
+/// меняется: при обычном шрифте — байт в байт.
+///
+/// Где буквы сходятся (замер по пикселям 30.09.2026, ревью того же дня):
+/// длинные значения справочника — «{Вегетарианская}», «{Американская}»,
+/// «Кондитерская» — на экранах уже 391 dp; чем ниже строка названия, тем
+/// выше тип и кухня, и хуже всех название, ужатое до пола кегля в одну
+/// строку. С ценами «$»–«$$$» — при обычном шрифте до 364 dp, при ×1,2 до
+/// 384 dp; с «$$$$», который допускает база, — до 370 и 390 dp. У 26
+/// карточек прода буквы на экранах от 360 dp не сходились ближе 3,5 dp, и
+/// там раскладка их не меняет; уже — на 356–358 dp при ×1,2 — «Европейская»
+/// и «Итальянская» подходят к «$$» на 0,9–3 dp и обрываются.
+///
+/// Высота — название, тип и кухня: колонка на неё не влияет, как и прежде,
+/// когда она лежала поверх текста.
+class _CardHeader
+    extends SlottedMultiChildRenderObjectWidget<_HeaderSlot, RenderBox> {
+  const _CardHeader({
+    required this.title,
+    required this.category,
+    required this.cuisine,
+    required this.rating,
+    required this.price,
+    required this.categoryFontSize,
+    required this.cuisineFontSize,
+    required this.priceFontSize,
+  });
+
+  final Widget title;
+  final Widget category;
+  final Widget? cuisine;
+  final Widget? rating;
+  final Widget? price;
+
+  /// Кегли до масштаба: по ним раскладка находит, где буквы.
+  final double categoryFontSize;
+  final double cuisineFontSize;
+  final double priceFontSize;
+
+  @override
+  Iterable<_HeaderSlot> get slots => _HeaderSlot.values;
+
+  @override
+  Widget? childForSlot(_HeaderSlot slot) => switch (slot) {
+        _HeaderSlot.title => title,
+        _HeaderSlot.category => category,
+        _HeaderSlot.cuisine => cuisine,
+        _HeaderSlot.rating => rating,
+        _HeaderSlot.price => price,
+      };
+
+  // Масштаб текста — из контекста самого верха, то есть под пределом
+  // карточки, тем же, что у строк.
+  @override
+  _RenderCardHeader createRenderObject(BuildContext context) {
+    return _RenderCardHeader(
+      categoryFontSize: categoryFontSize,
+      cuisineFontSize: cuisineFontSize,
+      priceFontSize: priceFontSize,
+      textScaler: MediaQuery.textScalerOf(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderCardHeader renderObject) {
+    renderObject
+      ..categoryFontSize = categoryFontSize
+      ..cuisineFontSize = cuisineFontSize
+      ..priceFontSize = priceFontSize
+      ..textScaler = MediaQuery.textScalerOf(context);
+  }
+}
+
+class _RenderCardHeader extends RenderBox
+    with SlottedContainerRenderObjectMixin<_HeaderSlot, RenderBox> {
+  _RenderCardHeader({
+    required double categoryFontSize,
+    required double cuisineFontSize,
+    required double priceFontSize,
+    required TextScaler textScaler,
+  })  : _categoryFontSize = categoryFontSize,
+        _cuisineFontSize = cuisineFontSize,
+        _priceFontSize = priceFontSize,
+        _textScaler = textScaler;
+
+  /// Отступ под названием.
+  static const double _titleGap = 2;
+
+  /// От бейджа рейтинга до цены.
+  static const double _ratingPriceGap = 6;
+
+  /// Оборванная строка кончается за столько dp до колонки.
+  static const double _cutGap = 4;
+
+  /// Строка сходится с препятствием колонки, если её коробка заходит за его
+  /// левый край и полосы букв по высоте перекрываются или расходятся меньше
+  /// чем на столько (сглаживание краёв букв и приблизительность полос).
+  static const double _nearBy = 1.75;
+
+  /// Полосы букв перекрываются на столько и больше — буквы стоят вровень, и
+  /// касание наступает при любом заходе коробки: поля знаков у «}» и «$»
+  /// вместе около 1,2 dp. Меньше — буквы встречаются углами (скобка кухни под
+  /// «$»), и касаются, только если строка зашла глубже [_cornerIntrusion].
+  static const double _sideBySide = 4;
+  static const double _cornerIntrusion = 1.5;
+
+  // Пороги подобраны по пиксельному замеру 30.09.2026: 25 920 строк (три
+  // формы названия, 12 пар тип/кухня, четыре цены, 356–390 dp, ×1,0–1,2),
+  // касание — буквы ближе 1 dp. Все 855 касаний обрываются; обрывается и
+  // около половины строк, чьи буквы подходили к цене на 1,3–4,3 dp: почти
+  // все ближе 2 dp, дальше 3 dp — редко (тесно). Ревью проверило и 12 192
+  // сочетания вне подбора — касаний после правки нет.
+  // Пропуски появлялись бы при [_nearBy] ниже 1,3, [_sideBySide] выше 5 или
+  // [_cornerIntrusion] выше 2 — выбраны значения с запасом.
+
+  /// Где буквы от базовой линии, в долях кегля — Nunito Sans, по файлу
+  /// шрифта: «$» поднимается на 0,82 и опускается на 0,115; заглавные и
+  /// фигурные скобки поднимаются на 0,705, скобки и «р», «у» опускаются на
+  /// 0,18. Смена шрифта тела требует перемерить и доли, и пороги.
+  static const double _priceInkAbove = 0.82;
+  static const double _priceInkBelow = 0.115;
+  static const double _lineInkAbove = 0.705;
+  static const double _lineInkBelow = 0.18;
+
+  double _categoryFontSize;
+  set categoryFontSize(double value) {
+    if (value == _categoryFontSize) return;
+    _categoryFontSize = value;
+    markNeedsLayout();
+  }
+
+  double _cuisineFontSize;
+  set cuisineFontSize(double value) {
+    if (value == _cuisineFontSize) return;
+    _cuisineFontSize = value;
+    markNeedsLayout();
+  }
+
+  double _priceFontSize;
+  set priceFontSize(double value) {
+    if (value == _priceFontSize) return;
+    _priceFontSize = value;
+    markNeedsLayout();
+  }
+
+  TextScaler _textScaler;
+  set textScaler(TextScaler value) {
+    if (value == _textScaler) return;
+    _textScaler = value;
+    markNeedsLayout();
+  }
+
+  static BoxParentData _parentData(RenderBox child) =>
+      child.parentData! as BoxParentData;
+
+  /// Текст снизу, колонка поверх — как было, когда колонка лежала над
+  /// текстом в Stack.
+  Iterable<RenderBox> get _paintOrder => const [
+        _HeaderSlot.title,
+        _HeaderSlot.category,
+        _HeaderSlot.cuisine,
+        _HeaderSlot.rating,
+        _HeaderSlot.price,
+      ].map(childForSlot).whereType<RenderBox>();
+
+  /// Верх и низ букв текста [child], стоящего на высоте [top]: от базовой
+  /// линии на доли кегля [fontSize]. Нет базовой линии — вся коробка.
+  (double, double) _inkBand(RenderBox child, double top, double fontSize,
+      double above, double below) {
+    final baseline = child.getDistanceToBaseline(TextBaseline.alphabetic,
+        onlyReal: true);
+    if (baseline == null) return (top, top + child.size.height);
+    final size = _textScaler.scale(fontSize);
+    return (top + baseline - above * size, top + baseline + below * size);
+  }
+
+  @override
+  void performLayout() {
+    assert(constraints.hasBoundedWidth);
+    final width = constraints.maxWidth;
+    final loose = BoxConstraints(maxWidth: width);
+
+    // Колонка у правого края: бейдж, под ним цена, центры на одной
+    // вертикали.
+    final rating = childForSlot(_HeaderSlot.rating);
+    final price = childForSlot(_HeaderSlot.price);
+    rating?.layout(loose, parentUsesSize: true);
+    price?.layout(loose, parentUsesSize: true);
+    final columnWidth =
+        math.max(rating?.size.width ?? 0.0, price?.size.width ?? 0.0);
+    final columnLeft = width - columnWidth;
+
+    // Где в колонке буквы: левый край, верх, низ. Бейдж залит целиком.
+    final obstacles = <(double, double, double)>[];
+    if (rating != null) {
+      final offset =
+          Offset(columnLeft + (columnWidth - rating.size.width) / 2, 0);
+      _parentData(rating).offset = offset;
+      obstacles.add((offset.dx, 0, rating.size.height));
+    }
+    if (price != null) {
+      final offset = Offset(
+        columnLeft + (columnWidth - price.size.width) / 2,
+        (rating?.size.height ?? 0) + _ratingPriceGap,
+      );
+      _parentData(price).offset = offset;
+      final (top, bottom) = _inkBand(
+          price, offset.dy, _priceFontSize, _priceInkAbove, _priceInkBelow);
+      obstacles.add((offset.dx, top, bottom));
+    }
+
+    final title = childForSlot(_HeaderSlot.title)!;
+    title.layout(loose, parentUsesSize: true);
+    _parentData(title).offset = Offset.zero;
+    var y = title.size.height + _titleGap;
+
+    for (final (slot, fontSize) in [
+      (_HeaderSlot.category, _categoryFontSize),
+      (_HeaderSlot.cuisine, _cuisineFontSize),
+    ]) {
+      final line = childForSlot(slot);
+      if (line == null) continue;
+      line.layout(loose, parentUsesSize: true);
+      final (inkTop, inkBottom) =
+          _inkBand(line, y, fontSize, _lineInkAbove, _lineInkBelow);
+      double? limit;
+      for (final (left, top, bottom) in obstacles) {
+        final overlap = math.min(inkBottom, bottom) - math.max(inkTop, top);
+        if (overlap <= -_nearBy) continue;
+        final intrusion = line.size.width - left;
+        if (intrusion > (overlap >= _sideBySide ? 0 : _cornerIntrusion)) {
+          limit = math.min(limit ?? left, left);
+        }
+      }
+      if (limit != null) {
+        line.layout(
+          BoxConstraints(maxWidth: math.max(0.0, limit - _cutGap)),
+          parentUsesSize: true,
+        );
+      }
+      _parentData(line).offset = Offset(0, y);
+      y += line.size.height;
+    }
+
+    size = constraints.constrain(Size(width, y));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    for (final child in _paintOrder) {
+      context.paintChild(child, _parentData(child).offset + offset);
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    for (final child in _paintOrder.toList().reversed) {
+      final isHit = result.addWithPaintOffset(
+        offset: _parentData(child).offset,
+        position: position,
+        hitTest: (result, transformed) =>
+            child.hitTest(result, position: transformed),
+      );
+      if (isHit) return true;
+    }
+    return false;
+  }
+
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) {
+    final title = childForSlot(_HeaderSlot.title);
+    final distance = title?.getDistanceToActualBaseline(baseline);
+    return distance == null ? null : distance + _parentData(title!).offset.dy;
+  }
+
+  // Собственных размеров без раскладки верх не знает — как и название на
+  // LayoutBuilder: строки подгоняются по месту.
+
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    assert(_debugThrowIfNotCheckingIntrinsics());
+    return 0.0;
+  }
+
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    assert(_debugThrowIfNotCheckingIntrinsics());
+    return 0.0;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    assert(_debugThrowIfNotCheckingIntrinsics());
+    return 0.0;
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    assert(_debugThrowIfNotCheckingIntrinsics());
+    return 0.0;
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    assert(debugCannotComputeDryLayout(
+      reason: 'The card header fits its lines by laying them out.',
+    ));
+    return Size.zero;
+  }
+
+  bool _debugThrowIfNotCheckingIntrinsics() {
+    assert(() {
+      if (!RenderObject.debugCheckingIntrinsics) {
+        throw FlutterError(
+          'The establishment card header does not support returning intrinsic '
+          'dimensions: it fits its lines by laying them out.',
+        );
+      }
+      return true;
+    }());
+    return true;
+  }
+}
+
+/// Кухня в фигурных скобках одной строкой. Не помещается — многоточие
+/// внутри скобок: «{Вегетарианс…}», а не «{Вегетарианс…» без закрывающей,
+/// как оборвал бы `Text`.
+///
+/// Места не хватает, когда кухня упирается в цену (см. [_CardHeader]) или
+/// шире всей колонки (356 dp при ×1,2 — прежний `Text` рвал слово по
+/// буквам); помещается — это прежний `Text`. Замер — стилем, каким рисует `Text`
+/// ([_renderedStyle]), с масштабом из `MediaQuery` и по ширине, которую
+/// строке отдали на самом деле (`LayoutBuilder`).
+class _BracedText extends StatelessWidget {
+  const _BracedText(this.value, {required this.style});
+
+  final String value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final rendered = _renderedStyle(context, style);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final full = '{$value}';
+        final text =
+            _fitted(rendered, constraints.maxWidth, textScaler, direction);
+        return Text(
+          text,
+          style: style,
+          maxLines: 1,
+          softWrap: false,
+          // Экранный чтец читает оборванную кухню целиком — как тип, который
+          // обрывает многоточием сам движок.
+          semanticsLabel: text == full ? null : full,
+        );
+      },
+    );
+  }
+
+  /// Полный текст, если помещается; иначе самое длинное начало слова,
+  /// которое помещается вместе с «…}».
+  String _fitted(
+    TextStyle rendered,
+    double maxWidth,
+    TextScaler textScaler,
+    TextDirection direction,
+  ) {
+    final full = '{$value}';
+    if (!maxWidth.isFinite) return full;
+
+    final painter = TextPainter(
+      textDirection: direction,
+      textScaler: textScaler,
+      maxLines: 1,
+    );
+    try {
+      bool fits(String text) {
+        painter.text = TextSpan(text: text, style: rendered);
+        painter.layout();
+        return painter.width <= maxWidth;
+      }
+
+      if (fits(full)) return full;
+      final letters = value.characters.toList();
+      for (var n = letters.length - 1; n > 0; n--) {
+        final cut = '{${letters.take(n).join().trimRight()}…}';
+        if (fits(cut)) return cut;
+      }
+      return '{…}';
+    } finally {
+      painter.dispose();
+    }
+  }
+}
+
 /// Текст в узкой колонке, который переносится только между словами.
 ///
 /// На 360 dp колонке адреса достаётся 96 dp, и слово вроде «Независимости,»
@@ -486,22 +933,9 @@ class _WholeWordText extends StatelessWidget {
   final TextStyle style;
   final int maxLines;
 
-  /// Стиль, которым `Text` будет рисовать на самом деле — той же сборкой, что
-  /// и в `Text.build`: слияние с `DefaultTextStyle` и системный «жирный текст».
-  TextStyle _renderedStyle(BuildContext context) {
-    var effective = style;
-    if (effective.inherit) {
-      effective = DefaultTextStyle.of(context).style.merge(effective);
-    }
-    if (MediaQuery.boldTextOf(context)) {
-      effective = effective.merge(const TextStyle(fontWeight: FontWeight.bold));
-    }
-    return effective;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final rendered = _renderedStyle(context);
+    final rendered = _renderedStyle(context, style);
     final textScaler = MediaQuery.textScalerOf(context);
     final direction = Directionality.of(context);
 

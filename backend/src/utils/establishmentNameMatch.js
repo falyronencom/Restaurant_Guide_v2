@@ -20,8 +20,10 @@
  * Уровни совпадения, лучший побеждает:
  *  3 — название целиком: фраза равна названию или содержит его целиком
  *      («кофейня TIDEN», «underdog пицца»);
- *  2 — начало: фраза от 3 букв — начало названия или одного из его слов
- *      («tid», «Pinky», «Pigeon»);
+ *  2 — часть названия, фраза от 3 букв. Два вида: целое слово названия или
+ *      несколько его слов подряд, но не всё название («Pigeon» у Le Pigeon,
+ *      «urban dzen» у urban dzen cafe; вид 'word'), — или начало названия либо
+ *      одного его слова («tid», «мале», «Pige»; вид 'prefix');
  *  1 — опечатка: фраза от 4 букв похожа на название или его слово
  *      (триграммы, как pg_trgm similarity, ≥ NAME_TYPO_THRESHOLD: «tidem»).
  *
@@ -158,6 +160,21 @@ function scoreSkeletons(queryWords, nameWordsList) {
     }
   }
 
+  // Целое слово названия или несколько его слов подряд («Pigeon» у «Le
+  // Pigeon», «dzen cafe» у «urban dzen cafe»). Всё название сюда не доходит —
+  // оно уровень 3 выше. Уровень тот же, что у начала, вид другой: целое слово
+  // smartSearchService поднимает первым при любом разборе (решение
+  // Координатора 30.09.2026), начало — только спасает от пустой выдачи.
+  if (query.length >= NAME_PREFIX_MIN && nameWordsList.length > 1) {
+    for (let i = 0; i < nameWordsList.length; i++) {
+      let run = '';
+      for (let j = i; j < nameWordsList.length && run.length < query.length; j++) {
+        run += nameWordsList[j];
+        if (run === query) return { level: 2, kind: 'word' };
+      }
+    }
+  }
+
   if (query.length >= NAME_PREFIX_MIN
     && (name.startsWith(query) || nameWordsList.some((word) => word.startsWith(query)))) {
     return { level: 2, kind: 'prefix' };
@@ -176,7 +193,7 @@ function scoreSkeletons(queryWords, nameWordsList) {
  * Совпадение фразы с названием.
  * @param {string} query
  * @param {string} name
- * @returns {{ level: number, kind: 'full'|'contained'|'prefix'|'typo'|null }}
+ * @returns {{ level: number, kind: 'full'|'contained'|'word'|'prefix'|'typo'|null }}
  */
 export function scoreNameMatch(query, name) {
   return scoreSkeletons(textSkeletons(query), textSkeletons(name));
@@ -184,7 +201,11 @@ export function scoreNameMatch(query, name) {
 
 /**
  * Заведения, чьё название совпало с фразой, — только лучшего уровня: если
- * есть название целиком, начала и опечатки не считаются.
+ * есть название целиком, начала и опечатки не считаются. На уровне 2 целые
+ * слова стоят впереди начал: вызывающий режет список сверху (smartSearchService,
+ * не больше 50), и заведение с целым словом не должно уступить место началам
+ * (ревью 30.09.2026: на большом каталоге «Pigeon» может начинать десятки
+ * названий).
  * @param {string} query
  * @param {Array<{ id: string, name: string }>} rows — активные заведения
  * @returns {{ level: number, matches: Array<{ id: string, name: string, kind: string }> }|null}
@@ -204,5 +225,7 @@ export function pickNameMatches(query, rows) {
     }
     matches.push({ id: row.id, name: row.name, kind: score.kind });
   }
-  return level > 0 ? { level, matches } : null;
+  if (level === 0) return null;
+  const words = matches.filter((match) => match.kind === 'word');
+  return { level, matches: [...words, ...matches.filter((match) => match.kind !== 'word')] };
 }
