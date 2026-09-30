@@ -23,6 +23,7 @@ import {
   LightboxTrigger,
   type LightboxPhoto,
 } from '@/components/establishment/Lightbox';
+import { JsonLdScript } from '@/components/JsonLdScript';
 import type { PublicMenuItem, PublicMedia } from '@/lib/api/types';
 
 type MenuBlockProps = {
@@ -201,12 +202,9 @@ export function MenuBlock({
         </p>
       ) : null}
 
-      {cleanItems.length > 0 ? (
-        <script
-          type='application/ld+json'
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      ) : null}
+      {/* Item names are OCR output from the partner's menu photo — the
+          serializer in JsonLdScript keeps them from closing the tag. */}
+      {cleanItems.length > 0 ? <JsonLdScript data={jsonLd} /> : null}
     </section>
   );
 }

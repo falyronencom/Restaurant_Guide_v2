@@ -69,9 +69,10 @@ export const createPromotion = asyncHandler(async (req, res) => {
  * List all promotions for a partner's establishment (including inactive).
  */
 export const getPromotions = asyncHandler(async (req, res) => {
+  const partnerId = req.user.userId;
   const { establishmentId } = req.params;
 
-  const promotions = await PromotionService.getPromotions(establishmentId, true);
+  const promotions = await PromotionService.getPartnerPromotions(partnerId, establishmentId);
 
   res.status(200).json({
     success: true,

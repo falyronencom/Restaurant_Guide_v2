@@ -70,14 +70,19 @@ describe('create', () => {
       guestCount: 2,
       comment: null,
       contactPhone: '+375291234567',
-      expiresAt: new Date(),
+      confirmationTimeoutHours: 4,
     });
 
     expect(result).toEqual(mockBookingRow);
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    const [sql] = mockQuery.mock.calls[0];
+    const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('INSERT INTO bookings');
     expect(sql).toContain('RETURNING *');
+    // expires_at comes from the database clock plus the timeout; no JS Date is
+    // bound (a zone-less column would store the process wall clock).
+    expect(sql).toMatch(/COALESCE\(\$8::timestamptz, NOW\(\)\) \+ make_interval\(hours => \$9::int\)\) AT TIME ZONE 'UTC'/);
+    expect(params.slice(7)).toEqual([null, 4]);
+    expect(params.some((value) => value instanceof Date)).toBe(false);
   });
 
   it('propagates DB errors', async () => {
@@ -90,7 +95,7 @@ describe('create', () => {
       bookingTime: '12:00',
       guestCount: 2,
       contactPhone: '+375291234567',
-      expiresAt: new Date(),
+      confirmationTimeoutHours: 4,
     })).rejects.toThrow('DB error');
   });
 });

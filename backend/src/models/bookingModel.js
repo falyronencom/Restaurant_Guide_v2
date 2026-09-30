@@ -11,6 +11,13 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 
+/**
+ * The clock bookings are made on: guests book a date and a time of day in
+ * Minsk, stored without a zone. Named explicitly in every computation below —
+ * the process clock is not this clock (production runs UTC, CI Europe/Minsk).
+ */
+export const BOOKING_TIME_ZONE = 'Europe/Minsk';
+
 // ============================================================================
 // Lazy Expiry (called before reads)
 // ============================================================================
@@ -77,9 +84,71 @@ const expirePendingBookingsForUser = async (userId) => {
 // ============================================================================
 
 /**
+ * Where a requested slot sits against "now" on the Minsk clock — one reading
+ * for all of createBooking's date and time checks.
+ *
+ * Computed in SQL, the project's path for zone-less time: `AT TIME ZONE` turns
+ * the Minsk wall clock of the slot into an instant, and "today" is the Minsk
+ * calendar date of now. The old JS arithmetic ran on the process clock — on
+ * UTC production a slot that had already passed looked three hours ahead, and
+ * from 00:00 to 03:00 Minsk "today" was still yesterday (review 23.09, #35).
+ *
+ * @param {object} p
+ * @param {string} p.bookingDate - 'YYYY-MM-DD', Minsk calendar date
+ * @param {string} p.bookingTime - 'HH:MM', Minsk wall clock
+ * @param {number} p.maxDaysAhead - booking_settings.max_days_ahead
+ * @param {Date|null} [p.now] - injectable clock for tests; null = NOW()
+ * @returns {Promise<{isPastDate: boolean, isTooFar: boolean, dayOfWeek: number, hoursUntil: number}>}
+ *   dayOfWeek: 0 = Sunday, as JS getDay()
+ */
+export const checkSlot = async ({ bookingDate, bookingTime, maxDaysAhead, now = null }) => {
+  const query = `
+    WITH clock AS (SELECT COALESCE($4::timestamptz, NOW()) AS now)
+    SELECT $1::date < (clock.now AT TIME ZONE $5)::date               AS is_past_date,
+           $1::date > (clock.now AT TIME ZONE $5)::date + $3::int     AS is_too_far,
+           EXTRACT(DOW FROM $1::date)::int                            AS day_of_week,
+           (EXTRACT(EPOCH FROM ((($1::date + $2::time) AT TIME ZONE $5) - clock.now))
+             / 3600)::float8                                          AS hours_until
+      FROM clock
+  `;
+
+  try {
+    const result = await pool.query(query, [
+      bookingDate,
+      bookingTime,
+      maxDaysAhead,
+      now ? now.toISOString() : null,
+      BOOKING_TIME_ZONE,
+    ]);
+    const row = result.rows[0];
+    return {
+      isPastDate: row.is_past_date,
+      isTooFar: row.is_too_far,
+      dayOfWeek: row.day_of_week,
+      hoursUntil: row.hours_until,
+    };
+  } catch (error) {
+    logger.error('Error checking booking slot', {
+      error: error.message,
+      bookingDate,
+      bookingTime,
+    });
+    throw error;
+  }
+};
+
+/**
  * Create a new booking.
  *
+ * expires_at is computed here, from the database clock (or the injected one):
+ * a JS Date bound into this zone-less column would be written as the PROCESS's
+ * wall clock — three hours late under Europe/Minsk. `AT TIME ZONE 'UTC'` stores
+ * UTC wall clock, which is what NOW() writes into every such column and what
+ * the lazy expiry above compares against.
+ *
  * @param {object} data
+ * @param {number} data.confirmationTimeoutHours - booking_settings.confirmation_timeout_hours
+ * @param {Date|null} [data.now] - injectable clock for tests; null = NOW()
  * @returns {object} created booking row
  */
 export const create = async (data) => {
@@ -91,7 +160,8 @@ export const create = async (data) => {
     guestCount,
     comment,
     contactPhone,
-    expiresAt,
+    confirmationTimeoutHours,
+    now = null,
   } = data;
 
   const query = `
@@ -99,7 +169,8 @@ export const create = async (data) => {
       establishment_id, user_id, booking_date, booking_time,
       guest_count, comment, contact_phone, expires_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7,
+            (COALESCE($8::timestamptz, NOW()) + make_interval(hours => $9::int)) AT TIME ZONE 'UTC')
     RETURNING *
   `;
 
@@ -112,7 +183,8 @@ export const create = async (data) => {
       guestCount,
       comment || null,
       contactPhone,
-      expiresAt,
+      now ? now.toISOString() : null,
+      confirmationTimeoutHours,
     ]);
     return result.rows[0];
   } catch (error) {

@@ -1,3 +1,4 @@
+import { JsonLdScript } from '@/components/JsonLdScript';
 import type { PublicEstablishmentDetail, PublicReview } from '@/lib/api/types';
 import { toAbsoluteUrl } from '@/lib/seo-gate';
 import {
@@ -15,8 +16,9 @@ import {
  * entity the detail page's RestaurantSchema describes — address/geo/hours are
  * NOT duplicated here, they live on the detail node.
  *
- * Mirrors RestaurantSchema emission (standalone <script>, no wrapper library);
- * shares subtype mapping + the aggregateRating gate via @/lib/schema-org.
+ * Mirrors RestaurantSchema emission (a standalone <script> via JsonLdScript —
+ * review text is written by any user and must not close the tag); shares
+ * subtype mapping + the aggregateRating gate via @/lib/schema-org.
  *
  * Not emitted when there are no reviews: the detail RestaurantSchema already
  * represents the entity, and an empty review list adds no structured data.
@@ -91,10 +93,5 @@ export function ReviewSchema({
     schema.aggregateRating = aggregateRating;
   }
 
-  return (
-    <script
-      type='application/ld+json'
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLdScript data={schema} />;
 }
