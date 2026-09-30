@@ -2,17 +2,20 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /*
-   * Image hosts allowed for `<Image>` remote URLs.
+   * Image hosts allowed for `<Image>` remote URLs — everything else gets 400
+   * from the Image Optimization API (/_next/image).
    *
-   * fastly.picsum.photos — current production seed (Lorem Picsum placeholders
-   *   used while real partner uploads are absent). Discovered Brief 3.
-   * res.cloudinary.com — anticipated real-data host once partners upload via
-   *   backend Cloudinary pipeline. Path-pattern intentionally broad until
-   *   cloud_name is verified and locked in (CAT for future tightening).
-   *
-   * Per Next.js images docs: prefer narrowest pathname acceptable. When
-   * cloud_name is confirmed, change Cloudinary entry to
-   *   `pathname: '/{cloud_name}/**'` to restrict to single account.
+   * fastly.picsum.photos — Lorem Picsum placeholders of the early seed
+   *   (Brief 3); no production image uses it since the 18.07.2026 wipe.
+   * res.cloudinary.com/davrzdre8 — our Cloudinary account, where the backend
+   *   puts every partner upload, and only it: the optimizer decodes whatever
+   *   it fetches, so it should fetch from nowhere but our own storage (decoder
+   *   advisories such as GHSA-2xp9-vwfh-vxw4 are fixed by upgrading next;
+   *   this keeps the surface small between upgrades). Checked 30.09.2026:
+   *   all 278 image URLs of the production catalogue (list, cards, reviews)
+   *   are under /davrzdre8/. Cloudinary URLs carry the SDK tag `?_a=…`, so
+   *   `search` stays open. If the account ever changes, this entry changes
+   *   with it — image-remote-patterns.test.ts pins the name.
    */
   images: {
     remotePatterns: [
@@ -24,7 +27,7 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'res.cloudinary.com',
-        pathname: '/**',
+        pathname: '/davrzdre8/**',
       },
     ],
   },
