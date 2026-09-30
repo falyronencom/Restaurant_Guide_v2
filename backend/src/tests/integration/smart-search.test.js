@@ -1135,6 +1135,24 @@ describe('Smart Search - поиск по названию заведения', (
     return est.rows[0].id;
   }
 
+  /** Распознанное меню заведения: позиции без раздела, по 10 BYN. */
+  async function withMenu(establishmentId, itemNames) {
+    const media = await query(
+      `INSERT INTO establishment_media
+         (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+       VALUES ($1, 'menu', 'pdf', 'http://test/menu.pdf', 'http://test/t.png', 'http://test/p.png')
+       RETURNING id`,
+      [establishmentId],
+    );
+    for (const [position, itemName] of itemNames.entries()) {
+      await query(
+        `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, is_hidden_by_admin, position)
+         VALUES ($1, $2, $3, 10.00, NULL, FALSE, $4)`,
+        [establishmentId, media.rows[0].id, itemName, position],
+      );
+    }
+  }
+
   beforeEach(async () => {
     await establishment('TIDEN', ['Кофейня'], ['Вегетарианская']);
     await establishment('urban dzen cafe', ['Кофейня'], ['Авторская']);
@@ -1272,10 +1290,23 @@ describe('Smart Search - поиск по названию заведения', (
     expect(namesOf(data)).toEqual(['Ромашка']);
   });
 
-  test('город во фразе — не название: «минск» — весь город, а не одна SFB Minsk', async () => {
+  test('город во фразе — не название: «минск» — весь город, а не одна SFB Minsk, и SFB Minsk не поднимается первой', async () => {
     const data = await smart('минск', p1Intent({ location: 'Минск' }));
 
     expect(data.pagination.total).toBe(MINSK_TOTAL);
+    // «минск» — целое слово в «SFB Minsk», но общее: первым оно ничего не
+    // поднимает (по рейтингу первым стоит «Итальяно»).
+    expect(namesOf(data)[0]).not.toBe('SFB Minsk');
+  });
+
+  test('фраза из общих слов: «кафе минск» — кафе Минска, заведение «Кафе Минск Сити» первым не поднимается', async () => {
+    // Все слова фразы — тип и город; целиком она — слова названия «Кафе Минск
+    // Сити» (ресторан, не кафе). Ищут по ней кафе, а не это заведение.
+    await establishment('Кафе Минск Сити', ['Ресторан'], ['Европейская']);
+
+    const data = await smart('кафе минск', p1Intent({ category: 'Кафе', location: 'Минск' }));
+
+    expect(namesOf(data)).toEqual(['Ромашка']);
   });
 
   test('заведение с общим словом в названии: «бар» — «Бар» первым, SFB Minsk (тоже бар) остаётся', async () => {
@@ -1330,6 +1361,48 @@ describe('Smart Search - поиск по названию заведения', (
     const data = await smart('что-нибудь вкусное', p1Intent());
 
     expect(data.pagination.total).toBe(MINSK_TOTAL);
+  });
+
+  // Целое слово названия — первым при любом прочтении модели (решение
+  // Координатора 30.09.2026). Разборы — те, что модель давала 30.09 на «Pigeon»
+  // и «Zalkind» (docs/handoffs/name_part_vs_dish_20260930/). Прежде при
+  // непустом разборе часть названия лишь спасала от пустой выдачи.
+
+  test('целое слово названия: «Pigeon», модель прочла «голубцы» — Le Pigeon первым, дальше место с голубцами (прежде Le Pigeon не было вовсе)', async () => {
+    await withMenu(await establishment('Le Pigeon', ['Кофейня'], ['Авторская']), ['Латте голубика-роза']);
+    await withMenu(await establishment('Лампа', ['Ресторан'], ['Народная']), ['Голубцы с овощным соусом']);
+
+    const data = await smart('Pigeon', p1Intent({ dish: 'голубцы', dish_variants: ['pigeon'] }));
+
+    expect(namesOf(data)).toEqual(['Le Pigeon', 'Лампа']);
+    expect(data.pagination.total).toBe(2);
+    // Под заведением — выдача по прочтению модели, поэтому разбор в ответе целиком.
+    expect(data.intent.dish).toBe('голубцы');
+  });
+
+  test('целое слово названия: «Pigeon», модель прочла «голубь» — Le Pigeon первым и один раз, хотя Charlie выше по рейтингу; «Pigeonnier» (название лишь начинается с Pigeon) не поднимается', async () => {
+    // «голуб…» находит и голубику Le Pigeon, и голубые мидии Charlie — как на проде.
+    await withMenu(await establishment('Le Pigeon', ['Кофейня'], ['Авторская']), ['Латте голубика-роза']);
+    await withMenu(await establishment('Charlie', ['Ресторан'], ['Европейская']), ['Голубые мидии']);
+    await establishment('Pigeonnier', ['Кафе'], ['Европейская']);
+    await query(`UPDATE establishments SET average_rating = 5.0, review_count = 20 WHERE name = 'Charlie'`);
+
+    const data = await smart('Pigeon', p1Intent({ dish: 'голубь', dish_variants: ['pigeon'] }));
+
+    expect(namesOf(data)).toEqual(['Le Pigeon', 'Charlie']);
+    expect(data.pagination.total).toBe(2);
+  });
+
+  test('целое слово названия: «Zalkind», модель прочла город — Zalkind Kitchen первым, дальше весь город без повторов', async () => {
+    await establishment('Zalkind Kitchen', ['Ресторан'], ['Авторская']);
+
+    const data = await smart('Zalkind', p1Intent({ location: 'Минск' }));
+    const names = namesOf(data);
+
+    expect(names[0]).toBe('Zalkind Kitchen');
+    expect(data.pagination.total).toBe(MINSK_TOTAL + 1);
+    expect(names).toHaveLength(MINSK_TOTAL + 1);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
