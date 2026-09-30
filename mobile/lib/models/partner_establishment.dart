@@ -103,7 +103,6 @@ double? _parseDoubleSafe(dynamic value) {
   return null;
 }
 
-/// Establishment moderation status
 /// Почему карточку нельзя удалить — тем же текстом, что и отказ сервера
 /// (решение Координатора 30.09.2026). Показывается вместо пункта удаления,
 /// когда [EstablishmentStatusExtension.canDelete] ложно.
@@ -111,6 +110,7 @@ const String kNotDeletableHint =
     'Удалить можно только черновик или отклонённую карточку. '
     'Чтобы убрать эту карточку, напишите в поддержку.';
 
+/// Establishment moderation status
 enum EstablishmentStatus {
   draft,     // Черновик (только создано)
   pending,   // На модерации

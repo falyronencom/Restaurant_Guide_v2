@@ -43,8 +43,14 @@ jest.unstable_mockModule('../../services/searchService.js', () => ({
   searchByRadius: jest.fn(),
 }));
 
-/** Обращение, пропущенное без похода в Redis, укладывается сюда с запасом. */
-const NOT_READY_MS = 250;
+/**
+ * Обращение, пропущенное без похода в Redis, укладывается сюда с запасом.
+ * Верхняя граница — потолок одного обращения (500 мс): таймер потолка раньше
+ * срока не срабатывает, так что обращение, дошедшее до Redis, займёт не меньше
+ * 500 мс и сюда не уложится. Нижняя — пауза сборки мусора под --runInBand, где
+ * весь набор идёт одним процессом (замечание ревью 30.09: при 250 мс запас мал).
+ */
+const NOT_READY_MS = 450;
 /** Одно обращение к молчащему Redis: потолок 500 мс плюс запас. */
 const ONE_CALL_MS = 1500;
 /** Два обращения подряд (лимитер: счётчик и TTL; умный поиск: чтение и запись кэша). */
@@ -350,7 +356,7 @@ describe('клиент открыт, но не готов: обращение п
     global.fetch = jest.fn(slowModelAnswer({ dish: 'пицца' }));
     const get = jest.spyOn(redisClient, 'get');
     const setEx = jest.spyOn(redisClient, 'setEx');
-    const outcome = await settleWithin(twoSimultaneousSmartSearches(), 400);
+    const outcome = await settleWithin(twoSimultaneousSmartSearches(), NOT_READY_MS);
     expect(outcome.settled).toBe(true);
     expect(outcome.value.map((result) => result.intent.dish)).toEqual(['пицца', 'пицца']);
     expect(global.fetch).toHaveBeenCalledTimes(1);
