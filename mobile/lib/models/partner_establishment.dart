@@ -104,6 +104,13 @@ double? _parseDoubleSafe(dynamic value) {
 }
 
 /// Establishment moderation status
+/// Почему карточку нельзя удалить — тем же текстом, что и отказ сервера
+/// (решение Координатора 30.09.2026). Показывается вместо пункта удаления,
+/// когда [EstablishmentStatusExtension.canDelete] ложно.
+const String kNotDeletableHint =
+    'Удалить можно только черновик или отклонённую карточку. '
+    'Чтобы убрать эту карточку, напишите в поддержку.';
+
 enum EstablishmentStatus {
   draft,     // Черновик (только создано)
   pending,   // На модерации
@@ -138,6 +145,22 @@ extension EstablishmentStatusExtension on EstablishmentStatus {
       case EstablishmentStatus.approved:
       case EstablishmentStatus.rejected:
         return true;
+      case EstablishmentStatus.suspended:
+        return false;
+    }
+  }
+
+  /// Может ли партнёр удалить карточку сам: только черновик и отклонённую —
+  /// как на сайте. Остальные статусы сервер удалить не даёт (403
+  /// ESTABLISHMENT_NOT_DELETABLE): опубликованная карточка несёт отзывы,
+  /// избранное и брони пользователей, и удаление унесло бы их каскадом.
+  bool get canDelete {
+    switch (this) {
+      case EstablishmentStatus.draft:
+      case EstablishmentStatus.rejected:
+        return true;
+      case EstablishmentStatus.pending:
+      case EstablishmentStatus.approved:
       case EstablishmentStatus.suspended:
         return false;
     }

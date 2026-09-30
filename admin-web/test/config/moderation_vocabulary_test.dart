@@ -44,6 +44,7 @@ void main() {
           'suspend',
           'unsuspend',
           'claim_establishment',
+          'partner_delete_establishment',
           'admin_update_coordinates',
           'admin_update_slug',
           'review_hide',
@@ -71,6 +72,11 @@ void main() {
       expect(auditActionTone('unsuspend'), AuditActionTone.allowing);
       expect(auditActionTone('review_hide'), AuditActionTone.restricting);
       expect(auditActionTone('suspend'), AuditActionTone.restricting);
+      // Удалённой партнёром карточки больше нет — это ограничение.
+      expect(
+        auditActionTone('partner_delete_establishment'),
+        AuditActionTone.restricting,
+      );
       // Передача заведения партнёру — не награда и не наказание: доступность
       // объекта она не меняет.
       expect(auditActionTone('claim_establishment'), AuditActionTone.neutral);

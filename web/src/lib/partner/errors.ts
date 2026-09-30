@@ -6,7 +6,7 @@
  * are English and never surface; unknown codes fall back to a neutral message.
  *
  * Keys MUST match the AppError codes thrown by backend establishmentService.js on
- * the create / update / submit paths. Manual cross-target sync (no shared package,
+ * the create / update / submit / delete paths. Manual cross-target sync (no shared package,
  * like constants.ts), so drift degrades SILENTLY to the neutral fallback — the
  * COORDINATES_CITY_MISMATCH / DUPLICATE_ESTABLISHMENT gap that masked the
  * create-flow failures. partner-errors.test.ts guards the cabinet code set.
@@ -43,6 +43,11 @@ const CODE_RU: Record<string, string> = {
   ESTABLISHMENT_SUSPENDED:
     'Заведение приостановлено вами. Возобновите его, чтобы редактировать.',
   ESTABLISHMENT_NOT_FOUND: 'Заведение не найдено.',
+  // Delete refused for any status but draft/rejected (backend
+  // deleteEstablishment). The cabinet hides the button for those statuses, so
+  // this surfaces only on a stale page — same words as the server's message.
+  ESTABLISHMENT_NOT_DELETABLE:
+    'Удалить можно только черновик или отклонённую карточку. Чтобы убрать эту карточку, напишите в поддержку.',
   INVALID_STATUS_TRANSITION: 'Действие недоступно в текущем статусе заведения.',
   INVALID_STATUS_FOR_SUBMISSION:
     'Это действие недоступно в текущем статусе заведения.',

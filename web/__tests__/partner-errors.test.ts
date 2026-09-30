@@ -8,12 +8,12 @@
  * future backend addition can't regress unnoticed.
  *
  * Source of truth: backend/src/services/establishmentService.js AppError codes on
- * the create / update / submit paths (manual cross-target sync — no shared
+ * the create / update / submit / delete paths (manual cross-target sync — no shared
  * package, per constants.ts).
  */
 import { messageForEstablishmentError } from '@/lib/partner/errors';
 
-// Codes establishmentService throws on create/update/submit that reach the
+// Codes establishmentService throws on create/update/submit/delete that reach the
 // cabinet UI — each MUST map to a specific message (not the neutral fallback).
 const CABINET_CODES = [
   'INVALID_CITY',
@@ -31,6 +31,7 @@ const CABINET_CODES = [
   'FORBIDDEN',
   'ESTABLISHMENT_SUSPENDED',
   'ESTABLISHMENT_NOT_FOUND',
+  'ESTABLISHMENT_NOT_DELETABLE',
   'INVALID_STATUS_FOR_SUBMISSION',
   'INCOMPLETE_ESTABLISHMENT',
   'NO_SESSION',

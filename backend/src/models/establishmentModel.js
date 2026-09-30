@@ -1296,17 +1296,41 @@ export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
 };
 
 /**
- * Delete an establishment and its associated media records
+ * Delete a partner's draft or rejected establishment and record it in the audit log.
+ *
+ * Only `draft` and `rejected` go: a card that has been public carries users'
+ * reviews, favourites and bookings, and the delete cascades to every table
+ * that references it (#4a of the 23.09.2026 review). The status condition sits
+ * in the DELETE itself, not in a check before it: if the card changes status
+ * in between (sent to moderation, approved), the DELETE re-checks its own
+ * WHERE on the new row version and deletes nothing.
+ *
+ * The audit row is written by the same statement, so there is no deletion
+ * without a record. old_data keeps name, city and status — once the card is
+ * gone the audit screen has nothing to join it to.
  *
  * @param {string} establishmentId - UUID of the establishment
  * @param {string} partnerId - UUID of the partner (for ownership check)
- * @returns {Promise<Object|null>} Deleted establishment basic info, or null if not found/not owned
+ * @returns {Promise<Object|null>} Deleted establishment basic info, or null when
+ *   nothing was deleted: not found, not owned, or a status that may not be deleted
  */
 export const deleteEstablishment = async (establishmentId, partnerId) => {
   const query = `
-    DELETE FROM establishments
-    WHERE id = $1 AND partner_id = $2
-    RETURNING id, name
+    WITH deleted AS (
+      DELETE FROM establishments
+      WHERE id = $1 AND partner_id = $2
+        AND status IN ('draft', 'rejected')
+      RETURNING id, name, city, status
+    ), logged AS (
+      INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data)
+      SELECT $2, 'partner_delete_establishment', 'establishment', d.id,
+             jsonb_build_object('name', d.name, 'city', d.city, 'status', d.status)
+        FROM deleted d
+      RETURNING entity_id
+    )
+    SELECT d.id, d.name
+      FROM deleted d
+      JOIN logged l ON l.entity_id = d.id
   `;
 
   try {
