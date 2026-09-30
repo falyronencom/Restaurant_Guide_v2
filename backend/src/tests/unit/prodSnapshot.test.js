@@ -356,12 +356,14 @@ describe('ошибки pg_restore', () => {
     ]);
   });
 
-  test('белый список — ровно три схемы расширений, не «любое already exists»', () => {
+  test('белый список — три схемы расширений и колонка topology.useslargeids, не «любое already exists»', () => {
     const stderr = [
       'schema "tiger" already exists', 'schema "tiger_data" already exists', 'schema "topology" already exists',
+      'column "useslargeids" of relation "topology" does not exist',
       'schema "public" already exists', 'relation "users" already exists', 'schema "tiger_dataX" already exists',
+      'column "useslargeids" of relation "users" does not exist', 'column "email" of relation "topology" does not exist',
     ].map((t) => `pg_restore: error: could not execute query: ERROR:  ${t}`).join('\n');
-    expect(parseRestoreErrors(stderr).map((e) => e.expected)).toEqual([true, true, true, false, false, false]);
+    expect(parseRestoreErrors(stderr).map((e) => e.expected)).toEqual([true, true, true, true, false, false, false, false, false]);
   });
 });
 

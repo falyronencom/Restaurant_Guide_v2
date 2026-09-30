@@ -108,6 +108,12 @@ export const EXPECTED_RESTORE_ERRORS = Object.freeze([
   // на pg-test (дамп базы с тем же набором расширений → база из template_postgis):
   // ровно эти три ошибки, счётчики всех 21 таблиц совпали.
   /^schema "(tiger|tiger_data|topology)" already exists$/,
+  // Разница версий PostGIS: на проде 3.7.0dev, в pg-test 3.4.3. У служебной
+  // таблицы расширения topology.topology в 3.7 есть колонка useslargeids, в 3.4
+  // её нет; pg_dump пишет COPY со списком колонок даже для пустой таблицы. Прогон
+  // 30.09.2026: на проде в topology.topology и topology.layer 0 строк — данных за
+  // этой ошибкой нет. При восстановлении в PostGIS шаблона Railway её не будет.
+  /^column "useslargeids" of relation "topology" does not exist$/,
 ]);
 
 /**
