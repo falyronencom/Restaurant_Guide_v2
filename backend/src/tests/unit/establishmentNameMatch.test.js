@@ -106,11 +106,11 @@ describe('название целиком внутри фразы', () => {
 
 describe('начало названия или слова названия — от трёх букв', () => {
   test.each([
-    ['tid', 'TIDEN'], ['under', 'underdog'], ['мале', 'МАЛЕВИЧ'], ['SFB', 'SFB Minsk'],
-    ['Pinky', 'Pinky Bandinsky'], ['Pigeon', 'Le Pigeon'], ['Martinque', 'Martinque Brasserie'],
-    ['Zalkind', 'Zalkind Kitchen'], ['urban dzen', 'urban dzen cafe'], ['Чарли', 'Charlie'],
+    ['tid', 'TIDEN'], ['under', 'underdog'], ['мале', 'МАЛЕВИЧ'], ['Чарли', 'Charlie'], ['Pige', 'Le Pigeon'],
+    ['urbandz', 'urban dzen cafe'],
   ])('«%s» → %s', (query, name) => {
     expect(found(query)).toEqual({ level: 2, names: [name] });
+    expect(scoreNameMatch(query, name).kind).toBe('prefix');
   });
 
   test('две буквы — ещё не начало', () => {
@@ -119,6 +119,40 @@ describe('начало названия или слова названия — �
 
   test('одно начало — несколько названий', () => {
     expect(found('мар')).toEqual({ level: 2, names: ['MARKS', 'MARBL', 'Martinque Brasserie', 'МАРЫ'] });
+  });
+});
+
+describe('целое слово названия — тот же уровень, вид «слово» (решение Координатора 30.09.2026)', () => {
+  // Вид решает режим поиска: целое слово поднимается первым при любом разборе,
+  // начало лишь спасает от пустой выдачи (unit/smartSearchNameMode.test.js).
+  // Слова — все целые слова многословных названий прода, которые модель 30.09
+  // читала то пусто, то как блюдо, тип или город (Pigeon, Zalkind, Brasserie,
+  // Bull), и соседние.
+  test.each([
+    ['Pigeon', 'Le Pigeon'], ['pigeon', 'Le Pigeon'], ['Pinky', 'Pinky Bandinsky'], ['Пинки', 'Pinky Bandinsky'],
+    ['Bandinsky', 'Pinky Bandinsky'], ['Zalkind', 'Zalkind Kitchen'], ['Kitchen', 'Zalkind Kitchen'],
+    ['Martinque', 'Martinque Brasserie'], ['Brasserie', 'Martinque Brasserie'], ['Bull', 'Bull&Roo'],
+    ['SFB', 'SFB Minsk'], ['urban dzen', 'urban dzen cafe'], ['dzen cafe', 'urban dzen cafe'], ['Let', 'Let It Be'],
+  ])('«%s» → %s', (query, name) => {
+    expect(found(query)).toEqual({ level: 2, names: [name] });
+    expect(scoreNameMatch(query, name)).toEqual({ level: 2, kind: 'word' });
+  });
+
+  test('всё название — не «слово», а уровень 3', () => {
+    expect(scoreNameMatch('Le Pigeon', 'Le Pigeon')).toEqual({ level: 3, kind: 'full' });
+    expect(scoreNameMatch('Pinky Bandinsky', 'Pinky Bandinsky')).toEqual({ level: 3, kind: 'full' });
+  });
+
+  test('слово из двух букв — не слово: «Le» ничего не находит', () => {
+    expect(found('Le')).toBeNull();
+  });
+
+  test('целое слово и начало на одном уровне — в выдаче сверки оба, каждый со своим видом', () => {
+    const catalog = [{ id: 'a', name: 'Le Pigeon' }, { id: 'b', name: 'Pigeonnier' }];
+    expect(pickNameMatches('Pigeon', catalog)).toEqual({
+      level: 2,
+      matches: [{ id: 'a', name: 'Le Pigeon', kind: 'word' }, { id: 'b', name: 'Pigeonnier', kind: 'prefix' }],
+    });
   });
 });
 
@@ -150,12 +184,16 @@ describe('что не обещано — фонетика', () => {
 });
 
 describe('общие слова касаются названий — что с этим делать, решает режим поиска', () => {
-  // Сопоставитель только измеряет: «минск» — начало слова в «SFB Minsk»,
-  // «кафе» — в «urban dzen cafe». Выдачу по ним не заменяет nameMatchMode
-  // (разбор с городом или типом не пуст) — см. unit/smartSearchNameMode.test.js.
-  test('«минск» и «кафе» — уровень «начало»', () => {
+  // Сопоставитель только измеряет: «минск» — целое слово в «SFB Minsk», «кафе»
+  // — в «urban dzen cafe». Выдачу по ним не заменяет и первыми их не поднимает
+  // nameMatchMode: фраза — общее слово (город, тип) — см.
+  // unit/smartSearchNameMode.test.js и блок «поиск по названию» в
+  // integration/smart-search.test.js.
+  test('«минск» и «кафе» — уровень 2, вид «слово»', () => {
     expect(found('минск')).toEqual({ level: 2, names: ['SFB Minsk'] });
     expect(found('кафе')).toEqual({ level: 2, names: ['urban dzen cafe'] });
+    expect(scoreNameMatch('минск', 'SFB Minsk').kind).toBe('word');
+    expect(scoreNameMatch('кафе', 'urban dzen cafe').kind).toBe('word');
   });
 });
 

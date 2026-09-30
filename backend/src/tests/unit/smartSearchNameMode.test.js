@@ -18,8 +18,10 @@ const intentOf = (extra = {}) => ({
 });
 
 const full = { level: 3, generic: false };
-const prefix = { level: 2, generic: false };
-const typo = { level: 1, generic: false };
+const prefix = { level: 2, generic: false, wordIds: [], wordGeneric: false };
+const typo = { level: 1, generic: false, wordIds: [], wordGeneric: false };
+/** Целое слово названия: «Pigeon» у Le Pigeon. */
+const word = { level: 2, generic: false, wordIds: ['le-pigeon'], wordGeneric: false };
 
 describe('isIntentEmpty', () => {
   test('пустой разбор пуст; сортировка условием не считается', () => {
@@ -106,6 +108,39 @@ describe('nameMatchMode — начало названия и опечатка', 
 
   test.each([['начало', prefix], ['опечатка', typo]])('%s при одном слове обстановки в тегах — как при пустом разборе, только совпавшие', (_, match) => {
     expect(nameMatchMode(match, { intent: intentOf({ tags: ['уютное'] }), hasMenuTerm: false })).toBe('only');
+  });
+});
+
+describe('nameMatchMode — целое слово названия (решение Координатора 30.09.2026)', () => {
+  // Разборы — те, что модель давала 30.09 на целые слова названий прода
+  // (docs/handoffs/name_part_vs_dish_20260930/name_parts_parse_probe.*).
+  test('модель ничего не прочла («Pigeon» в 15 разборах из 20) — только совпавшие, как прежде', () => {
+    expect(nameMatchMode(word, { intent: intentOf(), hasMenuTerm: false })).toBe('only');
+  });
+
+  test.each([
+    ['блюдо «голубь»', { dish: 'голубь', dish_variants: ['pigeon'] }, true],
+    ['блюдо «голубцы»', { dish: 'голубцы', dish_variants: ['pigeon'] }, true],
+    ['город («Zalkind»)', { location: 'Минск' }, false],
+    ['тип («Brasserie»)', { category: 'Ресторан' }, false],
+    ['удобство', { tags: ['терраса'] }, false],
+  ])('модель прочла %s — заведение первым, дальше её выдача', (_, extra, hasMenuTerm) => {
+    expect(nameMatchMode(word, { intent: intentOf(extra), hasMenuTerm })).toBe('first');
+  });
+
+  test('модель не ответила (запасной путь) — первым', () => {
+    expect(nameMatchMode(word, { intent: null, hasMenuTerm: false })).toBe('first');
+  });
+
+  test('фраза — общее слово («кафе» у urban dzen cafe, «минск» у SFB Minsk) — только спасение, как у начала', () => {
+    const generic = { ...word, wordGeneric: true };
+    expect(nameMatchMode(generic, { intent: intentOf({ category: 'Кафе' }), hasMenuTerm: false })).toBe('rescue');
+    expect(nameMatchMode(generic, { intent: intentOf({ location: 'Минск' }), hasMenuTerm: false })).toBe('rescue');
+    expect(nameMatchMode(generic, { intent: null, hasMenuTerm: false })).toBe('rescue');
+  });
+
+  test('начало без целого слова («Pige») при том же разборе — по-прежнему только спасение', () => {
+    expect(nameMatchMode(prefix, { intent: intentOf({ dish: 'голубь' }), hasMenuTerm: true })).toBe('rescue');
   });
 });
 

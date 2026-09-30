@@ -11,7 +11,8 @@
  * Name match (29.09.2026): in parallel with the parse, the phrase is matched
  * against establishment names in the DB (utils/establishmentNameMatch.js);
  * nameMatchMode decides whether the matches are the whole result, go first,
- * or only rescue an empty result.
+ * or only rescue an empty result. Since 30.09.2026 a whole word of a name goes
+ * first whatever the model read in it.
  */
 
 import { z } from 'zod';
@@ -757,13 +758,22 @@ export function isIntentEmpty(intent) {
  * название — общее слово («Кафе»), модель не ответила (запасной путь). Слово
  * обстановки в тегах («уютный Tiden») ничего не просит: выдачу оно не режет.
  *
- * Начало названия и опечатка (уровни 2 и 1) — сигнал слабее: только совпавшие —
- * лишь когда модель во фразе ничего не нашла («tid», «tidem»). Иначе фраза
- * значит своё («кафе» — тип, «минск» — город), и совпадение по названию лишь
- * спасает от пустой выдачи («андердог» модель принимает за блюдо — в меню его
- * нет — находим underdog).
+ * Часть названия и опечатка (уровни 2 и 1) — сигнал слабее: только совпавшие —
+ * лишь когда модель во фразе ничего не нашла («tid», «tidem», «Pigeon»).
  *
- * @param {{ level: number, generic: boolean }|null} nameMatch
+ * Иначе решает вид совпадения. Целое слово названия (вид 'word': «Pigeon» у
+ * Le Pigeon, «Zalkind» у Zalkind Kitchen) — первым, дальше обычная выдача,
+ * что бы модель в нём ни прочла, и когда она не ответила (решение
+ * Координатора 30.09.2026). Прочтение одного слова — жребий: из 20 разборов
+ * «Pigeon» 15 пустые, 3 — блюдо «голубь» (8 мест с голубикой и голубым
+ * сыром), 2 — «голубцы» (Le Pigeon нет вовсе); «Zalkind» модель читала как
+ * город, «Brasserie» — как тип, «Bull» — как «стейк», и заведение стояло
+ * 4–19-м (docs/handoffs/name_part_vs_dish_20260930/). Кроме общего слова
+ * («cafe» у urban dzen cafe, «Minsk» у SFB Minsk): его ищут как тип или
+ * город, и оно, как начало и опечатка, лишь спасает от пустой выдачи
+ * («андердог» модель принимает за блюдо — в меню его нет — находим underdog).
+ *
+ * @param {{ level: number, generic: boolean, wordIds?: string[], wordGeneric?: boolean }|null} nameMatch
  * @param {{ intent: object|null, hasMenuTerm: boolean }} parse
  * @returns {'only'|'first'|'rescue'|null}
  */
@@ -773,7 +783,9 @@ export function nameMatchMode(nameMatch, { intent, hasMenuTerm }) {
     const asksMore = hasMenuTerm || tagsToAttributes(intent?.tags).length > 0;
     return intent && !asksMore && !nameMatch.generic ? 'only' : 'first';
   }
-  return intent && isIntentEmpty(intent) ? 'only' : 'rescue';
+  if (intent && isIntentEmpty(intent)) return 'only';
+  if (nameMatch.wordIds?.length > 0 && !nameMatch.wordGeneric) return 'first';
+  return 'rescue';
 }
 
 /**
@@ -801,8 +813,13 @@ function nameOnlyIntent(intent) {
 /**
  * Заведения, чьё название совпало с фразой (лучший уровень), или null. Сверка —
  * добавка к поиску, не условие: сбой базы здесь не роняет выдачу.
+ *
+ * `wordIds` — те из совпавших, в чьём названии фраза — целое слово или
+ * несколько слов подряд (вид 'word'); первыми при непустом разборе
+ * поднимаются только они, а не все, чьё название с фразы начинается.
+ * `wordGeneric` — сама фраза общее слово («cafe», «Minsk»).
  * @param {string} query
- * @returns {Promise<{ level: number, ids: string[], generic: boolean }|null>}
+ * @returns {Promise<{ level: number, ids: string[], generic: boolean, wordIds: string[], wordGeneric: boolean }|null>}
  */
 async function findNameMatches(query) {
   try {
@@ -813,6 +830,8 @@ async function findNameMatches(query) {
       level: picked.level,
       ids: matches.map((match) => match.id),
       generic: matches.some((match) => GENERIC_NAME_SKELETONS.has(nameSkeleton(match.name))),
+      wordIds: matches.filter((match) => match.kind === 'word').map((match) => match.id),
+      wordGeneric: GENERIC_NAME_SKELETONS.has(nameSkeleton(query)),
     };
   } catch (error) {
     logger.warn('Smart search name lookup failed', { error: error.message });
@@ -932,11 +951,12 @@ function paginationOf(total, page, limit) {
  * 'first' на странице p позиции [(p−1)·limit, p·limit) берутся сперва из
  * совпавших, остаток — из основной выдачи со сдвигом на их число; основная
  * выдача исключает совпавших (`excludeIds`), `total` — сумма. Если фильтры
- * экрана отсекли все совпавшие — обычная выдача.
+ * экрана отсекли все совпавшие — обычная выдача. `ids` — совпавшие, которых
+ * показывать; без режима не читаются.
  *
  * @returns {Promise<{ establishments: object[], pagination: object, nameOnly: boolean, shown: number }>}
  */
-async function searchWithNameMatches({ mode, nameMatch, filters, explicitFilters, page, limit, offset }) {
+async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page, limit, offset }) {
   const plain = async () => ({ ...(await runSearch({ ...filters, limit, offset, page })), nameOnly: false, shown: 0 });
   if (!mode) return plain();
 
@@ -947,7 +967,7 @@ async function searchWithNameMatches({ mode, nameMatch, filters, explicitFilters
   }
 
   const named = await runSearch({
-    ...nameMatchParams(filters, explicitFilters, nameMatch.ids),
+    ...nameMatchParams(filters, explicitFilters, ids),
     limit: MAX_NAME_MATCHES,
     offset: 0,
     page: 1,
@@ -1014,10 +1034,13 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
     ? buildSmartSearchFilters(intent, context, explicitFilters)
     : buildFallbackFilters(query, context, explicitFilters);
 
-  // 4. Выдача с учётом совпадений по названию (nameMatchMode).
+  // 4. Выдача с учётом совпадений по названию (nameMatchMode). «Первыми» по
+  // части названия — только те, в чьём названии фраза целое слово: «Pigeon»
+  // поднимает Le Pigeon, но не заведение, чьё название с «Pigeon» начинается.
   const mode = nameMatchMode(nameMatch, { intent, hasMenuTerm: Boolean(filters.dish) });
+  const ids = mode === 'first' && nameMatch.level < 3 ? nameMatch.wordIds : nameMatch?.ids;
   const searchResult = await searchWithNameMatches({
-    mode, nameMatch, filters, explicitFilters, page, limit, offset,
+    mode, ids, filters, explicitFilters, page, limit, offset,
   });
 
   // Log for analytics
