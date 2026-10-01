@@ -357,6 +357,9 @@ class EstablishmentMedia {
   final String? url;
   final String? caption;
   final int position;
+  // Обложка карточки (её же показывает превью в выдаче). Ответ без флага —
+  // не обложка: старые строки так и приходят.
+  final bool isPrimary;
   final DateTime createdAt;
 
   EstablishmentMedia({
@@ -369,6 +372,7 @@ class EstablishmentMedia {
     this.url,
     this.caption,
     required this.position,
+    this.isPrimary = false,
     required this.createdAt,
   });
 
@@ -385,6 +389,7 @@ class EstablishmentMedia {
       url: json['url'] as String?,
       caption: json['caption'] as String?,
       position: json['position'] as int,
+      isPrimary: json['is_primary'] == true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -400,6 +405,7 @@ class EstablishmentMedia {
       'url': url,
       'caption': caption,
       'position': position,
+      'is_primary': isPrimary,
       'created_at': createdAt.toIso8601String(),
     };
   }

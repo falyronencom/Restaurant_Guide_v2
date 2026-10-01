@@ -29,6 +29,7 @@ import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
+import 'package:restaurant_guide_mobile/utils/gallery_photos.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -1018,28 +1019,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return '${km.toStringAsFixed(1)} км от вас';
   }
 
-  /// Get establishment photos sorted with primary image first.
-  /// Matches primary by url against thumbnailUrl (primary_image_url).
-  List<EstablishmentMedia> _getSortedPhotos() {
-    final photos = (_establishment!.media ?? [])
-        .where((m) => m.type == 'photo' || m.type == 'interior')
-        .toList();
-
-    if (photos.isEmpty) return photos;
-
-    final primaryUrl = _establishment!.thumbnailUrl;
-    if (primaryUrl == null) return photos;
-
-    final primaryIndex = photos.indexWhere(
-      (m) => m.url == primaryUrl || m.thumbnailUrl == primaryUrl,
-    );
-    if (primaryIndex > 0) {
-      final primary = photos.removeAt(primaryIndex);
-      photos.insert(0, primary);
-    }
-
-    return photos;
-  }
+  /// Gallery photos: every image except menu, cover first (see galleryPhotos).
+  List<EstablishmentMedia> _getSortedPhotos() => galleryPhotos(
+        _establishment!.media ?? [],
+        primaryUrl: _establishment!.thumbnailUrl,
+      );
 
   /// Build menu section
   Widget _buildMenuSection() {

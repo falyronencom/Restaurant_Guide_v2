@@ -246,6 +246,19 @@ void main() {
       expect(m.type, 'menu');
     });
 
+    test('is_primary доходит до модели — по нему галерея ставит обложку первой',
+        () {
+      expect(EstablishmentMedia.fromJson(mediaRow(isPrimary: true)).isPrimary,
+          isTrue);
+      expect(EstablishmentMedia.fromJson(mediaRow()).isPrimary, isFalse);
+      // Строка без флага (старый ответ) — не обложка, а не падение разбора.
+      expect(
+        EstablishmentMedia.fromJson(without(mediaRow(), 'is_primary'))
+            .isPrimary,
+        isFalse,
+      );
+    });
+
     test('медиа заведения разбирается вместе с карточкой', () {
       final e = Establishment.fromJson(establishmentRow(
         media: [mediaRow(position: 0), mediaRow(id: 'x', position: 1)],

@@ -69,23 +69,29 @@ Map<String, dynamic> establishmentRow({
       'promotions': promotions,
     };
 
-/// Строка медиа заведения.
+/// Строка медиа заведения — `MediaModel.getEstablishmentMedia` (бэкенд),
+/// проекция детали передаёт её как есть, включая `is_primary`.
 Map<String, dynamic> mediaRow({
   String id = '22222222-2222-4222-8222-222222222222',
   String type = 'photo',
   String? fileType,
   int position = 0,
+  bool isPrimary = false,
+  String url = 'https://cdn.example/full',
+  String previewUrl = 'https://cdn.example/preview',
+  String thumbnailUrl = 'https://cdn.example/thumb',
 }) =>
     <String, dynamic>{
       'id': id,
       'establishment_id': '11111111-1111-4111-8111-111111111111',
       'type': type,
       if (fileType != null) 'file_type': fileType,
-      'thumbnail_url': 'https://cdn.example/thumb',
-      'preview_url': 'https://cdn.example/preview',
-      'url': 'https://cdn.example/full',
+      'thumbnail_url': thumbnailUrl,
+      'preview_url': previewUrl,
+      'url': url,
       'caption': null,
       'position': position,
+      'is_primary': isPrimary,
       'created_at': '2026-04-01T09:00:00.000Z',
     };
 
