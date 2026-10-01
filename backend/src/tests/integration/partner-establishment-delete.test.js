@@ -30,6 +30,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 import * as EstablishmentModel from '../../models/establishmentModel.js';
+import { processCard } from '../../../scripts/seed-import/pipeline.js';
 
 /** Спецификация: удаляются только эти два статуса — и только у карточки, которой не было на сайте. */
 const DELETABLE = ['draft', 'rejected'];
@@ -242,6 +243,45 @@ describe('путь через приостановку: карточка был�
       favoritesLeft: await favoritesLeft(id),
       deletionRecords: await deletionRecords(id),
     }).toEqual({ cardsLeft: 1, reviewsLeft: 1, favoritesLeft: 1, deletionRecords: 0 });
+
+    // Дальше партнёр правит карточку по замечаниям, и mobile подменяет её в
+    // кабинете ответом правки — признак обязан прийти и в нём, иначе пункт
+    // «Удалить» вернётся на экран.
+    const edited = await step('правка после отказа', asPartner('put', `/${id}`)
+      .send({ description: 'Уточнили описание по замечанию модератора.' }));
+    expect(edited.body.data.establishment.published_at).toEqual(expect.any(String));
+  });
+});
+
+describe('пакетный импорт: карточку на сайт выводит активация — и ставит published_at', () => {
+  // Импорт (scripts/seed-import, CAT-E-2.2) выводит карточку на сайт сам, в
+  // обход модерации. Без published_at такая карточка после передачи партнёру,
+  // приостановки, повторной отправки и отказа снова удалялась бы — правило
+  // выше держится на том, что published_at ставит КАЖДЫЙ путь на сайт.
+  it('конвейер, продолженный с последней фазы перед активацией, выводит карточку на сайт с published_at', async () => {
+    const est = await createTestEstablishment(partner.user.id);
+    await query("UPDATE establishments SET status = 'draft', published_at = NULL WHERE id = $1", [est.id]);
+    const stableId = `delete-test-${est.id.slice(0, 8)}`;
+    // Реестр — на фазе перед активацией: конвейер пропустит создание, медиа и
+    // OCR и выполнит только активацию, как при возобновлении прерванной партии.
+    await query(
+      `INSERT INTO seed_import_registry (stable_id, establishment_id, batch_id, content_hash, phase)
+       VALUES ($1, $2, 'batch-delete-test', 'h', 'ocr_enqueued')`,
+      [stableId, est.id],
+    );
+
+    const outcome = await processCard(
+      { db: { query }, batchId: 'batch-delete-test' },
+      { stable_id: stableId, content_hash: 'h' },
+      [],
+    );
+
+    expect(outcome).toMatchObject({ status: 'resumed', establishment_id: est.id });
+    const { rows: [card] } = await query(
+      'SELECT status, is_seed, published_at FROM establishments WHERE id = $1',
+      [est.id],
+    );
+    expect(card).toEqual({ status: 'active', is_seed: true, published_at: expect.any(Date) });
   });
 });
 

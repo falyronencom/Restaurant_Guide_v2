@@ -155,8 +155,10 @@ extension EstablishmentStatusExtension on EstablishmentStatus {
   /// сайте. Остальные статусы сервер удалить не даёт (403
   /// ESTABLISHMENT_NOT_DELETABLE): опубликованная карточка несёт отзывы,
   /// избранное и брони пользователей, и удаление унесло бы их каскадом.
-  /// Правило целиком — у карточки: [PartnerEstablishment.canDelete].
-  bool get canDelete {
+  /// Правило целиком — у карточки: [PartnerEstablishment.canDelete]. Часть
+  /// закрыта (видна только в этом файле), чтобы новая точка удаления не взяла
+  /// неполное правило: отклонённая карточка могла уже быть на сайте.
+  bool get _hasDeletableStatus {
     switch (this) {
       case EstablishmentStatus.draft:
       case EstablishmentStatus.rejected:
@@ -356,7 +358,7 @@ class PartnerEstablishment {
   /// ещё не была на сайте, — то же правило, что у сервера и кабинета сайта.
   /// «Отклонена» бывает и у карточки, которая уже была на сайте: приостановка
   /// → повторная отправка → отказ модератора; такую сервер не удаляет (403).
-  bool get canDelete => status.canDelete && publishedAt == null;
+  bool get canDelete => status._hasDeletableStatus && publishedAt == null;
 
   // ===========================================================================
   // Moderation feedback getters
@@ -446,9 +448,7 @@ class PartnerEstablishment {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : DateTime.now(),
-      publishedAt: json['published_at'] is String
-          ? DateTime.tryParse(json['published_at'] as String)
-          : null,
+      publishedAt: _parsePublishedAt(json['published_at']),
       stats: stats,
       description: json['description'] as String?,
       phone: json['phone'] as String?,
@@ -584,6 +584,15 @@ class PartnerEstablishment {
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       baseScore: baseScore ?? this.baseScore,
     );
+  }
+
+  /// Когда карточку впервые одобрили. Значение, которое не разбирается как
+  /// дата, всё равно значит «была на сайте»: правило удаления не должно
+  /// открываться от формы поля — сервер такую карточку всё равно не удалит.
+  static DateTime? _parsePublishedAt(Object? value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString()) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 
   /// Parse status string to enum
