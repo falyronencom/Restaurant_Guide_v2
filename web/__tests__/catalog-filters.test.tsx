@@ -243,6 +243,31 @@ describe('generateMetadata — filter-aware noindex + canonical', () => {
   });
 });
 
+describe('CategoryPage — only cities with cards (Coordinator 01.10, А2)', () => {
+  it('noindexes the catalog of a valid city that has no cards yet', async () => {
+    (isLiveCity as jest.Mock).mockResolvedValue(false);
+    const meta = await generateMetadata({
+      params: Promise.resolve({ city: 'grodno', category: 'restorany' }),
+      searchParams: SP({}),
+    });
+    expect(isLiveCity).toHaveBeenCalledWith('grodno');
+    expect(meta.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('feeds the city picker the live list, not the full metadata set', async () => {
+    const LIVE = [{ slug: 'minsk', name: 'Минск' }];
+    (getMetadata as jest.Mock).mockResolvedValue({
+      ...META,
+      cities: [...LIVE, { slug: 'grodno', name: 'Гродно' }],
+    });
+    (getLiveCities as jest.Mock).mockResolvedValue(LIVE);
+
+    const tree = await CategoryPage({ params: P(), searchParams: SP({}) });
+    const hero = tree.props.children[0];
+    expect(hero.props.cities).toEqual(LIVE);
+  });
+});
+
 // ===========================================================================
 // 3. FilterShelf island — toggle → URL
 // ===========================================================================

@@ -14,7 +14,7 @@ type Props = {
  * complete without dangling 404s).
  *
  * Pure presentational Server Component; `cities` comes from the (public)
- * layout's cached getMetadata() call.
+ * layout's cached getLiveCities() call — only cities with cards.
  */
 export function SiteFooter({ cities }: Props) {
   return (

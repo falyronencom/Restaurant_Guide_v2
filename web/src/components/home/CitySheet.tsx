@@ -21,6 +21,10 @@ type Props = {
   /** Override the trigger pill styling — e.g. the catalog banner's glass
    *  variant. Defaults to the home-hero white-outline pill. */
   triggerClassName?: string;
+  /** Pill label when `value` is not among `cities` — a valid city without
+   *  cards reached by a direct link (/grodno): the list offers only cities
+   *  with cards, but the pill still names where the visitor is. */
+  currentLabel?: string;
 };
 
 /*
@@ -44,6 +48,7 @@ export function CitySheet({
   value,
   onChange,
   triggerClassName = DEFAULT_TRIGGER_CLASS,
+  currentLabel,
 }: Props) {
   const current = cities.find((c) => c.slug === value);
 
@@ -63,7 +68,7 @@ export function CitySheet({
           <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
           <circle cx="12" cy="10" r="3" />
         </svg>
-        {current?.name ?? 'Город'}
+        {current?.name ?? currentLabel ?? 'Город'}
         <svg
           viewBox="0 0 24 24"
           fill="none"

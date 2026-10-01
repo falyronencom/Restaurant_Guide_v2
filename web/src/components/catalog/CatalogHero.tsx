@@ -117,6 +117,7 @@ export function CatalogHero({
         <div className="mt-1">
           <CatalogSearch
             citySlug={citySlug}
+            cityName={cityName}
             categorySlug={categorySlug}
             cities={cities}
             searchParams={searchParams}

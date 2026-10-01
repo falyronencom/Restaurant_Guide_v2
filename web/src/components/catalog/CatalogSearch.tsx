@@ -13,6 +13,9 @@ import { MobileFilterDrawer } from './MobileFilterDrawer';
 
 type Props = {
   citySlug: string;
+  /** Display name of `citySlug` — the city pill's label when the city is not
+   *  in `cities` (a city without cards, see CitySheet `currentLabel`). */
+  cityName?: string;
   /** Catalog route segment. Omitted on the city page (/{city}), where search
    *  and city changes stay category-less. */
   categorySlug?: string;
@@ -52,6 +55,7 @@ const GLASS_TRIGGER =
  */
 export function CatalogSearch({
   citySlug,
+  cityName,
   categorySlug,
   cities,
   searchParams,
@@ -90,6 +94,7 @@ export function CatalogSearch({
         <CitySheet
           cities={cities}
           value={citySlug}
+          currentLabel={cityName}
           onChange={(slug) => navigate(slug, term.trim() || undefined)}
           triggerClassName={GLASS_TRIGGER}
         />
