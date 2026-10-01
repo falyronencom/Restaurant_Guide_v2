@@ -37,6 +37,27 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
         'PanGestureRecognizer',
         'LongPressGestureRecognizer',
       ]);
+  // Биндинг сбрасывается после КАЖДОГО теста — тем же публичным и
+  // идемпотентным `reset()`, который flutter_test сам зовёт в НАЧАЛЕ
+  // виджет-теста. Без этого последний тест файла, где кончилась прокрутка
+  // (переход по вкладке `TabBarView`, листание `PageView`, бросок списка),
+  // отчитывается о течи `TestRestorationManager` с его корневой
+  // `RestorationBucket`: конец прокрутки (`ScrollableState.saveOffset` →
+  // `flushData()`) будит менеджер, биндинг создаёт его лениво, а освобождает
+  // только в `reset()` следующего теста, которого у последнего нет. Течь
+  // стенда, не продукта, — и зелёный файл держался на том, какой тест стоит
+  // последним.
+  //
+  // Порядок гарантирован: корневой `tearDown` идёт после `addTearDown` теста
+  // и `binding.postTest`, но до `tearDownAll` файла, где сторож собирает
+  // отчёт. Обычные `test()` сброс не задевает: из каналов он трогает только
+  // `SystemChannels.textInput`, ставя туда обработчик самого flutter_test.
+  // Тест, повесивший на этот канал свой обработчик в `setUpAll`, потерял бы
+  // его после первого теста — таких в сьюте нет. Классы стенда в исключения
+  // не вносить: исключение снимает класс целиком, вместе с настоящими течами.
+  // Сторож этой строки — группа в конце
+  // `test/config/leak_tracking_guard_test.dart`.
+  tearDown(TestWidgetsFlutterBinding.ensureInitialized().reset);
   await _loadBundledFonts();
   await testMain();
 }

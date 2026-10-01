@@ -19,6 +19,14 @@ type Props = {
   activeCategorySlug?: string;
   establishments: PublicEstablishmentListing[];
   pagination: PaginationMeta;
+  /**
+   * How the search phrase was understood («бургер · недорого») — shown above
+   * the results so the visitor sees the phrase was read, not just matched as
+   * text (the mobile preview header). null/absent → no line.
+   */
+  understood?: string | null;
+  /** The order the search phrase asked for («недорого») — the sort select shows it. */
+  sortFromPhrase?: string | null;
   /** FilterShelf / pagination base (e.g. `/minsk` or `/minsk/restaurants`). */
   basePath: string;
   searchParams: Record<string, string | string[] | undefined>;
@@ -51,6 +59,8 @@ export function ResultsView({
   activeCategorySlug,
   establishments,
   pagination,
+  understood,
+  sortFromPhrase,
   basePath,
   searchParams,
   cuisineOptions,
@@ -76,13 +86,24 @@ export function ResultsView({
       {/* min-w-0 lets the flex child shrink so the inner grid never overflows */}
       <div className="lg:min-w-0 lg:flex-1">
         <div className="mb-m flex items-center justify-between gap-m">
-          <p className="text-body-m text-muted-foreground">
-            {pagination.total > 0
-              ? `Найдено ${pagination.total}`
-              : 'Заведений по этим параметрам не найдено'}
-          </p>
+          <div className="min-w-0">
+            <p className="text-body-m text-muted-foreground">
+              {pagination.total > 0
+                ? `Найдено ${pagination.total}`
+                : 'Заведений по этим параметрам не найдено'}
+            </p>
+            {understood && (
+              <p className="truncate text-body-s text-muted-foreground">
+                Ищем: {understood}
+              </p>
+            )}
+          </div>
           {pagination.total > 0 && (
-            <SortSelect basePath={basePath} searchParams={searchParams} />
+            <SortSelect
+              basePath={basePath}
+              searchParams={searchParams}
+              impliedSort={sortFromPhrase ?? undefined}
+            />
           )}
         </div>
 

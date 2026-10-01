@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { getCatalog } from '@/lib/api/endpoints/establishments';
 import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
 import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
@@ -15,6 +14,7 @@ import {
   parsePage,
   type SearchParams,
 } from '@/lib/catalog-params';
+import { getCatalogResults } from '@/lib/smart-search';
 
 /*
  * /[city] — city-wide results view (web-vitrine Segment B).
@@ -24,6 +24,8 @@ import {
  * (ResultsView): category chips → SEO paths, facet sidebar, cards-lead. Same
  * filter query-string contract + CAT-C-2.3 noindex-on-filter posture as the
  * catalog page (first web caller of the category-less getCatalog path).
+ * A `search` phrase is answered by the smart endpoint, as on mobile, with the
+ * classic catalog as fallback (getCatalogResults, lib/smart-search.ts).
  *
  * Greedy [city] note: any top-level path (/about, ...) matches [city] first;
  * validateCitySlug → notFound() protects it. Declare real top-level segments
@@ -108,9 +110,12 @@ export default async function CityPage({
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
-  const [meta, catalog] = await Promise.all([
-    getMetadata(),
-    getCatalog({
+  // Metadata is already fetched (validateCitySlug, React.cache); the results
+  // need it first — a phrase goes to the smart endpoint in the backend's
+  // Cyrillic values, which only metadata maps the URL slugs to.
+  const meta = await getMetadata();
+  const catalog = await getCatalogResults(
+    {
       city,
       page,
       sort_by: sortBy,
@@ -120,8 +125,9 @@ export default async function CityPage({
       hours_filter: hours,
       minRating,
       search,
-    }),
-  ]);
+    },
+    meta,
+  );
 
   const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
   const cuisineOptions = meta.cuisines.map((c) => ({
@@ -148,6 +154,8 @@ export default async function CityPage({
           categories={meta.categories}
           establishments={catalog.establishments}
           pagination={catalog.pagination}
+          understood={catalog.understood}
+          sortFromPhrase={catalog.sortFromPhrase}
           basePath={`/${city}`}
           searchParams={sp}
           cuisineOptions={cuisineOptions}

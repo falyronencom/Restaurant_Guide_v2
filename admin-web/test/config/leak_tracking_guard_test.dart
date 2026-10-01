@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:leak_tracker_flutter_testing/leak_tracker_flutter_testing.dart';
 
@@ -14,6 +15,9 @@ import 'package:leak_tracker_flutter_testing/leak_tracker_flutter_testing.dart';
 ///
 /// Отсюда два утверждения: настройки действительно те, что задумывались, и в
 /// сьюте нет второго места, где их переопределяют.
+///
+/// Третье — про сброс биндинга после каждого теста (тоже в конфиге): без него
+/// отчёт зависит от того, какой тест в файле стоит последним.
 void main() {
   test('отслеживание включено и настроено ожидаемо', () {
     expect(LeakTesting.enabled, isTrue);
@@ -81,5 +85,30 @@ void main() {
     }
 
     expect(offenders, isEmpty);
+  });
+
+  // Сторож сброса биндинга после каждого теста — `tearDown` в
+  // `test/flutter_test_config.dart`. Виджет-тест будит менеджер
+  // восстановления, как это делает конец любой прокрутки, а проверка стоит в
+  // `tearDownAll` группы: он исполняется после `tearDown` конфига и раньше
+  // любого следующего виджет-теста — тот сбросил бы биндинг сам, и проверка
+  // зеленела бы без сторожимой строки. Без этой группы снятую строку выдал бы
+  // только отчёт о течи в `tearDownAll` того файла, чей последний тест
+  // случайно кончился прокруткой.
+  group('менеджер восстановления не переживает свой тест', () {
+    TestRestorationManager? woken;
+
+    testWidgets('виджет-тест будит менеджер', (tester) async {
+      woken = tester.binding.restorationManager;
+    });
+
+    tearDownAll(() {
+      expect(
+        () => ChangeNotifier.debugAssertNotDisposed(woken!),
+        throwsFlutterError,
+        reason: 'менеджер пережил свой тест — снят сброс биндинга (tearDown) '
+            'в test/flutter_test_config.dart',
+      );
+    });
   });
 }

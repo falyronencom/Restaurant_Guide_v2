@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 
 import type { MetadataSlug } from '@/lib/api/types';
 import { useSelectedCity } from '@/lib/city/selected-city';
@@ -9,6 +9,7 @@ import { PRICE_VALUES } from '@/lib/facets';
 
 import { CitySheet } from './CitySheet';
 import { HeroFilters, type HeroFilterValue } from './HeroFilters';
+import { SearchSubmitButton } from './SearchSubmitButton';
 
 type Props = {
   cities: MetadataSlug[];
@@ -46,6 +47,9 @@ export function HeroSearch({ cities, categories, cuisines }: Props) {
   const [term, setTerm] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [filters, setFilters] = useState<HeroFilterValue>(EMPTY_FILTERS);
+  // Navigation is a transition: isPending holds while the server renders the
+  // results (a fresh phrase takes 1–2 s at the smart endpoint).
+  const [isPending, startTransition] = useTransition();
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +74,7 @@ export function HeroSearch({ cities, categories, cuisines }: Props) {
     if (filters.hours) params.set('hours', filters.hours);
     const qs = params.toString();
     const base = category ? `/${city}/${category}` : `/${city}`;
-    router.push(qs ? `${base}?${qs}` : base);
+    startTransition(() => router.push(qs ? `${base}?${qs}` : base));
   }
 
   return (
@@ -103,13 +107,7 @@ export function HeroSearch({ cities, categories, cuisines }: Props) {
           aria-label="Поиск заведения"
           className="flex-1 bg-transparent px-l py-m text-body-l text-foreground outline-none placeholder:text-text-tertiary"
         />
-        <button
-          type="submit"
-          aria-label="Найти"
-          className="flex items-center justify-center bg-brand px-l text-2xl text-white transition-colors hover:bg-brand-dark"
-        >
-          ›
-        </button>
+        <SearchSubmitButton pending={isPending} className="px-l text-2xl" />
       </form>
     </>
   );

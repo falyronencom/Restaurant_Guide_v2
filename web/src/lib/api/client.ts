@@ -30,12 +30,16 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  * @param path - Absolute path under /api/v1/public/ (must start with /).
  * @param init - Optional RequestInit; merged with defaults (Accept JSON,
  *               AbortController timeout).
+ * @param options.timeoutMs - Abort after this long (default 10 s). Only for a
+ *               call whose backend legitimately takes longer — the smart
+ *               search, whose AI parse is budgeted 20 s (endpoints/search.ts).
  * @returns The unwrapped `data` field of the success envelope.
  * @throws  ApiError on non-success envelope OR HTTP failure OR timeout.
  */
 export async function serverFetch<T>(
   path: string,
   init?: RequestInit,
+  options: { timeoutMs?: number } = {},
 ): Promise<T> {
   const apiUrl = process.env.API_URL;
   if (!apiUrl) {
@@ -47,7 +51,10 @@ export async function serverFetch<T>(
 
   const url = `${apiUrl}${path}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
 
   let response: Response;
   try {

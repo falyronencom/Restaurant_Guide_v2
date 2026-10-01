@@ -14,7 +14,8 @@ import {
  * Catalog sort dropdown — client island. Mutates the `sort_by` query param and
  * the Server Component re-fetches (same URL contract as FilterShelf): preserve
  * sibling params, reset `page`, and omit `sort_by` for the default ('rating')
- * to keep the canonical URL clean.
+ * to keep the canonical URL clean. Under a search phrase the default is the
+ * order the phrase asked for (`impliedSort`, see sortHref).
  *
  * Values match the backend's buildOrderByClause (searchService.js): 'rating',
  * 'price_asc', 'price_desc'. Distance sort is geo-only — excluded on the web
@@ -36,30 +37,56 @@ const SORT_ITEMS: Record<string, string> = Object.fromEntries(
   SORT_OPTIONS.map((o) => [o.value, o.label]),
 );
 
+type Searchish = Record<string, string | string[] | undefined>;
+
 type Props = {
   basePath: string;
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Searchish;
+  /**
+   * The order a search phrase asked for when the visitor has not chosen one
+   * («бургер недорого» → 'price_asc'). It is the list's real order then, so
+   * the select shows it instead of «по рейтингу».
+   */
+  impliedSort?: string;
 };
 
-export function SortSelect({ basePath, searchParams }: Props) {
+/*
+ * Where choosing `next` leads. `sort_by` is omitted only when `next` is the
+ * order the list already has without it — 'rating', or the phrase's own order.
+ * Under a phrase that asked for «недорого», «по рейтингу» must therefore be
+ * sent explicitly: an omitted sort_by would hand the order straight back to
+ * the phrase, and the visitor could never get the rating order.
+ */
+export function sortHref(
+  basePath: string,
+  searchParams: Searchish,
+  next: string,
+  impliedSort?: string,
+): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (key === 'page' || key === 'sort_by') continue;
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) params.append(key, v);
+    } else {
+      params.set(key, value);
+    }
+  }
+  if (next !== (impliedSort ?? 'rating')) params.set('sort_by', next);
+  const qs = params.toString();
+  return qs ? `${basePath}?${qs}` : basePath;
+}
+
+export function SortSelect({ basePath, searchParams, impliedSort }: Props) {
   const router = useRouter();
   const current =
-    typeof searchParams.sort_by === 'string' ? searchParams.sort_by : 'rating';
+    typeof searchParams.sort_by === 'string'
+      ? searchParams.sort_by
+      : (impliedSort ?? 'rating');
 
   function handleChange(next: string) {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (key === 'page' || key === 'sort_by') continue;
-      if (value == null) continue;
-      if (Array.isArray(value)) {
-        for (const v of value) params.append(key, v);
-      } else {
-        params.set(key, value);
-      }
-    }
-    if (next !== 'rating') params.set('sort_by', next);
-    const qs = params.toString();
-    router.push(qs ? `${basePath}?${qs}` : basePath);
+    router.push(sortHref(basePath, searchParams, next, impliedSort));
   }
 
   return (

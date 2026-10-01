@@ -7,15 +7,19 @@
  * tree here (FilterShelf accordion + base-ui sheet + favorites need providers /
  * polyfills) — the layout is verified via live preview; these tests lock the
  * data + SEO logic that changed in Segment B:
- *   1. searchParam → getCatalog mapping — city-wide (NO category), facets parsed.
+ *   1. searchParam → getCatalog mapping — city-wide (NO category), facets parsed;
+ *      a search phrase goes to the smart endpoint instead (lib/smart-search).
  *   2. SEO — hasAnyFilter → noindex+follow + clean /[city] canonical (CAT-C-2.3).
  *   3. Unknown city slug → notFound() before any data fetch.
  */
 import { notFound } from 'next/navigation';
+import type { ReactElement } from 'react';
 
 import CityPage, { generateMetadata } from '@/app/(public)/[city]/page';
+import { ResultsView } from '@/components/catalog/ResultsView';
 import { getCatalog } from '@/lib/api/endpoints/establishments';
 import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
+import { smartSearch } from '@/lib/api/endpoints/search';
 
 jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
@@ -33,6 +37,9 @@ jest.mock('@/lib/api/endpoints/metadata', () => ({
   validateCitySlug: jest.fn(),
   validateCategorySlug: jest.fn(),
 }));
+jest.mock('@/lib/api/endpoints/search', () => ({
+  smartSearch: jest.fn(),
+}));
 
 const META = {
   cities: [{ slug: 'minsk', name: 'Минск' }],
@@ -47,6 +54,32 @@ const EMPTY_CATALOG = {
   establishments: [],
   pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
 };
+
+const BLANK_INTENT = {
+  category: null,
+  cuisine: null,
+  dish: null,
+  meal_type: null,
+  price_max: null,
+  location: null,
+  sort: null,
+  tags: [],
+};
+
+/** The first element of `type` in an unrendered element tree (the page is not rendered here). */
+function findElement(node: unknown, type: unknown): ReactElement<Record<string, unknown>> | null {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, type);
+      if (found) return found;
+    }
+    return null;
+  }
+  const el = node as ReactElement<{ children?: unknown }>;
+  if (el.type === type) return el as ReactElement<Record<string, unknown>>;
+  return findElement(el.props?.children, type);
+}
 
 const P = () => Promise.resolve({ city: 'minsk' });
 const SP = (o: Record<string, string | string[] | undefined>) =>
@@ -85,6 +118,49 @@ describe('CityPage — city-wide getCatalog mapping', () => {
     expect(arg.cuisines).toBeUndefined();
     expect(arg.priceRange).toBeUndefined();
     expect(arg.hours_filter).toBeUndefined();
+  });
+
+  it('a search phrase is answered by the smart endpoint, in the backend’s city name', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: null,
+      establishments: [],
+      pagination: EMPTY_CATALOG.pagination,
+      fallback: false,
+    });
+
+    await CityPage({
+      params: P(),
+      searchParams: SP({ search: 'терраса', cuisine: 'italian' }),
+    });
+
+    expect(getCatalog).not.toHaveBeenCalled();
+    expect(smartSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: 'терраса',
+        city: 'Минск',
+        cuisines: ['Итальянская'],
+      }),
+    );
+  });
+
+  it('hands the phrase’s understanding and order to the results view', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: { ...BLANK_INTENT, dish: 'бургер', sort: 'price_asc' },
+      establishments: [],
+      pagination: EMPTY_CATALOG.pagination,
+      fallback: false,
+    });
+
+    const ui = await CityPage({
+      params: P(),
+      searchParams: SP({ search: 'бургер недорого' }),
+    });
+
+    const view = findElement(ui, ResultsView);
+    expect(view?.props).toMatchObject({
+      understood: 'бургер · недорого',
+      sortFromPhrase: 'price_asc',
+    });
   });
 });
 

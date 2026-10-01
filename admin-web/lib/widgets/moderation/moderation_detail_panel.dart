@@ -1731,6 +1731,33 @@ class _WorkingHoursDisplay extends StatelessWidget {
     'sunday': 'Воскресенье',
   };
 
+  /// «08:00 – 22:00» для рабочего дня; `null` — для выходного и для записи,
+  /// которую не прочесть как часы.
+  ///
+  /// День хранится в одной из двух форм, смотря кто его записал: кабинет
+  /// партнёра пишет объект `{is_open: true, open: '08:00', close: '22:00'}`,
+  /// пакетный импорт (`backend/scripts/seed-import/sheet.js`) — строку
+  /// `'08:00-22:00'`; выходной у обоих — `{is_open: false}`. Разбор повторяет
+  /// `parseDay` сайта (`web/src/lib/establishment-helpers.ts`): модератор
+  /// должен видеть ту же неделю, что и гость. Пока панель читала только
+  /// объект, у импортированной карточки все рабочие дни выходили «Закрыто».
+  static String? _openSpan(Object? day) {
+    Object? open;
+    Object? close;
+    if (day is String) {
+      final parts = day.split('-');
+      if (parts.length != 2) return null;
+      open = parts[0].trim();
+      close = parts[1].trim();
+    } else if (day is Map && day['is_open'] != false) {
+      open = day['open'];
+      close = day['close'];
+    }
+    if (open is! String || open.isEmpty) return null;
+    if (close is! String || close.isEmpty) return null;
+    return '$open – $close';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (hours == null || hours!.isEmpty) {
@@ -1746,11 +1773,9 @@ class _WorkingHoursDisplay extends StatelessWidget {
       ),
       child: Column(
         children: _dayOrder.map((dayKey) {
-          final dayData = hours![dayKey];
           final dayName = _dayNames[dayKey] ?? dayKey;
-          final isOpen = dayData is Map && dayData['is_open'] == true;
-          final open = dayData is Map ? dayData['open'] as String? : null;
-          final close = dayData is Map ? dayData['close'] as String? : null;
+          final span = _openSpan(hours![dayKey]);
+          final isOpen = span != null;
 
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -1771,9 +1796,7 @@ class _WorkingHoursDisplay extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    isOpen && open != null && close != null
-                        ? '$open – $close'
-                        : 'Закрыто',
+                    span ?? 'Закрыто',
                     style: TextStyle(
                       fontSize: 14,
                       color: isOpen

@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { getCatalog } from '@/lib/api/endpoints/establishments';
 import {
   getMetadata,
   validateCategorySlug,
@@ -23,6 +22,7 @@ import {
   parsePage,
   type SearchParams,
 } from '@/lib/catalog-params';
+import { getCatalogResults } from '@/lib/smart-search';
 
 /*
  * /[city]/[category] — canonical catalog page (Brief 3).
@@ -34,7 +34,8 @@ import {
  *
  * Filter query-string handling: reads cuisine / priceRange (multi-value,
  * comma-joined) / hours (single bucket) / minRating / search / sort_by / page
- * from `searchParams`, passes through to backend. The interactive shelf
+ * from `searchParams`, passes through to backend (a `search` phrase goes to the
+ * smart endpoint, as on mobile — getCatalogResults). The interactive shelf
  * (FilterShelf, a 'use client' island) only mutates the URL — the server
  * re-fetch applies the filtering. Filtered URLs get noindex robots meta +
  * canonical to the clean variant (CAT-C-2.3 — prevent indexing of every filter
@@ -132,11 +133,13 @@ export default async function CategoryPage({
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
-  // Parallel fetches — metadata is cached after validate calls above, so
-  // this resolves immediately; catalog actually hits backend.
-  const [meta, catalog] = await Promise.all([
-    getMetadata(),
-    getCatalog({
+  // Metadata is cached after the validate calls above, so this resolves
+  // immediately; the results need it first — a phrase goes to the smart
+  // endpoint in the backend's Cyrillic values, which only metadata maps the
+  // URL slugs to.
+  const meta = await getMetadata();
+  const catalog = await getCatalogResults(
+    {
       city,
       category,
       page,
@@ -147,8 +150,9 @@ export default async function CategoryPage({
       hours_filter: hours,
       minRating,
       search,
-    }),
-  ]);
+    },
+    meta,
+  );
 
   const cityName =
     meta.cities.find((c) => c.slug === city)?.name ?? city;
@@ -182,6 +186,8 @@ export default async function CategoryPage({
           activeCategorySlug={category}
           establishments={catalog.establishments}
           pagination={catalog.pagination}
+          understood={catalog.understood}
+          sortFromPhrase={catalog.sortFromPhrase}
           basePath={`/${city}/${category}`}
           searchParams={sp}
           cuisineOptions={cuisineOptions}
