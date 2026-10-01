@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import {
+  getLiveCities,
   getMetadata,
+  isLiveCity,
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
@@ -64,8 +66,10 @@ export async function generateMetadata({
 
   let cityName = city;
   let categoryName = category;
+  let live = true;
   try {
     const meta = await getMetadata();
+    live = await isLiveCity(city);
     cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
     categoryName =
       meta.categories.find((c) => c.slug === category)?.name ?? category;
@@ -88,7 +92,8 @@ export async function generateMetadata({
     // the noindex'd variant onto the clean URL (CAT-C-2.3 core); for the
     // clean URL itself it explicitly anchors the canonical signal.
     // metadataBase in root layout auto-promotes the relative path → absolute.
-    robots: hasFilters ? { index: false, follow: true } : undefined,
+    // A city without cards is a thin page — noindex (see /[city]).
+    robots: hasFilters || !live ? { index: false, follow: true } : undefined,
     alternates: {
       canonical: `/${city}/${category}`,
     },
@@ -137,7 +142,10 @@ export default async function CategoryPage({
   // immediately; the results need it first — a phrase goes to the smart
   // endpoint in the backend's Cyrillic values, which only metadata maps the
   // URL slugs to.
-  const meta = await getMetadata();
+  const [meta, liveCities] = await Promise.all([
+    getMetadata(),
+    getLiveCities(),
+  ]);
   const catalog = await getCatalogResults(
     {
       city,
@@ -170,7 +178,7 @@ export default async function CategoryPage({
         cityName={cityName}
         categorySlug={category}
         categoryName={categoryName}
-        cities={meta.cities}
+        cities={liveCities}
         searchParams={sp}
         categories={meta.categories}
         activeCategorySlug={category}

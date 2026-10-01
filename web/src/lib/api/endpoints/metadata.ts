@@ -3,7 +3,7 @@ import 'server-only';
 import { cache } from 'react';
 
 import { serverFetch } from '../client';
-import type { PublicMetadata } from '../types';
+import type { MetadataSlug, PaginationMeta, PublicMetadata } from '../types';
 
 /**
  * GET /api/v1/public/metadata
@@ -18,6 +18,54 @@ import type { PublicMetadata } from '../types';
 export const getMetadata = cache(async (): Promise<PublicMetadata> => {
   return serverFetch<PublicMetadata>('/api/v1/public/metadata');
 });
+
+/**
+ * Cities the visitor is offered — the metadata set narrowed to cities that
+ * have at least one active establishment (Coordinator decision 01.10, А2).
+ *
+ * The metadata list is a backend constant (7 cities) while the catalog lives
+ * in Минск only; offering Гродно led to an empty page. Every visible city
+ * choice (header/footer links, the hero and catalog city pickers, the home
+ * category tiles, the sitemap) goes through this list, so a city appears on
+ * its own once its first card is published — no code change.
+ *
+ * Probe: one `limit=1` catalog request per city, cached in the Next data
+ * cache for CITY_PROBE_REVALIDATE_S so force-dynamic pages do not spend 7
+ * backend calls per render against the per-IP rate limit.
+ *
+ * Degradation: a city whose probe FAILS is kept (unknown ≠ empty — the old
+ * behaviour); if every city reports zero (empty catalog) the full list is
+ * returned so the pickers never render empty.
+ *
+ * URL validity is NOT narrowed: `/grodno` stays a valid page (validateCitySlug
+ * uses the full set) and shows an honest «пока нет заведений» state.
+ */
+const CITY_PROBE_REVALIDATE_S = 600;
+
+export const getLiveCities = cache(async (): Promise<MetadataSlug[]> => {
+  const { cities } = await getMetadata();
+  const probes = await Promise.allSettled(
+    cities.map((c) =>
+      serverFetch<{ pagination: PaginationMeta }>(
+        `/api/v1/public/establishments?city=${encodeURIComponent(c.slug)}&limit=1`,
+        { next: { revalidate: CITY_PROBE_REVALIDATE_S } },
+      ),
+    ),
+  );
+  const live = cities.filter((_, i) => {
+    const probe = probes[i];
+    return probe.status === 'rejected' || probe.value.pagination.total > 0;
+  });
+  return live.length > 0 ? live : cities;
+});
+
+/**
+ * Whether a city has at least one active establishment (see getLiveCities).
+ */
+export async function isLiveCity(citySlug: string): Promise<boolean> {
+  const live = await getLiveCities();
+  return live.some((c) => c.slug === citySlug);
+}
 
 /**
  * Validate that a city slug is in the known set.

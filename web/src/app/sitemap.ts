@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 import { getCatalog } from '@/lib/api/endpoints/establishments';
-import { getMetadata } from '@/lib/api/endpoints/metadata';
+import { getLiveCities, getMetadata } from '@/lib/api/endpoints/metadata';
 import { isNoIndexMode, toAbsoluteUrl } from '@/lib/seo-gate';
 
 /**
@@ -14,8 +14,9 @@ import { isNoIndexMode, toAbsoluteUrl } from '@/lib/seo-gate';
  *
  * When the gate is off, the sitemap enumerates four URL tiers:
  *   1. Home              — 1 URL
- *   2. City pages        — 7 URLs (Mogilev ё/е deduplicated by backend metadata)
- *   3. City × Category   — ~105 URLs (7 cities × 15 categories)
+ *   2. City pages        — cities WITH cards only (getLiveCities, Coordinator
+ *                          decision 01.10 А2); today 1 URL (Минск)
+ *   3. City × Category   — live cities × 15 categories
  *   4. Establishment slugs — paginated `getCatalog` enumeration (~1500 URLs)
  *
  * Defensive try/catch around catalog pagination: sitemap.ts lives OUTSIDE
@@ -68,8 +69,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let cities: SlugName[] = [];
   let categories: SlugName[] = [];
   try {
-    const meta = await getMetadata();
-    cities = meta.cities;
+    const [meta, liveCities] = await Promise.all([
+      getMetadata(),
+      getLiveCities(),
+    ]);
+    cities = liveCities;
     categories = meta.categories;
   } catch {
     // No metadata reachable → only home. Better than 500.

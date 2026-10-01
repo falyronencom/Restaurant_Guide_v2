@@ -18,7 +18,12 @@ import type { ReactElement } from 'react';
 import CityPage, { generateMetadata } from '@/app/(public)/[city]/page';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import { getCatalog } from '@/lib/api/endpoints/establishments';
-import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
+import {
+  getLiveCities,
+  getMetadata,
+  isLiveCity,
+  validateCitySlug,
+} from '@/lib/api/endpoints/metadata';
 import { smartSearch } from '@/lib/api/endpoints/search';
 
 jest.mock('next/navigation', () => ({
@@ -34,6 +39,8 @@ jest.mock('@/lib/api/endpoints/establishments', () => ({
 }));
 jest.mock('@/lib/api/endpoints/metadata', () => ({
   getMetadata: jest.fn(),
+  getLiveCities: jest.fn(),
+  isLiveCity: jest.fn(),
   validateCitySlug: jest.fn(),
   validateCategorySlug: jest.fn(),
 }));
@@ -88,6 +95,8 @@ const SP = (o: Record<string, string | string[] | undefined>) =>
 beforeEach(() => {
   jest.clearAllMocks();
   (getMetadata as jest.Mock).mockResolvedValue(META);
+  (getLiveCities as jest.Mock).mockResolvedValue(META.cities);
+  (isLiveCity as jest.Mock).mockResolvedValue(true);
   (validateCitySlug as jest.Mock).mockResolvedValue(true);
   (getCatalog as jest.Mock).mockResolvedValue(EMPTY_CATALOG);
 });
@@ -186,6 +195,41 @@ describe('CityPage generateMetadata — filter-aware noindex + canonical', () =>
       searchParams: SP({ page: '2' }),
     });
     expect(meta.robots).toBeUndefined();
+  });
+});
+
+describe('CityPage — only cities with cards (Coordinator 01.10, А2)', () => {
+  it('noindexes a valid city that has no cards yet', async () => {
+    (isLiveCity as jest.Mock).mockResolvedValue(false);
+    const meta = await generateMetadata({
+      params: Promise.resolve({ city: 'grodno' }),
+      searchParams: SP({}),
+    });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('feeds the city picker the live list, not the full metadata set', async () => {
+    const LIVE = [{ slug: 'minsk', name: 'Минск' }];
+    (getMetadata as jest.Mock).mockResolvedValue({
+      ...META,
+      cities: [...LIVE, { slug: 'grodno', name: 'Гродно' }],
+    });
+    (getLiveCities as jest.Mock).mockResolvedValue(LIVE);
+
+    const tree = await CityPage({ params: P(), searchParams: SP({}) });
+    const hero = tree.props.children[0];
+    expect(hero.props.cities).toEqual(LIVE);
+  });
+
+  it('still renders (no 404) a valid city without cards', async () => {
+    (isLiveCity as jest.Mock).mockResolvedValue(false);
+    await expect(
+      CityPage({
+        params: Promise.resolve({ city: 'grodno' }),
+        searchParams: SP({}),
+      }),
+    ).resolves.toBeTruthy();
+    expect(notFound).not.toHaveBeenCalled();
   });
 });
 

@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { FavoritesProvider } from '@/components/favorites/FavoritesProvider';
 import type { PaginationMeta, PublicEstablishmentListing } from '@/lib/api/types';
+import { hasAnyFilter } from '@/lib/catalog-params';
 import type { FacetOption } from '@/lib/facets';
 
 import { CatalogPagination } from './CatalogPagination';
@@ -68,6 +69,11 @@ export function ResultsView({
   fallbackCategorySlug,
 }: Props) {
   const hasResults = establishments.length > 0;
+  // Zero results WITHOUT a narrowing filter means the city (or the category in
+  // it) simply has no cards yet — «измените фильтры» would be a lie to a guest
+  // who set none (Coordinator 01.10, А0/А2). Sorting does not narrow.
+  const isNarrowed = hasAnyFilter({ ...searchParams, sort_by: undefined });
+  const isEmptyPlace = pagination.total === 0 && !isNarrowed;
 
   return (
     <div className="lg:flex lg:items-start lg:gap-l">
@@ -90,7 +96,9 @@ export function ResultsView({
             <p className="text-body-m text-muted-foreground">
               {pagination.total > 0
                 ? `Найдено ${pagination.total}`
-                : 'Заведений по этим параметрам не найдено'}
+                : isEmptyPlace
+                  ? 'Заведений пока нет'
+                  : 'Заведений по этим параметрам не найдено'}
             </p>
             {understood && (
               <p className="truncate text-body-s text-muted-foreground">
@@ -138,6 +146,23 @@ export function ResultsView({
               />
             </div>
           </>
+        ) : isEmptyPlace ? (
+          <section className="flex flex-col items-center gap-m py-xl text-center">
+            <h2 className="font-display text-headline-m">
+              {activeCategorySlug
+                ? 'В этой категории пока нет заведений'
+                : 'В этом городе пока нет заведений'}
+            </h2>
+            <p className="max-w-md text-body-m text-muted-foreground">
+              Мы добавляем заведения постепенно.
+            </p>
+            <Link
+              href={activeCategorySlug ? `/${citySlug}` : '/'}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              {activeCategorySlug ? '← Все заведения города' : '← На главную'}
+            </Link>
+          </section>
         ) : (
           <section className="flex flex-col items-center gap-m py-xl text-center">
             <h2 className="font-display text-headline-m">Ничего не найдено</h2>

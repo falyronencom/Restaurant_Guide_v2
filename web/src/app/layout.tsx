@@ -67,14 +67,11 @@ export const metadata: Metadata = {
     // twitter:image inherits og:image when absent (X spec) — no separate
     // twitter-image.tsx needed at root for the (b) strategy.
   },
-  // Apple Smart App Banner (CAT-C-4.2). Next 16 metadata API renders
-  // <meta name="apple-itunes-app" content="app-id=6759831819"> into <head>.
-  // iOS Safari shows the native banner only once the App Store listing is live;
-  // the tag is harmless before then. Android has no native equivalent → the
-  // client AppBanner sticky-bar covers it.
-  itunes: {
-    appId: '6759831819',
-  },
+  // Apple Smart App Banner (CAT-C-4.2) — REMOVED until the app is published
+  // in the App Store (Coordinator decision 01.10, А3: the banner led to an app
+  // that exists only in TestFlight). To restore on publication:
+  //   itunes: { appId: '6759831819' },
+  // together with <AppBanner /> on the home page (Android).
   // Gate layer 3 (defense-in-depth). CAT-C-2.3 page-level filter-aware
   // robots overrides on /[city]/[category] remain compatible — child
   // metadata wins.

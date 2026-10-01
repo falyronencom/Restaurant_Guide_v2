@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { getMetadata, validateCitySlug } from '@/lib/api/endpoints/metadata';
+import {
+  getLiveCities,
+  getMetadata,
+  isLiveCity,
+  validateCitySlug,
+} from '@/lib/api/endpoints/metadata';
 import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import { cityHeading } from '@/lib/catalog-labels';
@@ -54,9 +59,11 @@ export async function generateMetadata({
   const sp = await searchParams;
 
   let cityName = city;
+  let live = true;
   try {
     const meta = await getMetadata();
     cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+    live = await isLiveCity(city);
   } catch {
     // Metadata fetch failed — fall back to slug. validateCitySlug in the body
     // 404s a bogus slug cleanly.
@@ -71,7 +78,10 @@ export async function generateMetadata({
     // CAT-C-2.3: now that the city page carries facets, filtered permutations
     // (?cuisine=…&priceRange=…) get noindex + canonical onto the clean city URL;
     // the clean URL itself stays indexable (mirrors /[city]/[category]).
-    robots: hasAnyFilter(sp) ? { index: false, follow: true } : undefined,
+    // A city without cards (valid slug, empty catalog) is a thin page — also
+    // noindex; it leaves the sitemap the same way (getLiveCities).
+    robots:
+      hasAnyFilter(sp) || !live ? { index: false, follow: true } : undefined,
     alternates: {
       canonical: `/${city}`,
     },
@@ -113,7 +123,10 @@ export default async function CityPage({
   // Metadata is already fetched (validateCitySlug, React.cache); the results
   // need it first — a phrase goes to the smart endpoint in the backend's
   // Cyrillic values, which only metadata maps the URL slugs to.
-  const meta = await getMetadata();
+  const [meta, liveCities] = await Promise.all([
+    getMetadata(),
+    getLiveCities(),
+  ]);
   const catalog = await getCatalogResults(
     {
       city,
@@ -140,7 +153,7 @@ export default async function CityPage({
       <CatalogHero
         citySlug={city}
         cityName={cityName}
-        cities={meta.cities}
+        cities={liveCities}
         searchParams={sp}
         categories={meta.categories}
         cuisineOptions={cuisineOptions}

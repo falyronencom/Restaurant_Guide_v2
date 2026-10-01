@@ -8,8 +8,10 @@ import { useEffect, useState } from 'react';
  * the `itunes` metadata in the root layout, so this component is Android-only —
  * Android has no native smart-banner equivalent.
  *
- * Coordinator decision (2026-06-17): visible immediately. Until the app is
- * published on Google Play the link lands on a Play placeholder — accepted.
+ * Coordinator decision (2026-06-17): visible immediately. Superseded 01.10
+ * (А3): the Play link led nowhere, so the banner is NOT mounted anywhere until
+ * the app is published — re-add <AppBanner /> to the home page then, together
+ * with the root-layout `itunes` metadata.
  *
  * Hydration: render nothing on the server (visible=false), then after mount
  * detect Android + the dismissed flag and show via a deferred setState. A lazy

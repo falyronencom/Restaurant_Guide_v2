@@ -26,7 +26,9 @@ import CategoryPage, {
 } from '@/app/(public)/[city]/[category]/page';
 import { getCatalog } from '@/lib/api/endpoints/establishments';
 import {
+  getLiveCities,
   getMetadata,
+  isLiveCity,
   validateCategorySlug,
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
@@ -50,6 +52,8 @@ jest.mock('@/lib/api/endpoints/establishments', () => ({
 }));
 jest.mock('@/lib/api/endpoints/metadata', () => ({
   getMetadata: jest.fn(),
+  getLiveCities: jest.fn(),
+  isLiveCity: jest.fn(),
   validateCitySlug: jest.fn(),
   validateCategorySlug: jest.fn(),
 }));
@@ -79,6 +83,8 @@ const SP = (o: Record<string, string | string[] | undefined>) =>
 beforeEach(() => {
   jest.clearAllMocks();
   (getMetadata as jest.Mock).mockResolvedValue(META);
+  (getLiveCities as jest.Mock).mockResolvedValue(META.cities);
+  (isLiveCity as jest.Mock).mockResolvedValue(true);
   (validateCitySlug as jest.Mock).mockResolvedValue(true);
   (validateCategorySlug as jest.Mock).mockResolvedValue(true);
   (getCatalog as jest.Mock).mockResolvedValue(EMPTY_CATALOG);
