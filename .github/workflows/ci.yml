@@ -167,6 +167,25 @@ jobs:
         run: |
           NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --ci
 
+      - name: Тесты броней под TZ=UTC (пояс прода)
+        # Шаг выше идёт под Europe/Minsk намеренно — и потому пояса прода не
+        # видит ни один прогон. Время брони лежит ровно на этой оси (внешний
+        # обзор 23.09.2026, #35): под UTC прежний createBooking принимал бронь
+        # на уже прошедшее время, а тест на это под Минском зелёный и на
+        # старом коде. Здесь — только брони: refresh-token-prune под UTC
+        # падает намеренно (комментарий к шагу выше).
+        #
+        # Шаблон — строго booking. !cancelled(): шаг идёт и при красном
+        # основном, чтобы один красный не прятал другой. Схему заново не
+        # разворачивает: раннер изолированных прогонов читает рецепт схемы из
+        # строк наката этого файла и на повторе падает.
+        if: ${{ !cancelled() }}
+        env:
+          TZ: UTC
+        working-directory: backend
+        run: |
+          NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --ci --testPathPatterns booking
+
   web:
     name: Web — lint + jest + типы
     runs-on: ubuntu-latest

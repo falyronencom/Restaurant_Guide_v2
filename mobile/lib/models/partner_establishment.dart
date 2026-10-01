@@ -103,6 +103,14 @@ double? _parseDoubleSafe(dynamic value) {
   return null;
 }
 
+/// Почему карточку нельзя удалить — тем же текстом, что и отказ сервера
+/// (решение Координатора 01.10.2026). Показывается вместо пункта удаления,
+/// когда [PartnerEstablishment.canDelete] ложно.
+const String kNotDeletableHint =
+    'Удалить можно только черновик или отклонённую карточку, '
+    'которая ещё не была на сайте. '
+    'Чтобы убрать эту карточку, напишите в поддержку.';
+
 /// Establishment moderation status
 enum EstablishmentStatus {
   draft,     // Черновик (только создано)
@@ -138,6 +146,25 @@ extension EstablishmentStatusExtension on EstablishmentStatus {
       case EstablishmentStatus.approved:
       case EstablishmentStatus.rejected:
         return true;
+      case EstablishmentStatus.suspended:
+        return false;
+    }
+  }
+
+  /// Статусная часть правила удаления: только черновик и отклонённая — как на
+  /// сайте. Остальные статусы сервер удалить не даёт (403
+  /// ESTABLISHMENT_NOT_DELETABLE): опубликованная карточка несёт отзывы,
+  /// избранное и брони пользователей, и удаление унесло бы их каскадом.
+  /// Правило целиком — у карточки: [PartnerEstablishment.canDelete]. Часть
+  /// закрыта (видна только в этом файле), чтобы новая точка удаления не взяла
+  /// неполное правило: отклонённая карточка могла уже быть на сайте.
+  bool get _hasDeletableStatus {
+    switch (this) {
+      case EstablishmentStatus.draft:
+      case EstablishmentStatus.rejected:
+        return true;
+      case EstablishmentStatus.pending:
+      case EstablishmentStatus.approved:
       case EstablishmentStatus.suspended:
         return false;
     }
@@ -216,6 +243,9 @@ class PartnerEstablishment {
   final List<String> cuisineTypes;
   final DateTime createdAt;
   final DateTime updatedAt;
+  /// Когда карточку впервые одобрили (`published_at`); null — на сайте она
+  /// ещё не была. Сервер ставит его при первом одобрении и не сбрасывает.
+  final DateTime? publishedAt;
   final EstablishmentStats stats;
 
   // Full details (may be loaded separately)
@@ -257,6 +287,7 @@ class PartnerEstablishment {
     this.cuisineTypes = const [],
     required this.createdAt,
     required this.updatedAt,
+    this.publishedAt,
     this.stats = const EstablishmentStats(),
     this.description,
     this.phone,
@@ -322,6 +353,12 @@ class PartnerEstablishment {
 
   /// Check if this is a premium tier (dark card background)
   bool get isPremium => subscriptionTier == 'Премиум';
+
+  /// Может ли партнёр удалить карточку сам: черновик или отклонённая, которая
+  /// ещё не была на сайте, — то же правило, что у сервера и кабинета сайта.
+  /// «Отклонена» бывает и у карточки, которая уже была на сайте: приостановка
+  /// → повторная отправка → отказ модератора; такую сервер не удаляет (403).
+  bool get canDelete => status._hasDeletableStatus && publishedAt == null;
 
   // ===========================================================================
   // Moderation feedback getters
@@ -411,6 +448,7 @@ class PartnerEstablishment {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : DateTime.now(),
+      publishedAt: _parsePublishedAt(json['published_at']),
       stats: stats,
       description: json['description'] as String?,
       phone: json['phone'] as String?,
@@ -456,6 +494,7 @@ class PartnerEstablishment {
     'cuisine_type': cuisineTypes,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
+    if (publishedAt != null) 'published_at': publishedAt!.toIso8601String(),
     'stats': stats.toJson(),
     if (description != null) 'description': description,
     if (phone != null) 'phone': phone,
@@ -488,6 +527,7 @@ class PartnerEstablishment {
     List<String>? cuisineTypes,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? publishedAt,
     EstablishmentStats? stats,
     String? description,
     String? phone,
@@ -521,6 +561,7 @@ class PartnerEstablishment {
       cuisineTypes: cuisineTypes ?? this.cuisineTypes,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      publishedAt: publishedAt ?? this.publishedAt,
       stats: stats ?? this.stats,
       description: description ?? this.description,
       phone: phone ?? this.phone,
@@ -543,6 +584,15 @@ class PartnerEstablishment {
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       baseScore: baseScore ?? this.baseScore,
     );
+  }
+
+  /// Когда карточку впервые одобрили. Значение, которое не разбирается как
+  /// дата, всё равно значит «была на сайте»: правило удаления не должно
+  /// открываться от формы поля — сервер такую карточку всё равно не удалит.
+  static DateTime? _parsePublishedAt(Object? value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString()) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 
   /// Parse status string to enum

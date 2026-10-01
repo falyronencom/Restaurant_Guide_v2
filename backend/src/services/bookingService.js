@@ -71,6 +71,39 @@ const isTimeWithinRange = (time, open, close) => {
   return time >= open && time <= close;
 };
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** 'YYYY-MM-DD' of a day that exists (2026-02-30 does not). */
+const isCalendarDate = (value) => {
+  if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCFullYear() === year
+    && probe.getUTCMonth() === month - 1
+    && probe.getUTCDate() === day;
+};
+
+// ============================================================================
+// Ownership (partner actions)
+// ============================================================================
+
+/**
+ * The establishment in the URL belongs to the partner, or 403.
+ *
+ * The partner routes check only the role (bookingRoutes.js), so this is the
+ * whole ownership check — and it runs FIRST, before the booking is looked up or
+ * its status read. Otherwise a foreign partner would learn from the different
+ * codes and texts whether a booking exists and in which status it is. Same code
+ * and text as bookingSettingsService.verifyOwnership.
+ */
+const assertOwnsEstablishment = async (establishmentId, partnerId) => {
+  const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
+  if (!isOwner) {
+    throw new AppError('Establishment not found or not owned by you', 403, 'FORBIDDEN');
+  }
+};
+
 // ============================================================================
 // Booking CRUD
 // ============================================================================
@@ -87,8 +120,20 @@ const isTimeWithinRange = (time, open, close) => {
  * - min_hours_before respected
  * - user active bookings < 2
  * - user has no active booking at this establishment
+ *
+ * Date and time are Minsk wall clock. "Today", the weekday and the hours left
+ * until the slot are computed in SQL on the Minsk clock, and the confirmation
+ * deadline from NOW() — never from the process clock: production runs UTC, CI
+ * runs Europe/Minsk, and the old arithmetic on JS Dates accepted a slot that
+ * had already passed (external review 23.09.2026, #35).
+ *
+ * @param {string} userId
+ * @param {object} data - { establishmentId, date 'YYYY-MM-DD', time 'HH:MM', guestCount, comment, contactPhone }
+ * @param {object} [options]
+ * @param {Date} [options.now] - injectable clock for tests; production passes
+ *   nothing and the database clock (NOW()) decides. Not reachable over HTTP.
  */
-export const createBooking = async (userId, data) => {
+export const createBooking = async (userId, data, { now = null } = {}) => {
   const {
     establishmentId,
     date: bookingDate,
@@ -102,6 +147,15 @@ export const createBooking = async (userId, data) => {
   if (!establishmentId || !bookingDate || !bookingTime || !guestCount || !contactPhone) {
     throw new AppError(
       'Необходимо заполнить все обязательные поля',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+  // The date and time go into SQL as ::date / ::time, where a malformed string
+  // would surface as a 500. Clients send zero-padded 'YYYY-MM-DD' and 'HH:MM'.
+  if (!isCalendarDate(bookingDate) || !TIME_RE.test(bookingTime)) {
+    throw new AppError(
+      'Неверный формат даты или времени бронирования',
       400,
       'VALIDATION_ERROR',
     );
@@ -131,19 +185,20 @@ export const createBooking = async (userId, data) => {
     );
   }
 
-  // 5. Validate booking date (within max_days_ahead)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const bDate = new Date(bookingDate);
-  bDate.setHours(0, 0, 0, 0);
+  // 5–7 run on one Minsk-clock reading of the slot (BookingModel.checkSlot).
+  const slot = await BookingModel.checkSlot({
+    bookingDate,
+    bookingTime,
+    maxDaysAhead: settings.max_days_ahead,
+    now,
+  });
 
-  if (bDate < today) {
+  // 5. Validate booking date (within max_days_ahead)
+  if (slot.isPastDate) {
     throw new AppError('Дата бронирования не может быть в прошлом', 400, 'INVALID_DATE');
   }
 
-  const maxDate = new Date(today);
-  maxDate.setDate(maxDate.getDate() + settings.max_days_ahead);
-  if (bDate > maxDate) {
+  if (slot.isTooFar) {
     throw new AppError(
       `Бронирование возможно не более чем на ${settings.max_days_ahead} дней вперёд`,
       400,
@@ -152,8 +207,7 @@ export const createBooking = async (userId, data) => {
   }
 
   // 6. Validate booking time within working hours
-  const dayOfWeek = bDate.getDay(); // 0=Sun
-  const dayKey = DAY_KEYS[dayOfWeek];
+  const dayKey = DAY_KEYS[slot.dayOfWeek]; // 0=Sun
   const dayHours = parseDayHours(establishment.working_hours, dayKey);
 
   if (!dayHours.isOpen) {
@@ -169,11 +223,7 @@ export const createBooking = async (userId, data) => {
   }
 
   // 7. Validate min_hours_before
-  const now = new Date();
-  const bookingDateTime = new Date(`${bookingDate}T${bookingTime}:00`);
-  const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
-
-  if (hoursUntilBooking < settings.min_hours_before) {
+  if (slot.hoursUntil < settings.min_hours_before) {
     throw new AppError(
       `Бронирование должно быть сделано минимум за ${settings.min_hours_before} ч.`,
       400,
@@ -203,10 +253,7 @@ export const createBooking = async (userId, data) => {
     );
   }
 
-  // 9. Calculate expires_at
-  const expiresAt = new Date(now.getTime() + settings.confirmation_timeout_hours * 60 * 60 * 1000);
-
-  // 10. Create booking
+  // 9–10. Create booking; expires_at = now + confirmation timeout, in SQL
   const booking = await BookingModel.create({
     establishmentId,
     userId,
@@ -215,7 +262,8 @@ export const createBooking = async (userId, data) => {
     guestCount,
     comment,
     contactPhone,
-    expiresAt,
+    confirmationTimeoutHours: settings.confirmation_timeout_hours,
+    now,
   });
 
   // 11. Track analytics (non-blocking)
@@ -248,6 +296,8 @@ export const createBooking = async (userId, data) => {
  * Transition: pending → confirmed
  */
 export const confirmBooking = async (bookingId, partnerId, establishmentId) => {
+  await assertOwnsEstablishment(establishmentId, partnerId);
+
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
     throw new AppError('Booking not found', 404, 'NOT_FOUND');
@@ -287,6 +337,8 @@ export const confirmBooking = async (bookingId, partnerId, establishmentId) => {
  * Transition: pending → declined
  */
 export const declineBooking = async (bookingId, partnerId, establishmentId, reason) => {
+  await assertOwnsEstablishment(establishmentId, partnerId);
+
   if (!reason || !reason.trim()) {
     throw new AppError('Decline reason is required', 400, 'VALIDATION_ERROR');
   }
@@ -369,6 +421,8 @@ export const cancelBooking = async (bookingId, userId) => {
  * Transition: confirmed → no_show
  */
 export const markNoShow = async (bookingId, partnerId, establishmentId) => {
+  await assertOwnsEstablishment(establishmentId, partnerId);
+
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
     throw new AppError('Booking not found', 404, 'NOT_FOUND');
@@ -390,6 +444,8 @@ export const markNoShow = async (bookingId, partnerId, establishmentId) => {
  * Transition: confirmed → completed
  */
 export const markCompleted = async (bookingId, partnerId, establishmentId) => {
+  await assertOwnsEstablishment(establishmentId, partnerId);
+
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
     throw new AppError('Booking not found', 404, 'NOT_FOUND');
@@ -408,9 +464,11 @@ export const markCompleted = async (bookingId, partnerId, establishmentId) => {
 
 /**
  * Get bookings for an establishment (partner view).
+ * Ownership first: the read also runs the lazy expiry of this establishment's
+ * pending bookings (bookingModel.getByEstablishmentId), a write.
  */
 export const getPartnerBookings = async (establishmentId, partnerId, options = {}) => {
-  // Ownership verified by controller middleware
+  await assertOwnsEstablishment(establishmentId, partnerId);
   return BookingModel.getByEstablishmentId(establishmentId, options);
 };
 

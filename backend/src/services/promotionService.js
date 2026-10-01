@@ -103,15 +103,26 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
 };
 
 /**
- * Get promotions for an establishment.
- * Partner view: all statuses. Public view: active only.
+ * Get all promotions of the partner's establishment — every status, the
+ * partner's cabinet view (the public views read active ones through the model).
  *
+ * Ownership first: the route checks only the role, and the model read starts
+ * with the lazy expiry of this establishment's promotions — a write. Before
+ * 30.09.2026 any partner read another establishment's promotions, inactive
+ * included (review 23.09, #1). 403, like bookingService and the establishment
+ * mutations; the other promotion actions still answer 404 (guarded as they are
+ * by partner-ownership-guard.test.js).
+ *
+ * @param {string} partnerId - UUID of authenticated partner
  * @param {string} establishmentId - UUID
- * @param {boolean} includeInactive - true for partner, false for public
  * @returns {Promise<Object[]>} Promotions array
  */
-export const getPromotions = async (establishmentId, includeInactive = false) => {
-  return PromotionModel.getPromotionsByEstablishment(establishmentId, includeInactive);
+export const getPartnerPromotions = async (partnerId, establishmentId) => {
+  const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
+  if (!isOwner) {
+    throw new AppError('Establishment not found or not owned by you', 403, 'FORBIDDEN');
+  }
+  return PromotionModel.getPromotionsByEstablishment(establishmentId, true);
 };
 
 /**

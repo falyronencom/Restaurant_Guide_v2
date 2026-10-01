@@ -20,11 +20,18 @@ import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 
 const BASE_URL = '/api/v1/admin/audit-log';
 
-/** Действия, которые сервисы пишут в журнал. Источник — grep по `action:`. */
+/**
+ * Действия, которые пишутся в журнал. Источник — grep по `action:` (сервисы
+ * через createAuditLog) и по `INSERT INTO audit_log` (SQL, пишущий журнал в том
+ * же операторе, что и само действие: удаление карточки партнёром,
+ * scripts/dismiss-menu-flags). Второй поиск первым не находится — такие
+ * действия вписываются сюда руками.
+ */
 const WRITTEN_ACTIONS = [
   ['admin_update_coordinates', 'establishment', 'Координаты обновлены'],
   ['admin_update_slug', 'establishment', 'Адрес страницы изменён'],
   ['claim_establishment', 'establishment', 'Заведение передано партнёру'],
+  ['partner_delete_establishment', 'establishment', 'Заведение удалено партнёром'],
   ['suspend', 'establishment', 'Приостановлено заведение'],
   ['unsuspend', 'establishment', 'Возобновлено заведение'],
   ['moderate_approve', 'establishment', 'Одобрено заведение'],
@@ -45,7 +52,7 @@ beforeAll(async () => {
   adminToken = admin.accessToken;
 
   // Записи вставляются напрямую: цель — проверить перевод, а не воспроизвести
-  // четырнадцать сценариев. Обязательных колонок у audit_log две — action и
+  // пятнадцать сценариев. Обязательных колонок у audit_log две — action и
   // entity_type, остальное допускает NULL.
   for (const [action, entityType] of WRITTEN_ACTIONS) {
     await query(

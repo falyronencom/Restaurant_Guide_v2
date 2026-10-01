@@ -52,6 +52,7 @@ const Map<String, String> kAuditActions = <String, String>{
   'suspend': 'Приостановка',
   'unsuspend': 'Возобновление',
   'claim_establishment': 'Передача партнёру',
+  'partner_delete_establishment': 'Удаление заведения партнёром',
   'admin_update_coordinates': 'Обновление координат',
   'admin_update_slug': 'Изменение адреса страницы',
   'review_hide': 'Скрытие отзыва',
@@ -92,6 +93,9 @@ const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>
   'suspend': AuditActionTone.restricting,
   'unsuspend': AuditActionTone.allowing,
   'claim_establishment': AuditActionTone.neutral,
+  // Партнёр удалил свою карточку — черновик или отклонённую; другие статусы
+  // сервер удалить не даёт. Карточки больше нет — ограничивающее.
+  'partner_delete_establishment': AuditActionTone.restricting,
   'admin_update_coordinates': AuditActionTone.neutral,
   'admin_update_slug': AuditActionTone.neutral,
   'review_hide': AuditActionTone.restricting,

@@ -31,6 +31,7 @@ export function RegisterForm({ returnTo }: { returnTo: string }) {
 
   useEffect(() => {
     if (state?.ok) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the hard load is the point: see the comment above
       window.location.assign('/verify-email');
     }
   }, [state]);

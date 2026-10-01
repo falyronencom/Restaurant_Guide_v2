@@ -26,6 +26,7 @@ jest.unstable_mockModule('../../config/redis.js', () => ({
   getTTL,
   setWithExpiry: jest.fn(),
   deleteKey: jest.fn(),
+  withRedisDeadline: (command) => command,
   default: {},
 }));
 

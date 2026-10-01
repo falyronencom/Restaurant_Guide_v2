@@ -280,5 +280,76 @@ void main() {
       expect(e.categories, ['Бар']);
       expect(e.cuisineTypes, ['Авторская']);
     });
+
+    test('была ли карточка на сайте: published_at разбирается, без него — null',
+        () {
+      final published = PartnerEstablishment.fromJson(
+          partnerRow()..['published_at'] = '2026-07-20T10:00:00.000Z');
+      expect(published.publishedAt, DateTime.utc(2026, 7, 20, 10));
+
+      expect(PartnerEstablishment.fromJson(partnerRow()).publishedAt, isNull);
+      expect(
+          PartnerEstablishment.fromJson(partnerRow()..['published_at'] = null)
+              .publishedAt,
+          isNull);
+    });
+
+    test(
+        'удалить можно только черновик или отклонённую карточку, '
+        'которой не было на сайте', () {
+      // То же правило, что у сервера (DELETE … status IN ('draft', 'rejected')
+      // AND published_at IS NULL) и у кабинета сайта; статусы — как их отдаёт
+      // сервер.
+      final outcomes = <String, bool>{};
+      for (final status in ['draft', 'pending', 'active', 'rejected', 'suspended']) {
+        for (final published in [false, true]) {
+          final row = partnerRow()
+            ..['status'] = status
+            ..['published_at'] = published ? '2026-07-20T10:00:00.000Z' : null;
+          outcomes['$status${published ? ' + была на сайте' : ''}'] =
+              PartnerEstablishment.fromJson(row).canDelete;
+        }
+      }
+
+      expect(outcomes, <String, bool>{
+        'draft': true,
+        'draft + была на сайте': false,
+        'pending': false,
+        'pending + была на сайте': false,
+        'active': false,
+        'active + была на сайте': false,
+        'rejected': true,
+        'rejected + была на сайте': false,
+        'suspended': false,
+        'suspended + была на сайте': false,
+      });
+    });
+
+    test(
+        'published_at, которое не разбирается как дата, — всё равно '
+        '«была на сайте»: удалить нельзя', () {
+      // Правило удаления не должно открываться от формы поля: сервер такую
+      // карточку всё равно не удалит.
+      final e = PartnerEstablishment.fromJson(partnerRow()
+        ..['status'] = 'rejected'
+        ..['published_at'] = 'не дата');
+
+      expect(e.publishedAt, isNotNull);
+      expect(e.canDelete, isFalse);
+    });
+
+    test('копия сохраняет признак «была на сайте»', () {
+      // Кабинет меняет карточку копией (повторная отправка, приостановка,
+      // возобновление): признак, потерянный в копии, вернул бы пункт удаления
+      // карточке, которую сервер удалить не даст.
+      final e = PartnerEstablishment.fromJson(partnerRow()
+        ..['status'] = 'rejected'
+        ..['published_at'] = '2026-07-20T10:00:00.000Z');
+
+      final copy = e.copyWith(name: 'Васильки на Немиге');
+
+      expect(copy.publishedAt, DateTime.utc(2026, 7, 20, 10));
+      expect(copy.canDelete, isFalse);
+    });
   });
 }

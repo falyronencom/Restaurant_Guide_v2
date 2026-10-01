@@ -806,18 +806,29 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
 
               const SizedBox(height: 8),
 
-              // Delete option
-              _buildStatusOption(
-                context,
-                icon: Icons.delete_outline,
-                title: 'Удалить заведение',
-                description: 'Это действие нельзя отменить',
-                isDestructive: true,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation(context, establishment);
-                },
-              ),
+              // Delete option — only a draft or a rejected card that has
+              // never been public, as on the site; for the rest the server
+              // refuses, so say why instead
+              if (establishment.canDelete)
+                _buildStatusOption(
+                  context,
+                  icon: Icons.delete_outline,
+                  title: 'Удалить заведение',
+                  description: 'Это действие нельзя отменить',
+                  isDestructive: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showDeleteConfirmation(context, establishment);
+                  },
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    kNotDeletableHint,
+                    style: TextStyle(fontSize: 13, color: _greyText),
+                  ),
+                ),
 
               const SizedBox(height: 16),
             ],

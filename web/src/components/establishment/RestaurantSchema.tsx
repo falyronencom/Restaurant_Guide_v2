@@ -3,10 +3,10 @@
  *
  * Inline JSON-LD Schema.org/Restaurant (or subtype) injection for the
  * establishment detail page. Mirrors the MenuBlock pattern (Discovery Q2):
- * standalone <script> tag with dangerouslySetInnerHTML — no wrapper
- * component, no library. Independent script tags per concern (one for Menu,
- * one for Restaurant); search engines parse each independently, no @id
- * cross-linking needed.
+ * a standalone <script> via JsonLdScript, whose serializer keeps the partner's
+ * name and address from closing the tag. Independent script tags per concern
+ * (one for Menu, one for Restaurant); search engines parse each independently,
+ * no @id cross-linking needed.
  *
  * Honest emission discipline (Trunk locked decisions):
  *   - Subtype mapping handles BOTH Cyrillic canonical AND legacy English seed
@@ -23,6 +23,7 @@
  *     the projection or DB schema).
  */
 
+import { JsonLdScript } from '@/components/JsonLdScript';
 import type { PublicEstablishmentDetail } from '@/lib/api/types';
 import { toAbsoluteUrl } from '@/lib/seo-gate';
 import { normalizeCuisine } from '@/lib/working-hours';
@@ -41,12 +42,7 @@ type Props = {
 
 export function RestaurantSchema({ establishment, citySlug, categorySlug }: Props) {
   const schema = buildRestaurantSchema(establishment, citySlug, categorySlug);
-  return (
-    <script
-      type='application/ld+json'
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLdScript data={schema} />;
 }
 
 // -- internals --------------------------------------------------------------

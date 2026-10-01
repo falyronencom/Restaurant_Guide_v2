@@ -323,6 +323,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
+        WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' THEN 'Заведение удалено партнёром'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
         WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
         WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
@@ -338,10 +339,12 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         ELSE al.action || ' (' || al.entity_type || ')'
       END as summary,
       CASE
+        -- Удалённое заведение join уже не найдёт: название и город берутся из
+        -- old_data, куда их кладёт само удаление (partner_delete_establishment).
         WHEN al.entity_type = 'establishment' THEN
           json_build_object(
-            'name', e_direct.name,
-            'city', e_direct.city
+            'name', COALESCE(e_direct.name, al.old_data->>'name'),
+            'city', COALESCE(e_direct.city, al.old_data->>'city')
           )
         WHEN al.entity_type = 'review' THEN
           json_build_object(
