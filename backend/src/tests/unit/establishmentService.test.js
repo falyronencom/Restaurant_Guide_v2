@@ -860,22 +860,22 @@ describe('establishmentService', () => {
     });
   });
 
-  // Правило «удалить можно только черновик или отклонённую» живёт в самом
-  // DELETE (модель) и проверено на живой базе в
-  // integration/partner-establishment-delete.test.js. Здесь — выбор ответа,
+  // Правило «удалить можно только черновик или отклонённую карточку, которой
+  // не было на сайте» живёт в самом DELETE (модель) и проверено на живой базе
+  // в integration/partner-establishment-delete.test.js. Здесь — выбор ответа,
   // когда модель ничего не удалила: гонку «карточка исчезла между проверкой
   // владения и удалением» на живой базе не поставить.
   describe('deleteEstablishment — ответ, когда ничего не удалено', () => {
     const establishmentId = 'est-to-delete';
 
-    test('карточка на месте в другом статусе — 403 ESTABLISHMENT_NOT_DELETABLE, текст решения', async () => {
+    test('карточка на месте, но удалить её нельзя — 403 ESTABLISHMENT_NOT_DELETABLE, текст решения', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
       EstablishmentModel.deleteEstablishment.mockResolvedValue(null);
 
       await expect(deleteEstablishment(establishmentId, partnerId)).rejects.toMatchObject({
         statusCode: 403,
         code: 'ESTABLISHMENT_NOT_DELETABLE',
-        message: 'Удалить можно только черновик или отклонённую карточку. Чтобы убрать эту карточку, напишите в поддержку.',
+        message: 'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.',
       });
     });
 

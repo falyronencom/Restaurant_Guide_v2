@@ -50,4 +50,10 @@ describe('messageForEstablishmentError — cabinet code coverage (B1 anti-drift)
     expect(messageForEstablishmentError('SOME_FUTURE_CODE')).toBe(FALLBACK);
     expect(messageForEstablishmentError(undefined)).toBe(FALLBACK);
   });
+
+  it('refusal to delete — the Coordinator decision text of 01.10.2026, same as the server and mobile', () => {
+    expect(messageForEstablishmentError('ESTABLISHMENT_NOT_DELETABLE')).toBe(
+      'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.',
+    );
+  });
 });

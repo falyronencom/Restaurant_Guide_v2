@@ -21,7 +21,8 @@ import { messageForEstablishmentError } from '@/lib/partner/errors';
  * Delete control for a draft/rejected cabinet card (CAT-C-3.x B4). Confirm dialog
  * → buffered Route Handler (same-origin guarded) → onDeleted removes the card
  * from the dashboard list. Permanent (the backend cascades media); the caller
- * gates rendering to draft/rejected — active/with-reviews cards are not deletable
+ * gates rendering to a draft/rejected card that has never been public — cards
+ * that have been on the site (reviews, favourites, bookings) are not deletable
  * from the cabinet by design.
  */
 export function DeleteEstablishmentButton({

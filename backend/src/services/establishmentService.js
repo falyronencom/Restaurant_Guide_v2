@@ -1365,20 +1365,21 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
 };
 
 /**
- * Refusal to delete a card that is not a draft or a rejected one — the text the
- * partner reads (mobile shows the server's message as is). Decision of the
- * Coordinator, 30.09.2026.
+ * Refusal to delete a card that is not a draft or a rejected one, or that has
+ * been public — the text the partner reads (mobile shows the server's message
+ * as is). Decision of the Coordinator, 01.10.2026.
  */
 export const NOT_DELETABLE_MESSAGE =
-  'Удалить можно только черновик или отклонённую карточку. Чтобы убрать эту карточку, напишите в поддержку.';
+  'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.';
 
 /**
- * Delete a partner's establishment permanently — a draft or a rejected card only.
+ * Delete a partner's establishment permanently — a draft or a rejected card
+ * that has never been public only.
  *
  * The rule lives in the DELETE itself (EstablishmentModel.deleteEstablishment);
  * the second read below only picks the answer when nothing was deleted: the
- * card is still there in another status (403 ESTABLISHMENT_NOT_DELETABLE), or
- * it is gone (404).
+ * card is still there but may not be deleted (403 ESTABLISHMENT_NOT_DELETABLE),
+ * or it is gone (404).
  */
 export const deleteEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);

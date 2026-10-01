@@ -1296,14 +1296,19 @@ export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
 };
 
 /**
- * Delete a partner's draft or rejected establishment and record it in the audit log.
+ * Delete a partner's draft or rejected establishment that has never been public,
+ * and record it in the audit log.
  *
- * Only `draft` and `rejected` go: a card that has been public carries users'
- * reviews, favourites and bookings, and the delete cascades to every table
- * that references it (#4a of the 23.09.2026 review). The status condition sits
- * in the DELETE itself, not in a check before it: if the card changes status
- * in between (sent to moderation, approved), the DELETE re-checks its own
- * WHERE on the new row version and deletes nothing.
+ * Only `draft` and `rejected` go, and only while `published_at` is empty: a card
+ * that has been public carries users' reviews, favourites and bookings, and the
+ * delete cascades to every table that references it (#4a of the 23.09.2026
+ * review). «Rejected» alone does not mean «never public»: an active card can be
+ * suspended, sent to moderation again and rejected (review of 30.09, HIGH).
+ * `published_at` is set by the first approval (and by the seed import) and is
+ * never cleared, so it is the «has been public» mark. Both conditions sit in
+ * the DELETE itself, not in a check before it: if the card changes in between
+ * (sent to moderation, approved), the DELETE re-checks its own WHERE on the
+ * new row version and deletes nothing.
  *
  * The audit row is written by the same statement, so there is no deletion
  * without a record. old_data keeps name, city and status — once the card is
@@ -1312,7 +1317,8 @@ export const checkDuplicateName = async (partnerId, name, excludeId = null) => {
  * @param {string} establishmentId - UUID of the establishment
  * @param {string} partnerId - UUID of the partner (for ownership check)
  * @returns {Promise<Object|null>} Deleted establishment basic info, or null when
- *   nothing was deleted: not found, not owned, or a status that may not be deleted
+ *   nothing was deleted: not found, not owned, a status that may not be deleted,
+ *   or a card that has been public
  */
 export const deleteEstablishment = async (establishmentId, partnerId) => {
   const query = `
@@ -1320,6 +1326,7 @@ export const deleteEstablishment = async (establishmentId, partnerId) => {
       DELETE FROM establishments
       WHERE id = $1 AND partner_id = $2
         AND status IN ('draft', 'rejected')
+        AND published_at IS NULL
       RETURNING id, name, city, status
     ), logged AS (
       INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data)

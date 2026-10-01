@@ -43,11 +43,12 @@ const CODE_RU: Record<string, string> = {
   ESTABLISHMENT_SUSPENDED:
     'Заведение приостановлено вами. Возобновите его, чтобы редактировать.',
   ESTABLISHMENT_NOT_FOUND: 'Заведение не найдено.',
-  // Delete refused for any status but draft/rejected (backend
-  // deleteEstablishment). The cabinet hides the button for those statuses, so
-  // this surfaces only on a stale page — same words as the server's message.
+  // Delete refused for any card but a draft/rejected one that has never been
+  // public (backend deleteEstablishment). The cabinet hides the button for the
+  // rest, so this surfaces only on a stale page — same words as the server's
+  // message.
   ESTABLISHMENT_NOT_DELETABLE:
-    'Удалить можно только черновик или отклонённую карточку. Чтобы убрать эту карточку, напишите в поддержку.',
+    'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.',
   INVALID_STATUS_TRANSITION: 'Действие недоступно в текущем статусе заведения.',
   INVALID_STATUS_FOR_SUBMISSION:
     'Это действие недоступно в текущем статусе заведения.',

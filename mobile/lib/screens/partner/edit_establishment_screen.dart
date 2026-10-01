@@ -806,9 +806,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
 
               const SizedBox(height: 8),
 
-              // Delete option — only a draft or a rejected card, as on the
-              // site; for the rest the server refuses, so say why instead
-              if (establishment.status.canDelete)
+              // Delete option — only a draft or a rejected card that has
+              // never been public, as on the site; for the rest the server
+              // refuses, so say why instead
+              if (establishment.canDelete)
                 _buildStatusOption(
                   context,
                   icon: Icons.delete_outline,

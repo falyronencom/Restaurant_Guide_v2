@@ -44,9 +44,13 @@ export function EstablishmentVignette({
   const notes = e.moderation_notes;
   const rejectionEntries =
     e.status === 'rejected' && notes ? Object.entries(notes) : [];
-  // Delete is offered only for draft/rejected — removing an active card with
-  // reviews/engagement from the cabinet is intentionally not a one-click action.
-  const canDelete = e.status === 'draft' || e.status === 'rejected';
+  // Delete is offered only for a draft/rejected card that has never been public
+  // (published_at — set by the first approval, never cleared) — the server's
+  // rule. A rejected card may have been public (suspended → resubmitted →
+  // rejected) and carries guests' reviews, favourites and bookings; removing it
+  // from the cabinet is intentionally not a one-click action.
+  const canDelete =
+    (e.status === 'draft' || e.status === 'rejected') && !e.published_at;
 
   return (
     <article className="flex flex-col overflow-hidden rounded-[var(--radius-l)] border border-border bg-background">
