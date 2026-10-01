@@ -16,6 +16,7 @@ import {
   cityGenitive,
 } from '@/lib/catalog-labels';
 import {
+  acceptedSearchParams,
   asFloat,
   asHours,
   asList,
@@ -36,8 +37,9 @@ import { getCatalogResults } from '@/lib/smart-search';
  *
  * Filter query-string handling: reads cuisine / priceRange (multi-value,
  * comma-joined) / hours (single bucket) / minRating / search / sort_by / page
- * from `searchParams`, passes through to backend (a `search` phrase goes to the
- * smart endpoint, as on mobile — getCatalogResults). The interactive shelf
+ * from `searchParams`, passes the values the backend accepts through to it
+ * (acceptedSearchParams drops the rest; a `search` phrase goes to the smart
+ * endpoint, as on mobile — getCatalogResults). The interactive shelf
  * (FilterShelf, a 'use client' island) only mutates the URL — the server
  * re-fetch applies the filtering. Filtered URLs get noindex robots meta +
  * canonical to the clean variant (CAT-C-2.3 — prevent indexing of every filter
@@ -117,7 +119,6 @@ export default async function CategoryPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { city, category } = await params;
-  const sp = await searchParams;
 
   // Validate both slugs in parallel — single /metadata fetch shared via
   // React.cache wrapper on getMetadata.
@@ -126,6 +127,19 @@ export default async function CategoryPage({
     validateCategorySlug(category),
   ]);
   if (!cityValid || !categoryValid) notFound();
+
+  // Metadata is cached after the validate calls above, so this resolves
+  // immediately; the results need it first — a phrase goes to the smart
+  // endpoint in the backend's Cyrillic values, which only metadata maps the
+  // URL slugs to. The query is narrowed by it too: a value the backend would
+  // reject (an unknown cuisine slug, a rating outside 1–5) is dropped before
+  // anything below reads the params — the shelf, the links built from them
+  // and the map island included.
+  const [meta, liveCities] = await Promise.all([
+    getMetadata(),
+    getLiveCities(),
+  ]);
+  const sp = acceptedSearchParams(await searchParams, meta.cuisines);
 
   // Parse filter / pagination params from query-string. cuisine & priceRange
   // are multi-value (comma-joined, OR-within-group); hours is a single bucket.
@@ -138,14 +152,6 @@ export default async function CategoryPage({
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
-  // Metadata is cached after the validate calls above, so this resolves
-  // immediately; the results need it first — a phrase goes to the smart
-  // endpoint in the backend's Cyrillic values, which only metadata maps the
-  // URL slugs to.
-  const [meta, liveCities] = await Promise.all([
-    getMetadata(),
-    getLiveCities(),
-  ]);
   const catalog = await getCatalogResults(
     {
       city,

@@ -11,6 +11,7 @@ import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import { cityHeading } from '@/lib/catalog-labels';
 import {
+  acceptedSearchParams,
   asFloat,
   asHours,
   asList,
@@ -105,10 +106,21 @@ export default async function CityPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { city } = await params;
-  const sp = await searchParams;
 
   const isValid = await validateCitySlug(city);
   if (!isValid) notFound();
+
+  // Metadata is already fetched (validateCitySlug, React.cache); the results
+  // need it first — a phrase goes to the smart endpoint in the backend's
+  // Cyrillic values, which only metadata maps the URL slugs to. The query is
+  // narrowed by it too: a value the backend would reject (an unknown cuisine
+  // slug, a rating outside 1–5) is dropped before anything below reads the
+  // params — the shelf, the links built from them and the map island included.
+  const [meta, liveCities] = await Promise.all([
+    getMetadata(),
+    getLiveCities(),
+  ]);
+  const sp = acceptedSearchParams(await searchParams, meta.cuisines);
 
   // Parse filter / pagination params — identical contract to the catalog page.
   const page = parsePage(sp.page);
@@ -120,13 +132,6 @@ export default async function CityPage({
   const hours = asHours(sp.hours);
   const minRating = asFloat(sp.minRating);
 
-  // Metadata is already fetched (validateCitySlug, React.cache); the results
-  // need it first — a phrase goes to the smart endpoint in the backend's
-  // Cyrillic values, which only metadata maps the URL slugs to.
-  const [meta, liveCities] = await Promise.all([
-    getMetadata(),
-    getLiveCities(),
-  ]);
   const catalog = await getCatalogResults(
     {
       city,

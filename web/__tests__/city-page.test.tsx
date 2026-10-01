@@ -11,13 +11,20 @@
  *      a search phrase goes to the smart endpoint instead (lib/smart-search).
  *   2. SEO — hasAnyFilter → noindex+follow + clean /[city] canonical (CAT-C-2.3).
  *   3. Unknown city slug → notFound() before any data fetch.
+ *   4. A facet value the backend would reject (an unknown cuisine slug, a rating
+ *      outside 1–5) is dropped before the fetch and before the params are
+ *      handed on (ResultsView → shelf, links, map island; CatalogHero) — the
+ *      page does not throw, so the error screen does not show (01.10).
  */
 import { notFound } from 'next/navigation';
 import type { ReactElement } from 'react';
 
 import CityPage, { generateMetadata } from '@/app/(public)/[city]/page';
 import { ResultsView } from '@/components/catalog/ResultsView';
-import { getCatalog } from '@/lib/api/endpoints/establishments';
+import {
+  getCatalog,
+  type CatalogParams,
+} from '@/lib/api/endpoints/establishments';
 import {
   getLiveCities,
   getMetadata,
@@ -25,6 +32,7 @@ import {
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
 import { smartSearch } from '@/lib/api/endpoints/search';
+import { ApiError } from '@/lib/api/types';
 
 jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
@@ -173,6 +181,83 @@ describe('CityPage — city-wide getCatalog mapping', () => {
   });
 });
 
+describe('CityPage — a value the backend would reject is dropped, not a crash', () => {
+  // The catalog answers as the backend does (publicController): 400 on a
+  // cuisine slug it cannot translate (it folds case), 422 on a rating outside
+  // 1–5. Before 01.10 either took the page to the error screen.
+  beforeEach(() => {
+    const known = META.cuisines.map((c) => c.slug);
+    (getCatalog as jest.Mock).mockImplementation(async (p: CatalogParams) => {
+      if (p.cuisines?.some((c) => !known.includes(c.toLowerCase()))) {
+        throw new ApiError(400, 'Invalid cuisine slug', 'INVALID_SLUG');
+      }
+      if (p.minRating !== undefined && (p.minRating < 1 || p.minRating > 5)) {
+        throw new ApiError(422, 'minRating must be between 1 and 5', 'VALIDATION_ERROR');
+      }
+      return EMPTY_CATALOG;
+    });
+  });
+
+  it('an unknown cuisine slug: the page does not throw and fetches the whole city', async () => {
+    await expect(
+      CityPage({ params: P(), searchParams: SP({ cuisine: 'nonexistent-xyz' }) }),
+    ).resolves.toBeTruthy();
+
+    const arg = (getCatalog as jest.Mock).mock.calls[0][0];
+    expect(arg.cuisines).toBeUndefined();
+  });
+
+  it('a mixed list keeps its known slug — in the fetch and in the params ResultsView and CatalogHero pass on', async () => {
+    const ui = await CityPage({
+      params: P(),
+      searchParams: SP({ cuisine: 'italian,nonexistent-xyz', view: 'map' }),
+    });
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].cuisines).toEqual([
+      'italian',
+    ]);
+    // ResultsView hands `searchParams` to the shelf, pagination, sort and —
+    // through ResultsSwitcher — the map island, which builds its /api/map
+    // query from them (MapView buildFilters); the hero to its search box and
+    // the mobile filter drawer.
+    const narrowed = { cuisine: 'italian', view: 'map' };
+    const view = findElement(ui, ResultsView);
+    expect(view?.props.searchParams).toEqual(narrowed);
+    expect(view?.props.selected).toMatchObject({ cuisines: ['italian'] });
+    const hero = (ui as ReactElement<{ children: ReactElement[] }>).props
+      .children[0] as ReactElement<Record<string, unknown>>;
+    expect(hero.props.searchParams).toEqual(narrowed);
+    expect(hero.props.selected).toMatchObject({ cuisines: ['italian'] });
+  });
+
+  it('a rating outside 1–5: the page does not throw and fetches without a rating', async () => {
+    await expect(
+      CityPage({ params: P(), searchParams: SP({ minRating: '0' }) }),
+    ).resolves.toBeTruthy();
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].minRating).toBeUndefined();
+  });
+
+  it('a phrase with an unknown cuisine slug still takes the smart path', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: null,
+      establishments: [],
+      pagination: EMPTY_CATALOG.pagination,
+      fallback: false,
+    });
+
+    await CityPage({
+      params: P(),
+      searchParams: SP({ search: 'терраса', cuisine: 'italian,nonexistent-xyz' }),
+    });
+
+    expect(getCatalog).not.toHaveBeenCalled();
+    expect(smartSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ cuisines: ['Итальянская'] }),
+    );
+  });
+});
+
 describe('CityPage generateMetadata — filter-aware noindex + canonical', () => {
   it('noindex+follow with clean /[city] canonical when a facet is active', async () => {
     const meta = await generateMetadata({
@@ -195,6 +280,16 @@ describe('CityPage generateMetadata — filter-aware noindex + canonical', () =>
       searchParams: SP({ page: '2' }),
     });
     expect(meta.robots).toBeUndefined();
+  });
+
+  it('keeps a URL with an unknown cuisine slug noindex, canonical on the clean city', async () => {
+    // The body drops the slug; the metadata reads the raw query on purpose.
+    const meta = await generateMetadata({
+      params: P(),
+      searchParams: SP({ cuisine: 'nonexistent-xyz' }),
+    });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates?.canonical).toBe('/minsk');
   });
 });
 

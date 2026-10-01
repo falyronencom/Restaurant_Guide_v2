@@ -122,7 +122,8 @@ export async function getPhraseMapMarkers(
  * The web's catalog params (URL slugs) → the smart endpoint body (the
  * backend's Cyrillic values), or null when there is no phrase or a slug does
  * not translate. On null the caller keeps the classic path, which answers such
- * a URL exactly as it always has (an unknown cuisine slug stays a 400 there).
+ * a URL exactly as it always has (an unknown cuisine slug is a 400 there; the
+ * results pages drop one before it gets here — acceptedSearchParams).
  *
  * Untouched filters stay undefined, so they never reach the wire
  * (JSON.stringify drops them) — see SmartSearchBody.

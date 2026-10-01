@@ -6,7 +6,8 @@
  * generateMetadata as a function):
  *
  *   1. URL searchParam → getCatalog fetch-param mapping (multi-value comma-join
- *      for cuisine/priceRange, single bucket for hours, soft-ignore unknown).
+ *      for cuisine/priceRange, single bucket for hours, soft-ignore unknown;
+ *      an unknown cuisine slug / a rating outside 1–5 dropped, not a crash).
  *   2. SEO — hasAnyFilter → noindex+follow + clean canonical (CAT-C-2.3),
  *      pagination stays indexable.
  *   3. FilterShelf island — user toggle → URL round-trip (OR-within-group
@@ -24,7 +25,10 @@ import userEvent from '@testing-library/user-event';
 import CategoryPage, {
   generateMetadata,
 } from '@/app/(public)/[city]/[category]/page';
-import { getCatalog } from '@/lib/api/endpoints/establishments';
+import {
+  getCatalog,
+  type CatalogParams,
+} from '@/lib/api/endpoints/establishments';
 import {
   getLiveCities,
   getMetadata,
@@ -33,6 +37,7 @@ import {
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
 import { smartSearch } from '@/lib/api/endpoints/search';
+import { ApiError } from '@/lib/api/types';
 import { FilterShelf } from '@/components/catalog/FilterShelf';
 import { ResultsView } from '@/components/catalog/ResultsView';
 
@@ -198,6 +203,72 @@ describe('CategoryPage — searchParam → getCatalog mapping', () => {
   });
 });
 
+// 01.10: /minsk/restaurants?cuisine=nonexistent-xyz took the page to the error
+// screen instead of the catalog — the backend's 400 on the slug.
+describe('CategoryPage — a value the backend would reject is dropped, not a crash', () => {
+  // The catalog answers as the backend does (publicController): 400 on a
+  // cuisine slug it cannot translate (it folds case), 422 on a rating outside 1–5.
+  beforeEach(() => {
+    const known = META.cuisines.map((c) => c.slug);
+    (getCatalog as jest.Mock).mockImplementation(async (p: CatalogParams) => {
+      if (p.cuisines?.some((c) => !known.includes(c.toLowerCase()))) {
+        throw new ApiError(400, 'Invalid cuisine slug', 'INVALID_SLUG');
+      }
+      if (p.minRating !== undefined && (p.minRating < 1 || p.minRating > 5)) {
+        throw new ApiError(422, 'minRating must be between 1 and 5', 'VALIDATION_ERROR');
+      }
+      return EMPTY_CATALOG;
+    });
+  });
+
+  it('an unknown cuisine slug: the page does not throw and fetches the category without it', async () => {
+    await expect(
+      CategoryPage({
+        params: P(),
+        searchParams: SP({ cuisine: 'nonexistent-xyz' }),
+      }),
+    ).resolves.toBeTruthy();
+
+    const arg = (getCatalog as jest.Mock).mock.calls[0][0];
+    expect(arg.cuisines).toBeUndefined();
+  });
+
+  it('a mixed list keeps its known slug — in the fetch and in the params ResultsView and CatalogHero pass on', async () => {
+    const ui = await CategoryPage({
+      params: P(),
+      searchParams: SP({ cuisine: 'georgian,nonexistent-xyz', page: '2' }),
+    });
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].cuisines).toEqual([
+      'georgian',
+    ]);
+    // ResultsView hands `searchParams` to the shelf, pagination, sort and the
+    // map island (through ResultsSwitcher); the hero to its search box and the
+    // mobile filter drawer.
+    const narrowed = { cuisine: 'georgian', page: '2' };
+    const children = (ui as { props: { children: unknown[] } }).props.children;
+    const hero = children[0] as { props: Record<string, unknown> };
+    const main = children[1] as { props: { children: unknown } };
+    const view = main.props.children as {
+      type: unknown;
+      props: Record<string, unknown>;
+    };
+    expect(view.type).toBe(ResultsView);
+    expect(view.props.searchParams).toEqual(narrowed);
+    expect(view.props.selected).toMatchObject({ cuisines: ['georgian'] });
+    expect(hero.props.searchParams).toEqual(narrowed);
+    expect(hero.props.selected).toMatchObject({ cuisines: ['georgian'] });
+  });
+
+  it('a rating outside 1–5: the page does not throw and fetches without a rating', async () => {
+    await expect(
+      CategoryPage({ params: P(), searchParams: SP({ minRating: '6' }) }),
+    ).resolves.toBeTruthy();
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].minRating).toBeUndefined();
+  });
+});
+
 // ===========================================================================
 // 2. SEO — noindex / canonical (CAT-C-2.3)
 // ===========================================================================
@@ -232,6 +303,16 @@ describe('generateMetadata — filter-aware noindex + canonical', () => {
   it('does NOT noindex the clean catalog URL', async () => {
     const meta = await generateMetadata({ params: P(), searchParams: SP({}) });
     expect(meta.robots).toBeUndefined();
+  });
+
+  it('keeps a URL with an unknown cuisine slug noindex, canonical on the clean catalog URL', async () => {
+    // The body drops the slug; the metadata reads the raw query on purpose.
+    const meta = await generateMetadata({
+      params: P(),
+      searchParams: SP({ cuisine: 'nonexistent-xyz' }),
+    });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates?.canonical).toBe('/minsk/restorany');
   });
 
   it('does NOT noindex when the hours value is unknown (not a real filter)', async () => {
