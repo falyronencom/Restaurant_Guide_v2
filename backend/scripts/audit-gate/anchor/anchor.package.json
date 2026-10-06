@@ -1,0 +1,8 @@
+{
+  "name": "audit-gate-anchor",
+  "private": true,
+  "description": "Known-vulnerable fixture: the audit gate must report multer here, or it is blind.",
+  "dependencies": {
+    "multer": "2.0.2"
+  }
+}

@@ -186,6 +186,36 @@ jobs:
         run: |
           NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --ci --testPathPatterns booking
 
+  deps-audit:
+    name: Backend — уязвимости зависимостей
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Пункт #21 внешнего обзора (06.10.2026). multer 2.0.2 с шестью high
+    # пролежал в lock-файле с марта по октябрь: зависимости не сверял ни один
+    # прогон. Сторож (backend/scripts/audit-gate): npm audit --omit=dev по
+    # lock-файлу backend; high/critical вне allowlist.json — красный.
+    # Перед этим — якорь, литеральный lock-файл с multer 2.0.2: нет тревоги по
+    # multer — сторож слеп, и это тоже красный. Ответ npm без отчёта (реестр
+    # не ответил) — повторы, затем красный: «чисто» он не значит.
+    #
+    # Единственная задача гейта, которая может покраснеть без нашего коммита —
+    # когда опубликуют новое уведомление. Вариант А, решение Координатора
+    # 06.10.2026: лучше остановить выкатку backend («Wait for CI»), чем молча
+    # выкатывать с известной уязвимостью. Лечение — обновить пакет или записать
+    # исключение с причиной в allowlist.json; пропущенная выкатка догонится
+    # следующим коммитом. Установка зависимостей не нужна: скрипт берёт только
+    # встроенные модули Node, npm audit читает lock-файл.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Сторож уязвимостей (якорь multer 2.0.2, затем lock-файл backend)
+        working-directory: backend
+        run: node scripts/audit-gate/check.js
+
   web:
     name: Web — lint + jest + типы
     runs-on: ubuntu-latest
