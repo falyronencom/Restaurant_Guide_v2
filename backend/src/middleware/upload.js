@@ -34,6 +34,31 @@ fs.mkdirSync(AVATARS_DIR, { recursive: true });
 const TEMP_UPLOAD_DIR = path.join(__dirname, '..', '..', 'tmp', 'uploads');
 fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
 
+/**
+ * Multipart parsing limits shared by every multer instance in the backend
+ * (fileSize stays per route). Until 2026-10 none were set: parsing a request was
+ * bounded by nothing but the file size (review 02.10.2026, S1).
+ *
+ * Every upload form the clients send — the app in every version, the site — is
+ * one file plus at most five flat text fields; the promotions controller reads
+ * seven. Hence:
+ * - fields: 10 — the 11th text field aborts the request (LIMIT_FIELD_COUNT);
+ * - parts: 20 — busboy counts every part, including parts without a
+ *   Content-Disposition that are neither a field nor a file and slip past the
+ *   limit above; the 21st part aborts the request (LIMIT_PART_COUNT — multer
+ *   hands busboy parts + 1, so the value is the maximum allowed);
+ * - fieldNestingDepth: 0 — no client sends a bracketed name (a[b]), from which
+ *   multer would build nested objects (LIMIT_FIELD_NESTING). An array index
+ *   needs a bracket too, so fieldArrayIndexLimit adds nothing at depth 0.
+ * `files` stays unset: every route takes .single(name), which already refuses a
+ * second file (LIMIT_UNEXPECTED_FILE).
+ */
+export const MULTIPART_LIMITS = Object.freeze({
+  fields: 10,
+  parts: 20,
+  fieldNestingDepth: 0,
+});
+
 // Allowed image MIME types
 const ALLOWED_IMAGE_TYPES = [
   'image/jpeg',
@@ -74,6 +99,7 @@ export const uploadAvatar = multer({
   storage: avatarStorage,
   fileFilter: imageFilter,
   limits: {
+    ...MULTIPART_LIMITS,
     fileSize: 5 * 1024 * 1024, // 5MB
   },
 }).single('avatar');

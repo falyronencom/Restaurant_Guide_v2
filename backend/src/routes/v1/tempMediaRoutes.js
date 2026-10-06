@@ -23,7 +23,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
-import { TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
 import logger from '../../utils/logger.js';
@@ -70,6 +70,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
+    ...MULTIPART_LIMITS,
     fileSize: 60 * 1024 * 1024, // 60MB ceiling (PDF); images further capped to 10MB in handler
   },
 });

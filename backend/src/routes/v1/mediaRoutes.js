@@ -27,7 +27,7 @@ import * as MediaController from '../../controllers/mediaController.js';
 import * as MediaValidation from '../../validators/mediaValidation.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
-import { TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
 
 const router = express.Router({ mergeParams: true });
 
@@ -101,6 +101,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
+    ...MULTIPART_LIMITS,
     fileSize: 60 * 1024 * 1024, // 60MB ceiling (PDF limit; images further capped to 10MB in service)
   },
 });
