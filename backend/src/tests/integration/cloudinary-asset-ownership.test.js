@@ -279,22 +279,24 @@ describe('Путь B: DELETE медиа уничтожает файл тольк
     expect(await mediaRowExists(mediaId)).toBe(false);
   });
 
-  test('сквозной путь из находки: чужая ссылка через PUT карточки, затем DELETE — файл не уничтожается', async () => {
+  // Первый шаг пути из находки закрыт и на входе (N3, вторая половина): чужую
+  // ссылку в карточку больше не положить. Строки, попавшие в карточку раньше,
+  // проверяет тест выше — их удаление чужой файл тоже не трогает.
+  test('сквозной путь из находки: чужая ссылка через PUT карточки не сохраняется — удалять нечего', async () => {
     const foreignUrl = deliveryUrl(`establishments/temp/${otherPartner.id}/interior/victim0001`);
 
-    await request(app)
+    const response = await request(app)
       .put(`/api/v1/partner/establishments/${card.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ interior_photos: [foreignUrl] })
-      .expect(200);
+      .expect(422);
+    expect(response.body.error.code).toBe('MEDIA_URL_NOT_OWNED');
+
     const { rows } = await query(
-      'SELECT id FROM establishment_media WHERE establishment_id = $1 AND url = $2',
-      [card.id, foreignUrl],
+      'SELECT id FROM establishment_media WHERE establishment_id = $1',
+      [card.id],
     );
-    expect(rows).toHaveLength(1);
-
-    await deleteMediaRequest(rows[0].id).expect(200);
-
+    expect(rows).toHaveLength(0);
     expect(destroy).not.toHaveBeenCalled();
   });
 });

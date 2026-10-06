@@ -59,6 +59,9 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
   ownCloudPublicId: jest.fn(() => 'test-public-id'),
   isOwnedAsset: jest.fn(() => false),
+  // Named-imported by establishmentService (loaded via server.js) — must exist
+  // in the module mock or ESM linking fails.
+  hasPlainTransformations: jest.fn(() => false),
   // Plain functions, not jest.fn: resetMocks would wipe them before every test.
   // Same folder layout as the real builders.
   ownedFolders: {
