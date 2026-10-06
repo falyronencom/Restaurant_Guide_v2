@@ -1,0 +1,47 @@
+{
+  "GHSA-34x7-hfp2-rc4v": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-8qq5-rm4j-mr97": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-83g3-92jg-28cx": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-qffp-2rhf-9h96": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-9ppj-qmqm-q256": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-r6q2-hw4h-h46w": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-23hp-3jrh-7fpw": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-8x88-c5mf-7j5w": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  },
+  "GHSA-r292-9mhp-454m": {
+    "package": "tar",
+    "reason": "tar 6 — только при установке: argon2 0.31 через @mapbox/node-pre-gyp распаковывает свой бинарник (архив релиза argon2 на GitHub) во время npm ci. Процесс сервера tar не загружает (проба 06.10.2026). Уходит с argon2 >= 0.40.",
+    "reviewed": "2026-10-06"
+  }
+}
