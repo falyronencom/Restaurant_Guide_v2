@@ -23,7 +23,8 @@ import * as registry from './registry.js';
  * @param {import('pg').Pool} args.db
  * @param {string} args.batchId
  * @param {string} args.snapshotFile - where to write the pre-delete snapshot
- * @param {(publicId:string)=>Promise<void>} args.destroy - Cloudinary destroy (real path)
+ * @param {(publicId:string, establishmentId:string)=>Promise<{result:string}|void>} args.destroy -
+ *   Cloudinary destroy (real path): the asset and the card the registry assigns it to
  * @param {boolean} [args.forceWithInteractions]
  * @returns {Promise<{ deleted:number, skipped_claimed:number, assets_destroyed:number, blocked?:string }>}
  */
@@ -70,7 +71,10 @@ export async function rollbackBatch({ db, batchId, snapshotFile, destroy, forceW
     for (const relpath of Object.keys(state)) {
       const publicId = state[relpath].public_id;
       if (!publicId || publicId.startsWith('dryrun/')) continue; // stub asset — nothing to destroy
-      if (destroy) { await destroy(publicId); assetsDestroyed++; }
+      if (destroy) {
+        const outcome = await destroy(publicId, r.establishment_id);
+        if (outcome?.result !== 'refused') assetsDestroyed++;
+      }
     }
   }
 

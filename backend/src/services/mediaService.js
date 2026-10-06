@@ -464,13 +464,19 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
       );
     }
 
-    // Extract public_id from Cloudinary URL
-    const publicId = CloudinaryUtil.extractPublicIdFromUrl(media.url);
+    // The row's URL names the asset, and a partner can store any URL in a card's
+    // media (review 02.10.2026, N1): only an asset on our cloud inside this
+    // card's folder or the partner's own uploads is destroyed — deleteImage
+    // refuses the rest, and the row is removed either way.
+    const publicId = CloudinaryUtil.ownCloudPublicId(media.url);
 
     // Delete from Cloudinary (non-blocking - log error but continue)
     if (publicId) {
       try {
-        await CloudinaryUtil.deleteImage(publicId);
+        await CloudinaryUtil.deleteImage(publicId, [
+          CloudinaryUtil.ownedFolders.establishment(establishmentId),
+          CloudinaryUtil.ownedFolders.partnerUploads(partnerId),
+        ]);
       } catch (cloudinaryError) {
         // Log error but don't fail the operation
         // The database record should still be deleted even if Cloudinary fails
@@ -482,9 +488,8 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
         });
       }
     } else {
-      logger.warn('Could not extract public_id from URL, skipping Cloudinary deletion', {
+      logger.warn('Media URL is not an asset on our cloud, skipping Cloudinary deletion', {
         mediaId,
-        url: media.url,
       });
     }
 

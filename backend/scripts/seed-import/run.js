@@ -13,7 +13,7 @@ import { pool } from '../../src/config/database.js';
 import * as service from '../../src/services/establishmentService.js';
 import * as MediaModel from '../../src/models/mediaModel.js';
 import * as OcrJobModel from '../../src/models/ocrJobModel.js';
-import { deleteImage } from '../../src/config/cloudinary.js';
+import { deleteImage, ownedFolders } from '../../src/config/cloudinary.js';
 import { parseCsv } from './csv.js';
 import { preflight } from './preflight.js';
 import { processCard } from './pipeline.js';
@@ -52,7 +52,9 @@ export async function run(cfg) {
         db: pool,
         batchId: cfg.rollbackBatchId,
         snapshotFile: cfg.snapshotFile,
-        destroy: (publicId) => deleteImage(publicId),
+        // An asset is destroyed only inside the folder of the card the registry
+        // assigns it to — deleteImage refuses the rest (review 02.10.2026, N1).
+        destroy: (publicId, establishmentId) => deleteImage(publicId, [ownedFolders.establishment(establishmentId)]),
         forceWithInteractions: cfg.forceWithInteractions,
       });
       log(`Rollback ${cfg.rollbackBatchId}: ${JSON.stringify(result)}`);

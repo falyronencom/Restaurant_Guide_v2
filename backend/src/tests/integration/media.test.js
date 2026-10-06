@@ -57,6 +57,15 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   generatePdfPageImageUrl: jest.fn((url, page) => url.replace('/upload/', `/upload/pg_${page}/`).replace(/\.pdf$/i, '.jpg')),
   deleteImage: jest.fn(async () => ({ result: 'ok' })),
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
+  ownCloudPublicId: jest.fn(() => 'test-public-id'),
+  isOwnedAsset: jest.fn(() => false),
+  // Plain functions, not jest.fn: resetMocks would wipe them before every test.
+  // Same folder layout as the real builders.
+  ownedFolders: {
+    avatars: (userId) => `avatars/${userId}/`,
+    establishment: (establishmentId) => `establishments/${establishmentId}/`,
+    partnerUploads: (userId) => `establishments/temp/${userId}/`,
+  },
   isValidImageType: jest.fn(() => true),
   isValidImageSize: jest.fn(() => true),
   isValidPdfType: jest.fn(() => true),
@@ -126,6 +135,7 @@ beforeEach(async () => {
     cloudinary.generateImageUrl.mockReturnValue('https://res.cloudinary.com/test/image/upload/test-public-id.jpg');
     cloudinary.deleteImage.mockResolvedValue({ result: 'ok' });
     cloudinary.extractPublicIdFromUrl.mockReturnValue('test-public-id');
+    cloudinary.ownCloudPublicId.mockReturnValue('test-public-id');
     cloudinary.isValidImageType.mockReturnValue(true);
     cloudinary.isValidImageSize.mockReturnValue(true);
     cloudinary.isValidPdfType.mockReturnValue(true);
@@ -1081,7 +1091,14 @@ describe('Media System - Upload Operations', () => {
       );
       expect(result.rows).toHaveLength(0);
 
-      expect(cloudinary.deleteImage).toHaveBeenCalled();
+      // The service names the folders the asset may lie in — this card's and the
+      // partner's own uploads; the real deleteImage refuses anything outside them
+      // (cloudinary-asset-ownership.test.js exercises it unmocked).
+      expect(cloudinary.deleteImage).toHaveBeenCalledTimes(1);
+      expect(cloudinary.deleteImage).toHaveBeenCalledWith('test-public-id', [
+        `establishments/${establishment.id}/`,
+        `establishments/temp/${partner.id}/`,
+      ]);
     });
 
     test('should delete from database even if Cloudinary fails', async () => {

@@ -202,3 +202,49 @@ describe('extractText — download timeout', () => {
     expect(PDF_FETCH_TIMEOUT_MS).toBe(60000);
   });
 });
+
+describe('extractText — downloads only from this project\'s cloud', () => {
+  // The URL comes from an establishment_media row, and the media URL gate checks
+  // only the file extension (review 02.10.2026, N3): the server fetched whatever
+  // host the row named. Only a delivery URL on our own cloud (CLOUDINARY_CLOUD_NAME,
+  // 'test' in the suite) is downloaded now; the orchestrator treats a refusal like
+  // any download failure and reads the pages as images.
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+    mockPdfParse.mockResolvedValue({ text: 'Борщ — 15 руб.', numpages: 1 });
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test.each([
+    ['an internal address', 'http://169.254.169.254/latest/menu.pdf'],
+    ['a private network host', 'https://10.0.0.5/menu.pdf'],
+    ['another Cloudinary cloud', 'https://res.cloudinary.com/othercloud/image/upload/v1/menu.pdf'],
+    ['a host that only starts like Cloudinary', 'https://res.cloudinary.com.example.org/test/image/upload/v1/menu.pdf'],
+    ['our cloud over plain http', 'http://res.cloudinary.com/test/image/upload/v1/establishments/x/menu_pdf/menu.pdf'],
+    ['our cloud, raw resource type', 'https://res.cloudinary.com/test/raw/upload/v1/establishments/x/menu_pdf/menu.pdf'],
+  ])('%s — refused before any request', async (_label, url) => {
+    await expect(extractText(url)).rejects.toThrow('PDF URL is not on this project\'s Cloudinary cloud');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockPdfParse).not.toHaveBeenCalled();
+  });
+
+  test('a delivery URL on our cloud is downloaded as before', async () => {
+    const url = 'https://res.cloudinary.com/test/image/upload/v1759600000/establishments/x/menu_pdf/menu.pdf';
+
+    await extractText(url);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toBe(url);
+  });
+});

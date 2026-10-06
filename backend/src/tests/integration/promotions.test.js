@@ -44,6 +44,14 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   generatePdfPageImageUrl: jest.fn((url, page) => url.replace('/upload/', `/upload/pg_${page}/`).replace(/\.pdf$/i, '.jpg')),
   deleteImage: jest.fn(async () => ({ result: 'ok' })),
   extractPublicIdFromUrl: jest.fn(() => 'test-promo-public-id'),
+  // Named-imported by authController / pdfTextExtractor (loaded via server.js).
+  ownCloudPublicId: jest.fn(() => 'test-promo-public-id'),
+  isOwnedAsset: jest.fn(() => false),
+  ownedFolders: {
+    avatars: (userId) => `avatars/${userId}/`,
+    establishment: (establishmentId) => `establishments/${establishmentId}/`,
+    partnerUploads: (userId) => `establishments/temp/${userId}/`,
+  },
   isValidImageType: jest.fn(() => true),
   isValidImageSize: jest.fn(() => true),
   // Named-imported by establishmentService (loaded via server.js) — must exist
