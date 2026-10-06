@@ -29,6 +29,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATE_DIR = resolve(__dirname, '../../../scripts/audit-gate');
+const CI_WORKFLOW = resolve(__dirname, '../../../../.github/workflows/ci.yml');
 
 const advisory = (name, ghsa, severity, title = `${name} advisory`) => ({
   source: 1,
@@ -251,5 +252,39 @@ describe('runGate', () => {
     expect(code).toBe(EXIT.BLIND);
     expect(out.annotations).toHaveLength(1);
     expect(out.annotations[0]).toBe('::error title=Сторож уязвимостей ослеп::npm не запустился: Command failed npm ERR! code E500');
+  });
+});
+
+// Вариант А (решение Координатора 06.10.2026): сторож — задача гейта ci.yml.
+// Без задачи, с continue-on-error или с условием if на ней он перестаёт
+// останавливать выкатку, и об этом никто не узнает.
+describe('workflow ci.yml', () => {
+  // Блок задачи: от «  <имя>:» до следующего ключа того же уровня.
+  const jobBlock = (yaml, job) => {
+    const lines = yaml.split(/\r?\n/);
+    const start = lines.findIndex((l) => l === `  ${job}:`);
+    if (start === -1) return null;
+    const end = lines.findIndex((l, i) => i > start && /^ {2}\S/.test(l));
+    return lines.slice(start + 1, end === -1 ? undefined : end).join('\n');
+  };
+
+  test('разбор блока задачи (якорь на литерале — иначе проверка ниже пуста)', () => {
+    const literal = 'jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: one\n\n  b:\n    steps:\n      - run: two\n';
+    expect(jobBlock(literal, 'a')).toBe('    runs-on: x\n    steps:\n      - run: one\n');
+    expect(jobBlock(literal, 'b')).toBe('    steps:\n      - run: two\n');
+    expect(jobBlock(literal, 'c')).toBeNull();
+  });
+
+  test('сторож — отдельная задача гейта, без continue-on-error и без условия', () => {
+    const yaml = readFileSync(CI_WORKFLOW, 'utf8');
+    const block = jobBlock(yaml, 'deps-audit');
+    expect(block).not.toBeNull();
+    expect(block).toMatch(/^ {8}working-directory: backend$/m);
+    expect(block).toMatch(/^ {8}run: node scripts\/audit-gate\/check\.js$/m);
+    expect(block).not.toMatch(/continue-on-error/);
+    expect(block).not.toMatch(/^ {4}if:/m);
+    // Гейт идёт на pull_request и на push в main — сторож вместе с ним.
+    expect(yaml).toMatch(/^ {2}pull_request:/m);
+    expect(yaml).toMatch(/^ {2}push:/m);
   });
 });
