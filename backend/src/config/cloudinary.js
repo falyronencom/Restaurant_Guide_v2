@@ -446,6 +446,44 @@ export const ownCloudPublicId = (url) => {
 };
 
 /**
+ * The transformation parameters our URL builders emit (generateAllResolutions,
+ * the PDF previews, the old seed builder): crop, width, height, format, quality,
+ * the progressive flag and the PDF page. A delivery URL may carry any other
+ * parameter, and some of them draw something besides the asset into the picture:
+ * a layer of another asset, of a remote file or of text (l_, u_), a default image
+ * (d_), a named transformation (t_), an effect (e_).
+ */
+const PLAIN_TRANSFORMATION_PARAM = /^(?:c|w|h|f|q|fl|pg)_[a-z0-9]+$/;
+
+/**
+ * True when every transformation in a delivery URL only resizes, crops or
+ * reformats the asset, so the picture shows that asset and nothing else
+ * (review 02.10.2026, N3). Looks at the segments extractPublicIdFromUrl skips
+ * before the public_id — those with a comma, and version markers. Judge the
+ * host and the asset with ownCloudPublicId; false for a link that does not parse.
+ *
+ * @param {string} url - A delivery URL
+ * @returns {boolean}
+ */
+export const hasPlainTransformations = (url) => {
+  let pathname;
+  try {
+    ({ pathname } = new URL(url));
+  } catch {
+    return false;
+  }
+  const marker = '/image/upload/';
+  const start = pathname.indexOf(marker);
+  if (start === -1) return false;
+  for (const segment of pathname.slice(start + marker.length).split('/')) {
+    if (/^v\d+$/.test(segment)) continue;
+    if (!segment.includes(',')) break;
+    if (!segment.split(',').every((param) => PLAIN_TRANSFORMATION_PARAM.test(param))) return false;
+  }
+  return true;
+};
+
+/**
  * Validate image file type
  * 
  * This function checks if the uploaded file is a valid image type.

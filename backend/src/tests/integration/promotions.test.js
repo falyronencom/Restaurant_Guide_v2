@@ -47,6 +47,8 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   // Named-imported by authController / pdfTextExtractor (loaded via server.js).
   ownCloudPublicId: jest.fn(() => 'test-promo-public-id'),
   isOwnedAsset: jest.fn(() => false),
+  // Named-imported by establishmentService (loaded via server.js).
+  hasPlainTransformations: jest.fn(() => false),
   ownedFolders: {
     avatars: (userId) => `avatars/${userId}/`,
     establishment: (establishmentId) => `establishments/${establishmentId}/`,

@@ -26,8 +26,12 @@ import {
   fileExtension,
   generatePdfThumbnailUrl,
   generatePdfPreviewUrl,
+  hasPlainTransformations,
   hasValidImageExtension,
   hasValidPdfExtension,
+  isOwnedAsset,
+  ownCloudPublicId,
+  ownedFolders,
 } from '../config/cloudinary.js';
 
 /**
@@ -61,6 +65,60 @@ function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = fal
     }
   }
 }
+
+/**
+ * The text the partner reads when a media link is not one of their own uploads
+ * (mobile shows the server's message as is). Decision of the Coordinator,
+ * 06.10.2026: such a save is refused, not trimmed silently.
+ */
+const MEDIA_URL_NOT_OWNED_MESSAGE =
+  'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.';
+
+/**
+ * Why `link` may not be attached by a caller owning `folders`, or null when it
+ * may: a delivery URL on our cloud, showing only its own asset (an overlay or a
+ * fetched layer would put another picture into a link to the partner's file),
+ * and that asset inside the given folders.
+ */
+const mediaLinkRefusal = (link, folders) => {
+  const publicId = ownCloudPublicId(link);
+  if (publicId === null) return 'not_our_cloud';
+  if (!hasPlainTransformations(link)) return 'transformation_not_allowed';
+  if (!isOwnedAsset(publicId, folders)) return 'outside_own_folders';
+  return null;
+};
+
+/**
+ * Reject media links that are not the caller's own uploads, BEFORE any DB write
+ * (review 02.10.2026, N3, second half). The create/update payloads carry raw
+ * URLs, and our upload routes file every asset under its owner's folder (the
+ * folder layout is the ownership record — config/cloudinary.js), so a link
+ * outside the given folders is someone else's file or another host. Attached to
+ * a card it would show in the catalog: an edit of an active card goes live
+ * without moderation. The log names the bucket and the reason, never the link —
+ * it is client-supplied text.
+ *
+ * @param {Object<string, Array>} linksByBucket - Links keyed by the bucket named in the log
+ * @param {string[]} folders - The caller's own folders, built with ownedFolders
+ * @param {Object} logContext - Server-known ids for the refusal log
+ */
+function assertOwnMediaUrls(linksByBucket, folders, logContext) {
+  for (const [bucket, links] of Object.entries(linksByBucket)) {
+    for (const link of links) {
+      const reason = mediaLinkRefusal(link, folders);
+      if (reason === null) continue;
+      logger.warn('Media link refused: not among the partner\'s own uploads', {
+        ...logContext,
+        bucket,
+        reason,
+      });
+      throw new AppError(MEDIA_URL_NOT_OWNED_MESSAGE, 422, 'MEDIA_URL_NOT_OWNED');
+    }
+  }
+}
+
+/** Optional single links (cover, PDF previews): absent when undefined, null or ''. */
+const presentLinks = (...links) => links.filter((link) => link !== undefined && link !== null && link !== '');
 
 /**
  * Build the establishment_media type/url triplet for a synced menu URL. Menu PDFs
@@ -307,6 +365,18 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       (Array.isArray(menu_pdfs) ? menu_pdfs : []).map((pdf) => pdf?.url ?? ''),
       { allowImage: false, allowPdf: true, bucket: 'menu PDF' },
     );
+
+    // Ownership gate, before the INSERT too, over every link create stores —
+    // primary_photo becomes the catalog thumbnail as is. The card has no folder
+    // yet, so each link must be the partner's own temp upload (where the app and
+    // the site upload: establishments/temp/{userId}/).
+    assertOwnMediaUrls({
+      interior: Array.isArray(interior_photos) ? interior_photos : [],
+      menu: Array.isArray(menu_photos) ? menu_photos : [],
+      menu_pdf: (Array.isArray(menu_pdfs) ? menu_pdfs : [])
+        .flatMap((pdf) => [pdf?.url, ...presentLinks(pdf?.thumbnail_url, pdf?.preview_url)]),
+      primary: presentLinks(primary_photo),
+    }, [ownedFolders.partnerUploads(partnerId)], { partnerId });
 
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
@@ -906,6 +976,19 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       delete updates.slug;
     }
 
+    // The catalog thumbnail is system-controlled too: setPrimaryPhoto writes it
+    // from one of the card's media rows, and the media sync below clears it when
+    // the last interior photo goes. Taken from the request it would reach the
+    // catalog as is — any address, live without moderation (review 02.10.2026,
+    // N3). No client sends it.
+    if (updates.primary_image_url !== undefined) {
+      delete updates.primary_image_url;
+      logger.warn('Partner attempted to set primary_image_url directly — ignored', {
+        establishmentId,
+        partnerId,
+      });
+    }
+
     // Slug regeneration gate:
     //   mutable statuses (draft, pending, rejected) → regenerate when name changes
     //   frozen statuses (active, suspended, archived) → slug stays stable
@@ -976,10 +1059,14 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const primaryPhotoUrl = updates.primary_photo || null;
 
-      // Format gate on newly added URLs only — existing rows stay untouched
-      // (legacy-safe), and the check runs before the first DB write below
-      // (deletes happen inside the sync loop). The menu bucket accepts PDFs on
-      // this path: buildMenuMediaFields types them correctly.
+      // Format and ownership gates on newly added URLs only — existing rows stay
+      // untouched (legacy-safe: a card transferred from the service account keeps
+      // its photos in that account's folder), and both run before the first DB
+      // write below (deletes happen inside the sync loop). The menu bucket accepts
+      // PDFs on this path: buildMenuMediaFields types them correctly. An added
+      // link must be the partner's own temp upload or a file of this very card
+      // (a PDF attached through POST /:id/media).
+      const ownFolders = [ownedFolders.establishment(establishmentId), ownedFolders.partnerUploads(partnerId)];
       for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
         if (updates[field] === undefined) continue;
         const existingUrlsOfType = existingMedia
@@ -990,6 +1077,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           allowPdf: type === 'menu',
           bucket: type === 'menu' ? 'menu' : 'interior photo',
         });
+        assertOwnMediaUrls({ [type]: addedUrls }, ownFolders, { partnerId, establishmentId });
       }
 
       // Sync each media type

@@ -26,6 +26,7 @@ const CABINET_CODES = [
   'COORDINATES_CITY_MISMATCH',
   'MEDIA_LIMIT_EXCEEDED',
   'INVALID_FILE_TYPE',
+  'MEDIA_URL_NOT_OWNED',
   'DUPLICATE_ESTABLISHMENT',
   'CONSTRAINT_VIOLATION',
   'FORBIDDEN',
@@ -49,6 +50,12 @@ describe('messageForEstablishmentError — cabinet code coverage (B1 anti-drift)
   it('falls back to the neutral message for an unknown / missing code', () => {
     expect(messageForEstablishmentError('SOME_FUTURE_CODE')).toBe(FALLBACK);
     expect(messageForEstablishmentError(undefined)).toBe(FALLBACK);
+  });
+
+  it('media link not from the partner\'s own uploads — the Coordinator decision of 06.10.2026, same words as the server', () => {
+    expect(messageForEstablishmentError('MEDIA_URL_NOT_OWNED')).toBe(
+      'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.',
+    );
   });
 
   it('refusal to delete — the Coordinator decision text of 01.10.2026, same as the server and mobile', () => {

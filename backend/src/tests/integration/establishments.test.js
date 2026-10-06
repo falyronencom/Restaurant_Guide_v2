@@ -135,9 +135,14 @@ describe('Establishments System - Create Establishment', () => {
   });
 
   describe('POST/PUT - Media Materialization Limits & OCR enqueue', () => {
+    // Media links are the partner's own uploads in the shape the temp-upload
+    // route hands out (canonical extension-less delivery URL; PDF secure_url
+    // with version and .pdf): saving a card accepts only files from the
+    // partner's own folders (establishment-media-ownership.test.js). Builders,
+    // not constants — partnerId is known only after beforeAll.
     const photoUrls = (count, prefix) => Array.from(
       { length: count },
-      (_, i) => `https://res.cloudinary.com/test/image/upload/${prefix}-${i}.jpg`,
+      (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}?_a=BAMAMiRg0`,
     );
 
     // Бюджет 8000, а не 2000: на медленном раннере двух секунд может не
@@ -270,7 +275,7 @@ describe('Establishments System - Create Establishment', () => {
     // minimum WITHOUT photos, then autosave PUT adds media). The PUT media-sync
     // must populate establishments.primary_image_url (catalog thumbnail) and type
     // menu PDFs correctly — both were broken (MARBL, 2026-07-20).
-    const menuPdfUrl = 'https://res.cloudinary.com/test/image/upload/v1/establishments/temp/x/menu_pdf/abc.pdf';
+    const menuPdfUrl = () => `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partnerId}/menu_pdf/abc.pdf`;
 
     test('two-stage create→PUT populates establishments.primary_image_url', async () => {
       const created = await request(app)
@@ -346,7 +351,7 @@ describe('Establishments System - Create Establishment', () => {
       await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ menu_photos: [menuPdfUrl] })
+        .send({ menu_photos: [menuPdfUrl()] })
         .expect(200);
 
       const row = await query(
@@ -356,8 +361,8 @@ describe('Establishments System - Create Establishment', () => {
       expect(row.rows).toHaveLength(1);
       const m = row.rows[0];
       expect(m.file_type).toBe('pdf');
-      expect(m.url).toBe(menuPdfUrl); // original preserved for download
-      expect(m.preview_url).not.toBe(menuPdfUrl); // transformed, not raw pdf (Cloudinary 401s raw)
+      expect(m.url).toBe(menuPdfUrl()); // original preserved for download
+      expect(m.preview_url).not.toBe(menuPdfUrl()); // transformed, not raw pdf (Cloudinary 401s raw)
       expect(m.preview_url).toContain('pg_1');
       expect(m.thumbnail_url).toContain('pg_1');
     });
@@ -397,7 +402,7 @@ describe('Establishments System - Create Establishment', () => {
         .expect(201);
       const estId = created.body.data.establishment.id;
 
-      const menuUrls = [photoUrls(1, 'menu')[0], menuPdfUrl];
+      const menuUrls = [photoUrls(1, 'menu')[0], menuPdfUrl()];
       await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
@@ -430,13 +435,13 @@ describe('Establishments System - Create Establishment', () => {
     // Regression (MARKS, 2026-07-20): an .ai URL in the menu bucket lands as
     // file_type='image' and renders broken everywhere. The URL extension gate
     // must reject it before any DB write.
-    const aiUrl = 'https://res.cloudinary.com/test/image/upload/v1/establishments/temp/x/menu_pdf/menu.ai';
+    const aiUrl = () => `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partnerId}/menu_pdf/menu.ai`;
 
     test('create rejects an .ai menu url with INVALID_FILE_TYPE, no orphan row', async () => {
       const response = await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ ...testEstablishments[0], menu_photos: [aiUrl] })
+        .send({ ...testEstablishments[0], menu_photos: [aiUrl()] })
         .expect(422);
 
       expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
@@ -448,7 +453,7 @@ describe('Establishments System - Create Establishment', () => {
       const response = await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ ...testEstablishments[0], menu_photos: [menuPdfUrl] })
+        .send({ ...testEstablishments[0], menu_photos: [menuPdfUrl()] })
         .expect(422);
 
       expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
@@ -465,7 +470,7 @@ describe('Establishments System - Create Establishment', () => {
       const response = await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ menu_photos: [aiUrl] })
+        .send({ menu_photos: [aiUrl()] })
         .expect(422);
       expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
 
@@ -487,7 +492,7 @@ describe('Establishments System - Create Establishment', () => {
       const response = await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ interior_photos: [menuPdfUrl] })
+        .send({ interior_photos: [menuPdfUrl()] })
         .expect(422);
       expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
     });
@@ -498,7 +503,7 @@ describe('Establishments System - Create Establishment', () => {
     // must accept that shape for image buckets, or every real cabinet
     // autosave PUT / mobile registration finalize 422s (found in review,
     // 2026-07-20).
-    const extensionlessUrl = 'https://res.cloudinary.com/test/image/upload/c_limit,h_1080,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/u1/interior/abc123xyz?_a=BAMAK';
+    const extensionlessUrl = () => `https://res.cloudinary.com/test/image/upload/c_limit,h_1080,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/interior/abc123xyz?_a=BAMAK`;
 
     test('PUT media-sync accepts a canonical extension-less image url', async () => {
       const created = await request(app)
@@ -511,7 +516,7 @@ describe('Establishments System - Create Establishment', () => {
       await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ interior_photos: [extensionlessUrl], menu_photos: [extensionlessUrl] })
+        .send({ interior_photos: [extensionlessUrl()], menu_photos: [extensionlessUrl()] })
         .expect(200);
 
       const media = await query(
@@ -525,7 +530,7 @@ describe('Establishments System - Create Establishment', () => {
       await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ ...testEstablishments[0], interior_photos: [extensionlessUrl] })
+        .send({ ...testEstablishments[0], interior_photos: [extensionlessUrl()] })
         .expect(201);
     });
 
@@ -542,14 +547,14 @@ describe('Establishments System - Create Establishment', () => {
         `INSERT INTO establishment_media
            (establishment_id, type, file_type, url, thumbnail_url, preview_url, position)
          VALUES ($1, 'menu', 'image', $2, $2, $2, 0)`,
-        [estId, aiUrl],
+        [estId, aiUrl()],
       );
 
       // Re-sending the same set = no new inserts → must stay 200.
       await request(app)
         .put(`/api/v1/partner/establishments/${estId}`)
         .set('Authorization', `Bearer ${partnerToken}`)
-        .send({ menu_photos: [aiUrl] })
+        .send({ menu_photos: [aiUrl()] })
         .expect(200);
     });
   });

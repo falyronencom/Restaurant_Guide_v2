@@ -24,6 +24,12 @@ const CODE_RU: Record<string, string> = {
   COORDINATES_CITY_MISMATCH:
     'Координаты не попадают в границы выбранного города. Проверьте город или определите координаты по адресу заново.',
   MEDIA_LIMIT_EXCEEDED: 'Превышен лимит фотографий для заведения.',
+  // Save refused: a media link is not among the partner's own uploads (backend
+  // create/update ownership gate). The cabinet uploads into the partner's own
+  // folders, so this surfaces only on stale state — same words as the server's
+  // message.
+  MEDIA_URL_NOT_OWNED:
+    'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.',
   // Upload / streaming-proxy codes (also surfaced from the media routes).
   FILE_TOO_LARGE: 'Файл слишком большой.',
   HTTP_413: 'Файл слишком большой.',
