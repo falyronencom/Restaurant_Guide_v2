@@ -20,7 +20,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import * as PromotionController from '../../controllers/promotionController.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
-import { TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
 
 const router = express.Router();
 
@@ -49,6 +49,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
+    ...MULTIPART_LIMITS,
     fileSize: 10 * 1024 * 1024, // 10MB
   },
 });

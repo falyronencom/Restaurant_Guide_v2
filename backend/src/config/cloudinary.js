@@ -244,9 +244,70 @@ export const generateAllResolutions = (publicId) => {
 };
 
 /**
- * Delete an image from Cloudinary
+ * Asset ownership: the cloud's folder layout is the ownership record.
+ *
+ * Every upload path files an asset under its owner's folder:
+ * - uploadAvatar → avatars/{userId}/…
+ * - uploadImage / uploadPdf → establishments/{establishmentId}/…
+ * - the partner temp-upload route → establishments/temp/{userId}/… (uploadImage
+ *   with `temp/${userId}`; permanent storage despite the name)
+ *
+ * A public_id reaching a destroy call is derived from a stored URL, and clients
+ * could store any URL — an avatar link via PUT /auth/profile, a card's media URLs
+ * via the establishment PUT — so any registered user could get someone else's
+ * photo, PDF menu or avatar destroyed (review 02.10.2026, N1). deleteImage
+ * therefore destroys only an asset inside a folder the caller names as its own,
+ * built with ownedFolders from the authenticated caller and the object it owns —
+ * never from the URL itself.
+ */
+const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const OWNED_FOLDER_PATTERN = new RegExp(`^(?:avatars|establishments|establishments/temp)/${UUID_SOURCE}/$`);
+// Path segments of letters, digits, '_' and '-' only. Rules out '.' and '..'
+// segments, empty segments, encoded or back slashes and spaces: our uploads
+// produce none of them, and any of them could make a prefix check say «inside»
+// about an id that points elsewhere.
+const PLAIN_PUBLIC_ID_PATTERN = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+
+/**
+ * Builders of the folders an owner holds. The result is checked where it is
+ * used (deleteImage, isOwnedAsset): a folder whose id is not a UUID names
+ * nothing.
+ */
+export const ownedFolders = {
+  avatars: (userId) => `avatars/${userId}/`,
+  establishment: (establishmentId) => `establishments/${establishmentId}/`,
+  partnerUploads: (userId) => `establishments/temp/${userId}/`,
+};
+
+/**
+ * Why `publicId` may not be destroyed for a caller owning `folders`, or null
+ * when it may. Folder strings outside the layout above are ignored, so an empty
+ * or truncated scope never widens to «everything».
+ */
+const ownershipRefusal = (publicId, folders) => {
+  if (typeof publicId !== 'string' || !PLAIN_PUBLIC_ID_PATTERN.test(publicId)) {
+    return 'not_a_plain_asset_id';
+  }
+  const owned = (Array.isArray(folders) ? folders : [])
+    .filter((folder) => typeof folder === 'string' && OWNED_FOLDER_PATTERN.test(folder));
+  if (owned.length === 0) return 'no_owned_folder_named';
+  if (!owned.some((folder) => publicId.startsWith(folder))) return 'outside_owned_folders';
+  return null;
+};
+
+/**
+ * True when the asset lies inside one of the given owned folders.
+ *
+ * @param {string} publicId - Cloudinary public_id
+ * @param {string[]} folders - Folders built with ownedFolders
+ * @returns {boolean}
+ */
+export const isOwnedAsset = (publicId, folders) => ownershipRefusal(publicId, folders) === null;
+
+/**
+ * Delete an image from Cloudinary — only an asset inside one of the caller's own
+ * folders (see ownedFolders above); anything else is refused, not destroyed.
  * 
- * This function permanently removes an image from Cloudinary storage.
  * It should be called when media is deleted from the database to prevent
  * orphaned files that consume storage quota.
  * 
@@ -254,10 +315,24 @@ export const generateAllResolutions = (publicId) => {
  * public_id will succeed without error (even if the image was already deleted).
  * 
  * @param {string} publicId - Cloudinary public_id to delete
- * @returns {Promise<Object>} Deletion result
+ * @param {string[]} folders - The caller's own folders, built with
+ *   ownedFolders from the authenticated caller and the object it owns
+ * @returns {Promise<Object>} Deletion result; { result: 'refused' } when the
+ *   asset is not inside the given folders
  * @throws {Error} If deletion fails
  */
-export const deleteImage = async (publicId) => {
+export const deleteImage = async (publicId, folders) => {
+  const refusal = ownershipRefusal(publicId, folders);
+  if (refusal) {
+    // No ids and no file names: the public_id may come from client-supplied text.
+    const topFolder = typeof publicId === 'string' ? publicId.split('/')[0] : '';
+    logger.warn('Cloudinary delete refused: the asset is not in the caller\'s folders', {
+      reason: refusal,
+      topFolder: ['avatars', 'establishments'].includes(topFolder) ? topFolder : 'other',
+    });
+    return { result: 'refused' };
+  }
+
   try {
     const result = await cloudinary.uploader.destroy(publicId);
 
@@ -340,6 +415,34 @@ export const extractPublicIdFromUrl = (cloudinaryUrl) => {
     });
     return null;
   }
+};
+
+/**
+ * public_id of a delivery URL on this project's cloud, or null for any other
+ * link — another host, another cloud, another resource type, plain http.
+ *
+ * The URL is resolved first (dot segments, backslashes, fragment), so the id
+ * returned is the asset the link actually points at, not its spelling.
+ *
+ * @param {string} url - A stored media, avatar or promotion image URL
+ * @returns {string|null} The public_id, or null when the link is not ours
+ */
+export const ownCloudPublicId = (url) => {
+  if (typeof url !== 'string') return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.host !== 'res.cloudinary.com'
+    || !parsed.pathname.startsWith(`/${cloudinary.config().cloud_name}/image/upload/`)
+  ) {
+    return null;
+  }
+  return extractPublicIdFromUrl(`${parsed.origin}${parsed.pathname}`);
 };
 
 /**

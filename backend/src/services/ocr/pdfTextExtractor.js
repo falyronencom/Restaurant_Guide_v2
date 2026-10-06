@@ -12,6 +12,7 @@
  */
 
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
+import { ownCloudPublicId } from '../../config/cloudinary.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -41,10 +42,19 @@ const PDF_FETCH_TIMEOUT_MS = 60000;
  * Uses the global fetch (Node.js 18+), aborted after PDF_FETCH_TIMEOUT_MS —
  * the signal covers the body read (arrayBuffer) as well as the headers.
  *
+ * Only a delivery URL on our own cloud is downloaded. The URL comes from an
+ * establishment_media row, and the media URL gate checks the extension only
+ * (review 02.10.2026, N3): without this the server fetched any host a row
+ * named. A refusal is a download failure like any other for the orchestrator.
+ *
  * @param {string} url - Cloudinary PDF URL
  * @returns {Promise<Buffer>}
  */
 const fetchPdfBuffer = async (url) => {
+  if (ownCloudPublicId(url) === null) {
+    throw new Error('PDF URL is not on this project\'s Cloudinary cloud');
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), PDF_FETCH_TIMEOUT_MS);
 

@@ -16,8 +16,27 @@
 import fs from 'fs/promises';
 import * as authService from '../services/authService.js';
 import { verifyGoogleToken, verifyYandexToken } from '../services/oauthService.js';
-import { uploadAvatar as cloudinaryUploadAvatar, deleteImage, extractPublicIdFromUrl } from '../config/cloudinary.js';
+import {
+  uploadAvatar as cloudinaryUploadAvatar,
+  deleteImage,
+  isOwnedAsset,
+  ownCloudPublicId,
+  ownedFolders,
+} from '../config/cloudinary.js';
 import logger from '../utils/logger.js';
+
+/**
+ * A link into the user's own avatar folder on our cloud (the folder layout is
+ * the ownership record — config/cloudinary.js, ownedFolders).
+ *
+ * @param {*} url - Client-supplied avatar_url
+ * @param {string} userId - Authenticated caller
+ * @returns {boolean}
+ */
+const isOwnAvatarUrl = (url, userId) => {
+  const publicId = ownCloudPublicId(url);
+  return publicId !== null && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
+};
 
 /**
  * Register a new user
@@ -424,7 +443,8 @@ export async function logout(req, res, next) {
  *
  * Request body:
  * - name (optional): New display name (max 100 chars)
- * - avatar_url (optional): New avatar URL (max 500 chars)
+ * - avatar_url (optional): null / '' to remove the avatar, or a link into the
+ *   caller's own avatar folder on our cloud; any other value is ignored
  *
  * Response:
  * - 200 OK: Updated user information
@@ -448,9 +468,23 @@ export async function updateProfile(req, res, next) {
       });
     }
 
+    // POST /auth/avatar destroys the previous avatar by this link, and an
+    // arbitrary link let any user get someone else's file destroyed (review
+    // 02.10.2026, N1): a client may only clear the avatar or point into its own
+    // avatar folder. Neither client sends the field (the site sends { name },
+    // the app sends the name only, in every version), so anything else is
+    // ignored rather than refused — a client echoing a stored value must not
+    // break a name change.
+    let avatarUrl = avatar_url;
+    if (avatarUrl !== undefined && avatarUrl !== null && avatarUrl !== ''
+      && !isOwnAvatarUrl(avatarUrl, userId)) {
+      logger.warn('Profile update: avatar_url outside the caller\'s avatar folder ignored');
+      avatarUrl = undefined;
+    }
+
     const user = await authService.updateUserProfile(userId, {
       name,
-      avatarUrl: avatar_url,
+      avatarUrl,
     });
 
     return res.status(200).json({
@@ -539,17 +573,18 @@ export async function uploadAvatar(req, res, next) {
     // Update avatar_url in database with absolute Cloudinary URL
     const user = await authService.updateUserProfile(userId, { avatarUrl });
 
-    // Delete old avatar from Cloudinary if it was a Cloudinary URL
-    if (oldAvatarUrl && oldAvatarUrl.includes('res.cloudinary.com')) {
-      const oldPublicId = extractPublicIdFromUrl(oldAvatarUrl);
-      if (oldPublicId) {
-        deleteImage(oldPublicId).catch((err) => {
-          logger.warn('Failed to delete old avatar from Cloudinary', {
-            oldPublicId,
-            error: err.message,
-          });
+    // Delete the old avatar from Cloudinary. The stored link is not trusted to
+    // name our asset (PUT /auth/profile used to store any URL): only an asset
+    // on our cloud inside the caller's own avatar folder is destroyed —
+    // deleteImage refuses the rest (review 02.10.2026, N1).
+    const oldPublicId = ownCloudPublicId(oldAvatarUrl);
+    if (oldPublicId) {
+      deleteImage(oldPublicId, [ownedFolders.avatars(userId)]).catch((err) => {
+        logger.warn('Failed to delete old avatar from Cloudinary', {
+          oldPublicId,
+          error: err.message,
         });
-      }
+      });
     }
 
     return res.status(200).json({
