@@ -574,3 +574,64 @@ describe('validateDeletePartnerResponse', () => {
     expect(result.isEmpty()).toBe(false);
   });
 });
+
+// ─── Length limits vs invisible variation selectors ─────────────────────────
+//
+// The validator is the ONLY bound on review text: the live table carries no
+// CHECK on reviews.content (production_schema.sql, note on migration 007).
+// validator < 13.15.22 did not count U+FE0F / U+FE0E at all (GHSA-vghf-hv5q-vc2g),
+// so a short visible text followed by thousands of invisible selectors passed
+// max: 1000 and was stored and served to every guest opening the reviews.
+
+describe('length limits count invisible variation selectors', () => {
+  const validId = '550e8400-e29b-41d4-a716-446655440000';
+
+  test('review content padded with U+FE0F past 1000 is rejected', async () => {
+    const req = mockReq({
+      body: {
+        establishmentId: validId,
+        rating: 5,
+        content: `Отличное место${'\uFE0F'.repeat(1000)}`,
+      },
+    });
+    const result = await runValidation(validateCreateReview, req);
+    expect(result.array().map(e => e.path)).toContain('content');
+  });
+
+  test('partner response padded with U+FE0E past 1000 is rejected', async () => {
+    const req = mockReq({
+      params: { id: validId },
+      body: { response: `Спасибо за отзыв${'\uFE0E'.repeat(1000)}` },
+    });
+    const result = await runValidation(validatePartnerResponse, req);
+    expect(result.array().map(e => e.path)).toContain('response');
+  });
+
+  test('an emoji with its selector still counts as one character (1000 pass, 1001 fail)', async () => {
+    // '\u2764\uFE0F' is U+2764 U+FE0F — two code units, one character for the guest.
+    const atLimit = mockReq({
+      body: { establishmentId: validId, rating: 5, content: '\u2764\uFE0F'.repeat(1000) },
+    });
+    expect((await runValidation(validateCreateReview, atLimit)).isEmpty()).toBe(true);
+
+    const overLimit = mockReq({
+      body: { establishmentId: validId, rating: 5, content: '\u2764\uFE0F'.repeat(1001) },
+    });
+    expect((await runValidation(validateCreateReview, overLimit)).array().map(e => e.path))
+      .toContain('content');
+  });
+});
+
+// ─── Identifiers must be RFC 9562 UUIDs ─────────────────────────────────────
+//
+// validator ≥ 13.15.0 checks the variant nibble: every id column defaults to
+// gen_random_uuid() (RFC v4, variant 8–b), so real ids pass; a hand-typed
+// all-ones id now gets 400 at validation instead of reaching the database.
+
+describe('UUID params require an RFC variant', () => {
+  test('all-ones id (variant 1) is rejected', async () => {
+    const req = mockReq({ params: { id: '11111111-1111-1111-1111-111111111111' } });
+    const result = await runValidation(validateGetReview, req);
+    expect(result.array().map(e => e.path)).toContain('id');
+  });
+});
