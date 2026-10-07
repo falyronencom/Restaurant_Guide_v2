@@ -361,7 +361,11 @@ describe('GET /api/v1/auth/me', () => {
     expect(response.body.error.code).toBe('TOKEN_EXPIRED');
   });
 
-  test('returns 404 when user no longer exists', async () => {
+  // Until 2026-10-07 this was a 404 USER_NOT_FOUND from the controller: the
+  // token alone opened the door. authenticate now asks the database first,
+  // and an account that is gone is refused like a switched-off one — a 401
+  // the clients answer by refreshing once and then signing out.
+  test('returns 401 ACCOUNT_INACTIVE when the user no longer exists', async () => {
     const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
     const accessToken = body.data.accessToken;
     await query('DELETE FROM users WHERE id = $1', [body.data.user.id]);
@@ -369,8 +373,8 @@ describe('GET /api/v1/auth/me', () => {
     const response = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${accessToken}`)
-      .expect(404);
+      .expect(401);
 
-    expect(response.body.error.code).toBe('USER_NOT_FOUND');
+    expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
   });
 });

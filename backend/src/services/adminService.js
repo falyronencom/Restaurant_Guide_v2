@@ -18,6 +18,7 @@ import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { BELARUS_BOUNDS, validateCityCoordinates } from './establishmentService.js';
 import { upgradeUserToPartner } from './authService.js';
+import { invalidateAccountStatus } from './accountStatus.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
@@ -1184,6 +1185,10 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
   } finally {
     client.release();
   }
+
+  // The role may have changed (user → partner): authenticate reads it from the
+  // database, cached briefly — forget the cached one once the change is committed.
+  invalidateAccountStatus(targetUserId);
 
   // 4. Audit log — awaited, outside transaction; createAuditLog swallows its own errors
   await AuditLogModel.createAuditLog({

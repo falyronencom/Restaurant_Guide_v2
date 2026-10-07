@@ -384,8 +384,10 @@ export async function refresh(req, res, next) {
  * POST /api/v1/auth/logout
  * 
  * Invalidates the user's current refresh token, preventing further token refreshes.
- * Access token continues to work until natural expiration (15 minutes) which is
- * acceptable given short lifetime.
+ * The access token continues to work until its natural expiration (4 hours,
+ * JWT_ACCESS_EXPIRY): logging out ends the session's renewal, not the account.
+ * Switching an account off is what stops its tokens at once — authenticate
+ * checks the account on every request (services/accountStatus.js).
  * 
  * This endpoint requires authentication via access token in Authorization header.
  * 
