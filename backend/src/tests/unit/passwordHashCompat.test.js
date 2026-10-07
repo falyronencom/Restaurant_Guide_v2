@@ -12,6 +12,11 @@
  * for a throwaway test password: one with the app's ARGON2_OPTIONS
  * (authService.js), one with the library defaults (scripts/create-test-partner.js
  * and scripts/seed-reviews.js hash without options).
+ *
+ * The other stored value login meets is no hash at all: an account created
+ * through Google or Yandex keeps password_hash NULL (authenticateWithOAuth).
+ * The real argon2.verify throws on it («pchstr must be a non-empty string»),
+ * which is why the last block also runs against the real module.
  */
 import { jest } from '@jest/globals';
 
@@ -28,6 +33,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 
 const { verifyCredentials } = await import('../../services/authService.js');
 const argon2 = (await import('argon2')).default;
+const logger = (await import('../../utils/logger.js')).default;
 
 const PASSWORD = 'Пароль-до-обновления-2026';
 const HASH_0_31_APP_OPTIONS = '$argon2id$v=19$m=16384,t=3,p=1$eqfvAOPouXq6nsUHI6uqTg$vDqHm7UEUrBkEtKI3Xwlv6SBP3RTmt2kY4nKB1t0P1I';
@@ -88,6 +94,42 @@ describe('password hashes written by argon2 0.31', () => {
       expect(verify).toHaveBeenCalledTimes(1);
       expect(verify.mock.calls[0][0]).toMatch(/^\$argon2id\$v=19\$m=16384,t=3,p=1\$/);
       await expect(verify.mock.results[0].value).resolves.toBe(false);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+});
+
+describe('an account without a password (signed up through Google or Yandex)', () => {
+  beforeEach(() => {
+    mockPool.query.mockReset();
+  });
+
+  // A typed password is refused exactly like a wrong one: the same full dummy
+  // verify as for an unknown e-mail, then null → the controller's 401
+  // INVALID_CREDENTIALS. Before the fix argon2.verify(NULL) threw and login
+  // answered 500; skipping the verify instead would answer faster than a wrong
+  // password does — either way the response would tell the account type apart.
+  test.each([
+    ['NULL (OAuth sign-up)', null],
+    ["'' (empty)", ''],
+  ])('password_hash %s: refused like a wrong password, without throwing', async (_label, storedHash) => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [{ ...userRow(storedHash), auth_method: 'google' }],
+    });
+    const verify = jest.spyOn(argon2, 'verify');
+
+    try {
+      const user = await verifyCredentials({ email: 'guest@example.com', password: PASSWORD });
+
+      expect(user).toBeNull();
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(verify.mock.calls[0][0]).toMatch(/^\$argon2id\$v=19\$m=16384,t=3,p=1\$/);
+      await expect(verify.mock.results[0].value).resolves.toBe(false);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Login attempt failed',
+        expect.objectContaining({ reason: 'no_password' }),
+      );
     } finally {
       verify.mockRestore();
     }
