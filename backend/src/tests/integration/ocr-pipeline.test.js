@@ -32,7 +32,8 @@ const menuItemModel = await import('../../models/menuItemModel.js');
 const ocrService = await import('../../services/ocr/ocrService.js');
 const pdfTextExtractor = await import('../../services/ocr/pdfTextExtractor.js');
 const ocrJobPoller = await import('../../services/ocr/ocrJobPoller.js');
-const { createPartnerAndGetToken, createTestEstablishment } = await import('../utils/auth.js');
+const { createPartnerAndGetToken, createTestEstablishment, createUserAndGetTokens } = await import('../utils/auth.js');
+const adminService = await import('../../services/adminService.js');
 
 const OCR_CONFIG = {
   apiKey: 'test-key',
@@ -501,6 +502,190 @@ describe('OCR pipeline integration', () => {
       }),
     });
     expect(items.find((it) => it.item_name === 'Old item removed')).toBeUndefined();
+  });
+
+  // ── Re-reading a file keeps the moderator's decisions ───────────────────
+  // A re-read («повторить распознавание», reocr-menus) replaces every row of
+  // the file. Until 2026-10-07 the moderator's «Скрыть» went with the old
+  // rows: a dish hidden from guests came back with the next re-read. Now a
+  // decision is carried to the new row with the same normalized name
+  // (lowercase, trimmed, inner spaces collapsed — the rule the price-delta
+  // check uses), with its reason; where a name repeats in several sections,
+  // the section decides first.
+  describe('re-reading a file keeps the moderator\'s decisions', () => {
+    const HIDE_REASON = 'Не блюдо — табачная продукция';
+    let adminUserId;
+
+    beforeAll(async () => {
+      // An address of its own, and removed afterwards: this file does not
+      // clear users, and admin@test.com belongs to the files that do.
+      const admin = await createUserAndGetTokens({
+        email: `ocr-moderator-${randomUUID()}@test.com`,
+        phone: null,
+        password: 'Admin123!@#',
+        name: 'Модератор меню',
+        role: 'admin',
+        authMethod: 'email',
+      });
+      adminUserId = admin.user.id;
+    });
+
+    afterAll(async () => {
+      await pool.query('DELETE FROM audit_log WHERE user_id = $1', [adminUserId]);
+      await pool.query('DELETE FROM users WHERE id = $1', [adminUserId]);
+    });
+
+    /** Seed the previous read of the file, hide rows by name through the panel's own writer. */
+    const seedPreviousRead = async (mediaId, items, hide) => {
+      const rows = await menuItemModel.createMany({ establishmentId: establishment.id, mediaId, items });
+      for (const { name, category, reason } of hide) {
+        const row = rows.find((it) => it.item_name === name && (it.category_raw ?? null) === category);
+        await adminService.hideMenuItem(row.id, { reason, adminUserId });
+      }
+    };
+
+    const reRead = async (mediaId, structuredItems) => {
+      pdfParseModule.default.mockResolvedValue({ text: 'Меню', numpages: 1 });
+      global.fetch = buildFetchMock(structuredItems);
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const result = await ocrService.processJob(picked.id);
+      expect(result.success).toBe(true);
+      return menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true });
+    };
+
+    test('a hidden dish stays hidden with its reason when the re-read has the same normalized name', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await seedPreviousRead(mediaId, [
+        { item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.9, position: 0 },
+        { item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 1 },
+      ], [{ name: 'Кальян на чаше', category: null, reason: HIDE_REASON }]);
+
+      // Case, outer and inner spaces and the section changed — the name did not.
+      const items = await reRead(mediaId, [
+        { item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.95 },
+        { item_name: '  КАЛЬЯН   на чаше ', price_byn: 50, category_raw: 'Прочее', confidence: 0.95 },
+        { item_name: 'Драники', price_byn: 9, category_raw: 'Горячее', confidence: 0.95 },
+      ]);
+
+      expect(items).toHaveLength(3);
+      const hookah = items.find((it) => it.item_name.trim().toLowerCase().startsWith('кальян'));
+      expect(hookah.is_hidden_by_admin).toBe(true);
+      expect(hookah.hidden_reason).toBe(HIDE_REASON);
+      expect(items.find((it) => it.item_name === 'Борщ').is_hidden_by_admin).toBe(false);
+      expect(items.find((it) => it.item_name === 'Драники').is_hidden_by_admin).toBe(false);
+
+      // What the partner and guests are served — the hidden row is not there.
+      const shown = await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: false });
+      expect(shown.map((it) => it.item_name).sort()).toEqual(['Борщ', 'Драники']);
+    });
+
+    test('a name in two sections: the decision follows the section; a dish shown again stays shown', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await seedPreviousRead(mediaId, [
+        { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.9, position: 0 },
+        { item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.9, position: 1 },
+        { item_name: 'Сырники', price_byn: 8, category_raw: 'Завтраки', confidence: 0.9, position: 2 },
+      ], [
+        { name: 'Чай', category: 'Напитки', reason: HIDE_REASON },
+        { name: 'Сырники', category: 'Завтраки', reason: 'Временно нет в продаже' },
+      ]);
+      // Shown again by the moderator before the re-read.
+      const syrniki = (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true }))
+        .find((it) => it.item_name === 'Сырники');
+      await adminService.unhideMenuItem(syrniki.id, { adminUserId });
+
+      const items = await reRead(mediaId, [
+        { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.95 },
+        { item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.95 },
+        { item_name: 'Сырники', price_byn: 8, category_raw: 'Завтраки', confidence: 0.95 },
+      ]);
+
+      const state = (name, category) => {
+        const row = items.find((it) => it.item_name === name && it.category_raw === category);
+        return { hidden: row.is_hidden_by_admin, reason: row.hidden_reason };
+      };
+      expect(state('Чай', 'Напитки')).toEqual({ hidden: true, reason: HIDE_REASON });
+      expect(state('Чай', 'Завтраки')).toEqual({ hidden: false, reason: null });
+      expect(state('Сырники', 'Завтраки')).toEqual({ hidden: false, reason: null });
+    });
+
+    test('a name twice in one section, one hidden: hidden it stays; a section written differently is the same section', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const rows = await menuItemModel.createMany({
+        establishmentId: establishment.id,
+        mediaId,
+        items: [
+          { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.9, position: 0 },
+          { item_name: 'Чай', price_byn: 4, category_raw: 'Напитки', confidence: 0.9, position: 1 },
+          { item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.9, position: 2 },
+        ],
+      });
+      // The second row of the section is the hidden one: the first seen is visible.
+      await adminService.hideMenuItem(rows[1].id, { reason: HIDE_REASON, adminUserId });
+
+      const items = await reRead(mediaId, [
+        { item_name: 'Чай', price_byn: 3, category_raw: 'НАПИТКИ ', confidence: 0.95 },
+        { item_name: 'Чай', price_byn: 2, category_raw: '  завтраки', confidence: 0.95 },
+      ]);
+
+      const drinks = items.find((it) => it.category_raw.trim().toLowerCase() === 'напитки');
+      const breakfast = items.find((it) => it.category_raw.trim().toLowerCase() === 'завтраки');
+      expect({ hidden: drinks.is_hidden_by_admin, reason: drinks.hidden_reason })
+        .toEqual({ hidden: true, reason: HIDE_REASON });
+      expect({ hidden: breakfast.is_hidden_by_admin, reason: breakfast.hidden_reason })
+        .toEqual({ hidden: false, reason: null });
+    });
+
+    test('a «Скрыть» committed while the re-read is being written is carried, not lost', async () => {
+      // Below HTTP on purpose: two supertest requests serialize and race
+      // nothing. The moderator's write holds the row; the re-read starts,
+      // must wait for it, and only then reads what it is replacing.
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const [row] = await menuItemModel.createMany({
+        establishmentId: establishment.id,
+        mediaId,
+        items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+      });
+
+      const moderator = await pool.connect();
+      try {
+        await moderator.query('BEGIN');
+        await moderator.query(
+          'UPDATE menu_items SET is_hidden_by_admin = TRUE, hidden_reason = $2 WHERE id = $1',
+          [row.id, HIDE_REASON],
+        );
+
+        const replacing = menuItemModel.replaceForMedia({
+          establishmentId: establishment.id,
+          mediaId,
+          newItems: [{ item_name: 'Кальян на чаше', price_byn: 50, category_raw: null, confidence: 0.95, position: 0 }],
+        });
+
+        // Precondition of the scene: the re-read is waiting on the row lock.
+        let waiting = 0;
+        for (let i = 0; i < 100 && waiting === 0; i += 1) {
+          const activity = await pool.query(
+            `SELECT count(*)::int AS n FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock'
+               AND query LIKE '%FROM menu_items WHERE media_id%'`,
+          );
+          waiting = activity.rows[0].n;
+          if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(waiting).toBe(1);
+
+        await moderator.query('COMMIT');
+        const { newItems, carriedHidden } = await replacing;
+
+        expect(carriedHidden).toBe(1);
+        expect(newItems[0].is_hidden_by_admin).toBe(true);
+        expect(newItems[0].hidden_reason).toBe(HIDE_REASON);
+      } finally {
+        await moderator.query('ROLLBACK').catch(() => {});
+        moderator.release();
+      }
+    });
   });
 
   // ── PDF menus: page images first, the text layer only as a backup ────────

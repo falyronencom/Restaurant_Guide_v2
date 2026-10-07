@@ -221,9 +221,10 @@ router.delete(
 /**
  * GET /api/v1/partner/establishments/:id/menu-items
  *
- * Return all parsed menu items (Segment B) for this establishment,
- * including admin-hidden items and sanity_flag values so the partner UI
- * can display status markers.
+ * Return the parsed menu items (Segment B) for this establishment with their
+ * sanity_flag values so the partner UI can display status markers. Items
+ * hidden by a moderator are not returned (partnerMenuItemService.getMenuItems)
+ * and cannot be edited by the partner.
  */
 router.get(
   '/:id/menu-items',
