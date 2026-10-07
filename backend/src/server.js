@@ -15,6 +15,7 @@ import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
+import { createGracefulShutdown, installShutdownHandlers } from './utils/gracefulShutdown.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -150,74 +151,33 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 /**
- * Graceful shutdown handler.
- *
- * Order (Coordinator decision 2026-09-05, option «б» — align the windows):
- *   1. Arm the force-exit timer with the budget from config/shutdown.js. On
- *      Railway that is the drain period minus a margin, so the timer fires
- *      before the platform's SIGKILL, never after it.
- *   2. Stop the background loops at once, in parallel with server.close():
- *      neither needs the HTTP server, and stop() waits for the work in flight
- *      — the OCR job (up to ocrService.JOB_DURATION_BOUND_MS) and the prune
- *      batch (one statement) — so they must not queue behind a slow request
- *      that is still draining.
- *   3. Once the HTTP connections are gone and both loops have stopped, close
- *      the pool and Redis, then exit.
- * A job that outlives the budget dies with the process as a 'processing'
- * row; ocrJobPoller's stale sweep settles it about an hour later.
+ * Graceful shutdown handler. The sequence and its exit code live in
+ * utils/gracefulShutdown.js: force-exit timer first, both background loops
+ * stopped in parallel with server.close() (stop() waits for the work in
+ * flight, which must not queue behind a slow request still draining), then
+ * the pool and Redis. Exit code 0 only for a planned stop (SIGTERM, SIGINT);
+ * a crash shutdown ends with 1. The server is read when the shutdown starts —
+ * it is assigned at the bottom of this file.
  */
-const gracefulShutdown = async (signal) => {
-  logger.info(`${signal} received, starting graceful shutdown`, {
-    budgetMs: shutdownBudget.timeoutMs,
-  });
-
-  // Force exit if graceful shutdown outlives the budget
-  setTimeout(() => {
-    logger.error('Graceful shutdown timeout, forcing exit', {
-      budgetMs: shutdownBudget.timeoutMs,
-    });
-    process.exit(1);
-  }, shutdownBudget.timeoutMs);
-
-  // Stop OCR poller now — waits for the in-flight job and stale sweep. Errors
-  // are logged inside stop(); this catch only keeps the await below safe.
-  const pollerStopped = ocrJobPoller.stop().catch((error) => {
-    logger.error('OCR poller stop failed during shutdown', { error: error.message });
-  });
-
-  // Same reasoning as the poller, and the same parallelism: the pruner does
-  // not need the HTTP server, and its stop() waits only for the batch in
-  // flight — it must not queue behind a slow request that is still draining.
-  const prunerStopped = refreshTokenPruner.stop().catch((error) => {
-    logger.error('Refresh token pruner stop failed during shutdown', { error: error.message });
-  });
-
-  // Stop accepting new connections
-  server.close(async () => {
-    logger.info('HTTP server closed, closing external connections');
-
-    try {
-      // Both background loops must be idle before the pool goes away
-      await pollerStopped;
-      await prunerStopped;
-
-      // Close database connection pool
-      await closePool();
-
-      // Disconnect from Redis
-      await disconnectRedis();
-
-      logger.info('Graceful shutdown completed successfully');
-      process.exit(0);
-    } catch (error) {
-      logger.error('Error during graceful shutdown', {
-        error: error.message,
-        stack: error.stack,
-      });
-      process.exit(1);
-    }
-  });
-};
+const gracefulShutdown = createGracefulShutdown({
+  getServer: () => server,
+  backgroundLoops: [
+    // Waits for the in-flight OCR job and the stale sweep.
+    {
+      stop: () => ocrJobPoller.stop(),
+      failureMessage: 'OCR poller stop failed during shutdown',
+    },
+    // Waits only for the prune batch in flight.
+    {
+      stop: () => refreshTokenPruner.stop(),
+      failureMessage: 'Refresh token pruner stop failed during shutdown',
+    },
+  ],
+  closePool,
+  disconnectRedis,
+  timeoutMs: shutdownBudget.timeoutMs,
+  logger,
+});
 
 /**
  * Application startup sequence.
@@ -296,26 +256,9 @@ const startServer = async () => {
       });
     });
 
-    // Register graceful shutdown handlers
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-    // Handle uncaught exceptions and unhandled rejections
-    process.on('uncaughtException', (error) => {
-      logger.error('Uncaught exception', {
-        error: error.message,
-        stack: error.stack,
-      });
-      gracefulShutdown('UNCAUGHT_EXCEPTION');
-    });
-
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled promise rejection', {
-        reason,
-        promise,
-      });
-      gracefulShutdown('UNHANDLED_REJECTION');
-    });
+    // Register graceful shutdown handlers: SIGTERM/SIGINT, plus uncaught
+    // exceptions and unhandled rejections (those end with a non-zero code)
+    installShutdownHandlers({ processRef: process, gracefulShutdown, logger });
   } catch (error) {
     logger.error('Failed to start server', {
       error: error.message,
