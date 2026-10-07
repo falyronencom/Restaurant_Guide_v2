@@ -194,7 +194,7 @@ describe('reviewController', () => {
     });
   });
 
-  test('updateReview builds updates object from provided fields', async () => {
+  test('updateReview builds updates object from provided fields and answers with the public projection', async () => {
     const req = createMockRequest({
       params: { id: 'review-1' },
       body: { rating: 3 },
@@ -202,7 +202,26 @@ describe('reviewController', () => {
     });
     const res = createMockResponse();
     const next = jest.fn();
-    ReviewService.updateReview.mockResolvedValue({ id: 'review-1', rating: 3 });
+    // The row as reviewService.updateReview returns it (findReviewById): once
+    // a partner has answered, it carries the responder's user id.
+    ReviewService.updateReview.mockResolvedValue({
+      id: 'review-1',
+      user_id: 'author-1',
+      establishment_id: 'est-1',
+      rating: 3,
+      content: 'Текст отзыва',
+      partner_response: 'Спасибо!',
+      partner_response_at: '2026-10-07T10:00:00.000Z',
+      partner_responder_id: 'partner-1',
+      is_deleted: false,
+      is_visible: true,
+      is_edited: true,
+      created_at: '2026-10-01T10:00:00.000Z',
+      updated_at: '2026-10-07T11:00:00.000Z',
+      author_name: 'Автор',
+      author_email: 'author@test.com',
+      author_avatar: null,
+    });
 
     await ReviewController.updateReview(req, res, next);
 
@@ -210,7 +229,20 @@ describe('reviewController', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
-      data: { review: { id: 'review-1', rating: 3 } },
+      data: {
+        review: {
+          id: 'review-1',
+          establishment_id: 'est-1',
+          rating: 3,
+          content: 'Текст отзыва',
+          partner_response: 'Спасибо!',
+          partner_response_at: '2026-10-07T10:00:00.000Z',
+          is_edited: true,
+          created_at: '2026-10-01T10:00:00.000Z',
+          updated_at: '2026-10-07T11:00:00.000Z',
+          author: { id: 'author-1', name: 'Автор', avatar_url: null },
+        },
+      },
     });
   });
 

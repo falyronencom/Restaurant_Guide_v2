@@ -329,7 +329,7 @@ describe('reviewService', () => {
       expect(ReviewModel.updateReview).not.toHaveBeenCalled();
     });
 
-    test('should not update aggregates when rating unchanged', async () => {
+    test('recounts the rating even when only the text changed (the trigger counts hidden reviews)', async () => {
       ReviewModel.findReviewById
         .mockReset()
         .mockResolvedValueOnce(mockReview)
@@ -338,7 +338,7 @@ describe('reviewService', () => {
 
       await updateReview(reviewId, userId, { content: 'Only content changed' });
 
-      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(mockReview.establishment_id);
     });
 
     test('should map constraint violation to app error', async () => {

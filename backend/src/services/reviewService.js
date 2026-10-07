@@ -343,7 +343,8 @@ export const getUserReviews = async (userId, options = {}) => {
  * 
  * This operation allows the review author to modify rating and/or content.
  * The updated_at timestamp is automatically updated and is_edited flag is set.
- * If rating changes, establishment aggregate statistics are recalculated.
+ * Establishment aggregate statistics are recalculated after every update
+ * (the rating trigger fires on any update and counts hidden reviews).
  * 
  * Authorization note: The controller must verify that the authenticated user
  * is the review author before calling this service method. This service focuses
@@ -389,9 +390,11 @@ export const updateReview = async (reviewId, userId, updates) => {
     // Update the review
     const updatedReview = await ReviewModel.updateReview(reviewId, updates);
 
-    // If rating changed, update establishment aggregates synchronously
+    // Recount on every update, not only when the rating changed: the UPDATE
+    // fired the rating trigger, which counts hidden reviews too, and a
+    // text-only edit would otherwise leave a hidden review in the rating.
+    await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
     if (ratingChanged) {
-      await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
       logger.info('Establishment aggregates updated after review rating change', {
         reviewId,
         oldRating: currentReview.rating,
@@ -596,6 +599,10 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
 
   await ReviewModel.addPartnerResponse(reviewId, partnerId, responseText);
 
+  // The UPDATE fired the rating trigger, which counts hidden reviews too;
+  // the rating guests see is the visible-only recount, written last.
+  await ReviewModel.updateEstablishmentAggregates(reviewWithEstablishment.establishment_id);
+
   const updatedReview = await ReviewModel.findReviewById(reviewId);
 
   // Notify review author (non-blocking)
@@ -632,7 +639,16 @@ export const deletePartnerResponse = async (reviewId, partnerId) => {
     );
   }
 
-  await ReviewModel.deletePartnerResponse(reviewId);
+  const cleared = await ReviewModel.deletePartnerResponse(reviewId);
+
+  // No response to delete: nothing was written, and there is nothing to say
+  // but that — the answer carries no review.
+  if (!cleared) {
+    throw new AppError('This review has no partner response', 404, 'RESPONSE_NOT_FOUND');
+  }
+
+  // Same as addPartnerResponse: recount after the trigger, visible only.
+  await ReviewModel.updateEstablishmentAggregates(reviewWithEstablishment.establishment_id);
 
   const updatedReview = await ReviewModel.findReviewById(reviewId);
 
