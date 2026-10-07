@@ -163,7 +163,9 @@ class _SuspendReason extends StatelessWidget {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              hasReason ? text : 'причина не указана',
+              // Приостановка модератора без причины не делается — пустая
+              // причина значит паузу самого партнёра.
+              hasReason ? text : 'пауза партнёра',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -202,12 +204,26 @@ class _EntityActions extends StatelessWidget {
     // Счётчики очередей берём ДО асинхронного действия: обращаться к
     // context после await нельзя.
     final badges = context.read<BadgesProvider>();
+    final detail = provider.selectedDetail;
 
+    // Две независимые паузы (07.10.2026). Своя приостановка снимается здесь:
+    // «Возобновить» вернёт карточку туда, где она была. Паузу партнёра
+    // включает только партнёр — вместо «Возобновить» у неё «Приостановить»:
+    // модератор может закрепить её своей причиной. Пока карточка не
+    // загружена, решать не по чему — кнопок нет.
     return ModerationEntityActions(
-      establishmentName: provider.selectedDetail?.name ?? '',
-      onUnsuspend: () => provider
-          .unsuspendEstablishment()
-          .then((ok) => ok ? badges.load() : null),
+      establishmentName: detail?.name ?? '',
+      unsuspendReturnsTo: detail?.suspendedFrom,
+      onSuspend: detail != null && detail.isPausedByPartner
+          ? (reason) => provider
+              .suspendEstablishment(reason)
+              .then((ok) => ok ? badges.load() : null)
+          : null,
+      onUnsuspend: detail != null && detail.isSuspendedByModerator
+          ? () => provider
+              .unsuspendEstablishment()
+              .then((ok) => ok ? badges.load() : null)
+          : null,
     );
   }
 }

@@ -17,6 +17,12 @@ import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import {
+  hasModeratorSuspensionMarks,
+  isModeratorSuspension,
+  parseModerationNotes,
+  withoutModeratorSuspension,
+} from '../utils/moderationNotes.js';
 import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MEDIA_LIMITS } from './mediaService.js';
@@ -1387,7 +1393,14 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
 };
 
 /**
- * Suspend a partner's establishment (active → suspended)
+ * Suspend a partner's establishment (active → suspended) — the partner's own
+ * pause, which the partner switches back on (resumeEstablishment).
+ *
+ * An active card is under no moderator's suspension, so any suspension marks
+ * still in its notes are leftovers (until 2026-10-07 lifting a suspension
+ * left the reason behind) and are dropped here: otherwise this pause would
+ * read as the moderator's — the partner could not resume it, and the panel
+ * would show an old reason (utils/moderationNotes.js).
  */
 export const suspendEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -1395,9 +1408,13 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
     throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
   }
 
+  const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+  const notes = parseModerationNotes(establishment?.moderation_notes);
+
   const result = await EstablishmentModel.changeEstablishmentStatus(establishmentId, {
     fromStatus: 'active',
     toStatus: 'suspended',
+    ...(hasModeratorSuspensionMarks(notes) ? { moderationNotes: withoutModeratorSuspension(notes) } : {}),
   });
 
   if (!result) {
@@ -1411,8 +1428,11 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
 /**
  * Resume a partner's self-suspended establishment (suspended → active)
  *
- * Only works for self-suspended establishments (no suspend_reason in moderation_notes).
- * Admin-suspended establishments must be edited and resubmitted via submitForModeration.
+ * Only works for self-suspended establishments (no suspend_reason in moderation_notes):
+ * the partner's own pause goes straight back to active, without moderation.
+ * A moderator's suspension is not the partner's to lift (403 ADMIN_SUSPENDED):
+ * the partner edits the card and resubmits it via submitForModeration, or the
+ * moderator lifts it (adminService.unsuspendEstablishment).
  */
 export const resumeEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -1430,21 +1450,31 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
     ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return {}; } })()
     : (establishment.moderation_notes || {});
 
+  const adminSuspended = () => new AppError(
+    'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
+    403,
+    'ADMIN_SUSPENDED',
+  );
+
   if (notes.suspend_reason) {
-    throw new AppError(
-      'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
-      403,
-      'ADMIN_SUSPENDED',
-    );
+    throw adminSuspended();
   }
 
-  // Self-suspended: restore to active (was approved before self-suspend)
+  // Self-suspended: restore to active (was approved before self-suspend).
+  // The notes the decision was made on guard the write: a moderator may
+  // suspend this very card over the partner's pause meanwhile — the status
+  // stays 'suspended', only the notes change — and that suspension must win.
   const result = await EstablishmentModel.changeEstablishmentStatus(establishmentId, {
     fromStatus: 'suspended',
     toStatus: 'active',
+    expectedModerationNotes: establishment.moderation_notes ?? null,
   });
 
   if (!result) {
+    const now = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+    if (now && isModeratorSuspension(now.status, parseModerationNotes(now.moderation_notes))) {
+      throw adminSuspended();
+    }
     throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
   }
 

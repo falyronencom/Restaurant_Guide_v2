@@ -197,7 +197,9 @@ router.post(
 );
 
 /**
- * Resume a suspended establishment (goes to 'pending' for re-moderation)
+ * Resume an establishment the partner paused (suspended → active, no
+ * re-moderation). A moderator's suspension is refused with 403
+ * ADMIN_SUSPENDED: the partner edits the card and submits it for moderation.
  *
  * POST /api/v1/partner/establishments/:id/resume
  */
