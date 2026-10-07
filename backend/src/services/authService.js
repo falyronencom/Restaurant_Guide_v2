@@ -54,6 +54,22 @@ const ARGON2_OPTIONS = {
 };
 
 /**
+ * Stand-in hash for a login that has no stored hash to check: an unknown
+ * email/phone, or an account without a password (Google/Yandex sign-up keeps
+ * password_hash NULL). Verifying against it takes as long as a real check, so
+ * the response time does not tell these cases from a wrong password; it
+ * verifies to false. The cost is built from ARGON2_OPTIONS rather than written
+ * out: a literal would keep the old cost if the options change, and these
+ * answers would quietly become faster than a wrong password.
+ */
+const DUMMY_PASSWORD_HASH = [
+  '$argon2id$v=19',
+  `m=${ARGON2_OPTIONS.memoryCost},t=${ARGON2_OPTIONS.timeCost},p=${ARGON2_OPTIONS.parallelism}`,
+  'dummysaltdummysalt',
+  'dummyhashdummyhashdummyhashdummy',
+].join('$');
+
+/**
  * Access token lifetime reported to clients, in seconds.
  *
  * Mirrors JWT_ACCESS_EXPIRY ('4h' by default, utils/jwt.js) — the JWT carries
@@ -148,8 +164,10 @@ export async function createUser(userData) {
  * This function implements constant-time verification to prevent timing attacks
  * that could reveal whether an email/phone exists in the system. Even when a
  * user doesn't exist, we still perform a hash verification against a dummy hash
- * to maintain consistent response times.
- * 
+ * to maintain consistent response times. An account without a password (signed
+ * up through Google/Yandex, password_hash NULL) is refused the same way as a
+ * wrong password: the same dummy verification, then null.
+ *
  * @param {Object} credentials - Login credentials
  * @param {string} credentials.email - User's email (optional if phone provided)
  * @param {string} credentials.phone - User's phone (optional if email provided)
@@ -180,14 +198,25 @@ export async function verifyCredentials(credentials) {
     // Always perform hash verification even if user not found
     // This prevents timing attacks from revealing valid emails/phones
     let isValidPassword = false;
-    
+    let failureReason = 'user_not_found';
+
     if (result.rows.length > 0) {
       const user = result.rows[0];
-      
-      // Verify password against stored hash
-      // argon2.verify is intentionally slow and takes constant time
-      isValidPassword = await argon2.verify(user.password_hash, password);
-      
+
+      if (user.password_hash) {
+        // Verify password against stored hash
+        // argon2.verify is intentionally slow and takes constant time
+        isValidPassword = await argon2.verify(user.password_hash, password);
+        failureReason = 'invalid_password';
+      } else {
+        // No password on this account (signed up through Google/Yandex).
+        // argon2.verify throws on a missing hash — that was a 500 — and
+        // skipping the verify would answer faster than a wrong password:
+        // either way the response would tell the account type apart.
+        await argon2.verify(DUMMY_PASSWORD_HASH, password);
+        failureReason = 'no_password';
+      }
+
       if (isValidPassword) {
         // Update last login timestamp
         await pool.query(
@@ -208,17 +237,14 @@ export async function verifyCredentials(credentials) {
     } else {
       // User not found, but still perform dummy hash verification
       // to maintain constant response time
-      await argon2.verify(
-        '$argon2id$v=19$m=16384,t=3,p=1$dummysaltdummysalt$dummyhashdummyhashdummyhashdummy',
-        password,
-      );
+      await argon2.verify(DUMMY_PASSWORD_HASH, password);
     }
-    
+
     // Log failed login attempt for security monitoring
-    logger.warn('Login attempt failed', { 
+    logger.warn('Login attempt failed', {
       email: email || 'not_provided',
       phone: phone || 'not_provided',
-      reason: result.rows.length === 0 ? 'user_not_found' : 'invalid_password',
+      reason: failureReason,
     });
     
     return null;
