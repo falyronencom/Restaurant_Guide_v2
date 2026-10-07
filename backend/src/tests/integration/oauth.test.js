@@ -8,12 +8,15 @@
  * global fetch to login.yandex.ru for Yandex. Verifies the provider whitelist,
  * provider branching, the new-user / existing-user / account-link paths against
  * the real schema, and the error-code → HTTP-status map. Additive coverage of a
- * path that previously had none (Discovery Q8).
+ * path that previously had none (Discovery Q8). The last block covers what an
+ * account created here meets at the password login (POST /auth/login and the
+ * admin panel's login): it has no password until «forgot password» sets one.
  *
  * google-auth-library is mocked via unstable_mockModule, so app (which imports
  * it transitively through oauthService) is dynamically imported AFTER the mock.
  */
 import { jest } from '@jest/globals';
+import { createHash, randomBytes } from 'crypto';
 
 const mockVerifyIdToken = jest.fn();
 const MockOAuth2Client = jest.fn();
@@ -24,7 +27,7 @@ jest.unstable_mockModule('google-auth-library', () => ({
 
 const request = (await import('supertest')).default;
 const app = (await import('../../server.js')).default;
-const { clearAllData } = await import('../utils/database.js');
+const { clearAllData, query } = await import('../utils/database.js');
 const { getUserByEmail, createTestUser } = await import('../utils/auth.js');
 const { oauthProviderResponses } = await import('../fixtures/users.js');
 
@@ -39,6 +42,21 @@ function mockYandexInfo(body, ok = true, status = 200) {
 
 const postOAuth = (payload) =>
   request(app).post('/api/v1/auth/oauth').send(payload);
+
+/**
+ * Seed a password-reset token row directly: the service emails the raw token
+ * and stores only its SHA-256, so a test that needs a working link writes the
+ * row itself (the same way auth-password-reset.test.js does).
+ */
+async function seedResetToken(userId) {
+  const rawToken = randomBytes(32).toString('hex');
+  await query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, NOW() + interval '30 minutes')`,
+    [userId, createHash('sha256').update(rawToken).digest('hex')],
+  );
+  return rawToken;
+}
 
 let savedFetch;
 
@@ -149,5 +167,55 @@ describe('POST /api/v1/auth/oauth — Google', () => {
 
     const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(401);
     expect(res.body.error.code).toBe('INVALID_TOKEN');
+  });
+});
+
+describe('password login into an account created through OAuth', () => {
+  // OAuth sign-up stores password_hash NULL. A typed password is refused like
+  // any wrong one — the same 401 body as for an e-mail nobody registered, never
+  // a 500 that sets the account apart. «Forgot password» gives the account a
+  // password, and from then on it logs in with it like any other.
+  const OAUTH_EMAIL = oauthProviderResponses.yandex.default_email;
+  const TYPED_PASSWORD = 'Some-Password-123';
+
+  const signUpWithYandex = async () => {
+    mockYandexInfo(yandexBody());
+    const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+    return res.body.data.user;
+  };
+
+  const postLogin = (path, email, password) =>
+    request(app).post(path).send({ email, password });
+
+  // The admin panel's login calls the same verifyCredentials but writes its
+  // own 401 body (adminController.js) — both doors are pinned.
+  test.each([
+    ['/api/v1/auth/login'],
+    ['/api/v1/admin/auth/login'],
+  ])('POST %s: 401 INVALID_CREDENTIALS, the same body as for an unknown e-mail', async (path) => {
+    await signUpWithYandex();
+
+    const oauthAccount = await postLogin(path, OAUTH_EMAIL, TYPED_PASSWORD);
+    const unknownEmail = await postLogin(path, 'nobody-here@yandex.ru', TYPED_PASSWORD);
+
+    expect(oauthAccount.status).toBe(401);
+    expect(oauthAccount.body.error.code).toBe('INVALID_CREDENTIALS');
+    expect(oauthAccount.body).toEqual(unknownEmail.body);
+  });
+
+  test('after «forgot password» the account logs in with the new password', async () => {
+    const user = await signUpWithYandex();
+    const rawToken = await seedResetToken(user.id);
+    await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: rawToken, password: 'NewPass456' })
+      .expect(200);
+
+    const login = await postLogin('/api/v1/auth/login', OAUTH_EMAIL, 'NewPass456');
+
+    expect(login.status).toBe(200);
+    expect(login.body.data.user.id).toBe(user.id);
+    // Premise: still a Yandex account — the password, not auth_method, decides.
+    expect(login.body.data.user.authMethod).toBe('yandex');
   });
 });
