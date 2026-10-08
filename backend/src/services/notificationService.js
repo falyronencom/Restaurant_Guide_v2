@@ -152,8 +152,13 @@ const extractRejectionReason = (reason) => {
  * @param {string} establishmentId
  * @param {string} newStatus - 'active' | 'rejected' | 'suspended' | 'unsuspended'
  * @param {string|object} [reason] - Rejection/suspension reason (string or moderation_notes object)
+ * @param {Object} [options]
+ * @param {string} [options.returnedTo] - 'unsuspended' only: the status the
+ *   lifted suspension returned the card to (adminService.unsuspendEstablishment).
+ *   Only 'active' (or none) is «снова активно»; a card back on the partner's
+ *   own pause, in the queue or among the rejected is told so.
  */
-export const notifyEstablishmentStatusChange = async (establishmentId, newStatus, reason) => {
+export const notifyEstablishmentStatusChange = async (establishmentId, newStatus, reason, options = {}) => {
   try {
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
     if (!establishment || !establishment.partner_id) return;
@@ -165,11 +170,12 @@ export const notifyEstablishmentStatusChange = async (establishmentId, newStatus
       unsuspended: 'establishment_unsuspended',
     };
 
-    const type = typeMap[newStatus];
+    let type = typeMap[newStatus];
     if (!type) return;
 
     const name = establishment.name || 'Заведение';
     let message;
+    let title = TITLES[type];
 
     if (type === 'establishment_approved') {
       message = `«${name}» одобрено модерацией`;
@@ -183,20 +189,36 @@ export const notifyEstablishmentStatusChange = async (establishmentId, newStatus
         ? `«${name}» приостановлено: ${reason}`
         : `«${name}» приостановлено модерацией`;
     } else if (type === 'establishment_unsuspended') {
-      message = `«${name}» снова активно`;
+      const returnedTo = options.returnedTo || 'active';
+      if (returnedTo === 'active') {
+        message = `«${name}» снова активно`;
+      } else {
+        // The app opens establishment_unsuspended as the public card, which
+        // exists only for an active one. A card back on the partner's pause,
+        // in the queue or among the rejected is opened where the partner
+        // manages it: the two types the app routes to /partner/edit/:id
+        // (mobile main_navigation.dart, notification_list_screen.dart).
+        type = returnedTo === 'rejected' ? 'establishment_rejected' : 'establishment_suspended';
+        title = 'Приостановка снята';
+        message = {
+          suspended: `Модератор снял приостановку «${name}». Заведение остаётся на вашей паузе — включите его, когда будете готовы.`,
+          pending: `Модератор снял приостановку «${name}». Заведение вернулось на проверку.`,
+          rejected: `Модератор снял приостановку «${name}». Заявка остаётся отклонённой — исправьте замечания и отправьте её снова.`,
+        }[returnedTo] || `Модератор снял приостановку «${name}».`;
+      }
     }
 
     await NotificationModel.create({
       userId: establishment.partner_id,
       type,
-      title: TITLES[type],
+      title,
       message,
       establishmentId,
     });
 
     // Push notification (non-blocking)
     PushService.sendPush(establishment.partner_id, {
-      title: TITLES[type],
+      title,
       message,
       data: { type, establishmentId },
     }).catch((err) => logger.error('Push failed for establishment status', { error: err.message }));

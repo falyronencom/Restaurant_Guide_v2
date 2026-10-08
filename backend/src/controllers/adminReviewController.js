@@ -12,13 +12,15 @@
 
 import * as adminReviewService from '../services/adminReviewService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { isViewer } from '../config/panelRoles.js';
 import logger from '../utils/logger.js';
 
 /**
  * GET /api/v1/admin/reviews
  *
  * Returns paginated reviews with author and establishment info.
- * Admin can see all reviews including deleted and hidden.
+ * Admin can see all reviews including deleted and hidden. A viewer gets the
+ * same list with author_email = null (see adminReviewService.getReviews).
  */
 export const listReviews = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -45,6 +47,7 @@ export const listReviews = asyncHandler(async (req, res) => {
     sort,
     from,
     to,
+    viewer: isViewer(req.user.role),
   });
 
   logger.info('Admin fetched reviews list', {

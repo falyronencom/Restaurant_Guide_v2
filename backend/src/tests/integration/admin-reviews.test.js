@@ -29,6 +29,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
   createAdminAndGetToken,
+  createViewerAndGetToken,
   createPartnerWithEstablishment,
   createTestReview,
   checkAuditLogExists,
@@ -36,6 +37,7 @@ import {
 
 let adminToken;
 let reviewerUserId;
+let reviewerEmail;
 let testEstablishmentId;
 
 beforeAll(async () => {
@@ -44,8 +46,9 @@ beforeAll(async () => {
   adminToken = admin.accessToken;
 
   // Regular user as review author
+  reviewerEmail = `reviewer-${randomUUID()}@test.com`;
   const reviewer = await createUserAndGetTokens({
-    email: `reviewer-${randomUUID()}@test.com`,
+    email: reviewerEmail,
     phone: null,
     password: 'User123!@#',
     name: 'Test Reviewer',
@@ -204,6 +207,41 @@ describe('GET /api/v1/admin/reviews (#14)', () => {
     await request(app)
       .get('/api/v1/admin/reviews')
       .expect(401);
+  });
+
+  // The query the panel sends on opening the screen
+  // (admin-web admin_review_service.dart getReviews: page + per_page), and
+  // what AdminReviewItem.fromJson needs: id and created_at as strings,
+  // author_name / author_email nullable — the panel shows the author by name.
+  const PANEL_FIRST_PAGE = '/api/v1/admin/reviews?page=1&per_page=20';
+
+  test('a viewer gets the list without the author e-mail; the name is still there', async () => {
+    const viewer = await createViewerAndGetToken();
+    await createTestReview(reviewerUserId, testEstablishmentId, { rating: 4 });
+
+    const response = await request(app)
+      .get(PANEL_FIRST_PAGE)
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    const review = response.body.data[0];
+    expect(typeof review.id).toBe('string');
+    expect(typeof review.created_at).toBe('string');
+    expect(review.author_name).toBe('Test Reviewer');
+    expect(review).toHaveProperty('author_email', null);
+    expect(JSON.stringify(response.body)).not.toContain(reviewerEmail);
+  });
+
+  test('an admin still gets the author e-mail', async () => {
+    await createTestReview(reviewerUserId, testEstablishmentId, { rating: 4 });
+
+    const response = await request(app)
+      .get(PANEL_FIRST_PAGE)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body.data[0].author_email).toBe(reviewerEmail);
   });
 });
 

@@ -1,23 +1,33 @@
 import { verifyAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
+import { getAccountStatus } from '../services/accountStatus.js';
+import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
 
 /**
  * Authentication middleware that verifies JWT access tokens.
- * 
+ *
  * This middleware protects routes by ensuring that:
  * 1. A valid Authorization header is present in the request
  * 2. The token can be successfully verified and decoded
  * 3. The token hasn't expired
- * 
- * On successful authentication, the decoded user data is attached to req.user
- * for use by route handlers. This includes userId, email, and role.
- * 
+ * 4. The account behind it is still active (services/accountStatus.js)
+ *
+ * On successful authentication, the user is attached to req.user for use by
+ * route handlers: userId and email from the token, role from the database —
+ * an account switched off or given another role is treated as such from the
+ * next request, not when its access token expires (up to 4 h). A switched-off
+ * or missing account gets 401 ACCOUNT_INACTIVE, the code the refresh endpoint
+ * already answers it with, so every client signs it out. If the check itself
+ * cannot be made (database down), the answer is 503, never 401: a database
+ * blip must not sign everyone out.
+ *
  * Usage in routes:
  * router.get('/protected-endpoint', authenticate, async (req, res) => {
  *   // req.user.userId, req.user.email, req.user.role are available here
  * });
  */
 export const authenticate = async (req, res, next) => {
+  let decoded;
   try {
     const authHeader = req.headers.authorization;
 
@@ -46,19 +56,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     // Verify token signature and expiration
-    const decoded = verifyAccessToken(token);
-
-    // Attach user data to request object for downstream handlers
-    req.user = {
-      userId: decoded.userId,
-      email: decoded.email,
-      role: decoded.role,
-    };
-
-    // Attach correlation ID for request tracing through logs
-    req.correlationId = req.headers['x-correlation-id'] || decoded.userId;
-
-    next();
+    decoded = verifyAccessToken(token);
   } catch (error) {
     // JWT verification throws specific errors we can categorize
     let errorCode = 'INVALID_TOKEN';
@@ -87,6 +85,50 @@ export const authenticate = async (req, res, next) => {
       timestamp: new Date().toISOString(),
     });
   }
+
+  // The token says who; the database says whether the account may still act,
+  // and as what (services/accountStatus.js — cached per account, short).
+  let account;
+  try {
+    account = await getAccountStatus(decoded.userId);
+  } catch (error) {
+    logger.error('Account status check failed', {
+      error: error.message,
+      userId: decoded.userId,
+    });
+    return next(new AppError(
+      'Account check is temporarily unavailable. Please retry.',
+      503,
+      'AUTH_CHECK_UNAVAILABLE',
+    ));
+  }
+
+  if (!account || !account.isActive) {
+    logger.warn('Authentication refused: account inactive or missing', {
+      userId: decoded.userId,
+      ip: req.ip,
+    });
+    return res.status(401).json({
+      success: false,
+      message: 'User account is inactive',
+      error: {
+        code: 'ACCOUNT_INACTIVE',
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Attach user data to request object for downstream handlers
+  req.user = {
+    userId: decoded.userId,
+    email: decoded.email,
+    role: account.role,
+  };
+
+  // Attach correlation ID for request tracing through logs
+  req.correlationId = req.headers['x-correlation-id'] || decoded.userId;
+
+  next();
 };
 
 /**
@@ -169,6 +211,11 @@ export const authorize = (allowedRoles) => {
  * Use case: Endpoints that provide different data for authenticated vs
  * unauthenticated users (e.g., search results that include favorites for
  * logged-in users but work for anonymous users too).
+ *
+ * Not mounted on any route (2026-10-07). Unlike authenticate it trusts the
+ * token alone — it does not ask services/accountStatus.js whether the account
+ * is still active or what its role is now. Add that check before using it for
+ * anything beyond personalization.
  * 
  * Usage in routes:
  * router.get('/public-with-personalization', optionalAuth, async (req, res) => {

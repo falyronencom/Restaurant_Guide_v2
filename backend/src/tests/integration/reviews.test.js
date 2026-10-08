@@ -21,6 +21,7 @@ import { clearAllData, query, countRecords } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment, createPartnerAndGetToken } from '../utils/auth.js';
 import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
 import { testUsers } from '../fixtures/users.js';
+import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 
 let userToken;
 let user2Token;
@@ -597,6 +598,36 @@ describe('Reviews System - Update Review', () => {
     expect(parseFloat(metrics.rows[0].average_rating)).toBeCloseTo(2.0);
     expect(metrics.rows[0].review_count).toBe(2);
   });
+
+  test('editing a review the partner answered: the answer is public, the partner behind it is not', async () => {
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: 'Спасибо, ждём вас снова!' })
+      .expect(200);
+
+    // The body as the app sends it (reviews_service.dart updateReview).
+    const response = await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ rating: 4, content: `${longContent} edited after the answer` })
+      .expect(200);
+
+    const { review } = response.body.data;
+    // What Review.fromJson reads.
+    expect(review.id).toBe(reviewId);
+    expect(review.establishment_id).toBe(establishmentId);
+    expect(review.rating).toBe(4);
+    expect(typeof review.created_at).toBe('string');
+    expect(typeof review.updated_at).toBe('string');
+    expect(review.author.id).toBe(userId);
+    expect(review.partner_response).toBe('Спасибо, ждём вас снова!');
+    // What it must not carry.
+    for (const field of ['partner_responder_id', 'author_email', 'user_id', 'is_visible', 'is_deleted']) {
+      expect(review).not.toHaveProperty(field);
+    }
+    expect(JSON.stringify(response.body)).not.toContain(partnerId);
+  });
 });
 
 describe('Reviews System - Delete Review', () => {
@@ -790,8 +821,23 @@ describe('Reviews System - Daily Quota', () => {
   });
 });
 
+/**
+ * The daily review quota lives in Redis, which the quota block above
+ * connects; from then on every review created through the API counts. Blocks
+ * that create several reviews per user start each test from zero.
+ */
+const resetReviewQuotas = async () => {
+  if (!redisClient.isReady) return;
+  await Promise.all([
+    deleteKey(rateLimitKeyFor(userId)),
+    deleteKey(rateLimitKeyFor(user2Id)),
+  ]);
+};
+
 describe('Reviews System - Partner Responses', () => {
   const responseText = 'Спасибо за ваш отзыв! Мы ценим обратную связь.';
+
+  beforeEach(resetReviewQuotas);
 
   const createReview = async (token = userToken, contentSuffix = 'base') => {
     const reviewResponse = await request(app)
@@ -818,7 +864,10 @@ describe('Reviews System - Partner Responses', () => {
 
     expect(response.body.success).toBe(true);
     expect(response.body.data.review.partner_response).toBe(responseText);
-    expect(response.body.data.review.partner_responder_id).toBe(partnerId);
+    expect(response.body.data.review).not.toHaveProperty('partner_responder_id');
+
+    const stored = await query('SELECT partner_responder_id FROM reviews WHERE id = $1', [reviewId]);
+    expect(stored.rows[0].partner_responder_id).toBe(partnerId);
 
     const detail = await request(app)
       .get(`/api/v1/reviews/${reviewId}`)
@@ -826,6 +875,98 @@ describe('Reviews System - Partner Responses', () => {
 
     expect(detail.body.data.review.partner_response).toBe(responseText);
     expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
+  });
+
+  /**
+   * What the partner app reads from these two answers (mobile
+   * reviews_service.dart addPartnerResponse → Review.fromJson): id,
+   * establishment_id, rating as int, created_at / updated_at as ISO strings,
+   * partner_response, partner_response_at, author { id, name, avatar_url }.
+   * The answer is the public projection of GET /reviews/:id — the author's
+   * e-mail and the moderation flags are not the partner's to see.
+   */
+  const expectPublicReviewForPartnerApp = (body, { reviewId, authorEmail }) => {
+    const { review } = body.data;
+
+    expect(review.id).toBe(reviewId);
+    expect(review.establishment_id).toBe(establishmentId);
+    expect(Number.isInteger(review.rating)).toBe(true);
+    expect(typeof review.created_at).toBe('string');
+    expect(Number.isNaN(Date.parse(review.created_at))).toBe(false);
+    expect(typeof review.updated_at).toBe('string');
+    expect(Number.isNaN(Date.parse(review.updated_at))).toBe(false);
+    expect(review.author).toEqual({
+      id: userId,
+      name: testUsers.regularUser.name,
+      avatar_url: null,
+    });
+
+    for (const field of ['author_email', 'author_name', 'author_avatar', 'user_id',
+      'partner_responder_id', 'is_visible', 'is_deleted']) {
+      expect(review).not.toHaveProperty(field);
+    }
+    expect(JSON.stringify(body)).not.toContain(authorEmail);
+  };
+
+  test('adding a response answers with the public projection: what the partner app reads, no author e-mail', async () => {
+    const reviewId = await createReview(userToken, 'projection-add');
+
+    // The body exactly as the partner app sends it.
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    expectPublicReviewForPartnerApp(response.body, {
+      reviewId,
+      authorEmail: testUsers.regularUser.email,
+    });
+    expect(response.body.data.review.partner_response).toBe(responseText);
+    expect(typeof response.body.data.review.partner_response_at).toBe('string');
+  });
+
+  test('deleting a response answers with the public projection, no author e-mail', async () => {
+    const reviewId = await createReview(userToken, 'projection-delete');
+
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    // The partner app sends DELETE without a body.
+    const response = await request(app)
+      .delete(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    expectPublicReviewForPartnerApp(response.body, {
+      reviewId,
+      authorEmail: testUsers.regularUser.email,
+    });
+    expect(response.body.data.review.partner_response).toBeNull();
+    expect(response.body.data.review.partner_response_at).toBeNull();
+  });
+
+  test('deleting a response that does not exist is a 404 and leaves the review row untouched', async () => {
+    const reviewId = await createReview(userToken, 'delete-missing-response');
+    // A moment in the past, so a write in the same millisecond cannot hide.
+    await query("UPDATE reviews SET updated_at = NOW() - INTERVAL '1 hour' WHERE id = $1", [reviewId]);
+    const before = await query('SELECT updated_at, partner_response FROM reviews WHERE id = $1', [reviewId]);
+    expect(before.rows[0].partner_response).toBeNull();
+
+    const response = await request(app)
+      .delete(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(404);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('RESPONSE_NOT_FOUND');
+    expect(JSON.stringify(response.body)).not.toContain(testUsers.regularUser.email);
+
+    const after = await query('SELECT updated_at FROM reviews WHERE id = $1', [reviewId]);
+    expect(after.rows[0].updated_at.getTime()).toBe(before.rows[0].updated_at.getTime());
   });
 
   test('should reject partner responding to review on other establishment', async () => {
@@ -885,7 +1026,7 @@ describe('Reviews System - Partner Responses', () => {
       .expect(200);
 
     expect(response.body.data.review.partner_response).toBe(updatedText);
-    expect(response.body.data.review.partner_responder_id).toBe(partnerId);
+    expect(response.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
   test('should delete partner response', async () => {
@@ -928,6 +1069,107 @@ describe('Reviews System - Partner Responses', () => {
     expect(detail.body.data.review.partner_response).toBe(responseText);
     expect(detail.body.data.review).not.toHaveProperty('partner_responder_id');
     expect(detail.body.data.review.partner_response_at).toBeTruthy();
+  });
+});
+
+describe('Reviews System - Hidden Reviews Stay Out of the Rating', () => {
+  // The rating guests see counts visible reviews only: it is written by
+  // ReviewModel.updateEstablishmentAggregates. The database trigger
+  // update_metrics_after_review fires on EVERY update of a review row and
+  // writes a rating that counts hidden reviews too — so every path that
+  // updates a review has to recount after it. These three paths did not: a
+  // partner's reply, its removal and a text-only edit put the review the
+  // moderator had hidden back into the rating.
+  const responseText = 'Спасибо за ваш отзыв! Мы ценим обратную связь.';
+  let adminToken;
+
+  beforeAll(async () => {
+    const admin = await createAdminAndGetToken();
+    adminToken = admin.accessToken;
+  });
+
+  beforeEach(resetReviewQuotas);
+
+  const ratingOfEstablishment = async () => {
+    const result = await query(
+      'SELECT average_rating, review_count FROM establishments WHERE id = $1',
+      [establishmentId]
+    );
+    return {
+      average: parseFloat(result.rows[0].average_rating),
+      count: result.rows[0].review_count,
+    };
+  };
+
+  /**
+   * A 5★ review that stays visible and a 1★ review hidden by the moderator
+   * through the panel's own endpoint. With `respondFirst` the partner has
+   * already answered the visible one before the moderator acted.
+   */
+  const setUpHiddenOneStar = async ({ respondFirst = false } = {}) => {
+    const visible = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 5, content: `${longContent} visible five` })
+      .expect(201);
+    const hidden = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${user2Token}`)
+      .send({ establishmentId, rating: 1, content: `${longContent} hidden one` })
+      .expect(201);
+    const visibleId = visible.body.data.review.id;
+
+    if (respondFirst) {
+      await request(app)
+        .post(`/api/v1/reviews/${visibleId}/response`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ response: responseText })
+        .expect(200);
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/reviews/${hidden.body.data.review.id}/toggle-visibility`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // Precondition: the hidden 1★ is out of the rating.
+    expect(await ratingOfEstablishment()).toEqual({ average: 5, count: 1 });
+    return { visibleId };
+  };
+
+  test('a partner response leaves the hidden review out of the rating', async () => {
+    const { visibleId } = await setUpHiddenOneStar();
+
+    await request(app)
+      .post(`/api/v1/reviews/${visibleId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+
+    expect(await ratingOfEstablishment()).toEqual({ average: 5, count: 1 });
+  });
+
+  test('deleting a partner response leaves the hidden review out of the rating', async () => {
+    const { visibleId } = await setUpHiddenOneStar({ respondFirst: true });
+
+    await request(app)
+      .delete(`/api/v1/reviews/${visibleId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    expect(await ratingOfEstablishment()).toEqual({ average: 5, count: 1 });
+  });
+
+  test('editing the text of a review (rating unchanged) leaves the hidden review out of the rating', async () => {
+    const { visibleId } = await setUpHiddenOneStar();
+
+    await request(app)
+      .put(`/api/v1/reviews/${visibleId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ content: `${longContent} edited text only` })
+      .expect(200);
+
+    expect(await ratingOfEstablishment()).toEqual({ average: 5, count: 1 });
   });
 });
 

@@ -208,8 +208,8 @@ export const getUserReviews = asyncHandler(async (req, res) => {
  * at least one field is provided. The updated_at timestamp and is_edited flag are
  * automatically updated by the model layer.
  * 
- * If the rating changes, establishment aggregate statistics are recalculated
- * synchronously before returning the response.
+ * Establishment aggregate statistics are recalculated synchronously after
+ * every update, before returning the response.
  */
 export const updateReview = asyncHandler(async (req, res) => {
   // Extract review ID from URL path parameter
@@ -240,11 +240,14 @@ export const updateReview = asyncHandler(async (req, res) => {
     endpoint: 'PUT /api/v1/reviews/:id',
   });
 
-  // Return 200 OK with updated review object
+  // Return 200 OK with the updated review in the public projection: once a
+  // partner has answered, the raw row carries the responder's user id, which
+  // is not the author's to see. The app reads only public fields
+  // (Review.fromJson); the site ignores this body.
   res.status(200).json({
     success: true,
     data: {
-      review,
+      review: toPublicReview(review),
     },
   });
 });
@@ -318,10 +321,14 @@ export const getReviewQuota = asyncHandler(async (req, res) => {
 
 /**
  * Add or update partner response to a review
- * 
+ *
  * POST /api/v1/reviews/:id/response
- * 
+ *
  * Protected: Yes (partner)
+ *
+ * Answers with the same public projection as GET /reviews/:id: the partner
+ * sees the review as guests do — never the author's e-mail, the responder
+ * id or the moderation flags. The partner app reads only the public fields.
  */
 export const addPartnerResponse = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -332,16 +339,19 @@ export const addPartnerResponse = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: { review },
+    data: { review: toPublicReview(review) },
   });
 });
 
 /**
  * Delete partner response from a review
- * 
+ *
  * DELETE /api/v1/reviews/:id/response
- * 
+ *
  * Protected: Yes (partner)
+ *
+ * Same public projection as addPartnerResponse. A review without a response
+ * is a 404 (RESPONSE_NOT_FOUND) and the row is not touched.
  */
 export const deletePartnerResponse = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -351,7 +361,7 @@ export const deletePartnerResponse = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: { review },
+    data: { review: toPublicReview(review) },
   });
 });
 

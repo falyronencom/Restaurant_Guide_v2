@@ -697,9 +697,14 @@ export const updatePartnerResponse = addPartnerResponse;
 
 /**
  * Delete partner response from a review
- * 
+ *
+ * Only a review that has a response is updated: the condition sits in the
+ * UPDATE itself, so a review without one keeps its row as it was — no
+ * updated_at bump, and no rating trigger fired for nothing.
+ *
  * @param {string} reviewId - UUID of the review
- * @returns {Promise<Object>} Updated review row
+ * @returns {Promise<Object|null>} Updated review row, or null when the review
+ *   has no response (or is gone)
  */
 export const deletePartnerResponse = async (reviewId) => {
   const query = `
@@ -711,6 +716,7 @@ export const deletePartnerResponse = async (reviewId) => {
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     AND is_deleted = false
+    AND partner_response IS NOT NULL
     RETURNING
       id,
       user_id,
@@ -731,7 +737,7 @@ export const deletePartnerResponse = async (reviewId) => {
     const result = await pool.query(query, [reviewId]);
 
     if (result.rows.length === 0) {
-      throw new Error('Review not found or already deleted');
+      return null;
     }
 
     logger.info('Partner response deleted', { reviewId });

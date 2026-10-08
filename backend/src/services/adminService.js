@@ -18,6 +18,12 @@ import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { BELARUS_BOUNDS, validateCityCoordinates } from './establishmentService.js';
 import { upgradeUserToPartner } from './authService.js';
+import { invalidateAccountStatus } from './accountStatus.js';
+import {
+  isModeratorSuspension,
+  parseModerationNotes,
+  withoutModeratorSuspension,
+} from '../utils/moderationNotes.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
@@ -109,8 +115,13 @@ export const getEstablishmentForModeration = async (
     // authorship is the audit log. Read it back instead of writing a second
     // copy into moderation_notes: one source of truth, and it also covers
     // suspensions made before this field existed. One extra query, only for
-    // the suspended card.
-    const suspension = establishment.status === 'suspended'
+    // a card a moderator suspended: the partner's own pause has no author in
+    // the journal, and the latest 'suspend' entry there may belong to a
+    // suspension lifted long ago.
+    const suspension = isModeratorSuspension(
+      establishment.status,
+      parseModerationNotes(establishment.moderation_notes),
+    )
       ? await AuditLogModel.getLatestEntityAction({
         entityType: 'establishment',
         entityId: establishmentId,
@@ -346,11 +357,13 @@ export const moderateEstablishment = async (establishmentId, params) => {
     // модератор только что сам и поменял.
     invalidateBadges();
 
-    // Снимок здоровья сбрасывается ТОЛЬКО на отказе, и это не осторожность.
+    // Снимок здоровья сбрасывается здесь ТОЛЬКО на отказе, и это не осторожность.
     // Счётчик «висящих флагов» с этапа 7 ограничен областью
     // CATALOGUE_TRACK_STATUSES (active + pending + suspended). Одобрение ведёт
-    // pending → active, приостановка и возобновление ходят внутри той же
-    // области — величина не меняется, пересчитывать нечего. А отказ выводит
+    // pending → active, приостановка и возобновление обычно ходят внутри той же
+    // области — величина не меняется, пересчитывать нечего (кроме приостановки
+    // отклонённой и возврата в отклонённые — их сбрасывают suspend/unsuspend,
+    // 07.10.2026). А отказ выводит
     // заведение ЗА область, и все его флагованные позиции разом выпадают из
     // счёта. До появления этого JOIN отказ был безвреден, поэтому прежняя
     // формулировка «модерация заведений на здоровье не влияет» верна больше
@@ -480,10 +493,29 @@ export const getRejectedEstablishments = async ({ page = 1, perPage = 20 } = {})
 };
 
 /**
- * Suspend an active establishment
+ * Statuses a moderator may suspend a card from (Coordinator, 2026-10-07,
+ * option A — two independent pauses): anything but a draft, which has not
+ * been sent to moderation, and an archived card. 'suspended' here means the
+ * partner's own pause; a card the moderator already suspended is refused.
+ */
+const SUSPENDABLE_STATUSES = Object.freeze(['pending', 'active', 'rejected', 'suspended']);
+
+/**
+ * Where lifting a moderator's suspension may return a card
+ * (moderation_notes.suspended_from). Anything else — and a suspension made
+ * before 2026-10-07, which has no suspended_from — returns to 'active': every
+ * suspension before that date was made from 'active'.
+ */
+const SUSPENSION_RETURN_STATUSES = Object.freeze(['active', 'pending', 'rejected', 'suspended']);
+
+/**
+ * Suspend an establishment
  *
- * Changes status: active → suspended
- * Records reason in moderation_notes and audit log
+ * Changes status: pending | active | rejected | suspended (the partner's own
+ * pause) → suspended, with the reason, the time and the status it came from
+ * in moderation_notes (utils/moderationNotes.js), and an audit log entry.
+ * The partner cannot switch a moderator's suspension off; unsuspend returns
+ * the card to where it was.
  *
  * @param {string} establishmentId - UUID
  * @param {Object} params
@@ -518,30 +550,43 @@ export const suspendEstablishment = async (establishmentId, params) => {
       );
     }
 
-    if (existing.status !== 'active') {
+    const currentNotes = parseModerationNotes(existing.moderation_notes);
+
+    if (isModeratorSuspension(existing.status, currentNotes)) {
       throw new AppError(
-        `Cannot suspend establishment with status '${existing.status}'. Only active establishments can be suspended.`,
+        'Establishment is already suspended by a moderator.',
         400,
         'INVALID_STATUS_FOR_SUSPEND',
       );
     }
 
-    // Merge suspend reason into existing moderation_notes
-    const currentNotes = typeof existing.moderation_notes === 'string'
-      ? JSON.parse(existing.moderation_notes || '{}')
-      : (existing.moderation_notes || {});
+    if (!SUSPENDABLE_STATUSES.includes(existing.status)) {
+      throw new AppError(
+        `Cannot suspend establishment with status '${existing.status}'. Drafts and archived establishments cannot be suspended.`,
+        400,
+        'INVALID_STATUS_FOR_SUSPEND',
+      );
+    }
+
+    // Merge the suspension marks into the existing notes; suspended_from is
+    // where unsuspend returns the card.
     const updatedNotes = {
       ...currentNotes,
       suspend_reason: reason,
       suspended_at: new Date().toISOString(),
+      suspended_from: existing.status,
     };
 
+    // The status and the notes the decision was made on are the guard: if
+    // the partner resumes or pauses, or another moderator suspends, in the
+    // meantime, nothing is written (409).
     const updated = await EstablishmentModel.changeEstablishmentStatus(
       establishmentId,
       {
-        fromStatus: 'active',
+        fromStatus: existing.status,
         toStatus: 'suspended',
         moderationNotes: updatedNotes,
+        expectedModerationNotes: existing.moderation_notes ?? null,
       },
     );
 
@@ -561,7 +606,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
       action: 'suspend',
       entity_type: 'establishment',
       entity_id: establishmentId,
-      old_data: { status: 'active' },
+      old_data: { status: existing.status },
       new_data: { status: 'suspended', reason },
       ip_address: ipAddress,
       user_agent: userAgent,
@@ -579,6 +624,12 @@ export const suspendEstablishment = async (establishmentId, params) => {
     // сразу, иначе бейдж до полминуты показывал бы число, которое
     // модератор только что сам и поменял.
     invalidateBadges();
+    // Отклонённая карточка вне области «висящих флагов»
+    // (CATALOGUE_TRACK_STATUSES), приостановленная — внутри: приостановка
+    // отклонённой вводит её флаги в счёт снимка здоровья.
+    if (existing.status === 'rejected') {
+      invalidateHealth();
+    }
 
     logger.info('Establishment suspended', {
       establishmentId,
@@ -604,9 +655,15 @@ export const suspendEstablishment = async (establishmentId, params) => {
 };
 
 /**
- * Unsuspend (reactivate) a suspended establishment
+ * Unsuspend — lift a moderator's suspension
  *
- * Changes status: suspended → active
+ * Returns the card to where it was before the suspension
+ * (moderation_notes.suspended_from): active, the partner's own pause,
+ * pending or rejected — a card never approved does not reach the site this
+ * way. Suspensions from before 2026-10-07 carry no suspended_from and return
+ * to active, as they always did. The suspension marks are removed, the other
+ * notes kept (a rejected card keeps its rejection comments). A card the
+ * partner paused is refused: that pause is the partner's to lift.
  * Records event in audit log
  *
  * @param {string} establishmentId - UUID
@@ -641,11 +698,28 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       );
     }
 
+    const notes = parseModerationNotes(existing.moderation_notes);
+    if (!isModeratorSuspension(existing.status, notes)) {
+      throw new AppError(
+        'The partner paused this establishment; only the partner can resume it.',
+        400,
+        'SUSPENDED_BY_PARTNER',
+      );
+    }
+
+    const returnTo = SUSPENSION_RETURN_STATUSES.includes(notes.suspended_from)
+      ? notes.suspended_from
+      : 'active';
+
+    // Guarded by the notes as read: two moderators lifting the same
+    // suspension at once write once — the second gets 409.
     const updated = await EstablishmentModel.changeEstablishmentStatus(
       establishmentId,
       {
         fromStatus: 'suspended',
-        toStatus: 'active',
+        toStatus: returnTo,
+        moderationNotes: withoutModeratorSuspension(notes),
+        expectedModerationNotes: existing.moderation_notes ?? null,
       },
     );
 
@@ -665,28 +739,37 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       action: 'unsuspend',
       entity_type: 'establishment',
       entity_id: establishmentId,
-      old_data: { status: 'suspended' },
-      new_data: { status: 'active' },
+      old_data: { status: 'suspended', reason: notes.suspend_reason },
+      new_data: { status: returnTo },
       ip_address: ipAddress,
       user_agent: userAgent,
     });
 
-    // Notify partner — distinct unsuspend notification, awaited for the same
-    // reasons as in moderateEstablishment; the notifier swallows its own
-    // errors, so this cannot fail the reactivation.
+    // Notify partner — distinct unsuspend notification, worded by where the
+    // card went back to; awaited for the same reasons as in
+    // moderateEstablishment; the notifier swallows its own errors, so this
+    // cannot fail the reactivation.
     await NotificationService.notifyEstablishmentStatusChange(
       establishmentId,
       'unsuspended',
+      undefined,
+      { returnedTo: returnTo },
     ).catch(() => {});
 
     // Размер очереди изменился — счётчики рейла обязаны это увидеть
     // сразу, иначе бейдж до полминуты показывал бы число, которое
     // модератор только что сам и поменял.
     invalidateBadges();
+    // Возврат в отклонённые выводит карточку из области «висящих флагов» —
+    // её флаги выпадают из счёта снимка здоровья (как при отказе).
+    if (returnTo === 'rejected') {
+      invalidateHealth();
+    }
 
     logger.info('Establishment unsuspended', {
       establishmentId,
       adminUserId,
+      returnedTo: returnTo,
     });
 
     return updated;
@@ -1184,6 +1267,10 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
   } finally {
     client.release();
   }
+
+  // The role may have changed (user → partner): authenticate reads it from the
+  // database, cached briefly — forget the cached one once the change is committed.
+  invalidateAccountStatus(targetUserId);
 
   // 4. Audit log — awaited, outside transaction; createAuditLog swallows its own errors
   await AuditLogModel.createAuditLog({

@@ -159,21 +159,29 @@ describe('PATCH /api/v1/partner/menu-items/:id', () => {
     expect(res.body.data.sanity_flag).toBeNull();
   });
 
-  test('does NOT change is_hidden_by_admin on partner edit', async () => {
+  // Until 2026-10-07 the partner could edit a hidden item by its id (200, the
+  // item stayed hidden). Since a re-read carries the moderator's «Скрыть» over
+  // by the dish name, a renamed hidden item would come back visible after the
+  // next «повторить распознавание» — so a hidden item is answered like a
+  // stranger's: the partner's list does not show it either.
+  test('a dish the moderator hid is not the partner\'s to edit: 404, nothing changes', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     const mediaId = await seedPdfMedia(estId);
     const item = await seedMenuItem(estId, mediaId, {
+      itemName: 'Кальян',
       isHiddenByAdmin: true,
     });
 
     const res = await request(app)
       .patch(`/api/v1/partner/menu-items/${item.id}`)
       .set('Authorization', `Bearer ${partner.accessToken}`)
-      .send({ item_name: 'Обновлено' })
-      .expect(200);
+      .send({ item_name: 'Чай травяной' })
+      .expect(404);
 
-    expect(res.body.data.is_hidden_by_admin).toBe(true);
+    expect(res.body.error.code).toBe('MENU_ITEM_NOT_FOUND');
+    const stored = await query('SELECT item_name, is_hidden_by_admin FROM menu_items WHERE id = $1', [item.id]);
+    expect(stored.rows[0]).toEqual({ item_name: 'Кальян', is_hidden_by_admin: true });
   });
 
   test('returns 404 when partner does not own the item', async () => {

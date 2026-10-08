@@ -18,6 +18,7 @@ import { pool } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
+import { invalidateAccountStatus } from './accountStatus.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
@@ -946,6 +947,10 @@ export async function upgradeUserToPartner(userId) {
     `;
 
     const result = await pool.query(updateQuery, [new Date(), userId]);
+
+    // authenticate reads the role from the database (cached briefly): the
+    // new role applies from the next request, whatever token is presented.
+    invalidateAccountStatus(userId);
 
     logger.info('User upgraded to partner role', {
       userId,

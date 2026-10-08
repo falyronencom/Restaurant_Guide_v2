@@ -19,7 +19,14 @@ import logger from '../utils/logger.js';
 /**
  * Get paginated admin reviews with filters
  *
+ * A viewer — the read-only panel role that may be shown to a third party —
+ * gets the reviews without the author's e-mail: the key stays, the value is
+ * null, the same as the partner contacts on the establishment card
+ * (Coordinator decision 2026-09-08, SDL CAT-C-2.11). The panel then shows
+ * the author by name.
+ *
  * @param {Object} params
+ * @param {boolean} [params.viewer=false] - Caller is the read-only panel role
  * @returns {Promise<Object>} { reviews, meta }
  */
 export const getReviews = async ({
@@ -33,6 +40,7 @@ export const getReviews = async ({
   sort = 'newest',
   from,
   to,
+  viewer = false,
 } = {}) => {
   try {
     const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
@@ -55,7 +63,9 @@ export const getReviews = async ({
     ]);
 
     return {
-      reviews,
+      reviews: viewer
+        ? reviews.map((review) => ({ ...review, author_email: null }))
+        : reviews,
       meta: {
         total: stats.total,
         // Считаются по той же выборке, что и total: подпись экрана

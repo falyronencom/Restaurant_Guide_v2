@@ -8,14 +8,18 @@ import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 /// Manages:
 /// - Suspended establishments list with pagination
 /// - Detail loading for selected establishment
-/// - Unsuspend action (returns establishment to active status)
+/// - Two independent pauses (Coordinator, 2026-10-07, option A): the
+///   moderator's own suspension is lifted here («Возобновить» — the card goes
+///   back to where it was); a card the partner paused is the partner's to
+///   switch on, and the moderator may suspend it with a reason of their own.
 class SuspendedProvider extends ChangeNotifier {
   /// Размер страницы — как у сервиса и как в подписи «Показано N–M из T».
   static const int perPage = 20;
 
-  final ModerationService _service = ModerationService();
+  final ModerationService _service;
 
-  SuspendedProvider() {
+  SuspendedProvider({ModerationService? service})
+      : _service = service ?? ModerationService() {
     AccountScope.register(resetAccountScope);
   }
 
@@ -123,33 +127,87 @@ class SuspendedProvider extends ChangeNotifier {
     }
   }
 
-  /// Unsuspend the currently selected establishment (suspended → active)
+  /// «Возобновить»: снять приостановку модератора с выбранной карточки.
+  ///
+  /// Сервер возвращает карточку туда, где она была до приостановки. На сайт,
+  /// в очередь или в отклонённые — и она уходит из раздела; на паузу
+  /// партнёра — и она остаётся здесь, уже как пауза партнёра. Поэтому
+  /// раздел перечитывается, а не правится на месте.
   Future<bool> unsuspendEstablishment() async {
-    if (_selectedId == null) return false;
+    final id = _selectedId;
+    if (id == null) return false;
 
     _isSubmitting = true;
     _submitError = null;
     notifyListeners();
 
     try {
-      await _service.unsuspendEstablishment(id: _selectedId!);
-
-      // Remove from list and clear selection
-      _establishments.removeWhere((e) => e.id == _selectedId);
-      _totalCount = (_totalCount - 1).clamp(0, _totalCount);
-      _selectedId = null;
-      _selectedDetail = null;
-      _isSubmitting = false;
-      notifyListeners();
-      _reloadIfPageEmptied();
-      return true;
-
+      await _service.unsuspendEstablishment(id: id);
     } catch (e) {
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+
+    await _refreshAfterAction(id);
+    return true;
+  }
+
+  /// «Приостановить» карточку, которую партнёр поставил на паузу сам.
+  ///
+  /// Пауза партнёра не мешает модератору: поверх неё ставится приостановка
+  /// модератора с причиной, и включить карточку сам партнёр уже не сможет.
+  /// Карточка остаётся в разделе — с причиной и кнопкой «Возобновить».
+  Future<bool> suspendEstablishment(String reason) async {
+    final id = _selectedId;
+    if (id == null) return false;
+
+    _isSubmitting = true;
+    _submitError = null;
+    notifyListeners();
+
+    try {
+      await _service.suspendEstablishment(id: id, reason: reason);
+    } catch (e) {
+      _isSubmitting = false;
+      _submitError = _extractMessage(e);
+      notifyListeners();
+      return false;
+    }
+
+    await _refreshAfterAction(id);
+    return true;
+  }
+
+  /// После действия карточка либо ушла из раздела, либо осталась в нём в
+  /// новом виде (пауза партнёра ↔ приостановка модератора). Сначала
+  /// перечитывается сама карточка: осталась — раздел открывается с первой
+  /// страницы (действие освежило карточку, а раздел упорядочен по времени
+  /// изменения — она теперь первая; на второй странице её уже нет), выбор и
+  /// новый вид сохраняются; ушла — перечитывается текущая страница, выбор
+  /// снимет проверка устаревшего выбора в [loadSuspendedEstablishments].
+  /// Действие уже выполнено: сбой перечитывания его не отменяет и ошибкой не
+  /// считается.
+  Future<void> _refreshAfterAction(String id) async {
+    _isSubmitting = false;
+
+    EstablishmentDetail? detail;
+    try {
+      detail = await _service.getEstablishmentDetails(id);
+    } catch (_) {
+      // Карточка перечитается при следующем выборе.
+    }
+    final stays = detail?.status == 'suspended';
+
+    await loadSuspendedEstablishments(page: stays ? 1 : _currentPage);
+
+    if (_selectedId != id) {
+      _reloadIfPageEmptied();
+      return;
+    }
+    if (detail != null) _selectedDetail = detail;
+    notifyListeners();
   }
 
   /// Clear selection

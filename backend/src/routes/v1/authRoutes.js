@@ -115,8 +115,8 @@ router.post(
  * 3. Controller: Validate token, rotate, and return new pair
  * 
  * Higher rate limit because legitimate use case is frequent token refreshes
- * for long-lived sessions. Access tokens expire every 15 minutes, so active
- * users will hit this endpoint regularly.
+ * for long-lived sessions. Access tokens expire after 4 hours
+ * (JWT_ACCESS_EXPIRY), so active users will hit this endpoint regularly.
  */
 router.post(
   '/refresh',

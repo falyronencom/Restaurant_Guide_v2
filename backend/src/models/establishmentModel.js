@@ -1197,16 +1197,31 @@ export const countSearchResults = async (search, filters = {}) => {
 
 /**
  * Change establishment status with validation of current state
- * Used for suspend (active → suspended) and unsuspend (suspended → active)
+ * Used for the partner's pause and resume, and the moderator's suspend and
+ * unsuspend (two independent pauses, 2026-10-07).
+ *
+ * The status alone does not tell the two pauses apart — both are
+ * 'suspended'; moderation_notes does (utils/moderationNotes.js). A decision
+ * read from the notes is guarded in the UPDATE itself: pass the notes as read
+ * (`expectedModerationNotes`, the raw column value or null), and the row is
+ * written only if nobody changed them in between — a check made before the
+ * UPDATE would not see, say, a moderator's suspension placed over the
+ * partner's pause while the partner resumes.
  *
  * @param {string} establishmentId - UUID of the establishment
  * @param {Object} params
  * @param {string} params.fromStatus - Required current status
  * @param {string} params.toStatus - Target status
  * @param {Object} params.moderationNotes - Optional moderation notes update
- * @returns {Promise<Object|null>} Updated establishment or null if status mismatch
+ * @param {string|null} [params.expectedModerationNotes] - Optional guard: the
+ *   moderation_notes value the decision was made on (undefined — no guard)
+ * @returns {Promise<Object|null>} Updated establishment or null if status or
+ *   the guarded notes do not match
  */
-export const changeEstablishmentStatus = async (establishmentId, { fromStatus, toStatus, moderationNotes }) => {
+export const changeEstablishmentStatus = async (
+  establishmentId,
+  { fromStatus, toStatus, moderationNotes, expectedModerationNotes },
+) => {
   const values = [toStatus];
   let paramCount = 2;
   let notesClause = '';
@@ -1222,6 +1237,12 @@ export const changeEstablishmentStatus = async (establishmentId, { fromStatus, t
   const idParam = values.length - 1;
   const statusParam = values.length;
 
+  let notesGuard = '';
+  if (expectedModerationNotes !== undefined) {
+    values.push(expectedModerationNotes);
+    notesGuard = `AND moderation_notes IS NOT DISTINCT FROM $${values.length}`;
+  }
+
   const query = `
     UPDATE establishments
     SET
@@ -1230,6 +1251,7 @@ export const changeEstablishmentStatus = async (establishmentId, { fromStatus, t
       ${notesClause}
     WHERE id = $${idParam}
       AND status = $${statusParam}
+      ${notesGuard}
     RETURNING
       id,
       partner_id,

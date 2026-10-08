@@ -286,13 +286,35 @@ class ModerationEntityActions extends StatelessWidget {
   final ValueChanged<String>? onClaim;
   final String establishmentName;
 
+  /// Куда «Возобновить» вернёт карточку — статус, из которого её приостановил
+  /// модератор (`moderation_notes.suspended_from`): `active`, `suspended`
+  /// (пауза партнёра), `pending`, `rejected`. Без него — на сайт: так
+  /// возвращались все приостановки до 07.10.2026.
+  final String? unsuspendReturnsTo;
+
   const ModerationEntityActions({
     super.key,
     this.onSuspend,
     this.onUnsuspend,
     this.onClaim,
+    this.unsuspendReturnsTo,
     required this.establishmentName,
   });
+
+  /// Что скажет диалог подтверждения: «Возобновить» не всегда значит «на
+  /// сайт» — карточка возвращается туда, где была до приостановки.
+  static String unsuspendOutcome(String? returnsTo) {
+    switch (returnsTo) {
+      case 'suspended':
+        return 'Заведение вернётся на паузу партнёра — включить его сможет только партнёр.';
+      case 'pending':
+        return 'Заведение вернётся в очередь проверки.';
+      case 'rejected':
+        return 'Заявка останется отклонённой — партнёр исправит замечания и отправит её снова.';
+      default:
+        return 'Заведение снова появится в поиске и каталоге.';
+    }
+  }
 
   /// Кнопка слота шапки: высота 40, r10 — как у соседних контролов.
   static ButtonStyle _action({Color? color, double borderWidth = 1}) =>
@@ -381,9 +403,7 @@ class ModerationEntityActions extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Возобновить заведение?'),
-        content: const Text(
-          'Заведение снова появится в поиске и каталоге.',
-        ),
+        content: Text(unsuspendOutcome(unsuspendReturnsTo)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -803,7 +823,11 @@ class _SuspensionBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reason = notes?['suspend_reason']?.toString().trim();
-    if (reason == null || reason.isEmpty) return const SizedBox.shrink();
+    // Без причины приостановки модератора не бывает: это пауза самого
+    // партнёра (две независимые паузы, 07.10.2026). Автора из журнала здесь
+    // не показываем — последняя запись «приостановил» может относиться к
+    // давно снятой приостановке модератора.
+    if (reason == null || reason.isEmpty) return const _PartnerPauseNote();
     final author = authorName?.trim();
 
     // `.toLocal()` обязателен: бэкенд пишет метку через toISOString(), то
@@ -880,6 +904,61 @@ class _SuspensionBlock extends StatelessWidget {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(value.day)}.${two(value.month)}.${value.year}, '
         '${two(value.hour)}:${two(value.minute)}';
+  }
+}
+
+/// Пауза, которую партнёр поставил сам. Объясняет модератору, почему в
+/// шапке нет «Возобновить»: включает карточку только партнёр, а модератор
+/// может закрепить её своей приостановкой — тогда без проверки она на сайт
+/// не вернётся.
+class _PartnerPauseNote extends StatelessWidget {
+  const _PartnerPauseNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: AppTheme.disclaimerBg,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.pause_circle_outline,
+                size: 18,
+                color: AppTheme.disclaimerText,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Пауза партнёра',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.disclaimerText,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Партнёр сам снял заведение с показа и включит его сам. '
+            'Чтобы оно не вернулось на сайт без проверки, приостановите его '
+            'со своей причиной.',
+            style: TextStyle(
+              fontSize: 15,
+              color: AppTheme.textDark,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

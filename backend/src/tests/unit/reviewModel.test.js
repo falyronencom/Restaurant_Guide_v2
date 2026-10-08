@@ -598,14 +598,16 @@ describe('reviewModel', () => {
         expect.stringContaining('partner_response = NULL'),
         ['r1']
       );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('AND partner_response IS NOT NULL'),
+        ['r1']
+      );
     });
 
-    test('should throw when review not found or deleted', async () => {
+    test('returns null when the review has no response or is gone — the caller answers 404', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
 
-      await expect(
-        ReviewModel.deletePartnerResponse('missing')
-      ).rejects.toThrow('Review not found or already deleted');
+      await expect(ReviewModel.deletePartnerResponse('missing')).resolves.toBeNull();
     });
 
     test('should throw on database error', async () => {

@@ -15,6 +15,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { normalizeMenuItemName } from '../utils/menuItemName.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 import {
   cityCyrillicToSlug,
@@ -40,9 +41,13 @@ const WRITABLE_FIELDS = [
  * @param {Object[]} items - Items with fields from WRITABLE_FIELDS
  * @param {string} establishmentId - UUID
  * @param {string} mediaId - UUID
+ * @param {Object} [options]
+ * @param {boolean} [options.withModeration=false] - Append is_hidden_by_admin
+ *   and hidden_reason (replaceForMedia carries the moderator's decisions over;
+ *   the INSERT column list must name both after position)
  * @returns {{ valuesClause: string, params: Array }} SQL fragment and params
  */
-const buildBulkInsertFragment = (items, establishmentId, mediaId) => {
+const buildBulkInsertFragment = (items, establishmentId, mediaId, { withModeration = false } = {}) => {
   const params = [];
   const valueRows = [];
 
@@ -57,13 +62,17 @@ const buildBulkInsertFragment = (items, establishmentId, mediaId) => {
       item.sanity_flag ? JSON.stringify(item.sanity_flag) : null,
       item.position ?? idx,
     ];
+    if (withModeration) {
+      rowParams.push(item.is_hidden_by_admin === true, item.hidden_reason ?? null);
+    }
 
     const base = params.length + 1;
     params.push(...rowParams);
 
+    const moderationParams = withModeration ? `, $${base + 8}, $${base + 9}` : '';
     valueRows.push(
       `($${base}, $${base + 1}, $${base + 2}, $${base + 3}, ` +
-      `$${base + 4}, $${base + 5}, $${base + 6}::jsonb, $${base + 7})`,
+      `$${base + 4}, $${base + 5}, $${base + 6}::jsonb, $${base + 7}${moderationParams})`,
     );
   });
 
@@ -231,20 +240,84 @@ export const updateById = async (id, updates) => {
 };
 
 /**
+ * The moderator's «Скрыть» decisions on the previous read of a file, ready to
+ * be looked up by the rows of the new read.
+ *
+ * A decision travels with the dish name, normalized the way the price-delta
+ * check normalizes it (utils/menuItemName.js). Where a name repeats across
+ * sections («Чай» under «Напитки» hidden, under «Завтраки» shown), the row
+ * with the same name AND section decides first; failing that, a name that was
+ * hidden anywhere in the file stays hidden — a re-read must not show guests
+ * a dish the moderator took away, and an over-hidden row is one click in the
+ * panel. Rows are walked in menu order, so the reason carried is the one of
+ * the first hidden row.
+ *
+ * @param {Object[]} previousItems - Rows of the file before the re-read
+ * @returns {{ bySection: Map<string, {hidden: boolean, reason: (string|null)}>,
+ *             hiddenByName: Map<string, (string|null)> }}
+ */
+const collectModerationDecisions = (previousItems) => {
+  const bySection = new Map();
+  const hiddenByName = new Map();
+
+  for (const item of previousItems) {
+    if (!item.item_name) continue;
+    const name = normalizeMenuItemName(item.item_name);
+    const sectionKey = JSON.stringify([name, normalizeMenuItemName(item.category_raw ?? '')]);
+    const hidden = item.is_hidden_by_admin === true;
+
+    const known = bySection.get(sectionKey);
+    if (!known || (hidden && !known.hidden)) {
+      bySection.set(sectionKey, { hidden, reason: hidden ? item.hidden_reason : null });
+    }
+    if (hidden && !hiddenByName.has(name)) {
+      hiddenByName.set(name, item.hidden_reason);
+    }
+  }
+
+  return { bySection, hiddenByName };
+};
+
+/**
+ * The decision a new row inherits (see collectModerationDecisions).
+ *
+ * @returns {{hidden: boolean, reason: (string|null)}}
+ */
+const inheritedDecision = (item, { bySection, hiddenByName }) => {
+  if (!item.item_name) return { hidden: false, reason: null };
+  const name = normalizeMenuItemName(item.item_name);
+
+  const sameSection = bySection.get(JSON.stringify([name, normalizeMenuItemName(item.category_raw ?? '')]));
+  if (sameSection) return sameSection;
+
+  return hiddenByName.has(name)
+    ? { hidden: true, reason: hiddenByName.get(name) }
+    : { hidden: false, reason: null };
+};
+
+/**
  * Atomically replace all menu items for a media file.
  *
- * Single transaction: SELECT previous items (for sanity comparison by caller) →
- * DELETE existing items for this media → INSERT new items.
+ * Single transaction: SELECT previous items (locked) → DELETE existing items for
+ * this media → INSERT new items, carrying the moderator's decisions over.
  *
  * Search results will never observe a partial state because the whole replacement
  * is one transaction and the GIN trigram index is consistent on commit.
+ *
+ * The moderator's «Скрыть» survives the re-read («повторить распознавание»,
+ * scripts/reocr-menus): a new row with the same normalized name inherits
+ * is_hidden_by_admin and hidden_reason (collectModerationDecisions). The
+ * previous rows are read FOR UPDATE, so a «Скрыть» clicked while the re-read
+ * is being written either lands before it — and is carried — or waits for it
+ * and finds its row gone, instead of being lost silently.
  *
  * @param {Object} params
  * @param {string} params.establishmentId - UUID
  * @param {string} params.mediaId - UUID
  * @param {Object[]} params.newItems - New items to insert
- * @returns {Promise<{previousItems: Object[], newItems: Object[]}>}
- *          previousItems for sanity check delta comparison; newItems with generated IDs
+ * @returns {Promise<{previousItems: Object[], newItems: Object[], carriedHidden: number}>}
+ *          previousItems for sanity check delta comparison; newItems with generated IDs;
+ *          carriedHidden — new rows that inherited a «Скрыть»
  */
 export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) => {
   const client = await pool.connect();
@@ -253,7 +326,7 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
     await client.query('BEGIN');
 
     const prevResult = await client.query(
-      'SELECT * FROM menu_items WHERE media_id = $1 ORDER BY position ASC',
+      'SELECT * FROM menu_items WHERE media_id = $1 ORDER BY position ASC FOR UPDATE',
       [mediaId],
     );
     const previousItems = prevResult.rows;
@@ -261,13 +334,27 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
     await client.query('DELETE FROM menu_items WHERE media_id = $1', [mediaId]);
 
     let insertedItems = [];
+    let carriedHidden = 0;
     if (newItems && newItems.length > 0) {
-      const { valuesClause, params } = buildBulkInsertFragment(newItems, establishmentId, mediaId);
+      const decisions = collectModerationDecisions(previousItems);
+      const itemsWithDecisions = newItems.map((item) => {
+        const decision = inheritedDecision(item, decisions);
+        if (decision.hidden) carriedHidden += 1;
+        return { ...item, is_hidden_by_admin: decision.hidden, hidden_reason: decision.reason };
+      });
+
+      const { valuesClause, params } = buildBulkInsertFragment(
+        itemsWithDecisions,
+        establishmentId,
+        mediaId,
+        { withModeration: true },
+      );
 
       const insertQuery = `
         INSERT INTO menu_items (
           establishment_id, media_id, item_name, price_byn,
-          category_raw, confidence, sanity_flag, position
+          category_raw, confidence, sanity_flag, position,
+          is_hidden_by_admin, hidden_reason
         )
         VALUES ${valuesClause}
         RETURNING *
@@ -284,11 +371,13 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
       establishmentId,
       previousCount: previousItems.length,
       newCount: insertedItems.length,
+      carriedHidden,
     });
 
     return {
       previousItems,
       newItems: insertedItems,
+      carriedHidden,
     };
   } catch (error) {
     await client.query('ROLLBACK');
