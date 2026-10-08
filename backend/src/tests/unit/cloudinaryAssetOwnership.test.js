@@ -18,7 +18,7 @@
 
 import { jest } from '@jest/globals';
 import { v2 as cloudinarySdk } from 'cloudinary';
-import { deleteImage } from '../../config/cloudinary.js';
+import { assetHolder, deleteImage } from '../../config/cloudinary.js';
 import logger from '../../utils/logger.js';
 
 const OWNER = 'a3c1e2f4-5b6d-4e7f-8a9b-0c1d2e3f4a5b';
@@ -137,5 +137,27 @@ describe('deleteImage — отказ виден в логе: причина и �
     );
     // «Удалено» в лог не пишется — удаления не было.
     expect(info).not.toHaveBeenCalled();
+  });
+});
+
+describe('assetHolder — папка ассета читается из public_id: чья и какого рода', () => {
+  test.each([
+    ['аватар пользователя', `avatars/${OWNER}/k3j2h1g0f9`, { kind: 'avatars', id: OWNER }],
+    ['фото в папке карточки', `establishments/${CARD}/interior/a1b2c3d4e5`, { kind: 'establishment', id: CARD }],
+    ['PDF меню в папке карточки', `establishments/${CARD}/menu_pdf/m5n6b7v8c9`, { kind: 'establishment', id: CARD }],
+    ['загрузка партнёра', `establishments/temp/${OTHER}/interior/z9y8x7w6v5`, { kind: 'partnerUploads', id: OTHER }],
+    ['PDF из загрузок партнёра', `establishments/temp/${OTHER}/menu_pdf/p1o2i3u4y5`, { kind: 'partnerUploads', id: OTHER }],
+  ])('%s', (_label, publicId, holder) => {
+    expect(assetHolder(publicId)).toEqual(holder);
+  });
+
+  test.each([
+    ['папка temp без id партнёра', 'establishments/temp/interior/z9y8x7w6v5'],
+    ['id не UUID', 'establishments/temp/not-a-uuid/interior/z9y8x7w6v5'],
+    ['шаг назад внутри id', `establishments/temp/${OWNER}/../${OTHER}/interior/z9y8x7w6v5`],
+    ['верхняя папка вне раскладки', `private/${OWNER}/photo77`],
+    ['не строка', undefined],
+  ])('вне раскладки — null: %s', (_label, publicId) => {
+    expect(assetHolder(publicId)).toBeNull();
   });
 });

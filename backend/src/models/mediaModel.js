@@ -663,3 +663,59 @@ export const getPrimaryPhoto = async (establishmentId) => {
   }
 };
 
+
+/**
+ * Every place that still names an asset, apart from one media row that is
+ * about to go: other media rows (any card), the catalog cover of other cards
+ * (establishments.primary_image_url) and promotion images.
+ *
+ * The match is by substring of the stored links — a link carries the public_id
+ * after the transformation segments, and the three link columns of a row may
+ * differ only in those segments. A longer public_id with the same prefix
+ * matches too; the service confirms each candidate by parsing the link, so a
+ * false candidate here never destroys a file — it can only keep one.
+ *
+ * The cover of one card may be left out (`coverOfEstablishmentId`): the media
+ * service passes the row's own card when the row is its primary photo, because
+ * it resets that cover right after the row is gone. A row that is not the
+ * primary photo gets no such exemption — if the cover still shows the file
+ * (the flag was cleared by PUT is_primary:false), the cover holds it.
+ *
+ * @param {string} publicId - Cloudinary public_id of the asset
+ * @param {Object} except
+ * @param {string} except.mediaId - The media row being deleted
+ * @param {string|null} except.coverOfEstablishmentId - Card whose cover the caller resets, or null
+ * @returns {Promise<Array<{source: string, id: string, urls: string[]}>>}
+ */
+export const findOtherAssetReferences = async (publicId, { mediaId, coverOfEstablishmentId = null }) => {
+  const pattern = `%${publicId}%`;
+  const query = `
+    SELECT 'media' AS source, id::text AS id, ARRAY[url, thumbnail_url, preview_url] AS urls
+    FROM establishment_media
+    WHERE id <> $2
+      AND (url LIKE $1 OR thumbnail_url LIKE $1 OR preview_url LIKE $1)
+    UNION ALL
+    SELECT 'establishment_cover', id::text, ARRAY[primary_image_url]
+    FROM establishments
+    WHERE ($3::uuid IS NULL OR id <> $3::uuid) AND primary_image_url LIKE $1
+    UNION ALL
+    SELECT 'promotion', id::text, ARRAY[image_url, thumbnail_url, preview_url]
+    FROM promotions
+    WHERE image_url LIKE $1 OR thumbnail_url LIKE $1 OR preview_url LIKE $1
+  `;
+
+  try {
+    const result = await pool.query(query, [pattern, mediaId, coverOfEstablishmentId]);
+    return result.rows.map((row) => ({
+      source: row.source,
+      id: row.id,
+      urls: (row.urls || []).filter((url) => typeof url === 'string'),
+    }));
+  } catch (error) {
+    logger.error('Error looking up other references to a media asset', {
+      error: error.message,
+      mediaId,
+    });
+    throw error;
+  }
+};
