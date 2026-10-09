@@ -59,7 +59,21 @@ class AuthService {
 
   /// Logout current admin
   ///
-  /// Clears stored tokens and notifies backend to invalidate refresh token
+  /// Clears stored tokens and notifies backend to invalidate refresh token.
+  ///
+  /// Ключ тела — `refreshToken`, как у обновления токена и у сайта: под
+  /// `refresh_token` сервер отвечал 422, и сеанс на нём жил до своего срока
+  /// (09.10.2026).
+  ///
+  /// Выход с истёкшим access-токеном: сервер отвечает 401, транспорт
+  /// обновляет пару и повторяет выход с ТЕМ ЖЕ телом — со старым токеном,
+  /// который ротация уже погасила. Сервер отвечает 200, а преемник остаётся
+  /// живым. Поэтому после выхода токен перечитывается: сменился — гасится и
+  /// тот, что сессия держит сейчас. Перечитывается и тогда, когда выход
+  /// отказал: обновление могло пройти, а повтор выхода — оборваться. Повтор
+  /// один: второй выход идёт уже со свежим access-токеном и ротации не
+  /// вызывает. Сессия мертва (обновление отвергнуто) — транспорт уже стёр
+  /// токены, и второго выхода нет.
   Future<void> logout() async {
     try {
       final refreshToken = await _storage.read(key: 'refresh_token');
@@ -67,10 +81,15 @@ class AuthService {
       // Best-effort backend notification
       if (refreshToken != null) {
         try {
-          await _apiClient.post(
-            '/api/v1/auth/logout',
-            data: {'refresh_token': refreshToken},
-          );
+          await _postLogout(refreshToken);
+        } catch (e) {
+          // Ignore logout endpoint errors
+        }
+        try {
+          final current = await _storage.read(key: 'refresh_token');
+          if (current != null && current != refreshToken) {
+            await _postLogout(current);
+          }
         } catch (e) {
           // Ignore logout endpoint errors
         }
@@ -82,6 +101,11 @@ class AuthService {
       rethrow;
     }
   }
+
+  Future<void> _postLogout(String refreshToken) => _apiClient.post(
+        '/api/v1/auth/logout',
+        data: {'refreshToken': refreshToken},
+      );
 
   // ============================================================================
   // Token Management

@@ -236,12 +236,30 @@ export const validateRefresh = [
 ];
 
 /**
+ * Accepts the logout token under the legacy `refresh_token` key.
+ *
+ * Mobile and admin-web sent it that way until 09.10.2026 and got 422, so the
+ * session outlived the logout. The clients now send `refreshToken`; the
+ * mobile builds already installed are not rebuilt until launch, and without
+ * this their logout would never reach the token. `refreshToken` wins when
+ * both are present; the value is validated below exactly as before.
+ */
+const acceptLegacyRefreshTokenKey = (req, res, next) => {
+  if (req.body && req.body.refreshToken === undefined && req.body.refresh_token !== undefined) {
+    req.body.refreshToken = req.body.refresh_token;
+  }
+  next();
+};
+
+/**
  * Logout validation rules
  * 
  * Validates logout request. Similar to refresh, we just check that the token
  * is provided and has reasonable format.
  */
 export const validateLogout = [
+  acceptLegacyRefreshTokenKey,
+
   // Refresh token validation
   body('refreshToken')
     .notEmpty()
