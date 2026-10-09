@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/notification_preferences_provider.dart';
+import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
 
 /// Screen for managing push notification preferences.
 ///
@@ -60,6 +61,10 @@ class _NotificationPreferencesScreenState
                 ),
               ),
               const SizedBox(height: 8),
+
+              // Доходят ли push до этого телефона — отдельно от
+              // переключателей: те хранятся на сервере в аккаунте.
+              const _PushDeviceStatus(),
 
               // Booking notifications
               SwitchListTile(
@@ -214,6 +219,121 @@ class _NotificationPreferencesScreenState
       );
     } else {
       prefs.updatePreferences(booking: true);
+    }
+  }
+}
+
+/// Строка о том, доходят ли push до ЭТОГО телефона.
+///
+/// Переключатели ниже — настройки аккаунта на сервере. Дойдёт ли push до
+/// телефона, они не говорят. До 08.10.2026 сбой регистрации адреса телефона
+/// был виден только в отладочном журнале. С июля ни один телефон не присылал
+/// серверу адрес, а снаружи это не было видно.
+class _PushDeviceStatus extends StatelessWidget {
+  const _PushDeviceStatus();
+
+  @override
+  Widget build(BuildContext context) {
+    final pushService = PushNotificationService();
+    return ValueListenableBuilder<PushStatus>(
+      valueListenable: pushService.status,
+      builder: (context, status, _) {
+        final text = _textFor(status);
+        if (text == null) return const SizedBox.shrink();
+        final failed = status.state == PushState.failed;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  _iconFor(status.state),
+                  size: 18,
+                  color: _colorFor(status.state),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: failed ? AppTheme.textPrimary : AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+              if (failed)
+                TextButton(
+                  onPressed: pushService.registerDevice,
+                  child: const Text('Повторить'),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static String? _textFor(PushStatus status) {
+    switch (status.state) {
+      case PushState.idle:
+        return null;
+      case PushState.registering:
+        return 'Подключаем push-уведомления на этом телефоне…';
+      case PushState.registered:
+        return 'На этом телефоне push-уведомления включены.';
+      case PushState.denied:
+        return 'На этом телефоне push-уведомления запрещены в настройках '
+            'телефона. Разрешите их там, чтобы получать уведомления.';
+      case PushState.failed:
+        return 'На этом телефоне push-уведомления не работают: '
+            '${_reasonFor(status.problem)}';
+    }
+  }
+
+  static String _reasonFor(PushProblem? problem) {
+    switch (problem) {
+      case PushProblem.firebaseUnavailable:
+        return 'сервис уведомлений не запустился.';
+      case PushProblem.appleAddressMissing:
+        return 'Apple не выдал телефону адрес для уведомлений.';
+      case PushProblem.addressUnavailable:
+        return 'не удалось получить адрес телефона у сервиса уведомлений. '
+            'Проверьте интернет.';
+      case PushProblem.serverRejected:
+        return 'сервер не принял адрес телефона.';
+      case null:
+        return 'причина неизвестна.';
+    }
+  }
+
+  static IconData _iconFor(PushState state) {
+    switch (state) {
+      case PushState.registered:
+        return Icons.check_circle_outline;
+      case PushState.denied:
+        return Icons.notifications_off_outlined;
+      case PushState.failed:
+        return Icons.error_outline;
+      case PushState.idle:
+      case PushState.registering:
+        return Icons.sync;
+    }
+  }
+
+  static Color _colorFor(PushState state) {
+    switch (state) {
+      case PushState.registered:
+        return AppTheme.statusGreen;
+      case PushState.denied:
+        return AppTheme.primaryOrange;
+      case PushState.failed:
+        return AppTheme.errorRed;
+      case PushState.idle:
+      case PushState.registering:
+        return AppTheme.textSecondary;
     }
   }
 }
