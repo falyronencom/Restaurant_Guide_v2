@@ -14,6 +14,7 @@ import { jest } from '@jest/globals';
 const mockPool = { query: jest.fn() };
 
 jest.unstable_mockModule('../../config/database.js', () => ({
+  getClient: jest.fn(),
   pool: mockPool,
   default: mockPool,
 }));
