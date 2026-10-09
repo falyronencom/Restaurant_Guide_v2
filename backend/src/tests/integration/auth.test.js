@@ -314,6 +314,54 @@ describe('POST /api/v1/auth/logout', () => {
 
     expect(refreshResponse.body.error.code).toBe('TOKEN_REUSE_DETECTED');
   });
+
+  // Mobile and admin-web sent the logout token as `refresh_token` until
+  // 09.10.2026 and got 422, so the session outlived the logout. The clients
+  // now send `refreshToken`; the builds already installed (TestFlight, APKs)
+  // are not rebuilt until launch, so the server takes the old key too.
+  test('accepts the legacy refresh_token key and burns that token', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const { accessToken, refreshToken } = body.data;
+
+    await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refresh_token: refreshToken })
+      .expect(200);
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE token = $1', [
+      refreshToken,
+    ]);
+    expect(rows[0].used_at).not.toBeNull();
+  });
+
+  test('refreshToken wins when both keys are sent', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const { accessToken, refreshToken } = body.data;
+
+    await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refreshToken, refresh_token: 'x'.repeat(64) })
+      .expect(200);
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE token = $1', [
+      refreshToken,
+    ]);
+    expect(rows[0].used_at).not.toBeNull();
+  });
+
+  test('without either key the request is still a validation error', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+
+    const response = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${body.data.accessToken}`)
+      .send({})
+      .expect(422);
+
+    expectValidationError(response, 'refreshToken');
+  });
 });
 
 describe('GET /api/v1/auth/me', () => {
