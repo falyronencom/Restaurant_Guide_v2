@@ -12,9 +12,16 @@ class BookingSettingsProvider with ChangeNotifier {
     AccountScope.register(resetAccountScope);
   }
 
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   /// Clears the partner's booking settings; registered in [AccountScope],
   /// runs on logout / account switch.
   void resetAccountScope() {
+    _generation++;
     _settings = null;
     _isLoading = false;
     _error = null;
@@ -38,9 +45,11 @@ class BookingSettingsProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient
           .get('/api/v1/partner/booking-settings/$establishmentId');
+      if (generation != _generation) return; // account switched mid-flight
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = (response.data as Map<String, dynamic>)['data'];
@@ -49,10 +58,13 @@ class BookingSettingsProvider with ChangeNotifier {
             : null;
       }
     } catch (e) {
+      if (generation != _generation) return;
       _error = 'Ошибка загрузки настроек бронирования';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -65,11 +77,13 @@ class BookingSettingsProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient.post(
         '/api/v1/partner/booking-settings/$establishmentId/activate',
         data: settingsData,
       );
+      if (generation != _generation) return false; // account switched mid-flight
 
       if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
         final data = (response.data as Map<String, dynamic>)['data'];
@@ -85,6 +99,7 @@ class BookingSettingsProvider with ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
+      if (generation != _generation) return false;
       _error = 'Ошибка активации бронирования';
       _isLoading = false;
       notifyListeners();
@@ -101,11 +116,13 @@ class BookingSettingsProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient.put(
         '/api/v1/partner/booking-settings/$establishmentId',
         data: settingsData,
       );
+      if (generation != _generation) return false; // account switched mid-flight
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = (response.data as Map<String, dynamic>)['data'];
@@ -121,6 +138,7 @@ class BookingSettingsProvider with ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
+      if (generation != _generation) return false;
       _error = 'Ошибка обновления настроек';
       _isLoading = false;
       notifyListeners();
@@ -134,10 +152,12 @@ class BookingSettingsProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient.post(
         '/api/v1/partner/booking-settings/$establishmentId/deactivate',
       );
+      if (generation != _generation) return false; // account switched mid-flight
 
       if (response.statusCode == 200) {
         _settings = null;
@@ -150,6 +170,7 @@ class BookingSettingsProvider with ChangeNotifier {
       notifyListeners();
       return false;
     } catch (e) {
+      if (generation != _generation) return false;
       _error = 'Ошибка отключения бронирования';
       _isLoading = false;
       notifyListeners();
