@@ -131,25 +131,28 @@ class AdminReviewsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle visibility of the selected review (optimistic with rollback)
-  Future<bool> toggleVisibility() async {
+  /// Set visibility of the selected review to [visible] (optimistic with
+  /// rollback). The target is explicit — the button that was pressed says
+  /// «скрыть» or «показать» — and is sent to the server as is, so a repeat of
+  /// the same request (the client retries 5xx) asks for the same state.
+  Future<bool> setVisibility({required bool visible}) async {
     if (_selectedId == null) return false;
 
     _isSubmitting = true;
     _submitError = null;
 
-    // Optimistic update: toggle immediately for instant UI feedback
+    // Optimistic update: show the target state immediately for instant UI feedback
     final index = _reviews.indexWhere((r) => r.id == _selectedId);
     final bool prevVisible = index >= 0 ? _reviews[index].isVisible : true;
     if (index >= 0) {
-      final updated = _reviews[index].copyWith(isVisible: !prevVisible);
+      final updated = _reviews[index].copyWith(isVisible: visible);
       _reviews[index] = updated;
       _selectedReview = updated;
     }
     notifyListeners();
 
     try {
-      await _service.toggleVisibility(_selectedId!);
+      await _service.setVisibility(_selectedId!, isVisible: visible);
       _isSubmitting = false;
       notifyListeners();
       // Оптимистичная правка меняет один флаг, а действие меняет больше:

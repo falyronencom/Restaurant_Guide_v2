@@ -60,9 +60,17 @@ class AdminReviewService {
     );
   }
 
-  /// POST /api/v1/admin/reviews/:id/toggle-visibility
-  Future<void> toggleVisibility(String id) async {
-    await _apiClient.post('/api/v1/admin/reviews/$id/toggle-visibility');
+  /// POST /api/v1/admin/reviews/:id/visibility — `{ is_visible }`.
+  ///
+  /// Состояние задаётся явно, а не переключается: клиент повторяет запрос при
+  /// 5xx (api_client.dart), и повтор «скрыть» обязан снова означать «скрыть» —
+  /// переключение, исполненное с первого раза при потерянном ответе, повтор
+  /// возвращал бы назад (пакет 1 находок критиков, пункт 2 — Codex C-10).
+  Future<void> setVisibility(String id, {required bool isVisible}) async {
+    await _apiClient.post(
+      '/api/v1/admin/reviews/$id/visibility',
+      data: <String, dynamic>{'is_visible': isVisible},
+    );
   }
 
   /// POST /api/v1/admin/reviews/:id/delete

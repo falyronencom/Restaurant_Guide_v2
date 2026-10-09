@@ -213,37 +213,47 @@ export const getReviewStats = async (filters = {}) => {
 };
 
 /**
- * Toggle review visibility (is_visible = NOT is_visible)
+ * Set review visibility to an explicit value — never a toggle.
+ *
+ * The panel's client repeats any request answered with a 5xx (api_client.dart);
+ * a toggle executed once and answered late would be undone by its own repeat
+ * (critics' pack 1, point 2 — Codex C-10). The write is guarded by the value
+ * the decision was read on (`fromVisible`): a concurrent change leaves the row
+ * untouched and the caller re-reads.
  *
  * @param {string} reviewId - UUID of the review
- * @returns {Promise<Object|null>} Updated review { id, is_visible, establishment_id } or null if not found
+ * @param {boolean} isVisible - The state the moderator asked for
+ * @param {boolean} fromVisible - The state the decision was made on
+ * @returns {Promise<Object|null>} Updated review { id, is_visible, establishment_id },
+ *   or null when no row matched (not found, deleted, or changed meanwhile)
  */
-export const toggleReviewVisibility = async (reviewId) => {
+export const setReviewVisibility = async (reviewId, isVisible, fromVisible) => {
   const query = `
     UPDATE reviews
     SET
-      is_visible = NOT is_visible,
+      is_visible = $2,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     AND is_deleted = false
+    AND is_visible IS NOT DISTINCT FROM $3
     RETURNING id, is_visible, establishment_id
   `;
 
   try {
-    const result = await pool.query(query, [reviewId]);
+    const result = await pool.query(query, [reviewId, isVisible, fromVisible]);
 
     if (result.rows.length === 0) {
       return null;
     }
 
-    logger.info('Review visibility toggled', {
+    logger.info('Review visibility set', {
       reviewId,
-      newVisibility: result.rows[0].is_visible,
+      isVisible: result.rows[0].is_visible,
     });
 
     return result.rows[0];
   } catch (error) {
-    logger.error('Error toggling review visibility', {
+    logger.error('Error setting review visibility', {
       error: error.message,
       reviewId,
     });

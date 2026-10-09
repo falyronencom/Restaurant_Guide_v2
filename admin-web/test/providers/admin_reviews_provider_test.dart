@@ -16,6 +16,7 @@ import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
 class _FakeAdminReviewService implements AdminReviewService {
   final List<int> listCalls = <int>[];
   int toggleCalls = 0;
+  final List<bool> visibilityTargets = <bool>[];
   int deleteCalls = 0;
   String? lastDeleteReason;
 
@@ -68,8 +69,9 @@ class _FakeAdminReviewService implements AdminReviewService {
   }
 
   @override
-  Future<void> toggleVisibility(String id) async {
+  Future<void> setVisibility(String id, {required bool isVisible}) async {
     toggleCalls++;
+    visibilityTargets.add(isVisible);
     final failure = failActionWith;
     if (failure != null) throw failure;
   }
@@ -168,10 +170,11 @@ void main() {
         ]
         ..hidden = 1;
 
-      final ok = await provider.toggleVisibility();
+      final ok = await provider.setVisibility(visible: false);
 
       expect(ok, isTrue);
       expect(fake.toggleCalls, 1);
+      expect(fake.visibilityTargets, <bool>[false]);
       expect(fake.listCalls, <int>[1, 1]);
       expect(provider.hiddenCount, 1);
       // Выбранный отзыв переопределён по свежему списку: `selectReview` на тот
@@ -197,12 +200,32 @@ void main() {
       expect(provider.selectedReview?.establishmentAverageRating, 5.0);
     });
 
+    test('цель явная: повтор того же действия просит то же состояние', () async {
+      // Повтор «скрыть» после уже скрытого (оптимистично) отзыва — всё равно
+      // «скрыть», а не переключение назад: именно так клиент повторяет
+      // запрос при 5xx (пакет 1 находок критиков, пункт 2 — Codex C-10).
+      await provider.loadReviews();
+      provider.selectReview('r1');
+
+      await provider.setVisibility(visible: false);
+      // Выборка после первого действия — скрытый отзыв (а не след
+      // оптимистичной правки в общем списке фейка): второе действие
+      // принимает решение на уже скрытом.
+      fake.reviews = <AdminReviewItem>[
+        _review(isVisible: false, establishmentAverageRating: 4.4),
+      ];
+      await provider.setVisibility(visible: false);
+
+      expect(fake.visibilityTargets, <bool>[false, false]);
+      expect(provider.selectedReview?.isVisible, isFalse);
+    });
+
     test('неудача действия откатывает и не перечитывает', () async {
       await provider.loadReviews();
       provider.selectReview('r1');
       fake.failActionWith = Exception('403');
 
-      final ok = await provider.toggleVisibility();
+      final ok = await provider.setVisibility(visible: false);
 
       expect(ok, isFalse);
       // Перечитка после провала подменила бы сообщение об ошибке молчаливым
