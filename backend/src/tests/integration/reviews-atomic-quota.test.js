@@ -26,7 +26,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query, countRecords } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
-import redisClient, { connectRedis, deleteKey, getCounter, setWithExpiry } from '../../config/redis.js';
+import redisClient, { connectRedis, deleteKey, getCounter, getTTL, setWithExpiry } from '../../config/redis.js';
 import { createReview } from '../../services/reviewService.js';
 
 const CONTENT = 'Достаточно длинный и содержательный отзыв длиной более двадцати символов.';
@@ -112,6 +112,23 @@ describe('квота отзывов держится при параллельн
       .rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_REVIEW' });
 
     expect(await getCounter(quotaKey(user.id))).toBe(1);
+  });
+
+  test('отказанная попытка не продлевает окно квоты', async () => {
+    // Окно отсчитывается от первого отзыва дня: у ключа осталось 100 секунд,
+    // и одиннадцатая попытка не должна вернуть ему сутки (ревью 09.10.2026).
+    await setWithExpiry(quotaKey(user.id), '10', 100);
+
+    await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId: await newEstablishment(), rating: 5, content: CONTENT })
+      .expect(429);
+
+    const ttl = await getTTL(quotaKey(user.id));
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(100);
+    expect(await getCounter(quotaKey(user.id))).toBe(10);
   });
 
   test('одиннадцатый отзыв отвергается, счётчик не растёт выше десяти', async () => {
