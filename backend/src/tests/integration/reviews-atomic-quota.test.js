@@ -148,6 +148,7 @@ describe('отзыв и пересчёт рейтинга записываютс
         RETURN NEW;
       END;
       $$`);
+    await query('DROP TRIGGER IF EXISTS test_fail_service_recalc ON establishments');
     await query(`
       CREATE TRIGGER test_fail_service_recalc BEFORE UPDATE ON establishments
       FOR EACH ROW EXECUTE FUNCTION test_fail_service_recalc()`);

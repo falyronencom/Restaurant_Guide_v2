@@ -16,6 +16,7 @@ import { jest } from '@jest/globals';
 // its import graph bind connectRedis/disconnectRedis and the cache helpers,
 // and the limiter needs deterministic counters (no live Redis in unit tests).
 const incrementWithExpiry = jest.fn();
+ decrement: jest.fn(),
 const getTTL = jest.fn();
 
 jest.unstable_mockModule('../../config/redis.js', () => ({
