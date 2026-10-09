@@ -263,6 +263,40 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
 };
 
 /**
+ * Decrement a counter — the way to give back a slot reserved with
+ * incrementWithExpiry when the guarded operation did not happen (the review
+ * quota: reserve first, create, give back on failure — critics' pack 1,
+ * point 5). A counter that would go below zero is removed instead: the key
+ * may have expired between the reservation and the return.
+ *
+ * Same stance as the other helpers: Redis unavailable means «skip», never
+ * «wait» or «throw».
+ *
+ * @param {string} key - Redis key for the counter
+ * @returns {Promise<number>} Counter value after the decrement (0 when skipped)
+ */
+export const decrement = async (key) => {
+  try {
+    if (!redisClient.isReady) {
+      logger.warn('Redis client not ready, skipping decrement', { key });
+      return 0;
+    }
+    const value = await withRedisDeadline(redisClient.decr(key));
+    if (value < 0) {
+      await withRedisDeadline(redisClient.del(key));
+      return 0;
+    }
+    return value;
+  } catch (error) {
+    logger.error('Redis decrement failed', {
+      error: error.message,
+      key,
+    });
+    return 0;
+  }
+};
+
+/**
  * Get current value of a counter.
  * Returns null if key doesn't exist.
  * Returns 0 if Redis is not available (e.g., in test environment).
