@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
@@ -328,24 +331,101 @@ class AuthService {
       // Open browser for authentication and wait for redirect
       final resultUrl = await _launchYandexOAuth(authUrl, redirectUri);
 
-      // Extract access token from redirect URL fragment
-      // Yandex returns: redirect_uri#access_token=TOKEN&token_type=bearer&expires_in=...
-      final fragment = Uri.parse(resultUrl.replaceFirst('#', '?')).queryParameters;
-      final accessToken = fragment['access_token'];
-
-      if (accessToken == null || accessToken.isEmpty) {
-        throw Exception('Failed to obtain Yandex access token');
-      }
-
-      debugPrint('AuthService: Yandex OAuth successful, sending to backend');
-
-      // Send token to our backend
-      return await _authenticateWithOAuth(
-        provider: 'yandex',
-        token: accessToken,
-      );
+      return await completeYandexSignIn(resultUrl);
     } on Exception {
       rethrow;
+    }
+  }
+
+  /// Вторая половина входа через Яндекс — после возврата из браузера.
+  ///
+  /// Отдельным методом ради тестов: ключ клиента Яндекса вшивается при сборке
+  /// (`--dart-define`), в тестах его нет, и [loginWithYandex] останавливается
+  /// на «не настроен» раньше браузера.
+  @visibleForTesting
+  Future<AuthResponse> completeYandexSignIn(String resultUrl) async {
+    // Extract access token from redirect URL fragment
+    // Yandex returns: redirect_uri#access_token=TOKEN&token_type=bearer&expires_in=...
+    final fragment = Uri.parse(resultUrl.replaceFirst('#', '?')).queryParameters;
+    final accessToken = fragment['access_token'];
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('Failed to obtain Yandex access token');
+    }
+
+    debugPrint('AuthService: Yandex OAuth successful, sending to backend');
+
+    await _untilOnScreen();
+
+    return _sendYandexToken(accessToken);
+  }
+
+  /// Паузы перед тихими повторами в [_sendYandexToken] — две попытки сверх
+  /// первой, около трёх секунд в сумме.
+  static const List<Duration> _yandexRetryDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
+
+  /// Отправляет ответ Яндекса на сервер; на Android — с двумя тихими
+  /// повторами.
+  ///
+  /// Повторяется только отказ соединения (`connectionError`: адрес сервера
+  /// не нашёлся, соединение не установилось). Он быстрый и бывает в первые
+  /// мгновения после возврата из браузера, пока Android ещё не открыл
+  /// приложению сеть. Таймаут не повторяется: каждый длится до 30 с, и
+  /// человек ждал бы полторы минуты. Ответ сервера не повторяется тоже: 4xx —
+  /// отказ по существу, 5xx уже повторяет транспорт. Не помогли и повторы —
+  /// отказ уходит наверх, и провайдер говорит человеку, что делать.
+  Future<AuthResponse> _sendYandexToken(String accessToken) async {
+    final delays = defaultTargetPlatform == TargetPlatform.android
+        ? _yandexRetryDelays
+        : const <Duration>[];
+    for (var attempt = 0;; attempt++) {
+      try {
+        return await _authenticateWithOAuth(
+          provider: 'yandex',
+          token: accessToken,
+        );
+      } on DioException catch (e) {
+        if (e.type != DioExceptionType.connectionError ||
+            attempt >= delays.length) {
+          rethrow;
+        }
+        debugPrint('AuthService: no connection, Yandex retry ${attempt + 1}');
+        await Future<void>.delayed(delays[attempt]);
+      }
+    }
+  }
+
+  /// Предел ожидания в [_untilOnScreen].
+  static const Duration _onScreenWait = Duration(minutes: 1);
+
+  /// Ждёт, пока приложение снова окажется на экране, — только на Android.
+  ///
+  /// Ответ Яндекса приходит, когда поверх приложения ещё браузер. При
+  /// включённом энергосбережении Android закрывает сеть приложениям, которых
+  /// нет на экране (`dumpsys netpolicy`: `blocked=BATTERY_SAVER`), и запрос,
+  /// отправленный сразу, трижды падал `Failed host lookup` (A72, 08.10.2026).
+  /// Признак «на экране» — `resumed`, тот же, по которому плагин входа
+  /// отменяет незавершённые входы.
+  ///
+  /// iPhone не ждёт: окно входа Apple закрывается само, а сеть приложению на
+  /// экране iOS не закрывает. Ожидание ограничено [_onScreenWait]: если
+  /// признак так и не придёт, запрос уйдёт, как уходил до этой правки.
+  Future<void> _untilOnScreen() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    final binding = WidgetsBinding.instance;
+    final state = binding.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) return;
+
+    debugPrint('AuthService: waiting for the app to be on screen ($state)');
+    final waiter = _ResumeWaiter();
+    binding.addObserver(waiter);
+    try {
+      await waiter.resumed.timeout(_onScreenWait, onTimeout: () {});
+    } finally {
+      binding.removeObserver(waiter);
     }
   }
 
@@ -630,5 +710,22 @@ class AuthService {
   }) async {
     await _storage.write(key: 'access_token', value: accessToken);
     await _storage.write(key: 'refresh_token', value: refreshToken);
+  }
+}
+
+/// Ловит возврат приложения на экран для [AuthService._untilOnScreen].
+///
+/// Простой наблюдатель, как у самого плагина входа: нужен только факт
+/// `resumed`, без разбора, через какие состояния приложение к нему пришло.
+class _ResumeWaiter with WidgetsBindingObserver {
+  final Completer<void> _resumed = Completer<void>();
+
+  Future<void> get resumed => _resumed.future;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_resumed.isCompleted) {
+      _resumed.complete();
+    }
   }
 }

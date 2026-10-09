@@ -41,10 +41,18 @@
             android:name="com.yandex.android.mapkit.MAPKIT_API_KEY"
             android:value="${YANDEX_MAPKIT_API_KEY}" />
 
-        <!-- Yandex OAuth callback activity for flutter_web_auth_2 -->
+        <!-- Возврат из браузера после входа через Яндекс (flutter_web_auth_2).
+             Свой экран вместо CallbackActivity плагина: с taskAffinity=""
+             у MainActivity тот оставлял поверх приложения вкладку браузера
+             (см. OAuthCallbackActivity.kt). CallbackActivity плагина рядом
+             НЕ объявлять: два обработчика одной схемы — и Android спросит
+             человека, чем открыть ссылку. Прозрачная тема — без вспышки
+             пустого окна между браузером и приложением. -->
         <activity
-            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
-            android:exported="true">
+            android:name=".OAuthCallbackActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter android:label="flutter_web_auth_2">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

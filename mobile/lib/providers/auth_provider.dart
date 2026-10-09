@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
@@ -487,11 +488,35 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
       return true;
     } catch (e) {
-      _setError(_extractErrorMessage(e));
+      _setError(_yandexErrorMessage(e));
       _status = AuthenticationStatus.unauthenticated;
       _setLoading(false);
       return false;
     }
+  }
+
+  /// Текст отказа, когда ответ Яндекса так и не дошёл до сервера.
+  static const String yandexNoConnectionMessage =
+      'Нет связи с сервером. Проверьте интернет и нажмите '
+      '«Продолжить с Яндекс» ещё раз.';
+
+  /// Текст отказа во входе через Яндекс.
+  ///
+  /// Отказ соединения приходит сюда на Android уже после тихих повторов
+  /// (`AuthService.completeYandexSignIn`), на iPhone — сразу; в обоих случаях
+  /// текст говорит, что делать: повтором служит та же кнопка. Общая таблица [_extractErrorMessage] такой
+  /// отказ не узнаёт — она ищет «Network» и «Connection» с большой буквы, а в
+  /// `toString()` у `DioException` их нет, — и человек видел «Произошла
+  /// ошибка». Остальные отказы — по общей таблице, как раньше.
+  String _yandexErrorMessage(Object error) {
+    if (error is DioException &&
+        (error.type == DioExceptionType.connectionError ||
+            error.type == DioExceptionType.connectionTimeout ||
+            error.type == DioExceptionType.sendTimeout ||
+            error.type == DioExceptionType.receiveTimeout)) {
+      return yandexNoConnectionMessage;
+    }
+    return _extractErrorMessage(error);
   }
 
   /// Logout current user

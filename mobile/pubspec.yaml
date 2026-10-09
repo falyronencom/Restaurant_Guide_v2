@@ -20,6 +20,9 @@ dependencies:
   shared_preferences: ^2.2.2
   flutter_secure_storage: ^9.0.0
   google_sign_in: ^6.2.1
+  # Возврат из браузера на Android принимает свой экран и отдаёт ответ через
+  # внутренний `FlutterWebAuth2Plugin.callbacks` плагина — при обновлении
+  # сверить android/.../OAuthCallbackActivity.kt с CallbackActivity плагина.
   flutter_web_auth_2: ^4.0.1
   intl: ^0.20.2
   image_picker: ^1.0.7
