@@ -32,6 +32,27 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// После входа — назад к экрану, с которого открыли вход: профиль,
+  /// карточка заведения (гость вошёл, чтобы забронировать, — и вернулся к
+  /// брони). Экраны входа и регистрации по пути снимаются. Если под ними
+  /// ничего нет — это «Регистрация» первого запуска, корень стека, — на
+  /// главный экран: раньше вход возвращал гостя на «Регистрацию», а «Назад»
+  /// там закрывал приложение (Galaxy A72, 10.10.2026).
+  void _leaveAfterLogin() {
+    final navigator = Navigator.of(context);
+    var onlyAuthScreens = true;
+    navigator.popUntil((route) {
+      if (!(route.settings.name?.startsWith('/auth/') ?? false)) {
+        onlyAuthScreens = false;
+        return true;
+      }
+      return route.isFirst;
+    });
+    if (onlyAuthScreens) {
+      navigator.pushNamedAndRemoveUntil('/home', (route) => false);
+    }
+  }
+
   /// Validate email or phone number
   String? _validateEmailOrPhone(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -75,8 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (success && mounted) {
-        // Pop back to the screen that initiated login (e.g. profile tab)
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        _leaveAfterLogin();
       } else if (!success && mounted) {
         setState(() {
           _errorMessage = authProvider.errorMessage ??
@@ -109,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final success = await authProvider.loginWithGoogle();
 
       if (success && mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        _leaveAfterLogin();
       } else if (!success && mounted) {
         setState(() {
           _errorMessage =
@@ -140,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final success = await authProvider.loginWithYandex();
 
       if (success && mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        _leaveAfterLogin();
       } else if (!success && mounted) {
         setState(() {
           _errorMessage =

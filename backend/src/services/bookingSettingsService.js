@@ -64,6 +64,34 @@ export const getSettings = async (establishmentId, partnerId) => {
   return BookingSettingsModel.getByEstablishmentId(establishmentId);
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Booking terms for the guest's booking form (public read).
+ *
+ * The form used to load them from the partner route above, which answers 403
+ * to everyone but the owner — a guest got no settings, no time slots and
+ * «Заведение не работает в этот день» on every date (found 09.10.2026).
+ *
+ * Served only while booking is possible at all; otherwise 404 with the code
+ * and text createBooking uses for the same case. A malformed id gets the same
+ * 404 without a query: the route is anonymous, and a cast error would be a
+ * logged 500-class event per request.
+ *
+ * @param {string} establishmentId
+ * @returns {object} { is_enabled: true, max_guests_per_booking, max_days_ahead,
+ *   min_hours_before, confirmation_timeout_hours }
+ */
+export const getPublicTerms = async (establishmentId) => {
+  const terms = UUID_RE.test(establishmentId || '')
+    ? await BookingSettingsModel.getPublicTerms(establishmentId)
+    : null;
+  if (!terms) {
+    throw new AppError('Бронирование недоступно для этого заведения', 404, 'BOOKING_NOT_ENABLED');
+  }
+  return { is_enabled: true, ...terms };
+};
+
 /**
  * Activate booking for an establishment.
  * Creates settings row + sets establishments.booking_enabled = TRUE in one transaction.

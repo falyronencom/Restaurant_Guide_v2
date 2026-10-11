@@ -39,6 +39,7 @@ import notificationRoutes from './notificationRoutes.js';
 import partnerAnalyticsRoutes from './partnerAnalyticsRoutes.js';
 import promotionRoutes from './promotionRoutes.js';
 import bookingSettingsRoutes from './bookingSettingsRoutes.js';
+import { getPublicTerms as getPublicBookingTerms } from '../../controllers/bookingSettingsController.js';
 import partnerMenuItemRoutes from './partnerMenuItemRoutes.js';
 import { partnerBookingRouter, userBookingRouter } from './bookingRoutes.js';
 import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
@@ -181,6 +182,18 @@ router.use('/reviews', reviewRoutes);
 // Public review listings
 router.get('/establishments/:id/reviews', getEstablishmentReviews);
 router.get('/users/:id/reviews', getUserReviews);
+
+/**
+ * GET /api/v1/establishments/:id/booking-settings
+ *
+ * Booking terms for the guest's booking form: max guests, how many days ahead,
+ * how many hours before, how soon the establishment answers. Public read, no
+ * auth; 404 unless the establishment is active and its booking is switched on.
+ * Managing the settings stays on the partner routes below
+ * (/partner/booking-settings — partner role + ownership), which the guest's
+ * form used to call and got 403 from.
+ */
+router.get('/establishments/:id/booking-settings', getPublicBookingTerms);
 
 /**
  * /api/v1/favorites/*

@@ -36,6 +36,43 @@ export const getByEstablishmentId = async (establishmentId, client) => {
 };
 
 /**
+ * The booking terms a guest's form needs — only for an active establishment
+ * whose booking is switched on, the same two conditions createBooking checks
+ * (bookingService.createBooking, steps 2–3).
+ *
+ * Projection, not SELECT *: the row is served without authentication, and the
+ * columns a partner manages beyond these four (ids, timestamps, anything added
+ * later) are not the guest's business.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {object|null} { max_guests_per_booking, max_days_ahead,
+ *   min_hours_before, confirmation_timeout_hours } or null
+ */
+export const getPublicTerms = async (establishmentId) => {
+  const query = `
+    SELECT bs.max_guests_per_booking,
+           bs.max_days_ahead,
+           bs.min_hours_before,
+           bs.confirmation_timeout_hours
+      FROM booking_settings bs
+      JOIN establishments e ON e.id = bs.establishment_id
+     WHERE bs.establishment_id = $1
+       AND bs.is_enabled = TRUE
+       AND e.status = 'active'
+  `;
+  try {
+    const result = await pool.query(query, [establishmentId]);
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error getting public booking terms', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Create or update booking settings (UPSERT).
  *
  * @param {object} data - { establishmentId, maxGuestsPerBooking, confirmationTimeoutHours, maxDaysAhead, minHoursBefore }
