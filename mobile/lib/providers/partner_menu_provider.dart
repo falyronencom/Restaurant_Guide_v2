@@ -22,6 +22,10 @@ class PartnerMenuProvider with ChangeNotifier {
   String? _error;
   Timer? _pollingTimer;
 
+  /// Растёт на каждой загрузке и на каждой остановке опроса: загрузка,
+  /// пережившая остановку, видит чужой номер и опрос не включает.
+  int _pollingSession = 0;
+
   PartnerMenuProvider({PartnerMenuService? service})
       : _service = service ?? PartnerMenuService() {
     AccountScope.register(resetAccountScope);
@@ -67,7 +71,11 @@ class PartnerMenuProvider with ChangeNotifier {
       _items = [];
       _error = null;
     }
+    final session = ++_pollingSession;
     await fetchMenuItems();
+    // Экран закрыли (stopPolling) или сменили аккаунт, пока шла загрузка, —
+    // опрос не запускаем: иначе он стартовал уже после ухода и шёл в фоне.
+    if (session != _pollingSession) return;
     _startPolling();
   }
 
@@ -81,6 +89,7 @@ class PartnerMenuProvider with ChangeNotifier {
   }
 
   void stopPolling() {
+    _pollingSession++;
     _pollingTimer?.cancel();
     _pollingTimer = null;
   }

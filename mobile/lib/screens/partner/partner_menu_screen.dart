@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Partner view of parsed menu items for a single establishment.
 /// Component 8, Segment C, Block 1.
@@ -22,20 +23,24 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   static const Color _bg = AppTheme.backgroundWarm;
   static const Color _primary = AppTheme.primaryOrangeDark;
 
+  /// Ссылка берётся заранее: в dispose экран уже отцеплен от дерева, и
+  /// `context.read` там — поиск предка у неактивного элемента (в отладке —
+  /// исключение при каждом уходе с экрана).
+  late final PartnerMenuProvider _menu;
+
   @override
   void initState() {
     super.initState();
+    _menu = context.read<PartnerMenuProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context
-          .read<PartnerMenuProvider>()
-          .loadForEstablishment(widget.establishmentId);
+      _menu.loadForEstablishment(widget.establishmentId);
     });
   }
 
   @override
   void dispose() {
     // Stop polling when leaving the screen; next visit re-starts via initState.
-    context.read<PartnerMenuProvider>().stopPolling();
+    _menu.stopPolling();
     super.dispose();
   }
 
@@ -43,15 +48,10 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _bg,
-        elevation: 0,
-        foregroundColor: AppTheme.textPrimary,
-        title: const Text(
-          'Меню',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-        ),
-      ),
+      // Каноническая шапка, как у «Акций» и «Бронирований». Своя шапка с
+      // заголовком без цвета брала белый из темы (appBarTheme.titleTextStyle
+      // перекрывает foregroundColor) — «Меню» белым по светлому фону.
+      appBar: const CanonAppBar(title: 'Меню'),
       body: Consumer<PartnerMenuProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading && provider.items.isEmpty) {
