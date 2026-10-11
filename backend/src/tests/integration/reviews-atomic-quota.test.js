@@ -64,6 +64,10 @@ beforeEach(async () => {
   await deleteKey(quotaKey(user.id));
 });
 
+afterAll(async () => {
+  await clearAllData();
+});
+
 afterEach(async () => {
   if (user) await deleteKey(quotaKey(user.id));
   await query('DROP TRIGGER IF EXISTS test_fail_service_recalc ON establishments');

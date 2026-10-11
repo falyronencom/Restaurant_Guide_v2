@@ -62,6 +62,12 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+// The admin fixture carries a fixed e-mail: a suite that leaves it behind
+// breaks the next suite's beforeAll with a duplicate key.
+afterAll(async () => {
+  await clearAllData();
+});
+
 let seq = 0;
 const newPartner = async () => {
   seq += 1;
