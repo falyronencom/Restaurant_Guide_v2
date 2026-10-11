@@ -28,6 +28,7 @@ import { clearAllData, query, countRecords } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
 import redisClient, { connectRedis, deleteKey, getCounter, getTTL, setWithExpiry } from '../../config/redis.js';
 import { createReview } from '../../services/reviewService.js';
+import { secondsUntilMinskMidnight } from '../../utils/minskDay.js';
 
 const CONTENT = 'Достаточно длинный и содержательный отзыв длиной более двадцати символов.';
 const quotaKey = (userId) => `reviews:ratelimit:${userId}`;
@@ -112,6 +113,34 @@ describe('квота отзывов держится при параллельн
       .rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_REVIEW' });
 
     expect(await getCounter(quotaKey(user.id))).toBe(1);
+  });
+
+  test('окно квоты кончается в полночь Минска, а не через 24 часа', async () => {
+    // Решение Координатора 11.10.2026 (закрывает 23.09 #26): квота — 10 отзывов
+    // в календарные сутки по Минску. Срок ключа после первого отзыва дня —
+    // секунды до минской полуночи, считанные по именованному поясу.
+    const establishmentId = await newEstablishment();
+    const before = secondsUntilMinskMidnight();
+
+    await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 5, content: CONTENT })
+      .expect(201);
+
+    const ttl = await getTTL(quotaKey(user.id));
+    const after = secondsUntilMinskMidnight();
+    // Между «до» и «после» прошло не больше нескольких секунд; на границе
+    // полуночи «после» может оказаться 86400 — тогда и ttl около него.
+    expect(ttl).toBeGreaterThanOrEqual(Math.min(before, after) - 5);
+    expect(ttl).toBeLessThanOrEqual(Math.max(before, after));
+    // Ответ о квоте называет тот же срок.
+    const quota = await request(app)
+      .get('/api/v1/reviews/quota')
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(200);
+    expect(quota.body.data.quota.resetIn).toBeGreaterThanOrEqual(ttl - 5);
+    expect(quota.body.data.quota.resetIn).toBeLessThanOrEqual(Math.max(before, after));
   });
 
   test('отказанная попытка не продлевает окно квоты', async () => {

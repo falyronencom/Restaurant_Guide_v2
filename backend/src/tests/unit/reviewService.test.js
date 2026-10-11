@@ -108,7 +108,11 @@ describe('reviewService', () => {
       expect(ReviewModel.establishmentExists).toHaveBeenCalledWith('estab-123');
 
       // Verify the quota slot is reserved before anything is written
-      expect(incrementWithExpiry).toHaveBeenCalledWith('reviews:ratelimit:user-123', 86400);
+      // The window ends at Minsk midnight — a number of seconds within the day.
+      expect(incrementWithExpiry).toHaveBeenCalledWith('reviews:ratelimit:user-123', expect.any(Number));
+      const [, ttl] = incrementWithExpiry.mock.calls[0];
+      expect(ttl).toBeGreaterThanOrEqual(1);
+      expect(ttl).toBeLessThanOrEqual(86400);
       expect(incrementWithExpiry.mock.invocationCallOrder[0])
         .toBeLessThan(ReviewModel.createReview.mock.invocationCallOrder[0]);
 
@@ -263,7 +267,7 @@ describe('reviewService', () => {
 
       expect(incrementWithExpiry).toHaveBeenCalledWith(
         'reviews:ratelimit:user-123',
-        86400 // 24 hours
+        expect.any(Number) // seconds until Minsk midnight
       );
     });
 
@@ -652,12 +656,13 @@ describe('reviewService', () => {
 
       const result = await getUserReviewQuota('user-1');
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         limit: 10,
         used: 4,
         remaining: 6,
-        resetIn: 86400,
       });
+      expect(result.resetIn).toBeGreaterThanOrEqual(1);
+      expect(result.resetIn).toBeLessThanOrEqual(86400);
       expect(getCounter).toHaveBeenCalledWith('reviews:ratelimit:user-1');
     });
   });

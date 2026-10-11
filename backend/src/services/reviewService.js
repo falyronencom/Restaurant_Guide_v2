@@ -15,11 +15,14 @@ import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { incrementWithExpiry, decrement, getCounter } from '../config/redis.js';
+import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 
 // Rate limiting configuration for review creation
-// Directive specifies 10 reviews per day per user as reasonable limit
+// Directive specifies 10 reviews per day per user as reasonable limit. The day
+// is Minsk's calendar day: the counter is born with the first reservation and
+// expires at Minsk midnight (decision of the Coordinator 11.10.2026, closing
+// 23.09 #26) — secondsUntilMinskMidnight, never a fixed 24 hours.
 const RATE_LIMIT_MAX_REVIEWS = 10;
-const RATE_LIMIT_WINDOW_SECONDS = 86400; // 24 hours
 
 /**
  * Create a new review for an establishment
@@ -68,7 +71,7 @@ export const createReview = async (reviewData) => {
   // attempt that does not end in a review is given back (decrement). Without
   // Redis the counter answers 1 and the quota is skipped — decision 23.09 #22.
   const rateLimitKey = `reviews:ratelimit:${user_id}`;
-  const reserved = await incrementWithExpiry(rateLimitKey, RATE_LIMIT_WINDOW_SECONDS);
+  const reserved = await incrementWithExpiry(rateLimitKey, secondsUntilMinskMidnight());
 
   if (reserved > RATE_LIMIT_MAX_REVIEWS) {
     await decrement(rateLimitKey);
@@ -579,7 +582,7 @@ export const getUserReviewQuota = async (userId) => {
     limit: RATE_LIMIT_MAX_REVIEWS,
     used: currentCount,
     remaining: Math.max(0, RATE_LIMIT_MAX_REVIEWS - currentCount),
-    resetIn: RATE_LIMIT_WINDOW_SECONDS, // Seconds until counter resets
+    resetIn: secondsUntilMinskMidnight(), // Seconds until Minsk midnight — the counter's reset
   };
 };
 
