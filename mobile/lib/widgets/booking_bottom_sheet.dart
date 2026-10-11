@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/booking_settings.dart';
-import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/utils/booking_slots.dart';
 
 /// Modal bottom sheet for creating a booking.
 /// Fetches settings on open, generates time slots from working_hours.
@@ -38,16 +38,6 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   bool _settingsLoaded = false;
   BookingSettings? _settings;
 
-  static const _dayKeys = [
-    'monday',
-    'tuesday',
-    'wednesday',
-    'thursday',
-    'friday',
-    'saturday',
-    'sunday',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -69,11 +59,14 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   }
 
   Future<void> _loadSettings() async {
-    final provider = context.read<BookingSettingsProvider>();
-    await provider.loadSettings(widget.establishment.id);
+    // Условия — с публичного адреса (BookingProvider.loadBookingTerms), не из
+    // BookingSettingsProvider: тот читает партнёрский адрес, гостю там 403.
+    final settings = await context
+        .read<BookingProvider>()
+        .loadBookingTerms(widget.establishment.id);
     if (mounted) {
       setState(() {
-        _settings = provider.settings;
+        _settings = settings;
         _settingsLoaded = true;
         // Clamp guest count to max
         if (_settings != null && _guestCount > _settings!.maxGuestsPerBooking) {
@@ -81,41 +74,6 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         }
       });
     }
-  }
-
-  List<String> _generateTimeSlots() {
-    if (_settings == null || widget.establishment.workingHours == null) {
-      return [];
-    }
-
-    final dayIndex = (_selectedDate.weekday - 1) % 7; // 0=Mon
-    final dayKey = _dayKeys[dayIndex];
-    final dayHours = Establishment.parseDayHours(
-      widget.establishment.workingHours![dayKey],
-    );
-
-    if (dayHours == null || dayHours['is_open'] == false) return [];
-
-    final openStr = dayHours['open'] as String?;
-    final closeStr = dayHours['close'] as String?;
-    if (openStr == null || closeStr == null) return [];
-
-    final openParts = openStr.split(':');
-    final closeParts = closeStr.split(':');
-    if (openParts.length != 2 || closeParts.length != 2) return [];
-
-    final openMinutes = int.parse(openParts[0]) * 60 + int.parse(openParts[1]);
-    final closeMinutes =
-        int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
-
-    final slots = <String>[];
-    for (int m = openMinutes; m <= closeMinutes - 30; m += 30) {
-      final h = (m ~/ 60).toString().padLeft(2, '0');
-      final min = (m % 60).toString().padLeft(2, '0');
-      slots.add('$h:$min');
-    }
-
-    return slots;
   }
 
   bool _isSlotDisabled(String slot) {
@@ -214,8 +172,12 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   }
 
   Widget _buildForm() {
-    final slots = _generateTimeSlots();
-    final isClosed = slots.isEmpty && _settingsLoaded;
+    final day =
+        bookingSlotsFor(widget.establishment.workingHours, _selectedDate);
+    final unavailable = _settings == null;
+    // «Не работает» — только когда день закрыт по расписанию. Прежде так
+    // называлось любое отсутствие слотов: и отказ в условиях, и полночь.
+    final cannotSubmit = unavailable || day.isClosed || day.slots.isEmpty;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -240,7 +202,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Бронирование столика', style: AppTheme.canonSheetTitle),
+              const Text('Бронирование столика',
+                  style: AppTheme.canonSheetTitle),
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child:
@@ -266,20 +229,12 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           // Time picker
           _buildLabel('Время'),
           const SizedBox(height: 8),
-          if (isClosed)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.gray100,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-              ),
-              child: const Text(
-                'Заведение не работает в этот день',
-                style: TextStyle(color: AppTheme.textDark),
-              ),
-            )
+          if (unavailable)
+            _buildNotice('Бронирование сейчас недоступно. Попробуйте позже.')
+          else if (day.isClosed)
+            _buildNotice('Заведение не работает в этот день')
           else
-            _buildTimeSelector(slots),
+            _buildTimeSelector(day.slots),
           const SizedBox(height: 16),
 
           // Guest count
@@ -353,7 +308,8 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               return SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: provider.isLoading || isClosed ? null : _submit,
+                  onPressed:
+                      provider.isLoading || cannotSubmit ? null : _submit,
                   style: AppTheme.canonCtaL(),
                   child: Text(
                     provider.isLoading ? 'Отправка...' : 'Отправить запрос',
@@ -375,6 +331,18 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildNotice(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.gray100,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Text(text, style: const TextStyle(color: AppTheme.textDark)),
     );
   }
 

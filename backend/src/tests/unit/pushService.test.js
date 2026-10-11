@@ -315,6 +315,81 @@ describe('pushService', () => {
     });
   });
 
+  // ─── sendPush — failure log ───────────────────────────────────────────
+
+  describe('sendPush — failure log', () => {
+    // An FCM token is the device's address: no log line may carry it, whole
+    // or cut. Each token starts and ends with its own marker, so a leaked
+    // prefix or suffix shows below as well as the whole string.
+    const iosToken = 'QHEADIOS-fcm-address-of-the-iphone-QTAILIOS';
+    const staleAndroidToken = 'QHEADOLD-fcm-address-of-the-old-android-QTAILOLD';
+    const androidToken = 'QHEADAND-fcm-address-of-the-android-QTAILAND';
+    const tokenParts = (token) => [token, token.slice(0, 8), token.slice(-8)];
+
+    test('logs platform and FCM error code for each failed device, never the token', async () => {
+      // console.* is not barred by lint here, so it is scanned too.
+      const consoleSpies = ['log', 'info', 'warn', 'error', 'debug'].map((method) =>
+        jest.spyOn(console, method).mockImplementation(() => {})
+      );
+      mockFindByUserId.mockResolvedValue([
+        { fcm_token: iosToken, platform: 'ios' },
+        { fcm_token: staleAndroidToken, platform: 'android' },
+        { fcm_token: androidToken, platform: 'android' },
+      ]);
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 2,
+        responses: [
+          { success: false, error: { code: 'messaging/third-party-auth-error' } },
+          { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+          { success: true },
+        ],
+      });
+      mockDeactivate.mockResolvedValue(1);
+
+      await sendPush(userId, basePayload);
+
+      // One line per failed device; the delivered one gets none.
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        1,
+        'Push failed for device',
+        expect.objectContaining({
+          userId,
+          type: 'booking_received',
+          platform: 'ios',
+          errorCode: 'messaging/third-party-auth-error',
+        })
+      );
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        2,
+        'Push failed for device',
+        expect.objectContaining({
+          platform: 'android',
+          errorCode: 'messaging/registration-token-not-registered',
+        })
+      );
+
+      // Who gets push is unchanged: only the uninstalled app's token is
+      // switched off — a missing APNs key must not switch off iPhones.
+      expect(mockDeactivate).toHaveBeenCalledTimes(1);
+      expect(mockDeactivate).toHaveBeenCalledWith(staleAndroidToken);
+
+      const logged = JSON.stringify(
+        [logger.debug, logger.info, logger.warn, logger.error, ...consoleSpies].map(
+          (fn) => fn.mock.calls
+        )
+      );
+      // Anchors: the scan sees the warn and the info payloads, so the
+      // silence below is real.
+      expect(logged).toContain('messaging/third-party-auth-error');
+      expect(logged).toContain('Deactivating stale FCM token');
+      [iosToken, staleAndroidToken, androidToken].flatMap(tokenParts).forEach((part) => {
+        expect(logged).not.toContain(part);
+      });
+    });
+  });
+
   // ─── sendPush — non-blocking error handling ───────────────────────────
 
   describe('sendPush — error handling', () => {

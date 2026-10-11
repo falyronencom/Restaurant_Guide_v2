@@ -9,7 +9,8 @@
  * 1. Query active device tokens for user
  * 2. Check notification preferences (category opt-out)
  * 3. Send via FCM multicast
- * 4. Deactivate stale tokens reported by FCM
+ * 4. Log each failed device (platform + FCM error code, never the token);
+ *    deactivate stale tokens reported by FCM
  */
 
 import * as DeviceTokenModel from '../models/deviceTokenModel.js';
@@ -161,13 +162,23 @@ export const sendPush = async (userId, payload) => {
       failureCount: response.failureCount,
     });
 
-    // 5. Handle stale tokens
+    // 5. Log failed devices, deactivate stale tokens.
+    // One line per failed device, so the platform and FCM's code tell an
+    // iPhone-only cause (no or wrong APNs key in Firebase) from an
+    // uninstalled app. The FCM token itself is never logged: it is the
+    // device's address.
     if (response.failureCount > 0) {
       const staleTokenPromises = [];
 
       response.responses.forEach((resp, index) => {
         if (!resp.success && resp.error) {
           const errorCode = resp.error.code;
+          logger.warn('Push failed for device', {
+            userId,
+            type: notificationType,
+            platform: tokens[index].platform,
+            errorCode,
+          });
           if (
             errorCode === 'messaging/registration-token-not-registered' ||
             errorCode === 'messaging/invalid-registration-token'

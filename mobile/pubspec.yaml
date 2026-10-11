@@ -37,6 +37,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Подставной Firebase для тестов регистрации push (setupFirebaseCoreMocks).
+  # Версия та же, что уже тянет firebase_core.
+  firebase_core_platform_interface: ^6.0.3
   flutter_lints: ^3.0.1
   flutter_launcher_icons: ^0.14.4
 

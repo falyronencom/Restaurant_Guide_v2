@@ -22,6 +22,10 @@ class PartnerMenuProvider with ChangeNotifier {
   String? _error;
   Timer? _pollingTimer;
 
+  /// Растёт на каждой загрузке и на каждой остановке опроса: загрузка,
+  /// пережившая остановку, видит чужой номер и опрос не включает.
+  int _pollingSession = 0;
+
   PartnerMenuProvider({PartnerMenuService? service})
       : _service = service ?? PartnerMenuService() {
     AccountScope.register(resetAccountScope);
@@ -74,11 +78,14 @@ class PartnerMenuProvider with ChangeNotifier {
       _items = [];
       _error = null;
     }
+    // Two guards, one answer each: the account changed while the fetch was in
+    // flight (generation, pack 1 of the critics' findings, point 4) or the
+    // screen was closed / polling stopped (session) — in both cases the timer
+    // must not come back.
     final generation = _generation;
+    final session = ++_pollingSession;
     await fetchMenuItems();
-    // The scope was reset while the fetch was in flight: stopPolling already
-    // ran, and the timer must not come back for an establishment that is gone.
-    if (generation != _generation) return;
+    if (generation != _generation || session != _pollingSession) return;
     _startPolling();
   }
 
@@ -92,6 +99,7 @@ class PartnerMenuProvider with ChangeNotifier {
   }
 
   void stopPolling() {
+    _pollingSession++;
     _pollingTimer?.cancel();
     _pollingTimer = null;
   }
