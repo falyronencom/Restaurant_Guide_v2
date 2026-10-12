@@ -16,6 +16,11 @@
  *     the params from the hash, so the login will match regardless).
  *   - Requires typing "yes" to confirm (skip with --yes).
  *
+ * Ends every session of the account, as a password reset does: devices signed
+ * in with the old password must sign in again (lib/operator-password.js). The
+ * write itself lives there too — this script targets production only, so a
+ * test cannot run it.
+ *
  * Usage (PowerShell):
  *   $env:NEW_PASSWORD = "choose-a-strong-password"
  *   node scripts/set-partner-password.js --email=seed.data.generator@restaurantguide.by
@@ -32,6 +37,7 @@ import { createInterface } from 'readline';
 import pg from 'pg';
 import argon2 from 'argon2';
 import dotenv from 'dotenv';
+import { reportEndedSessions, setActiveAccountPassword } from './lib/operator-password.js';
 
 const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -89,20 +95,19 @@ async function run() {
   console.log(`  Host:        ${hostDisplay}`);
   console.log(`  Target user: ${u.email}  (role=${u.role}, active=${u.is_active}, auth=${u.auth_method})`);
   console.log(`  Has password now: ${u.has_password}  →  will be: true`);
+  console.log('  Sessions:    every session of this account ends — signed-in devices must sign in again');
   console.log('════════════════════════════════════════════════\n');
 
   if (!(await confirm())) { console.log('Aborted — no changes made.'); await client.end(); process.exit(0); }
 
   const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);
-  const upd = await client.query(
-    `UPDATE users SET password_hash = $1, updated_at = $2
-      WHERE email = $3 AND is_active = true
-      RETURNING id, email`,
-    [passwordHash, new Date(), email],
-  );
+  const { account, sessions } = await setActiveAccountPassword(client, email, passwordHash);
 
-  if (!upd.rows.length) console.error('❌ Update affected 0 rows (user inactive?).');
-  else console.log(`✅ Password set for ${upd.rows[0].email}. You can now log into the partner cabinet as this account.`);
+  if (!account) console.error('❌ Update affected 0 rows (user inactive?).');
+  else {
+    console.log(`✅ Password set for ${account.email}. You can now log into the partner cabinet as this account.`);
+    reportEndedSessions(sessions);
+  }
 
   await client.end();
 }
