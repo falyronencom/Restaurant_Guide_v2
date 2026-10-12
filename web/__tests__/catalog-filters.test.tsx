@@ -269,6 +269,45 @@ describe('CategoryPage — a value the backend would reject is dropped, not a cr
   });
 });
 
+// 12.10: /minsk/restaurants?page=100000000000000000000 and ?priceRange=%00 took
+// the page to the error screen, as on the city page.
+describe('CategoryPage — a huge page number or a control character is not a crash', () => {
+  const NUL = String.fromCharCode(0);
+  // The catalog answers as the backend does, measured on a local stand (12.10):
+  // NUL in a text value is a 500; an OFFSET, (page − 1) × 20, past the
+  // database's bigint is a 500 or a 400.
+  beforeEach(() => {
+    (getCatalog as jest.Mock).mockImplementation(async (p: CatalogParams) => {
+      if ([...(p.priceRange ?? []), p.search ?? ''].some((t) => t.includes(NUL))) {
+        throw new ApiError(500, 'invalid byte sequence for encoding "UTF8": 0x00', '22021');
+      }
+      if (((p.page ?? 1) - 1) * 20 > 2 ** 63) {
+        throw new ApiError(500, 'value is out of range for type bigint', '22003');
+      }
+      return EMPTY_CATALOG;
+    });
+  });
+
+  it('a page number past any listing: the page does not throw and fetches page 1', async () => {
+    await expect(
+      CategoryPage({
+        params: P(),
+        searchParams: SP({ page: '100000000000000000000' }),
+      }),
+    ).resolves.toBeTruthy();
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].page).toBe(1);
+  });
+
+  it('NUL as a price: the page does not throw and fetches the category without it', async () => {
+    await expect(
+      CategoryPage({ params: P(), searchParams: SP({ priceRange: NUL }) }),
+    ).resolves.toBeTruthy();
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].priceRange).toBeUndefined();
+  });
+});
+
 // ===========================================================================
 // 2. SEO — noindex / canonical (CAT-C-2.3)
 // ===========================================================================

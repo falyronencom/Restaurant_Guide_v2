@@ -230,6 +230,28 @@ describe('ReviewsPage — getReviews pagination params', () => {
       limit: 10,
     });
   });
+
+  // 12.10: ?page=100000000000000000000 — the backend's OFFSET outgrew the
+  // database's bigint (a 500/400) and the page went to the error screen.
+  it('reads a page number past any listing as page 1', async () => {
+    (getBySlug as jest.Mock).mockResolvedValue({
+      establishment: makeEstablishment('huge-page-slug'),
+    });
+    (getReviews as jest.Mock).mockResolvedValue({
+      reviews: [],
+      pagination: pagination(),
+    });
+
+    await ReviewsPage({
+      params: P('huge-page-slug'),
+      searchParams: SP({ page: '100000000000000000000' }),
+    });
+
+    expect(getReviews).toHaveBeenCalledWith('huge-page-slug', {
+      page: 1,
+      limit: 10,
+    });
+  });
 });
 
 // ===========================================================================
