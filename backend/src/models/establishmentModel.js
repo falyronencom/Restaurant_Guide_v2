@@ -1650,7 +1650,6 @@ export const findEstablishmentBySlug = async (slug, includeAll = false) => {
   }
 };
 
-
 /**
  * True once the card has been transferred to another owner by an admin
  * (claimEstablishment sets claimed_at). The media service widens the folders a

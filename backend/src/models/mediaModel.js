@@ -663,7 +663,6 @@ export const getPrimaryPhoto = async (establishmentId) => {
   }
 };
 
-
 /**
  * Every place that still names an asset, apart from one media row that is
  * about to go: other media rows (any card), the catalog cover of other cards
