@@ -28,6 +28,7 @@ import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { setReviewVisibility } from '../../models/adminReviewModel.js';
+import * as adminReviewService from '../../services/adminReviewService.js';
 import {
   createAdminAndGetToken,
   createViewerAndGetToken,
@@ -397,6 +398,39 @@ describe('GET /api/v1/admin/reviews — проекция просмотрщик�
 
     expect(response.body.data).toHaveLength(0);
     expect(response.body.meta.total).toBe(0);
+  });
+
+  test('статистика автора у видимого отзыва не выдаёт его скрытые (ревью Phase 3.5)', async () => {
+    // Иначе разница «отзывов у автора» и его видимых строк называет число
+    // скрытых, а список скрытых — их оценку, заведение и дату: скрытый отзыв
+    // связывается с именем автора.
+    const other = await createPartnerWithEstablishment('active');
+    const author = await createNamedAuthor('Автор-двух', 'two-reviews-author');
+    await createTestReview(author.id, testEstablishmentId, { rating: 5 });
+    await createTestReview(author.id, other.establishment.id, { rating: 1, is_visible: false });
+
+    const viewer = await asViewer('/api/v1/admin/reviews?status=visible').expect(200);
+    const row = viewer.body.data.find((r) => r.author_name === author.name);
+    expect(row.author_review_count).toBe(1);
+    expect(row.author_average_rating).toBe(5);
+
+    const admin = await asAdmin('/api/v1/admin/reviews?status=visible').expect(200);
+    const adminRow = admin.body.data.find((r) => r.author_name === author.name);
+    expect(adminRow.author_review_count).toBe(2);
+    expect(adminRow.author_average_rating).toBe(3);
+  });
+
+  test('сервис сам, без общего слоя, отдаёт просмотрщику отзыв без почты автора', async () => {
+    // Два слоя — у каждого свой свидетель: общий слой (projections/
+    // viewerProjection.js) почту тоже гасит, и тест маршрута её не отличит.
+    await seedThree();
+
+    const { reviews } = await adminReviewService.getReviews({ viewer: true });
+
+    expect(reviews.length).toBe(2);
+    for (const review of reviews) {
+      expect(review.author_email).toBeNull();
+    }
   });
 
   test('администратору — как прежде: удалённые и скрытые с автором и текстом, фильтр по человеку работает', async () => {

@@ -37,6 +37,7 @@ import {
   createViewerAndGetToken,
 } from '../utils/adminTestHelpers.js';
 import * as EstablishmentModel from '../../models/establishmentModel.js';
+import * as AuditLogModel from '../../models/auditLogModel.js';
 
 const BASE_URL = '/api/v1/admin/audit-log';
 
@@ -630,6 +631,19 @@ describe('GET /api/v1/admin/audit-log — проекция просмотрщи�
     const hidden = viewer.data.find((e) => e.entity_id === reviewIds.hidden);
     expect(hidden.entity_context).toHaveProperty('text_snippet', null);
     expect(hidden.entity_context.rating).toBe(4);
+  });
+
+  test('модель сама, без общего слоя, не называет людей просмотрщику (ревью Phase 3.5)', async () => {
+    // Общий слой ответа (projections/viewerProjection.js) тоже гасит
+    // admin_name / admin_email / reviewer_name, и тест маршрута не отличит,
+    // какой из двух слоёв сработал. Этот тест держит SQL-слой.
+    const entries = await AuditLogModel.getAuditLogEntries({ viewer: true }, 50, 0);
+    const body = JSON.stringify(entries);
+
+    expect(entries.length).toBeGreaterThan(0);
+    for (const value of [MODERATOR_NAME, MODERATOR_EMAIL, PARTNER_NAME, partnerEmail, HIDDEN_AUTHOR]) {
+      expect({ value, present: body.includes(value) }).toEqual({ value, present: false });
+    }
   });
 
   test('фильтр «действия одного человека» просмотрщику отвергается', async () => {

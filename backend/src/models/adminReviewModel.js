@@ -104,6 +104,13 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
   };
   const orderBy = sortMap[filters.sort] || sortMap.newest;
 
+  // A viewer sees author statistics over VISIBLE reviews only — as an
+  // outsider would. Counting the hidden ones in would let the difference
+  // between «reviews by this author» and their visible rows name how many are
+  // hidden, and the hidden list (rating, place, date) would tie them to the
+  // name (Phase 3.5 review of pack 2). Fixed SQL chosen by a boolean.
+  const authorVisibility = filters.viewer ? 'AND ar.is_visible = TRUE' : '';
+
   const query = `
     SELECT
       r.id,
@@ -148,7 +155,7 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
         COUNT(*)::int as review_count,
         ROUND(AVG(ar.rating)::numeric, 2) as average_rating
       FROM reviews ar
-      WHERE ar.user_id = r.user_id AND ar.is_deleted = FALSE
+      WHERE ar.user_id = r.user_id AND ar.is_deleted = FALSE ${authorVisibility}
     ) author ON TRUE
     ${whereClause}
     ORDER BY ${orderBy}

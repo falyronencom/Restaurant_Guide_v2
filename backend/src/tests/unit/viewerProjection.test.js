@@ -66,6 +66,23 @@ describe('projectForViewer', () => {
     });
   });
 
+  test('moderator notes are opaque: their keys are field names, not people (Phase 3.5 review)', () => {
+    // moderation_notes maps a field of the card to the moderator's comment on
+    // it — «contact_person: укажите ФИО» is a remark about the field, not the
+    // person. Withholding it would silently drop a reason for rejection.
+    const notes = {
+      contact_person: 'Укажите ФИО полностью',
+      contact_email: 'Почта не отвечает',
+      name: 'Уточните название',
+    };
+    const out = projectForViewer({
+      data: { moderation_notes: notes, new_data: { status: 'rejected', moderation_notes: notes } },
+    });
+
+    expect(out.data.moderation_notes).toEqual(notes);
+    expect(out.data.new_data.moderation_notes).toEqual(notes);
+  });
+
   test('does not modify its argument', () => {
     const body = { data: [{ admin_email: 'm@x.by' }] };
     projectForViewer(body);

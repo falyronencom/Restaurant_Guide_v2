@@ -76,6 +76,15 @@ export const VIEWER_PERSON_OBJECT_KEYS = Object.freeze(new Set([
 
 const PERSON_FIELDS = Object.freeze(new Set(['name', 'email', 'phone']));
 
+/**
+ * Keys whose value is passed as is: moderation_notes maps a FIELD of the card
+ * to the moderator's comment on it («contact_person: укажите ФИО» is a remark
+ * about the field, not the person). Projecting inside would silently drop
+ * reasons for a rejection (Phase 3.5 review of pack 2). The comments are the
+ * team's text — kept for a viewer, like the reasons in the journal.
+ */
+export const VIEWER_OPAQUE_KEYS = Object.freeze(new Set(['moderation_notes']));
+
 const isPlainObject = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
 
@@ -101,7 +110,9 @@ export const projectForViewer = (value) => {
 
   const out = {};
   for (const [key, inner] of Object.entries(value)) {
-    if (VIEWER_WITHHELD_KEYS.has(key)) {
+    if (VIEWER_OPAQUE_KEYS.has(key)) {
+      out[key] = inner;
+    } else if (VIEWER_WITHHELD_KEYS.has(key)) {
       out[key] = inner === undefined ? undefined : null;
     } else if (VIEWER_PERSON_OBJECT_KEYS.has(key)) {
       out[key] = projectPerson(inner);

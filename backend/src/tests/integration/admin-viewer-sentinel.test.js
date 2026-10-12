@@ -73,6 +73,9 @@ const P = {
   hiddenAuthor: `Автор Скрытого ${tag}`,
   deletedAuthor: `Автор Удалённого ${tag}`,
   hiddenText: `сторож-скрытый-текст-${tag}`,
+  // The moderator's comment on the field «contact person» — team text about a
+  // field, not a person: it must reach the viewer (opaque moderation_notes).
+  contactFieldComment: `уточните контактное лицо ${tag}`,
   deletedText: `сторож-удалённый-текст-${tag}`,
 };
 
@@ -171,8 +174,15 @@ const keyPaths = (value, path = '', out = new Map()) => {
   return out;
 };
 
+// Under moderation_notes the keys are names of card fields with the
+// moderator's comment on each («contact_person: укажите ФИО») — not people.
+// The value check above still covers them.
+const insideModerationNotes = (path) => /(^|\.)moderation_notes\./.test(path);
+
 const withheldWithValue = (body) => [...keyPaths(body).entries()]
-  .filter(([path, hasValue]) => hasValue && WITHHELD_KEYS.includes(path.split('.').pop().replace('[]', '')))
+  .filter(([path, hasValue]) => hasValue
+    && !insideModerationNotes(path)
+    && WITHHELD_KEYS.includes(path.split('.').pop().replace('[]', '')))
   .map(([path]) => path);
 
 const get = (url, token) => request(app).get(`${PREFIX}${url}`).set('Authorization', `Bearer ${token}`);
@@ -222,7 +232,8 @@ beforeAll(async () => {
   await act('post', `/establishments/${ids.suspended}/suspend`, { reason: 'проверка сторожа' }).expect(200);
   ids.rejected = (await card('pending', 'отклонена')).establishment.id;
   await act('post', `/establishments/${ids.rejected}/moderate`, {
-    action: 'reject', moderation_notes: { name: 'уточните название' },
+    action: 'reject',
+    moderation_notes: { name: 'уточните название', contact_person: P.contactFieldComment },
   }).expect(200);
 
   // Reviews: visible, hidden and deleted by the moderator.
@@ -304,6 +315,14 @@ describe('admin panel × viewer — sentinel over every route of the router', ()
     const all = bodies.join('\n');
     for (const [name, value] of Object.entries(personalValues())) {
       expect({ name, reachesAdmin: all.includes(value) }).toEqual({ name, reachesAdmin: true });
+    }
+  });
+
+  test('the layer does not over-reach: moderator comments on the contact fields reach the viewer', async () => {
+    for (const url of ['/establishments/rejected', `/establishments/${ids.rejected}`]) {
+      const response = await get(url, viewerToken).expect(200);
+      expect({ url, comment: JSON.stringify(response.body).includes(P.contactFieldComment) })
+        .toEqual({ url, comment: true });
     }
   });
 

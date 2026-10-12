@@ -77,6 +77,12 @@ describe('a panel route registered without a tier is closed by the server', () =
       .expect(403);
   });
 
+  test('viewer: HEAD is a read, not an action', async () => {
+    await request(app).head(URL)
+      .set('Authorization', `Bearer ${tokens.viewer}`)
+      .expect(200);
+  });
+
   test('admin: reads and acts', async () => {
     const read = await request(app).get(URL)
       .set('Authorization', `Bearer ${tokens.admin}`)
@@ -87,6 +93,20 @@ describe('a panel route registered without a tier is closed by the server', () =
       .set('Authorization', `Bearer ${tokens.admin}`)
       .send({})
       .expect(200);
+  });
+
+  test('a CORS preflight is answered before the gate — the panel lives on another origin', async () => {
+    // Every request of the panel carries Authorization, so the browser sends
+    // OPTIONS first, without the token. cors() at the app level answers it
+    // (server.js, no preflightContinue); were the gate to see it, it would
+    // answer 401 and the hosted panel would stop working altogether.
+    const response = await request(app)
+      .options('/api/v1/admin/reviews')
+      .set('Origin', 'http://localhost:5000')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'authorization');
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5000');
   });
 
   test('the login stays public — the gate sits after it', async () => {
