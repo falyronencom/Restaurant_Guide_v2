@@ -194,12 +194,25 @@ export async function persistOAuthSession(
  * deploy) can still trip REFRESH_TOKEN_REUSE_DETECTED — handled by
  * accept-and-recover (clearSession → forced re-login), never an error page.
  */
-const inFlightRefresh = new Map<string, Promise<string | null>>();
+const inFlightRefresh = new Map<string, Promise<RefreshAttempt>>();
 
-/** Returns a fresh access token (cookies rotated) or null if the session is dead. */
+/**
+ * Returns a fresh access token (cookies rotated) or null. Null covers BOTH a
+ * dead session (cookies cleared) and a transient failure (cookies intact) —
+ * a caller that must tell them apart reads refreshCycle instead.
+ */
 export async function refreshSession(): Promise<string | null> {
+  const outcome = await refreshCycle();
+  return outcome.kind === 'ok' ? outcome.accessToken : null;
+}
+
+/**
+ * One single-flight refresh cycle with its verdict kept. `absent`: there was
+ * no refresh token to present, so the server was never asked.
+ */
+async function refreshCycle(): Promise<RefreshAttempt | { kind: 'absent' }> {
   const refreshToken = await getRefreshToken();
-  if (!refreshToken) return null;
+  if (!refreshToken) return { kind: 'absent' };
 
   const existing = inFlightRefresh.get(refreshToken);
   if (existing) return existing;
@@ -250,7 +263,7 @@ type RefreshAttempt =
  * ladder of its own (one fetch under an AbortController timeout), and
  * authedFetch runs at most one refresh cycle per call.
  */
-async function doRefresh(refreshToken: string): Promise<string | null> {
+async function doRefresh(refreshToken: string): Promise<RefreshAttempt> {
   let attempt = await attemptRefresh(refreshToken);
   if (attempt.kind === 'transient') {
     // The cycle's single retry: the second verdict replaces the first entirely.
@@ -259,9 +272,8 @@ async function doRefresh(refreshToken: string): Promise<string | null> {
 
   if (attempt.kind === 'rejected') {
     await clearSession();
-    return null;
   }
-  return attempt.kind === 'ok' ? attempt.accessToken : null;
+  return attempt;
 }
 
 /** One presentation of the refresh token. Classifies, never clears cookies. */
@@ -350,10 +362,20 @@ export async function authedFetch<T>(
     // access token, a follow-up 401 is not retried — avoids burning a second
     // single-use rotation on one logical request.
     if (err instanceof ApiError && err.statusCode === 401 && !didRefresh) {
-      const refreshed = await refreshSession();
-      if (refreshed) {
-        return fetchWithBearer<T>(path, init, refreshed);
+      const refreshed = await refreshCycle();
+      if (refreshed.kind === 'ok') {
+        return fetchWithBearer<T>(path, init, refreshed.accessToken);
       }
+      // The server refused the refresh too (revoked by a password reset or a
+      // reuse alarm, account disabled — cookies are already cleared), or there
+      // was no refresh token to try: nothing left to recover. The islands send
+      // the user to /login on NO_SESSION only; the backend's own 401 code
+      // would leave them on a generic error over a session that is gone.
+      if (refreshed.kind !== 'transient') {
+        throw new ApiError(401, 'Not authenticated', 'NO_SESSION');
+      }
+      // Transient: cookies intact, the session may still recover on the next
+      // action — keep the original error.
     }
     throw err;
   }
