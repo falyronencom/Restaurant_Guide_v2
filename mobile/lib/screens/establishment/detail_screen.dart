@@ -29,6 +29,7 @@ import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
+import 'package:restaurant_guide_mobile/widgets/status_bar_scrim.dart';
 import 'package:restaurant_guide_mobile/utils/gallery_photos.dart';
 
 /// Establishment detail screen displaying full information
@@ -171,14 +172,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   }
 
   /// Show login prompt dialog
-  void _showLoginPrompt() {
+  void _showLoginPrompt({
+    String message = 'Для добавления в избранное необходимо войти в аккаунт.',
+  }) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Требуется авторизация'),
-        content: const Text(
-          'Для добавления в избранное необходимо войти в аккаунт.',
-        ),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -208,53 +209,62 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
     return Scaffold(
       backgroundColor: _backgroundColor,
-      body: SingleChildScrollView(
-        // ClampingScrollPhysics: на iOS убирает bounce-overscroll, который
-        // открывал пустой фон Scaffold над/под контентом (на Android так по умолч.).
-        physics: const ClampingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Hero section with photo and overlay info
-            _buildHeroSection(),
+      // Шапки у экрана нет — фото героя уходит под часы. Без полосы при
+      // прокрутке под системную строку ехал текст страницы.
+      // Прокрутка — основным контроллером маршрута (primary): по нему же
+      // Scaffold на iPhone возвращает страницу наверх тапом по строке.
+      body: StatusBarScrim(
+        controller: PrimaryScrollController.of(context),
+        color: _backgroundColor,
+        child: SingleChildScrollView(
+          primary: true,
+          // ClampingScrollPhysics: на iOS убирает bounce-overscroll, который
+          // открывал пустой фон Scaffold над/под контентом (на Android так по умолч.).
+          physics: const ClampingScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Hero section with photo and overlay info
+              _buildHeroSection(),
 
-            // Promotion trigger banner (shown when promotions exist)
-            if (_establishment?.promotions != null &&
-                _establishment!.promotions!.isNotEmpty)
-              _buildPromotionBanner(),
+              // Promotion trigger banner (shown when promotions exist)
+              if (_establishment?.promotions != null &&
+                  _establishment!.promotions!.isNotEmpty)
+                _buildPromotionBanner(),
 
-            // Description section (shown when present)
-            _buildDescriptionSection(),
+              // Description section (shown when present)
+              _buildDescriptionSection(),
 
-            // Menu section
-            _buildMenuSection(),
+              // Menu section
+              _buildMenuSection(),
 
-            // Divider
-            _buildDivider(),
+              // Divider
+              _buildDivider(),
 
-            // Attributes section
-            _buildAttributesSection(),
+              // Attributes section
+              _buildAttributesSection(),
 
-            // Divider
-            _buildDivider(),
+              // Divider
+              _buildDivider(),
 
-            // Map section
-            _buildMapSection(),
+              // Map section
+              _buildMapSection(),
 
-            // Booking CTA (only when booking enabled)
-            if (_establishment?.bookingEnabled == true) _buildBookingCTA(),
+              // Booking CTA (only when booking enabled)
+              if (_establishment?.bookingEnabled == true) _buildBookingCTA(),
 
-            // Reviews section (dark background)
-            _buildReviewsSection(),
+              // Reviews section (dark background)
+              _buildReviewsSection(),
 
-            // Bottom padding — чёрный, чтобы низ тёмной секции «Отзывы» доходил
-            // до края экрана (иначе под кнопкой виден бежевый фон Scaffold).
-            Container(
-              width: double.infinity,
-              height: 34,
-              color: AppTheme.textPrimary,
-            ),
-          ],
+              // Bottom padding — чёрный, чтобы низ тёмной секции «Отзывы» доходил
+              // до края экрана (иначе под кнопкой виден бежевый фон Scaffold).
+              Container(
+                width: double.infinity,
+                height: 34,
+                color: AppTheme.textPrimary,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1553,6 +1563,16 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       color: AppTheme.backgroundWarm,
       child: ElevatedButton(
         onPressed: () async {
+          // Бронь отправляет только вошедший гость (POST /bookings — с
+          // токеном). Условия и время форма теперь видит и без входа, и
+          // гость без входа заполнял её целиком, а при отправке получал
+          // «Ошибка создания бронирования». Вход — до формы.
+          if (!context.read<AuthProvider>().isAuthenticated) {
+            _showLoginPrompt(
+              message: 'Чтобы забронировать столик, войдите в аккаунт.',
+            );
+            return;
+          }
           final result =
               await BookingBottomSheet.show(context, _establishment!);
           if (result == true && mounted) {

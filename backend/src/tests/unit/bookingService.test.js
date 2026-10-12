@@ -281,6 +281,56 @@ describe('createBooking', () => {
       .rejects.toMatchObject({ code: 'TIME_OUTSIDE_HOURS', message: expect.stringContaining('в рабочие часы') });
   });
 
+  describe('closing at or after midnight (string comparison said "23:00" > "00:00")', () => {
+    const nightEstablishment = {
+      ...mockEstablishment,
+      working_hours: {
+        monday: '12:00-00:00',
+        tuesday: { is_open: true, open: '18:00', close: '02:00' },
+        wednesday: '12:00-12:00',
+        thursday: '09:00-22:00',
+        // Seconds are read, not taken for "no hours" (which accepts anything).
+        friday: { is_open: true, open: '12:00:00', close: '00:00:00' },
+      },
+    };
+
+    const bookOn = (dayOfWeek, time) => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(nightEstablishment);
+      BookingSettingsModel.getByEstablishmentId.mockResolvedValue(mockSettings);
+      BookingModel.checkSlot.mockResolvedValue({ ...VALID_SLOT, dayOfWeek });
+      BookingModel.getActiveCountForUser.mockResolvedValue(0);
+      BookingModel.getActiveForEstablishmentAndUser.mockResolvedValue(null);
+      BookingModel.create.mockResolvedValue(mockBooking);
+      return createBooking(USER_ID, { ...validBookingData(), time });
+    };
+
+    it.each([
+      [1, '23:00', 'closes 00:00'],
+      [1, '23:30', 'closes 00:00 — the last slot the form offers'],
+      [2, '23:00', 'closes 02:00'],
+      [2, '23:30', 'closes 02:00'],
+      [3, '12:00', 'open == close: 24 hours from the opening'],
+      [3, '23:30', 'open == close: 24 hours from the opening'],
+      [4, '21:30', 'ordinary day, half an hour before closing'],
+      [5, '23:00', 'HH:MM:SS hours, closes 00:00:00'],
+    ])('day %i, %s is accepted (%s)', async (dayOfWeek, time) => {
+      await expect(bookOn(dayOfWeek, time)).resolves.toBe(mockBooking);
+    });
+
+    it.each([
+      [1, '11:30', 'before the opening'],
+      [2, '01:00', 'the small hours belong to the previous day\'s session'],
+      [2, '17:30', 'before the opening'],
+      [3, '11:30', 'open == close: before the opening'],
+      [4, '22:00', 'the closing minute itself'],
+      [5, '11:00', 'HH:MM:SS hours, before the opening'],
+    ])('day %i, %s is rejected (%s)', async (dayOfWeek, time) => {
+      await expect(bookOn(dayOfWeek, time))
+        .rejects.toMatchObject({ code: 'TIME_OUTSIDE_HOURS' });
+      expect(BookingModel.create).not.toHaveBeenCalled();
+    });
+  });
+
   it('rejects when fewer than min_hours_before remain until the slot', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(mockEstablishment);
     BookingSettingsModel.getByEstablishmentId.mockResolvedValue(mockSettings);

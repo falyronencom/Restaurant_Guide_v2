@@ -37,6 +37,15 @@ class _NotificationPreferencesScreenState
         title: const Text('Настройки уведомлений'),
         backgroundColor: Colors.white,
         foregroundColor: AppTheme.textPrimary,
+        // Стиль заголовка — явно, как в теме, но тёмным: тема задаёт
+        // titleTextStyle с белым цветом, и он перекрывает foregroundColor —
+        // заголовок был белым по белому.
+        titleTextStyle: const TextStyle(
+          fontFamily: AppTheme.fontBodyFamily,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.textPrimary,
+        ),
         elevation: 0,
       ),
       backgroundColor: Colors.white,

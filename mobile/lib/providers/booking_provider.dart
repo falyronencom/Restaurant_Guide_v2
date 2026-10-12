@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/booking.dart';
+import 'package:restaurant_guide_mobile/models/booking_settings.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
@@ -166,6 +167,32 @@ class BookingProvider with ChangeNotifier {
   // ==========================================================================
   // User-facing methods
   // ==========================================================================
+
+  /// Условия брони для формы гостя: сколько гостей, на сколько дней вперёд,
+  /// за сколько часов, как скоро ответит заведение.
+  ///
+  /// Публичный адрес, не партнёрский: `/partner/booking-settings` отвечает
+  /// 403 всем, кроме владельца, и гость оставался без времени и с надписью
+  /// «Заведение не работает в этот день» на любую дату (09.10.2026).
+  /// Состояние провайдера не трогает — условия живут в самой форме.
+  ///
+  /// `null` — бронь сейчас недоступна (выключена, карточка скрыта) или
+  /// сервер не ответил.
+  Future<BookingSettings?> loadBookingTerms(String establishmentId) async {
+    try {
+      final response = await _apiClient
+          .get('/api/v1/establishments/$establishmentId/booking-settings');
+      final body = response.data;
+      if (response.statusCode == 200 &&
+          body is Map<String, dynamic> &&
+          body['data'] is Map<String, dynamic>) {
+        return BookingSettings.fromJson(body['data'] as Map<String, dynamic>);
+      }
+    } catch (_) {
+      // 404 «бронь недоступна» и сетевой сбой для формы одно и то же.
+    }
+    return null;
+  }
 
   List<Booking> _userBookings = [];
   List<Booking> get userBookings => _userBookings;
