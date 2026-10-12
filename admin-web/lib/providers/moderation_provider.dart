@@ -109,11 +109,25 @@ class ModerationProvider with ChangeNotifier {
     AccountScope.register(resetAccountScope);
   }
 
+  /// Метки запросов (пакет 2, пункт 4; Codex CL-4) — как в ApprovedProvider.
+  ///
+  /// Сверки id выбора мало: просмотрщик, вошедший после администратора, может
+  /// открыть ту же заявку, и поздний ответ на запрос администратора (с
+  /// контактами и документом партнёра) совпал бы по id. [_generation] —
+  /// аккаунт, [_detailRequest] — последний запрос детали, [_listRequest] —
+  /// последний запрос очереди.
+  int _generation = 0;
+  int _detailRequest = 0;
+  int _listRequest = 0;
+
   /// Сброс при смене аккаунта. Вердикты по полям — работа модератора, и
   /// переносить их на следующего вошедшего нельзя так же, как с одной заявки
-  /// на другую. Ответ на летящую загрузку детали выбросится сам: он сверяет
-  /// свой id с `_selectedId`, а тот обнулён.
+  /// на другую. Ответ на летящую загрузку детали выбросится: сброс сдвигает
+  /// метки запросов.
   void resetAccountScope() {
+    _generation++;
+    _detailRequest++;
+    _listRequest++;
     _establishments = [];
     _isLoadingList = false;
     _listError = null;
@@ -141,7 +155,10 @@ class ModerationProvider with ChangeNotifier {
   int get totalPages => _totalPages;
   int get totalCount => _totalCount;
 
-  EstablishmentDetail? get selectedDetail => _selectedDetail;
+  /// Деталь показывается только вместе со своим выбором (пакет 2, пункт 4):
+  /// пока грузится другая заявка, деталь прежней не отдаётся.
+  EstablishmentDetail? get selectedDetail =>
+      _selectedDetail?.id == _selectedId ? _selectedDetail : null;
   bool get isLoadingDetail => _isLoadingDetail;
   String? get detailError => _detailError;
   String? get selectedId => _selectedId;
@@ -230,12 +247,14 @@ class ModerationProvider with ChangeNotifier {
   // ============================================================================
 
   Future<void> loadPendingEstablishments({int page = 1}) async {
+    final request = ++_listRequest;
     _isLoadingList = true;
     _listError = null;
     notifyListeners();
 
     try {
       final response = await _service.getPendingEstablishments(page: page);
+      if (request != _listRequest) return; // обогнали или сменился аккаунт
       _establishments = response.establishments;
       _currentPage = response.page;
       _totalPages = response.pages;
@@ -244,6 +263,7 @@ class ModerationProvider with ChangeNotifier {
       // Clear stale selection if the selected item is no longer in the list
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
+        _detailRequest++;
         _selectedId = null;
         _selectedDetail = null;
         _fieldReviews = {};
@@ -251,11 +271,11 @@ class ModerationProvider with ChangeNotifier {
         _submitError = null;
       }
     } catch (e) {
+      if (request != _listRequest) return;
       _listError = _extractMessage(e);
-    } finally {
-      _isLoadingList = false;
-      notifyListeners();
     }
+    _isLoadingList = false;
+    notifyListeners();
   }
 
   // ============================================================================
@@ -296,6 +316,7 @@ class ModerationProvider with ChangeNotifier {
   Future<void> _reloadSelectedDetail() async {
     final id = _selectedId;
     if (id == null) return;
+    final request = ++_detailRequest;
 
     _isLoadingDetail = true;
     _detailError = null;
@@ -309,11 +330,13 @@ class ModerationProvider with ChangeNotifier {
       failure = _extractMessage(e);
     }
 
-    // Пока ответ шёл, модератор мог открыть другую карточку. Тогда этот
-    // ответ уже не о ней: положить его в `_selectedDetail` значит показать
-    // чужие данные под её именем — и вердикты по ним ушли бы не в ту заявку.
-    // Флаг загрузки тоже не трогаем: его держит более свежий запрос.
-    if (_selectedId != id) return;
+    // Пока ответ шёл, модератор мог открыть другую карточку, а аккаунт —
+    // смениться. Тогда этот ответ уже не о ней: положить его в
+    // `_selectedDetail` значит показать чужие данные под её именем — и
+    // вердикты по ним ушли бы не в ту заявку; после смены аккаунта — показать
+    // просмотрщику то, что сервер отдал администратору. Флаг загрузки тоже не
+    // трогаем: его держит более свежий запрос.
+    if (request != _detailRequest || _selectedId != id) return;
 
     // При сбое прежняя деталь остаётся на месте: она устарела, но это всё
     // ещё та самая карточка, и обнулять её ради сообщения об ошибке незачем.
@@ -324,6 +347,8 @@ class ModerationProvider with ChangeNotifier {
   }
 
   void clearSelection() {
+    _detailRequest++;
+    _isLoadingDetail = false;
     _selectedId = null;
     _selectedDetail = null;
     _fieldReviews = {};
@@ -370,8 +395,14 @@ class ModerationProvider with ChangeNotifier {
   // Moderation actions
   // ============================================================================
 
+  /// Действие выполняется над показанной карточкой — по ней модератор
+  /// выставлял вердикты (пакет 2, пункт 4).
+  String? get _shownId => selectedDetail?.id;
+
   Future<bool> approveEstablishment() async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
@@ -387,27 +418,32 @@ class ModerationProvider with ChangeNotifier {
       }
 
       await _service.moderateEstablishment(
-        id: _selectedId!,
+        id: id,
         action: 'approve',
         moderationNotes: notes,
       );
+      if (generation != _generation) return false; // аккаунт уже другой
 
       // Remove from list and clear selection
-      _establishments.removeWhere((e) => e.id == _selectedId);
+      _establishments.removeWhere((e) => e.id == id);
       _totalCount = (_totalCount - 1).clamp(0, _totalCount);
-      clearSelection();
-      return true;
-    } catch (e) {
-      _submitError = _extractMessage(e);
-      return false;
-    } finally {
+      if (_selectedId == id) clearSelection();
       _isSubmitting = false;
       notifyListeners();
+      return true;
+    } catch (e) {
+      if (generation != _generation) return false;
+      _submitError = _extractMessage(e);
+      _isSubmitting = false;
+      notifyListeners();
+      return false;
     }
   }
 
   Future<bool> rejectEstablishment() async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
@@ -425,22 +461,25 @@ class ModerationProvider with ChangeNotifier {
       }
 
       await _service.moderateEstablishment(
-        id: _selectedId!,
+        id: id,
         action: 'reject',
         moderationNotes: notes,
       );
+      if (generation != _generation) return false; // аккаунт уже другой
 
       // Remove from list and clear selection
-      _establishments.removeWhere((e) => e.id == _selectedId);
+      _establishments.removeWhere((e) => e.id == id);
       _totalCount = (_totalCount - 1).clamp(0, _totalCount);
-      clearSelection();
-      return true;
-    } catch (e) {
-      _submitError = _extractMessage(e);
-      return false;
-    } finally {
+      if (_selectedId == id) clearSelection();
       _isSubmitting = false;
       notifyListeners();
+      return true;
+    } catch (e) {
+      if (generation != _generation) return false;
+      _submitError = _extractMessage(e);
+      _isSubmitting = false;
+      notifyListeners();
+      return false;
     }
   }
 
@@ -450,7 +489,9 @@ class ModerationProvider with ChangeNotifier {
 
   /// Update establishment coordinates (admin correction)
   Future<bool> updateCoordinates(double latitude, double longitude) async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
@@ -458,10 +499,11 @@ class ModerationProvider with ChangeNotifier {
 
     try {
       await _service.updateCoordinates(
-        id: _selectedId!,
+        id: id,
         latitude: latitude,
         longitude: longitude,
       );
+      if (generation != _generation) return false; // аккаунт уже другой
 
       // Перечитать деталь, чтобы показать новые координаты. Именно
       // перечитать: [selectEstablishment] обнуляет вердикты, и правка
@@ -472,6 +514,7 @@ class ModerationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      if (generation != _generation) return false;
       _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();

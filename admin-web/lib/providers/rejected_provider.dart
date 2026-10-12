@@ -11,9 +11,10 @@ class RejectedProvider extends ChangeNotifier {
   /// Размер страницы — как у сервиса и как в подписи «Показано N–M из T».
   static const int perPage = 20;
 
-  final ModerationService _service = ModerationService();
+  final ModerationService _service;
 
-  RejectedProvider() {
+  RejectedProvider({ModerationService? service})
+      : _service = service ?? ModerationService() {
     AccountScope.register(resetAccountScope);
   }
 
@@ -34,9 +35,19 @@ class RejectedProvider extends ChangeNotifier {
   // Currently selected rejection item (for rejection notes)
   RejectedEstablishmentItem? _selectedRejection;
 
+  /// Метки запросов (пакет 2, пункт 4; Codex CL-4) — как в ApprovedProvider:
+  /// ответ пишется, только если его метка всё ещё текущая. Сброс при смене
+  /// аккаунта сдвигает обе: поздний ответ администратору (с контактами
+  /// партнёра) не ложится в панель просмотрщика. Счётчика поколения для
+  /// действий здесь нет — у раздела нет действий.
+  int _detailRequest = 0;
+  int _listRequest = 0;
+
   /// Сброс при смене аккаунта: история и выбранная карточка принадлежат
   /// вошедшему.
   void resetAccountScope() {
+    _detailRequest++;
+    _listRequest++;
     _rejections = [];
     _isLoadingList = false;
     _listError = null;
@@ -59,7 +70,9 @@ class RejectedProvider extends ChangeNotifier {
   int get totalPages => _totalPages;
   int get totalCount => _totalCount;
 
-  EstablishmentDetail? get selectedDetail => _selectedDetail;
+  /// Деталь показывается только вместе со своим выбором (пакет 2, пункт 4).
+  EstablishmentDetail? get selectedDetail =>
+      _selectedDetail?.id == _selectedId ? _selectedDetail : null;
   bool get isLoadingDetail => _isLoadingDetail;
   String? get detailError => _detailError;
   String? get selectedId => _selectedId;
@@ -67,12 +80,14 @@ class RejectedProvider extends ChangeNotifier {
 
   /// Load rejection history
   Future<void> loadRejectedEstablishments({int page = 1}) async {
+    final request = ++_listRequest;
     _isLoadingList = true;
     _listError = null;
     notifyListeners();
 
     try {
       final result = await _service.getRejectedEstablishments(page: page);
+      if (request != _listRequest) return; // обогнали или сменился аккаунт
 
       _rejections = result.rejections;
       _currentPage = result.page;
@@ -83,14 +98,12 @@ class RejectedProvider extends ChangeNotifier {
       // Clear stale selection if the selected item is no longer in the list
       if (_selectedId != null &&
           !_rejections.any((e) => e.establishmentId == _selectedId)) {
-        _selectedId = null;
-        _selectedDetail = null;
-        _selectedRejection = null;
-        _detailError = null;
+        _dropSelection();
       }
 
       notifyListeners();
     } catch (e) {
+      if (request != _listRequest) return;
       _isLoadingList = false;
       _listError = _extractMessage(e);
       notifyListeners();
@@ -100,8 +113,9 @@ class RejectedProvider extends ChangeNotifier {
   /// Select a rejected establishment and load its detail
   Future<void> selectEstablishment(RejectedEstablishmentItem rejection) async {
     final id = rejection.establishmentId;
-    if (_selectedId == id && _selectedDetail != null) return;
+    if (_selectedId == id && selectedDetail != null) return;
 
+    final request = ++_detailRequest;
     _selectedId = id;
     _selectedRejection = rejection;
     _isLoadingDetail = true;
@@ -109,22 +123,34 @@ class RejectedProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _selectedDetail = await _service.getEstablishmentDetails(id);
+      final detail = await _service.getEstablishmentDetails(id);
+      // За время ожидания модератор мог выбрать другую карточку, а аккаунт
+      // — смениться: тогда этот ответ уже не для панели.
+      if (request != _detailRequest) return;
+      _selectedDetail = detail;
       _isLoadingDetail = false;
       notifyListeners();
     } catch (e) {
+      if (request != _detailRequest) return;
       _isLoadingDetail = false;
       _detailError = _extractMessage(e);
       notifyListeners();
     }
   }
 
-  /// Clear selection
-  void clearSelection() {
+  /// Снять выбор и отменить ожидание его детали.
+  void _dropSelection() {
+    _detailRequest++;
     _selectedId = null;
     _selectedDetail = null;
     _selectedRejection = null;
+    _isLoadingDetail = false;
     _detailError = null;
+  }
+
+  /// Clear selection
+  void clearSelection() {
+    _dropSelection();
     notifyListeners();
   }
 

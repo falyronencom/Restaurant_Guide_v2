@@ -41,9 +41,20 @@ class SuspendedProvider extends ChangeNotifier {
   bool _isSubmitting = false;
   String? _submitError;
 
+  /// Метки запросов (пакет 2, пункт 4; Codex CL-4) — как в ApprovedProvider:
+  /// [_generation] — аккаунт (ответы на запросы и действия прежнего
+  /// выбрасываются), [_detailRequest] — последний запрос детали,
+  /// [_listRequest] — последний запрос списка.
+  int _generation = 0;
+  int _detailRequest = 0;
+  int _listRequest = 0;
+
   /// Сброс при смене аккаунта: список, выбранная карточка и ход действия
   /// принадлежат вошедшему.
   void resetAccountScope() {
+    _generation++;
+    _detailRequest++;
+    _listRequest++;
     _establishments = [];
     _isLoadingList = false;
     _listError = null;
@@ -67,7 +78,9 @@ class SuspendedProvider extends ChangeNotifier {
   int get totalPages => _totalPages;
   int get totalCount => _totalCount;
 
-  EstablishmentDetail? get selectedDetail => _selectedDetail;
+  /// Деталь показывается только вместе со своим выбором (пакет 2, пункт 4).
+  EstablishmentDetail? get selectedDetail =>
+      _selectedDetail?.id == _selectedId ? _selectedDetail : null;
   bool get isLoadingDetail => _isLoadingDetail;
   String? get detailError => _detailError;
   String? get selectedId => _selectedId;
@@ -76,12 +89,14 @@ class SuspendedProvider extends ChangeNotifier {
 
   /// Load suspended establishments
   Future<void> loadSuspendedEstablishments({int page = 1}) async {
+    final request = ++_listRequest;
     _isLoadingList = true;
     _listError = null;
     notifyListeners();
 
     try {
       final result = await _service.getSuspendedEstablishments(page: page);
+      if (request != _listRequest) return; // обогнали или сменился аккаунт
 
       _establishments = result.establishments;
       _currentPage = result.page;
@@ -92,14 +107,13 @@ class SuspendedProvider extends ChangeNotifier {
       // Stale selection check (lesson from Testing Session 5)
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
-        _selectedId = null;
-        _selectedDetail = null;
-        _detailError = null;
+        _dropSelection();
         _submitError = null;
       }
 
       notifyListeners();
     } catch (e) {
+      if (request != _listRequest) return;
       _isLoadingList = false;
       _listError = _extractMessage(e);
       notifyListeners();
@@ -108,8 +122,9 @@ class SuspendedProvider extends ChangeNotifier {
 
   /// Select establishment and load its detail
   Future<void> selectEstablishment(String id) async {
-    if (_selectedId == id && _selectedDetail != null) return;
+    if (_selectedId == id && selectedDetail != null) return;
 
+    final request = ++_detailRequest;
     _selectedId = id;
     _isLoadingDetail = true;
     _detailError = null;
@@ -117,15 +132,33 @@ class SuspendedProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _selectedDetail = await _service.getEstablishmentDetails(id);
+      final detail = await _service.getEstablishmentDetails(id);
+      // За время ожидания модератор мог выбрать другую карточку, а аккаунт
+      // — смениться: тогда этот ответ уже не для панели.
+      if (request != _detailRequest) return;
+      _selectedDetail = detail;
       _isLoadingDetail = false;
       notifyListeners();
     } catch (e) {
+      if (request != _detailRequest) return;
       _isLoadingDetail = false;
       _detailError = _extractMessage(e);
       notifyListeners();
     }
   }
+
+  /// Снять выбор и отменить ожидание его детали.
+  void _dropSelection() {
+    _detailRequest++;
+    _selectedId = null;
+    _selectedDetail = null;
+    _isLoadingDetail = false;
+    _detailError = null;
+  }
+
+  /// Действие выполняется над показанной карточкой — её имя называет диалог
+  /// подтверждения (пакет 2, пункт 4).
+  String? get _shownId => selectedDetail?.id;
 
   /// «Возобновить»: снять приостановку модератора с выбранной карточки.
   ///
@@ -134,8 +167,9 @@ class SuspendedProvider extends ChangeNotifier {
   /// партнёра — и она остаётся здесь, уже как пауза партнёра. Поэтому
   /// раздел перечитывается, а не правится на месте.
   Future<bool> unsuspendEstablishment() async {
-    final id = _selectedId;
+    final id = _shownId;
     if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
@@ -144,13 +178,15 @@ class SuspendedProvider extends ChangeNotifier {
     try {
       await _service.unsuspendEstablishment(id: id);
     } catch (e) {
+      if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+    if (generation != _generation) return false;
 
-    await _refreshAfterAction(id);
+    await _refreshAfterAction(id, generation);
     return true;
   }
 
@@ -160,8 +196,9 @@ class SuspendedProvider extends ChangeNotifier {
   /// модератора с причиной, и включить карточку сам партнёр уже не сможет.
   /// Карточка остаётся в разделе — с причиной и кнопкой «Возобновить».
   Future<bool> suspendEstablishment(String reason) async {
-    final id = _selectedId;
+    final id = _shownId;
     if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
@@ -170,13 +207,15 @@ class SuspendedProvider extends ChangeNotifier {
     try {
       await _service.suspendEstablishment(id: id, reason: reason);
     } catch (e) {
+      if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+    if (generation != _generation) return false;
 
-    await _refreshAfterAction(id);
+    await _refreshAfterAction(id, generation);
     return true;
   }
 
@@ -188,9 +227,11 @@ class SuspendedProvider extends ChangeNotifier {
   /// новый вид сохраняются; ушла — перечитывается текущая страница, выбор
   /// снимет проверка устаревшего выбора в [loadSuspendedEstablishments].
   /// Действие уже выполнено: сбой перечитывания его не отменяет и ошибкой не
-  /// считается.
-  Future<void> _refreshAfterAction(String id) async {
+  /// считается. Перечитанная деталь ложится в панель, только если за это
+  /// время не сменились ни аккаунт, ни выбор, и не ушёл новый запрос детали.
+  Future<void> _refreshAfterAction(String id, int generation) async {
     _isSubmitting = false;
+    final detailRequest = _detailRequest;
 
     EstablishmentDetail? detail;
     try {
@@ -198,23 +239,25 @@ class SuspendedProvider extends ChangeNotifier {
     } catch (_) {
       // Карточка перечитается при следующем выборе.
     }
+    if (generation != _generation) return;
     final stays = detail?.status == 'suspended';
 
     await loadSuspendedEstablishments(page: stays ? 1 : _currentPage);
+    if (generation != _generation) return;
 
     if (_selectedId != id) {
       _reloadIfPageEmptied();
       return;
     }
-    if (detail != null) _selectedDetail = detail;
+    if (detail != null && detailRequest == _detailRequest) {
+      _selectedDetail = detail;
+    }
     notifyListeners();
   }
 
   /// Clear selection
   void clearSelection() {
-    _selectedId = null;
-    _selectedDetail = null;
-    _detailError = null;
+    _dropSelection();
     _submitError = null;
     notifyListeners();
   }

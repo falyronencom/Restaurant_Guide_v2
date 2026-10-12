@@ -48,9 +48,26 @@ class ApprovedProvider extends ChangeNotifier {
   bool _isSubmitting = false;
   String? _submitError;
 
+  /// Метки запросов (пакет 2, пункт 4; Codex CL-4).
+  ///
+  /// Сервер решает, что скрыть, по роли того, кто спросил: ответ на запрос
+  /// администратора несёт контакты и документ партнёра. Ответ пишется в
+  /// состояние, только если его метка всё ещё текущая:
+  /// - [_generation] сдвигает сброс при смене аккаунта — ответ на запрос
+  ///   прежнего аккаунта (и на его действие) выбрасывается;
+  /// - [_detailRequest] сдвигает каждый новый запрос детали, смена выбора и
+  ///   сброс — поздняя деталь другой карточки не ложится в открытую панель;
+  /// - [_listRequest] — то же для списка.
+  int _generation = 0;
+  int _detailRequest = 0;
+  int _listRequest = 0;
+
   /// Сброс при смене аккаунта: каталог, поиск, фильтры, выбранная карточка и
   /// ход действия принадлежат вошедшему.
   void resetAccountScope() {
+    _generation++;
+    _detailRequest++;
+    _listRequest++;
     _establishments = [];
     _isLoadingList = false;
     _listError = null;
@@ -82,7 +99,10 @@ class ApprovedProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   bool get isSearchMode => _isSearchMode;
 
-  EstablishmentDetail? get selectedDetail => _selectedDetail;
+  /// Деталь показывается только вместе со своим выбором: деталь другой
+  /// карточки под этим выбором не отдаётся никогда (пакет 2, пункт 4).
+  EstablishmentDetail? get selectedDetail =>
+      _selectedDetail?.id == _selectedId ? _selectedDetail : null;
   bool get isLoadingDetail => _isLoadingDetail;
   String? get detailError => _detailError;
   String? get selectedId => _selectedId;
@@ -91,6 +111,7 @@ class ApprovedProvider extends ChangeNotifier {
 
   /// Load active (approved) establishments
   Future<void> loadActiveEstablishments({int page = 1}) async {
+    final request = ++_listRequest;
     _isLoadingList = true;
     _listError = null;
     _isSearchMode = false;
@@ -102,6 +123,7 @@ class ApprovedProvider extends ChangeNotifier {
         sort: _sort,
         city: _cityFilter,
       );
+      if (request != _listRequest) return; // обогнали или сменился аккаунт
 
       _establishments = result.establishments;
       _currentPage = result.page;
@@ -112,13 +134,12 @@ class ApprovedProvider extends ChangeNotifier {
       // Clear stale selection if the selected item is no longer in the list
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
-        _selectedId = null;
-        _selectedDetail = null;
-        _detailError = null;
+        _dropSelection();
       }
 
       notifyListeners();
     } catch (e) {
+      if (request != _listRequest) return;
       _isLoadingList = false;
       _listError = _extractMessage(e);
       notifyListeners();
@@ -135,6 +156,7 @@ class ApprovedProvider extends ChangeNotifier {
       return;
     }
 
+    final request = ++_listRequest;
     _searchQuery = query;
     _isSearchMode = true;
     _isLoadingList = true;
@@ -147,6 +169,7 @@ class ApprovedProvider extends ChangeNotifier {
         city: _cityFilter,
         page: page,
       );
+      if (request != _listRequest) return; // обогнали или сменился аккаунт
 
       _establishments = result.establishments;
       _currentPage = result.page;
@@ -157,13 +180,12 @@ class ApprovedProvider extends ChangeNotifier {
       // Clear stale selection if the selected item is no longer in search results
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
-        _selectedId = null;
-        _selectedDetail = null;
-        _detailError = null;
+        _dropSelection();
       }
 
       notifyListeners();
     } catch (e) {
+      if (request != _listRequest) return;
       _isLoadingList = false;
       _listError = _extractMessage(e);
       notifyListeners();
@@ -214,133 +236,162 @@ class ApprovedProvider extends ChangeNotifier {
 
   /// Select an establishment and load its detail
   Future<void> selectEstablishment(String id) async {
-    if (_selectedId == id && _selectedDetail != null) return;
+    if (_selectedId == id && selectedDetail != null) return;
 
+    // Прежняя деталь под новым выбором наружу не отдаётся: геттер
+    // [selectedDetail] сверяет её id с выбором.
     _selectedId = id;
+    _submitError = null;
+    await _loadDetail(id);
+  }
+
+  /// Загрузить деталь [id] и записать её, только если ответ — на последний
+  /// запрос: за время ожидания модератор мог выбрать другую карточку, а
+  /// аккаунт — смениться.
+  Future<void> _loadDetail(String id) async {
+    final request = ++_detailRequest;
     _isLoadingDetail = true;
     _detailError = null;
-    _submitError = null;
     notifyListeners();
 
     try {
-      _selectedDetail = await _service.getEstablishmentDetails(id);
+      final detail = await _service.getEstablishmentDetails(id);
+      if (request != _detailRequest) return;
+      _selectedDetail = detail;
       _isLoadingDetail = false;
       notifyListeners();
     } catch (e) {
+      if (request != _detailRequest) return;
       _isLoadingDetail = false;
       _detailError = _extractMessage(e);
       notifyListeners();
     }
   }
 
-  /// Clear selection
-  void clearSelection() {
+  /// Снять выбор и отменить ожидание его детали.
+  void _dropSelection() {
+    _detailRequest++;
     _selectedId = null;
     _selectedDetail = null;
+    _isLoadingDetail = false;
     _detailError = null;
+  }
+
+  /// Clear selection
+  void clearSelection() {
+    _dropSelection();
     _submitError = null;
     notifyListeners();
   }
 
-  /// Suspend the currently selected establishment
+  /// Карточка, над которой выполняется действие, — та, что показана: её имя
+  /// называет диалог подтверждения. Не просто выбранная: между кликом и
+  /// ответом выбор и деталь могли расходиться (пакет 2, пункт 4).
+  String? get _shownId => selectedDetail?.id;
+
+  /// Suspend the establishment shown in the detail panel
   Future<bool> suspendEstablishment(String reason) async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
     notifyListeners();
 
     try {
-      await _service.suspendEstablishment(
-        id: _selectedId!,
-        reason: reason,
-      );
-
-      // Поиск находит карточки любого статуса — приостановленная остаётся в
-      // выдаче, уже в новом статусе: выдача перечитывается. Список одобренных
-      // её теряет — убрать на месте.
-      if (_isSearchMode) {
-        _selectedId = null;
-        _selectedDetail = null;
-        _isSubmitting = false;
-        notifyListeners();
-        searchEstablishments(_searchQuery, page: _currentPage);
-        return true;
-      }
-
-      // Remove from list and clear selection
-      _establishments.removeWhere((e) => e.id == _selectedId);
-      _totalCount = (_totalCount - 1).clamp(0, _totalCount);
-      _selectedId = null;
-      _selectedDetail = null;
-      _isSubmitting = false;
-      notifyListeners();
-      _reloadIfPageEmptied();
-      return true;
+      await _service.suspendEstablishment(id: id, reason: reason);
     } catch (e) {
+      if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+    if (generation != _generation) return false;
+
+    _isSubmitting = false;
+    if (_selectedId == id) _dropSelection();
+
+    // Поиск находит карточки любого статуса — приостановленная остаётся в
+    // выдаче, уже в новом статусе: выдача перечитывается. Список одобренных
+    // её теряет — убрать на месте.
+    if (_isSearchMode) {
+      notifyListeners();
+      searchEstablishments(_searchQuery, page: _currentPage);
+      return true;
+    }
+
+    _establishments.removeWhere((e) => e.id == id);
+    _totalCount = (_totalCount - 1).clamp(0, _totalCount);
+    notifyListeners();
+    _reloadIfPageEmptied();
+    return true;
   }
 
-  /// Unsuspend (reactivate) the currently selected establishment
+  /// Unsuspend (reactivate) the establishment shown in the detail panel
   Future<bool> unsuspendEstablishment() async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
     notifyListeners();
 
     try {
-      await _service.unsuspendEstablishment(id: _selectedId!);
-
-      // Refresh the list (if in search mode, item status changed)
-      _selectedId = null;
-      _selectedDetail = null;
-      _isSubmitting = false;
-      notifyListeners();
-
-      if (_isSearchMode) {
-        searchEstablishments(_searchQuery, page: _currentPage);
-      } else {
-        loadActiveEstablishments(page: _currentPage);
-      }
-      return true;
+      await _service.unsuspendEstablishment(id: id);
     } catch (e) {
+      if (generation != _generation) return false;
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+    if (generation != _generation) return false;
+
+    // Refresh the list (if in search mode, item status changed)
+    _isSubmitting = false;
+    if (_selectedId == id) _dropSelection();
+    notifyListeners();
+
+    if (_isSearchMode) {
+      searchEstablishments(_searchQuery, page: _currentPage);
+    } else {
+      loadActiveEstablishments(page: _currentPage);
+    }
+    return true;
   }
 
-  /// Claim the currently selected establishment for a target user
+  /// Claim the establishment shown in the detail panel for a target user
   Future<bool> claimEstablishment(String userId) async {
-    if (_selectedId == null) return false;
+    final id = _shownId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
     notifyListeners();
 
     try {
-      await _service.claimEstablishment(
-        id: _selectedId!,
-        userId: userId,
-      );
-
-      // Refresh detail to show new owner
-      _isSubmitting = false;
-      notifyListeners();
-      await selectEstablishment(_selectedId!);
-      return true;
+      await _service.claimEstablishment(id: id, userId: userId);
     } catch (e) {
+      if (generation != _generation) return false;
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
+    if (generation != _generation) return false;
+
+    // Показать нового владельца: перечитать деталь именно переданной
+    // карточки и только если она всё ещё открыта. Раньше перечитывание шло
+    // через selectEstablishment и выходило ранним возвратом — деталь уже
+    // была, и панель продолжала показывать прежнего владельца.
+    _isSubmitting = false;
+    notifyListeners();
+    if (_selectedId == id) await _loadDetail(id);
+    return true;
   }
 
   String _extractMessage(Object error) {
