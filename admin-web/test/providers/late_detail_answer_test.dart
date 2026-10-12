@@ -456,6 +456,10 @@ void main() {
       final approve = pending.approveEstablishment();
       await pumpEventQueue();
       pending.resetAccountScope();
+      // Вошедший открыл ту же заявку — ошибка чужого действия не о нём.
+      pending.selectEstablishment('a');
+      server.answer('a', _detail('a', forAdmin: false), index: 1);
+      await pumpEventQueue();
       server.moderateGate!.completeError(Exception('HTTP 500'));
       expect(await approve, isFalse);
       expect(pending.submitError, isNull);
@@ -467,6 +471,9 @@ void main() {
       final unsuspend = suspended.unsuspendEstablishment();
       await pumpEventQueue();
       suspended.resetAccountScope();
+      suspended.selectEstablishment('b');
+      server.answer('b', _detail('b', forAdmin: false), index: 1);
+      await pumpEventQueue();
       server.unsuspendGate!.completeError(Exception('HTTP 500'));
       expect(await unsuspend, isFalse);
       expect(suspended.submitError, isNull);
