@@ -1,13 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
+import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
+import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
 import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 
@@ -31,6 +34,9 @@ class _GatedServer implements ModerationService {
       <String, List<Completer<EstablishmentDetail>>>{};
   final List<String> calls = <String>[];
   Completer<void>? suspendGate;
+  Completer<void>? claimGate;
+  Completer<void>? moderateGate;
+  Completer<void>? unsuspendGate;
 
   /// Ответить на [index]-й запрос детали карточки [id].
   void answer(String id, EstablishmentDetail detail, {int index = 0}) =>
@@ -56,6 +62,7 @@ class _GatedServer implements ModerationService {
   @override
   Future<void> unsuspendEstablishment({required String id}) async {
     calls.add('unsuspend:$id');
+    if (unsuspendGate != null) await unsuspendGate!.future;
   }
 
   @override
@@ -64,6 +71,7 @@ class _GatedServer implements ModerationService {
     required String userId,
   }) async {
     calls.add('claim:$id');
+    if (claimGate != null) await claimGate!.future;
   }
 
   @override
@@ -73,6 +81,7 @@ class _GatedServer implements ModerationService {
     Map<String, String>? moderationNotes,
   }) async {
     calls.add('$action:$id');
+    if (moderateGate != null) await moderateGate!.future;
   }
 
   @override
@@ -365,6 +374,141 @@ void main() {
     });
   });
 
+  group('Правки по ревью Phase 3.5', () {
+    late _GatedServer server;
+    setUp(() => server = _GatedServer());
+
+    Future<void> open(dynamic provider, String id) async {
+      provider.selectEstablishment(id);
+      server.answer(id, _detail(id));
+      await pumpEventQueue();
+    }
+
+    test('передача: если во время неё открыта другая карточка, её загрузка '
+        'не выбрасывается, и переданная не перечитывается', () async {
+      final provider = ApprovedProvider(service: server);
+      addTearDown(provider.dispose);
+      await open(provider, 'a');
+
+      server.claimGate = Completer<void>();
+      final done = provider.claimEstablishment('u-new');
+      await pumpEventQueue();
+      provider.selectEstablishment('c'); // модератор открыл другую
+      server.claimGate!.complete();
+      await done;
+      server.answer('c', _detail('c'));
+      await pumpEventQueue();
+
+      expect(server.calls.where((c) => c == 'detail:a').length, 1);
+      expect(provider.selectedDetail?.id, 'c');
+    });
+
+    test('ошибка перечитывания после передачи не запирает карточку: '
+        'повторный тап перечитывает', () async {
+      final provider = ApprovedProvider(service: server);
+      addTearDown(provider.dispose);
+      await open(provider, 'a');
+
+      final done = provider.claimEstablishment('u-new');
+      await pumpEventQueue();
+      server.details['a']![1].completeError(Exception('HTTP 500'));
+      await done;
+      expect(provider.detailError, isNotNull);
+
+      provider.selectEstablishment('a'); // повторный тап
+      await pumpEventQueue();
+      expect(server.calls.where((c) => c == 'detail:a').length, 3);
+    });
+
+    test('ошибка действия над «a» не показывается под открытой позже «b»',
+        () async {
+      final approved = ApprovedProvider(service: server);
+      addTearDown(approved.dispose);
+      await open(approved, 'a');
+      server.suspendGate = Completer<void>();
+      final suspend = approved.suspendEstablishment('Жалобы');
+      await pumpEventQueue();
+      await open(approved, 'b');
+      server.suspendGate!.completeError(Exception('HTTP 500'));
+      expect(await suspend, isFalse);
+      expect(approved.submitError, isNull);
+      expect(approved.isSubmitting, isFalse);
+
+      final pending = ModerationProvider(service: server);
+      addTearDown(pending.dispose);
+      await open(pending, 'c');
+      server.moderateGate = Completer<void>();
+      final approve = pending.approveEstablishment();
+      await pumpEventQueue();
+      await open(pending, 'd');
+      server.moderateGate!.completeError(Exception('HTTP 500'));
+      expect(await approve, isFalse);
+      expect(pending.submitError, isNull);
+      expect(pending.isSubmitting, isFalse);
+    });
+
+    test('ответ на действие после смены аккаунта: очередь и приостановленные '
+        'не пишут ошибку в состояние нового', () async {
+      final pending = ModerationProvider(service: server);
+      addTearDown(pending.dispose);
+      await open(pending, 'a');
+      server.moderateGate = Completer<void>();
+      final approve = pending.approveEstablishment();
+      await pumpEventQueue();
+      pending.resetAccountScope();
+      server.moderateGate!.completeError(Exception('HTTP 500'));
+      expect(await approve, isFalse);
+      expect(pending.submitError, isNull);
+
+      final suspended = SuspendedProvider(service: server);
+      addTearDown(suspended.dispose);
+      await open(suspended, 'b');
+      server.unsuspendGate = Completer<void>();
+      final unsuspend = suspended.unsuspendEstablishment();
+      await pumpEventQueue();
+      suspended.resetAccountScope();
+      server.unsuspendGate!.completeError(Exception('HTTP 500'));
+      expect(await unsuspend, isFalse);
+      expect(suspended.submitError, isNull);
+    });
+
+    group('Отзывы: откат действия после смены аккаунта', () {
+      for (final action in <String>['delete', 'hide']) {
+        test('$action: откат не возвращает в список просмотрщика копию, '
+            'полученную администратором', () async {
+          final service = _GatedReviewService();
+          final provider = AdminReviewsProvider(service: service);
+          addTearDown(provider.dispose);
+
+          // Администратор: отзыв с автором и почтой.
+          service.next = <AdminReviewItem>[_adminCopy()];
+          await provider.loadReviews();
+          provider.selectReview('r1');
+          service.actionGate = Completer<void>();
+          final done = action == 'delete'
+              ? provider.deleteReview('спам')
+              : provider.setVisibility(visible: false);
+          await pumpEventQueue();
+
+          // Выход; вошёл просмотрщик — тот же отзыв без людей.
+          provider.resetAccountScope();
+          service.next = <AdminReviewItem>[_viewerCopy()];
+          await provider.loadReviews();
+
+          service.actionGate!.completeError(Exception('HTTP 500'));
+          expect(await done, isFalse);
+
+          final row = provider.reviews.single;
+          expect(row.authorEmail, isNull);
+          expect(row.authorName, isNull);
+          expect(row.viewerRedacted, isTrue);
+          expect(provider.selectedReview, isNull);
+          expect(provider.submitError, isNull);
+        });
+      }
+    });
+  });
+
   group('Журнал', () {
     test('ответ администратору, опоздавший к входу просмотрщика, не ложится '
         'в его журнал', () async {
@@ -409,6 +553,54 @@ class _GatedAuditService implements AuditLogService {
         'подставка не обслуживает ${invocation.memberName}',
       );
 }
+
+class _GatedReviewService implements AdminReviewService {
+  List<AdminReviewItem> next = <AdminReviewItem>[];
+  Completer<void>? actionGate;
+
+  @override
+  Future<AdminReviewListResponse> getReviews({
+    int page = 1,
+    int perPage = 20,
+    String? status,
+    int? rating,
+    String? search,
+    String? sort,
+    DateTime? from,
+    DateTime? to,
+  }) async =>
+      AdminReviewListResponse(reviews: next, total: next.length, page: 1, pages: 1);
+
+  @override
+  Future<void> setVisibility(String id, {required bool isVisible}) =>
+      actionGate!.future;
+
+  @override
+  Future<void> deleteReview(String id, {String? reason}) => actionGate!.future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        'подставка не обслуживает ${invocation.memberName}',
+      );
+}
+
+AdminReviewItem _adminCopy() => AdminReviewItem(
+      id: 'r1',
+      rating: 1,
+      content: 'Текст скрытого отзыва',
+      authorName: 'Марына К.',
+      authorEmail: 'marina.k@gmail.com',
+      isVisible: false,
+      createdAt: DateTime.utc(2026, 10, 12, 9),
+    );
+
+AdminReviewItem _viewerCopy() => AdminReviewItem(
+      id: 'r1',
+      rating: 1,
+      isVisible: false,
+      viewerRedacted: true,
+      createdAt: DateTime.utc(2026, 10, 12, 9),
+    );
 
 AuditLogListResponse _auditPage({required String? adminName}) =>
     AuditLogListResponse(

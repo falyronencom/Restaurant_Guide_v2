@@ -819,8 +819,12 @@ class _DetailPanel extends StatelessWidget {
                 children: <Widget>[
                   _Heading(review: review, state: state),
                   _Quote(review: review),
+                  // Карточка списка пишет «партнёр ответил»; у скрытого от
+                  // просмотрщика ответ не пришёл — блок говорит, что он скрыт,
+                  // а не пропадает молча.
                   if (review.hasPartnerResponse &&
-                      review.partnerResponse != null)
+                      (review.partnerResponse != null ||
+                          review.viewerRedacted))
                     _PartnerResponse(review: review),
                   _Facts(review: review),
                 ],
@@ -1016,11 +1020,13 @@ class _PartnerResponse extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            review.partnerResponse!.trim(),
-            style: const TextStyle(
+            review.partnerResponse?.trim() ?? kRedactedForViewerLabel,
+            style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              color: AppTheme.textDark,
+              color: review.partnerResponse == null
+                  ? AppTheme.textGrey
+                  : AppTheme.textDark,
             ),
           ),
         ],
@@ -1094,6 +1100,17 @@ class _Facts extends StatelessWidget {
   Widget _authorStats() {
     final count = review.authorReviewCount;
     final average = review.authorAverageRating;
+
+    // Скрыто от просмотрщика — не «нет данных»: число есть, его не показали.
+    if (review.viewerRedacted) {
+      return const _Fact(
+        label: 'Отзывов от автора',
+        value: Text(
+          kRedactedForViewerLabel,
+          style: AppTheme.canonFieldValueEmpty,
+        ),
+      );
+    }
 
     if (count == null) {
       return const _Fact(label: 'Отзывов от автора', value: _Unknown());

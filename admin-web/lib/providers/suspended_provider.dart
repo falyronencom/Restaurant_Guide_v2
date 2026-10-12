@@ -122,7 +122,9 @@ class SuspendedProvider extends ChangeNotifier {
 
   /// Select establishment and load its detail
   Future<void> selectEstablishment(String id) async {
-    if (_selectedId == id && selectedDetail != null) return;
+    if (_selectedId == id && selectedDetail != null && _detailError == null) {
+      return;
+    }
 
     final request = ++_detailRequest;
     _selectedId = id;
@@ -180,7 +182,7 @@ class SuspendedProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
@@ -209,7 +211,7 @@ class SuspendedProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }

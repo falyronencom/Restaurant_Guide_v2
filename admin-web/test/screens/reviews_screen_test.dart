@@ -347,6 +347,7 @@ void main() {
           rating: 1,
           isVisible: false,
           viewerRedacted: true,
+          hasPartnerResponse: true,
           establishmentName: 'Кухмістр',
           createdAt: DateTime.utc(2026, 8, 12, 16, 24),
         ),
@@ -362,8 +363,10 @@ void main() {
 
       expect(find.text('Автор оставил только оценку, без текста'), findsNothing);
       expect(find.text('Без имени'), findsNothing);
-      // В панели разбора — ещё две: цитата и строка «Автор».
-      expect(find.text(kRedactedForViewerLabel), findsNWidgets(4));
+      // В панели разбора — ещё четыре: цитата, «Автор», «Отзывов от автора»
+      // и ответ партнёра (карточка списка сказала «партнёр ответил»).
+      expect(find.text('ОТВЕТ ПАРТНЁРА'), findsOneWidget);
+      expect(find.text(kRedactedForViewerLabel), findsNWidgets(6));
     });
 
     testWidgets('ответ партнёра помечен в карточке', (tester) async {

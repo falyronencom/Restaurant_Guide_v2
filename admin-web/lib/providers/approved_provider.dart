@@ -236,7 +236,11 @@ class ApprovedProvider extends ChangeNotifier {
 
   /// Select an establishment and load its detail
   Future<void> selectEstablishment(String id) async {
-    if (_selectedId == id && selectedDetail != null) return;
+    // Ошибка загрузки — исключение: повторный тап и есть «попробовать снова»
+    // (например, после сбоя перечитывания после передачи).
+    if (_selectedId == id && selectedDetail != null && _detailError == null) {
+      return;
+    }
 
     // Прежняя деталь под новым выбором наружу не отдаётся: геттер
     // [selectedDetail] сверяет её id с выбором.
@@ -304,7 +308,9 @@ class ApprovedProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
-      _submitError = _extractMessage(e);
+      // Ошибка — о карточке, над которой действовали: под другой, открытой
+      // за это время, она не показывается.
+      if (_selectedId == id) _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
@@ -344,7 +350,7 @@ class ApprovedProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false;
       _isSubmitting = false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }
@@ -378,7 +384,7 @@ class ApprovedProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false;
       _isSubmitting = false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       notifyListeners();
       return false;
     }

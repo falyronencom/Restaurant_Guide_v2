@@ -264,6 +264,7 @@ class ModerationProvider with ChangeNotifier {
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
         _detailRequest++;
+        _isLoadingDetail = false;
         _selectedId = null;
         _selectedDetail = null;
         _fieldReviews = {};
@@ -433,7 +434,9 @@ class ModerationProvider with ChangeNotifier {
       return true;
     } catch (e) {
       if (generation != _generation) return false;
-      _submitError = _extractMessage(e);
+      // Ошибка — о заявке, над которой действовали, не о той, что открыта
+      // за это время (ревью Phase 3.5 пакета 2).
+      if (_selectedId == id) _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();
       return false;
@@ -476,7 +479,7 @@ class ModerationProvider with ChangeNotifier {
       return true;
     } catch (e) {
       if (generation != _generation) return false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();
       return false;
@@ -509,13 +512,14 @@ class ModerationProvider with ChangeNotifier {
       // перечитать: [selectEstablishment] обнуляет вердикты, и правка
       // координат стирала бы проверку по всем четырнадцати полям.
       await _reloadSelectedDetail();
+      if (generation != _generation) return false;
 
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
       if (generation != _generation) return false;
-      _submitError = _extractMessage(e);
+      if (_selectedId == id) _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();
       return false;

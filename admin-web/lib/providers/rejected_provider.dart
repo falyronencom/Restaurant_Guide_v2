@@ -113,7 +113,9 @@ class RejectedProvider extends ChangeNotifier {
   /// Select a rejected establishment and load its detail
   Future<void> selectEstablishment(RejectedEstablishmentItem rejection) async {
     final id = rejection.establishmentId;
-    if (_selectedId == id && selectedDetail != null) return;
+    if (_selectedId == id && selectedDetail != null && _detailError == null) {
+      return;
+    }
 
     final request = ++_detailRequest;
     _selectedId = id;
