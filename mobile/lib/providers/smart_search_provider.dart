@@ -24,7 +24,12 @@ class SmartSearchProvider extends ChangeNotifier {
   /// не утечка ПДн (сама выдача — публичный каталог), но показывать человеку
   /// чужой запрос на старте всё равно нельзя. / The phrase belongs to whoever
   /// typed it; the preview renders on the first screen after login.
+  /// Bumped on every account-scope reset; a search started before the reset
+  /// drops its answer (pack 1 of the critics' findings, point 4 — Codex C2).
+  int _generation = 0;
+
   void resetAccountScope() {
+    _generation++;
     _state = SmartSearchState.idle;
     _smartResults = [];
     _totalResults = 0;
@@ -74,6 +79,7 @@ class SmartSearchProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final result = await _service.searchSmart(
         query: _lastQuery,
@@ -91,6 +97,7 @@ class SmartSearchProvider extends ChangeNotifier {
         features: filters?.features,
         limit: 3,
       );
+      if (generation != _generation) return; // account switched mid-flight
 
       _smartResults = result.results;
       _totalResults = result.total;
@@ -98,6 +105,7 @@ class SmartSearchProvider extends ChangeNotifier {
       _isFallback = result.fallback;
       _state = SmartSearchState.results;
     } catch (e) {
+      if (generation != _generation) return;
       _state = SmartSearchState.error;
       _errorMessage = 'Не удалось выполнить поиск';
       _smartResults = [];

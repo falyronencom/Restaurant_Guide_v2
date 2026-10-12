@@ -118,13 +118,17 @@ describe('POST /api/v1/auth/oauth — Yandex', () => {
   });
 
   test('links onto an existing password account with the same (verified) email', async () => {
-    await createTestUser({
+    const shared = await createTestUser({
       email: 'shared@yandex.ru',
       phone: '+375291112233',
       password: 'Test123!@#',
       name: 'Shared',
       authMethod: 'email',
     });
+    // createTestUser writes email_verified = false; the link path is for a
+    // record whose address IS confirmed (an unconfirmed one passes to the
+    // signer instead — oauth-unverified-takeover.test.js).
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [shared.id]);
 
     mockYandexInfo(yandexBody({ default_email: 'shared@yandex.ru' }));
     const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);

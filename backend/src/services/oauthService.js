@@ -112,7 +112,14 @@ export async function verifyYandexToken(oauthToken) {
       email: data.default_email.toLowerCase().trim(),
       name: data.display_name || data.real_name || data.default_email.split('@')[0],
       avatarUrl,
-      emailVerified: true, // Yandex considers default_email as verified
+      // default_email is taken as verified. Checked against Yandex ID docs on
+      // 11.10.2026 (decision of the Coordinator): the info response carries no
+      // verified flag; a Yandex ID registered on an outside address («упрощённая
+      // регистрация», support/id/authorization/lite) requires the code sent to
+      // that address, and a passwordless sign-in goes through a link mailed to
+      // it — so the address behind default_email has been proven to Yandex.
+      // Business-domain mail (Почта для бизнеса) cannot be used that way.
+      emailVerified: true,
       provider: 'yandex',
     };
   } catch (error) {

@@ -1650,3 +1650,27 @@ export const findEstablishmentBySlug = async (slug, includeAll = false) => {
   }
 };
 
+/**
+ * True once the card has been transferred to another owner by an admin
+ * (claimEstablishment sets claimed_at). The media service widens the folders a
+ * card may destroy files from only for such cards: a transferred card keeps the
+ * previous owner's uploads, and they belong to the card now.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<boolean>}
+ */
+export const hasBeenClaimed = async (establishmentId) => {
+  try {
+    const result = await pool.query(
+      'SELECT claimed_at IS NOT NULL AS claimed FROM establishments WHERE id = $1',
+      [establishmentId],
+    );
+    return result.rows.length > 0 && result.rows[0].claimed === true;
+  } catch (error) {
+    logger.error('Error checking whether establishment was claimed', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};

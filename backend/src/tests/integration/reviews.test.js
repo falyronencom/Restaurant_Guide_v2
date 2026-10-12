@@ -1128,8 +1128,9 @@ describe('Reviews System - Hidden Reviews Stay Out of the Rating', () => {
     }
 
     await request(app)
-      .post(`/api/v1/admin/reviews/${hidden.body.data.review.id}/toggle-visibility`)
+      .post(`/api/v1/admin/reviews/${hidden.body.data.review.id}/visibility`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_visible: false })
       .expect(200);
 
     // Precondition: the hidden 1★ is out of the rating.

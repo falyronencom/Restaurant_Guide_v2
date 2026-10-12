@@ -23,6 +23,12 @@ class NotificationProvider with ChangeNotifier {
   Timer? _pollingTimer;
   bool _isAuthenticated = false;
 
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   NotificationProvider({NotificationService? service})
       : _service = service ?? NotificationService() {
     // stopPolling already clears the list, badge and timer — exactly the
@@ -57,6 +63,7 @@ class NotificationProvider with ChangeNotifier {
 
   /// Stop polling (call on logout)
   void stopPolling() {
+    _generation++;
     _isAuthenticated = false;
     _pollingTimer?.cancel();
     _pollingTimer = null;
@@ -83,8 +90,10 @@ class NotificationProvider with ChangeNotifier {
   /// Lightweight call for badge — silent on errors
   Future<void> fetchUnreadCount() async {
     if (!_isAuthenticated) return;
+    final generation = _generation;
     try {
       final count = await _service.getUnreadCount();
+      if (generation != _generation) return; // account switched mid-flight
       if (_unreadCount != count) {
         _unreadCount = count;
         notifyListeners();
@@ -112,12 +121,14 @@ class NotificationProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final result = await _service.getNotifications(
         page: _currentPage,
         limit: 20,
         category: _currentCategory,
       );
+      if (generation != _generation) return; // account switched mid-flight
 
       final items = result['items'] as List<NotificationModel>;
       final pagination = result['pagination'] as Map<String, dynamic>;
@@ -134,6 +145,7 @@ class NotificationProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     } catch (e) {
+      if (generation != _generation) return;
       _isLoading = false;
       _errorMessage = 'Не удалось загрузить уведомления';
       notifyListeners();
@@ -172,10 +184,13 @@ class NotificationProvider with ChangeNotifier {
       notifyListeners();
     }
 
+    final generation = _generation;
     try {
       await _service.markAsRead(notificationId);
     } catch (_) {
-      // Revert on failure
+      // Revert on failure — unless the account changed meanwhile: the list
+      // being reverted is already gone.
+      if (generation != _generation) return;
       if (index != -1) {
         _notifications[index] = _notifications[index].copyWith(isRead: false);
         _unreadCount++;
@@ -196,9 +211,11 @@ class NotificationProvider with ChangeNotifier {
     _unreadCount = 0;
     notifyListeners();
 
+    final generation = _generation;
     try {
       await _service.markAllAsRead();
     } catch (_) {
+      if (generation != _generation) return;
       // Revert on failure
       _notifications = previousNotifications;
       _unreadCount = previousCount;
