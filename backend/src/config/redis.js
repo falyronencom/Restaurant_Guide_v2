@@ -228,14 +228,13 @@ export const disconnectRedis = async () => {
  * Increment a counter in Redis with automatic expiration.
  * Primary use case: rate limiting counters that auto-expire after time window.
  *
- * INCR and EXPIRE run in one MULTI, so the counter is never left without an
- * expiry. EXPIRE runs on every increment: each hit pushes the expiry back by
- * expirySeconds. Rate-limiter keys carry their time window in the key and roll
- * over regardless; a key without one (the review quota) lives until
- * expirySeconds after its last increment.
+ * SET NX (with the expiry) and INCR run in one MULTI, so the counter is never
+ * left without an expiry, and the expiry is fixed when the key is born: a key
+ * without a window in its name (the review quota) lives expirySeconds after
+ * its FIRST increment, whatever happens to it later.
  *
  * @param {string} key - Redis key for the counter
- * @param {number} expirySeconds - Seconds until key expires, counted from this increment
+ * @param {number} expirySeconds - Seconds until key expires, counted from the key's first increment
  * @returns {Promise<number>} New counter value after increment
  */
 export const incrementWithExpiry = async (key, expirySeconds) => {
@@ -247,11 +246,17 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
       logger.warn('Redis client not ready, skipping increment', { key });
       return 1; // Return 1 as if it's the first increment
     }
+    // The expiry is set when the key is born (SET NX) and never pushed back by
+    // a later increment: the review quota reserves a slot on every attempt
+    // (critics' pack 1, point 5), and a refused or failed attempt must not
+    // extend the day — a user at the limit who retried once a day would never
+    // regain it (review of 09.10.2026). Rate-limiter keys carry their window
+    // in the name and roll over regardless.
     const multi = redisClient.multi();
+    multi.set(key, '0', { EX: expirySeconds, NX: true });
     multi.incr(key);
-    multi.expire(key, expirySeconds);
     const results = await withRedisDeadline(multi.exec());
-    return results[0]; // Return the incremented value
+    return results[1]; // Return the incremented value
   } catch (error) {
     logger.error('Redis increment with expiry failed', {
       error: error.message,
@@ -259,6 +264,40 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
     });
     // Return 1 instead of throwing to allow tests to continue
     return 1;
+  }
+};
+
+/**
+ * Decrement a counter — the way to give back a slot reserved with
+ * incrementWithExpiry when the guarded operation did not happen (the review
+ * quota: reserve first, create, give back on failure — critics' pack 1,
+ * point 5). A counter that would go below zero is removed instead: the key
+ * may have expired between the reservation and the return.
+ *
+ * Same stance as the other helpers: Redis unavailable means «skip», never
+ * «wait» or «throw».
+ *
+ * @param {string} key - Redis key for the counter
+ * @returns {Promise<number>} Counter value after the decrement (0 when skipped)
+ */
+export const decrement = async (key) => {
+  try {
+    if (!redisClient.isReady) {
+      logger.warn('Redis client not ready, skipping decrement', { key });
+      return 0;
+    }
+    const value = await withRedisDeadline(redisClient.decr(key));
+    if (value < 0) {
+      await withRedisDeadline(redisClient.del(key));
+      return 0;
+    }
+    return value;
+  } catch (error) {
+    logger.error('Redis decrement failed', {
+      error: error.message,
+      key,
+    });
+    return 0;
   }
 };
 

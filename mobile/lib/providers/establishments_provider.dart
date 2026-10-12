@@ -133,9 +133,16 @@ class EstablishmentsProvider with ChangeNotifier {
   ///
   /// Город, фильтры, сортировка и сам список НЕ трогаются намеренно: это
   /// публичный каталог, он одинаков для всех и к владельцу не привязан. /
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   /// Favorites and the typed phrase belong to the account; city, filters and
   /// the catalog listing do not.
   void resetAccountScope() {
+    _generation++;
     _favoriteIds = {};
     _favoriteEstablishments = [];
     _isFavoritesLoading = false;
@@ -720,6 +727,7 @@ class EstablishmentsProvider with ChangeNotifier {
     }
     notifyListeners();
 
+    final generation = _generation;
     try {
       if (wasFavorite) {
         await _service.removeFromFavorites(establishmentId);
@@ -727,7 +735,10 @@ class EstablishmentsProvider with ChangeNotifier {
         await _service.addToFavorites(establishmentId);
       }
     } catch (e) {
-      // Revert on error
+      // Revert on error — unless the account changed meanwhile (an expired
+      // session resets the scope before the failure reaches this catch): the
+      // list being reverted belongs to the previous account and is gone.
+      if (generation != _generation) return;
       if (wasFavorite) {
         _favoriteIds.add(establishmentId);
         // Restore removed establishment to list
@@ -751,13 +762,16 @@ class EstablishmentsProvider with ChangeNotifier {
     _favoritesError = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final favorites = await _service.getFavorites();
+      if (generation != _generation) return; // account switched mid-flight
       _favoriteEstablishments = favorites;
       _favoriteIds = favorites.map((e) => e.id).toSet();
       _isFavoritesLoading = false;
       notifyListeners();
     } catch (e) {
+      if (generation != _generation) return;
       _favoritesError = _extractErrorMessage(e);
       _isFavoritesLoading = false;
       notifyListeners();

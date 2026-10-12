@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -24,9 +26,20 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => MainNavigationScreenState();
 }
 
-class MainNavigationScreenState extends State<MainNavigationScreen> {
+class MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   /// Static instance for access from screens on different navigators
   static MainNavigationScreenState? instance;
+
+  /// Авторизация, на которую подписан экран; ставится после первого кадра.
+  AuthProvider? _auth;
+
+  /// Аккаунт, для которого уже запущены опрос уведомлений и регистрация
+  /// адреса телефона для push; null — гость.
+  String? _signedInAccount;
+
+  /// Отличает «состояние входа ещё не смотрели» от «смотрели, гость».
+  bool _authSeen = false;
 
   int _currentIndex = 0;
 
@@ -46,26 +59,67 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     instance = this;
-    // Start notification polling after frame is built (only when authenticated)
+    WidgetsBinding.instance.addObserver(this);
+    _wirePushHandlers();
+    // Главная живёт всю сессию: под ней проходят и вход из «Профиля»,
+    // «Избранного» или карточки, и выход, и смена аккаунта. Поэтому она
+    // слушает авторизацию, а не смотрит на неё один раз. До 08.10.2026
+    // опрос уведомлений и регистрация адреса телефона для push запускались
+    // только здесь, на первом кадре, если человек уже вошёл. Вход изнутри
+    // приложения возвращал на уже открытую главную, и оба не запускались
+    // до полного перезапуска (A72, 08.10.2026).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = context.read<AuthProvider>();
-      if (authProvider.isAuthenticated) {
-        context.read<NotificationProvider>().startPolling();
-        _initializePushNotifications();
-      }
+      if (!mounted) return;
+      _auth = context.read<AuthProvider>()..addListener(_onAuthChanged);
+      _onAuthChanged();
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _auth?.removeListener(_onAuthChanged);
     if (instance == this) {
       instance = null;
     }
     super.dispose();
   }
 
-  /// Initialize push notification service with foreground + tap handlers.
-  void _initializePushNotifications() {
+  /// Возврат в приложение — повод повторить регистрацию адреса, если она
+  /// сорвалась (при запуске сети могло не быть), и перечитать разрешение на
+  /// уведомления (его могли поменять в настройках телефона).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _signedInAccount != null) {
+      PushNotificationService().refreshOnResume();
+    }
+  }
+
+  /// Вход, выход и смена аккаунта — любым путём, в том числе восстановление
+  /// сессии при запуске и при возврате в приложение.
+  void _onAuthChanged() {
+    final auth = _auth;
+    if (auth == null || !mounted) return;
+    // Пустая строка — вошёл, но профиль ещё не получен (ответ 429 при
+    // восстановлении сессии). Когда профиль придёт, ключ сменится на id, и
+    // регистрация повторится — сервер принимает повторную без последствий.
+    final account = auth.isAuthenticated ? (auth.currentUser?.id ?? '') : null;
+    if (_authSeen && account == _signedInAccount) return;
+    _authSeen = true;
+    _signedInAccount = account;
+
+    final pushService = PushNotificationService();
+    if (account == null) {
+      pushService.onSignedOut();
+      return;
+    }
+    context.read<NotificationProvider>().startPolling();
+    unawaited(pushService.registerDevice());
+  }
+
+  /// Обработчики push: пришёл при открытом приложении и нажатие на push.
+  /// Firebase они не трогают и от входа не зависят — ставятся один раз.
+  void _wirePushHandlers() {
     final pushService = PushNotificationService();
 
     // Foreground: show snackbar + refresh badge
@@ -87,7 +141,9 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
 
     // Tap: navigate based on push data payload
     pushService.onMessageTap = (message) {
-      if (!mounted) return;
+      // Push ведут на экраны аккаунта (отзывы, меню, правка карточки) —
+      // гостю туда незачем: push мог прийти прежнему аккаунту.
+      if (!mounted || _signedInAccount == null) return;
       final data = message.data;
       final type = data['type'] as String?;
       final establishmentId = data['establishmentId'] as String?;
@@ -148,8 +204,6 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
           break;
       }
     };
-
-    pushService.initialize();
   }
 
   /// Switch to specified tab (accessible via static instance)

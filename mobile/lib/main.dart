@@ -30,6 +30,7 @@ import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_preferences_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
+import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
 
 /// Restaurant Guide Belarus v2.0 Mobile Application
 /// Entry point for the Flutter application
@@ -37,11 +38,13 @@ void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (non-blocking — app works without it)
+  // Initialize Firebase (non-blocking — app works without it). Push на этом
+  // телефоне без него не будет: причину человек увидит в «Настройках
+  // уведомлений», журнал — в сервисе push.
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Firebase init failed: $e — push notifications disabled');
+    PushNotificationService().reportFirebaseInitFailure(e);
   }
 
   // Lock to portrait orientation only

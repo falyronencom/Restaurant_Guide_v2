@@ -19,9 +19,16 @@ class NotificationPreferencesProvider extends ChangeNotifier {
     AccountScope.register(resetAccountScope);
   }
 
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   /// Back to defaults + not-initialized so the next account re-fetches its
   /// own preferences; registered in [AccountScope].
   void resetAccountScope() {
+    _generation++;
     _bookingPushEnabled = true;
     _reviewsPushEnabled = true;
     _promotionsPushEnabled = true;
@@ -51,10 +58,12 @@ class NotificationPreferencesProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient.get(
         '/api/v1/notifications/preferences',
       );
+      if (generation != _generation) return; // account switched mid-flight
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
@@ -68,11 +77,14 @@ class NotificationPreferencesProvider extends ChangeNotifier {
       }
       _isInitialized = true;
     } catch (e) {
+      if (generation != _generation) return;
       debugPrint('Failed to fetch notification preferences: $e');
       // Keep defaults on error
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -98,6 +110,7 @@ class NotificationPreferencesProvider extends ChangeNotifier {
     if (menu != null) _menuPushEnabled = menu;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final body = <String, dynamic>{};
       if (booking != null) body['booking_push_enabled'] = booking;
@@ -110,7 +123,9 @@ class NotificationPreferencesProvider extends ChangeNotifier {
         data: body,
       );
     } catch (e) {
-      // Rollback on failure
+      // Rollback on failure — unless the account changed meanwhile: the
+      // toggles being restored are the previous account's.
+      if (generation != _generation) return;
       _bookingPushEnabled = prevBooking;
       _reviewsPushEnabled = prevReviews;
       _promotionsPushEnabled = prevPromotions;

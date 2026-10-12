@@ -26,7 +26,9 @@ import * as adminReviewController from '../../controllers/adminReviewController.
 import * as adminMenuItemController from '../../controllers/adminMenuItemController.js';
 import * as qualityHealthController from '../../controllers/qualityHealthController.js';
 import * as badgesController from '../../controllers/badgesController.js';
+import { body, param } from 'express-validator';
 import { validateLogin } from '../../validators/authValidation.js';
+import { validate } from '../../middleware/errorHandler.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { PANEL_READ_ROLES, PANEL_ACTION_ROLES } from '../../config/panelRoles.js';
@@ -346,16 +348,44 @@ router.get(
 );
 
 /**
- * POST /api/v1/admin/reviews/:id/toggle-visibility
+ * POST /api/v1/admin/reviews/:id/visibility
+ * Body: { is_visible: boolean }
  *
- * Toggle review visibility (is_visible = NOT is_visible).
- * Writes audit_log entry.
+ * Set review visibility to an explicit state. Not a toggle: the panel's client
+ * repeats any request answered with a 5xx (api_client.dart), so an action must
+ * mean the same thing when repeated (critics' pack 1, point 2 — Codex C-10).
+ * Writes audit_log entry when the state changed.
+ *
+ * The former path /toggle-visibility is kept as an alias with the SAME
+ * contract — a panel build from before this change gets a loud 422 rather
+ * than a silent flip. Remove the alias once every deployed panel sends
+ * is_visible.
  */
+const validateVisibility = [
+  param('id').isUUID().withMessage('Review id must be a UUID'),
+  body('is_visible')
+    .exists({ checkNull: true })
+    .withMessage('is_visible is required: true to show, false to hide')
+    .isBoolean({ strict: true })
+    .withMessage('is_visible must be true or false'),
+];
+
+router.post(
+  '/reviews/:id/visibility',
+  authenticate,
+  writeAccess,
+  validateVisibility,
+  validate,
+  adminReviewController.setVisibility,
+);
+
 router.post(
   '/reviews/:id/toggle-visibility',
   authenticate,
   writeAccess,
-  adminReviewController.toggleVisibility,
+  validateVisibility,
+  validate,
+  adminReviewController.setVisibility,
 );
 
 /**

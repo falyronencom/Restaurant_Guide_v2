@@ -20,6 +20,7 @@ const mockPool = {
 };
 
 jest.unstable_mockModule('../../config/database.js', () => ({
+  getClient: jest.fn(),
   pool: mockPool,
   default: mockPool,
 }));
