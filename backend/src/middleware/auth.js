@@ -1,5 +1,5 @@
-import { verifyAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
-import { getAccountStatus } from '../services/accountStatus.js';
+import { verifyAccessToken, extractTokenFromHeader, accessTokenIssuedAtMs } from '../utils/jwt.js';
+import { getAccountStatus, issuedBeforeRevocation } from '../services/accountStatus.js';
 import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -11,15 +11,20 @@ import logger from '../utils/logger.js';
  * 2. The token can be successfully verified and decoded
  * 3. The token hasn't expired
  * 4. The account behind it is still active (services/accountStatus.js)
+ * 5. The token was issued after the account's sessions were last revoked —
+ *    by a password reset, a detected refresh-token reuse or the takeover of
+ *    an unconfirmed record (users.sessions_revoked_at)
  *
  * On successful authentication, the user is attached to req.user for use by
  * route handlers: userId and email from the token, role from the database —
  * an account switched off or given another role is treated as such from the
  * next request, not when its access token expires (up to 4 h). A switched-off
  * or missing account gets 401 ACCOUNT_INACTIVE, the code the refresh endpoint
- * already answers it with, so every client signs it out. If the check itself
- * cannot be made (database down), the answer is 503, never 401: a database
- * blip must not sign everyone out.
+ * already answers it with, so every client signs it out. A token issued before
+ * a revocation gets 401 TOKEN_REVOKED: every client refreshes once on any 401,
+ * the refresh token is refused the same way, and the client signs out. If the
+ * check itself cannot be made (database down), the answer is 503, never 401:
+ * a database blip must not sign everyone out.
  *
  * Usage in routes:
  * router.get('/protected-endpoint', authenticate, async (req, res) => {
@@ -113,6 +118,23 @@ export const authenticate = async (req, res, next) => {
       message: 'User account is inactive',
       error: {
         code: 'ACCOUNT_INACTIVE',
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Signature and expiry are fine, but every session the account had before
+  // its last revocation has ended — and this token belongs to one of them.
+  if (issuedBeforeRevocation(accessTokenIssuedAtMs(decoded), account.sessionsRevokedAt)) {
+    logger.warn('Authentication refused: token issued before the account sessions were revoked', {
+      userId: decoded.userId,
+      ip: req.ip,
+    });
+    return res.status(401).json({
+      success: false,
+      message: 'Access token has been revoked. Please log in again.',
+      error: {
+        code: 'TOKEN_REVOKED',
       },
       timestamp: new Date().toISOString(),
     });
@@ -214,8 +236,9 @@ export const authorize = (allowedRoles) => {
  *
  * Not mounted on any route (2026-10-07). Unlike authenticate it trusts the
  * token alone — it does not ask services/accountStatus.js whether the account
- * is still active or what its role is now. Add that check before using it for
- * anything beyond personalization.
+ * is still active, what its role is now, or whether the token was issued
+ * before the account's sessions were revoked. Add that check before using it
+ * for anything beyond personalization.
  * 
  * Usage in routes:
  * router.get('/public-with-personalization', optionalAuth, async (req, res) => {
