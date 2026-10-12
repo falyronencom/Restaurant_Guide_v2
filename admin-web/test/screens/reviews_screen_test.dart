@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
@@ -331,6 +332,38 @@ void main() {
       // Величина техническая, и шрифт отличает её от имени раньше, чем
       // прочтёшь.
       expect(email.style?.fontFamily, contains('JetBrainsMono'));
+    });
+
+    testWidgets(
+        'скрытый от просмотрщика: «Скрыто в режиме просмотра», а не «Аноним» '
+        'и «без текста»', (tester) async {
+      // Сервер отдаёт просмотрщику скрытый отзыв без автора и текста
+      // (пакет 2, пункт 1). Подписи «Аноним» и «отзыв без текста» были бы
+      // неправдой: и автор, и текст есть — они не показаны.
+      final fake = await pumpScreen(tester, viewer: true);
+      await settle(tester, fake, reviews: <AdminReviewItem>[
+        AdminReviewItem(
+          id: 'r9',
+          rating: 1,
+          isVisible: false,
+          viewerRedacted: true,
+          establishmentName: 'Кухмістр',
+          createdAt: DateTime.utc(2026, 8, 12, 16, 24),
+        ),
+      ]);
+
+      expect(find.text('Аноним'), findsNothing);
+      expect(find.text('Отзыв без текста — только оценка'), findsNothing);
+      // Автор и текст — две подписи в карточке.
+      expect(find.text(kRedactedForViewerLabel), findsNWidgets(2));
+
+      await tester.tap(find.text(kRedactedForViewerLabel).first);
+      await tester.pump();
+
+      expect(find.text('Автор оставил только оценку, без текста'), findsNothing);
+      expect(find.text('Без имени'), findsNothing);
+      // В панели разбора — ещё две: цитата и строка «Автор».
+      expect(find.text(kRedactedForViewerLabel), findsNWidgets(4));
     });
 
     testWidgets('ответ партнёра помечен в карточке', (tester) async {

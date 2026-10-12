@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
+import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
@@ -539,9 +540,11 @@ class _ReviewCard extends StatelessWidget {
               _placeRow(),
               const SizedBox(height: 8),
               Text(
-                review.content?.trim().isNotEmpty == true
-                    ? review.content!.trim()
-                    : 'Отзыв без текста — только оценка',
+                review.viewerRedacted
+                    ? kRedactedForViewerLabel
+                    : review.content?.trim().isNotEmpty == true
+                        ? review.content!.trim()
+                        : 'Отзыв без текста — только оценка',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
@@ -587,10 +590,17 @@ class _ReviewCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            hasName ? name : (review.authorEmail ?? 'Аноним'),
+            hasName
+                ? name
+                : review.viewerRedacted
+                    ? kRedactedForViewerLabel
+                    : (review.authorEmail ?? 'Аноним'),
             // Без имени показывается адрес — величина техническая, и
             // моноширинный отличает её от имени раньше, чем прочтёшь.
-            style: hasName
+            // Скрытое от просмотрщика — не адрес и не имя: обычный серый.
+            style: !hasName && review.viewerRedacted
+                ? const TextStyle(fontSize: 14, color: AppTheme.textGrey)
+                : hasName
                 ? TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -942,9 +952,11 @@ class _Quote extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            text?.isNotEmpty == true
-                ? text!
-                : 'Автор оставил только оценку, без текста',
+            review.viewerRedacted
+                ? kRedactedForViewerLabel
+                : text?.isNotEmpty == true
+                    ? text!
+                    : 'Автор оставил только оценку, без текста',
             style: TextStyle(
               fontFamily: AppTheme.fontCardTitleFamily,
               fontSize: 16,
@@ -1060,7 +1072,11 @@ class _Facts extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              hasName ? name : 'Без имени',
+              hasName
+                  ? name
+                  : review.viewerRedacted
+                      ? kRedactedForViewerLabel
+                      : 'Без имени',
               style: hasName
                   ? AppTheme.canonFieldValue
                   : AppTheme.canonFieldValueEmpty,

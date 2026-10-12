@@ -37,6 +37,14 @@ const buildReviewWhere = (filters) => {
     values.push(parseInt(filters.rating, 10));
   }
 
+  // A viewer — the read-only panel role shown to people outside the project —
+  // never receives a deleted review, whoever deleted it (pack 2, point 1;
+  // cloud critic 2A, B-1). The condition sits in the WHERE and not in a
+  // post-filter so that the counters of getReviewStats agree with the list.
+  if (filters.viewer) {
+    conditions.push('r.is_deleted = false');
+  }
+
   // Status mapping: visible, hidden, deleted
   if (filters.status === 'visible') {
     conditions.push('r.is_visible = true AND r.is_deleted = false');
@@ -48,7 +56,13 @@ const buildReviewWhere = (filters) => {
   // No filter = show all (including deleted and hidden)
 
   if (filters.search) {
-    conditions.push(`COALESCE(r.content, r.text, '') ILIKE $${paramIndex++}`);
+    // For a viewer the search reads visible texts only: the text of a hidden
+    // review is withheld from them, and a search over it would let the text be
+    // guessed piece by piece from which queries match.
+    const searchCondition = `COALESCE(r.content, r.text, '') ILIKE $${paramIndex++}`;
+    conditions.push(filters.viewer
+      ? `(r.is_visible = true AND ${searchCondition})`
+      : searchCondition);
     values.push(`%${filters.search}%`);
   }
 
