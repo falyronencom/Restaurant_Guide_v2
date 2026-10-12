@@ -507,7 +507,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Поддержка: support@niriveo.by'),
+                  content: Text('Поддержка: support@nirivio.by'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
