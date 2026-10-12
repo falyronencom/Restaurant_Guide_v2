@@ -11,6 +11,11 @@
  *   readAccess  — admin + viewer: every GET that only shows data
  *   writeAccess — admin only: every mutation, plus reads that exist only to
  *                 serve one (users/search feeds "assign a partner")
+ * The read tier carries the viewer projection (projections/viewerProjection.js,
+ * pack 2, point 3): an answer to a viewer from ANY read route loses the
+ * personal data of people. It lives inside readAccess so that a read route
+ * cannot be registered without it; tests/integration/admin-viewer-sentinel.test.js
+ * walks every route of this router as a viewer.
  * The split is checked statically by tests/unit/adminRoutesAccessTiers.test.js:
  * a route without a tier, or a GET under writeAccess outside the allow-list
  * kept there, fails the gate. Do not reintroduce a raw authorize call with an
@@ -32,11 +37,15 @@ import { validate } from '../../middleware/errorHandler.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { PANEL_READ_ROLES, PANEL_ACTION_ROLES } from '../../config/panelRoles.js';
+import { viewerResponseProjection } from '../../projections/viewerProjection.js';
 
 const router = express.Router();
 
-/** Read tier: admin and viewer. */
-const readAccess = authorize(PANEL_READ_ROLES);
+/**
+ * Read tier: admin and viewer. A viewer's answer passes the viewer projection
+ * — one layer for every read route, not a decision per route.
+ */
+const readAccess = [authorize(PANEL_READ_ROLES), viewerResponseProjection];
 /** Action tier: admin only. */
 const writeAccess = authorize(PANEL_ACTION_ROLES);
 
