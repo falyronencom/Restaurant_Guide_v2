@@ -47,7 +47,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 }));
 
 // Import after mocking
-const { pool } = await import('../../config/database.js');
+const { pool, getClient } = await import('../../config/database.js');
 const argon2 = (await import('argon2')).default;
 const { generateAccessToken, generateRefreshToken } = await import('../../utils/jwt.js');
 const logger = (await import('../../utils/logger.js')).default;
@@ -66,10 +66,41 @@ import {
   createMockUser,
 } from '../mocks/helpers.js';
 
+/**
+ * The connection invalidateAllUserTokens takes for its transaction: ending
+ * every session burns the refresh tokens and stamps sessions_revoked_at
+ * together, so it no longer goes through pool.query. `burned` is the number
+ * of refresh tokens the burn reports.
+ */
+const mockClient = { query: jest.fn(), release: jest.fn() };
+const routeClient = ({ burned = 0 } = {}) => {
+  mockClient.query.mockImplementation((sql) => Promise.resolve(
+    sql.startsWith('UPDATE refresh_tokens') ? { rows: [], rowCount: burned } : { rows: [], rowCount: 0 }
+  ));
+};
+const clientStatements = () => mockClient.query.mock.calls.map(([sql]) => sql);
+
+/** The revocation that a reuse verdict runs, as the transaction shows it. */
+const expectSessionsRevoked = (userId) => {
+  const statements = clientStatements();
+  const burn = statements.findIndex((sql) => sql.startsWith('UPDATE refresh_tokens SET used_at'));
+  const stamp = statements.findIndex((sql) => sql.startsWith('UPDATE users SET sessions_revoked_at'));
+  expect(statements[0]).toBe('BEGIN');
+  expect(burn).toBeGreaterThan(0);
+  // The stamp follows the burn (accountStatus.markSessionsRevoked says why).
+  expect(stamp).toBeGreaterThan(burn);
+  expect(statements[statements.length - 1]).toBe('COMMIT');
+  expect(mockClient.query.mock.calls[burn][1]).toEqual([expect.any(Date), userId]);
+  expect(mockClient.query.mock.calls[stamp][1]).toEqual([userId, expect.any(Date)]);
+  expect(mockClient.release).toHaveBeenCalledTimes(1);
+};
+
 describe('authService', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     jest.clearAllMocks();
+    getClient.mockResolvedValue(mockClient);
+    routeClient();
   });
 
   describe('createUser', () => {
@@ -536,11 +567,8 @@ describe('authService', () => {
         rowCount: 1,
       });
 
-      // Mock invalidating all tokens
-      pool.query.mockResolvedValueOnce({
-        rows: [],
-        rowCount: 3, // 3 tokens invalidated
-      });
+      // Invalidating all tokens: 3 refresh tokens burned
+      routeClient({ burned: 3 });
 
       await expect(refreshAccessToken('reused_token')).rejects.toThrow(
         'REFRESH_TOKEN_REUSE_DETECTED'
@@ -552,16 +580,100 @@ describe('authService', () => {
         expect.objectContaining({ userId: 'user-123' })
       );
 
-      // Verify all user tokens were invalidated
-      expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE refresh_tokens SET used_at'),
-        expect.arrayContaining([expect.any(Date), 'user-123'])
-      );
+      // Verify all user tokens were invalidated — refresh tokens burned and
+      // the access tokens issued until now refused, in one transaction
+      expectSessionsRevoked('user-123');
 
       expect(logger.warn).toHaveBeenCalledWith(
         'All refresh tokens invalidated for user',
-        expect.objectContaining({ userId: 'user-123', tokenCount: 3 })
+        expect.objectContaining({ userId: 'user-123', tokenCount: 3, accessTokensRevoked: true })
       );
+    });
+
+    describe('a token created before the account sessions were revoked', () => {
+      const REVOKED_AT = new Date('2026-10-12T09:00:00.500Z');
+
+      /**
+       * A row whose account had its sessions revoked at REVOKED_AT — by a
+       * password reset, a reuse alarm or a takeover, which also burned the
+       * token (used_at set, no successor).
+       */
+      const rowCreatedAt = (createdAt, overrides = {}) => ({
+        id: 'token-1',
+        user_id: 'user-123',
+        token: 'old_token',
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        created_at: createdAt,
+        used_at: new Date(REVOKED_AT.getTime()),
+        replaced_by: null,
+        email: 'user@test.com',
+        phone: null,
+        name: 'Test User',
+        role: 'user',
+        is_active: true,
+        sessions_revoked_at: REVOKED_AT,
+        ...overrides,
+      });
+
+      test('is refused as REFRESH_TOKEN_REVOKED — no reuse alarm, no second revocation', async () => {
+        pool.query.mockResolvedValueOnce({
+          rows: [rowCreatedAt(new Date(REVOKED_AT.getTime() - 1))],
+          rowCount: 1,
+        });
+
+        await expect(refreshAccessToken('old_token')).rejects.toThrow('REFRESH_TOKEN_REVOKED');
+
+        // The reuse verdict would revoke every session again — the one opened
+        // after the reset included — each time a stale device woke up.
+        expect(logger.error).not.toHaveBeenCalledWith(
+          expect.stringContaining('SECURITY ALERT'),
+          expect.anything()
+        );
+        expect(getClient).not.toHaveBeenCalled();
+        expect(pool.query).toHaveBeenCalledTimes(1);
+      });
+
+      test('an unused one too: a token a race left unburned is dead all the same', async () => {
+        pool.query.mockResolvedValueOnce({
+          rows: [rowCreatedAt(new Date(REVOKED_AT.getTime() - 1), { used_at: null })],
+          rowCount: 1,
+        });
+
+        await expect(refreshAccessToken('old_token')).rejects.toThrow('REFRESH_TOKEN_REVOKED');
+        expect(pool.query).toHaveBeenCalledTimes(1);
+      });
+
+      test('created at the stamp itself it is not — a burned one goes on to the reuse verdict', async () => {
+        pool.query.mockResolvedValueOnce({
+          rows: [rowCreatedAt(new Date(REVOKED_AT.getTime()))],
+          rowCount: 1,
+        });
+
+        await expect(refreshAccessToken('old_token')).rejects.toThrow('REFRESH_TOKEN_REUSE_DETECTED');
+      });
+
+      test('a claim lost to the revocation itself ends in REFRESH_TOKEN_REVOKED, not in a replay', async () => {
+        const createdAt = new Date(REVOKED_AT.getTime() - 1000);
+        pool.query
+          // 1. lookup: unused, and no revocation yet
+          .mockResolvedValueOnce({
+            rows: [rowCreatedAt(createdAt, { used_at: null, sessions_revoked_at: null })],
+            rowCount: 1,
+          })
+          // 2. successor inserted
+          .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+          // 3. claim finds the token burned — by the revocation
+          .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+          // 4. orphan successor removed
+          .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+          // 5. re-read: the account's sessions were revoked meanwhile
+          .mockResolvedValueOnce({ rows: [rowCreatedAt(createdAt)], rowCount: 1 });
+        generateAccessToken.mockReturnValue('never_handed_out');
+        generateRefreshToken.mockReturnValue('orphan_token');
+
+        await expect(refreshAccessToken('old_token')).rejects.toThrow('REFRESH_TOKEN_REVOKED');
+        expect(pool.query).toHaveBeenCalledTimes(5);
+      });
     });
 
     test('should throw USER_ACCOUNT_INACTIVE if account disabled', async () => {
@@ -742,8 +854,8 @@ describe('authService', () => {
 
         pool.query
           .mockResolvedValueOnce({ rows: [burnedRow()], rowCount: 1 })
-          .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // window missed
-          .mockResolvedValueOnce({ rows: [], rowCount: 3 }); // revoke
+          .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // window missed
+        routeClient({ burned: 3 }); // revoke
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
           'REFRESH_TOKEN_REUSE_DETECTED'
@@ -753,10 +865,11 @@ describe('authService', () => {
           expect.stringContaining('SECURITY ALERT'),
           expect.objectContaining({ userId: 'user-123' })
         );
-        expect(pool.query).toHaveBeenCalledWith(
+        expect(mockClient.query).toHaveBeenCalledWith(
           expect.stringContaining('WHERE user_id = $2 AND used_at IS NULL'),
           expect.arrayContaining([expect.any(Date), 'user-123'])
         );
+        expectSessionsRevoked('user-123');
       });
 
       test('replay is refused once the successor itself has been used', async () => {
@@ -769,8 +882,8 @@ describe('authService', () => {
             // a replay of its predecessor is no longer a lost answer.
             rows: [liveSuccessor({ used_at: new Date(Date.now() - 500) })],
             rowCount: 1,
-          })
-          .mockResolvedValueOnce({ rows: [], rowCount: 2 }); // revoke
+          });
+        routeClient({ burned: 2 }); // revoke
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
           'REFRESH_TOKEN_REUSE_DETECTED'
@@ -786,35 +899,39 @@ describe('authService', () => {
         process.env[GRACE_ENV] = '60';
 
         pool.query
-          .mockResolvedValueOnce({ rows: [burnedRow({ is_active: false })], rowCount: 1 })
-          .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // revoke
+          .mockResolvedValueOnce({ rows: [burnedRow({ is_active: false })], rowCount: 1 });
+        routeClient({ burned: 1 }); // revoke
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
           'REFRESH_TOKEN_REUSE_DETECTED'
         );
 
-        // Two queries, lookup and revoke: the window is not even consulted. It
+        // The lookup is the only query on the pool — the revocation runs in a
+        // transaction of its own: the window is not even consulted. It
         // forgives a lost answer, never a closed account — and the verdict stays
         // TOKEN_REUSE_DETECTED rather than ACCOUNT_INACTIVE because the reuse
         // check has always run first.
-        expect(pool.query).toHaveBeenCalledTimes(2);
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expectSessionsRevoked('user-123');
       });
 
       test('a token burned by logout has no successor and is never forgiven', async () => {
         process.env[GRACE_ENV] = '60';
 
         pool.query
-          .mockResolvedValueOnce({ rows: [burnedRow({ replaced_by: null })], rowCount: 1 })
-          .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // revoke
+          .mockResolvedValueOnce({ rows: [burnedRow({ replaced_by: null })], rowCount: 1 });
+        routeClient({ burned: 1 }); // revoke
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
           'REFRESH_TOKEN_REUSE_DETECTED'
         );
 
-        // Exactly two queries: lookup and revoke. With replaced_by null there
+        // Exactly one query on the pool, the lookup; the revocation runs in a
+        // transaction of its own. With replaced_by null there
         // is nothing to hand back, so the window is never consulted — which is
         // also what keeps the mock sequence of every older reuse test intact.
-        expect(pool.query).toHaveBeenCalledTimes(2);
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expectSessionsRevoked('user-123');
       });
 
       // Scoped to a stale replay on purpose: the claim-race caller is answered
@@ -823,14 +940,15 @@ describe('authService', () => {
         process.env[GRACE_ENV] = '0';
 
         pool.query
-          .mockResolvedValueOnce({ rows: [burnedRow()], rowCount: 1 }) // successor exists...
-          .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // ...and is never looked at
+          .mockResolvedValueOnce({ rows: [burnedRow()], rowCount: 1 }); // successor exists...
+        routeClient({ burned: 1 }); // ...and is never looked at
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
           'REFRESH_TOKEN_REUSE_DETECTED'
         );
 
-        expect(pool.query).toHaveBeenCalledTimes(2);
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expectSessionsRevoked('user-123');
       });
 
       test('a malformed window value falls back to the default, it does not disarm', async () => {
@@ -961,29 +1079,62 @@ describe('authService', () => {
   });
 
   describe('invalidateAllUserTokens', () => {
-    test('should invalidate all user tokens', async () => {
-      pool.query.mockResolvedValue({ rows: [], rowCount: 5 });
+    test('should invalidate all user tokens — refresh tokens and the access tokens issued until now', async () => {
+      routeClient({ burned: 5 });
 
       const result = await invalidateAllUserTokens('user-123');
 
       expect(result).toBe(5);
-      expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE refresh_tokens SET used_at'),
-        expect.arrayContaining([expect.any(Date), 'user-123'])
-      );
+      expectSessionsRevoked('user-123');
+      expect(pool.query).not.toHaveBeenCalled();
 
       expect(logger.warn).toHaveBeenCalledWith(
         'All refresh tokens invalidated for user',
-        expect.objectContaining({ userId: 'user-123', tokenCount: 5 })
+        expect.objectContaining({ userId: 'user-123', tokenCount: 5, accessTokensRevoked: true })
       );
     });
 
     test('should return 0 if no tokens to invalidate', async () => {
-      pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+      routeClient({ burned: 0 });
 
       const result = await invalidateAllUserTokens('user-123');
 
       expect(result).toBe(0);
+      // The access tokens are refused all the same: a session may live on an
+      // access token alone for hours after its refresh token was burned.
+      expectSessionsRevoked('user-123');
+    });
+
+    test('a failure undoes the whole revocation and reaches the caller', async () => {
+      mockClient.query.mockImplementation((sql) => (
+        sql.startsWith('UPDATE users')
+          ? Promise.reject(Object.assign(new Error('connection lost'), { code: '08006' }))
+          : Promise.resolve({ rows: [], rowCount: 1 })
+      ));
+
+      await expect(invalidateAllUserTokens('user-123')).rejects.toThrow('connection lost');
+
+      expect(clientStatements()).toContain('ROLLBACK');
+      expect(clientStatements()).not.toContain('COMMIT');
+      expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    test('before migration 035 the refresh tokens still die; the log says the access tokens did not', async () => {
+      mockClient.query.mockImplementation((sql) => {
+        if (sql.startsWith('UPDATE users')) {
+          return Promise.reject(Object.assign(new Error('column "sessions_revoked_at" does not exist'), { code: '42703' }));
+        }
+        return Promise.resolve({ rows: [], rowCount: sql.startsWith('UPDATE refresh_tokens') ? 2 : 0 });
+      });
+
+      await expect(invalidateAllUserTokens('user-123')).resolves.toBe(2);
+
+      expect(clientStatements()).toContain('ROLLBACK TO SAVEPOINT sessions_revoked_at');
+      expect(clientStatements()[clientStatements().length - 1]).toBe('COMMIT');
+      expect(logger.warn).toHaveBeenCalledWith(
+        'All refresh tokens invalidated for user',
+        expect.objectContaining({ userId: 'user-123', tokenCount: 2, accessTokensRevoked: false })
+      );
     });
   });
 
