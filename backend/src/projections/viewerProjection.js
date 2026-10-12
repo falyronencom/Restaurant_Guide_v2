@@ -114,10 +114,13 @@ export const projectForViewer = (value) => {
 
 /**
  * Express middleware: answers to a viewer go through projectForViewer.
- * Placed after authorize() in the read tier — req.user is set by then.
+ * Placed after authorize() — req.user is set by then. It sits both in the
+ * router's default-closed gate and in the read tier of each route; the flag
+ * keeps it to one wrap per response.
  */
 export const viewerResponseProjection = (req, res, next) => {
-  if (isViewer(req.user?.role)) {
+  if (isViewer(req.user?.role) && !res.locals.viewerProjection) {
+    res.locals.viewerProjection = true;
     const send = res.json.bind(res);
     res.json = (body) => send(projectForViewer(body));
   }

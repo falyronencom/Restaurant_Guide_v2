@@ -82,7 +82,7 @@ describe('projectForViewer', () => {
 describe('viewerResponseProjection middleware', () => {
   const run = (role, body) => {
     let sent;
-    const res = { json: (value) => { sent = value; return res; } };
+    const res = { locals: {}, json: (value) => { sent = value; return res; } };
     const next = jest.fn();
     viewerResponseProjection({ user: { role } }, res, next);
     res.json(body);
@@ -93,6 +93,21 @@ describe('viewerResponseProjection middleware', () => {
     const { sent, next } = run('viewer', { admin_email: 'm@x.by' });
     expect(sent).toEqual({ admin_email: null });
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('applied twice (router gate + route tier) wraps the answer once', () => {
+    // The projection is idempotent, so a double wrap would not change the
+    // output — the check is that the second application does not stack
+    // another wrapper (one pass over the body per response): res.json after
+    // the second application is the very function the first one installed.
+    const res = { locals: {}, json: (value) => value };
+    const next = jest.fn();
+    viewerResponseProjection({ user: { role: 'viewer' } }, res, next);
+    const wrapped = res.json;
+    viewerResponseProjection({ user: { role: 'viewer' } }, res, next);
+    expect(res.json).toBe(wrapped);
+    expect(res.json({ admin_email: 'm@x.by' })).toEqual({ admin_email: null });
+    expect(next).toHaveBeenCalledTimes(2);
   });
 
   test('leaves the answer of an admin untouched', () => {

@@ -16,6 +16,13 @@
  * personal data of people. It lives inside readAccess so that a read route
  * cannot be registered without it; tests/integration/admin-viewer-sentinel.test.js
  * walks every route of this router as a viewer.
+ * Under the tiers, the router is closed by default on the server (pack 2,
+ * point 5; cloud critic 2A, B-4): one gate right after the public login
+ * authenticates every other request and lets through only the panel roles —
+ * a read to admin and viewer (through the viewer projection), anything else
+ * to admin. A route registered here without a tier is therefore not open; it
+ * falls to the tier its method implies. tests/integration/admin-default-closed.test.js
+ * proves it with a route registered exactly that way.
  * The split is checked statically by tests/unit/adminRoutesAccessTiers.test.js:
  * a route without a tier, or a GET under writeAccess outside the allow-list
  * kept there, fails the gate. Do not reintroduce a raw authorize call with an
@@ -49,6 +56,19 @@ const readAccess = [authorize(PANEL_READ_ROLES), viewerResponseProjection];
 /** Action tier: admin only. */
 const writeAccess = authorize(PANEL_ACTION_ROLES);
 
+/** Reads by method: the panel roles; everything else acts — admin only. */
+const READ_METHODS = new Set(['GET', 'HEAD']);
+const readTier = authorize(PANEL_READ_ROLES);
+const tierByMethod = (req, res, next) =>
+  (READ_METHODS.has(req.method) ? readTier : writeAccess)(req, res, next);
+
+/**
+ * Default-closed gate for everything after the login (pack 2, point 5).
+ * The per-route tiers stay and may only narrow it; the second authenticate
+ * of a route costs one in-process cache hit (services/accountStatus.js).
+ */
+const defaultClosed = [authenticate, tierByMethod, viewerResponseProjection];
+
 // ============================================================================
 // Authentication (public — no auth required)
 // ============================================================================
@@ -75,6 +95,12 @@ router.post(
   validateLogin,
   adminController.adminLogin,
 );
+
+// ============================================================================
+// Default-closed gate — every route below needs a signed-in panel role
+// ============================================================================
+
+router.use(defaultClosed);
 
 // ============================================================================
 // Moderation (protected — readAccess for lists and cards, writeAccess for actions)
