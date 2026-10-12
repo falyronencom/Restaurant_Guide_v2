@@ -1,5 +1,6 @@
 import argon2 from 'argon2';
 import pkg from 'pg';
+import { reportEndedSessions, writePasswordEndingSessions } from './lib/operator-password.js';
 const { Pool } = pkg;
 
 const pool = new Pool({
@@ -37,28 +38,38 @@ async function createAdmin() {
     // Try to update existing admin first, create if not exists
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
 
-    let result;
+    let account;
+    let sessions = null;
     if (existing.rows.length > 0) {
-      result = await pool.query(
-        `UPDATE users SET password_hash = $1, name = $2, role = 'admin', is_active = true, updated_at = NOW()
-         WHERE email = $3
-         RETURNING id, email, role, name`,
-        [passwordHash, name, email]
-      );
+      // A new password ends every session of the account, as a password reset
+      // does (lib/operator-password.js).
+      const client = await pool.connect();
+      try {
+        ({ account, sessions } = await writePasswordEndingSessions(client, async (tx) => (await tx.query(
+          `UPDATE users SET password_hash = $1, name = $2, role = 'admin', is_active = true, updated_at = NOW()
+           WHERE email = $3
+           RETURNING id, email, role, name`,
+          [passwordHash, name, email],
+        )).rows[0]));
+      } finally {
+        client.release();
+      }
       console.log('✅ Admin password updated successfully!');
     } else {
-      result = await pool.query(
+      const result = await pool.query(
         `INSERT INTO users (id, email, password_hash, name, role, auth_method, email_verified, is_active, created_at, updated_at)
          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
          RETURNING id, email, role, name`,
         [email, passwordHash, name, 'admin', 'email', true, true]
       );
+      account = result.rows[0];
       console.log('✅ Admin created successfully!');
     }
-    console.log(`   Email: ${result.rows[0].email}`);
-    console.log(`   Name: ${result.rows[0].name}`);
-    console.log(`   Role: ${result.rows[0].role}`);
-    console.log(`   Password: ${password}`);
+    console.log(`   Email: ${account.email}`);
+    console.log(`   Name: ${account.name}`);
+    console.log(`   Role: ${account.role}`);
+    console.log('   Password: the one in ADMIN_PASSWORD (not printed)');
+    if (sessions) reportEndedSessions(sessions);
 
     await pool.end();
     process.exit(0);
