@@ -18,6 +18,7 @@ import {
   verifyAccessToken,
   extractTokenFromHeader,
   getRefreshTokenExpiry,
+  accessTokenIssuedAtMs,
 } from '../../utils/jwt.js';
 
 describe('jwt utilities', () => {
@@ -90,6 +91,38 @@ describe('jwt utilities', () => {
         expect(typeof t2).toBe('string');
         expect(t2).toBeDefined();
       });
+    });
+  });
+
+  describe('issue time in milliseconds (revoked sessions, migration 035)', () => {
+    const payload = { userId: 'user-123', email: 'test@example.com', role: 'user' };
+
+    test('the token carries iatMs, and iat is the same reading in whole seconds', () => {
+      const before = Date.now();
+      const decoded = jwt.decode(generateAccessToken(payload));
+      const after = Date.now();
+
+      expect(Number.isSafeInteger(decoded.iatMs)).toBe(true);
+      expect(decoded.iatMs).toBeGreaterThanOrEqual(before);
+      expect(decoded.iatMs).toBeLessThanOrEqual(after);
+      expect(decoded.iat).toBe(Math.floor(decoded.iatMs / 1000));
+      // exp is still counted from iat: the lifetime did not change.
+      expect(decoded.exp - decoded.iat).toBe(4 * 60 * 60);
+    });
+
+    test('accessTokenIssuedAtMs reads iatMs when the token has it', () => {
+      expect(accessTokenIssuedAtMs({ iat: 1791792208, iatMs: 1791792208137 })).toBe(1791792208137);
+    });
+
+    test('a token issued before iatMs existed is placed at the start of its iat second', () => {
+      // Never later than the moment it was really issued: against a revocation
+      // stamp such a token can only come out older.
+      expect(accessTokenIssuedAtMs({ iat: 1791792208 })).toBe(1791792208000);
+      expect(accessTokenIssuedAtMs({ iat: 1791792208, iatMs: '1791792208137' })).toBe(1791792208000);
+    });
+
+    test('a token with no issue time at all counts as the oldest possible', () => {
+      expect(accessTokenIssuedAtMs({})).toBe(0);
     });
   });
 
