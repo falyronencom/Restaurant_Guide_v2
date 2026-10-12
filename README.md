@@ -54,7 +54,7 @@ tools/brand/          генератор знака и иконок для вс�
 
 Нужны: Node.js 20 (`.nvmrc`; в `backend/package.json` и `web/package.json` — `>=20.9.0 <21`), npm 10, Docker, Flutter 3.35.2.
 
-Команды ниже — для bash (Linux, macOS, Git Bash на Windows) и запускаются из корня репозитория, если не сказано иное. Они повторяют рецепт CI (`.github/workflows/ci.yml`); `docker-compose.yml` в корне описывает прежнюю локальную среду и для этих шагов не нужен. На Windows клонируйте репозиторий в короткий путь (например, `C:\dev\nirivio`) или включите `git config --global core.longpaths true`: часть путей внутри `mobile/ios` длинная.
+Команды ниже — для bash (Linux, macOS, Git Bash на Windows) и запускаются из корня репозитория, если не сказано иное. Они повторяют рецепт CI (`.github/workflows/ci.yml`). На Windows клонируйте репозиторий в короткий путь (например, `C:\dev\nirivio`) или включите `git config --global core.longpaths true`: часть путей внутри `mobile/ios` длинная.
 
 ### База данных и Redis
 
@@ -67,6 +67,14 @@ docker run -d --name rg-redis -p 6379:6379 redis:7-alpine
 # Дождаться, когда сервер примет соединения по сети (первый старт образа занимает до минуты)
 until docker exec rg-pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; do sleep 2; done
 ```
+
+Вместо этих команд можно поднять те же два контейнера из `docker-compose.yml` в корне — команда сама дождётся готовности базы:
+
+```bash
+docker compose up -d --wait
+```
+
+Имена контейнеров и учётные данные те же, поэтому команды ниже не меняются. Данные базы compose хранит в именованном томе: `docker compose down` их сохраняет, `docker compose down -v` стирает.
 
 Схема разворачивается из снимка `production_schema.sql` (состав рабочего сервера) и миграций поверх него — так же, как в CI. Миграция 030 намеренно не применяется: причина записана в шапке снимка.
 
