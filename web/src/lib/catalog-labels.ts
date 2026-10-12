@@ -9,10 +9,17 @@
  * Гомель→Гомеля (soft). Keyed by the stable URL slug — keep in sync with the
  * backend category/city sets (backend/src/constants/urlSlugs.js) if they change.
  *
- * Scope: these LISTING forms are used only in the catalog heading, breadcrumb
- * and SEO title/description. Everywhere else the singular nominative `name` is
- * correct (category chips, the detail page super-category line, card subtitles)
- * and must NOT use these.
+ * Scope: these LISTING forms are used only in the catalog heading, breadcrumb,
+ * SEO title/description and the way back from a missing establishment
+ * (catalogBackLink). Everywhere else the singular nominative `name` is correct
+ * (category chips, the detail page super-category line, card subtitles) and
+ * must NOT use these.
+ *
+ * Slugs reach these helpers straight from the address, so the maps are read by
+ * own key only: a plain object also answers `constructor`, `toString` and the
+ * rest of its prototype — `/constructor` used to title the city page
+ * «Заведения function Object() { [native code] }», and `/minsk/constructor`
+ * threw on `.toLowerCase()` in generateMetadata.
  */
 
 /** Category URL slug → Russian plural display form. 15 entries. */
@@ -45,14 +52,21 @@ export const CITY_GENITIVE_BY_SLUG: Record<string, string> = {
   bobruisk: 'Бобруйска',
 };
 
+function ownLabel(
+  map: Record<string, string>,
+  slug: string,
+): string | undefined {
+  return Object.hasOwn(map, slug) ? map[slug] : undefined;
+}
+
 /** Plural category for a slug, falling back to the singular metadata name. */
 export function categoryPlural(slug: string, fallbackName: string): string {
-  return CATEGORY_PLURAL_BY_SLUG[slug] ?? fallbackName;
+  return ownLabel(CATEGORY_PLURAL_BY_SLUG, slug) ?? fallbackName;
 }
 
 /** Genitive city for a slug, falling back to the nominative metadata name. */
 export function cityGenitive(slug: string, fallbackName: string): string {
-  return CITY_GENITIVE_BY_SLUG[slug] ?? fallbackName;
+  return ownLabel(CITY_GENITIVE_BY_SLUG, slug) ?? fallbackName;
 }
 
 /**
@@ -72,4 +86,32 @@ export function catalogHeading(
 /** City heading «Заведения {city-genitive}», e.g. «Заведения Минска». */
 export function cityHeading(citySlug: string, cityName: string): string {
   return `Заведения ${cityGenitive(citySlug, cityName)}`;
+}
+
+/**
+ * The way back from an establishment address that led nowhere: the category
+ * in that city, else the city, else the home page. A slug counts as known when
+ * the maps above carry it. They mirror the backend sets: a slug the backend
+ * adds before this file does costs one level of precision; one it renames or
+ * drops while a map still carries it would send the link to «Категория не
+ * найдена» — hence the keep-in-sync note at the top.
+ */
+export function catalogBackLink(
+  citySlug: string | undefined,
+  categorySlug: string | undefined,
+): { href: string; label: string } {
+  const city = citySlug ? ownLabel(CITY_GENITIVE_BY_SLUG, citySlug) : undefined;
+  if (!city) return { href: '/', label: 'На главную' };
+
+  const category = categorySlug
+    ? ownLabel(CATEGORY_PLURAL_BY_SLUG, categorySlug)
+    : undefined;
+  if (!category) {
+    return { href: `/${citySlug}`, label: `Посмотреть заведения ${city}` };
+  }
+
+  return {
+    href: `/${citySlug}/${categorySlug}`,
+    label: `Посмотреть ${category.toLowerCase()} ${city}`,
+  };
 }
