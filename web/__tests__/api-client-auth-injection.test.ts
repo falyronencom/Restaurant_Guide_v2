@@ -182,6 +182,51 @@ describe('authedFetch', () => {
     expect(mockStore.delete).not.toHaveBeenCalled();
   });
 
+  // The same line on the path every action takes after 4 h idle: rg_at lives
+  // exactly expiresIn, so it is simply gone and the refresh runs up front.
+  it('no access cookie and a refresh that fails transiently: SESSION_REFRESH_UNAVAILABLE, cookies kept', async () => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_rt' ? { value: 'rt' } : undefined,
+    ); // rg_at expired out of the jar
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(503, 'unavailable')) // refresh
+      .mockRejectedValueOnce(new ApiError(0, 'timeout')); // the cycle's single retry
+
+    // Not NO_SESSION: that one sends the islands to /login.
+    await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+      statusCode: 503,
+      errorCode: 'SESSION_REFRESH_UNAVAILABLE',
+    });
+    // Both presentations went to the refresh path; the call itself never ran.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    for (const [path] of mockFetch.mock.calls) {
+      expect(path).toBe('/api/v1/auth/refresh');
+    }
+    expect(mockStore.delete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'TOKEN_REVOKED'],
+    [403, 'TOKEN_REUSE_DETECTED'],
+  ])(
+    'no access cookie and a refresh the server refuses (%i %s): NO_SESSION, cookies cleared',
+    async (refreshStatus, refreshCode) => {
+      mockStore.get.mockImplementation((name: string) =>
+        name === 'rg_rt' ? { value: 'rt' } : undefined,
+      );
+      mockFetch.mockRejectedValueOnce(
+        new ApiError(refreshStatus, 'refused', refreshCode),
+      );
+
+      await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+        statusCode: 401,
+        errorCode: 'NO_SESSION',
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1); // a refusal is not presented again
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
+    },
+  );
+
   it('throws NO_SESSION (no backend call) when there are no tokens', async () => {
     mockStore.get.mockReturnValue(undefined);
     await expect(authedFetch('/x')).rejects.toMatchObject({

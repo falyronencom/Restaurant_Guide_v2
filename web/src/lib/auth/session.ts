@@ -199,11 +199,35 @@ const inFlightRefresh = new Map<string, Promise<RefreshAttempt>>();
 /**
  * Returns a fresh access token (cookies rotated) or null. Null covers BOTH a
  * dead session (cookies cleared) and a transient failure (cookies intact) —
- * a caller that must tell them apart reads refreshCycle instead.
+ * a caller that must tell them apart uses refreshAccessToken instead.
  */
 export async function refreshSession(): Promise<string | null> {
   const outcome = await refreshCycle();
   return outcome.kind === 'ok' ? outcome.accessToken : null;
+}
+
+/**
+ * Returns a fresh access token (cookies rotated) or throws the reason there is
+ * none, in the shape authedFetch throws:
+ *   - ApiError(401, …, 'NO_SESSION') — the server refused the refresh token
+ *     (cookies already cleared) or there was none to present. The islands send
+ *     the user to /login on this code and on nothing else.
+ *   - ApiError(503, …, 'SESSION_REFRESH_UNAVAILABLE') — both presentations
+ *     failed without a verdict (transport, timeout, 5xx, 429). The cookies are
+ *     intact and the session may well be alive, so this is a "server
+ *     unavailable" error, never a reason to log the user out.
+ */
+export async function refreshAccessToken(): Promise<string> {
+  const outcome = await refreshCycle();
+  if (outcome.kind === 'ok') return outcome.accessToken;
+  if (outcome.kind === 'transient') {
+    throw new ApiError(
+      503,
+      'Session refresh unavailable',
+      'SESSION_REFRESH_UNAVAILABLE',
+    );
+  }
+  throw new ApiError(401, 'Not authenticated', 'NO_SESSION');
 }
 
 /**
@@ -339,7 +363,9 @@ async function fetchWithBearer<T>(
  * Handlers (so the transparent refresh below can legally rotate cookies).
  * Missing/expired access
  * token → refresh once; a 401 from the backend → refresh once and retry.
- * Throws ApiError(401, …, 'NO_SESSION') when there is no recoverable session.
+ * Throws ApiError(401, …, 'NO_SESSION') when there is no recoverable session,
+ * and ApiError(503, …, 'SESSION_REFRESH_UNAVAILABLE') when an access token
+ * was missing and the refresh never reached the server's verdict.
  */
 export async function authedFetch<T>(
   path: string,
@@ -348,11 +374,11 @@ export async function authedFetch<T>(
   let accessToken = await getAccessToken();
   let didRefresh = false;
   if (!accessToken) {
-    accessToken = await refreshSession();
+    // rg_at lives exactly expiresIn (4 h), so after that much idle time EVERY
+    // action comes this way — a transient refresh failure here must not read
+    // as a dead session (see refreshAccessToken).
+    accessToken = await refreshAccessToken();
     didRefresh = true;
-    if (!accessToken) {
-      throw new ApiError(401, 'Not authenticated', 'NO_SESSION');
-    }
   }
 
   try {
