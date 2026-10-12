@@ -155,6 +155,9 @@ describe('create-admin.js: новый пароль существующей за
     await expectOldSessionEnded(account);
     expect(res.stdout).toMatch(/Sessions ended: 1 refresh token\(s\) burned/);
     expect(res.stdout).toMatch(CACHE_WINDOW);
+    // Пароль приходит переменной окружения, чтобы не оседать в истории
+    // оболочки, — и в выводе ему тоже не место.
+    expect(res.stdout).not.toContain(NEW_PASSWORD);
   });
 });
 

@@ -68,7 +68,7 @@ async function createAdmin() {
     console.log(`   Email: ${account.email}`);
     console.log(`   Name: ${account.name}`);
     console.log(`   Role: ${account.role}`);
-    console.log(`   Password: ${password}`);
+    console.log('   Password: the one in ADMIN_PASSWORD (not printed)');
     if (sessions) reportEndedSessions(sessions);
 
     await pool.end();
