@@ -305,6 +305,28 @@ const ownershipRefusal = (publicId, folders) => {
 export const isOwnedAsset = (publicId, folders) => ownershipRefusal(publicId, folders) === null;
 
 /**
+ * The folder an asset was filed under, read back from its public_id: which kind
+ * of owner (a card, a partner's uploads, a user's avatars) and that owner's id.
+ * Null for an id outside the layout above or not a plain asset id.
+ *
+ * A card may show a file from a folder that is not its owner's: the wizard
+ * uploads into the partner's own folder, and a transferred card keeps the
+ * previous owner's uploads (the folder names who uploaded, not who holds the
+ * card now). The media service needs the folder's kind and id to decide
+ * whether that card may destroy the file.
+ *
+ * @param {string} publicId - Cloudinary public_id
+ * @returns {{ kind: 'avatars'|'establishment'|'partnerUploads', id: string }|null}
+ */
+export const assetHolder = (publicId) => {
+  if (typeof publicId !== 'string' || !PLAIN_PUBLIC_ID_PATTERN.test(publicId)) return null;
+  const match = publicId.match(new RegExp(`^(avatars|establishments/temp|establishments)/(${UUID_SOURCE})/`));
+  if (!match) return null;
+  const kind = { avatars: 'avatars', 'establishments/temp': 'partnerUploads', establishments: 'establishment' }[match[1]];
+  return { kind, id: match[2] };
+};
+
+/**
  * Delete an image from Cloudinary — only an asset inside one of the caller's own
  * folders (see ownedFolders above); anything else is refused, not destroyed.
  * 

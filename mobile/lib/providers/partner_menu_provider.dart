@@ -31,9 +31,16 @@ class PartnerMenuProvider with ChangeNotifier {
     AccountScope.register(resetAccountScope);
   }
 
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   /// Clears cached menu state and stops polling; registered in
   /// [AccountScope], runs on logout / account switch.
   void resetAccountScope() {
+    _generation++;
     stopPolling();
     _currentEstablishmentId = null;
     _items = [];
@@ -71,11 +78,14 @@ class PartnerMenuProvider with ChangeNotifier {
       _items = [];
       _error = null;
     }
+    // Two guards, one answer each: the account changed while the fetch was in
+    // flight (generation, pack 1 of the critics' findings, point 4) or the
+    // screen was closed / polling stopped (session) — in both cases the timer
+    // must not come back.
+    final generation = _generation;
     final session = ++_pollingSession;
     await fetchMenuItems();
-    // Экран закрыли (stopPolling) или сменили аккаунт, пока шла загрузка, —
-    // опрос не запускаем: иначе он стартовал уже после ухода и шёл в фоне.
-    if (session != _pollingSession) return;
+    if (generation != _generation || session != _pollingSession) return;
     _startPolling();
   }
 
@@ -115,20 +125,25 @@ class PartnerMenuProvider with ChangeNotifier {
       notifyListeners();
     }
 
+    final generation = _generation;
     try {
       final fetched = await _service.fetchMenuItems(id);
+      if (generation != _generation) return; // account switched mid-flight
       _items = fetched;
       _error = null;
     } catch (e) {
+      if (generation != _generation) return;
       if (!silent) {
         _error = 'Не удалось загрузить позиции меню';
       }
       // Silent poll errors are swallowed — existing items remain visible.
     } finally {
-      if (!silent) {
-        _isLoading = false;
+      if (generation == _generation) {
+        if (!silent) {
+          _isLoading = false;
+        }
+        notifyListeners();
       }
-      notifyListeners();
     }
   }
 
@@ -158,6 +173,7 @@ class PartnerMenuProvider with ChangeNotifier {
     _items = List.of(_items)..[index] = optimistic;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final updated = await _service.updateMenuItem(
         menuItemId,
@@ -165,10 +181,14 @@ class PartnerMenuProvider with ChangeNotifier {
         priceByn: priceByn,
         categoryRaw: categoryRaw,
       );
+      // Account switched mid-flight: the list is another partner's (or empty)
+      // and `index` points nowhere — neither the answer nor a rollback belongs.
+      if (generation != _generation) return false;
       _items = List.of(_items)..[index] = updated;
       notifyListeners();
       return true;
     } catch (e) {
+      if (generation != _generation) return false;
       // Rollback
       _items = List.of(_items)..[index] = original;
       _error = 'Не удалось сохранить изменения';

@@ -108,10 +108,20 @@ void main() {
         final file = File('lib/providers/${_snake(name)}.dart');
         expect(file.existsSync(), isTrue,
             reason: 'не найден исходник ${file.path}');
+        final source = file.readAsStringSync();
         expect(
-          file.readAsStringSync(),
+          source,
           contains('AccountScope.register('),
           reason: '$name обязан регистрировать сброс при смене аккаунта',
+        );
+        // Сброс очищает состояние, но запрос, ушедший до сброса, живёт
+        // дальше: без счётчика поколения его поздний ответ записывается
+        // поверх пустого состояния (пакет 1 находок критиков, пункт 4).
+        expect(
+          source,
+          contains('_generation++'),
+          reason: '$name обязан отбрасывать ответы, пришедшие после смены '
+              'аккаунта (счётчик поколения в сбросе)',
         );
       }
     });

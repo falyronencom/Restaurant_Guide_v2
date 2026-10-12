@@ -301,7 +301,8 @@ export const deleteReview = asyncHandler(async (req, res) => {
  * create today. It helps clients provide proactive feedback like "You have 7 reviews
  * remaining today" rather than letting users discover the limit through failed attempts.
  * 
- * The quota resets after 24 hours (sliding window), tracked via Redis rate limiting.
+ * The quota is per Minsk calendar day and resets at Minsk midnight (resetIn says
+ * how many seconds are left), tracked via a Redis counter.
  */
 export const getReviewQuota = asyncHandler(async (req, res) => {
   // Get authenticated user ID from JWT token

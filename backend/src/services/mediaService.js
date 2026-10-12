@@ -423,8 +423,80 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
 };
 
 /**
+ * Whether deleting a media row of `establishmentId` may also destroy the cloud
+ * file it names (critics' pack 1, point 0 — Claude-2A A-1 / Codex-2A IL-5,
+ * 08.10.2026).
+ *
+ * A file belongs to the cards that show it, not to the folder of whoever
+ * uploaded it. The wizard files uploads under the partner's own folder
+ * (establishments/temp/{userId}/), and a transfer of the card by an admin
+ * moves only the owner column — the files stay in the previous owner's folder.
+ * Two consequences the folder rule alone got wrong:
+ *
+ * - the previous owner, still a partner, could attach the same link to a card
+ *   of their own (it is in their folder) and delete it there — destroying the
+ *   file under the transferred card;
+ * - the new owner could not destroy those files at all (not their folder).
+ *
+ * Decision, in order:
+ * 1. Folders this card holds: its own folder, the caller's uploads and — for a
+ *    card that has been transferred (claimed_at set by the admin's claim) — the
+ *    uploads folder the file actually sits in. A card never transferred gains
+ *    nothing: a foreign uploads link in it is not a transfer.
+ * 2. The file is destroyed only if nothing else names it now: no media row of
+ *    any card, no catalog cover (this card's own cover counts too, unless the
+ *    row IS the cover — deleteMedia resets it then), no promotion image.
+ *    Candidates come from a substring match and are confirmed by parsing each
+ *    link.
+ *
+ * Accepted remainder: the card keeps no history of owners, so for a
+ * transferred card the uploads folder is whichever the file sits in. A row
+ * with a stranger's uploads link that entered a card before the input gate
+ * of 06.10.2026 would, after a transfer, let the owner destroy that file if
+ * nothing in the database names it. The gate admits no such link today.
+ *
+ * @returns {Promise<{destroy: boolean, folders?: string[], reason?: string, references?: number}>}
+ */
+const cloudDestroyDecision = async (publicId, { partnerId, establishmentId, mediaId, isCover }) => {
+  const folders = [
+    CloudinaryUtil.ownedFolders.establishment(establishmentId),
+    CloudinaryUtil.ownedFolders.partnerUploads(partnerId),
+  ];
+  const holder = CloudinaryUtil.assetHolder(publicId);
+  if (
+    holder
+    && holder.kind === 'partnerUploads'
+    && holder.id !== partnerId
+    && await EstablishmentModel.hasBeenClaimed(establishmentId)
+  ) {
+    folders.push(CloudinaryUtil.ownedFolders.partnerUploads(holder.id));
+  }
+
+  if (!CloudinaryUtil.isOwnedAsset(publicId, folders)) {
+    // deleteImage would refuse too; decide here so the log says why once.
+    return { destroy: false, reason: 'outside_card_folders' };
+  }
+
+  const candidates = await MediaModel.findOtherAssetReferences(publicId, {
+    mediaId,
+    coverOfEstablishmentId: isCover ? establishmentId : null,
+  });
+  // Confirmed by the asset the link names, whatever its scheme or host: a
+  // link written before the input gate may spell our cloud differently and
+  // still show the file (lens review, 08.10.2026). Widening keeps files; it
+  // never destroys one.
+  const references = candidates.filter((candidate) =>
+    candidate.urls.some((url) => CloudinaryUtil.extractPublicIdFromUrl(url) === publicId));
+  if (references.length > 0) {
+    return { destroy: false, reason: 'still_referenced', references: references.length };
+  }
+
+  return { destroy: true, folders };
+};
+
+/**
  * Delete media
- * 
+ *
  * This operation:
  * 1. Verifies ownership
  * 2. Deletes image from Cloudinary
@@ -465,24 +537,39 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
     }
 
     // The row's URL names the asset, and a partner can store any URL in a card's
-    // media (review 02.10.2026, N1): only an asset on our cloud inside this
-    // card's folder or the partner's own uploads is destroyed — deleteImage
-    // refuses the rest, and the row is removed either way.
+    // media (review 02.10.2026, N1): only an asset on our cloud inside a folder
+    // this card holds is destroyed — deleteImage refuses the rest, and the row
+    // is removed either way. Which folders the card holds, and whether the file
+    // is still shown elsewhere, is decided in cloudDestroyDecision.
     const publicId = CloudinaryUtil.ownCloudPublicId(media.url);
 
-    // Delete from Cloudinary (non-blocking - log error but continue)
+    // Decide, then delete from Cloudinary (a cloud error is logged, not
+    // raised; a database error in the decision fails the request as any
+    // other database error here does).
     if (publicId) {
-      try {
-        await CloudinaryUtil.deleteImage(publicId, [
-          CloudinaryUtil.ownedFolders.establishment(establishmentId),
-          CloudinaryUtil.ownedFolders.partnerUploads(partnerId),
-        ]);
-      } catch (cloudinaryError) {
-        // Log error but don't fail the operation
-        // The database record should still be deleted even if Cloudinary fails
-        logger.error('Failed to delete image from Cloudinary', {
-          error: cloudinaryError.message,
-          publicId,
+      const decision = await cloudDestroyDecision(publicId, {
+        partnerId,
+        establishmentId,
+        mediaId,
+        isCover: media.is_primary === true,
+      });
+      if (decision.destroy) {
+        try {
+          await CloudinaryUtil.deleteImage(publicId, decision.folders);
+        } catch (cloudinaryError) {
+          // Log error but don't fail the operation
+          // The database record should still be deleted even if Cloudinary fails
+          logger.error('Failed to delete image from Cloudinary', {
+            error: cloudinaryError.message,
+            publicId,
+            mediaId,
+            establishmentId,
+          });
+        }
+      } else {
+        logger.info('Media row removed, cloud file kept', {
+          reason: decision.reason,
+          references: decision.references ?? 0,
           mediaId,
           establishmentId,
         });

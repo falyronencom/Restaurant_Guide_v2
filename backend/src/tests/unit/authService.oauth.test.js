@@ -14,6 +14,7 @@ import { jest } from '@jest/globals';
 const mockPool = { query: jest.fn() };
 
 jest.unstable_mockModule('../../config/database.js', () => ({
+  getClient: jest.fn(),
   pool: mockPool,
   default: mockPool,
 }));
@@ -94,7 +95,9 @@ describe('authenticateWithOAuth', () => {
   });
 
   test('scenario 2 — verified email links onto an existing account', async () => {
-    const existing = userRow({ auth_method: 'email', oauth_provider_id: null });
+    // The link branch is for a record whose own address IS confirmed; an
+    // unconfirmed one passes to the signer instead (oauth-unverified-takeover.test.js).
+    const existing = userRow({ auth_method: 'email', oauth_provider_id: null, email_verified: true });
     mockPoolFor({
       oauthRows: [],
       emailRows: [existing],

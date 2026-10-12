@@ -308,7 +308,7 @@ export const notifyPartnerResponse = async (reviewId, establishmentId) => {
 
 /**
  * Notify review author about moderation action (hide/delete)
- * Called after: toggleVisibility (hide only), deleteReview
+ * Called after: setVisibility (hide only), deleteReview
  *
  * @param {string} reviewId
  * @param {'hidden'|'deleted'} action

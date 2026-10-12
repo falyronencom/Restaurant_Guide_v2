@@ -5,7 +5,7 @@
  *
  * Tests review management endpoints (Segment B — Phase 2):
  *   #14 GET  /api/v1/admin/reviews                    — all reviews (admin view)
- *   #15 POST /api/v1/admin/reviews/:id/toggle-visibility — toggle visibility
+ *   #15 POST /api/v1/admin/reviews/:id/visibility        — set visibility { is_visible }
  *   #16 POST /api/v1/admin/reviews/:id/delete          — soft delete
  *
  * Setup strategy:
@@ -15,7 +15,7 @@
  *
  * Notes:
  *   - Admin sees ALL reviews including is_visible=false and is_deleted=true
- *   - toggle-visibility uses WHERE is_deleted=false — deleted reviews return 404
+ *   - visibility uses WHERE is_deleted=false — deleted reviews return 404
  *   - delete is soft (is_deleted=true) — record remains in DB
  *   - Audit log writes are non-blocking (no await in service), but complete fast enough
  *     in test environment to be asserted without explicit delays
@@ -27,6 +27,7 @@ import { randomUUID } from 'crypto';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
+import { setReviewVisibility } from '../../models/adminReviewModel.js';
 import {
   createAdminAndGetToken,
   createViewerAndGetToken,
@@ -246,97 +247,128 @@ describe('GET /api/v1/admin/reviews (#14)', () => {
 });
 
 // ============================================================================
-// #15 — POST /api/v1/admin/reviews/:id/toggle-visibility
+// #15 — POST /api/v1/admin/reviews/:id/visibility  { is_visible }
 // ============================================================================
+//
+// Состояние задаётся явно, а не переключается: панель повторяет запрос при
+// 5xx, и повтор «скрыть» обязан оставить отзыв скрытым (пакет 1 находок
+// критиков, пункт 2 — Codex C-10). Прежний путь /toggle-visibility — псевдоним
+// с тем же договором.
 
-describe('POST /api/v1/admin/reviews/:id/toggle-visibility (#15)', () => {
-  test('should toggle visible review to hidden (is_visible: true → false)', async () => {
+describe('POST /api/v1/admin/reviews/:id/visibility (#15)', () => {
+  const setVisibility = (reviewId, body, path = 'visibility') => request(app)
+    .post(`/api/v1/admin/reviews/${reviewId}/${path}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send(body);
+
+  const visibilityInDb = async (reviewId) =>
+    (await query('SELECT is_visible FROM reviews WHERE id = $1', [reviewId])).rows[0].is_visible;
+
+  test('«скрыть» видимый отзыв: is_visible true → false, changed: true', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
 
-    const response = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+    const response = await setVisibility(review.id, { is_visible: false }).expect(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.data.id).toBe(review.id);
     expect(response.body.data.is_visible).toBe(false);
+    expect(response.body.data.changed).toBe(true);
+    expect(await visibilityInDb(review.id)).toBe(false);
   });
 
-  test('should toggle hidden review to visible (is_visible: false → true)', async () => {
+  test('«показать» скрытый отзыв: is_visible false → true', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: false });
 
-    const response = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+    const response = await setVisibility(review.id, { is_visible: true }).expect(200);
 
-    expect(response.body.success).toBe(true);
     expect(response.body.data.is_visible).toBe(true);
+    expect(response.body.data.changed).toBe(true);
+    expect(await visibilityInDb(review.id)).toBe(true);
   });
 
-  test('should verify is_visible actually changes in database after toggle', async () => {
+  test('дважды присланное «скрыть» оставляет отзыв скрытым и не пишет второй записи в журнал', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
 
-    // Toggle
-    await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+    await setVisibility(review.id, { is_visible: false }).expect(200);
+    const repeat = await setVisibility(review.id, { is_visible: false }).expect(200);
 
-    // Read back via admin list
+    expect(repeat.body.data.is_visible).toBe(false);
+    expect(repeat.body.data.changed).toBe(false);
+    expect(await visibilityInDb(review.id)).toBe(false);
+
+    const { rows } = await query(
+      "SELECT action FROM audit_log WHERE entity_id = $1 AND action IN ('review_hide', 'review_show')",
+      [review.id],
+    );
+    expect(rows).toEqual([{ action: 'review_hide' }]);
+  });
+
+  test('тот же договор по прежнему пути /toggle-visibility', async () => {
+    const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
+
+    await setVisibility(review.id, { is_visible: false }, 'toggle-visibility').expect(200);
+    await setVisibility(review.id, { is_visible: false }, 'toggle-visibility').expect(200);
+
+    expect(await visibilityInDb(review.id)).toBe(false);
+  });
+
+  test.each([
+    ['без тела', undefined],
+    ['is_visible строкой', { is_visible: 'false' }],
+    ['is_visible null', { is_visible: null }],
+  ])('без явного состояния — 422, отзыв не тронут: %s', async (_label, body) => {
+    const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
+
+    const response = await setVisibility(review.id, body).expect(422);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(await visibilityInDb(review.id)).toBe(true);
+  });
+
+  test('скрытый отзыв виден в списке со status=hidden', async () => {
+    const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
+
+    await setVisibility(review.id, { is_visible: false }).expect(200);
+
     const listResponse = await request(app)
       .get(`/api/v1/admin/reviews?status=hidden`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    const toggled = listResponse.body.data.find(r => r.id === review.id);
-    expect(toggled).toBeDefined();
-    expect(toggled.is_visible).toBe(false);
+    const hidden = listResponse.body.data.find(r => r.id === review.id);
+    expect(hidden).toBeDefined();
+    expect(hidden.is_visible).toBe(false);
   });
 
   test('should return 404 REVIEW_NOT_FOUND for non-existent UUID', async () => {
-    const response = await request(app)
-      .post('/api/v1/admin/reviews/00000000-0000-0000-0000-000000000000/toggle-visibility')
-      .set('Authorization', `Bearer ${adminToken}`)
+    const response = await setVisibility('00000000-0000-0000-0000-000000000000', { is_visible: false })
       .expect(404);
 
     expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('REVIEW_NOT_FOUND');
   });
 
-  test('should return 404 when toggling a deleted review (WHERE is_deleted=false)', async () => {
-    // toggleReviewVisibility has WHERE is_deleted = false, so deleted reviews return null → 404
+  test('should return 404 for a deleted review', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_deleted: true });
 
-    const response = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(404);
+    const response = await setVisibility(review.id, { is_visible: false }).expect(404);
 
     expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('REVIEW_NOT_FOUND');
   });
 
-  test('should return error for invalid UUID format', async () => {
-    const response = await request(app)
-      .post('/api/v1/admin/reviews/not-a-uuid/toggle-visibility')
-      .set('Authorization', `Bearer ${adminToken}`);
+  test('should return 422 for invalid UUID format', async () => {
+    const response = await setVisibility('not-a-uuid', { is_visible: false });
 
     expect(response.body.success).toBe(false);
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBe(422);
   });
 
   test('should create audit_log entry with review_hide action when hiding', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
 
-    const response = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-
-    // After toggle, is_visible = false → action should be 'review_hide'
-    expect(response.body.data.is_visible).toBe(false);
+    await setVisibility(review.id, { is_visible: false }).expect(200);
 
     const auditExists = await checkAuditLogExists(review.id, 'review_hide');
     expect(auditExists).toBe(true);
@@ -345,41 +377,46 @@ describe('POST /api/v1/admin/reviews/:id/toggle-visibility (#15)', () => {
   test('should create audit_log entry with review_show action when showing', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: false });
 
-    const response = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-
-    // After toggle, is_visible = true → action should be 'review_show'
-    expect(response.body.data.is_visible).toBe(true);
+    await setVisibility(review.id, { is_visible: true }).expect(200);
 
     const auditExists = await checkAuditLogExists(review.id, 'review_show');
     expect(auditExists).toBe(true);
   });
 
-  test('should double-toggle restore original visibility state', async () => {
+  test('скрыть, затем показать — исходное состояние восстановлено', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
 
-    // First toggle: true → false
-    await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+    await setVisibility(review.id, { is_visible: false }).expect(200);
+    const shown = await setVisibility(review.id, { is_visible: true }).expect(200);
 
-    // Second toggle: false → true
-    const secondResponse = await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+    expect(shown.body.data.is_visible).toBe(true);
+  });
 
-    expect(secondResponse.body.data.is_visible).toBe(true);
+  // Модель пишет запрошенное значение, а не противоположное текущему, и
+  // только если состояние то, на котором принималось решение — иначе
+  // параллельная правка перезаписывалась бы молча.
+  test('модель: явное значение под охраной прежнего состояния', async () => {
+    const hidden = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: false });
+
+    // Решение «скрыть», принятое на скрытом: писать нечего, строка не меняется.
+    expect(await setReviewVisibility(hidden.id, false, false)).toMatchObject({ id: hidden.id, is_visible: false });
+    expect(await visibilityInDb(hidden.id)).toBe(false);
+
+    // Решение, принятое на видимом, а отзыв уже скрыт: охранник не пропускает.
+    expect(await setReviewVisibility(hidden.id, false, true)).toBeNull();
+    expect(await visibilityInDb(hidden.id)).toBe(false);
+
+    // Решение «показать» на скрытом — пишется.
+    expect(await setReviewVisibility(hidden.id, true, false)).toMatchObject({ id: hidden.id, is_visible: true });
+    expect(await visibilityInDb(hidden.id)).toBe(true);
   });
 
   test('should require admin authentication', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId);
 
     await request(app)
-      .post(`/api/v1/admin/reviews/${review.id}/toggle-visibility`)
+      .post(`/api/v1/admin/reviews/${review.id}/visibility`)
+      .send({ is_visible: false })
       .expect(401);
   });
 });
@@ -505,7 +542,7 @@ describe('POST /api/v1/admin/reviews/:id/delete (#16)', () => {
 // #17 — Aggregate recalculation on visibility toggle
 // ============================================================================
 
-describe('Aggregate recalculation on toggle-visibility (#17)', () => {
+describe('Aggregate recalculation on visibility change (#17)', () => {
   test('hiding a 1-star review should exclude it from average_rating', async () => {
     // Create two reviews: 5-star + 1-star → average = 3.00
     await createTestReview(null, testEstablishmentId, { rating: 5 });
@@ -517,8 +554,9 @@ describe('Aggregate recalculation on toggle-visibility (#17)', () => {
 
     // Hide the 1-star review → should recalculate to 5.00 / count=1
     await request(app)
-      .post(`/api/v1/admin/reviews/${lowReview.id}/toggle-visibility`)
+      .post(`/api/v1/admin/reviews/${lowReview.id}/visibility`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_visible: false })
       .expect(200);
 
     estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
@@ -533,8 +571,9 @@ describe('Aggregate recalculation on toggle-visibility (#17)', () => {
 
     // Un-hide the 3-star review → should recalculate to 4.00 / count=2
     await request(app)
-      .post(`/api/v1/admin/reviews/${hiddenReview.id}/toggle-visibility`)
+      .post(`/api/v1/admin/reviews/${hiddenReview.id}/visibility`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_visible: true })
       .expect(200);
 
     const estRow = await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId]);
@@ -748,8 +787,9 @@ describe('Б3: чей рейтинг заведения попадает в пр
     const toHide = await createTestReview(null, testEstablishmentId, { rating: 1 });
 
     await request(app)
-      .post(`/api/v1/admin/reviews/${toHide.id}/toggle-visibility`)
+      .post(`/api/v1/admin/reviews/${toHide.id}/visibility`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_visible: false })
       .expect(200);
 
     const response = await request(app)

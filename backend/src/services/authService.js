@@ -14,11 +14,16 @@
  */
 
 import argon2 from 'argon2';
-import { pool } from '../config/database.js';
+import { pool, getClient } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
 import { invalidateAccountStatus } from './accountStatus.js';
+import * as AuditLogModel from '../models/auditLogModel.js';
+import * as NotificationService from './notificationService.js';
+import { invalidateCache as invalidateBadges } from './badgesService.js';
+import { parseModerationNotes } from '../utils/moderationNotes.js';
+import { isPanelRole } from '../config/panelRoles.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
@@ -219,11 +224,23 @@ export async function verifyCredentials(credentials) {
       }
 
       if (isValidPassword) {
-        // Update last login timestamp
-        await pool.query(
-          'UPDATE users SET last_login_at = $1 WHERE id = $2',
-          [new Date(), user.id],
+        // Update last login timestamp — only if the hash just verified is still
+        // the row's hash. The verify takes tens of milliseconds, and a takeover
+        // of the record (authenticateWithOAuth, 2c) may have dropped the
+        // password meanwhile; a login that then issued tokens would outlive the
+        // takeover (lens review, 08.10.2026).
+        const stillCurrent = await pool.query(
+          'UPDATE users SET last_login_at = $1 WHERE id = $2 AND password_hash = $3',
+          [new Date(), user.id, user.password_hash],
         );
+        if (stillCurrent.rowCount === 0) {
+          logger.warn('Login attempt failed', {
+            email: email || 'not_provided',
+            phone: phone || 'not_provided',
+            reason: 'password_changed_during_verification',
+          });
+          return null;
+        }
         
         // Remove password_hash from returned object for security
         delete user.password_hash;
@@ -747,11 +764,153 @@ export async function updateUserProfile(userId, profileData) {
  * @throws {Error} If user not found or already a partner/admin
  */
 /**
+ * What the moderator reads on a card parked by an account takeover, and what
+ * the account's new holder is told. Literal: both read it as is.
+ */
+export const TAKEOVER_SUSPEND_REASON =
+  'Учётная запись перешла к владельцу адреса e-mail после входа через Google или Яндекс. '
+  + 'Карточка приостановлена до решения модератора: кому она принадлежит.';
+
+/**
+ * Hand a record whose e-mail was never confirmed to the person who just proved
+ * the address through a provider.
+ *
+ * The record may have been created by anyone naming this address, so nothing
+ * the registrant set up is trusted: the password is dropped (no password login
+ * until «forgot password» sets one — that path proves the address again), every
+ * refresh token is deleted — not merely burned: a burned token presented later
+ * reads as token reuse and revokes every session of the record, the new
+ * holder's included (review, 08.10.2026) — so a replay answers «unknown token»
+ * and nothing else; access tokens live out their TTL, as after a password reset
+ * (the known remainder C-05). The registrant's push devices are deactivated:
+ * the record's notices must not keep arriving on their phone. The typed name,
+ * avatar and phone give way to the provider's data. The partner role stays
+ * with the record, but the active cards are not published under the new
+ * holder's name silently: each is suspended with a moderator's mark and a
+ * reason, and the moderator decides; the holder may edit and resubmit them,
+ * which puts them in the moderation queue with the marks kept. Drafts, pending
+ * and rejected cards are not public and stay as they are. Reviews, favorites,
+ * bookings, partner documents and notification preferences stay on the record.
+ *
+ * One transaction: a provider login that ends with the old password still
+ * valid, or the old sessions still alive, is the defect itself.
+ *
+ * @returns {Promise<Object>} The user row as the login response shapes it
+ */
+async function takeOverUnverifiedAccount(existingUser, { provider, providerId, name, avatarUrl }) {
+  const now = new Date();
+  const client = await getClient();
+  let user;
+  let deletedTokens = 0;
+  let deactivatedDevices = 0;
+  let parkedCards = [];
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query(
+      `UPDATE users
+       SET auth_method = $1, oauth_provider_id = $2, last_login_at = $3, updated_at = $3,
+           email_verified = true, password_hash = NULL,
+           name = COALESCE($4, name), avatar_url = $5,
+           phone = NULL, phone_verified = false
+       WHERE id = $6
+       RETURNING id, email, phone, name, role, auth_method, avatar_url,
+                 oauth_provider_id, is_active, last_login_at, created_at`,
+      [provider, providerId, now, name || null, avatarUrl || null, existingUser.id],
+    );
+    user = updated.rows[0];
+
+    // The successor link is a self-reference; clear it before the rows go.
+    await client.query(
+      'UPDATE refresh_tokens SET replaced_by = NULL WHERE user_id = $1',
+      [existingUser.id],
+    );
+    const deleted = await client.query(
+      'DELETE FROM refresh_tokens WHERE user_id = $1',
+      [existingUser.id],
+    );
+    deletedTokens = deleted.rowCount;
+
+    const devices = await client.query(
+      `UPDATE device_tokens SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1 AND is_active = TRUE`,
+      [existingUser.id],
+    );
+    deactivatedDevices = devices.rowCount;
+
+    const cards = await client.query(
+      `SELECT id, status, moderation_notes FROM establishments
+       WHERE partner_id = $1 AND status = 'active'
+       FOR UPDATE`,
+      [existingUser.id],
+    );
+    for (const card of cards.rows) {
+      const notes = {
+        ...parseModerationNotes(card.moderation_notes),
+        suspend_reason: TAKEOVER_SUSPEND_REASON,
+        suspended_at: now.toISOString(),
+        suspended_from: card.status,
+      };
+      await client.query(
+        `UPDATE establishments
+         SET status = 'suspended', moderation_notes = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [JSON.stringify(notes), card.id],
+      );
+    }
+    parkedCards = cards.rows.map((card) => card.id);
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // Outside the transaction, as the moderator's own suspension does: the
+  // journal and the notice must not undo a takeover that is already committed.
+  for (const establishmentId of parkedCards) {
+    await AuditLogModel.createAuditLog({
+      user_id: null,
+      action: 'suspend',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { status: 'active' },
+      new_data: { status: 'suspended', reason: TAKEOVER_SUSPEND_REASON, account_takeover: provider },
+      ip_address: null,
+      user_agent: null,
+    });
+    await NotificationService.notifyEstablishmentStatusChange(
+      establishmentId,
+      'suspended',
+      TAKEOVER_SUSPEND_REASON,
+    ).catch(() => {});
+  }
+  if (parkedCards.length > 0) {
+    invalidateBadges();
+  }
+
+  logger.warn('OAuth login: unverified account taken over by the address owner', {
+    userId: existingUser.id,
+    provider,
+    previousAuthMethod: existingUser.auth_method,
+    deletedTokens,
+    deactivatedDevices,
+    parkedCards: parkedCards.length,
+  });
+
+  return user;
+}
+
+/**
  * Authenticates a user via OAuth provider data.
  *
  * Three scenarios handled:
  * 1. Existing OAuth user (same provider + providerId) → login
  * 2. Email matches existing user + provider email verified → link account
+ *    (2c: if the record's own e-mail was never confirmed, the record passes to
+ *    the person signing in — takeOverUnverifiedAccount)
  * 3. No match → create new user (password_hash = NULL)
  *
  * Security: unverified provider emails cannot claim existing accounts.
@@ -805,7 +964,7 @@ export async function authenticateWithOAuth(providerData) {
     // 2. Check if email exists in users table
     const emailLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at
+              oauth_provider_id, is_active, last_login_at, created_at, email_verified
        FROM users
        WHERE email = $1`,
       [email.toLowerCase().trim()],
@@ -826,6 +985,38 @@ export async function authenticateWithOAuth(providerData) {
           provider,
         });
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
+      // 2c. The record's own e-mail was never confirmed: anyone can register
+      // naming someone else's address, and the provider's verified e-mail is
+      // the first proof of ownership this record has seen. The account passes
+      // to the person signing in — nothing the registrant set up survives
+      // (critics' pack 1, point 1; known since 02.10.2026 as N2 / F-09).
+      if (!existingUser.email_verified) {
+        // A panel account (admin, viewer) is created by an operator and logs
+        // in by password only: handing it over would lock the panel out, and
+        // it is never a stranger's claim on an address. Refused like an
+        // unproven link (review, 08.10.2026).
+        if (isPanelRole(existingUser.role)) {
+          logger.warn('OAuth login: unconfirmed panel account not handed over', {
+            userId: existingUser.id,
+            provider,
+          });
+          throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+        }
+        const takenOver = await takeOverUnverifiedAccount(existingUser, {
+          provider,
+          providerId,
+          name,
+          avatarUrl,
+        });
+        const tokens = await generateTokenPair(takenOver);
+        return {
+          user: takenOver,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+        };
       }
 
       // Link: update auth_method, set oauth_provider_id, optionally update avatar

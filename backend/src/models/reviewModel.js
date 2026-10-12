@@ -24,7 +24,7 @@ import logger from '../utils/logger.js';
  * @returns {Promise<Object>} The created review object with all database fields
  * @throws {Error} If database operation fails
  */
-export const createReview = async (reviewData) => {
+export const createReview = async (reviewData, client = pool) => {
   const { user_id, establishment_id, rating, content } = reviewData;
 
   const query = `
@@ -43,7 +43,9 @@ export const createReview = async (reviewData) => {
   const values = [user_id, establishment_id, rating, content];
 
   try {
-    const result = await pool.query(query, values);
+    // `client` lets the service run the insert and the aggregates update in
+    // one transaction (executeInTransaction); the pool is the default.
+    const result = await client.query(query, values);
     logger.info('Review created', {
       reviewId: result.rows[0].id,
       userId: user_id,
@@ -515,7 +517,7 @@ export const hardDeleteReview = async (reviewId) => {
  * @param {string} establishmentId - UUID of the establishment to update
  * @returns {Promise<Object>} Object with updated average_rating and review_count
  */
-export const updateEstablishmentAggregates = async (establishmentId) => {
+export const updateEstablishmentAggregates = async (establishmentId, client = pool) => {
   const query = `
     UPDATE establishments
     SET
@@ -539,7 +541,9 @@ export const updateEstablishmentAggregates = async (establishmentId) => {
   `;
 
   try {
-    const result = await pool.query(query, [establishmentId]);
+    // `client`: inside a transaction the recalculation sees the rows written
+    // by that transaction; the pool is the default.
+    const result = await client.query(query, [establishmentId]);
     
     if (result.rows.length === 0) {
       throw new Error('Establishment not found');
