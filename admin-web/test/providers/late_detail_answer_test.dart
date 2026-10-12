@@ -1,17 +1,23 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
+import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/analytics_totals_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/rejected_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
 import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
+import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
 import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
+import 'package:restaurant_guide_admin_web/services/badges_service.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 
 // Панель действует над тем, что показывает; поздние ответы не переживают
@@ -516,6 +522,69 @@ void main() {
     });
   });
 
+  group('Счётчики рейла и итоги аналитики (решение Координатора 12.10)', () {
+    // Числа одинаковы для обеих ролей — утечки здесь нет. Метка нужна, чтобы
+    // охрана держалась у каждого провайдера реестра, а не по списку; и
+    // заодно опоздавший ответ прежнего аккаунта не перекрывает свежий и не
+    // снимает флаг загрузки, пока новый запрос ещё в пути.
+    test('счётчики: опоздавший ответ прежнего аккаунта не перекрывает свежий',
+        () async {
+      final service = _GatedBadgesService();
+      final provider = BadgesProvider(service: service);
+      addTearDown(provider.dispose);
+
+      provider.load(); // прежний аккаунт
+      provider.resetAccountScope();
+      provider.load(); // вошедший
+      expect(service.gates.length, 2,
+          reason: 'запрос вошедшего обязан уйти, а не упереться в флаг '
+              'загрузки прежнего');
+
+      service.gates[1].complete(const AdminBadges(establishmentsPending: 2));
+      await pumpEventQueue();
+      service.gates[0].complete(const AdminBadges(establishmentsPending: 9));
+      await pumpEventQueue();
+
+      expect(provider.badges?.establishmentsPending, 2);
+    });
+
+    test('итоги аналитики: опоздавший ответ прежнего аккаунта не перекрывает '
+        'свежий', () async {
+      final service = _GatedAnalyticsService();
+      final provider = AnalyticsTotalsProvider(service: service);
+      addTearDown(provider.dispose);
+
+      provider.loadOnce(); // прежний аккаунт
+      provider.resetAccountScope();
+      provider.loadOnce(); // вошедший
+      expect(service.gates.length, 2);
+
+      service.gates[1].complete(_overview(establishments: 46));
+      await pumpEventQueue();
+      service.gates[0].complete(_overview(establishments: 999));
+      await pumpEventQueue();
+
+      expect(provider.establishments, 46);
+    });
+
+    test('опоздавший ответ прежнего аккаунта не снимает флаг загрузки '
+        'нового запроса', () async {
+      final service = _GatedBadgesService();
+      final provider = BadgesProvider(service: service);
+      addTearDown(provider.dispose);
+
+      provider.load();
+      provider.resetAccountScope();
+      provider.load();
+      service.gates[0].complete(const AdminBadges(establishmentsPending: 9));
+      await pumpEventQueue();
+
+      expect(provider.isLoading, isTrue,
+          reason: 'запрос вошедшего ещё в пути');
+      expect(provider.badges, isNull);
+    });
+  });
+
   group('Журнал', () {
     test('ответ администратору, опоздавший к входу просмотрщика, не ложится '
         'в его журнал', () async {
@@ -590,6 +659,50 @@ class _GatedReviewService implements AdminReviewService {
         'подставка не обслуживает ${invocation.memberName}',
       );
 }
+
+class _GatedBadgesService implements BadgesService {
+  final List<Completer<AdminBadges>> gates = <Completer<AdminBadges>>[];
+
+  @override
+  Future<AdminBadges> getBadges() {
+    final gate = Completer<AdminBadges>();
+    gates.add(gate);
+    return gate.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        'подставка не обслуживает ${invocation.memberName}',
+      );
+}
+
+class _GatedAnalyticsService implements AnalyticsService {
+  final List<Completer<OverviewData>> gates = <Completer<OverviewData>>[];
+
+  @override
+  Future<OverviewData> getOverview({
+    String period = '30d',
+    String? from,
+    String? to,
+  }) {
+    final gate = Completer<OverviewData>();
+    gates.add(gate);
+    return gate.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        'подставка не обслуживает ${invocation.memberName}',
+      );
+}
+
+OverviewData _overview({required int establishments}) =>
+    OverviewData.fromJson(<String, dynamic>{
+      'users': <String, dynamic>{'total': 1},
+      'establishments': <String, dynamic>{'total': establishments},
+      'reviews': <String, dynamic>{'total': 1},
+      'moderation': <String, dynamic>{},
+    });
 
 AdminReviewItem _adminCopy() => AdminReviewItem(
       id: 'r1',
