@@ -17,6 +17,46 @@
  */
 
 /**
+ * The establishment in the URL is missing or not the caller's. One text for
+ * both on purpose: a stranger must not learn whether the card exists.
+ */
+const ESTABLISHMENT_NOT_OWNED =
+  'Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.';
+
+/** A booking's present status, as the partner reads it when an action is refused. */
+const BOOKING_STATUS_PHRASES = {
+  pending: 'Бронь ещё не подтверждена.',
+  confirmed: 'Бронь уже подтверждена.',
+  declined: 'Бронь уже отклонена.',
+  expired: 'Время на ответ истекло — бронь снята автоматически.',
+  cancelled: 'Гость отменил эту бронь.',
+  no_show: 'Бронь уже отмечена: гость не пришёл.',
+  completed: 'Бронь уже отмечена как состоявшаяся.',
+};
+
+/**
+ * The partner's bookings — /api/v1/partner/bookings/:establishmentId/…
+ * (services/bookingService.js, the partner actions only; the guest's own
+ * cancel keeps its texts until the Coordinator's word). The app shows the
+ * text from its next build (option Б), until then its own.
+ */
+export const BOOKING_REFUSALS = Object.freeze({
+  establishmentNotOwned: ESTABLISHMENT_NOT_OWNED,
+  // Missing, or of another establishment than the one in the URL.
+  bookingNotFound: 'Бронь не найдена. Обновите список броней.',
+  // Confirm, decline, no-show or complete on a booking whose status has
+  // changed meanwhile: the answer time ran out, the guest cancelled, another
+  // phone of the same account acted first.
+  statusChanged: (status) => {
+    const phrase = Object.hasOwn(BOOKING_STATUS_PHRASES, status)
+      ? BOOKING_STATUS_PHRASES[status]
+      : 'Статус брони изменился.';
+    return `${phrase} Обновите список броней.`;
+  },
+  declineReasonRequired: 'Укажите причину отказа.',
+});
+
+/**
  * The wizard's photo and PDF upload — POST /api/v1/partner/media/upload
  * (routes/v1/tempMediaRoutes.js). The app shows the text after its own prefix
  * «Ошибка при загрузке фото:» until its next build.
