@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_registration_screen.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 
@@ -257,6 +258,50 @@ void main() {
     );
     expect(auth.currentUser?.role, 'partner');
     expect(dashboard.establishments.map((e) => e.id), [_id]);
+  });
+
+  /// Стрелка «назад» мастера с первого шага — к диалогу выхода. Шаги между
+  /// итоговым и первым (адрес с картой, фото из сети) в тестовой среде не
+  /// строятся, поэтому на первый шаг мастер переводит его же провайдер, а
+  /// диалог открывает настоящая стрелка экрана.
+  Future<void> backFromFirstStep(WidgetTester tester) async {
+    tester
+        .element(find.text('Отправить на верификацию'))
+        .read<PartnerRegistrationProvider>()
+        .goToStep(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.pumpAndSettle();
+    expect(find.text('Выйти из регистрации?'), findsOneWidget);
+  }
+
+  testWidgets(
+      'выход из мастера, когда черновик уже на сервере: данные не '
+      'пропадут — где его найти', (tester) async {
+    submitFault = DioExceptionType.connectionError;
+    await openWizard(tester);
+    await tapSend(tester);
+    ScaffoldMessenger.of(tester.element(find.byType(PartnerRegistrationScreen)))
+        .removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+
+    await backFromFirstStep(tester);
+
+    expect(
+      find.text('Заведение сохранено как черновик — отправить его на '
+          'модерацию можно из профиля.'),
+      findsOneWidget,
+    );
+    expect(find.text('Введённые данные будут потеряны.'), findsNothing);
+  });
+
+  testWidgets('выход из мастера без карточки на сервере: данные пропадут',
+      (tester) async {
+    await openWizard(tester);
+
+    await backFromFirstStep(tester);
+
+    expect(find.text('Введённые данные будут потеряны.'), findsOneWidget);
   });
 
   testWidgets('всё прошло: партнёр, карточка в профиле, мастер закрыт',

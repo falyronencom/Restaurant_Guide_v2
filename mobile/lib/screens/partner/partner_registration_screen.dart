@@ -154,7 +154,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       // Show confirmation dialog if there's data
       if (provider.data.categories.isNotEmpty ||
           provider.data.cuisineTypes.isNotEmpty) {
-        _showExitConfirmation(context);
+        _showExitConfirmation(context, draftSaved: provider.hasCardOnServer);
       } else {
         Navigator.of(context).pop();
       }
@@ -165,7 +165,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   }
 
   /// Show exit confirmation dialog
-  void _showExitConfirmation(BuildContext context) {
+  void _showExitConfirmation(BuildContext context, {required bool draftSaved}) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -179,9 +179,14 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
-          'Введённые данные будут потеряны.',
-          style: TextStyle(),
+        content: Text(
+          // Карточка уже на сервере черновиком — выход её не теряет
+          // (решение Координатора 13.10.2026).
+          draftSaved
+              ? 'Заведение сохранено как черновик — отправить его на '
+                  'модерацию можно из профиля.'
+              : 'Введённые данные будут потеряны.',
+          style: const TextStyle(),
         ),
         actions: [
           TextButton(
