@@ -346,7 +346,7 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(provider.error ?? 'Ошибка сохранения'),
+          content: Text(provider.actionError ?? 'Ошибка сохранения'),
           behavior: SnackBarBehavior.floating,
         ),
       );
