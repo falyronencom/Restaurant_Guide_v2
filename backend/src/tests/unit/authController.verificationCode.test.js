@@ -53,6 +53,7 @@ jest.unstable_mockModule('argon2', () => ({
 jest.unstable_mockModule('../../utils/jwt.js', () => ({
   generateAccessToken: jest.fn(),
   generateRefreshToken: jest.fn(),
+  deriveSuccessorRefreshToken: jest.fn(),
 }));
 
 const argon2 = (await import('argon2')).default;

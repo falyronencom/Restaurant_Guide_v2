@@ -145,9 +145,64 @@ describe('POST /api/v1/auth/oauth — Yandex', () => {
   });
 
   test('maps a Yandex account without an email to 400 OAUTH_NO_EMAIL', async () => {
-    mockYandexInfo({ id: 5 }); // no default_email
+    mockYandexInfo(yandexBody({ id: 5, default_email: undefined }));
     const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(400);
     expect(res.body.error.code).toBe('OAUTH_NO_EMAIL');
+  });
+});
+
+describe('POST /api/v1/auth/oauth — Yandex token issued to another application', () => {
+  // Yandex answers login.yandex.ru/info for any valid token and names the
+  // application it was issued to. Only our own application's tokens sign in
+  // (config/oauth.js) — the Yandex side of the audience check Google has.
+  const FOREIGN_APP = 'another-yandex-app-client-id';
+
+  const savedClientIds = process.env.YANDEX_CLIENT_ID;
+  beforeEach(() => {
+    delete process.env.YANDEX_CLIENT_ID;
+  });
+  afterAll(() => {
+    if (savedClientIds === undefined) delete process.env.YANDEX_CLIENT_ID;
+    else process.env.YANDEX_CLIENT_ID = savedClientIds;
+  });
+
+  test('does not sign into an existing account with the same e-mail, and links nothing', async () => {
+    const existing = await createTestUser({
+      email: 'owner@yandex.ru',
+      phone: '+375291112244',
+      password: 'Test123!@#',
+      name: 'Owner',
+      authMethod: 'email',
+    });
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [existing.id]);
+
+    mockYandexInfo(yandexBody({ client_id: FOREIGN_APP, default_email: 'owner@yandex.ru' }));
+    const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(401);
+
+    expect(res.body.error.code).toBe('INVALID_TOKEN');
+    expect(res.body.data).toBeUndefined();
+
+    // The account stays as it was: not switched to Yandex, no session opened.
+    const inDb = await getUserByEmail('owner@yandex.ru');
+    expect(inDb.auth_method).toBe('email');
+    expect(inDb.oauth_provider_id).toBeNull();
+    const { rows } = await query('SELECT id FROM refresh_tokens WHERE user_id = $1', [existing.id]);
+    expect(rows).toHaveLength(0);
+  });
+
+  test('does not create an account either', async () => {
+    mockYandexInfo(yandexBody({ client_id: FOREIGN_APP }));
+    await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(401);
+
+    expect(await getUserByEmail(oauthProviderResponses.yandex.default_email)).toBeNull();
+  });
+
+  test('an application listed in YANDEX_CLIENT_ID signs in as usual', async () => {
+    process.env.YANDEX_CLIENT_ID = `${oauthProviderResponses.yandex.client_id},${FOREIGN_APP}`;
+    mockYandexInfo(yandexBody({ client_id: FOREIGN_APP }));
+
+    const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+    expect(res.body.data.user.email).toBe(oauthProviderResponses.yandex.default_email);
   });
 });
 
