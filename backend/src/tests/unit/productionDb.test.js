@@ -30,6 +30,7 @@ import {
   verifyPinnedHandshake,
   withoutTlsParameters,
 } from '../../../scripts/lib/productionDb.js';
+import { databaseSsl } from '../../config/databaseTls.js';
 import {
   FAKE_SERVER_STOP,
   selfSignedCertificate,
@@ -212,6 +213,72 @@ describe('pin tool helpers', () => {
     expect(withoutTlsParameters('postgresql://u:p@h:5/db?sslmode=require&application_name=x&sslrootcert=/a'))
       .toBe('postgresql://u:p@h:5/db?application_name=x');
   });
+
+  test('an address that cannot be cleaned is refused, not used as it is', async () => {
+    expect(() => withoutTlsParameters('not a url ?sslmode=disable'))
+      .toThrow(expect.objectContaining({ code: 'PRODUCTION_DB_URL_UNREADABLE' }));
+
+    const client = new ProductionClient({ connectionString: 'not a url ?sslmode=disable' }, pinned(production));
+    expect((await failureOf(client.connect())).code).toBe('PRODUCTION_DB_URL_UNREADABLE');
+  });
+
+  test('upsertEnvLine keeps a single line for the key — dotenv would read the last duplicate', () => {
+    expect(upsertEnvLine('A=1\nDATABASE_TLS_CERT=one\nB=2\nDATABASE_TLS_CERT=two\n', PIN_VARIABLE, 'new'))
+      .toBe('A=1\nDATABASE_TLS_CERT=new\nB=2\n');
+  });
+});
+
+describe('ProductionClient given a bare connection string', () => {
+  let server;
+  afterEach(async () => {
+    if (server) await server.close();
+    server = null;
+  });
+
+  test('keeps the address and the pin, as pg.Client would keep the address', async () => {
+    server = await startFakePostgres(impostor);
+    const saved = process.env[PIN_VARIABLE];
+    process.env[PIN_VARIABLE] = pinValue(production.der);
+    try {
+      const client = new ProductionClient(databaseUrl(server.port));
+      expect((await failureOf(client.connect())).code).toBe('PRODUCTION_DB_CERT_MISMATCH');
+      expect(server.sslRequests).toBe(1);
+    } finally {
+      if (saved === undefined) delete process.env[PIN_VARIABLE];
+      else process.env[PIN_VARIABLE] = saved;
+    }
+  });
+});
+
+describe('databaseSsl — the app pool (src/config/database.js)', () => {
+  let server;
+  afterEach(async () => {
+    if (server) await server.close();
+    server = null;
+  });
+
+  test('outside production: no TLS; in production without a pin: as before (EN1, a separate decision)', () => {
+    expect(databaseSsl({ NODE_ENV: 'test', [PIN_VARIABLE]: pinValue(production.der) })).toBe(false);
+    expect(databaseSsl({ NODE_ENV: 'production' })).toEqual({ rejectUnauthorized: false });
+    expect(databaseSsl({ NODE_ENV: 'production', [PIN_VARIABLE]: ' ' })).toEqual({ rejectUnauthorized: false });
+  });
+
+  test('in production with a pin — seed-import --target=prod — only the pinned server', async () => {
+    const ssl = databaseSsl({ NODE_ENV: 'production', [PIN_VARIABLE]: pinValue(production.der) });
+
+    server = await startFakePostgres(impostor);
+    const toImpostor = new pg.Pool({ connectionString: databaseUrl(server.port), ssl });
+    await expect(toImpostor.connect()).rejects.toThrow();
+    await toImpostor.end();
+    expect(server.received).toHaveLength(0);
+    await server.close();
+
+    server = await startFakePostgres(production);
+    const toProduction = new pg.Pool({ connectionString: databaseUrl(server.port), ssl });
+    await expect(toProduction.connect()).rejects.toThrow(FAKE_SERVER_STOP);
+    await toProduction.end();
+    expect(server.received).toHaveLength(1);
+  });
 });
 
 describe('every script that connects to production checks the server', () => {
@@ -224,12 +291,17 @@ describe('every script that connects to production checks the server', () => {
     // it to the pin is its own task (review EN3), not done here.
     'prod-snapshot/database.js': 'snapshot (EN3)',
     'prod-snapshot/env.js': 'snapshot (EN3)',
+    'prod-snapshot/index.js': 'snapshot (EN3)',
   };
   const UNCHECKED = [
-    /rejectUnauthorized\s*:\s*false/,
-    /sslmode=no-verify/,
+    /rejectUnauthorized['"]?\s*:\s*(?:false|0|!1|null|undefined)\b/,
+    /no-verify/,
+    /NODE_TLS_REJECT_UNAUTHORIZED/,
     /PGSSLMODE\s*:\s*['"](?:require|prefer|allow)['"]/,
   ];
+  // Reading the production address obliges a script to take the pinned path.
+  const PRODUCTION_ADDRESS = /\.env\.production/;
+  const PINNED_PATH = /lib\/productionDb\.js/;
 
   const scriptFiles = (dir) => readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -237,19 +309,41 @@ describe('every script that connects to production checks the server', () => {
     return /\.(c|m)?js$/.test(name) ? [path] : [];
   });
 
+  /** Script names relative to backend/scripts, with their code (comments dropped). */
+  const scriptsWithCode = () => scriptFiles(SCRIPTS).map((path) => ({
+    name: relative(SCRIPTS, path).split(sep).join('/'),
+    // A comment that names the old setting is not a connection
+    code: readFileSync(path, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1'),
+  }));
+
   test('no script outside the named exceptions connects with the server unchecked', () => {
-    const offenders = scriptFiles(SCRIPTS)
-      .map((path) => relative(SCRIPTS, path).split(sep).join('/'))
-      .filter((name) => !ALLOWED[name])
-      .filter((name) => {
-        const text = readFileSync(join(SCRIPTS, name), 'utf8')
-          // A comment that names the old setting is not a connection
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/(^|[^:])\/\/.*$/gm, '$1');
-        return UNCHECKED.some((pattern) => pattern.test(text));
-      });
+    const offenders = scriptsWithCode()
+      .filter(({ name }) => !ALLOWED[name])
+      .filter(({ code }) => UNCHECKED.some((pattern) => pattern.test(code)))
+      .map(({ name }) => name);
 
     expect(offenders).toEqual([]);
+  });
+
+  test('every script that reads the production address goes through the pinned path', () => {
+    // Catches the indirect ways too — a script that sets NODE_ENV=production
+    // and borrows the app's pool (seed-import does, and passes the pin on).
+    const offenders = scriptsWithCode()
+      .filter(({ name }) => !ALLOWED[name] && name !== 'lib/productionDb.js')
+      .filter(({ code }) => PRODUCTION_ADDRESS.test(code) && !PINNED_PATH.test(code))
+      .map(({ name }) => name);
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('the guard can fail: it sees each way of switching the check off', () => {
+    ['ssl: { rejectUnauthorized: false }', "'rejectUnauthorized': 0", 'rejectUnauthorized: !1',
+      '?sslmode=no-verify', "ssl: 'no-verify'", "process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'",
+      "PGSSLMODE: 'require'"]
+      .forEach((line) => expect(UNCHECKED.some((pattern) => pattern.test(line))).toBe(true));
+    expect(UNCHECKED.some((pattern) => pattern.test('rejectUnauthorized: true'))).toBe(false);
   });
 
   test('the migration script goes through the pin', () => {

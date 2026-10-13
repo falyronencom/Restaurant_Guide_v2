@@ -653,10 +653,26 @@ async function handleReusedToken(tokenData, presentedToken, { concurrentClaim = 
     const successor = replay.rows[0];
     const successorToken = successor ? successorTokenFor(successor, presentedToken) : null;
 
+    // A live successor inside the window whose token cannot be recovered —
+    // after a JWT_SECRET change, or a rotation by the code before hashing
+    // whose row migration 036 hashed within the window. The replay is the
+    // kind the window forgives, so it is not treated as theft: this session
+    // ends (401), the account's other sessions are left alone.
+    if (successor
+      && !successorToken
+      && successor.used_at === null
+      && new Date(successor.expires_at) > new Date()) {
+      logger.warn('Refresh token replayed within grace window, successor not recoverable', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+        successorTokenId: successor.id,
+      });
+      throw new Error('INVALID_REFRESH_TOKEN');
+    }
+
     // The successor must still be the live end of the chain. Once it has been
     // used, the client demonstrably received it, and a replay of its
-    // predecessor is no longer explained by a lost answer. A successor whose
-    // token cannot be recovered is treated like no successor at all.
+    // predecessor is no longer explained by a lost answer.
     if (successorToken
       && successor.used_at === null
       && new Date(successor.expires_at) > new Date()) {

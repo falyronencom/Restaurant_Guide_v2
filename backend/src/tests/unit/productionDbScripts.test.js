@@ -68,8 +68,13 @@ beforeAll(() => {
   sandbox = mkdtempSync(join(BACKEND, 'tmp', 'production-db-scripts-'));
   mkdirSync(join(sandbox, 'scripts', 'lib'), { recursive: true });
   mkdirSync(join(sandbox, 'migrations'));
+  mkdirSync(join(sandbox, 'src', 'config'), { recursive: true });
   ['pin-production-db-cert.js', 'apply-migration-production.js', join('lib', 'productionDb.js')]
     .forEach((name) => copyFileSync(join(BACKEND, 'scripts', name), join(sandbox, 'scripts', name)));
+  copyFileSync(
+    join(BACKEND, 'src', 'config', 'databaseTls.js'),
+    join(sandbox, 'src', 'config', 'databaseTls.js'),
+  );
   writeFileSync(join(sandbox, 'migrations', '999_noop.sql'), 'SELECT 1;\n');
 });
 

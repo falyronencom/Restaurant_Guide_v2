@@ -26,14 +26,20 @@
 import { readFileSync, existsSync } from 'fs';
 import net from 'net';
 import tls from 'tls';
-import { X509Certificate } from 'crypto';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import {
+  PIN_VARIABLE,
+  certificateFromPin,
+  pinValue,
+  sslForPinnedCertificate,
+} from '../../src/config/databaseTls.js';
 
-/** Where the pin lives, next to DATABASE_URL. */
-export const PIN_VARIABLE = 'DATABASE_TLS_CERT';
+// The pin's format and the TLS options it makes are shared with the app's
+// pool (src/config/databaseTls.js); re-exported for the scripts and tests.
+export { PIN_VARIABLE, certificateFromPin, pinValue, sslForPinnedCertificate };
 
 /** backend/.env.production — gitignored, kept by the operator. */
 export const PRODUCTION_ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env.production');
@@ -57,30 +63,6 @@ const errorWithCode = (code, message, cause) => {
   const error = new Error(message, cause ? { cause } : undefined);
   error.code = code;
   return error;
-};
-
-/**
- * The pin as written into .env.production: the certificate's DER, base64,
- * one line.
- *
- * @param {Buffer} der
- * @returns {string}
- */
-export const pinValue = (der) => Buffer.from(der).toString('base64');
-
-/**
- * A pin back into a certificate. Accepts the one-line base64 the pin tool
- * writes and, for a hand-made pin, a PEM block.
- *
- * @param {string} value
- * @returns {X509Certificate}
- */
-export const certificateFromPin = (value) => {
-  const text = String(value).trim();
-  if (text.includes('-----BEGIN CERTIFICATE-----')) {
-    return new X509Certificate(text);
-  }
-  return new X509Certificate(Buffer.from(text.replace(/\s+/g, ''), 'base64'));
 };
 
 /**
@@ -116,28 +98,6 @@ export const readPinnedCertificate = ({ env = process.env, envFile = PRODUCTION_
     );
   }
 };
-
-/**
- * TLS options that accept only the pinned certificate.
- *
- * @param {X509Certificate} pinned
- * @returns {Object} node-pg `ssl` / tls.connect options
- */
-export const sslForPinnedCertificate = (pinned) => ({
-  ca: pinned.toString(),
-  rejectUnauthorized: true,
-  // Called only once the chain has verified against `ca` — that is, the
-  // server holds the pinned certificate's key. The name check is replaced by
-  // the fingerprint: the certificate is issued to "localhost".
-  checkServerIdentity: (_host, cert) => (
-    cert && cert.fingerprint256 === pinned.fingerprint256
-      ? undefined
-      : errorWithCode(
-        'PRODUCTION_DB_CERT_MISMATCH',
-        `certificate ${cert && cert.fingerprint256} is not the pinned ${pinned.fingerprint256}`,
-      )
-  ),
-});
 
 /**
  * node-pg `ssl` options for production, from the pin.
@@ -190,15 +150,22 @@ const SSL_URL_PARAMETERS = ['ssl', 'sslmode', 'sslcert', 'sslkey', 'sslrootcert'
  *
  * @param {string} connectionString
  * @returns {string}
+ * @throws {Error} code PRODUCTION_DB_URL_UNREADABLE — a string that does not
+ *   parse as a URL cannot be cleaned, so it is not used at all
  */
 export const withoutTlsParameters = (connectionString) => {
+  let url;
   try {
-    const url = new URL(connectionString);
-    SSL_URL_PARAMETERS.forEach((name) => url.searchParams.delete(name));
-    return url.toString();
-  } catch {
-    return connectionString;
+    url = new URL(connectionString);
+  } catch (cause) {
+    throw errorWithCode(
+      'PRODUCTION_DB_URL_UNREADABLE',
+      'DATABASE_URL не читается как адрес, подключение не начато. Проверьте строку в backend/.env.production.',
+      cause,
+    );
   }
+  SSL_URL_PARAMETERS.forEach((name) => url.searchParams.delete(name));
+  return url.toString();
 };
 
 /**
@@ -212,28 +179,33 @@ export const withoutTlsParameters = (connectionString) => {
  */
 export class ProductionClient extends pg.Client {
   constructor(config = {}, pinOptions = undefined) {
+    // pg.Client also takes a bare connection string
+    const { ssl: _ignored, ...rest } = typeof config === 'string' ? { connectionString: config } : config;
     let pinned = null;
-    let pinError = null;
+    let refusal = null;
+    let connectionString = rest.connectionString;
     try {
       pinned = readPinnedCertificate(pinOptions);
+      if (connectionString) connectionString = withoutTlsParameters(connectionString);
     } catch (error) {
-      pinError = error;
+      refusal = error;
     }
-    const { ssl: _ignored, ...rest } = config;
     super({
       ...rest,
-      ...(rest.connectionString ? { connectionString: withoutTlsParameters(rest.connectionString) } : {}),
+      // After a refusal connect() rejects before opening a socket; the
+      // placeholder only keeps pg's own parsing of the address from throwing.
+      ...(rest.connectionString ? { connectionString: refusal ? 'postgresql://refused.invalid/x' : connectionString } : {}),
       // Without a pin there is nothing to trust; connect() refuses before
       // opening a socket, and this value is never used.
       ssl: pinned ? sslForPinnedCertificate(pinned) : { rejectUnauthorized: true },
     });
     this.pinnedCertificate = pinned;
-    this.pinError = pinError;
+    this.refusal = refusal;
   }
 
   connect(callback) {
-    const connecting = this.pinError
-      ? Promise.reject(this.pinError)
+    const connecting = this.refusal
+      ? Promise.reject(this.refusal)
       : super.connect().catch((error) => {
         throw explainConnectionFailure(error, this.pinnedCertificate);
       });
@@ -338,8 +310,9 @@ export const targetOf = (databaseUrl) => {
 };
 
 /**
- * .env text with KEY set to value: the line replaced where it is, appended
- * otherwise. The other lines and the file's line endings are left alone.
+ * .env text with KEY set to value: the line replaced where it is (duplicates
+ * dropped), appended otherwise. The other lines and the file's line endings
+ * are left alone.
  *
  * @param {string} text
  * @param {string} key
@@ -350,10 +323,13 @@ export const upsertEnvLine = (text, key, value) => {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.length > 0 ? text.split(/\r?\n/) : [];
   const line = `${key}=${value}`;
-  const index = lines.findIndex((l) => new RegExp(`^\\s*${key}\\s*=`).test(l));
+  const isKey = (l) => new RegExp(`^\\s*${key}\\s*=`).test(l);
+  const index = lines.findIndex(isKey);
   if (index >= 0) {
+    // dotenv reads the last of duplicate lines: keep exactly one, in the
+    // place of the first.
     lines[index] = line;
-    return lines.join(eol);
+    return lines.filter((l, i) => i === index || !isKey(l)).join(eol);
   }
   if (lines.length > 0 && lines[lines.length - 1] === '') {
     lines.splice(lines.length - 1, 0, line);

@@ -1100,7 +1100,7 @@ describe('authService', () => {
       });
 
       describe('the successor\'s token is in the database only as a hash', () => {
-        test('a successor whose token cannot be derived again is not handed out', async () => {
+        test('a successor whose token cannot be derived again is not handed out — and is not called theft', async () => {
           process.env[GRACE_ENV] = '60';
 
           pool.query
@@ -1111,15 +1111,39 @@ describe('authService', () => {
               rows: [liveSuccessor({ token: storedRefreshToken('some_other_token') })],
               rowCount: 1,
             });
+
+          // The replay is one the window forgives: this session ends, the
+          // account's other sessions stay — no revocation, no alarm.
+          await expect(refreshAccessToken('burned_token')).rejects.toThrow('INVALID_REFRESH_TOKEN');
+          expect(getClient).not.toHaveBeenCalled();
+          expect(logger.error).not.toHaveBeenCalledWith(
+            expect.stringContaining('SECURITY ALERT'),
+            expect.anything()
+          );
+          expect(logger.warn).toHaveBeenCalledWith(
+            'Refresh token replayed within grace window, successor not recoverable',
+            expect.objectContaining({ userId: 'user-123', successorTokenId: 'successor-1' })
+          );
+        });
+
+        test('an unrecoverable successor that was already used still gets the theft verdict', async () => {
+          process.env[GRACE_ENV] = '60';
+
+          pool.query
+            .mockResolvedValueOnce({ rows: [burnedRow()], rowCount: 1 })
+            .mockResolvedValueOnce({
+              rows: [liveSuccessor({
+                token: storedRefreshToken('some_other_token'),
+                used_at: new Date(Date.now() - 500),
+              })],
+              rowCount: 1,
+            });
           routeClient({ burned: 2 });
 
           await expect(refreshAccessToken('burned_token')).rejects.toThrow(
             'REFRESH_TOKEN_REUSE_DETECTED'
           );
-          expect(logger.error).toHaveBeenCalledWith(
-            expect.stringContaining('SECURITY ALERT'),
-            expect.objectContaining({ userId: 'user-123' })
-          );
+          expectSessionsRevoked('user-123');
         });
 
         test('a rotation made before hashing is replayed with the successor its row holds', async () => {

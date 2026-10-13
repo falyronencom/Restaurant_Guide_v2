@@ -71,8 +71,21 @@ async function main() {
   const presented = await fetchServerCertificate(target);
   console.log('Сертификат, который она предъявляет:');
   console.log(`  кому выдан:  ${presented.subject.replace(/\n/g, ', ')}`);
+  console.log(`  кем выдан:   ${presented.issuer.replace(/\n/g, ', ')}`);
   console.log(`  действует:   ${dateOf(presented.validFrom)} — ${dateOf(presented.validTo)}`);
   console.log(`  отпечаток:   ${presented.fingerprint256}`);
+
+  // Pinning the certificate itself works for a self-signed one — Railway's
+  // is. One issued by a separate authority needs that authority pinned, which
+  // this tool does not do: say so instead of writing a pin that cannot work.
+  const selfSigned = presented.checkIssued(presented) && presented.verify(presented.publicKey);
+  if (!selfSigned) {
+    console.error('');
+    console.error('❌ Этот сертификат выдан не самим сервером, а отдельным центром — закрепить его');
+    console.error('   этим инструментом нельзя. Ничего не изменено. Нужна правка инструмента (закреплять центр).');
+    process.exitCode = 1;
+    return;
+  }
 
   let pinned = null;
   try {
@@ -118,13 +131,15 @@ async function main() {
     return;
   }
 
+  // The same check the scripts will make, before anything is written: a pin
+  // that would not let them connect is never saved.
+  await verifyPinnedHandshake(target, presented);
+  console.log('✓ Проверка: подключение с проверкой этого сертификата проходит.');
+
   const temporary = `${PRODUCTION_ENV_FILE}.tmp-${process.pid}`;
   writeFileSync(temporary, upsertEnvLine(envText, PIN_VARIABLE, pinValue(presented.raw)), { mode: 0o600 });
   renameSync(temporary, PRODUCTION_ENV_FILE);
-  console.log(`✓ Закреплён: ${PIN_VARIABLE} в backend/.env.production.`);
-
-  await verifyPinnedHandshake(target, presented);
-  console.log('✓ Проверка: рабочая база предъявляет закреплённый сертификат. Скрипты будут подключаться только к ней.');
+  console.log(`✓ Закреплён: ${PIN_VARIABLE} в backend/.env.production. Скрипты будут подключаться только к этой базе.`);
 }
 
 main().catch((error) => {

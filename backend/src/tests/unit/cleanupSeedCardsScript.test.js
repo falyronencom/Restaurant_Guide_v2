@@ -15,8 +15,9 @@
  * backend/tmp/ со своим .env.production рядом: адрес в нём ведёт на
  * подставной сервер теста, который считает подключения и сразу их рвёт.
  * Пакеты копия находит в backend/node_modules, выше по дереву. Рядом с
- * копией — scripts/lib/productionDb.js и закреплённый сертификат в её
- * .env.production: к проду скрипт ходит только через них.
+ * копией — scripts/lib/productionDb.js (с src/config/databaseTls.js) и
+ * закреплённый сертификат в её .env.production: к проду скрипт ходит только
+ * через них.
  */
 
 import { spawn } from 'child_process';
@@ -52,6 +53,11 @@ beforeAll(async () => {
   copyFileSync(
     join(BACKEND, 'scripts', 'lib', 'productionDb.js'),
     join(sandbox, 'scripts', 'lib', 'productionDb.js'),
+  );
+  mkdirSync(join(sandbox, 'src', 'config'), { recursive: true });
+  copyFileSync(
+    join(BACKEND, 'src', 'config', 'databaseTls.js'),
+    join(sandbox, 'src', 'config', 'databaseTls.js'),
   );
   writeFileSync(
     join(sandbox, '.env.production'),
