@@ -14,6 +14,13 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   static const int totalSteps = 7;
 
+  /// Предел фото заведения — тот же, что у сервера (`MEDIA_LIMITS.interior`
+  /// в backend/src/services/mediaService.js). Одно число на экран шага
+  /// «Медиа» и на [addInteriorPhoto]: когда экран держал 30, а провайдер 20,
+  /// фото с 21-го по 30-е загружались в облако, партнёр видел «Фото успешно
+  /// загружено», а в карточку они не попадали.
+  static const int maxInteriorPhotos = 30;
+
   // ============================================================================
   // State
   // ============================================================================
@@ -377,7 +384,7 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Add an interior photo
   void addInteriorPhoto(String url) {
-    if (_data.interiorPhotos.length < 20) {
+    if (_data.interiorPhotos.length < maxInteriorPhotos) {
       final photos = List<String>.from(_data.interiorPhotos)..add(url);
       _data = _data.copyWith(interiorPhotos: photos);
 
