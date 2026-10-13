@@ -1,8 +1,8 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Partner Registration wizard state provider
 /// Manages the 6-step registration flow for establishment partners
@@ -557,14 +557,10 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      // Extract user-friendly message from DioException
-      String message;
-      if (e is DioException && e.error is String) {
-        message = e.error as String;
-      } else {
-        message = e.toString();
-      }
-      _setError(message);
+      _setError(userMessageOf(
+        e,
+        fallback: 'Не удалось отправить на верификацию. Попробуйте ещё раз.',
+      ));
       _isSubmitting = false;
       notifyListeners();
       return false;
@@ -593,7 +589,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Ошибка при сохранении: ${e.toString()}');
+      // Без приставки «Ошибка при сохранении:», как при создании карточки
+      // (решение Координатора 07.10.2026): партнёр читает ровно фразу,
+      // утверждённую для отказа, а красная плашка и незакрывшийся экран и
+      // так говорят, что изменения не сохранились.
+      _setError(userMessageOf(
+        e,
+        fallback: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
+      ));
       _isSubmitting = false;
       notifyListeners();
       return false;
