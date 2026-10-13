@@ -126,8 +126,7 @@ describe('buildOrderByClause', () => {
     test('with distance: price + distance + weighted + name', () => {
       const result = buildOrderByClause('price_asc', true);
 
-      expect(result).toMatch(/CASE.*ELSE 5.*END\) ASC/s);
-      expect(result).toContain('distance_km ASC');
+      expect(result).toMatch(/CASE.*END\) ASC NULLS LAST, distance_km ASC/s);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.name ASC');
     });
@@ -135,21 +134,23 @@ describe('buildOrderByClause', () => {
     test('without distance: price + weighted + review_count + name', () => {
       const result = buildOrderByClause('price_asc', false);
 
-      expect(result).toMatch(/CASE.*ELSE 5.*END\) ASC/s);
+      expect(result).toMatch(/CASE.*END\) ASC NULLS LAST, /s);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.review_count DESC');
       expect(result).toContain('e.name ASC');
       expect(result).not.toContain('distance_km');
     });
 
-    test('NULL price_range maps to ELSE 5 (sorts after $$$$=4)', () => {
+    test('missing price_range maps to NULL, not to a placeholder number', () => {
       const result = buildOrderByClause('price_asc', false);
 
       expect(result).toContain("WHEN '$' THEN 1");
       expect(result).toContain("WHEN '$$' THEN 2");
       expect(result).toContain("WHEN '$$$' THEN 3");
       expect(result).toContain("WHEN '$$$$' THEN 4");
-      expect(result).toContain('ELSE 5');
+      // A number is last in one direction only: the former ELSE 5 put
+      // establishments without a price FIRST under price_desc (5 > 4).
+      expect(result).not.toMatch(/ELSE\s+\d/);
     });
   });
 
@@ -157,8 +158,7 @@ describe('buildOrderByClause', () => {
     test('with distance: price DESC + distance + weighted + name', () => {
       const result = buildOrderByClause('price_desc', true);
 
-      expect(result).toMatch(/CASE.*ELSE 5.*END\) DESC/s);
-      expect(result).toContain('distance_km ASC');
+      expect(result).toMatch(/CASE.*END\) DESC NULLS LAST, distance_km ASC/s);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.name ASC');
     });
@@ -166,10 +166,29 @@ describe('buildOrderByClause', () => {
     test('without distance: price DESC + weighted + review_count + name', () => {
       const result = buildOrderByClause('price_desc', false);
 
-      expect(result).toMatch(/CASE.*ELSE 5.*END\) DESC/s);
+      expect(result).toMatch(/CASE.*END\) DESC NULLS LAST, /s);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.review_count DESC');
       expect(result).toContain('e.name ASC');
+    });
+  });
+
+  // Postgres puts NULL last under ASC but FIRST under DESC, so both price
+  // directions spell NULLS LAST out. Tie-breakers after the price key are
+  // the same as before the fix — literal strings, not rebuilt from the code.
+  describe('price sort: no-price last in both directions, tie-breakers unchanged', () => {
+    const weighted = '(e.review_count * e.average_rating + 5 * 3.5) / (e.review_count + 5)';
+
+    test.each([
+      ['price_asc', true, `distance_km ASC, ${weighted} DESC, e.name ASC`],
+      ['price_desc', true, `distance_km ASC, ${weighted} DESC, e.name ASC`],
+      ['price_asc', false, `${weighted} DESC, e.review_count DESC, e.name ASC`],
+      ['price_desc', false, `${weighted} DESC, e.review_count DESC, e.name ASC`],
+    ])('%s (hasDistance=%s)', (mode, hasDistance, tieBreakers) => {
+      const [priceKey, rest] = buildOrderByClause(mode, hasDistance).split(' NULLS LAST, ');
+
+      expect(priceKey).toMatch(mode === 'price_asc' ? /END\) ASC$/ : /END\) DESC$/);
+      expect(rest).toBe(tieBreakers);
     });
   });
 

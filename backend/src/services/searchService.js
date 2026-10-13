@@ -468,13 +468,15 @@ const BAYESIAN_PRIOR_RATING = 3.5;
  * @returns {string} SQL ORDER BY clause
  */
 function buildOrderByClause(sortBy, hasDistance = false) {
-  // Convert price range to numeric for sorting — NULL/missing sorts last (ELSE 5)
+  // Цена в число; карточка без цены даёт NULL и уходит в конец при ОБОИХ
+  // направлениях (стратегия §2.4) — поэтому NULLS LAST у обоих price_*.
+  // Число-заглушка вместо NULL так не умеет: прежний `ELSE 5` при DESC
+  // оказывался больше '$$$$' = 4, и карточки без цены вставали первыми.
   const priceToNum = `(CASE e.price_range
     WHEN '$' THEN 1
     WHEN '$$' THEN 2
     WHEN '$$$' THEN 3
     WHEN '$$$$' THEN 4
-    ELSE 5
   END)`;
 
   // Bayesian weighted rating: plavnaya formula bez zhyostkikh porogov
@@ -489,15 +491,15 @@ function buildOrderByClause(sortBy, hasDistance = false) {
 
     case 'price_asc':
       if (hasDistance) {
-        return `${priceToNum} ASC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
+        return `${priceToNum} ASC NULLS LAST, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} ASC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} ASC NULLS LAST, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'price_desc':
       if (hasDistance) {
-        return `${priceToNum} DESC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
+        return `${priceToNum} DESC NULLS LAST, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} DESC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} DESC NULLS LAST, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'distance':
       if (hasDistance) {
