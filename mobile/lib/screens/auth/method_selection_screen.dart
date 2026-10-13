@@ -71,6 +71,22 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // «Регистрация» первого запуска — корень стека (её открывает заставка),
+    // и системное «Назад» здесь закрывало приложение. Ведём туда же, куда
+    // стрелка в шапке: на главный экран гостем. Открытая со «Входа» —
+    // обычный шаг назад.
+    return PopScope(
+      canPop: Navigator.of(context).canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
+      },
+      child: _buildScreen(context),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(

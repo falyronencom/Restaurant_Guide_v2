@@ -105,7 +105,10 @@ export function FavoritesList() {
           if (res.code === 'NO_SESSION') {
             // Sync the client auth context first: /login's AuthRedirect would
             // bounce a stale 'authenticated' status straight back here
-            // (redirect ping-pong). Non-destructive — cookies stay intact.
+            // (redirect ping-pong). The session is already gone: the server
+            // refused the refresh (cookies cleared) or there was nothing to
+            // refresh. A refresh that merely got no answer arrives as
+            // SESSION_REFRESH_UNAVAILABLE and lands on the error state below.
             markAnonymous();
             router.replace('/login?returnTo=/favorites');
             return; // keep the skeleton while the redirect lands

@@ -291,7 +291,7 @@ export async function login(req, res, next) {
  * 
  * Response:
  * - 200 OK: New token pair issued
- * - 401 Unauthorized: Invalid or expired token
+ * - 401 Unauthorized: Invalid, expired or revoked token
  * - 403 Forbidden: Token reuse detected (security alert)
  */
 export async function refresh(req, res, next) {
@@ -351,7 +351,22 @@ export async function refresh(req, res, next) {
         },
       });
     }
-    
+
+    if (error.message === 'REFRESH_TOKEN_REVOKED') {
+      // Issued before a password reset, a detected reuse or an account
+      // takeover ended every session of the account — the code authenticate
+      // answers such an access token with. 401, not the 403 of the reuse
+      // alarm: nothing was replayed, the session is simply over. Every client
+      // signs out on either.
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'TOKEN_REVOKED',
+          message: 'Refresh token has been revoked. Please log in again.',
+        },
+      });
+    }
+
     if (error.message === 'REFRESH_TOKEN_REUSE_DETECTED') {
       // This is a security incident - return 403 Forbidden
       return res.status(403).json({
@@ -384,8 +399,11 @@ export async function refresh(req, res, next) {
  * POST /api/v1/auth/logout
  * 
  * Invalidates the user's current refresh token, preventing further token refreshes.
- * Access token continues to work until natural expiration (15 minutes) which is
- * acceptable given short lifetime.
+ * The access token continues to work until its natural expiration (4 hours,
+ * JWT_ACCESS_EXPIRY): logging out ends the session's renewal, not the account.
+ * Switching an account off is what stops its tokens at once — authenticate
+ * checks the account on every request (services/accountStatus.js) — and so
+ * does ending all its sessions (password reset, detected token reuse).
  * 
  * This endpoint requires authentication via access token in Authorization header.
  * 
@@ -971,8 +989,9 @@ export async function forgotPassword(req, res) {
  *
  * POST /api/v1/auth/reset-password
  *
- * Public endpoint. Validates the token, sets the new password, and revokes
- * all refresh tokens for the user (force re-login on every device).
+ * Public endpoint. Validates the token, sets the new password, and ends every
+ * session of the user: refresh tokens revoked, access tokens issued before the
+ * reset refused (force re-login on every device).
  *
  * Body:
  *  - token: raw token from the emailed link

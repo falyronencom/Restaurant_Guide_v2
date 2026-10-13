@@ -24,7 +24,19 @@ const mockFetch = serverFetch as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks leaves queued `once` answers in place: one a test did not
+  // consume would be handed to the next test.
+  mockFetch.mockReset();
 });
+
+/** Live-looking session: an access token the backend may refuse + a refresh token. */
+function staleAccessWithRefresh() {
+  mockStore.get.mockImplementation((name: string) => {
+    if (name === 'rg_at') return { value: 'stale' };
+    if (name === 'rg_rt') return { value: 'rt' };
+    return undefined;
+  });
+}
 
 describe('authedFetch', () => {
   it('injects Authorization: Bearer from the access cookie', async () => {
@@ -110,6 +122,110 @@ describe('authedFetch', () => {
     });
     expect(mockFetch).toHaveBeenCalledTimes(2); // refresh + call; NO second refresh
   });
+
+  // The islands send the user to /login on NO_SESSION and on nothing else. A
+  // session the server ended (account switched off, tokens revoked by a
+  // password reset or a reuse alarm) refuses the call AND the refresh; the
+  // refusal has already cleared the cookies, so anything but NO_SESSION
+  // leaves the user on a generic error over a session that no longer exists.
+  it.each([
+    ['ACCOUNT_INACTIVE', 401, 'ACCOUNT_INACTIVE'],
+    ['TOKEN_REVOKED', 401, 'TOKEN_REVOKED'],
+    ['TOKEN_REVOKED', 403, 'TOKEN_REUSE_DETECTED'],
+  ])(
+    'a backend 401 %s whose refresh is refused (%i %s) throws NO_SESSION',
+    async (callCode, refreshStatus, refreshCode) => {
+      staleAccessWithRefresh();
+      mockFetch
+        .mockRejectedValueOnce(new ApiError(401, 'refused', callCode)) // authed call
+        .mockRejectedValueOnce(new ApiError(refreshStatus, 'refused', refreshCode)); // refresh
+
+      await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+        statusCode: 401,
+        errorCode: 'NO_SESSION',
+      });
+      // A refused refresh is not presented again, and the call is not repeated.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_at');
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_user');
+    },
+  );
+
+  it('a backend 401 with no refresh token to try throws NO_SESSION', async () => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_at' ? { value: 'stale' } : undefined,
+    ); // rg_rt absent
+    mockFetch.mockRejectedValueOnce(new ApiError(401, 'refused', 'TOKEN_REVOKED'));
+
+    await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+      statusCode: 401,
+      errorCode: 'NO_SESSION',
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1); // nothing to present — no refresh call
+  });
+
+  // The other side of the line above: a refresh that never got the server's
+  // verdict says nothing about the session. The cookies stay, the original
+  // error stays, and the next action may still recover — a NO_SESSION here
+  // would send a live session to /login.
+  it('a backend 401 whose refresh fails transiently keeps the original error and the cookies', async () => {
+    staleAccessWithRefresh();
+    const original = new ApiError(401, 'refused', 'TOKEN_REVOKED');
+    mockFetch
+      .mockRejectedValueOnce(original) // authed call
+      .mockRejectedValueOnce(new ApiError(503, 'unavailable')) // refresh
+      .mockRejectedValueOnce(new ApiError(0, 'timeout')); // the cycle's single retry
+
+    await expect(authedFetch('/api/v1/favorites')).rejects.toBe(original);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockStore.delete).not.toHaveBeenCalled();
+  });
+
+  // The same line on the path every action takes after 4 h idle: rg_at lives
+  // exactly expiresIn, so it is simply gone and the refresh runs up front.
+  it('no access cookie and a refresh that fails transiently: SESSION_REFRESH_UNAVAILABLE, cookies kept', async () => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_rt' ? { value: 'rt' } : undefined,
+    ); // rg_at expired out of the jar
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(503, 'unavailable')) // refresh
+      .mockRejectedValueOnce(new ApiError(0, 'timeout')); // the cycle's single retry
+
+    // Not NO_SESSION: that one sends the islands to /login.
+    await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+      statusCode: 503,
+      errorCode: 'SESSION_REFRESH_UNAVAILABLE',
+    });
+    // Both presentations went to the refresh path; the call itself never ran.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    for (const [path] of mockFetch.mock.calls) {
+      expect(path).toBe('/api/v1/auth/refresh');
+    }
+    expect(mockStore.delete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'TOKEN_REVOKED'],
+    [403, 'TOKEN_REUSE_DETECTED'],
+  ])(
+    'no access cookie and a refresh the server refuses (%i %s): NO_SESSION, cookies cleared',
+    async (refreshStatus, refreshCode) => {
+      mockStore.get.mockImplementation((name: string) =>
+        name === 'rg_rt' ? { value: 'rt' } : undefined,
+      );
+      mockFetch.mockRejectedValueOnce(
+        new ApiError(refreshStatus, 'refused', refreshCode),
+      );
+
+      await expect(authedFetch('/api/v1/favorites')).rejects.toMatchObject({
+        statusCode: 401,
+        errorCode: 'NO_SESSION',
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1); // a refusal is not presented again
+      expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
+    },
+  );
 
   it('throws NO_SESSION (no backend call) when there are no tokens', async () => {
     mockStore.get.mockReturnValue(undefined);

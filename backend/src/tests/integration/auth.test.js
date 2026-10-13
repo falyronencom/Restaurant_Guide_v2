@@ -314,6 +314,54 @@ describe('POST /api/v1/auth/logout', () => {
 
     expect(refreshResponse.body.error.code).toBe('TOKEN_REUSE_DETECTED');
   });
+
+  // Mobile and admin-web sent the logout token as `refresh_token` until
+  // 09.10.2026 and got 422, so the session outlived the logout. The clients
+  // now send `refreshToken`; the builds already installed (TestFlight, APKs)
+  // are not rebuilt until launch, so the server takes the old key too.
+  test('accepts the legacy refresh_token key and burns that token', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const { accessToken, refreshToken } = body.data;
+
+    await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refresh_token: refreshToken })
+      .expect(200);
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE token = $1', [
+      refreshToken,
+    ]);
+    expect(rows[0].used_at).not.toBeNull();
+  });
+
+  test('refreshToken wins when both keys are sent', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+    const { accessToken, refreshToken } = body.data;
+
+    await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ refreshToken, refresh_token: 'x'.repeat(64) })
+      .expect(200);
+
+    const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE token = $1', [
+      refreshToken,
+    ]);
+    expect(rows[0].used_at).not.toBeNull();
+  });
+
+  test('without either key the request is still a validation error', async () => {
+    const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
+
+    const response = await request(app)
+      .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${body.data.accessToken}`)
+      .send({})
+      .expect(422);
+
+    expectValidationError(response, 'refreshToken');
+  });
 });
 
 describe('GET /api/v1/auth/me', () => {
@@ -361,7 +409,11 @@ describe('GET /api/v1/auth/me', () => {
     expect(response.body.error.code).toBe('TOKEN_EXPIRED');
   });
 
-  test('returns 404 when user no longer exists', async () => {
+  // Until 2026-10-07 this was a 404 USER_NOT_FOUND from the controller: the
+  // token alone opened the door. authenticate now asks the database first,
+  // and an account that is gone is refused like a switched-off one — a 401
+  // the clients answer by refreshing once and then signing out.
+  test('returns 401 ACCOUNT_INACTIVE when the user no longer exists', async () => {
     const { body } = await request(app).post('/api/v1/auth/register').send(testUsers.regularUser);
     const accessToken = body.data.accessToken;
     await query('DELETE FROM users WHERE id = $1', [body.data.user.id]);
@@ -369,8 +421,8 @@ describe('GET /api/v1/auth/me', () => {
     const response = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${accessToken}`)
-      .expect(404);
+      .expect(401);
 
-    expect(response.body.error.code).toBe('USER_NOT_FOUND');
+    expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
   });
 });

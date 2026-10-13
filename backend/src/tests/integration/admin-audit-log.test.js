@@ -98,8 +98,9 @@ beforeAll(async () => {
   testReviewId = review.id;
 
   await request(app)
-    .post(`/api/v1/admin/reviews/${testReviewId}/toggle-visibility`)
-    .set('Authorization', `Bearer ${adminToken}`);
+    .post(`/api/v1/admin/reviews/${testReviewId}/visibility`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ is_visible: false });
 
 });
 

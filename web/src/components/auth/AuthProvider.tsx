@@ -77,9 +77,11 @@ type AuthContextValue = {
    * backend. Used by private islands before a NO_SESSION redirect to /login:
    * the provider hydrates once per hard load, so a stale 'authenticated'
    * status would make /login's AuthRedirect bounce straight back (redirect
-   * ping-pong). Non-destructive on purpose — a transient refresh failure
-   * keeps the cookies intact, so the session can still recover on a later
-   * hard load (accept-and-recover, see lib/auth/session.ts).
+   * ping-pong). It only syncs the context: NO_SESSION means the session is
+   * already gone (the server refused the refresh and session.ts cleared the
+   * cookies, or there was no refresh token). A refresh that merely got no
+   * answer is not NO_SESSION but SESSION_REFRESH_UNAVAILABLE — the islands
+   * show a generic error and never reach this call (lib/auth/session.ts).
    */
   markAnonymous: () => void;
 };

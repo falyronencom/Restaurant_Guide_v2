@@ -65,7 +65,11 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     existing.establishment_id,
     partnerId,
   );
-  if (!isOwner) {
+  // A dish the moderator hid is not the partner's to edit: the partner's
+  // list does not show it, and renaming it would detach the moderator's
+  // decision from the dish — a re-read carries «Скрыть» over by name
+  // (MenuItemModel.replaceForMedia). Answered like a stranger's item.
+  if (!isOwner || existing.is_hidden_by_admin === true) {
     throw new AppError(
       'Menu item not found or access denied',
       404,
@@ -126,7 +130,10 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
  * Re-run OCR for all OCR-eligible menu media of an establishment owned by the
  * partner: PDF menus plus menu photos (vision_image strategy).
  * Idempotency in OcrJobModel.enqueue ensures existing pending/processing jobs
- * are not duplicated.
+ * are not duplicated. A re-read replaces the rows of each file but keeps the
+ * moderator's «Скрыть» on dishes read again under the same name
+ * (MenuItemModel.replaceForMedia) — a partner cannot bring back a hidden dish
+ * by re-running the recognition.
  *
  * Contract note: the error code NO_PDF_MENUS and the response key totalPdfs
  * predate menu-photo support and are kept verbatim — mobile matches on the

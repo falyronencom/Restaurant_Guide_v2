@@ -274,7 +274,8 @@ export const suspendEstablishment = asyncHandler(async (req, res) => {
 });
 
 /**
- * Resume an establishment (partner action, goes to pending for re-moderation)
+ * Resume an establishment the partner paused (partner action, suspended →
+ * active without re-moderation; a moderator's suspension → 403 ADMIN_SUSPENDED)
  * POST /api/v1/partner/establishments/:id/resume
  */
 export const resumeEstablishment = asyncHandler(async (req, res) => {
@@ -288,7 +289,7 @@ export const resumeEstablishment = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: { establishment: result },
-    message: 'Establishment submitted for re-moderation',
+    message: 'Establishment resumed',
   });
 });
 

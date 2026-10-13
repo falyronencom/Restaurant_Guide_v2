@@ -59,6 +59,7 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
   ownCloudPublicId: jest.fn(() => 'test-public-id'),
   isOwnedAsset: jest.fn(() => false),
+  assetHolder: jest.fn(() => null),
   // Named-imported by establishmentService (loaded via server.js) — must exist
   // in the module mock or ESM linking fails.
   hasPlainTransformations: jest.fn(() => false),
@@ -1083,6 +1084,12 @@ describe('Media System - Upload Operations', () => {
     });
 
     test('should delete media successfully', async () => {
+      // The service destroys the file only when the asset lies in a folder the
+      // card holds (the mock says so here) and nothing else references it; the
+      // real check runs unmocked in cloudinary-asset-ownership.test.js and
+      // media-ownership-after-transfer.test.js.
+      cloudinary.isOwnedAsset.mockReturnValue(true);
+
       await request(app)
         .delete(`/api/v1/partner/establishments/${establishment.id}/media/${media.id}`)
         .set('Authorization', `Bearer ${partnerToken}`)

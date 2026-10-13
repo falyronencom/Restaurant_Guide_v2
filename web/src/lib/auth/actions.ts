@@ -583,7 +583,7 @@ function mapFormError(
  * actions. The user-reachable codes are covered by messageForCode
  * (INVALID_CODE, INVALID_OR_EXPIRED_CODE, TOO_MANY_ATTEMPTS, RATE_LIMITED,
  * RATE_LIMIT_EXCEEDED, NO_EMAIL, EMAIL_ALREADY_VERIFIED, INVALID_REQUEST,
- * NO_SESSION) — guarded by auth-errors.test.ts. 404 USER_NOT_FOUND (deleted
+ * NO_SESSION, SESSION_REFRESH_UNAVAILABLE) — guarded by auth-errors.test.ts. 404 USER_NOT_FOUND (deleted
  * account mid-session) deliberately rides the neutral fallback. `values`
  * echoes the entered code (verify form only; resend has no fields).
  */

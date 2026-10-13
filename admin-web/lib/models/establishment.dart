@@ -140,6 +140,33 @@ class EstablishmentDetail {
     this.updatedAt,
   });
 
+  /// Две независимые паузы (решение Координатора 07.10.2026, вариант A).
+  /// Приостановленную модератором карточку отличает причина в
+  /// `moderation_notes` — без неё статус `suspended` значит паузу самого
+  /// партнёра. Свою приостановку снимает модератор («Возобновить»), паузу
+  /// партнёра — только партнёр; модератор может поверх неё приостановить
+  /// карточку своей причиной. Сервер держит то же правило
+  /// (backend `utils/moderationNotes.js`).
+  bool get isSuspendedByModerator {
+    final reason = moderationNotes?['suspend_reason'];
+    return status == 'suspended' && reason is String && reason.trim().isNotEmpty;
+  }
+
+  /// Пауза, которую партнёр поставил сам.
+  bool get isPausedByPartner => status == 'suspended' && !isSuspendedByModerator;
+
+  /// Откуда модератор приостановил карточку — туда её вернёт «Возобновить».
+  /// `null` у приостановок до 07.10.2026 (все — из активных).
+  String? get suspendedFrom {
+    final from = moderationNotes?['suspended_from'];
+    return from is String ? from : null;
+  }
+
+  /// Можно ли приостановить: всё, кроме черновика, архива и уже
+  /// приостановленной модератором карточки.
+  bool get canBeSuspendedByModerator =>
+      status != 'draft' && status != 'archived' && !isSuspendedByModerator;
+
   factory EstablishmentDetail.fromJson(Map<String, dynamic> json) {
     final suspendedBy = _parseJsonMap(json['suspended_by']);
     return EstablishmentDetail(
@@ -302,6 +329,13 @@ class SuspendedEstablishmentItem extends EstablishmentListItem {
     this.suspendReason,
     this.suspendedAt,
   });
+
+  /// Приостановка модератора всегда с причиной (сервер без неё не
+  /// приостанавливает), поэтому запись без причины — пауза самого партнёра.
+  bool get isPausedByPartner {
+    final reason = suspendReason?.trim();
+    return reason == null || reason.isEmpty;
+  }
 
   factory SuspendedEstablishmentItem.fromJson(Map<String, dynamic> json) {
     final photo = json['primary_photo'];

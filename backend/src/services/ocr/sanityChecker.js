@@ -16,6 +16,8 @@
  * to env vars or per-establishment overrides.
  */
 
+import { normalizeMenuItemName } from '../../utils/menuItemName.js';
+
 const MIN_PRICE_BYN = 0.50;
 const MAX_PRICE_BYN = 1000.00;
 const MIN_CONFIDENCE = 0.70;
@@ -51,7 +53,8 @@ export const SANITY_FLAG_REASONS = Object.freeze([
 
 /**
  * Build a Map<normalized_name, price_byn> from previous items for delta lookup.
- * Normalization: lowercase + trim + collapse whitespace.
+ * Normalization: lowercase + trim + collapse whitespace (utils/menuItemName.js —
+ * shared with replaceForMedia carrying the moderator's decisions over).
  *
  * @param {Object[]} previousItems
  * @returns {Map<string, number>}
@@ -62,7 +65,7 @@ const buildPreviousPriceMap = (previousItems) => {
 
   for (const item of previousItems) {
     if (!item.item_name || item.price_byn == null) continue;
-    const key = item.item_name.toLowerCase().trim().replace(/\s+/g, ' ');
+    const key = normalizeMenuItemName(item.item_name);
     // Numeric fields may come back as strings from pg — normalize to Number.
     map.set(key, Number(item.price_byn));
   }
@@ -102,7 +105,7 @@ const checkItem = (item, previousPriceMap) => {
   }
 
   if (price != null && item.item_name) {
-    const key = item.item_name.toLowerCase().trim().replace(/\s+/g, ' ');
+    const key = normalizeMenuItemName(item.item_name);
     const previousPrice = previousPriceMap.get(key);
     if (previousPrice != null && previousPrice > 0) {
       const ratio = Math.max(price / previousPrice, previousPrice / price);

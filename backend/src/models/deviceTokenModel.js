@@ -15,6 +15,14 @@ import logger from '../utils/logger.js';
  * If the (user_id, fcm_token) pair already exists, updates updated_at
  * and sets is_active = true. This handles token re-registration on app restart.
  *
+ * One device, one active account: an FCM token belongs to the app install,
+ * not to a person. When another account signs in on the same phone and
+ * registers the token, the token is switched off for every other account
+ * in the same statement — otherwise the previous account's pushes keep
+ * arriving on a phone it has left. Uniqueness in the schema is per
+ * (user_id, fcm_token), so the rule lives here, without a migration.
+ * The released rows stay (is_active = FALSE): signing back in reactivates.
+ *
  * @param {Object} data
  * @param {string} data.userId
  * @param {string} data.fcmToken
@@ -25,7 +33,16 @@ import logger from '../utils/logger.js';
 export const create = async (data) => {
   const { userId, fcmToken, platform, deviceName = null } = data;
 
+  // A data-modifying CTE runs exactly once whether or not the INSERT reads
+  // it; both parts are one statement, hence one transaction. The caller's
+  // own row is left to ON CONFLICT (user_id <> $1): one statement must not
+  // modify the same row twice — Postgres does not define which change wins.
   const query = `
+    WITH released AS (
+      UPDATE device_tokens
+      SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+      WHERE fcm_token = $2 AND user_id <> $1 AND is_active = TRUE
+    )
     INSERT INTO device_tokens (user_id, fcm_token, platform, device_name)
     VALUES ($1, $2, $3, $4)
     ON CONFLICT (user_id, fcm_token)
@@ -52,15 +69,21 @@ export const create = async (data) => {
 /**
  * Find all active tokens for a user
  *
+ * Only while the account itself is active: a switched-off account
+ * (users.is_active = false) gets no pushes — booking details included — on
+ * the devices it was signed in on. Its token rows stay as they are, so
+ * switching the account back on brings its pushes back.
+ *
  * @param {string} userId
  * @returns {Promise<Array>} Active device tokens
  */
 export const findByUserId = async (userId) => {
   const query = `
-    SELECT id, user_id, fcm_token, platform, device_name, created_at, updated_at
-    FROM device_tokens
-    WHERE user_id = $1 AND is_active = TRUE
-    ORDER BY updated_at DESC
+    SELECT dt.id, dt.user_id, dt.fcm_token, dt.platform, dt.device_name, dt.created_at, dt.updated_at
+    FROM device_tokens dt
+    JOIN users u ON u.id = dt.user_id AND u.is_active = TRUE
+    WHERE dt.user_id = $1 AND dt.is_active = TRUE
+    ORDER BY dt.updated_at DESC
   `;
 
   try {

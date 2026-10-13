@@ -354,16 +354,22 @@ class _EntityActions extends StatelessWidget {
     // Счётчики очередей берём ДО асинхронного действия: обращаться к
     // context после await нельзя.
     final badges = context.read<BadgesProvider>();
-    final isSuspended = provider.selectedDetail?.status == 'suspended';
+    final detail = provider.selectedDetail;
 
+    // Две независимые паузы (07.10.2026): «Приостановить» — всё, кроме
+    // черновика, архива и уже приостановленной модератором (поиском сюда
+    // приходят карточки любого статуса, и пауза партнёра тоже);
+    // «Возобновить» — только своя приостановка: паузу партнёра включает
+    // партнёр. Пока карточка не загружена, решать не по чему — кнопок нет.
     return ModerationEntityActions(
-      establishmentName: provider.selectedDetail?.name ?? '',
-      onSuspend: isSuspended
-          ? null
-          : (reason) => provider
+      establishmentName: detail?.name ?? '',
+      unsuspendReturnsTo: detail?.suspendedFrom,
+      onSuspend: detail != null && detail.canBeSuspendedByModerator
+          ? (reason) => provider
               .suspendEstablishment(reason)
-              .then((ok) => ok ? badges.load() : null),
-      onUnsuspend: isSuspended
+              .then((ok) => ok ? badges.load() : null)
+          : null,
+      onUnsuspend: detail != null && detail.isSuspendedByModerator
           ? () => provider
               .unsuspendEstablishment()
               .then((ok) => ok ? badges.load() : null)

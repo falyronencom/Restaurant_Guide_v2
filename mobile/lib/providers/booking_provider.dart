@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/booking.dart';
+import 'package:restaurant_guide_mobile/models/booking_settings.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
@@ -13,9 +14,16 @@ class BookingProvider with ChangeNotifier {
     AccountScope.register(resetAccountScope);
   }
 
+  /// Bumped on every account-scope reset; a request started under the
+  /// previous account captured an older value and drops its write, so a late
+  /// answer can never show the previous account's data (pack 1 of the critics'
+  /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
+  int _generation = 0;
+
   /// Clears partner and user booking lists (guest names/phones — the most
   /// sensitive cache); registered in [AccountScope], runs on logout / switch.
   void resetAccountScope() {
+    _generation++;
     _pendingBookings = [];
     _confirmedBookings = [];
     _historyBookings = [];
@@ -47,9 +55,11 @@ class BookingProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient
           .get('/api/v1/partner/bookings/$establishmentId');
+      if (generation != _generation) return; // account switched mid-flight
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = (response.data as Map<String, dynamic>)['data'];
@@ -71,10 +81,13 @@ class BookingProvider with ChangeNotifier {
             .toList();
       }
     } catch (e) {
+      if (generation != _generation) return;
       _error = 'Ошибка загрузки бронирований';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -167,6 +180,32 @@ class BookingProvider with ChangeNotifier {
   // User-facing methods
   // ==========================================================================
 
+  /// Условия брони для формы гостя: сколько гостей, на сколько дней вперёд,
+  /// за сколько часов, как скоро ответит заведение.
+  ///
+  /// Публичный адрес, не партнёрский: `/partner/booking-settings` отвечает
+  /// 403 всем, кроме владельца, и гость оставался без времени и с надписью
+  /// «Заведение не работает в этот день» на любую дату (09.10.2026).
+  /// Состояние провайдера не трогает — условия живут в самой форме.
+  ///
+  /// `null` — бронь сейчас недоступна (выключена, карточка скрыта) или
+  /// сервер не ответил.
+  Future<BookingSettings?> loadBookingTerms(String establishmentId) async {
+    try {
+      final response = await _apiClient
+          .get('/api/v1/establishments/$establishmentId/booking-settings');
+      final body = response.data;
+      if (response.statusCode == 200 &&
+          body is Map<String, dynamic> &&
+          body['data'] is Map<String, dynamic>) {
+        return BookingSettings.fromJson(body['data'] as Map<String, dynamic>);
+      }
+    } catch (_) {
+      // 404 «бронь недоступна» и сетевой сбой для формы одно и то же.
+    }
+    return null;
+  }
+
   List<Booking> _userBookings = [];
   List<Booking> get userBookings => _userBookings;
   List<Booking> get userActiveBookings =>
@@ -229,8 +268,10 @@ class BookingProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    final generation = _generation;
     try {
       final response = await _apiClient.get('/api/v1/bookings/my');
+      if (generation != _generation) return; // account switched mid-flight
 
       if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
         final data = (response.data as Map<String, dynamic>)['data'];
@@ -240,10 +281,13 @@ class BookingProvider with ChangeNotifier {
             .toList();
       }
     } catch (e) {
+      if (generation != _generation) return;
       _error = 'Ошибка загрузки бронирований';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 

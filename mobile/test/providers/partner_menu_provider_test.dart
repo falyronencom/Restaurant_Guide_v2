@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
@@ -171,4 +173,48 @@ void main() {
       expect(groups['Десерты']!.length, 1);
     });
   });
+
+  // Ушли с экрана «Меню», пока список грузился: экран останавливал опрос
+  // раньше, чем загрузка его запускала, и опрос шёл в фоне каждые 30 с.
+  // testWidgets — ради управляемых часов: незакрытый таймер роняет тест сам.
+  group('опрос и уход с экрана во время загрузки', () {
+    testWidgets('остановили до ответа — опрос не запускается', (tester) async {
+      final gate = Completer<void>();
+      final fake = _GatedMenuService(gate);
+      final provider = PartnerMenuProvider(service: fake);
+
+      final load = provider.loadForEstablishment('est-1');
+      provider.stopPolling(); // экран закрыт, ответа ещё нет
+      gate.complete();
+      await load;
+      await tester.pump(const Duration(seconds: 61));
+
+      expect(fake.fetchCalls, 1, reason: 'меню запрашивалось после ухода');
+    });
+
+    testWidgets('без остановки опрос идёт, как раньше', (tester) async {
+      final gate = Completer<void>()..complete();
+      final fake = _GatedMenuService(gate);
+      final provider = PartnerMenuProvider(service: fake);
+
+      await provider.loadForEstablishment('est-1');
+      await tester.pump(const Duration(seconds: 31));
+
+      expect(fake.fetchCalls, 2);
+      provider.stopPolling();
+    });
+  });
+}
+
+/// Загрузка, которая отвечает, когда тест откроет [gate].
+class _GatedMenuService extends _FakeMenuService {
+  _GatedMenuService(this.gate);
+  final Completer<void> gate;
+
+  @override
+  Future<List<PartnerMenuItem>> fetchMenuItems(String establishmentId) async {
+    fetchCalls++;
+    await gate.future;
+    return fetchResult;
+  }
 }

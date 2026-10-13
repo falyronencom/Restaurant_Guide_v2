@@ -19,7 +19,14 @@ import logger from '../utils/logger.js';
 /**
  * Get paginated admin reviews with filters
  *
+ * A viewer — the read-only panel role that may be shown to a third party —
+ * gets the reviews without the author's e-mail: the key stays, the value is
+ * null, the same as the partner contacts on the establishment card
+ * (Coordinator decision 2026-09-08, SDL CAT-C-2.11). The panel then shows
+ * the author by name.
+ *
  * @param {Object} params
+ * @param {boolean} [params.viewer=false] - Caller is the read-only panel role
  * @returns {Promise<Object>} { reviews, meta }
  */
 export const getReviews = async ({
@@ -33,6 +40,7 @@ export const getReviews = async ({
   sort = 'newest',
   from,
   to,
+  viewer = false,
 } = {}) => {
   try {
     const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
@@ -55,7 +63,9 @@ export const getReviews = async ({
     ]);
 
     return {
-      reviews,
+      reviews: viewer
+        ? reviews.map((review) => ({ ...review, author_email: null }))
+        : reviews,
       meta: {
         total: stats.total,
         // Считаются по той же выборке, что и total: подпись экрана
@@ -81,23 +91,78 @@ export const getReviews = async ({
 };
 
 /**
- * Toggle review visibility and write audit log
+ * Set review visibility to the state the moderator asked for, and write the
+ * audit log when the state actually changed.
+ *
+ * Idempotent on purpose: the panel's client repeats a request answered with a
+ * 5xx, and the first attempt may have been applied before the answer was lost.
+ * A repeat that finds the review already in the requested state changes
+ * nothing — no second audit row, no second notice to the author, no
+ * recalculation (critics' pack 1, point 2 — Codex C-10).
  *
  * @param {string} reviewId
+ * @param {boolean} isVisible - true: show, false: hide
  * @param {string} adminUserId - UUID of admin performing the action
- * @returns {Promise<Object>} Updated review { id, is_visible }
+ * @returns {Promise<Object>} { id, is_visible, establishment_id, changed }
  */
-export const toggleVisibility = async (reviewId, adminUserId, { ipAddress, userAgent } = {}) => {
+export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddress, userAgent } = {}) => {
   try {
-    const result = await AdminReviewModel.toggleReviewVisibility(reviewId);
+    const review = await AdminReviewModel.getReviewForAdmin(reviewId);
 
-    if (!result) {
+    if (!review || review.is_deleted) {
       throw new AppError(
         'Review not found or already deleted',
         404,
         'REVIEW_NOT_FOUND',
       );
     }
+
+    // A repeat (or a decision already in force) writes nothing — but the
+    // aggregates are recalculated anyway: the first attempt may have changed
+    // the row and died before its own recalculation, and the schema trigger
+    // counts hidden reviews in (review of 08.10.2026). The UPDATE is
+    // idempotent and cheap.
+    if (review.is_visible === isVisible) {
+      await ReviewModel.updateEstablishmentAggregates(review.establishment_id);
+      return {
+        id: review.id,
+        is_visible: review.is_visible,
+        establishment_id: review.establishment_id,
+        changed: false,
+      };
+    }
+
+    let result = await AdminReviewModel.setReviewVisibility(reviewId, isVisible, review.is_visible);
+
+    if (!result) {
+      // Changed between the read and the write — by another moderator or by a
+      // repeat of this very request. Re-read: the requested state reached is
+      // a success, anything else is a conflict to show.
+      const current = await AdminReviewModel.getReviewForAdmin(reviewId);
+      if (!current || current.is_deleted) {
+        throw new AppError(
+          'Review not found or already deleted',
+          404,
+          'REVIEW_NOT_FOUND',
+        );
+      }
+      if (current.is_visible === isVisible) {
+        await ReviewModel.updateEstablishmentAggregates(current.establishment_id);
+        return {
+          id: current.id,
+          is_visible: current.is_visible,
+          establishment_id: current.establishment_id,
+          changed: false,
+        };
+      }
+      throw new AppError(
+        'Review visibility was changed concurrently',
+        409,
+        'VISIBILITY_CONFLICT',
+      );
+    }
+
+    result = { ...result, changed: true };
 
     // Recalculate establishment aggregates (hidden reviews excluded from rating)
     await ReviewModel.updateEstablishmentAggregates(result.establishment_id);
@@ -125,14 +190,14 @@ export const toggleVisibility = async (reviewId, adminUserId, { ipAddress, userA
     return result;
   } catch (error) {
     if (error.code) throw error; // Re-throw AppError
-    logger.error('Error in toggleVisibility service', {
+    logger.error('Error in setVisibility service', {
       error: error.message,
       reviewId,
     });
     throw new AppError(
-      'Failed to toggle review visibility',
+      'Failed to set review visibility',
       500,
-      'VISIBILITY_TOGGLE_FAILED',
+      'VISIBILITY_UPDATE_FAILED',
     );
   }
 };

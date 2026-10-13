@@ -15,9 +15,10 @@ class ApprovedProvider extends ChangeNotifier {
   /// для подписи «Показано 1–20 из 365»: расходиться этим двум числам нельзя.
   static const int perPage = 20;
 
-  final ModerationService _service = ModerationService();
+  final ModerationService _service;
 
-  ApprovedProvider() {
+  ApprovedProvider({ModerationService? service})
+      : _service = service ?? ModerationService() {
     AccountScope.register(resetAccountScope);
   }
 
@@ -254,6 +255,18 @@ class ApprovedProvider extends ChangeNotifier {
         id: _selectedId!,
         reason: reason,
       );
+
+      // Поиск находит карточки любого статуса — приостановленная остаётся в
+      // выдаче, уже в новом статусе: выдача перечитывается. Список одобренных
+      // её теряет — убрать на месте.
+      if (_isSearchMode) {
+        _selectedId = null;
+        _selectedDetail = null;
+        _isSubmitting = false;
+        notifyListeners();
+        searchEstablishments(_searchQuery, page: _currentPage);
+        return true;
+      }
 
       // Remove from list and clear selection
       _establishments.removeWhere((e) => e.id == _selectedId);

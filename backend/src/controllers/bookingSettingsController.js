@@ -26,6 +26,19 @@ export const getSettings = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /api/v1/establishments/:id/booking-settings
+ * Public: the booking terms a guest's form needs. 404 when booking is off.
+ */
+export const getPublicTerms = asyncHandler(async (req, res) => {
+  const terms = await BookingSettingsService.getPublicTerms(req.params.id);
+
+  res.status(200).json({
+    success: true,
+    data: terms,
+  });
+});
+
+/**
  * POST /api/v1/partner/booking-settings/:establishmentId/activate
  * Activate booking (create settings + enable).
  */

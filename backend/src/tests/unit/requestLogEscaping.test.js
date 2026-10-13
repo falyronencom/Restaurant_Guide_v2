@@ -21,6 +21,7 @@ jest.unstable_mockModule('../../config/redis.js', () => ({
   connectRedis: jest.fn(),
   disconnectRedis: jest.fn(),
   incrementWithExpiry: jest.fn(),
+  decrement: jest.fn(),
   getCounter: jest.fn(),
   getTTL: jest.fn(),
   setWithExpiry: jest.fn(),

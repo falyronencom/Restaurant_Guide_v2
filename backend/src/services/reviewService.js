@@ -14,12 +14,15 @@ import * as ReviewModel from '../models/reviewModel.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import { incrementWithExpiry, getCounter } from '../config/redis.js';
+import { incrementWithExpiry, decrement, getCounter } from '../config/redis.js';
+import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 
 // Rate limiting configuration for review creation
-// Directive specifies 10 reviews per day per user as reasonable limit
+// Directive specifies 10 reviews per day per user as reasonable limit. The day
+// is Minsk's calendar day: the counter is born with the first reservation and
+// expires at Minsk midnight (decision of the Coordinator 11.10.2026, closing
+// 23.09 #26) — secondsUntilMinskMidnight, never a fixed 24 hours.
 const RATE_LIMIT_MAX_REVIEWS = 10;
-const RATE_LIMIT_WINDOW_SECONDS = 86400; // 24 hours
 
 /**
  * Create a new review for an establishment
@@ -61,14 +64,20 @@ export const createReview = async (reviewData) => {
     throw new AppError('Establishment not found', 404, 'ESTABLISHMENT_NOT_FOUND');
   }
 
-  // Step 3: Check rate limit (10 reviews per day per user)
+  // Step 3: Reserve a slot of the daily quota (10 reviews per day per user).
+  // Reserve first, check after: INCR is atomic, so simultaneous requests
+  // cannot all read «9» and all pass — the eleventh reservation sees 11 and is
+  // refused (critics' pack 1, point 5 — Codex B7). A slot reserved by an
+  // attempt that does not end in a review is given back (decrement). Without
+  // Redis the counter answers 1 and the quota is skipped — decision 23.09 #22.
   const rateLimitKey = `reviews:ratelimit:${user_id}`;
-  const currentCount = await getCounter(rateLimitKey);
-  
-  if (currentCount >= RATE_LIMIT_MAX_REVIEWS) {
+  const reserved = await incrementWithExpiry(rateLimitKey, secondsUntilMinskMidnight());
+
+  if (reserved > RATE_LIMIT_MAX_REVIEWS) {
+    await decrement(rateLimitKey);
     logger.warn('Rate limit exceeded for review creation', {
       userId: user_id,
-      currentCount,
+      currentCount: reserved - 1,
       limit: RATE_LIMIT_MAX_REVIEWS,
     });
     throw new AppError(
@@ -82,6 +91,7 @@ export const createReview = async (reviewData) => {
   // The unique constraint will also catch this, but we check explicitly to provide better error message
   const existingReview = await ReviewModel.findExistingReview(user_id, establishment_id);
   if (existingReview) {
+    await decrement(rateLimitKey);
     throw new AppError(
       'You have already reviewed this establishment. Please update your existing review instead.',
       409,
@@ -89,23 +99,26 @@ export const createReview = async (reviewData) => {
     );
   }
 
-  // Step 5: Create review and update aggregates in a transaction
-  // This ensures atomicity - either both operations succeed or both fail
+  // Step 5: Create review and update aggregates in ONE transaction: either
+  // both land or neither (Codex B6). The schema trigger writes a rating that
+  // counts hidden reviews in; the service's recalculation is the one that
+  // excludes them, and it must not be lost between the insert and the answer.
+  // Once the transaction has committed, the slot is spent whatever happens to
+  // the response: a failing SELECT after the commit must not give it back
+  // (review of 09.10.2026).
+  let committed = false;
   try {
-    // Create the review
-    const createdReview = await ReviewModel.createReview({
-      user_id,
-      establishment_id,
-      rating,
-      content,
+    const createdReview = await ReviewModel.executeInTransaction(async (client) => {
+      const created = await ReviewModel.createReview({
+        user_id,
+        establishment_id,
+        rating,
+        content,
+      }, client);
+      await ReviewModel.updateEstablishmentAggregates(establishment_id, client);
+      return created;
     });
-
-    // Update establishment aggregate statistics synchronously
-    // Directive specifies synchronous updates for MVP to ensure consistency
-    await ReviewModel.updateEstablishmentAggregates(establishment_id);
-
-    // Increment rate limit counter after successful creation
-    await incrementWithExpiry(rateLimitKey, RATE_LIMIT_WINDOW_SECONDS);
+    committed = true;
 
     // Fetch complete review with author information for response
     const reviewWithAuthor = await ReviewModel.findReviewById(createdReview.id);
@@ -123,6 +136,11 @@ export const createReview = async (reviewData) => {
 
     return reviewWithAuthor;
   } catch (error) {
+    // No review came out of this attempt — the reserved slot goes back.
+    if (!committed) {
+      await decrement(rateLimitKey);
+    }
+
     // Handle specific database errors with better messages
     if (error.code === '23505') {
       // Unique constraint violation - duplicate review
@@ -343,7 +361,8 @@ export const getUserReviews = async (userId, options = {}) => {
  * 
  * This operation allows the review author to modify rating and/or content.
  * The updated_at timestamp is automatically updated and is_edited flag is set.
- * If rating changes, establishment aggregate statistics are recalculated.
+ * Establishment aggregate statistics are recalculated after every update
+ * (the rating trigger fires on any update and counts hidden reviews).
  * 
  * Authorization note: The controller must verify that the authenticated user
  * is the review author before calling this service method. This service focuses
@@ -389,9 +408,11 @@ export const updateReview = async (reviewId, userId, updates) => {
     // Update the review
     const updatedReview = await ReviewModel.updateReview(reviewId, updates);
 
-    // If rating changed, update establishment aggregates synchronously
+    // Recount on every update, not only when the rating changed: the UPDATE
+    // fired the rating trigger, which counts hidden reviews too, and a
+    // text-only edit would otherwise leave a hidden review in the rating.
+    await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
     if (ratingChanged) {
-      await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
       logger.info('Establishment aggregates updated after review rating change', {
         reviewId,
         oldRating: currentReview.rating,
@@ -561,7 +582,7 @@ export const getUserReviewQuota = async (userId) => {
     limit: RATE_LIMIT_MAX_REVIEWS,
     used: currentCount,
     remaining: Math.max(0, RATE_LIMIT_MAX_REVIEWS - currentCount),
-    resetIn: RATE_LIMIT_WINDOW_SECONDS, // Seconds until counter resets
+    resetIn: secondsUntilMinskMidnight(), // Seconds until Minsk midnight — the counter's reset
   };
 };
 
@@ -595,6 +616,10 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
   }
 
   await ReviewModel.addPartnerResponse(reviewId, partnerId, responseText);
+
+  // The UPDATE fired the rating trigger, which counts hidden reviews too;
+  // the rating guests see is the visible-only recount, written last.
+  await ReviewModel.updateEstablishmentAggregates(reviewWithEstablishment.establishment_id);
 
   const updatedReview = await ReviewModel.findReviewById(reviewId);
 
@@ -632,7 +657,16 @@ export const deletePartnerResponse = async (reviewId, partnerId) => {
     );
   }
 
-  await ReviewModel.deletePartnerResponse(reviewId);
+  const cleared = await ReviewModel.deletePartnerResponse(reviewId);
+
+  // No response to delete: nothing was written, and there is nothing to say
+  // but that — the answer carries no review.
+  if (!cleared) {
+    throw new AppError('This review has no partner response', 404, 'RESPONSE_NOT_FOUND');
+  }
+
+  // Same as addPartnerResponse: recount after the trigger, visible only.
+  await ReviewModel.updateEstablishmentAggregates(reviewWithEstablishment.establishment_id);
 
   const updatedReview = await ReviewModel.findReviewById(reviewId);
 

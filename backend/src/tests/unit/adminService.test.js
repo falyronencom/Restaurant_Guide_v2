@@ -92,6 +92,14 @@ jest.unstable_mockModule('../../services/badgesService.js', () => ({
   invalidateCache: jest.fn(),
 }));
 
+// Every export of the module, not only the one adminService uses: another
+// importer in the graph (partnerMenuItemService) must still link.
+jest.unstable_mockModule('../../services/qualityHealthService.js', () => ({
+  CACHE_TTL_MS: 120000,
+  invalidateCache: jest.fn(),
+  getQualityHealth: jest.fn(),
+}));
+
 jest.unstable_mockModule('../../config/database.js', () => ({
   query: jest.fn(),
   getClient: jest.fn(),
@@ -135,6 +143,7 @@ const AuditLogModel = await import('../../models/auditLogModel.js');
 const NotificationService = await import('../../services/notificationService.js');
 const EstablishmentService = await import('../../services/establishmentService.js');
 const AuthService = await import('../../services/authService.js');
+const QualityHealthService = await import('../../services/qualityHealthService.js');
 const DB = await import('../../config/database.js');
 
 const {
@@ -471,14 +480,61 @@ describe('suspendEstablishment', () => {
     });
   });
 
-  test('rejects with INVALID_STATUS_FOR_SUSPEND when status is not active', async () => {
+  // Two independent pauses (Coordinator, 2026-10-07, option A): anything but
+  // a draft, an archived card or a card the moderator already suspended.
+  test.each([
+    ['draft', null],
+    ['archived', null],
+    ['suspended', { suspend_reason: 'Earlier reason' }],
+  ])('rejects with INVALID_STATUS_FOR_SUSPEND for %s (notes %j)', async (status, notes) => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(
-      baseEstablishment({ status: 'pending' }),
+      baseEstablishment({ status, moderation_notes: notes }),
     );
     await expect(suspendEstablishment(EST_ID, baseParams)).rejects.toMatchObject({
       code: 'INVALID_STATUS_FOR_SUSPEND',
       statusCode: 400,
     });
+    expect(EstablishmentModel.changeEstablishmentStatus).not.toHaveBeenCalled();
+  });
+
+  test.each(['pending', 'active', 'rejected', 'suspended'])(
+    'suspends from %s, guarded by that status, and remembers it as suspended_from',
+    async (status) => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        baseEstablishment({ status, moderation_notes: null }),
+      );
+      EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
+        baseEstablishment({ status: 'suspended' }),
+      );
+
+      await suspendEstablishment(EST_ID, baseParams);
+
+      expect(EstablishmentModel.changeEstablishmentStatus).toHaveBeenCalledWith(EST_ID, {
+        fromStatus: status,
+        toStatus: 'suspended',
+        moderationNotes: {
+          suspend_reason: baseParams.reason,
+          suspended_at: expect.any(String),
+          suspended_from: status,
+        },
+        // The notes the decision was made on guard the write.
+        expectedModerationNotes: null,
+      });
+    },
+  );
+
+  test('suspending a rejected card drops the health snapshot; an active one does not', async () => {
+    EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
+      baseEstablishment({ status: 'suspended' }),
+    );
+
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment({ status: 'active' }));
+    await suspendEstablishment(EST_ID, baseParams);
+    expect(QualityHealthService.invalidateCache).not.toHaveBeenCalled();
+
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment({ status: 'rejected' }));
+    await suspendEstablishment(EST_ID, baseParams);
+    expect(QualityHealthService.invalidateCache).toHaveBeenCalledTimes(1);
   });
 
   test('suspends active establishment and merges reason into empty moderation_notes', async () => {
@@ -630,10 +686,27 @@ describe('unsuspendEstablishment', () => {
     });
   });
 
-  test('reactivates suspended establishment to active', async () => {
+  /** A moderator's suspension: a reason, and where it was made from (absent before 2026-10-07). */
+  const suspendedByModerator = (notes = {}) => baseEstablishment({
+    status: 'suspended',
+    moderation_notes: { suspend_reason: 'Violates community guidelines', suspended_at: '2026-10-01T10:00:00.000Z', ...notes },
+  });
+
+  test('rejects with SUSPENDED_BY_PARTNER when the partner paused the card (no moderator reason)', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(
-      baseEstablishment({ status: 'suspended' }),
+      baseEstablishment({ status: 'suspended', moderation_notes: null }),
     );
+    await expect(unsuspendEstablishment(EST_ID, baseParams)).rejects.toMatchObject({
+      code: 'SUSPENDED_BY_PARTNER',
+      statusCode: 400,
+    });
+    expect(EstablishmentModel.changeEstablishmentStatus).not.toHaveBeenCalled();
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  test('a suspension from before 2026-10-07 (no suspended_from) returns to active, marks removed', async () => {
+    const card = suspendedByModerator();
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(card);
     EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
       baseEstablishment({ status: 'active' }),
     );
@@ -643,16 +716,50 @@ describe('unsuspendEstablishment', () => {
     expect(result.status).toBe('active');
     expect(EstablishmentModel.changeEstablishmentStatus).toHaveBeenCalledWith(
       EST_ID,
-      { fromStatus: 'suspended', toStatus: 'active' },
+      {
+        fromStatus: 'suspended',
+        toStatus: 'active',
+        moderationNotes: {},
+        expectedModerationNotes: card.moderation_notes,
+      },
     );
   });
 
-  test('writes audit_log entry with action=unsuspend', async () => {
+  test.each(['active', 'pending', 'rejected', 'suspended'])(
+    'returns the card to where it was (%s), other notes kept',
+    async (from) => {
+      const card = suspendedByModerator({ suspended_from: from, name: 'field comment' });
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(card);
+      EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
+        baseEstablishment({ status: from }),
+      );
+
+      await unsuspendEstablishment(EST_ID, baseParams);
+
+      expect(EstablishmentModel.changeEstablishmentStatus).toHaveBeenCalledWith(
+        EST_ID,
+        {
+          fromStatus: 'suspended',
+          toStatus: from,
+          moderationNotes: { name: 'field comment' },
+          expectedModerationNotes: card.moderation_notes,
+        },
+      );
+      // Back among the rejected = out of the «hanging flags» scope.
+      if (from === 'rejected') {
+        expect(QualityHealthService.invalidateCache).toHaveBeenCalledTimes(1);
+      } else {
+        expect(QualityHealthService.invalidateCache).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  test('writes audit_log entry with action=unsuspend, the reason lifted and where the card went', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(
-      baseEstablishment({ status: 'suspended' }),
+      suspendedByModerator({ suspended_from: 'pending' }),
     );
     EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
-      baseEstablishment({ status: 'active' }),
+      baseEstablishment({ status: 'pending' }),
     );
 
     await unsuspendEstablishment(EST_ID, baseParams);
@@ -663,16 +770,14 @@ describe('unsuspendEstablishment', () => {
         action: 'unsuspend',
         entity_type: 'establishment',
         entity_id: EST_ID,
-        old_data: { status: 'suspended' },
-        new_data: { status: 'active' },
+        old_data: { status: 'suspended', reason: 'Violates community guidelines' },
+        new_data: { status: 'pending' },
       }),
     );
   });
 
-  test('notifies partner with distinct unsuspended type (no reason argument)', async () => {
-    EstablishmentModel.findEstablishmentById.mockResolvedValue(
-      baseEstablishment({ status: 'suspended' }),
-    );
+  test('notifies partner with distinct unsuspended type and where the card went back to', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(suspendedByModerator());
     EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(
       baseEstablishment({ status: 'active' }),
     );
@@ -682,6 +787,8 @@ describe('unsuspendEstablishment', () => {
     expect(NotificationService.notifyEstablishmentStatusChange).toHaveBeenCalledWith(
       EST_ID,
       'unsuspended',
+      undefined,
+      { returnedTo: 'active' },
     );
   });
 });
@@ -901,7 +1008,7 @@ describe('partner notification is written before the action returns', () => {
       arrange: () => {
         const result = baseEstablishment({ status: 'active' });
         EstablishmentModel.findEstablishmentById.mockResolvedValue(
-          baseEstablishment({ status: 'suspended' }),
+          baseEstablishment({ status: 'suspended', moderation_notes: { suspend_reason: 'Нарушение правил' } }),
         );
         EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(result);
         return result;

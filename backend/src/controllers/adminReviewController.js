@@ -6,19 +6,21 @@
  *
  * Endpoints (Segment E):
  *   GET  /api/v1/admin/reviews                    — list all reviews (admin view)
- *   POST /api/v1/admin/reviews/:id/toggle-visibility — toggle review visibility
+ *   POST /api/v1/admin/reviews/:id/visibility        — set review visibility { is_visible }
  *   POST /api/v1/admin/reviews/:id/delete         — soft-delete review
  */
 
 import * as adminReviewService from '../services/adminReviewService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { isViewer } from '../config/panelRoles.js';
 import logger from '../utils/logger.js';
 
 /**
  * GET /api/v1/admin/reviews
  *
  * Returns paginated reviews with author and establishment info.
- * Admin can see all reviews including deleted and hidden.
+ * Admin can see all reviews including deleted and hidden. A viewer gets the
+ * same list with author_email = null (see adminReviewService.getReviews).
  */
 export const listReviews = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -45,6 +47,7 @@ export const listReviews = asyncHandler(async (req, res) => {
     sort,
     from,
     to,
+    viewer: isViewer(req.user.role),
   });
 
   logger.info('Admin fetched reviews list', {
@@ -63,25 +66,30 @@ export const listReviews = asyncHandler(async (req, res) => {
 });
 
 /**
- * POST /api/v1/admin/reviews/:id/toggle-visibility
+ * POST /api/v1/admin/reviews/:id/visibility
+ * Body: { is_visible: boolean }
  *
- * Toggles is_visible between true and false.
- * Writes audit_log entry (review_hide or review_show).
+ * Sets is_visible to the value asked for — never toggles: the panel repeats a
+ * request answered with a 5xx, and a toggle applied once and answered late
+ * would be undone by its own repeat (critics' pack 1, point 2 — Codex C-10).
+ * Writes audit_log entry (review_hide or review_show) when the state changed.
  */
-export const toggleVisibility = asyncHandler(async (req, res) => {
+export const setVisibility = asyncHandler(async (req, res) => {
   const reviewId = req.params.id;
   const adminUserId = req.user.userId;
+  const isVisible = req.body.is_visible === true;
 
-  const result = await adminReviewService.toggleVisibility(reviewId, adminUserId, {
+  const result = await adminReviewService.setVisibility(reviewId, isVisible, adminUserId, {
     ipAddress: req.ip,
     userAgent: req.get('user-agent'),
   });
 
-  logger.info('Admin toggled review visibility', {
+  logger.info('Admin set review visibility', {
     adminId: adminUserId,
     reviewId,
-    newVisibility: result.is_visible,
-    endpoint: 'POST /api/v1/admin/reviews/:id/toggle-visibility',
+    isVisible: result.is_visible,
+    changed: result.changed,
+    endpoint: 'POST /api/v1/admin/reviews/:id/visibility',
   });
 
   res.status(200).json({

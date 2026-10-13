@@ -14,10 +14,20 @@
  */
 
 import argon2 from 'argon2';
-import { pool } from '../config/database.js';
+import { pool, getClient } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
+import {
+  invalidateAccountStatus,
+  issuedBeforeRevocation,
+  markSessionsRevoked,
+} from './accountStatus.js';
+import * as AuditLogModel from '../models/auditLogModel.js';
+import * as NotificationService from './notificationService.js';
+import { invalidateCache as invalidateBadges } from './badgesService.js';
+import { parseModerationNotes } from '../utils/moderationNotes.js';
+import { isPanelRole } from '../config/panelRoles.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
@@ -54,6 +64,22 @@ const ARGON2_OPTIONS = {
 };
 
 /**
+ * Stand-in hash for a login that has no stored hash to check: an unknown
+ * email/phone, or an account without a password (Google/Yandex sign-up keeps
+ * password_hash NULL). Verifying against it takes as long as a real check, so
+ * the response time does not tell these cases from a wrong password; it
+ * verifies to false. The cost is built from ARGON2_OPTIONS rather than written
+ * out: a literal would keep the old cost if the options change, and these
+ * answers would quietly become faster than a wrong password.
+ */
+const DUMMY_PASSWORD_HASH = [
+  '$argon2id$v=19',
+  `m=${ARGON2_OPTIONS.memoryCost},t=${ARGON2_OPTIONS.timeCost},p=${ARGON2_OPTIONS.parallelism}`,
+  'dummysaltdummysalt',
+  'dummyhashdummyhashdummyhashdummy',
+].join('$');
+
+/**
  * Access token lifetime reported to clients, in seconds.
  *
  * Mirrors JWT_ACCESS_EXPIRY ('4h' by default, utils/jwt.js) — the JWT carries
@@ -62,6 +88,43 @@ const ARGON2_OPTIONS = {
  * inside the reuse grace window) so they cannot drift apart.
  */
 const ACCESS_TOKEN_EXPIRES_IN_SECONDS = 14400;
+
+/**
+ * A refresh-token row joined with its user — what refreshAccessToken starts
+ * from, and re-reads after losing the claim race.
+ *
+ * sessions_revoked_at is read through to_jsonb rather than named: the column
+ * comes with migration 035, which production applies by hand after this code
+ * deploys, and a named column would fail every refresh until then
+ * (services/accountStatus.js).
+ */
+const REFRESH_TOKEN_ROW_SQL = `
+  SELECT rt.id, rt.user_id, rt.token, rt.expires_at, rt.created_at, rt.used_at, rt.replaced_by,
+         u.id as user_id, u.email, u.phone, u.name, u.role, u.is_active,
+         (to_jsonb(u) ->> 'sessions_revoked_at')::timestamptz AS sessions_revoked_at
+  FROM refresh_tokens rt
+  JOIN users u ON rt.user_id = u.id
+  WHERE rt.token = $1
+`;
+
+/**
+ * Whether a refresh-token row was created before its account's sessions were
+ * last revoked (accountStatus.issuedBeforeRevocation — the rule access tokens
+ * are held to).
+ *
+ * created_at is compared in JS on purpose, like expires_at in
+ * refreshAccessToken: generateTokenPair writes both from a JS Date into naive
+ * columns, and node-pg reads them back in the same local time, so the instant
+ * survives the round trip in any process time zone — SQL would read them in
+ * the database's. A row without created_at counts as the oldest possible.
+ *
+ * @param {Object} row - REFRESH_TOKEN_ROW_SQL row
+ * @returns {boolean}
+ */
+const refreshTokenRevoked = (row) => issuedBeforeRevocation(
+  row.created_at ? new Date(row.created_at).getTime() : 0,
+  row.sessions_revoked_at,
+);
 
 /**
  * Creates a new user account
@@ -148,8 +211,10 @@ export async function createUser(userData) {
  * This function implements constant-time verification to prevent timing attacks
  * that could reveal whether an email/phone exists in the system. Even when a
  * user doesn't exist, we still perform a hash verification against a dummy hash
- * to maintain consistent response times.
- * 
+ * to maintain consistent response times. An account without a password (signed
+ * up through Google/Yandex, password_hash NULL) is refused the same way as a
+ * wrong password: the same dummy verification, then null.
+ *
  * @param {Object} credentials - Login credentials
  * @param {string} credentials.email - User's email (optional if phone provided)
  * @param {string} credentials.phone - User's phone (optional if email provided)
@@ -180,20 +245,43 @@ export async function verifyCredentials(credentials) {
     // Always perform hash verification even if user not found
     // This prevents timing attacks from revealing valid emails/phones
     let isValidPassword = false;
-    
+    let failureReason = 'user_not_found';
+
     if (result.rows.length > 0) {
       const user = result.rows[0];
-      
-      // Verify password against stored hash
-      // argon2.verify is intentionally slow and takes constant time
-      isValidPassword = await argon2.verify(user.password_hash, password);
-      
+
+      if (user.password_hash) {
+        // Verify password against stored hash
+        // argon2.verify is intentionally slow and takes constant time
+        isValidPassword = await argon2.verify(user.password_hash, password);
+        failureReason = 'invalid_password';
+      } else {
+        // No password on this account (signed up through Google/Yandex).
+        // argon2.verify throws on a missing hash — that was a 500 — and
+        // skipping the verify would answer faster than a wrong password:
+        // either way the response would tell the account type apart.
+        await argon2.verify(DUMMY_PASSWORD_HASH, password);
+        failureReason = 'no_password';
+      }
+
       if (isValidPassword) {
-        // Update last login timestamp
-        await pool.query(
-          'UPDATE users SET last_login_at = $1 WHERE id = $2',
-          [new Date(), user.id],
+        // Update last login timestamp — only if the hash just verified is still
+        // the row's hash. The verify takes tens of milliseconds, and a takeover
+        // of the record (authenticateWithOAuth, 2c) may have dropped the
+        // password meanwhile; a login that then issued tokens would outlive the
+        // takeover (lens review, 08.10.2026).
+        const stillCurrent = await pool.query(
+          'UPDATE users SET last_login_at = $1 WHERE id = $2 AND password_hash = $3',
+          [new Date(), user.id, user.password_hash],
         );
+        if (stillCurrent.rowCount === 0) {
+          logger.warn('Login attempt failed', {
+            email: email || 'not_provided',
+            phone: phone || 'not_provided',
+            reason: 'password_changed_during_verification',
+          });
+          return null;
+        }
         
         // Remove password_hash from returned object for security
         delete user.password_hash;
@@ -208,17 +296,14 @@ export async function verifyCredentials(credentials) {
     } else {
       // User not found, but still perform dummy hash verification
       // to maintain constant response time
-      await argon2.verify(
-        '$argon2id$v=19$m=16384,t=3,p=1$dummysaltdummysalt$dummyhashdummyhashdummyhashdummy',
-        password,
-      );
+      await argon2.verify(DUMMY_PASSWORD_HASH, password);
     }
-    
+
     // Log failed login attempt for security monitoring
-    logger.warn('Login attempt failed', { 
+    logger.warn('Login attempt failed', {
       email: email || 'not_provided',
       phone: phone || 'not_provided',
-      reason: result.rows.length === 0 ? 'user_not_found' : 'invalid_password',
+      reason: failureReason,
     });
     
     return null;
@@ -316,22 +401,18 @@ export async function generateTokenPair(user) {
  *    inside the reuse grace window, where the same successor is handed back
  *    instead (handleReusedToken below; config/auth.js explains the window)
  *
+ * A token created before the account's sessions were last revoked (password
+ * reset, a detected reuse, account takeover) is refused before any of that,
+ * as REFRESH_TOKEN_REVOKED: the revocation burned it, nobody stole it.
+ *
  * @param {string} refreshToken - The refresh token to exchange
  * @returns {Promise<Object>} New token pair with user info
- * @throws {Error} If token is invalid, expired, or already used
+ * @throws {Error} If token is invalid, expired, revoked, or already used
  */
 export async function refreshAccessToken(refreshToken) {
   try {
     // Look up the refresh token in database
-    const query = `
-      SELECT rt.id, rt.user_id, rt.token, rt.expires_at, rt.used_at, rt.replaced_by,
-             u.id as user_id, u.email, u.phone, u.name, u.role, u.is_active
-      FROM refresh_tokens rt
-      JOIN users u ON rt.user_id = u.id
-      WHERE rt.token = $1
-    `;
-
-    const result = await pool.query(query, [refreshToken]);
+    const result = await pool.query(REFRESH_TOKEN_ROW_SQL, [refreshToken]);
 
     if (result.rows.length === 0) {
       logger.warn('Refresh token not found', { token: `${refreshToken.substring(0, 10)  }...` });
@@ -347,6 +428,19 @@ export async function refreshAccessToken(refreshToken) {
         tokenId: tokenData.id,
       });
       throw new Error('REFRESH_TOKEN_EXPIRED');
+    }
+
+    // Created before the account's sessions were revoked: dead, and not a sign
+    // of theft — the revocation burned it (or a race left it unburned), nobody
+    // replayed it. It must not reach the reuse verdict below, which would
+    // revoke every session once more — the one the user opened after a
+    // password reset included, the moment a stale device woke up.
+    if (refreshTokenRevoked(tokenData)) {
+      logger.warn('Refresh token created before the account sessions were revoked', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+      });
+      throw new Error('REFRESH_TOKEN_REVOKED');
     }
 
     // CRITICAL SECURITY CHECK: Detect token reuse
@@ -400,10 +494,16 @@ export async function refreshAccessToken(refreshToken) {
       // replay, so the loser gets the winner's successor instead of a 403.
       await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [tokens.refreshTokenId]);
 
-      const reread = await pool.query(query, [refreshToken]);
+      const reread = await pool.query(REFRESH_TOKEN_ROW_SQL, [refreshToken]);
 
       if (reread.rows.length === 0) {
         throw new Error('INVALID_REFRESH_TOKEN');
+      }
+
+      // The claim may have been lost to a revocation rather than to a
+      // concurrent rotation: then the token is simply dead.
+      if (refreshTokenRevoked(reread.rows[0])) {
+        throw new Error('REFRESH_TOKEN_REVOKED');
       }
 
       // concurrentClaim: this request held a token the database called unused
@@ -552,7 +652,8 @@ async function handleReusedToken(tokenData, { concurrentClaim = false } = {}) {
     originalUseTime: tokenData.used_at,
   });
 
-  // Invalidate ALL refresh tokens for this user as security measure
+  // End EVERY session of this user as security measure: refresh tokens burned,
+  // access tokens issued until now refused from the next request
   await invalidateAllUserTokens(tokenData.user_id);
 
   throw new Error('REFRESH_TOKEN_REUSE_DETECTED');
@@ -589,36 +690,66 @@ export async function invalidateRefreshToken(refreshToken) {
 }
 
 /**
- * Invalidates all refresh tokens for a user (security measure)
- * 
+ * Ends every session of a user, in the caller's transaction: burns every live
+ * refresh token, then stamps users.sessions_revoked_at so the access tokens
+ * issued until now are refused too. The order is load-bearing — see
+ * accountStatus.markSessionsRevoked. The caller drops the cached account
+ * status after COMMIT.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @returns {Promise<{tokenCount: number, revokedAt: Date|null}>} revokedAt is
+ *   null while migration 035 is not applied — then only the refresh tokens die
+ */
+async function revokeAllSessions(client, userId) {
+  const burned = await client.query(
+    'UPDATE refresh_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL',
+    [new Date(), userId],
+  );
+  const revokedAt = await markSessionsRevoked(client, userId);
+  return { tokenCount: burned.rowCount, revokedAt };
+}
+
+/**
+ * Invalidates all tokens of a user (security measure)
+ *
  * This is used when token reuse is detected, indicating a possible
  * security breach. By invalidating all tokens, we force complete
- * re-authentication of the user.
- * 
+ * re-authentication of the user: every refresh token is burned, and every
+ * access token issued until now is refused from the next request
+ * (revokeAllSessions). Before migration 035 the access tokens lived on
+ * until their expiry, up to 4 hours.
+ *
  * @param {string} userId - The user whose tokens should be invalidated
- * @returns {Promise<number>} Number of tokens invalidated
+ * @returns {Promise<number>} Number of refresh tokens invalidated
  */
 export async function invalidateAllUserTokens(userId) {
+  const client = await getClient();
+  let revoked;
   try {
-    const result = await pool.query(
-      'UPDATE refresh_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL',
-      [new Date(), userId],
-    );
-    
-    logger.warn('All refresh tokens invalidated for user', { 
-      userId,
-      tokenCount: result.rowCount, 
-    });
-    
-    return result.rowCount;
-    
+    await client.query('BEGIN');
+    revoked = await revokeAllSessions(client, userId);
+    await client.query('COMMIT');
   } catch (error) {
-    logger.error('Failed to invalidate all user tokens', { 
+    await client.query('ROLLBACK');
+    logger.error('Failed to invalidate all user tokens', {
       userId,
-      error: error.message, 
+      error: error.message,
     });
     throw error;
+  } finally {
+    client.release();
   }
+
+  invalidateAccountStatus(userId);
+
+  logger.warn('All refresh tokens invalidated for user', {
+    userId,
+    tokenCount: revoked.tokenCount,
+    accessTokensRevoked: revoked.revokedAt !== null,
+  });
+
+  return revoked.tokenCount;
 }
 
 /**
@@ -720,11 +851,165 @@ export async function updateUserProfile(userId, profileData) {
  * @throws {Error} If user not found or already a partner/admin
  */
 /**
+ * What the moderator reads on a card parked by an account takeover, and what
+ * the account's new holder is told. Literal: both read it as is.
+ */
+export const TAKEOVER_SUSPEND_REASON =
+  'Учётная запись перешла к владельцу адреса e-mail после входа через Google или Яндекс. '
+  + 'Карточка приостановлена до решения модератора: кому она принадлежит.';
+
+/**
+ * Hand a record whose e-mail was never confirmed to the person who just proved
+ * the address through a provider.
+ *
+ * The record may have been created by anyone naming this address, so nothing
+ * the registrant set up is trusted: the password is dropped (no password login
+ * until «forgot password» sets one — that path proves the address again), every
+ * refresh token is deleted — not merely burned: a burned token presented later
+ * reads as token reuse and revokes every session of the record, the new
+ * holder's included (review, 08.10.2026) — so a replay answers «unknown token»
+ * and nothing else; the access tokens issued before the takeover are refused
+ * from their next request (users.sessions_revoked_at, migration 035 — until
+ * it is applied they live out their TTL). The registrant's push devices are
+ * deactivated: the record's notices must not keep arriving on their phone.
+ * The typed name, avatar and phone give way to the provider's data. The
+ * partner role stays with the record, but the active cards are not published
+ * under the new holder's name silently: each is suspended with a moderator's
+ * mark and a reason, and the moderator decides; the holder may edit and
+ * resubmit them, which puts them in the moderation queue with the marks kept.
+ * Drafts, pending and rejected cards are not public and stay as they are.
+ * Reviews, favorites, bookings, partner documents and notification
+ * preferences stay on the record.
+ *
+ * One transaction: a provider login that ends with the old password still
+ * valid, or the old sessions still alive, is the defect itself.
+ *
+ * @returns {Promise<Object>} The user row as the login response shapes it
+ */
+async function takeOverUnverifiedAccount(existingUser, { provider, providerId, name, avatarUrl }) {
+  const now = new Date();
+  const client = await getClient();
+  let user;
+  let deletedTokens = 0;
+  let sessionsRevokedAt = null;
+  let deactivatedDevices = 0;
+  let parkedCards = [];
+  try {
+    await client.query('BEGIN');
+
+    const updated = await client.query(
+      `UPDATE users
+       SET auth_method = $1, oauth_provider_id = $2, last_login_at = $3, updated_at = $3,
+           email_verified = true, password_hash = NULL,
+           name = COALESCE($4, name), avatar_url = $5,
+           phone = NULL, phone_verified = false
+       WHERE id = $6
+       RETURNING id, email, phone, name, role, auth_method, avatar_url,
+                 oauth_provider_id, is_active, last_login_at, created_at`,
+      [provider, providerId, now, name || null, avatarUrl || null, existingUser.id],
+    );
+    user = updated.rows[0];
+
+    // The successor link is a self-reference; clear it before the rows go.
+    await client.query(
+      'UPDATE refresh_tokens SET replaced_by = NULL WHERE user_id = $1',
+      [existingUser.id],
+    );
+    const deleted = await client.query(
+      'DELETE FROM refresh_tokens WHERE user_id = $1',
+      [existingUser.id],
+    );
+    deletedTokens = deleted.rowCount;
+
+    // After the refresh tokens are gone, not before (markSessionsRevoked).
+    // The new holder's tokens are issued after COMMIT, so they come out newer.
+    sessionsRevokedAt = await markSessionsRevoked(client, existingUser.id);
+
+    const devices = await client.query(
+      `UPDATE device_tokens SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1 AND is_active = TRUE`,
+      [existingUser.id],
+    );
+    deactivatedDevices = devices.rowCount;
+
+    const cards = await client.query(
+      `SELECT id, status, moderation_notes FROM establishments
+       WHERE partner_id = $1 AND status = 'active'
+       FOR UPDATE`,
+      [existingUser.id],
+    );
+    for (const card of cards.rows) {
+      const notes = {
+        ...parseModerationNotes(card.moderation_notes),
+        suspend_reason: TAKEOVER_SUSPEND_REASON,
+        suspended_at: now.toISOString(),
+        suspended_from: card.status,
+      };
+      await client.query(
+        `UPDATE establishments
+         SET status = 'suspended', moderation_notes = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [JSON.stringify(notes), card.id],
+      );
+    }
+    parkedCards = cards.rows.map((card) => card.id);
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // The registrant's cached status must not outlive the commit: their next
+  // request reads the stamp.
+  invalidateAccountStatus(existingUser.id);
+
+  // Outside the transaction, as the moderator's own suspension does: the
+  // journal and the notice must not undo a takeover that is already committed.
+  for (const establishmentId of parkedCards) {
+    await AuditLogModel.createAuditLog({
+      user_id: null,
+      action: 'suspend',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { status: 'active' },
+      new_data: { status: 'suspended', reason: TAKEOVER_SUSPEND_REASON, account_takeover: provider },
+      ip_address: null,
+      user_agent: null,
+    });
+    await NotificationService.notifyEstablishmentStatusChange(
+      establishmentId,
+      'suspended',
+      TAKEOVER_SUSPEND_REASON,
+    ).catch(() => {});
+  }
+  if (parkedCards.length > 0) {
+    invalidateBadges();
+  }
+
+  logger.warn('OAuth login: unverified account taken over by the address owner', {
+    userId: existingUser.id,
+    provider,
+    previousAuthMethod: existingUser.auth_method,
+    deletedTokens,
+    accessTokensRevoked: sessionsRevokedAt !== null,
+    deactivatedDevices,
+    parkedCards: parkedCards.length,
+  });
+
+  return user;
+}
+
+/**
  * Authenticates a user via OAuth provider data.
  *
  * Three scenarios handled:
  * 1. Existing OAuth user (same provider + providerId) → login
  * 2. Email matches existing user + provider email verified → link account
+ *    (2c: if the record's own e-mail was never confirmed, the record passes to
+ *    the person signing in — takeOverUnverifiedAccount)
  * 3. No match → create new user (password_hash = NULL)
  *
  * Security: unverified provider emails cannot claim existing accounts.
@@ -778,7 +1063,7 @@ export async function authenticateWithOAuth(providerData) {
     // 2. Check if email exists in users table
     const emailLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at
+              oauth_provider_id, is_active, last_login_at, created_at, email_verified
        FROM users
        WHERE email = $1`,
       [email.toLowerCase().trim()],
@@ -799,6 +1084,38 @@ export async function authenticateWithOAuth(providerData) {
           provider,
         });
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
+      // 2c. The record's own e-mail was never confirmed: anyone can register
+      // naming someone else's address, and the provider's verified e-mail is
+      // the first proof of ownership this record has seen. The account passes
+      // to the person signing in — nothing the registrant set up survives
+      // (critics' pack 1, point 1; known since 02.10.2026 as N2 / F-09).
+      if (!existingUser.email_verified) {
+        // A panel account (admin, viewer) is created by an operator and logs
+        // in by password only: handing it over would lock the panel out, and
+        // it is never a stranger's claim on an address. Refused like an
+        // unproven link (review, 08.10.2026).
+        if (isPanelRole(existingUser.role)) {
+          logger.warn('OAuth login: unconfirmed panel account not handed over', {
+            userId: existingUser.id,
+            provider,
+          });
+          throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+        }
+        const takenOver = await takeOverUnverifiedAccount(existingUser, {
+          provider,
+          providerId,
+          name,
+          avatarUrl,
+        });
+        const tokens = await generateTokenPair(takenOver);
+        return {
+          user: takenOver,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+        };
       }
 
       // Link: update auth_method, set oauth_provider_id, optionally update avatar
@@ -920,6 +1237,10 @@ export async function upgradeUserToPartner(userId) {
     `;
 
     const result = await pool.query(updateQuery, [new Date(), userId]);
+
+    // authenticate reads the role from the database (cached briefly): the
+    // new role applies from the next request, whatever token is presented.
+    invalidateAccountStatus(userId);
 
     logger.info('User upgraded to partner role', {
       userId,
@@ -1213,8 +1534,12 @@ export async function createPasswordResetToken(email) {
  *      of two concurrent submissions exactly one proceeds, and a failure
  *      later leaves the token burned rather than replayable.
  *   2. Hash the new password with the same Argon2id parameters as register.
- *   3. Revoke every refresh token for the user (invalidateAllUserTokens) —
- *      a password reset must terminate whoever held the old credentials.
+ *   3. In ONE transaction: set the password and end every session
+ *      (revokeAllSessions — refresh tokens burned, access tokens issued
+ *      until now refused) — a password reset must terminate whoever held the
+ *      old credentials, and a reset that changes the password but leaves the
+ *      old sessions alive is the defect itself. No login sees the new
+ *      password before the old sessions are gone.
  *
  * @param {string} token - Raw token from the emailed link
  * @param {string} newPassword - Already validated against register rules
@@ -1237,24 +1562,44 @@ export async function consumePasswordResetToken(token, newPassword) {
 
   const passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
 
-  const updateResult = await pool.query(
-    `UPDATE users
-     SET password_hash = $1, updated_at = $2
-     WHERE id = $3 AND is_active = true
-     RETURNING id, email, name`,
-    [passwordHash, new Date(), resetToken.user_id],
-  );
+  const client = await getClient();
+  let user;
+  let revoked;
+  try {
+    await client.query('BEGIN');
+    const updateResult = await client.query(
+      `UPDATE users
+       SET password_hash = $1, updated_at = $2
+       WHERE id = $3 AND is_active = true
+       RETURNING id, email, name`,
+      [passwordHash, new Date(), resetToken.user_id],
+    );
+    user = updateResult.rows[0];
+    if (user) {
+      // Force re-login everywhere: the reset link came from email ownership,
+      // any session created with the old password is no longer trustworthy
+      revoked = await revokeAllSessions(client, resetToken.user_id);
+    }
+    await client.query(user ? 'COMMIT' : 'ROLLBACK');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 
-  if (updateResult.rows.length === 0) {
+  if (!user) {
     throw new Error('USER_NOT_FOUND');
   }
 
-  // Force re-login everywhere: the reset link came from email ownership,
-  // any session created with the old password is no longer trustworthy
-  await invalidateAllUserTokens(resetToken.user_id);
+  invalidateAccountStatus(resetToken.user_id);
 
-  logger.info('Password reset completed', { userId: resetToken.user_id });
+  logger.info('Password reset completed', {
+    userId: resetToken.user_id,
+    tokenCount: revoked.tokenCount,
+    accessTokensRevoked: revoked.revokedAt !== null,
+  });
 
-  return updateResult.rows[0];
+  return user;
 }
 

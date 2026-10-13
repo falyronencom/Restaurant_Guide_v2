@@ -28,10 +28,14 @@ jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   countReviewsByEstablishment: jest.fn(),
   findReviewsByUser: jest.fn(),
   countReviewsByUser: jest.fn(),
+  // The service runs insert + aggregates inside this; the mock hands the
+  // callback a marker client so the tests can see both calls share it.
+  executeInTransaction: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../config/redis.js', () => ({
   incrementWithExpiry: jest.fn(),
+  decrement: jest.fn(),
   getCounter: jest.fn(),
 }));
 
@@ -45,7 +49,8 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 
 // Import after mocking
 const ReviewModel = await import('../../models/reviewModel.js');
-const { incrementWithExpiry, getCounter } = await import('../../config/redis.js');
+const { incrementWithExpiry, decrement, getCounter } = await import('../../config/redis.js');
+const TX_CLIENT = { query: jest.fn(), marker: 'tx-client' };
 const logger = (await import('../../utils/logger.js')).default;
 
 const {
@@ -85,8 +90,10 @@ describe('reviewService', () => {
       ReviewModel.createReview.mockResolvedValue(mockReview);
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
       ReviewModel.findReviewById.mockResolvedValue(mockReview);
-      getCounter.mockResolvedValue(0);
-      incrementWithExpiry.mockResolvedValue(undefined);
+      ReviewModel.executeInTransaction.mockImplementation((callback) => callback(TX_CLIENT));
+      // The quota slot is reserved first: the counter answers the new value.
+      incrementWithExpiry.mockResolvedValue(1);
+      decrement.mockResolvedValue(0);
     });
 
     test('should create review with valid data', async () => {
@@ -100,20 +107,25 @@ describe('reviewService', () => {
       // Verify establishment validation
       expect(ReviewModel.establishmentExists).toHaveBeenCalledWith('estab-123');
 
-      // Verify rate limit check
-      expect(getCounter).toHaveBeenCalledWith('reviews:ratelimit:user-123');
+      // Verify the quota slot is reserved before anything is written
+      // The window ends at Minsk midnight — a number of seconds within the day.
+      expect(incrementWithExpiry).toHaveBeenCalledWith('reviews:ratelimit:user-123', expect.any(Number));
+      const [, ttl] = incrementWithExpiry.mock.calls[0];
+      expect(ttl).toBeGreaterThanOrEqual(1);
+      expect(ttl).toBeLessThanOrEqual(86400);
+      expect(incrementWithExpiry.mock.invocationCallOrder[0])
+        .toBeLessThan(ReviewModel.createReview.mock.invocationCallOrder[0]);
 
       // Verify duplicate check
       expect(ReviewModel.findExistingReview).toHaveBeenCalledWith('user-123', 'estab-123');
 
-      // Verify review creation
-      expect(ReviewModel.createReview).toHaveBeenCalledWith(validReviewData);
+      // Verify review creation and aggregates share one transaction client
+      expect(ReviewModel.executeInTransaction).toHaveBeenCalledTimes(1);
+      expect(ReviewModel.createReview).toHaveBeenCalledWith(validReviewData, TX_CLIENT);
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123', TX_CLIENT);
 
-      // Verify aggregates updated
-      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123');
-
-      // Verify rate limit incremented
-      expect(incrementWithExpiry).toHaveBeenCalledWith('reviews:ratelimit:user-123', 86400);
+      // The slot stays taken
+      expect(decrement).not.toHaveBeenCalled();
 
       expect(logger.info).toHaveBeenCalledWith(
         'Review created successfully',
@@ -159,7 +171,7 @@ describe('reviewService', () => {
     });
 
     test('should enforce rate limit of 10 reviews per day', async () => {
-      getCounter.mockResolvedValue(10); // Already at limit
+      incrementWithExpiry.mockResolvedValue(11); // The eleventh reservation of the day
 
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 429,
@@ -171,15 +183,18 @@ describe('reviewService', () => {
         expect.objectContaining({ currentCount: 10, limit: 10 })
       );
 
+      // The refused reservation is given back
+      expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
     });
 
     test('should allow review when under rate limit', async () => {
-      getCounter.mockResolvedValue(9); // Just under limit
+      incrementWithExpiry.mockResolvedValue(10); // The tenth reservation — the last allowed
 
       await expect(createReview(validReviewData)).resolves.toBeDefined();
 
       expect(ReviewModel.createReview).toHaveBeenCalled();
+      expect(decrement).not.toHaveBeenCalled();
     });
 
     test('should detect duplicate review', async () => {
@@ -191,6 +206,8 @@ describe('reviewService', () => {
       });
 
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
+      // No review came out of the attempt — the slot goes back
+      expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
     });
 
     test('should handle database unique constraint violation', async () => {
@@ -202,6 +219,7 @@ describe('reviewService', () => {
         statusCode: 409,
         code: 'DUPLICATE_REVIEW',
       });
+      expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
     });
 
     test('should handle foreign key violation', async () => {
@@ -226,19 +244,30 @@ describe('reviewService', () => {
       });
     });
 
-    test('should update establishment aggregates synchronously', async () => {
+    test('should update establishment aggregates inside the creation transaction', async () => {
       await createReview(validReviewData);
 
-      // Verify aggregates updated during create flow
-      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123');
+      // Verify aggregates updated during create flow, on the transaction client
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123', TX_CLIENT);
     });
 
-    test('should increment rate limit counter after successful creation', async () => {
+    test('a failed recalculation gives the quota slot back', async () => {
+      ReviewModel.updateEstablishmentAggregates.mockRejectedValue(new Error('recalc failed'));
+
+      await expect(createReview(validReviewData)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'REVIEW_CREATION_FAILED',
+      });
+
+      expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
+    });
+
+    test('should reserve the rate limit slot before creation', async () => {
       await createReview(validReviewData);
 
       expect(incrementWithExpiry).toHaveBeenCalledWith(
         'reviews:ratelimit:user-123',
-        86400 // 24 hours
+        expect.any(Number) // seconds until Minsk midnight
       );
     });
 
@@ -329,7 +358,7 @@ describe('reviewService', () => {
       expect(ReviewModel.updateReview).not.toHaveBeenCalled();
     });
 
-    test('should not update aggregates when rating unchanged', async () => {
+    test('recounts the rating even when only the text changed (the trigger counts hidden reviews)', async () => {
       ReviewModel.findReviewById
         .mockReset()
         .mockResolvedValueOnce(mockReview)
@@ -338,7 +367,7 @@ describe('reviewService', () => {
 
       await updateReview(reviewId, userId, { content: 'Only content changed' });
 
-      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(mockReview.establishment_id);
     });
 
     test('should map constraint violation to app error', async () => {
@@ -627,12 +656,13 @@ describe('reviewService', () => {
 
       const result = await getUserReviewQuota('user-1');
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         limit: 10,
         used: 4,
         remaining: 6,
-        resetIn: 86400,
       });
+      expect(result.resetIn).toBeGreaterThanOrEqual(1);
+      expect(result.resetIn).toBeLessThanOrEqual(86400);
       expect(getCounter).toHaveBeenCalledWith('reviews:ratelimit:user-1');
     });
   });

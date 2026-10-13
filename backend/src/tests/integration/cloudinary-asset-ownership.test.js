@@ -348,4 +348,38 @@ describe('Акции: PATCH с новой картинкой уничтожае�
 
     expect(destroy).not.toHaveBeenCalled();
   });
+
+  // Пакет 1 находок критиков, пункт 3 (Codex C-07): порядок замены —
+  // загрузить новое → записать ссылку → удалить прежнее. Отказ загрузки
+  // оставляет акцию с прежним фото и прежней ссылкой; файл в облаке цел.
+  test('отказ загрузки нового фото: прежнее на месте, ссылка не изменилась, файл не уничтожен', async () => {
+    const oldUrl = deliveryUrl(`establishments/${card.id}/promotions/promo0002`);
+    const promotionId = await insertPromotion(oldUrl);
+    cloudinarySdk.uploader.upload.mockRejectedValue(new Error('cloud is down'));
+
+    const response = await replaceImage(promotionId);
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(destroy).not.toHaveBeenCalled();
+    const { rows: [{ image_url }] } = await query('SELECT image_url FROM promotions WHERE id = $1', [promotionId]);
+    expect(image_url).toBe(oldUrl);
+  });
+
+  test('успешная замена: прежнее уничтожается только после записи новой ссылки', async () => {
+    const oldPublicId = `establishments/${card.id}/promotions/promo0003`;
+    const promotionId = await insertPromotion(deliveryUrl(oldPublicId));
+    // Момент уничтожения: какую ссылку акция держит, когда destroy вызван.
+    let imageUrlAtDestroy = null;
+    destroy.mockImplementation(async () => {
+      const { rows: [row] } = await query('SELECT image_url FROM promotions WHERE id = $1', [promotionId]);
+      imageUrlAtDestroy = row.image_url;
+      return { result: 'ok' };
+    });
+
+    await replaceImage(promotionId).expect(200);
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledWith(oldPublicId);
+    expect(imageUrlAtDestroy).toContain(`establishments/${card.id}/promotions/fresh0001`);
+  });
 });

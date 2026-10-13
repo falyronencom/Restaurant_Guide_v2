@@ -63,12 +63,37 @@ const parseDayHours = (workingHours, dayKey) => {
   return { isOpen: false, open: null, close: null };
 };
 
+const MINUTES_PER_DAY = 24 * 60;
+
+/** "HH:MM" (or "H:MM", or with ":SS") → minutes since midnight; null when unparseable. */
+const toMinutes = (value) => {
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(String(value).trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+
 /**
- * Check if a time string "HH:MM" falls within open-close range.
+ * Is the "HH:MM" slot inside the session that opens on the booking day.
+ *
+ * A close at or before the open runs past midnight: 12:00–00:00 and
+ * 18:00–02:00 are open till the end of the day, and open == close
+ * (12:00–12:00) is the 24-hour case of the same rule — the reading the
+ * «Открыто» badge already uses (mobile Establishment.isOpenAt, web
+ * working-hours.ts). The old string comparison `time <= close` turned every
+ * such day into one where nothing after the opening hour could be booked.
+ *
+ * The hours before the opening belong to the previous day's session and are
+ * not bookable on this date. The mobile form offers a subset of this window —
+ * from the opening, every 30 minutes, up to half an hour before closing and
+ * no later than 23:30 (booking_slots.dart) — so every slot it shows passes.
  */
 const isTimeWithinRange = (time, open, close) => {
   if (!open || !close) return true; // No hours specified = accept
-  return time >= open && time <= close;
+  const slot = toMinutes(time);
+  const opens = toMinutes(open);
+  const closes = toMinutes(close);
+  if (opens === null || closes === null) return true; // Unreadable hours = no limit, as above
+  const closesOnClock = closes <= opens ? closes + MINUTES_PER_DAY : closes;
+  return slot >= opens && slot < closesOnClock;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

@@ -35,13 +35,21 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
 
 /**
  * Generates an access token with short expiration time.
- * Access tokens are used for API authentication and are validated without database access.
- * 
+ * Access tokens are used for API authentication: the signature is checked here,
+ * the account behind the token in the database (middleware/auth.js).
+ *
  * Architecture decision: 4 hour expiry balances security and mobile UX.
  * Short expiry limits the damage window if a token is compromised, while refresh
  * tokens allow seamless session continuation. 15m was too aggressive for mobile
  * apps where users leave the app for hours between sessions.
- * 
+ *
+ * The issue time is carried twice: `iat` in whole seconds (the standard claim)
+ * and `iatMs` in milliseconds. authenticate compares it with the moment the
+ * account's sessions were last revoked (services/accountStatus.js), and whole
+ * seconds cannot tell a token issued just before a password reset from one
+ * issued just after it in the same second — the takeover of an unconfirmed
+ * record issues its own tokens milliseconds after its stamp.
+ *
  * @param {Object} payload - User data to encode in token
  * @param {string} payload.userId - User's unique identifier
  * @param {string} payload.email - User's email address
@@ -49,11 +57,16 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
  * @returns {string} Signed JWT access token
  */
 export const generateAccessToken = (payload) => {
+  const issuedAtMs = Date.now();
   const tokenPayload = {
     userId: payload.userId,
     email: payload.email,
     role: payload.role,
     type: 'access',
+    // One clock reading for both: jsonwebtoken takes iat from the payload
+    // when it is there, and counts exp from it.
+    iat: Math.floor(issuedAtMs / 1000),
+    iatMs: issuedAtMs,
   };
 
   return jwt.sign(tokenPayload, JWT_SECRET, {
@@ -82,10 +95,13 @@ export const generateRefreshToken = () => {
 
 /**
  * Verifies and decodes an access token.
- * 
- * This validation happens without database access for performance. The JWT signature
- * ensures the token hasn't been tampered with, and we trust the embedded claims.
- * 
+ *
+ * Signature, expiry, issuer, audience and type only — no database access. The
+ * JWT signature ensures the token hasn't been tampered with. Whether the
+ * account may still act, with which role, and whether this token was issued
+ * before its sessions were revoked is authenticate's next step
+ * (middleware/auth.js, services/accountStatus.js).
+ *
  * @param {string} token - JWT access token to verify
  * @returns {Object} Decoded token payload with userId, email, role
  * @throws {Error} If token is invalid, expired, or malformed
@@ -107,6 +123,28 @@ export const verifyAccessToken = (token) => {
     logger.warn('Access token verification failed', { error: error.message });
     throw error;
   }
+};
+
+/**
+ * When a verified access token was issued, in milliseconds since the epoch.
+ *
+ * `iatMs` on every token issued since 2026-10-12. A token without it (issued
+ * earlier) is placed at the start of its `iat` second — never later
+ * than the moment it was actually issued, so against a revocation stamp it can
+ * only come out older: the safe side. A token with neither claim counts as the
+ * oldest possible.
+ *
+ * @param {Object} decoded - Payload returned by verifyAccessToken
+ * @returns {number}
+ */
+export const accessTokenIssuedAtMs = (decoded) => {
+  if (Number.isSafeInteger(decoded.iatMs)) {
+    return decoded.iatMs;
+  }
+  if (Number.isSafeInteger(decoded.iat)) {
+    return decoded.iat * 1000;
+  }
+  return 0;
 };
 
 /**

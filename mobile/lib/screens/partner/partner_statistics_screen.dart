@@ -43,6 +43,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
 
   String _selectedPeriod = '1 неделя';
 
+  /// Сколько дат помещается под графиком без наезда: подпись «29.09» ~30 dp,
+  /// ширина графика на узком телефоне ~290 dp.
+  static const int _maxAxisLabels = 6;
+
   @override
   void initState() {
     super.initState();
@@ -412,8 +416,16 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
   // Views Section with Chart
   // ============================================================================
 
+  /// Число, процент и график — за ОДИН выбранный период: просмотры за период,
+  /// изменение к предыдущему такому же периоду, столбики по дням периода
+  /// (сервер считает число и столбики по одной таблице и одному окну).
+  /// Прежде крупное число было «за всё время»: в режиме «1 неделя» рядом
+  /// стояли 10 (всего), −100 % (за неделю 0 против 10) и пустой график.
+  /// Итог за всё время остался мелкой подписью «всего».
   Widget _buildViewsSection(PartnerEstablishment establishment, EstablishmentOverview? overview, AnalyticsTrends? trends) {
-    final viewsInPeriod = overview?.views.inPeriod ?? 0;
+    final viewsInPeriod = overview?.views.inPeriod;
+    final viewsTrend = trends?.viewsTrend ?? const <TrendPoint>[];
+    final hasViews = viewsTrend.any((point) => point.count > 0);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -435,9 +447,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(_formatNumber(establishment.stats.views), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-                  if (viewsInPeriod > 0)
-                    Text('$viewsInPeriod за период', style: const TextStyle(fontSize: 12, color: _greyText)),
+                  Text(viewsInPeriod == null ? '–' : _formatNumber(viewsInPeriod), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                  Text('за период · всего ${_formatNumber(establishment.stats.views)}', style: const TextStyle(fontSize: 12, color: _greyText)),
                 ],
               ),
             ],
@@ -445,8 +456,10 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
           const SizedBox(height: 16),
           SizedBox(
             height: 150,
-            child: trends != null && trends.viewsTrend.isNotEmpty
-                ? _buildTrendChart(trends.viewsTrend, _secondaryOrange)
+            // Ряд из одних нулей — тоже «нет данных»: пустая сетка столбиков
+            // читалась как поломка графика.
+            child: hasViews
+                ? _buildTrendChart(viewsTrend, _secondaryOrange)
                 : _buildEmptyChart(),
           ),
         ],
@@ -485,12 +498,14 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
               getTitlesWidget: (value, meta) {
                 final idx = value.toInt();
                 if (idx < 0 || idx >= data.length) return const SizedBox.shrink();
-                // For <= 7 data points show all labels; otherwise thin out
+                // Неделя подписывается целиком; длиннее — каждый step-й день,
+                // не больше _maxAxisLabels подписей, отсчёт от последнего дня
+                // (сегодня подписано всегда). Прежде подписывался ещё и
+                // каждый день с данными, и соседние даты сливались в
+                // «29.0930.0902.10».
                 if (data.length > 7) {
-                  final step = (data.length / 5).ceil().clamp(1, data.length);
-                  // Always show labels where there's data, first, and last
-                  final hasData = data[idx].count > 0;
-                  if (!hasData && idx % step != 0 && idx != data.length - 1) {
+                  final step = (data.length / _maxAxisLabels).ceil();
+                  if ((data.length - 1 - idx) % step != 0) {
                     return const SizedBox.shrink();
                   }
                 }

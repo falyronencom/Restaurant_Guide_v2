@@ -5,9 +5,11 @@
  * What deactivation does, by the backend's own checks:
  *   - login is refused at once (verifyCredentials filters is_active = true);
  *   - token refresh is refused at once (refreshAccessToken checks is_active);
- *   - an access token already issued stays valid until it expires
- *     (JWT_ACCESS_EXPIRY, 4h by default) — authenticate() verifies the
- *     signature only. Plan the revocation with that window in mind.
+ *   - an access token already issued stops working within
+ *     ACCOUNT_STATUS_TTL_MS (10 s): since 2026-10-07 authenticate() asks the
+ *     database whether the account is active (services/accountStatus.js,
+ *     cached briefly per server process). Until then it checked the
+ *     signature only and the token lived up to JWT_ACCESS_EXPIRY (4h).
  *
  * Security model (mirrors set-partner-password.js):
  *   - Target database: with --production, DATABASE_URL from
@@ -123,7 +125,7 @@ const main = async () => {
 
     console.log(`Will set is_active = ${active} for ${account.email}.`);
     if (!active) {
-      console.log('   Login and token refresh stop immediately; an access token already issued expires within JWT_ACCESS_EXPIRY (4h by default).');
+      console.log('   Login and token refresh stop immediately; an access token already issued stops working within 10 seconds.');
     }
 
     if (!skipConfirm && !(await confirm())) {

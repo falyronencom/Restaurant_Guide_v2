@@ -115,8 +115,8 @@ router.post(
  * 3. Controller: Validate token, rotate, and return new pair
  * 
  * Higher rate limit because legitimate use case is frequent token refreshes
- * for long-lived sessions. Access tokens expire every 15 minutes, so active
- * users will hit this endpoint regularly.
+ * for long-lived sessions. Access tokens expire after 4 hours
+ * (JWT_ACCESS_EXPIRY), so active users will hit this endpoint regularly.
  */
 router.post(
   '/refresh',
@@ -297,7 +297,8 @@ router.post(
  * POST /api/v1/auth/reset-password
  *
  * Public endpoint. Consumes a reset token (single-use, hashed at rest),
- * sets the new password, and revokes all refresh tokens for the user.
+ * sets the new password, and ends every session of the user: refresh tokens
+ * revoked, access tokens issued before the reset refused.
  *
  * Path and payload match the contract mobile already ships
  * (mobile/lib/services/auth_service.dart resetPassword).

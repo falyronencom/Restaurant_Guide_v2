@@ -1219,7 +1219,7 @@ class _Actions extends StatelessWidget {
                   if (isVisible) {
                     _confirmHide(context, reviews);
                   } else {
-                    reviews.toggleVisibility();
+                    reviews.setVisibility(visible: true);
                   }
                 },
           style: AppTheme.canonCtaOutlined(),
@@ -1283,7 +1283,7 @@ class _Actions extends StatelessWidget {
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              reviews.toggleVisibility();
+              reviews.setVisibility(visible: false);
             },
             child: const Text('Скрыть'),
           ),

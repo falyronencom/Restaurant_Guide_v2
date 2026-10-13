@@ -168,22 +168,6 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
       );
     }
 
-    // Delete old image if exists — only an asset on our cloud inside this card's
-    // folder, where uploadImage files promotion images; deleteImage refuses the
-    // rest (review 02.10.2026, N1).
-    if (promotion.image_url) {
-      try {
-        const oldPublicId = CloudinaryUtil.ownCloudPublicId(promotion.image_url);
-        if (oldPublicId) {
-          await CloudinaryUtil.deleteImage(oldPublicId, [
-            CloudinaryUtil.ownedFolders.establishment(promotion.establishment_id),
-          ]);
-        }
-      } catch (err) {
-        logger.warn('Failed to delete old promotion image', { error: err.message });
-      }
-    }
-
     const uploadResult = await CloudinaryUtil.uploadImage(
       file.path,
       promotion.establishment_id,
@@ -201,6 +185,26 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
     ...data,
     ...imageUrls,
   });
+
+  // The previous image goes LAST — after the new one is uploaded and its link
+  // written. A failure at either earlier step leaves the promotion with its
+  // previous picture (critics' pack 1, point 3 — Codex C-07; known as 23.09 #4b).
+  // Only an asset on our cloud inside this card's folder, where uploadImage
+  // files promotion images, is destroyed; deleteImage refuses the rest
+  // (review 02.10.2026, N1). A failure here is logged: the promotion already
+  // shows the new picture, and the old file is an orphan, not a loss.
+  if (file && promotion.image_url) {
+    try {
+      const oldPublicId = CloudinaryUtil.ownCloudPublicId(promotion.image_url);
+      if (oldPublicId) {
+        await CloudinaryUtil.deleteImage(oldPublicId, [
+          CloudinaryUtil.ownedFolders.establishment(promotion.establishment_id),
+        ]);
+      }
+    } catch (err) {
+      logger.warn('Failed to delete old promotion image', { error: err.message });
+    }
+  }
 
   logger.info('Promotion updated', {
     promotionId,

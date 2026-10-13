@@ -35,7 +35,10 @@ const CABINET_CODES = [
   'ESTABLISHMENT_NOT_DELETABLE',
   'INVALID_STATUS_FOR_SUBMISSION',
   'INCOMPLETE_ESTABLISHMENT',
+  // Not establishmentService's: thrown by the web layer itself (authedFetch,
+  // the media proxy) — they reach the same cabinet UI.
   'NO_SESSION',
+  'SESSION_REFRESH_UNAVAILABLE',
 ];
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';
