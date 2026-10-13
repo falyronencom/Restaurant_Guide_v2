@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -495,37 +498,177 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   final EstablishmentsService _establishmentsService = EstablishmentsService();
 
+  /// Карточка, которую этот мастер уже создал на сервере, — её id.
+  ///
+  /// Отправка новой карточки — два запроса: создать черновик и отправить его
+  /// на модерацию. Если второй не дошёл (нет связи, сбой сервера), карточка
+  /// уже лежит у партнёра черновиком. До 13.10.2026 повторное «Отправить на
+  /// верификацию» создавало её заново, и сервер отказывал по-английски:
+  /// заведение с таким названием у партнёра уже есть (409
+  /// DUPLICATE_ESTABLISHMENT). Теперь повтор продолжает с созданной карточки.
+  String? _createdId;
+
+  /// Данные мастера, какими они ушли на сервер последний раз (JSON). Если
+  /// партнёр между попытками что-то поменял, повтор сначала сохраняет правки
+  /// в созданную карточку и только потом отправляет её.
+  String? _sentData;
+
+  /// Прошлая попытка создать карточку кончилась без ответа сервера: связь
+  /// оборвалась, сервер не ответил или упал. Карточка при этом могла
+  /// создаться, но её id приложение не узнало — повтор упрётся в то же
+  /// название.
+  bool _createOutcomeUnknown = false;
+
+  bool _cardOnServer = false;
+
+  /// У партнёра на сервере уже есть карточка: этот мастер её создал, или
+  /// сервер отказал «заведение с таким названием у вас уже есть». Значит,
+  /// человек уже партнёр (роль сервер меняет при первой карточке), даже если
+  /// отправка на модерацию не прошла. Экран по этому признаку обновляет роль
+  /// и список заведений, чтобы черновик был виден в профиле.
+  bool get hasCardOnServer => _cardOnServer;
+
+  /// Хвост к причине отказа, когда карточка создана, но не отправлена
+  /// (решение Координатора 13.10.2026).
+  static const _savedAsDraftTail = 'Заведение сохранено как черновик — '
+      'нажмите «Отправить на верификацию» ещё раз.';
+
+  /// Повтор после потерянного ответа упёрся в то же название (решение
+  /// Координатора 13.10.2026). «Возможно» — потому что 409 бывает и у
+  /// настоящего тёзки: второе заведение сети с тем же названием.
+  static const _alreadyCreatedHint =
+      'Заведение с таким названием уже есть в вашем профиле — возможно, оно '
+      'создалось при прошлой попытке. Откройте его в профиле и нажмите '
+      '«Отправить на модерацию».';
+
   /// Submit registration to API
   /// Returns true on success, false on failure
   Future<bool> submit() async {
+    // Второе нажатие, пока первое в пути, создало бы вторую карточку: сервер
+    // сверяет названия без защиты от одновременных запросов.
+    if (_isSubmitting) return false;
+
     if (!_validateSummaryStep()) {
       _setError('Пожалуйста, заполните все обязательные поля');
       return false;
     }
+
+    final data = jsonEncode(_data.toJson());
 
     _isSubmitting = true;
     _clearError();
     notifyListeners();
 
     try {
-      // Call API to create establishment (status: draft)
-      final result = await _establishmentsService.createEstablishment(_data);
+      if (_createdId == null) {
+        // Call API to create establishment (status: draft)
+        final result = await _establishmentsService.createEstablishment(_data);
+        _createdId = result.id;
+        _sentData = data;
+        _cardOnServer = true;
+      } else if (data != _sentData) {
+        await _establishmentsService.updateEstablishment(
+          _createdId!,
+          _dataForCreatedCard(),
+        );
+        _sentData = data;
+      }
 
       // Auto-submit for moderation (draft → pending)
-      await _establishmentsService.submitForModeration(result.id);
+      await _sendCreatedCard();
 
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _setError(userMessageOf(
-        e,
-        fallback: 'Не удалось отправить на верификацию. Попробуйте ещё раз.',
-      ));
+      final reason =
+          userMessageOf(e, fallback: 'Не удалось отправить на верификацию.');
+      _setError(_createdId == null
+          ? _onCreateFailed(e)
+          // «Нажмите ещё раз» — только там, где повтор может помочь. Отказ
+          // правки (тёзка, точка вне города) повтор получит тот же: партнёру
+          // нужна причина, а не совет повторить.
+          : _retryMayHelp(e)
+              ? '$reason $_savedAsDraftTail'
+              : reason);
       _isSubmitting = false;
       notifyListeners();
       return false;
     }
+  }
+
+  /// Текст отказа создания; заодно запоминает, что о карточке теперь
+  /// известно.
+  String _onCreateFailed(Object error) {
+    final duplicate = _errorCodeOf(error) == 'DUPLICATE_ESTABLISHMENT';
+    if (duplicate) _cardOnServer = true;
+    final message = duplicate && _createOutcomeUnknown
+        ? _alreadyCreatedHint
+        : userMessageOf(
+            error,
+            fallback: 'Не удалось отправить на верификацию. Попробуйте ещё раз.',
+          );
+    // Отказ 4xx значит, что сервер разобрал запрос и карточку не создал. Всё
+    // прочее исхода не сообщает. Признак не сбрасывается: третья попытка
+    // упрётся в то же название, что и вторая.
+    if (!_isServerRefusal(error)) _createOutcomeUnknown = true;
+    return message;
+  }
+
+  /// Отправка созданной карточки на модерацию (черновик → на модерации).
+  ///
+  /// Отказ «статус уже не тот» значит, что карточка ушла раньше: прошлая
+  /// отправка дошла до сервера, а ответ потерялся. Цель достигнута — это
+  /// успех, а не ошибка.
+  Future<void> _sendCreatedCard() async {
+    try {
+      await _establishmentsService.submitForModeration(_createdId!);
+    } catch (e) {
+      if (_errorCodeOf(e) == 'INVALID_STATUS_FOR_SUBMISSION') return;
+      rethrow;
+    }
+  }
+
+  /// Данные мастера для правки уже созданной карточки (PUT).
+  ///
+  /// На сервере PDF-меню лежит в той же корзине «меню», что и фото меню, а
+  /// правка оставляет в корзине ровно те ссылки, что пришли в `menu_photos`:
+  /// без ссылок на PDF она бы их удалила. `menu_pdfs` — поле только
+  /// создания, правка его не читает. Поэтому PDF едут вместе с фото меню —
+  /// так же, как при правке из кабинета, куда сервер отдаёт PDF в
+  /// `menu_photos`.
+  PartnerRegistration _dataForCreatedCard() => _data.copyWith(
+        menuPhotos: [
+          ..._data.menuPhotos,
+          ..._data.menuPdfs.map((pdf) => pdf.url),
+        ],
+        menuPdfs: const [],
+      );
+
+  /// Код отказа из конверта ошибки бэкенда (`{error: {code}}`), если сервер
+  /// ответил.
+  static String? _errorCodeOf(Object error) {
+    if (error is! DioException) return null;
+    final body = error.response?.data;
+    if (body is! Map) return null;
+    final envelope = body['error'];
+    if (envelope is! Map) return null;
+    final code = envelope['code'];
+    return code is String ? code : null;
+  }
+
+  /// Сервер ответил отказом 4xx: запрос разобран и отклонён. Нет связи, нет
+  /// ответа, сбой 5xx исхода не сообщают — запрос мог успеть сделать своё.
+  static bool _isServerRefusal(Object error) {
+    final status = error is DioException ? error.response?.statusCode : null;
+    return status != null && status >= 400 && status < 500;
+  }
+
+  /// Повтор может помочь: ответа сервера нет (связь, таймаут), сбой 5xx или
+  /// лимит запросов (429). На прочий отказ 4xx повтор получит тот же отказ.
+  static bool _retryMayHelp(Object error) {
+    final status = error is DioException ? error.response?.statusCode : null;
+    return status == null || status >= 500 || status == 429;
   }
 
   // ============================================================================
@@ -572,6 +715,12 @@ class PartnerRegistrationProvider with ChangeNotifier {
   void reset() {
     _currentStep = 0;
     _data = const PartnerRegistration();
+    // Новая карточка — не продолжение прежней: иначе её отправка ушла бы в
+    // уже созданную.
+    _createdId = null;
+    _sentData = null;
+    _createOutcomeUnknown = false;
+    _cardOnServer = false;
     _isSubmitting = false;
     _clearError();
     notifyListeners();
