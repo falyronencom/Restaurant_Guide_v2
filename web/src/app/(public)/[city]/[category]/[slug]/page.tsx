@@ -167,9 +167,10 @@ export default async function EstablishmentPage({
   //    (public)/loading.tsx streams this page, so the status is already 200
   //    here (the reason notFound() answers 200 + noindex): Next sends the
   //    redirect as <meta http-equiv="refresh" content="0;url=…"> plus a
-  //    client-side replace — checked on `next start`, 13.10.2026. An instant
-  //    meta refresh reads as a permanent redirect to search engines, and the
-  //    response's canonical (generateMetadata) names the same address.
+  //    client-side replace — checked on `next start`, 13.10.2026. Google reads
+  //    an instant meta refresh as a permanent redirect, Yandex as a temporary
+  //    one (its webmaster help, «Meta tags»); the response's canonical
+  //    (generateMetadata) names the same address for both.
   //    The redirect is cached like the page (ISR, an hour) and nothing
   //    revalidates a card on edit: when a card's address changes (city, or
   //    its first category), the old and the new address can point at each
