@@ -4,6 +4,7 @@ import 'package:restaurant_guide_mobile/models/booking.dart';
 import 'package:restaurant_guide_mobile/models/booking_settings.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Provider for partner booking management.
 /// Handles listing, confirming, declining, and status updates.
@@ -91,8 +92,20 @@ class BookingProvider with ChangeNotifier {
     }
   }
 
-  /// Confirm a pending booking
-  Future<bool> confirmBooking(
+  /// Подтвердить новую бронь.
+  ///
+  /// `null` — сервер подтвердил, список перечитан. Иначе — текст для
+  /// партнёра: почему не вышло. Отказ по существу пишет сервер («Бронь уже
+  /// подтверждена. Обновите список броней.» — истёк срок ответа, гость
+  /// отменил, подтвердили со второго телефона); до сервера не дошло — своя
+  /// фраза транспорта («Нет связи…», «Сеанс истёк…»); у сбоя сервера готовой
+  /// фразы нет, и тогда — прежний текст провайдера.
+  ///
+  /// Текст отдаётся вызывающему, а не кладётся в [error]: [error] — это
+  /// ошибка загрузки списка, экран показывает её вместо списков, когда оба
+  /// пусты. До 13.10.2026 отказ действия уходил туда и не показывался никогда.
+  /// Список после отказа перечитывает экран — уже показав причину.
+  Future<String?> confirmBooking(
       String establishmentId, String bookingId) async {
     try {
       final response = await _apiClient.put(
@@ -101,20 +114,16 @@ class BookingProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         await loadPartnerBookings(establishmentId);
-        return true;
+        return null;
       }
-      _error = 'Не удалось подтвердить бронь';
-      notifyListeners();
-      return false;
+      return 'Не удалось подтвердить бронь';
     } catch (e) {
-      _error = 'Ошибка подтверждения';
-      notifyListeners();
-      return false;
+      return userMessageOf(e, fallback: 'Ошибка подтверждения');
     }
   }
 
-  /// Decline a pending booking
-  Future<bool> declineBooking(
+  /// Отклонить новую бронь. Что возвращает — как у [confirmBooking].
+  Future<String?> declineBooking(
       String establishmentId, String bookingId, String reason) async {
     try {
       final response = await _apiClient.put(
@@ -124,20 +133,16 @@ class BookingProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         await loadPartnerBookings(establishmentId);
-        return true;
+        return null;
       }
-      _error = 'Не удалось отклонить бронь';
-      notifyListeners();
-      return false;
+      return 'Не удалось отклонить бронь';
     } catch (e) {
-      _error = 'Ошибка отклонения';
-      notifyListeners();
-      return false;
+      return userMessageOf(e, fallback: 'Ошибка отклонения');
     }
   }
 
-  /// Mark as no-show
-  Future<bool> markNoShow(
+  /// Отметить, что гость не пришёл. Что возвращает — как у [confirmBooking].
+  Future<String?> markNoShow(
       String establishmentId, String bookingId) async {
     try {
       final response = await _apiClient.put(
@@ -146,13 +151,11 @@ class BookingProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         await loadPartnerBookings(establishmentId);
-        return true;
+        return null;
       }
-      return false;
+      return 'Ошибка отметки неявки';
     } catch (e) {
-      _error = 'Ошибка отметки неявки';
-      notifyListeners();
-      return false;
+      return userMessageOf(e, fallback: 'Ошибка отметки неявки');
     }
   }
 
