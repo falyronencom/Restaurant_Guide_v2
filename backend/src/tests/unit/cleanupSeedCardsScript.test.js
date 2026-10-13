@@ -14,7 +14,9 @@
  * сам скрипт отсюда не запускается. Запускается его побайтовая копия в
  * backend/tmp/ со своим .env.production рядом: адрес в нём ведёт на
  * подставной сервер теста, который считает подключения и сразу их рвёт.
- * Пакеты копия находит в backend/node_modules, выше по дереву.
+ * Пакеты копия находит в backend/node_modules, выше по дереву. Рядом с
+ * копией — scripts/lib/productionDb.js и закреплённый сертификат в её
+ * .env.production: к проду скрипт ходит только через них.
  */
 
 import { spawn } from 'child_process';
@@ -22,6 +24,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { createServer } from 'net';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { pinValue } from '../../../scripts/lib/productionDb.js';
+import { selfSignedCertificate } from '../utils/fakePostgresTls.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = resolve(HERE, '../../..');
@@ -42,12 +46,17 @@ beforeAll(async () => {
 
   mkdirSync(join(BACKEND, 'tmp'), { recursive: true });
   sandbox = mkdtempSync(join(BACKEND, 'tmp', 'cleanup-seed-cards-'));
-  mkdirSync(join(sandbox, 'scripts'));
+  mkdirSync(join(sandbox, 'scripts', 'lib'), { recursive: true });
   copy = join(sandbox, 'scripts', 'cleanup-seed-cards.js');
   copyFileSync(SCRIPT, copy);
+  copyFileSync(
+    join(BACKEND, 'scripts', 'lib', 'productionDb.js'),
+    join(sandbox, 'scripts', 'lib', 'productionDb.js'),
+  );
   writeFileSync(
     join(sandbox, '.env.production'),
-    `DATABASE_URL=postgresql://nobody:nothing@127.0.0.1:${port}/stub\n`,
+    `DATABASE_URL=postgresql://nobody:nothing@127.0.0.1:${port}/stub\n`
+      + `DATABASE_TLS_CERT=${pinValue(selfSignedCertificate().der)}\n`,
   );
 });
 
@@ -68,6 +77,7 @@ function run(args) {
   const env = { ...process.env };
   // dotenv не перезаписывает заданное окружение: адрес обязан прийти из файла.
   delete env.DATABASE_URL;
+  delete env.DATABASE_TLS_CERT;
   return new Promise((res, rej) => {
     const child = spawn(process.execPath, [copy, ...args], {
       env,
