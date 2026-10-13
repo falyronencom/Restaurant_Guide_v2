@@ -10,6 +10,7 @@ import {
 import { CatalogHero } from '@/components/catalog/CatalogHero';
 import { ResultsView } from '@/components/catalog/ResultsView';
 import { cityHeading } from '@/lib/catalog-labels';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import {
   acceptedSearchParams,
   asFloat,
@@ -62,6 +63,11 @@ export async function generateMetadata({
   let cityName = city;
   let live = true;
   try {
+    // The same check as the body: when it 404s, the tab says so too instead
+    // of «Заведения <slug>».
+    if (!(await validateCitySlug(city))) {
+      return { title: NOT_FOUND_TITLE.city };
+    }
     const meta = await getMetadata();
     cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
     live = await isLiveCity(city);

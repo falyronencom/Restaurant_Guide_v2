@@ -19,6 +19,7 @@ import {
   pluralizeReviews,
   ratingColorClass,
 } from '@/lib/establishment-helpers';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
@@ -79,10 +80,25 @@ export async function generateMetadata({
   let ogImageUrl: string | null = null;
 
   try {
+    // The page's own checks, in its order: an unknown city/category or a
+    // backend 404 render not-found.tsx, and the tab says the same.
+    const [cityValid, categoryValid] = await Promise.all([
+      validateCitySlug(city),
+      validateCategorySlug(category),
+    ]);
+    if (!cityValid || !categoryValid) {
+      return { title: NOT_FOUND_TITLE.establishment };
+    }
     const [detail, meta] = await Promise.all([
-      getCachedBySlug(slug),
+      // Only the card's own 404 is «не найдено» — the body maps exactly that
+      // one to notFound(); a 404 from anything else is an error there.
+      getCachedBySlug(slug).catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 404) return null;
+        throw err;
+      }),
       getMetadata(),
     ]);
+    if (!detail) return { title: NOT_FOUND_TITLE.establishment };
     const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
     const categoryName =
       meta.categories.find((c) => c.slug === category)?.name ?? category;
@@ -93,9 +109,8 @@ export async function generateMetadata({
       : `${detail.establishment.name} — ${lowerCategory} в городе ${cityName}. Меню, отзывы, контакты.`;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings + skip OG
-    // image override. Page render path will call notFound() cleanly if the
-    // slug truly doesn't exist.
+    // Backend hiccup — fall back to slug strings + skip OG image override;
+    // the page body surfaces the error boundary.
   }
 
   // openGraph.title does NOT inherit title.template (Discovery F5) — set

@@ -14,6 +14,7 @@ import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { ReviewCard } from '@/components/establishment/ReviewCard';
 import { ReviewSchema } from '@/components/establishment/ReviewSchema';
 import { parsePage } from '@/lib/catalog-params';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import {
   formatRating,
   pluralizeReviews,
@@ -65,10 +66,25 @@ export async function generateMetadata({
   let ogImageUrl: string | null = null;
 
   try {
+    // The page's own checks, in its order: an unknown city/category or a
+    // backend 404 render not-found.tsx, and the tab says the same.
+    const [cityValid, categoryValid] = await Promise.all([
+      validateCitySlug(city),
+      validateCategorySlug(category),
+    ]);
+    if (!cityValid || !categoryValid) {
+      return { title: NOT_FOUND_TITLE.establishment };
+    }
     const [detail, meta] = await Promise.all([
-      getCachedBySlug(slug),
+      // Only the card's own 404 is «не найдено» — the body maps exactly that
+      // one to notFound(); a 404 from anything else is an error there.
+      getCachedBySlug(slug).catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 404) return null;
+        throw err;
+      }),
       getMetadata(),
     ]);
+    if (!detail) return { title: NOT_FOUND_TITLE.establishment };
     const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
     const categoryName =
       meta.categories.find((c) => c.slug === category)?.name ?? category;
@@ -78,8 +94,8 @@ export async function generateMetadata({
     canonicalSlug = detail.establishment.slug;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings + skip OG image.
-    // The page render path calls notFound() cleanly if the slug truly is unknown.
+    // Backend hiccup — fall back to slug strings + skip OG image; the page
+    // body surfaces the error boundary.
   }
 
   // canonical → clean /reviews on ALL pages (no ?page) per CAT-C-2.3, anchored on
