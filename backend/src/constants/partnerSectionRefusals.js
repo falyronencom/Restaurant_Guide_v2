@@ -57,6 +57,25 @@ export const BOOKING_REFUSALS = Object.freeze({
 });
 
 /**
+ * The partner's promotions — /api/v1/partner/promotions…
+ * (services/promotionService.js, controllers/promotionController.js). The app
+ * shows the text from its next build (option Б), until then its own.
+ */
+export const PROMOTION_REFUSALS = Object.freeze({
+  establishmentNotOwned: ESTABLISHMENT_NOT_OWNED,
+  activeLimit: (max) =>
+    `Одновременно может действовать не больше ${max} акций. Удалите одну из текущих, чтобы добавить новую.`,
+  // Missing, or of another partner's establishment — one text for both.
+  promotionNotFound: 'Акция не найдена — возможно, её уже удалили. Обновите список акций.',
+  // The route's upload filter refuses the same types and sizes first; these
+  // two answer only if the filter and the service ever disagree.
+  invalidImageType: 'Этот формат не подходит: картинка акции — JPG, PNG, WebP или HEIC.',
+  imageTooLarge: 'Картинка больше 10 МБ. Выберите фото поменьше.',
+  establishmentRequired: 'Не выбрано заведение.',
+  titleRequired: 'Укажите название акции.',
+});
+
+/**
  * The wizard's photo and PDF upload — POST /api/v1/partner/media/upload
  * (routes/v1/tempMediaRoutes.js). The app shows the text after its own prefix
  * «Ошибка при загрузке фото:» until its next build.

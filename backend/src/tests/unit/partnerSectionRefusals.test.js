@@ -45,6 +45,7 @@ const BOOKING_STATUSES = ['pending', 'confirmed', 'declined', 'cancelled', 'expi
  */
 const CALLS = {
   'BOOKING_REFUSALS.statusChanged': [...BOOKING_STATUSES, 'some_future_status', 'constructor'].map((s) => [s]),
+  'PROMOTION_REFUSALS.activeLimit': [[3]],
 };
 
 /** Все тексты модуля: строки как есть, функции — с аргументами из CALLS. */
@@ -96,8 +97,9 @@ const notFrom = (group, values, { allowed = [], cyrillic = false } = {}) => {
 describe('Отказы партнёру вне карточки: тексты', () => {
   it('каждый текст — по-русски: есть кириллица, нет латиницы, кроме названий форматов', () => {
     const all = texts();
-    // Сторож перебора: тексты нашлись (8 загрузки + 3 брони + 9 вызовов статуса на 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(20);
+    // Сторож перебора: тексты нашлись (8 загрузки + 3 брони + 9 вызовов статуса
+    // + 6 акций + 1 вызов лимита на 13.10.2026).
+    expect(all.length).toBeGreaterThanOrEqual(27);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -177,5 +179,17 @@ describe('Отказы партнёру вне карточки: исходни�
     // Русских строк прямо в коде — не больше гостевых (13 в оформлении брони):
     // партнёрский отказ, вписанный строкой обратно, их число увеличит.
     expect(found.filter(cyrillicLiteral).length).toBeLessThanOrEqual(13);
+  });
+
+  it('акции (promotionService.js, promotionController.js): каждый отказ — из PROMOTION_REFUSALS', () => {
+    const service = appErrorTexts(source('services/promotionService.js'));
+    // Сторож разбора: отказы нашлись (11 на 13.10.2026).
+    expect(service.length).toBeGreaterThanOrEqual(11);
+    expect(notFrom('PROMOTION_REFUSALS', service)).toEqual([]);
+
+    const controller = messageTexts(source('controllers/promotionController.js'));
+    // Ответы с текстом нашлись (2 отказа на 13.10.2026).
+    expect(controller.length).toBeGreaterThanOrEqual(2);
+    expect(notFrom('PROMOTION_REFUSALS', controller)).toEqual([]);
   });
 });
