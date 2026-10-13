@@ -26,6 +26,7 @@ import {
   loginUser
 } from './helpers.js';
 import { query } from '../utils/database.js';
+import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
 
 describe('E2E Journey: Authentication Complete Flow', () => {
   const userData = {
@@ -108,12 +109,15 @@ describe('E2E Journey: Authentication Complete Flow', () => {
     });
 
     test('STEP 5: User refreshes access token', async () => {
-      // Access token expires, user refreshes using latest stored token
+      // Access token expires, user refreshes with the token the latest login
+      // handed out. The database holds only its hash
+      // (utils/refreshTokenStorage.js) — nothing there to refresh with.
+      const { refreshToken } = user;
       const latestTokenResult = await query(
         'SELECT token FROM refresh_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
         [user.user.id]
       );
-      const refreshToken = latestTokenResult.rows[0].token;
+      expect(latestTokenResult.rows[0].token).toBe(storedRefreshToken(refreshToken));
 
       const response = await request(app)
         .post('/api/v1/auth/refresh')
