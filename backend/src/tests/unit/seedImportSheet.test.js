@@ -104,6 +104,9 @@ describe('normalizeRow — rejections (single-gate fields)', () => {
     ['non-canon cuisine', { cuisines: 'european' }, /non-canon cuisines/],
     ['too many categories', { categories: 'Кафе|Бар|Клуб' }, /1-2 values/],
     ['bad phone', { phone: '80291234567' }, /phone.*\+375/],
+    // «8 029 …» after a formatter that prepends 375: same rule as the partner
+    // validator, so a seeded card never holds a number its partner cannot save.
+    ['phone with no Belarus code', { phone: '+375802912345' }, /phone.*\+375/],
     ['short description', { description: 'too short' }, /description .* < 120/],
     ['bad price', { price_range: '$$$$' }, /price_range/],
     ['bad hours format', { hours_mon: '9:00-18:00' }, /hours_mon.*HH:MM/],
