@@ -14,6 +14,34 @@ String getHumanErrorMessage(dynamic error) {
   return _fallbackMessage;
 }
 
+/// Текст отказа запроса для человека — или [fallback], если готового нет.
+///
+/// `ApiClient` пересобирает каждый отказ и кладёт в `DioException.error`
+/// готовую фразу для человека: текст сервера как есть («Одно из фото или
+/// файлов меню загружено не с этого аккаунта…»; по-русски пока не все —
+/// общие тексты бэкенда английские) или свою, русскую («Нет связи…»). Её и
+/// показывать: сервер знает про случай больше клиента. `toString()`
+/// исключения на экран не годится никогда — это текст для программиста:
+/// `DioException [bad response]: null`, перевод строки, `Error:` и лишь потом
+/// фраза. До 07.10.2026 партнёр читал его при каждой неудачной правке
+/// карточки.
+///
+/// Готовой фразы нет у сбоя сервера: исчерпав повторы 5xx, транспорт отдаёт
+/// наверх исходный отказ dio — `error` пуст, а в `toString()` четыре строки
+/// английского. Нет её и у исключений не из транспорта. Для них — [fallback];
+/// параметр обязательный, чтобы ни у одного вызова не было пути к
+/// `toString()`.
+///
+/// Не путать с [getHumanErrorMessage]: та переводит отказ по коду статуса
+/// фразами экрана входа (409 — «Аккаунт с таким email уже существует»), а
+/// текст сервера пропускает только для 400 и 422.
+String userMessageOf(Object error, {required String fallback}) {
+  if (error is DioException && error.error is String) {
+    return error.error as String;
+  }
+  return fallback;
+}
+
 String _mapDioError(DioException e) {
   // Network / connection errors
   if (e.type == DioExceptionType.connectionTimeout ||
