@@ -528,9 +528,8 @@ describe('authService', () => {
       expect(result.user).toBeDefined();
       expect(result.user.id).toBe(mockUser.id);
 
-      // Looked up by its hash. 'valid_refresh_token' does not have the shape
-      // of a token stored before hashing, so the hash is the only candidate.
-      expect(pool.query.mock.calls[0][1]).toEqual([[storedRefreshToken(refreshToken)]]);
+      // Looked up by its hash — the only thing the table holds for it
+      expect(pool.query.mock.calls[0][1]).toEqual([storedRefreshToken(refreshToken)]);
       // The successor comes from the token it replaces, never from random bytes
       expect(generateRefreshToken).not.toHaveBeenCalled();
       expect(deriveSuccessorRefreshToken).toHaveBeenCalledWith(refreshToken, expect.any(String));
@@ -1146,26 +1145,31 @@ describe('authService', () => {
           expectSessionsRevoked('user-123');
         });
 
-        test('a rotation made before hashing is replayed with the successor its row holds', async () => {
+        test('what the successor row holds is never handed out as its token', async () => {
           process.env[GRACE_ENV] = '60';
-          // The code before hashing rotated a moment before the deploy: both
-          // rows hold the tokens themselves, the successor a random one.
-          const oldPredecessor = 'b'.repeat(64);
-          const oldSuccessor = 'c'.repeat(64);
+          // A successor row holding a value in the shape of a token itself, as
+          // rows written before hashing did. It is not what a rotation of the
+          // replayed token derives, so the replay gets nothing — and no alarm.
+          const rawSuccessor = 'c'.repeat(64);
 
           pool.query
-            .mockResolvedValueOnce({ rows: [burnedRow({ token: oldPredecessor })], rowCount: 1 })
-            .mockResolvedValueOnce({ rows: [liveSuccessor({ token: oldSuccessor })], rowCount: 1 });
-          generateAccessToken.mockReturnValue('replayed_access_token');
+            .mockResolvedValueOnce({ rows: [burnedRow()], rowCount: 1 })
+            .mockResolvedValueOnce({ rows: [liveSuccessor({ token: rawSuccessor })], rowCount: 1 });
 
-          const result = await refreshAccessToken(oldPredecessor);
+          await expect(refreshAccessToken('burned_token')).rejects.toThrow('INVALID_REFRESH_TOKEN');
+          expect(getClient).not.toHaveBeenCalled();
+          expect(logger.error).not.toHaveBeenCalledWith(
+            expect.stringContaining('SECURITY ALERT'),
+            expect.anything()
+          );
+        });
 
-          expect(result.refreshToken).toBe(oldSuccessor);
-          // Found by the token itself as well as by its hash
-          expect(pool.query.mock.calls[0][1]).toEqual([
-            [storedRefreshToken(oldPredecessor), oldPredecessor],
-          ]);
-          expect(logger.error).not.toHaveBeenCalled();
+        test('a token in the shape of the rows written before hashing is looked up only by its hash', async () => {
+          const token = 'b'.repeat(64);
+          pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+          await expect(refreshAccessToken(token)).rejects.toThrow('INVALID_REFRESH_TOKEN');
+          expect(pool.query.mock.calls[0][1]).toEqual([storedRefreshToken(token)]);
         });
 
         test('a hash presented as a token is looked up only as a token\'s hash', async () => {
@@ -1174,7 +1178,7 @@ describe('authService', () => {
           pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
 
           await expect(refreshAccessToken(stored)).rejects.toThrow('INVALID_REFRESH_TOKEN');
-          expect(pool.query.mock.calls[0][1]).toEqual([[storedRefreshToken(stored)]]);
+          expect(pool.query.mock.calls[0][1]).toEqual([storedRefreshToken(stored)]);
         });
       });
     });
@@ -1191,7 +1195,7 @@ describe('authService', () => {
       // Found by its hash — the only thing the table holds for it
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE refresh_tokens SET used_at'),
-        [expect.any(Date), [storedRefreshToken('token_to_invalidate')]]
+        [expect.any(Date), storedRefreshToken('token_to_invalidate')]
       );
 
       expect(logger.info).toHaveBeenCalledWith(
@@ -1208,15 +1212,15 @@ describe('authService', () => {
       expect(result).toBe(false);
     });
 
-    test('a session opened before hashing is found by the token itself too', async () => {
-      pool.query.mockResolvedValue({ rows: [], rowCount: 1 });
+    test('a token in the shape of the rows written before hashing is looked up only by its hash', async () => {
+      pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
       const token = 'e'.repeat(64);
 
       await invalidateRefreshToken(token);
 
       expect(pool.query.mock.calls[0][1]).toEqual([
         expect.any(Date),
-        [storedRefreshToken(token), token],
+        storedRefreshToken(token),
       ]);
     });
   });
