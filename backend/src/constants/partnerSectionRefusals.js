@@ -1,6 +1,7 @@
 /**
  * The texts a partner reads when the server refuses an action outside the card
- * itself (the card's refusals live in establishmentRefusals.js).
+ * itself (the card's refusals: establishmentRefusals.js of the card pass —
+ * branch claude/nice-meitner-ae8d57 on 13.10.2026).
  *
  * Decision of the Coordinator, 13.10.2026 (option A): the server writes the
  * refusal in Russian and the error codes stay as they were — clients and tests

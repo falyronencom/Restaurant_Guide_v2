@@ -2,7 +2,9 @@
 /* eslint comma-dangle: 0 */
 /**
  * Сторож: отказы партнёру вне самой карточки — по-русски и из одного места
- * (решение Координатора 13.10.2026; карточку сторожит establishmentRefusals.test.js).
+ * (решение Координатора 13.10.2026; у отказов по карточке свой сторож —
+ * establishmentRefusals.test.js из прохода по карточке, ветка
+ * claude/nice-meitner-ae8d57 на 13.10.2026).
  *
  * Правило держат две проверки:
  *
@@ -63,10 +65,26 @@ const appErrorTexts = (code) =>
 /**
  * Значение каждого `message:` в ответе маршрута — до запятой, `}` или конца
  * строки. Строку или шаблон с запятой или `}` внутри это обрежет, но обрезанное
- * всё равно не член группы — нарушение не потеряется.
+ * всё равно не член группы. Чего этот разбор не видит — продолжения значения на
+ * следующей строке (`+ '…'`, `|| '…'`) и сокращённой записи `{ message }`, —
+ * то запрещает отдельная проверка ниже (unreadMessageShapes).
  */
 const messageTexts = (code) =>
   [...code.matchAll(/\bmessage:\s*([^,}\n\r]*)/g)].map((match) => match[1].trim());
+
+/**
+ * Формы `message`, которые messageTexts прочесть не может: сокращённая запись
+ * `{ message }` и значение, продолженное на следующей строке оператором.
+ */
+const unreadMessageShapes = (code) => {
+  const lines = code.split(/\r?\n/);
+  const shorthand = lines.filter((line) => /[{,]\s*message\s*[,}]/.test(line) || /^\s*message,?\s*$/.test(line));
+  const continued = lines
+    .map((line, i) => [line, lines[i + 1] ?? ''])
+    .filter(([line, next]) => /\bmessage:/.test(line) && /^\s*(\+|\|\||\?\?|\?|:)/.test(next))
+    .map(([line, next]) => `${line.trim()} ⏎ ${next.trim()}`);
+  return [...shorthand.map((line) => line.trim()), ...continued];
+};
 
 /**
  * Текст из списка — это ровно член группы или вызов члена: `GROUP.x`,
@@ -151,8 +169,28 @@ describe('Отказы партнёру вне карточки: исходни�
     expect(notFrom('UPLOAD_REFUSALS', appErrorTexts(sample), { cyrillic: true })).toEqual(["'Failed'"]);
   });
 
-  it('загрузка в мастере (tempMediaRoutes.js): каждый отказ — из UPLOAD_REFUSALS', () => {
+  it('якорь: формы message, которые разбор не читает, видны отдельной проверке', () => {
+    const sample = [
+      '  return res.status(400).json({ success: false, message });',
+      '  return res.status(400).json({',
+      '    message: UPLOAD_REFUSALS.fileRequired',
+      "      + ' (English tail)',",
+      '  });',
+      '  return res.status(422).json({ message: UPLOAD_REFUSALS.fileRequired });',
+    ].join('\n');
+    // Разбор значений такие формы пропускает — потому и нужна эта проверка.
+    expect(notFrom('UPLOAD_REFUSALS', messageTexts(sample))).toEqual([]);
+    expect(unreadMessageShapes(sample)).toEqual([
+      'return res.status(400).json({ success: false, message });',
+      "message: UPLOAD_REFUSALS.fileRequired ⏎ + ' (English tail)',",
+    ]);
+  });
+
+  // Проверка поля type (express-validator, ответ «Validation failed» с полями)
+  // этим разбором не видна и в проход не входила: приложение поле шлёт всегда.
+  it('загрузка в мастере (tempMediaRoutes.js): ответы отказа маршрута и AppError — из UPLOAD_REFUSALS', () => {
     const code = source('routes/v1/tempMediaRoutes.js');
+    expect(unreadMessageShapes(code)).toEqual([]);
     const messages = messageTexts(code);
     // Сторож разбора: ответы с текстом нашлись (10 на 13.10.2026).
     expect(messages.length).toBeGreaterThanOrEqual(10);
@@ -187,6 +225,7 @@ describe('Отказы партнёру вне карточки: исходни�
     expect(service.length).toBeGreaterThanOrEqual(11);
     expect(notFrom('PROMOTION_REFUSALS', service)).toEqual([]);
 
+    expect(unreadMessageShapes(source('controllers/promotionController.js'))).toEqual([]);
     const controller = messageTexts(source('controllers/promotionController.js'));
     // Ответы с текстом нашлись (2 отказа на 13.10.2026).
     expect(controller.length).toBeGreaterThanOrEqual(2);
