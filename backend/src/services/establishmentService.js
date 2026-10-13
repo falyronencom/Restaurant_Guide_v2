@@ -27,6 +27,7 @@ import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MEDIA_LIMITS } from './mediaService.js';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import {
   extractPublicIdFromUrl,
   fileExtension,
@@ -48,11 +49,7 @@ import {
  * .ai reported as application/pdf — MARKS, 2026-07-20) renders as a broken
  * image in every consumer.
  */
-function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = false, bucket }) {
-  const accepted = [
-    ...(allowImage ? ['JPEG, PNG, WebP, HEIC'] : []),
-    ...(allowPdf ? ['PDF'] : []),
-  ].join(', ');
+function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = false }) {
   for (const url of urls) {
     // Canonical image delivery URLs from generateAllResolutions carry NO
     // extension (cloudinary.url() without `format`) — that shape is
@@ -63,22 +60,10 @@ function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = fal
     const valid = (allowImage && (fileExtension(url) === '' || hasValidImageExtension(url)))
       || (allowPdf && hasValidPdfExtension(url));
     if (!valid) {
-      throw new AppError(
-        `Invalid ${bucket} file format. Accepted formats: ${accepted}`,
-        422,
-        'INVALID_FILE_TYPE',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.invalidFileType, 422, 'INVALID_FILE_TYPE');
     }
   }
 }
-
-/**
- * The text the partner reads when a media link is not one of their own uploads
- * (mobile shows the server's message as is). Decision of the Coordinator,
- * 06.10.2026: such a save is refused, not trimmed silently.
- */
-const MEDIA_URL_NOT_OWNED_MESSAGE =
-  'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.';
 
 /**
  * Why `link` may not be attached by a caller owning `folders`, or null when it
@@ -102,7 +87,8 @@ const mediaLinkRefusal = (link, folders) => {
  * outside the given folders is someone else's file or another host. Attached to
  * a card it would show in the catalog: an edit of an active card goes live
  * without moderation. The log names the bucket and the reason, never the link —
- * it is client-supplied text.
+ * it is client-supplied text. Decision of the Coordinator, 06.10.2026: such a
+ * save is refused, not trimmed silently.
  *
  * @param {Object<string, Array>} linksByBucket - Links keyed by the bucket named in the log
  * @param {string[]} folders - The caller's own folders, built with ownedFolders
@@ -118,7 +104,7 @@ function assertOwnMediaUrls(linksByBucket, folders, logContext) {
         bucket,
         reason,
       });
-      throw new AppError(MEDIA_URL_NOT_OWNED_MESSAGE, 422, 'MEDIA_URL_NOT_OWNED');
+      throw new AppError(ESTABLISHMENT_REFUSALS.mediaNotOwned, 422, 'MEDIA_URL_NOT_OWNED');
     }
   }
 }
@@ -194,6 +180,11 @@ export const CITY_BOUNDS = {
 
 /**
  * Validate that coordinates are within the selected city bounds
+ *
+ * `message` names the box in numbers — it is read by the moderator fixing a
+ * point (adminService). A partner is refused with
+ * ESTABLISHMENT_REFUSALS.coordinatesOutsideCity instead.
+ *
  * @param {string} city - City name
  * @param {number} latitude - Latitude coordinate
  * @param {number} longitude - Longitude coordinate
@@ -223,8 +214,32 @@ export function validateCityCoordinates(city, latitude, longitude) {
 }
 
 /**
+ * The refusal of a point outside the chosen city's box. The partner reads the
+ * plain text; the numbers — the point and the box — go to the log, where
+ * support finds them when the partner writes in (the text invites that).
+ */
+function cityMismatchRefusal(cityValidation, logContext) {
+  logger.warn('Point outside the city box refused', { ...logContext, detail: cityValidation.message });
+  return new AppError(ESTABLISHMENT_REFUSALS.coordinatesOutsideCity, 422, 'COORDINATES_CITY_MISMATCH');
+}
+
+/** One city whatever the spelling: the CHECK accepts both Могилев and Могилёв. */
+const sameCity = (a, b) => String(a).replace(/ё/g, 'е') === String(b).replace(/ё/g, 'е');
+
+/**
+ * Whether an incoming coordinate differs from the stored one. Absent means
+ * unchanged. The stored value comes from a numeric column as a string, the
+ * incoming one as a number (the app sends back what GET gave it) or a string,
+ * so they are compared as numbers. The incoming value is read whole (Number,
+ * not parseFloat): "54.2abc" is not the stored 54.2 — anything that is not
+ * exactly the stored number counts as a change and meets the checks as before.
+ */
+const coordinateChanged = (incoming, stored) =>
+  incoming !== undefined && Number(incoming) !== parseFloat(stored);
+
+/**
  * Create a new establishment
- * 
+ *
  * This is the core business operation that implements the complete establishment
  * creation workflow with all necessary validations.
  * 
@@ -272,74 +287,42 @@ export const createEstablishment = async (partnerId, establishmentData) => {
   try {
     // Validate city
     if (!VALID_CITIES.includes(city)) {
-      throw new AppError(
-        `Invalid city. Must be one of: ${VALID_CITIES.join(', ')}`,
-        422,
-        'INVALID_CITY',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.invalidCity, 422, 'INVALID_CITY');
     }
 
     // Validate categories array
     if (!Array.isArray(categories) || categories.length < 1 || categories.length > 2) {
-      throw new AppError(
-        'Categories must be an array with 1-2 items',
-        422,
-        'INVALID_CATEGORIES_LENGTH',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.categoriesCount, 422, 'INVALID_CATEGORIES_LENGTH');
     }
 
     const invalidCategories = categories.filter(cat => !VALID_CATEGORIES.includes(cat));
     if (invalidCategories.length > 0) {
-      throw new AppError(
-        `Invalid categories: ${invalidCategories.join(', ')}. Valid categories: ${VALID_CATEGORIES.join(', ')}`,
-        422,
-        'INVALID_CATEGORY_VALUE',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.unknownCategory, 422, 'INVALID_CATEGORY_VALUE');
     }
 
     // Validate cuisines array
     if (!Array.isArray(cuisines) || cuisines.length < 1 || cuisines.length > 3) {
-      throw new AppError(
-        'Cuisines must be an array with 1-3 items',
-        422,
-        'INVALID_CUISINES_LENGTH',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.cuisinesCount, 422, 'INVALID_CUISINES_LENGTH');
     }
 
     const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
     if (invalidCuisines.length > 0) {
-      throw new AppError(
-        `Invalid cuisines: ${invalidCuisines.join(', ')}. Valid cuisines: ${VALID_CUISINES.join(', ')}`,
-        422,
-        'INVALID_CUISINE_VALUE',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.unknownCuisine, 422, 'INVALID_CUISINE_VALUE');
     }
 
     // Validate geographic coordinates are within Belarus bounds
     if (latitude < BELARUS_BOUNDS.LAT_MIN || latitude > BELARUS_BOUNDS.LAT_MAX) {
-      throw new AppError(
-        `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
-        422,
-        'INVALID_LATITUDE',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.coordinatesOutsideBelarus, 422, 'INVALID_LATITUDE');
     }
 
     if (longitude < BELARUS_BOUNDS.LON_MIN || longitude > BELARUS_BOUNDS.LON_MAX) {
-      throw new AppError(
-        `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
-        422,
-        'INVALID_LONGITUDE',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.coordinatesOutsideBelarus, 422, 'INVALID_LONGITUDE');
     }
 
     // Validate coordinates match the selected city
     const cityValidation = validateCityCoordinates(city, latitude, longitude);
     if (!cityValidation.valid) {
-      throw new AppError(
-        cityValidation.message,
-        422,
-        'COORDINATES_CITY_MISMATCH',
-      );
+      throw cityMismatchRefusal(cityValidation, { partnerId });
     }
 
     // Enforce photo bucket limits at materialization — the wizard path carries
@@ -347,7 +330,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     // mediaService, so the count must be validated here.
     if (Array.isArray(interior_photos) && interior_photos.length > MEDIA_LIMITS.interior) {
       throw new AppError(
-        `Upload limit reached for interior photos. Maximum ${MEDIA_LIMITS.interior} interior photos per establishment.`,
+        ESTABLISHMENT_REFUSALS.photoLimit('interior', MEDIA_LIMITS.interior),
         403,
         'MEDIA_LIMIT_EXCEEDED',
       );
@@ -355,7 +338,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
 
     if (Array.isArray(menu_photos) && menu_photos.length > MEDIA_LIMITS.menu) {
       throw new AppError(
-        `Upload limit reached for menu photos. Maximum ${MEDIA_LIMITS.menu} menu photos per establishment.`,
+        ESTABLISHMENT_REFUSALS.photoLimit('menu', MEDIA_LIMITS.menu),
         403,
         'MEDIA_LIMIT_EXCEEDED',
       );
@@ -365,11 +348,11 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     // Create materializes menu_photos as file_type='image' and menu_pdfs as
     // file_type='pdf' unconditionally, so each bucket accepts only the formats
     // its materialization can render.
-    assertValidMediaUrlExtensions(interior_photos || [], { bucket: 'interior photo' });
-    assertValidMediaUrlExtensions(menu_photos || [], { bucket: 'menu photo' });
+    assertValidMediaUrlExtensions(interior_photos || [], {});
+    assertValidMediaUrlExtensions(menu_photos || [], {});
     assertValidMediaUrlExtensions(
       (Array.isArray(menu_pdfs) ? menu_pdfs : []).map((pdf) => pdf?.url ?? ''),
-      { allowImage: false, allowPdf: true, bucket: 'menu PDF' },
+      { allowImage: false, allowPdf: true },
     );
 
     // Ownership gate, before the INSERT too, over every link create stores —
@@ -387,11 +370,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
     if (isDuplicate) {
-      throw new AppError(
-        'You already have an establishment with this name',
-        409,
-        'DUPLICATE_ESTABLISHMENT',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.duplicateName, 409, 'DUPLICATE_ESTABLISHMENT');
     }
 
     // Generate unique slug from name (auto-suffix on collision)
@@ -593,26 +572,14 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     if (error.code === '23505') {
       // Unique constraint violation — disambiguate by constraint name
       if (error.constraint === 'establishments_slug_unique') {
-        throw new AppError(
-          'Slug collision could not be resolved',
-          409,
-          'SLUG_COLLISION',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.slugCollision, 409, 'SLUG_COLLISION');
       }
-      throw new AppError(
-        'An establishment with this information already exists',
-        409,
-        'DUPLICATE_ESTABLISHMENT',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.duplicateName, 409, 'DUPLICATE_ESTABLISHMENT');
     }
 
     if (error.code === '23514') {
       // Check constraint violation (enum values, etc.)
-      throw new AppError(
-        'Establishment data violates database constraints',
-        422,
-        'CONSTRAINT_VIOLATION',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.constraintViolation, 422, 'CONSTRAINT_VIOLATION');
     }
 
     // Log unexpected errors
@@ -622,11 +589,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       partnerId,
     });
 
-    throw new AppError(
-      'Failed to create establishment',
-      500,
-      'ESTABLISHMENT_CREATE_FAILED',
-    );
+    throw new AppError(ESTABLISHMENT_REFUSALS.createFailed, 500, 'ESTABLISHMENT_CREATE_FAILED');
   }
 };
 
@@ -709,11 +672,7 @@ export const getPartnerEstablishments = async (partnerId, filters = {}) => {
       partnerId,
     });
 
-    throw new AppError(
-      'Failed to fetch establishments',
-      500,
-      'ESTABLISHMENTS_FETCH_FAILED',
-    );
+    throw new AppError(ESTABLISHMENT_REFUSALS.listFailed, 500, 'ESTABLISHMENTS_FETCH_FAILED');
   }
 };
 
@@ -733,22 +692,14 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     // Check ownership first
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
-      throw new AppError(
-        'Establishment not found or access denied',
-        404,
-        'ESTABLISHMENT_NOT_FOUND',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
     }
 
     // Fetch establishment
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
 
     if (!establishment) {
-      throw new AppError(
-        'Establishment not found',
-        404,
-        'ESTABLISHMENT_NOT_FOUND',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
     }
 
     // Fetch media, partner documents, and rating distribution in parallel
@@ -801,11 +752,7 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
       partnerId,
     });
 
-    throw new AppError(
-      'Failed to fetch establishment',
-      500,
-      'ESTABLISHMENT_FETCH_FAILED',
-    );
+    throw new AppError(ESTABLISHMENT_REFUSALS.fetchFailed, 500, 'ESTABLISHMENT_FETCH_FAILED');
   }
 };
 
@@ -828,11 +775,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Check ownership
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
-      throw new AppError(
-        'Access denied. You can only update your own establishments.',
-        403,
-        'FORBIDDEN',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
     }
 
     // Fetch current establishment to check status and for comparison
@@ -842,11 +785,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     );
 
     if (!currentEstablishment) {
-      throw new AppError(
-        'Establishment not found',
-        404,
-        'ESTABLISHMENT_NOT_FOUND',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
     }
 
     // Self-suspended establishments cannot be edited (partner should resume first)
@@ -857,11 +796,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         : (currentEstablishment.moderation_notes || {});
 
       if (!notes.suspend_reason) {
-        throw new AppError(
-          'Cannot update self-suspended establishment. Resume it first.',
-          403,
-          'ESTABLISHMENT_SUSPENDED',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.selfPausedEdit, 403, 'ESTABLISHMENT_SUSPENDED');
       }
       // Admin-suspended with suspend_reason: allow editing (fall through)
     }
@@ -869,56 +804,45 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Validate updates if provided
     if (updates.categories !== undefined) {
       if (!Array.isArray(updates.categories) || updates.categories.length < 1 || updates.categories.length > 2) {
-        throw new AppError(
-          'Categories must be an array with 1-2 items',
-          422,
-          'INVALID_CATEGORIES_LENGTH',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.categoriesCount, 422, 'INVALID_CATEGORIES_LENGTH');
       }
 
       const invalidCategories = updates.categories.filter(cat => !VALID_CATEGORIES.includes(cat));
       if (invalidCategories.length > 0) {
-        throw new AppError(
-          `Invalid categories: ${invalidCategories.join(', ')}`,
-          422,
-          'INVALID_CATEGORY_VALUE',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.unknownCategory, 422, 'INVALID_CATEGORY_VALUE');
       }
     }
 
     if (updates.cuisines !== undefined) {
       if (!Array.isArray(updates.cuisines) || updates.cuisines.length < 1 || updates.cuisines.length > 3) {
-        throw new AppError(
-          'Cuisines must be an array with 1-3 items',
-          422,
-          'INVALID_CUISINES_LENGTH',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.cuisinesCount, 422, 'INVALID_CUISINES_LENGTH');
       }
 
       const invalidCuisines = updates.cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
-        throw new AppError(
-          `Invalid cuisines: ${invalidCuisines.join(', ')}`,
-          422,
-          'INVALID_CUISINE_VALUE',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.unknownCuisine, 422, 'INVALID_CUISINE_VALUE');
       }
     }
 
     // Validate city if being updated
     if (updates.city !== undefined && !VALID_CITIES.includes(updates.city)) {
-      throw new AppError(
-        `Invalid city. Must be one of: ${VALID_CITIES.join(', ')}`,
-        422,
-        'INVALID_CITY',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.invalidCity, 422, 'INVALID_CITY');
     }
 
-    // Validate coordinates match city when either coordinates or city are updated
-    const hasCoordinateUpdate = updates.latitude !== undefined || updates.longitude !== undefined;
-    const hasCityUpdate = updates.city !== undefined;
+    // Validate the point against Belarus and the city's box only when the
+    // city or the point actually changes. The app's edit wizard re-sends the
+    // stored city and point with every save (it serializes the whole card), so
+    // checking values that did not change refused every edit — a photo, the
+    // description — of a card whose point lies outside its city's box, a point
+    // accepted earlier (seed import, a moderator's fix). Decision of the
+    // Coordinator, 13.10.2026. A changed city is checked against the stored
+    // point, and a changed point against the stored city, as before.
+    const cityChanged = updates.city !== undefined
+      && !sameCity(updates.city, currentEstablishment.city);
+    const pointChanged = coordinateChanged(updates.latitude, currentEstablishment.latitude)
+      || coordinateChanged(updates.longitude, currentEstablishment.longitude);
 
-    if (hasCoordinateUpdate || hasCityUpdate) {
+    if (cityChanged || pointChanged) {
       // Use updated values or fall back to current values
       const effectiveCity = updates.city ?? currentEstablishment.city;
       const effectiveLat = updates.latitude !== undefined
@@ -931,32 +855,20 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       // Validate Belarus bounds for coordinates
       if (updates.latitude !== undefined) {
         if (effectiveLat < BELARUS_BOUNDS.LAT_MIN || effectiveLat > BELARUS_BOUNDS.LAT_MAX) {
-          throw new AppError(
-            `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
-            422,
-            'INVALID_LATITUDE',
-          );
+          throw new AppError(ESTABLISHMENT_REFUSALS.coordinatesOutsideBelarus, 422, 'INVALID_LATITUDE');
         }
       }
 
       if (updates.longitude !== undefined) {
         if (effectiveLon < BELARUS_BOUNDS.LON_MIN || effectiveLon > BELARUS_BOUNDS.LON_MAX) {
-          throw new AppError(
-            `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
-            422,
-            'INVALID_LONGITUDE',
-          );
+          throw new AppError(ESTABLISHMENT_REFUSALS.coordinatesOutsideBelarus, 422, 'INVALID_LONGITUDE');
         }
       }
 
       // Validate coordinates match city
       const cityValidation = validateCityCoordinates(effectiveCity, effectiveLat, effectiveLon);
       if (!cityValidation.valid) {
-        throw new AppError(
-          cityValidation.message,
-          422,
-          'COORDINATES_CITY_MISMATCH',
-        );
+        throw cityMismatchRefusal(cityValidation, { partnerId, establishmentId });
       }
     }
 
@@ -968,11 +880,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         establishmentId,
       );
       if (isDuplicate) {
-        throw new AppError(
-          'You already have an establishment with this name',
-          409,
-          'DUPLICATE_ESTABLISHMENT',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.duplicateName, 409, 'DUPLICATE_ESTABLISHMENT');
       }
     }
 
@@ -1055,7 +963,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         const incoming = updates[field];
         if (Array.isArray(incoming) && incoming.length > MEDIA_LIMITS[bucket]) {
           throw new AppError(
-            `Upload limit reached for ${bucket} photos. Maximum ${MEDIA_LIMITS[bucket]} ${bucket} photos per establishment.`,
+            ESTABLISHMENT_REFUSALS.photoLimit(bucket, MEDIA_LIMITS[bucket]),
             403,
             'MEDIA_LIMIT_EXCEEDED',
           );
@@ -1079,10 +987,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           .filter(m => m.type === type)
           .map(m => m.url);
         const addedUrls = (updates[field] || []).filter(url => !existingUrlsOfType.includes(url));
-        assertValidMediaUrlExtensions(addedUrls, {
-          allowPdf: type === 'menu',
-          bucket: type === 'menu' ? 'menu' : 'interior photo',
-        });
+        assertValidMediaUrlExtensions(addedUrls, { allowPdf: type === 'menu' });
         assertOwnMediaUrls({ [type]: addedUrls }, ownFolders, { partnerId, establishmentId });
       }
 
@@ -1252,25 +1157,13 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     // Handle database-specific errors
     if (error.code === '23505') {
       if (error.constraint === 'establishments_slug_unique') {
-        throw new AppError(
-          'Slug collision could not be resolved on update',
-          409,
-          'SLUG_COLLISION',
-        );
+        throw new AppError(ESTABLISHMENT_REFUSALS.slugCollision, 409, 'SLUG_COLLISION');
       }
-      throw new AppError(
-        'An establishment with this information already exists',
-        409,
-        'DUPLICATE_ESTABLISHMENT',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.duplicateName, 409, 'DUPLICATE_ESTABLISHMENT');
     }
 
     if (error.code === '23514') {
-      throw new AppError(
-        'Establishment data violates database constraints',
-        422,
-        'CONSTRAINT_VIOLATION',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.constraintViolation, 422, 'CONSTRAINT_VIOLATION');
     }
 
     logger.error('Unexpected error updating establishment', {
@@ -1280,11 +1173,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       partnerId,
     });
 
-    throw new AppError(
-      'Failed to update establishment',
-      500,
-      'ESTABLISHMENT_UPDATE_FAILED',
-    );
+    throw new AppError(ESTABLISHMENT_REFUSALS.updateFailed, 500, 'ESTABLISHMENT_UPDATE_FAILED');
   }
 };
 
@@ -1310,31 +1199,19 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
     // Check ownership
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
-      throw new AppError(
-        'Access denied. You can only update your own establishments.',
-        403,
-        'FORBIDDEN',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
     }
 
     // Fetch establishment to validate status
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
 
     if (!establishment) {
-      throw new AppError(
-        'Establishment not found',
-        404,
-        'ESTABLISHMENT_NOT_FOUND',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
     }
 
     // Must be in 'draft', 'rejected', or 'suspended' (admin-suspended) status to submit
     if (!['draft', 'rejected', 'suspended'].includes(establishment.status)) {
-      throw new AppError(
-        `Cannot submit establishment with status '${establishment.status}'. Only draft, rejected, or suspended establishments can be submitted.`,
-        400,
-        'INVALID_STATUS_FOR_SUBMISSION',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.alreadySubmitted, 400, 'INVALID_STATUS_FOR_SUBMISSION');
     }
 
     // Validate all required fields are complete
@@ -1349,11 +1226,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
     if (!establishment.working_hours) missingFields.push('working_hours');
 
     if (missingFields.length > 0) {
-      throw new AppError(
-        `Missing required fields: ${missingFields.join(', ')}`,
-        400,
-        'INCOMPLETE_ESTABLISHMENT',
-      );
+      throw new AppError(ESTABLISHMENT_REFUSALS.incomplete(missingFields), 400, 'INCOMPLETE_ESTABLISHMENT');
     }
 
     // TODO: Validate media requirements (Phase Two)
@@ -1384,11 +1257,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       partnerId,
     });
 
-    throw new AppError(
-      'Failed to submit establishment for moderation',
-      500,
-      'ESTABLISHMENT_SUBMIT_FAILED',
-    );
+    throw new AppError(ESTABLISHMENT_REFUSALS.submitFailed, 500, 'ESTABLISHMENT_SUBMIT_FAILED');
   }
 };
 
@@ -1405,7 +1274,7 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
 export const suspendEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
+    throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
   }
 
   const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
@@ -1418,7 +1287,7 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
   });
 
   if (!result) {
-    throw new AppError('Cannot suspend. Establishment must be in active status.', 400, 'INVALID_STATUS_TRANSITION');
+    throw new AppError(ESTABLISHMENT_REFUSALS.pauseNotPublished, 400, 'INVALID_STATUS_TRANSITION');
   }
 
   logger.info('Establishment suspended by partner', { establishmentId, partnerId });
@@ -1437,24 +1306,20 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
 export const resumeEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError('Access denied. You can only manage your own establishments.', 403, 'FORBIDDEN');
+    throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
   }
 
   // Check if suspended by admin (has suspend_reason) — partner cannot self-resume
   const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
   if (!establishment || establishment.status !== 'suspended') {
-    throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
+    throw new AppError(ESTABLISHMENT_REFUSALS.resumeNotPaused, 400, 'INVALID_STATUS_TRANSITION');
   }
 
   const notes = typeof establishment.moderation_notes === 'string'
     ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return {}; } })()
     : (establishment.moderation_notes || {});
 
-  const adminSuspended = () => new AppError(
-    'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
-    403,
-    'ADMIN_SUSPENDED',
-  );
+  const adminSuspended = () => new AppError(ESTABLISHMENT_REFUSALS.moderatorSuspended, 403, 'ADMIN_SUSPENDED');
 
   if (notes.suspend_reason) {
     throw adminSuspended();
@@ -1475,7 +1340,7 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
     if (now && isModeratorSuspension(now.status, parseModerationNotes(now.moderation_notes))) {
       throw adminSuspended();
     }
-    throw new AppError('Cannot resume. Establishment must be in suspended status.', 400, 'INVALID_STATUS_TRANSITION');
+    throw new AppError(ESTABLISHMENT_REFUSALS.resumeNotPaused, 400, 'INVALID_STATUS_TRANSITION');
   }
 
   logger.info('Establishment resumed by partner (self-suspend)', { establishmentId, partnerId });
@@ -1483,16 +1348,9 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
 };
 
 /**
- * Refusal to delete a card that is not a draft or a rejected one, or that has
- * been public — the text the partner reads (mobile shows the server's message
- * as is). Decision of the Coordinator, 01.10.2026.
- */
-export const NOT_DELETABLE_MESSAGE =
-  'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.';
-
-/**
  * Delete a partner's establishment permanently — a draft or a rejected card
- * that has never been public only.
+ * that has never been public only (decision of the Coordinator, 01.10.2026;
+ * the refusal text is ESTABLISHMENT_REFUSALS.notDeletable).
  *
  * The rule lives in the DELETE itself (EstablishmentModel.deleteEstablishment);
  * the second read below only picks the answer when nothing was deleted: the
@@ -1502,7 +1360,7 @@ export const NOT_DELETABLE_MESSAGE =
 export const deleteEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError('Access denied. You can only delete your own establishments.', 403, 'FORBIDDEN');
+    throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
   }
 
   const result = await EstablishmentModel.deleteEstablishment(establishmentId, partnerId);
@@ -1510,9 +1368,9 @@ export const deleteEstablishment = async (establishmentId, partnerId) => {
   if (!result) {
     const stillThere = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (stillThere) {
-      throw new AppError(NOT_DELETABLE_MESSAGE, 403, 'ESTABLISHMENT_NOT_DELETABLE');
+      throw new AppError(ESTABLISHMENT_REFUSALS.notDeletable, 403, 'ESTABLISHMENT_NOT_DELETABLE');
     }
-    throw new AppError('Establishment not found.', 404, 'ESTABLISHMENT_NOT_FOUND');
+    throw new AppError(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
   }
 
   logger.info('Establishment deleted by partner', { establishmentId, partnerId, name: result.name });
