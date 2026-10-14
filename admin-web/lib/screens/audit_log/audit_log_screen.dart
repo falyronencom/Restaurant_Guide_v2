@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
+import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
@@ -612,7 +613,9 @@ class _AdminCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = entry.adminName ?? entry.adminEmail;
+    // Просмотрщику сервер не называет людей — остаётся роль исполнителя.
+    final name =
+        entry.adminName ?? entry.adminEmail ?? actorRoleLabel(entry.actorRole);
     // Свои действия помечены брендовым кружком, чужие — серым. Журнал ведут
     // несколько человек, и первый вопрос к незнакомой записи — «это не я ли».
     final currentEmail =
