@@ -157,7 +157,8 @@ export function generateTestAccessToken(user) {
  *
  * Stored the way production stores it — as the token's hash
  * (utils/refreshTokenStorage.js). `{ asBeforeHashing: true }` writes the token
- * itself instead, the way rows written before hashing hold it.
+ * itself instead, the way rows written before hashing held it — such a row
+ * opens no session; the tests of migration 036 are what still need one.
  *
  * @param {string} userId - User ID
  * @param {string} refreshToken - Refresh token
