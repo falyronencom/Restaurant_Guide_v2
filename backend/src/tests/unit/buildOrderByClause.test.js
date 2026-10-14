@@ -148,9 +148,9 @@ describe('buildOrderByClause', () => {
       expect(result).toContain("WHEN '$$' THEN 2");
       expect(result).toContain("WHEN '$$$' THEN 3");
       expect(result).toContain("WHEN '$$$$' THEN 4");
-      // A number is last in one direction only: the former ELSE 5 put
+      // Any placeholder is last in one direction only: the former ELSE 5 put
       // establishments without a price FIRST under price_desc (5 > 4).
-      expect(result).not.toMatch(/ELSE\s+\d/);
+      expect(result).not.toMatch(/ELSE\s+(?!NULL\b)/);
     });
   });
 
