@@ -18,6 +18,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
+import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 import { testUsers } from '../fixtures/users.js';
 
 let partnerId;
@@ -446,7 +447,159 @@ describe('Search System - Validation', () => {
 describe('Search System - Intelligent Ranking', () => {
   test.todo('should rank by combined distance + rating + review_count');
   test.todo('should prioritize establishments with boost_score');
-  test.todo('should handle establishments with no reviews (NULL rating)');
+});
+
+describe('Search System - сортировка по рейтингу: заведение, у которого сняли последний отзыв, не встаёт первым', () => {
+  // Пересчёт после снятия отзыва писал average_rating = AVG(...) по видимым
+  // отзывам; когда их не осталось, AVG по пустому набору — NULL. Взвешенный
+  // рейтинг с NULL тоже NULL, а при DESC Postgres ставит NULL ПЕРВЫМ — карточка
+  // вставала в начало выдачи «по рейтингу» (на сайте — первой в «Популярном» на
+  // главной). Снять последний отзыв может автор, скрыть или удалить — модератор.
+  //
+  // Порядок строят buildOrderByClause (поиск приложения тремя путями, умный
+  // поиск, каталог и карта сайта без рамки) и свой ORDER BY у searchByBounds
+  // (карта приложения, карта сайта с рамкой) — поэтому все двери.
+  //
+  // Все карточки в одной точке и в одном ярусе цены: расстояние и цена у всех
+  // равны, и порядок решает взвешенный рейтинг — в любой сортировке.
+  // Взвешенный: Любимая 4,54 > Хорошая 3,97 > «с одним отзывом 5» 3,75 >
+  // без отзывов 3,5 > Слабая 2,83. Две карточки без отзывов делят 3,5 и идут
+  // по имени: «Без отзывов» раньше «Отзыв сняли».
+  const TARGET = 'Отзыв сняли';
+  const CARDS = [
+    // [имя, average_rating, review_count]
+    ['Любимая', 4.8, 20],
+    ['Хорошая', 4.2, 10],
+    [TARGET, 0, 0],
+    ['Без отзывов', 0, 0],
+    ['Слабая', 2.5, 10],
+  ];
+  const AFTER_REMOVAL = [
+    ['Любимая', 4.8, 20],
+    ['Хорошая', 4.2, 10],
+    ['Без отзывов', 0, 0],
+    [TARGET, 0, 0],
+    ['Слабая', 2.5, 10],
+  ];
+  const REVIEW_TEXT = 'Отзыв для проверки сортировки: длиннее двадцати символов.';
+
+  let targetId;
+  let reviewerToken;
+  let adminToken;
+
+  beforeEach(async () => {
+    for (const [name, rating, reviews] of CARDS) {
+      const inserted = await query(`
+        INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, average_rating, review_count, status, working_hours, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Тестовое место', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', $3, $4, 'active', $5::jsonb, NOW(), NOW())
+        RETURNING id
+      `, [partnerId, name, rating, reviews, defaultWorkingHours]);
+      if (name === TARGET) targetId = inserted.rows[0].id;
+    }
+    // Верхний beforeEach чистит users — автор и модератор каждый раз новые.
+    reviewerToken = (await createUserAndGetTokens(testUsers.regularUser)).accessToken;
+    adminToken = (await createAdminAndGetToken()).accessToken;
+  });
+
+  /**
+   * Выдача «по рейтингу» через все двери: [имя, average_rating, review_count].
+   * Карты сортировки не принимают — у них порядок всегда «по рейтингу», и он
+   * решает, кто попадёт под предел числа маркеров.
+   */
+  async function rowsOnEveryDoor(sortBy) {
+    const rows = (response) => {
+      expect(response.status).toBe(200);
+      return response.body.data.establishments
+        .map((e) => [e.name, e.average_rating, e.review_count]);
+    };
+    const bounds = { neLat: 53.95, neLon: 27.6, swLat: 53.85, swLon: 27.4 };
+    const doors = {
+      byRadius: rows(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ latitude: 53.9, longitude: 27.5, radius: 10, sort_by: sortBy })),
+      byRadiusInCity: rows(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ latitude: 53.9, longitude: 27.5, city: 'Минск', sort_by: sortBy })),
+      byCity: rows(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ city: 'Минск', sort_by: sortBy })),
+      publicCatalog: rows(await request(app)
+        .get('/api/v1/public/establishments')
+        .query({ city: 'minsk', sort_by: sortBy })),
+      // OpenRouter в тестах выключен — запасной путь по фразе, та же сортировка.
+      smart: rows(await request(app)
+        .post('/api/v1/search/smart')
+        .send({ query: 'место', city: 'Минск', sort_by: sortBy })),
+      smartNearby: rows(await request(app)
+        .post('/api/v1/search/smart')
+        .send({ query: 'место', latitude: 53.9, longitude: 27.5, sort_by: sortBy })),
+    };
+    if (sortBy === 'rating') {
+      doors.appMap = rows(await request(app).get('/api/v1/search/map').query(bounds));
+      doors.siteMap = rows(await request(app).get('/api/v1/public/establishments/map').query(bounds));
+      doors.siteMapByCity = rows(await request(app)
+        .get('/api/v1/public/establishments/map')
+        .query({ city: 'minsk' }));
+    }
+    return doors;
+  }
+
+  const onEveryDoor = (doors, expected) => Object.fromEntries(
+    Object.keys(doors).map((door) => [door, expected]),
+  );
+
+  const REMOVALS = [
+    ['автор удалил отзыв', (reviewId) => request(app)
+      .delete(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${reviewerToken}`)],
+    ['модератор скрыл отзыв', (reviewId) => request(app)
+      .post(`/api/v1/admin/reviews/${reviewId}/visibility`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_visible: false })],
+    ['модератор удалил отзыв', (reviewId) => request(app)
+      .post(`/api/v1/admin/reviews/${reviewId}/delete`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'проверка сортировки' })],
+  ];
+
+  test.each(REMOVALS)('%s — карточка встаёт к заведениям без отзывов, а не первой', async (_label, removeReview) => {
+    const created = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${reviewerToken}`)
+      .send({ establishmentId: targetId, rating: 5, content: REVIEW_TEXT });
+    expect(created.status).toBe(201);
+
+    // Отзыв лёг настоящим путём: пересчёт поднял карточку на третье место.
+    const withReview = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ city: 'minsk', sort_by: 'rating' });
+    expect(withReview.body.data.establishments.map((e) => [e.name, e.average_rating, e.review_count]))
+      .toEqual([['Любимая', 4.8, 20], ['Хорошая', 4.2, 10], [TARGET, 5, 1], ['Без отзывов', 0, 0], ['Слабая', 2.5, 10]]);
+
+    const removed = await removeReview(created.body.data.review.id);
+    expect(removed.status).toBe(200);
+
+    // Не первой, а там же, где заведение без отзывов, — и с тем же рейтингом 0:
+    // «отзывы сняли» и «отзывов не было» для гостя одно и то же.
+    const doors = await rowsOnEveryDoor('rating');
+    expect(doors).toEqual(onEveryDoor(doors, AFTER_REMOVAL));
+  });
+
+  test('строка с пустым рейтингом (так её оставлял прежний пересчёт) не первая ни в одной сортировке', async () => {
+    // Пересчёт отзывов NULL больше не пишет, но строка с NULL могла остаться от
+    // прежнего: у скрытой или снятой с публикации карточки её не видно через
+    // публичный API, а после возврата в выдачу она встала бы первой. Сортировка
+    // считает пустой рейтинг априорной оценкой — как у заведения без отзывов.
+    await query('UPDATE establishments SET average_rating = NULL, review_count = 0 WHERE id = $1', [targetId]);
+    const expected = AFTER_REMOVAL.map((row) => (row[0] === TARGET ? [TARGET, null, 0] : row));
+
+    // Цена и расстояние у всех равны: и в «по цене», и в «по расстоянию»
+    // порядок решает тот же взвешенный рейтинг в тай-брейкере.
+    for (const sortBy of ['rating', 'price_asc', 'price_desc', 'distance']) {
+      const doors = await rowsOnEveryDoor(sortBy);
+      expect({ sortBy, doors }).toEqual({ sortBy, doors: onEveryDoor(doors, expected) });
+    }
+  });
 });
 
 // TODO: Requires seeding 1000+ test establishments and EXPLAIN ANALYZE queries — deferred to performance phase
