@@ -258,6 +258,74 @@ describe('CityPage — a value the backend would reject is dropped, not a crash'
   });
 });
 
+// 12.10: /minsk?page=100000000000000000000, /minsk?priceRange=%00 and
+// /minsk?search=%00 took the page to the error screen.
+describe('CityPage — a huge page number or a control character is not a crash', () => {
+  const NUL = String.fromCharCode(0);
+  // The catalog answers as the backend does, measured on a local stand (12.10):
+  // NUL in a text value is a 500 (the database cannot hold it in text); an
+  // OFFSET, (page − 1) × 20, past the database's bigint is a 500 or a 400.
+  beforeEach(() => {
+    (getCatalog as jest.Mock).mockImplementation(async (p: CatalogParams) => {
+      if ([...(p.priceRange ?? []), p.search ?? ''].some((t) => t.includes(NUL))) {
+        throw new ApiError(500, 'invalid byte sequence for encoding "UTF8": 0x00', '22021');
+      }
+      if (((p.page ?? 1) - 1) * 20 > 2 ** 63) {
+        throw new ApiError(500, 'value is out of range for type bigint', '22003');
+      }
+      return EMPTY_CATALOG;
+    });
+  });
+
+  it('a page number past any listing: the page does not throw and fetches page 1', async () => {
+    await expect(
+      CityPage({ params: P(), searchParams: SP({ page: '100000000000000000000' }) }),
+    ).resolves.toBeTruthy();
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].page).toBe(1);
+  });
+
+  it('NUL as a price: fetched without it, and the params handed on carry none', async () => {
+    const ui = await CityPage({
+      params: P(),
+      searchParams: SP({ priceRange: NUL, view: 'map' }),
+    });
+
+    expect((getCatalog as jest.Mock).mock.calls[0][0].priceRange).toBeUndefined();
+    expect(findElement(ui, ResultsView)?.props.searchParams).toEqual({ view: 'map' });
+  });
+
+  it('NUL as the phrase: no phrase is left, the catalog answers', async () => {
+    await expect(
+      CityPage({ params: P(), searchParams: SP({ search: NUL }) }),
+    ).resolves.toBeTruthy();
+
+    expect(smartSearch).not.toHaveBeenCalled();
+    expect((getCatalog as jest.Mock).mock.calls[0][0].search).toBeUndefined();
+  });
+
+  it('NUL inside a phrase: when the smart endpoint fails, the fallback searches the same words', async () => {
+    // The fallback logs a warning (lib/smart-search logFallback) — kept quiet.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (smartSearch as jest.Mock).mockRejectedValueOnce(
+      new ApiError(429, 'Rate limit exceeded'),
+    );
+
+    try {
+      await expect(
+        CityPage({ params: P(), searchParams: SP({ search: `терраса${NUL}` }) }),
+      ).resolves.toBeTruthy();
+
+      expect(smartSearch).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'терраса' }),
+      );
+      expect((getCatalog as jest.Mock).mock.calls[0][0].search).toBe('терраса');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('CityPage generateMetadata — filter-aware noindex + canonical', () => {
   it('noindex+follow with clean /[city] canonical when a facet is active', async () => {
     const meta = await generateMetadata({

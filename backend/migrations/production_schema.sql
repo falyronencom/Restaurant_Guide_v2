@@ -1,19 +1,20 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Covers migrations 001-029 + 031 + 032. Regenerated 2026-09-02 (artefact
--- audit, slice B) against PostgreSQL 16.4 / PostGIS.
+-- Covers migrations 001-029 + 031-035. Regenerated 2026-09-02 (artefact
+-- audit, slice B) against PostgreSQL 16.4 / PostGIS; 033-035 spliced in
+-- 2026-10-12 (see the note after the migration list).
 --
 -- *** 030 IS DELIBERATELY ABSENT. DO NOT "COMPLETE" THIS FILE BY ADDING IT. ***
 -- The canon CHECK on establishments.categories / .cuisines (030, CAT-C-2.9) is
 -- dormant in production: it is applied only AFTER the placeholder-seed wipe at
 -- real-500 import-prep, because placeholder rows carry English tokens that the
 -- constraint rejects (23514). This snapshot's job is to mirror what production
--- actually runs — not the migration catalogue. Production = 001-029 + 031 + 032.
+-- actually runs — not the migration catalogue. Production = 001-029 + 031-035.
 --
 -- Baking 030 in also breaks the CI gate, and that is not hypothetical: it was
 -- tried on 2026-09-02 and run 33666684491 went red. `.github/workflows/ci.yml`
--- builds the test database FROM THIS FILE, then applies 031 and 032 on top;
+-- builds the test database FROM THIS FILE, then applies 031-035 on top;
 -- `src/tests/integration/admin-quality-health.test.js` must INSERT off-canon
 -- rows to prove the quality checker detects them, and the constraint makes that
 -- impossible — the whole suite dies at fixture setup with
@@ -62,6 +63,25 @@
 --                                            idempotency / resume sidecar)
 --                                        032 password_reset_tokens (SHA-256
 --                                            hash-at-rest, Email-Channel Slice 1)
+--                                        033 menu_push_enabled on
+--                                            notification_preferences
+--                                        034 viewer role (users_role_check)
+--                                        035 users.sessions_revoked_at
+--                                            (tokens issued before it refused)
+--
+-- Note on 033-035 (2026-10-12): applied to production by hand (033/034 on
+-- 2026-09-08, 035 on 2026-10-12, each after its code deployed) and spliced
+-- into this body as exactly the three objects they change, in the text
+-- pg_dump 16.4 prints for them. A full re-dump was NOT taken: a database
+-- restored from this file re-dumps seed_import_registry's two CHECKs in a
+-- different (equivalent) text than production printed them. Verified: a
+-- re-dump of this file equals a re-dump of the previous file + 033-035,
+-- users_role_check aside — it re-dumps in that same alternate text (a
+-- viewer row is accepted, an unknown role refused); the CI sequence (this
+-- file, then 031-035) replays clean, and the canon CHECK of 030 is absent,
+-- so off-canon rows still insert. The divergences from production recorded on
+-- 2026-10-02 (indexes of 006/013/014/017, extra extensions, PostGIS
+-- version) are untouched by this splice.
 --
 -- Note on migration 027: applied as three artifacts on the source DB
 -- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
@@ -396,7 +416,8 @@ CREATE TABLE public.notification_preferences (
     reviews_push_enabled boolean DEFAULT true,
     promotions_push_enabled boolean DEFAULT true,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    menu_push_enabled boolean DEFAULT true
 );
 
 
@@ -595,8 +616,9 @@ CREATE TABLE public.users (
     last_login_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    sessions_revoked_at timestamp with time zone,
     CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY (ARRAY[('email'::character varying)::text, ('phone'::character varying)::text, ('google'::character varying)::text, ('yandex'::character varying)::text]))),
-    CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY[('user'::character varying)::text, ('partner'::character varying)::text, ('admin'::character varying)::text])))
+    CONSTRAINT users_role_check CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'partner'::character varying, 'admin'::character varying, 'viewer'::character varying])::text[])))
 );
 
 

@@ -9,7 +9,13 @@
 
 import argon2 from 'argon2';
 import pkg from 'pg';
+import { ProductionClient } from './lib/productionDb.js';
+
 const { Pool } = pkg;
+
+// A host other than localhost is production: only the server whose
+// certificate is pinned (scripts/lib/productionDb.js).
+const remote = Boolean(process.env.DB_HOST) && process.env.DB_HOST !== 'localhost';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -17,9 +23,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'restaurant_guide_belarus',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_HOST && process.env.DB_HOST !== 'localhost'
-    ? { rejectUnauthorized: false }
-    : false,
+  ...(remote ? { Client: ProductionClient } : { ssl: false }),
 });
 
 const ARGON2_OPTIONS = {

@@ -1,54 +1,50 @@
-version: '3.8'
+# Локальные PostgreSQL + PostGIS и Redis — те же образы и учётные данные,
+# что в CI (.github/workflows/ci.yml) и в README («Локальный запуск»).
+# Замена двум `docker run` из README: имена контейнеров те же (rg-pg,
+# rg-redis), поэтому остальные команды README работают без правок.
+#
+#   docker compose up -d --wait   # поднять и дождаться готовности
+#   docker compose down           # остановить; данные базы сохраняются
+#   docker compose down -v        # остановить и стереть данные базы
+#
+# Схему контейнер сам не разворачивает: снимок production_schema.sql и
+# миграции поверх него применяются командами из README, как в CI.
+
+name: nirivio-local
 
 services:
-  # PostgreSQL Database with PostGIS extension
   postgres:
-    image: postgis/postgis:15-3.4
-    container_name: rgb_postgres
-    restart: unless-stopped
+    # Расширения postgis, pg_trgm и pgcrypto обязательны — обычный
+    # postgres:16 не подойдёт.
+    image: postgis/postgis:16-3.4
+    container_name: rg-pg
     environment:
-      POSTGRES_DB: restaurant_guide_belarus
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_dev_password
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: restaurant_guide_test
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./docs/02_architecture:/docker-entrypoint-initdb.d:ro
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      # -h 127.0.0.1: при первом старте образ поднимает временный сервер
+      # только на сокете, создаёт базу и перезапускается. Проверка через
+      # сокет сочла бы базу готовой до перезапуска.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 3s
       timeout: 5s
-      retries: 5
-    networks:
-      - rgb_network
+      retries: 40
 
-  # Redis Cache and Session Store
   redis:
     image: redis:7-alpine
-    container_name: rgb_redis
-    restart: unless-stopped
+    container_name: rg-redis
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 3s
       timeout: 3s
-      retries: 5
-    networks:
-      - rgb_network
+      retries: 10
 
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  rgb_network:
-    driver: bridge
-
-
+  pg_data:
