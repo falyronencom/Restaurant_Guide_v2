@@ -12,7 +12,9 @@
  *   - Reads host/DB for display, hides password
  *   - Prints first 40 lines of SQL for eyeball review
  *   - Requires typing "yes" to confirm (skip with --yes for CI)
- *   - SSL enforced (Railway requirement)
+ *   - TLS to the pinned certificate only (scripts/lib/productionDb.js):
+ *     pin once with scripts/pin-production-db-cert.js; checked before the
+ *     confirmation is asked, verified again in the TLS handshake
  *
  * Usage:
  *   node scripts/apply-migration-production.js <migration-name>
@@ -24,10 +26,8 @@ import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve, basename } from 'path';
 import { createInterface } from 'readline';
-import pg from 'pg';
 import dotenv from 'dotenv';
-
-const { Client } = pg;
+import { ProductionClient, readPinnedCertificate } from './lib/productionDb.js';
 
 // Resolve project paths relative to this script
 const __filename = fileURLToPath(import.meta.url);
@@ -53,6 +53,16 @@ dotenv.config({ path: envPath });
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
   console.error('❌ DATABASE_URL is not set in backend/.env.production');
+  process.exit(1);
+}
+
+// Without a pinned certificate there is nothing to connect to; say so before
+// the operator reads the SQL and types "yes".
+let pinnedCertificate;
+try {
+  pinnedCertificate = readPinnedCertificate();
+} catch (error) {
+  console.error(`❌ ${error.message}`);
   process.exit(1);
 }
 
@@ -102,6 +112,7 @@ console.log('  PRODUCTION MIGRATION — review before confirming');
 console.log('════════════════════════════════════════════════════════');
 console.log(`  Host:     ${hostDisplay}`);
 console.log(`  User:     ${userDisplay}`);
+console.log(`  TLS:      pinned certificate ${pinnedCertificate.fingerprint256.slice(0, 23)}…`);
 console.log(`  File:     ${basename(migrationFile)}`);
 console.log(`  Lines:    ${sqlLines.length}`);
 console.log('════════════════════════════════════════════════════════');
@@ -138,10 +149,8 @@ async function run() {
     process.exit(0);
   }
 
-  const client = new Client({
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // Railway requires SSL
-  });
+  // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+  const client = new ProductionClient({ connectionString: DATABASE_URL });
 
   try {
     await client.connect();

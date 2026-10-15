@@ -4,8 +4,8 @@
  * the real seed fill-up (done 18.07.2026).
  *
  * Targets — by OWNER, not by is_seed: the accounts listed in --emails=. There
- * is deliberately NO built-in list: the house account
- * seed.data.generator@restaurantguide.by now owns the real catalogue, and a
+ * is deliberately NO built-in list: the seed house (lib/seedHouse.js) now
+ * owns the real catalogue, and a
  * default target would offer to delete it. Without --emails= the script stops
  * before reading .env.production or touching the database.
  *
@@ -20,18 +20,17 @@
  *   - Deletes inside a TRANSACTION; FKs cascade to media/reviews/favorites.
  *
  * Usage:
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com --report-only  # inspect, change nothing
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com                # backup + confirm + delete
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com --yes          # skip the prompt
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --report-only  # inspect, change nothing
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com                # backup + confirm + delete
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --yes          # skip the prompt
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
 import { createInterface } from 'readline';
-import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
 const envPath = join(backendRoot, '.env.production');
@@ -74,7 +73,8 @@ function confirm(msg) {
   }));
 }
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function main() {
   await client.connect();

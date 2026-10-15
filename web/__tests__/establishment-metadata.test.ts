@@ -42,6 +42,10 @@ const META = {
 const detail = (slug: string) => ({
   establishment: {
     slug,
+    // The card's own address (establishmentAddress) — explicit, so the live
+    // title does not lean on the fallback city/category.
+    city_slug: 'minsk',
+    category_slug: 'restaurants',
     name: 'Летняя терраса',
     description: null,
     primary_image_url: null,

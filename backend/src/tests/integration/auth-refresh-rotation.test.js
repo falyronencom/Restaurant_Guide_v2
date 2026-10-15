@@ -24,6 +24,7 @@ import app from '../../server.js';
 import { refreshAccessToken } from '../../services/authService.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
+import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
 import { testUsers } from '../fixtures/users.js';
 
 const GRACE_ENV = 'REFRESH_REUSE_GRACE_SECONDS';
@@ -59,8 +60,10 @@ describe('POST /api/v1/auth/refresh — rotation chain', () => {
     const response = await refresh(refreshToken).expect(200);
 
     const { rows } = await tokenRows(user.id);
-    const burned = rows.find((row) => row.token === refreshToken);
-    const successor = rows.find((row) => row.token === response.body.data.refreshToken);
+    const burned = rows.find((row) => row.token === storedRefreshToken(refreshToken));
+    const successor = rows.find(
+      (row) => row.token === storedRefreshToken(response.body.data.refreshToken),
+    );
 
     expect(rows).toHaveLength(2);
     expect(burned.used_at).not.toBeNull();
@@ -101,7 +104,7 @@ describe('POST /api/v1/auth/refresh — reuse grace window', () => {
     // written in local time and the comparison would drift by the offset.
     await query(
       "UPDATE refresh_tokens SET used_at = NOW() - interval '31 seconds' WHERE token = $1",
-      [refreshToken],
+      [storedRefreshToken(refreshToken)],
     );
 
     const response = await refresh(refreshToken).expect(403);
@@ -142,7 +145,7 @@ describe('POST /api/v1/auth/refresh — reuse grace window', () => {
     // leave the window.
     await query(
       "UPDATE refresh_tokens SET used_at = NOW() + interval '3 hours' WHERE token = $1",
-      [refreshToken],
+      [storedRefreshToken(refreshToken)],
     );
 
     const response = await refresh(refreshToken).expect(403);
@@ -180,7 +183,7 @@ describe('POST /api/v1/auth/refresh — reuse grace window', () => {
     const { rows: strangerRows } = await tokenRows(stranger.user.id);
     await query('UPDATE refresh_tokens SET replaced_by = $1 WHERE token = $2', [
       strangerRows[0].id,
-      victim.refreshToken,
+      storedRefreshToken(victim.refreshToken),
     ]);
 
     const response = await refresh(victim.refreshToken).expect(403);
@@ -226,7 +229,7 @@ describe('POST /api/v1/auth/refresh — concurrent rotation', () => {
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.used_at === null)).toHaveLength(1);
     expect(rows.find((row) => row.used_at === null).token).toBe(
-      first.body.data.refreshToken,
+      storedRefreshToken(first.body.data.refreshToken),
     );
   });
 
@@ -251,6 +254,8 @@ describe('POST /api/v1/auth/refresh — concurrent rotation', () => {
     const { rows } = await tokenRows(user.id);
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.used_at === null)).toHaveLength(1);
-    expect(rows.find((row) => row.used_at === null).token).toBe(results[0].refreshToken);
+    expect(rows.find((row) => row.used_at === null).token).toBe(
+      storedRefreshToken(results[0].refreshToken),
+    );
   });
 });
