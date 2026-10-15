@@ -476,7 +476,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     } else {
       scaffoldMessenger.showSnackBar(
         SnackBar(
-          content: Text(provider.error ?? 'Ошибка отправки'),
+          content: Text(provider.actionError ??
+              'Не удалось отправить на модерацию. Попробуйте ещё раз.'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red,
         ),
@@ -717,9 +718,12 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     );
 
     if (result != null && mounted) {
+      const failureMessage =
+          'Не удалось сохранить время работы. Попробуйте ещё раз.';
       final success = await dashboardProvider.updateEstablishment(
         establishment.id,
         {'working_hours': result.toJson()},
+        failureMessage: failureMessage,
       );
 
       if (mounted) {
@@ -734,7 +738,7 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         } else {
           scaffoldMessenger.showSnackBar(
             SnackBar(
-              content: Text(dashboardProvider.error ?? 'Ошибка сохранения'),
+              content: Text(dashboardProvider.actionError ?? failureMessage),
               behavior: SnackBarBehavior.floating,
               backgroundColor: Colors.red,
             ),
@@ -933,7 +937,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               } else {
                 messenger.showSnackBar(
                   SnackBar(
-                    content: Text(provider.error ?? 'Ошибка приостановки'),
+                    content: Text(provider.actionError ??
+                        'Не удалось приостановить заведение. Попробуйте ещё раз.'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -968,7 +973,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     } else {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(provider.error ?? 'Ошибка возобновления'),
+          content: Text(provider.actionError ??
+              'Не удалось отправить заявку на возобновление. Попробуйте ещё раз.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1020,7 +1026,8 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
               } else {
                 messenger.showSnackBar(
                   SnackBar(
-                    content: Text(provider.error ?? 'Ошибка удаления'),
+                    content: Text(provider.actionError ??
+                        'Не удалось удалить заведение. Попробуйте ещё раз.'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );

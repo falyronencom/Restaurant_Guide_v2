@@ -8,14 +8,22 @@
  * What it cannot arrange is the database failing in the middle of the check:
  * that must be a 503 the clients retry, never a 401 — on a 401 every client
  * refreshes, and a refresh that also fails signs the user out.
+ *
+ * issuedBeforeRevocation is mocked too: here it is the middleware's use of the
+ * verdict that is checked — what it is asked and what it does with the
+ * answer. The rule itself, boundary included, is accountStatus.test.js and
+ * session-revocation.test.js.
  */
 
 import { jest } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 
 const getAccountStatus = jest.fn();
+const issuedBeforeRevocation = jest.fn();
 
 jest.unstable_mockModule('../../services/accountStatus.js', () => ({
   getAccountStatus,
+  issuedBeforeRevocation,
   invalidateAccountStatus: jest.fn(),
 }));
 
@@ -78,5 +86,45 @@ describe('authenticate — the account behind the token', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(getAccountStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('authenticate — a token issued before the account sessions were revoked', () => {
+  const REVOKED_AT = new Date('2026-10-12T09:00:00.000Z');
+
+  test('is refused with 401 TOKEN_REVOKED, the rule asked about this token and this stamp', async () => {
+    getAccountStatus.mockResolvedValue({ isActive: true, role: 'user', sessionsRevokedAt: REVOKED_AT });
+    issuedBeforeRevocation.mockReturnValue(true);
+    const authorization = tokenFor('user');
+    const { iatMs } = jwt.decode(authorization.slice('Bearer '.length));
+
+    const { req, res, next } = await callAuthenticate(authorization);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.user).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json.mock.calls[0][0].error.code).toBe('TOKEN_REVOKED');
+    // The issue time in milliseconds, not the whole-second iat.
+    expect(Number.isSafeInteger(iatMs)).toBe(true);
+    expect(issuedBeforeRevocation).toHaveBeenCalledWith(iatMs, REVOKED_AT);
+  });
+
+  test('is let through when the rule says it was issued after', async () => {
+    getAccountStatus.mockResolvedValue({ isActive: true, role: 'partner', sessionsRevokedAt: REVOKED_AT });
+    issuedBeforeRevocation.mockReturnValue(false);
+
+    const { req, next } = await callAuthenticate(tokenFor('user'));
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user.role).toBe('partner');
+  });
+
+  test('a switched-off account is answered ACCOUNT_INACTIVE whatever its tokens', async () => {
+    getAccountStatus.mockResolvedValue({ isActive: false, role: 'user', sessionsRevokedAt: REVOKED_AT });
+    issuedBeforeRevocation.mockReturnValue(true);
+
+    const { res } = await callAuthenticate(tokenFor('user'));
+
+    expect(res.json.mock.calls[0][0].error.code).toBe('ACCOUNT_INACTIVE');
   });
 });

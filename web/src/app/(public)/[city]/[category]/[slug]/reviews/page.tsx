@@ -13,6 +13,7 @@ import {
 import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { ReviewCard } from '@/components/establishment/ReviewCard';
 import { ReviewSchema } from '@/components/establishment/ReviewSchema';
+import { parsePage } from '@/lib/catalog-params';
 import {
   formatRating,
   pluralizeReviews,
@@ -234,13 +235,4 @@ export default async function ReviewsPage({
       />
     </main>
   );
-}
-
-// ----- helpers -------------------------------------------------------------
-
-function parsePage(raw: unknown): number {
-  if (typeof raw !== 'string') return 1;
-  const n = parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 1) return 1;
-  return n;
 }

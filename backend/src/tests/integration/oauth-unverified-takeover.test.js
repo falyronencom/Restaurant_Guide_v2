@@ -15,7 +15,8 @@
  * Правило теперь: если e-mail записи подтверждён — привязка как прежде, ничего
  * не гаснет; если не подтверждён — вход через провайдера есть доказательство
  * владения адресом, и запись переходит к вошедшему: пароль снимается, все
- * выданные refresh-токены сгорают, имя/аватар/телефон регистранта уступают
+ * выданные refresh-токены сгорают, выданные регистранту access-токены
+ * отвергаются со следующего запроса (миграция 035), имя/аватар/телефон регистранта уступают
  * данным провайдера, активные карточки записи приостанавливаются с отметкой
  * модератора и причиной — до решения модератора.
  *
@@ -86,13 +87,18 @@ const refreshWith = (refreshToken) => request(app)
   .post('/api/v1/auth/refresh')
   .send({ refreshToken });
 
+/** Запрос с access-токеном, доступный любой роли. */
+const touch = (accessToken) => request(app)
+  .get('/api/v1/notifications/unread-count')
+  .set('Authorization', `Bearer ${accessToken}`);
+
 /**
  * Запись, заведённая по e-mail без подтверждения (createTestUser пишет
  * email_verified = false), с паролем, телефоном и выданной сессией; партнёр —
  * с активной и с ожидающей карточками.
  */
 const registeredWithoutProof = async ({ partner = false, emailVerified = false } = {}) => {
-  const { user, refreshToken } = await createUserAndGetTokens({
+  const { user, accessToken, refreshToken } = await createUserAndGetTokens({
     email: EMAIL,
     phone: '+375291234567',
     password: OLD_PASSWORD,
@@ -109,7 +115,7 @@ const registeredWithoutProof = async ({ partner = false, emailVerified = false }
     pendingCard = await createTestEstablishment(user.id);
     await query("UPDATE establishments SET status = 'pending' WHERE id = $1", [pendingCard.id]);
   }
-  return { user, refreshToken, activeCard, pendingCard };
+  return { user, accessToken, refreshToken, activeCard, pendingCard };
 };
 
 const cardState = async (cardId) => {
@@ -158,6 +164,22 @@ describe('запись с неподтверждённым e-mail переход
 
     const useNew = await refreshWith(res.body.data.refreshToken);
     expect(useNew.status).toBe(200);
+  });
+
+  test('access-токен регистранта отвергается со следующего запроса, токен нового держателя работает', async () => {
+    const { accessToken: registrantToken } = await registeredWithoutProof();
+    // Тот же процесс, тёплый кэш статуса: до перехода токен проходит.
+    await touch(registrantToken).expect(200);
+
+    const res = await signInWith('google').expect(200);
+
+    // До миграции 035 этот токен работал до своего срока — до 4 ч в чужой
+    // теперь учётной записи.
+    const replayOld = await touch(registrantToken);
+    expect(replayOld.status).toBe(401);
+    expect(replayOld.body.error.code).toBe('TOKEN_REVOKED');
+
+    await touch(res.body.data.accessToken).expect(200);
   });
 
   test('телефон регистранта больше не получает уведомления записи', async () => {

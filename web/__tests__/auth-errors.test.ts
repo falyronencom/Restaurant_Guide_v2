@@ -4,8 +4,9 @@
  * codes → Russian; a code the backend actually throws but the map omits
  * degrades SILENTLY to the neutral fallback. This pins the verify-email
  * contract set (DISCOVERY_slice2 §2: both endpoints' service codes + the
- * middleware limiter code + authedFetch's NO_SESSION) so a future backend
- * addition can't regress unnoticed.
+ * middleware limiter code + authedFetch's own NO_SESSION and
+ * SESSION_REFRESH_UNAVAILABLE) so a future backend addition can't regress
+ * unnoticed.
  *
  * Source of truth: backend authController/authService verify-email paths +
  * rateLimiter middleware (manual cross-target sync — no shared package).
@@ -23,6 +24,7 @@ const VERIFY_CODES: Array<[string, number]> = [
   ['EMAIL_ALREADY_VERIFIED', 409],
   ['INVALID_REQUEST', 400],
   ['NO_SESSION', 401],
+  ['SESSION_REFRESH_UNAVAILABLE', 503],
 ];
 
 // Slice-1 codes that moved here out of actions.ts — pinned so the extraction

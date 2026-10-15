@@ -1,6 +1,7 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
 import logger from '../utils/logger.js';
+import { databaseSsl } from './databaseTls.js';
 
 dotenv.config();
 
@@ -32,8 +33,9 @@ const poolConfig = {
   max: parseInt(process.env.DB_MAX_CONNECTIONS || '10', 10),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '10000', 10),
   connectionTimeoutMillis: 3000,
-  // Enable SSL in production for encrypted connections
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Enable SSL in production for encrypted connections; with DATABASE_TLS_CERT
+  // set, only to the server holding the pinned certificate (config/databaseTls.js)
+  ssl: databaseSsl(process.env),
 };
 
 /**

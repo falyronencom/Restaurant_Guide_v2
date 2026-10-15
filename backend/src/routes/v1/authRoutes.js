@@ -297,7 +297,8 @@ router.post(
  * POST /api/v1/auth/reset-password
  *
  * Public endpoint. Consumes a reset token (single-use, hashed at rest),
- * sets the new password, and revokes all refresh tokens for the user.
+ * sets the new password, and ends every session of the user: refresh tokens
+ * revoked, access tokens issued before the reset refused.
  *
  * Path and payload match the contract mobile already ships
  * (mobile/lib/services/auth_service.dart resetPassword).

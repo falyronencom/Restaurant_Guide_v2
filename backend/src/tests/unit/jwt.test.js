@@ -12,12 +12,15 @@
  */
 
 import jwt from 'jsonwebtoken';
+import { createHmac } from 'crypto';
 import {
   generateAccessToken,
   generateRefreshToken,
+  deriveSuccessorRefreshToken,
   verifyAccessToken,
   extractTokenFromHeader,
   getRefreshTokenExpiry,
+  accessTokenIssuedAtMs,
 } from '../../utils/jwt.js';
 
 describe('jwt utilities', () => {
@@ -93,6 +96,38 @@ describe('jwt utilities', () => {
     });
   });
 
+  describe('issue time in milliseconds (revoked sessions, migration 035)', () => {
+    const payload = { userId: 'user-123', email: 'test@example.com', role: 'user' };
+
+    test('the token carries iatMs, and iat is the same reading in whole seconds', () => {
+      const before = Date.now();
+      const decoded = jwt.decode(generateAccessToken(payload));
+      const after = Date.now();
+
+      expect(Number.isSafeInteger(decoded.iatMs)).toBe(true);
+      expect(decoded.iatMs).toBeGreaterThanOrEqual(before);
+      expect(decoded.iatMs).toBeLessThanOrEqual(after);
+      expect(decoded.iat).toBe(Math.floor(decoded.iatMs / 1000));
+      // exp is still counted from iat: the lifetime did not change.
+      expect(decoded.exp - decoded.iat).toBe(4 * 60 * 60);
+    });
+
+    test('accessTokenIssuedAtMs reads iatMs when the token has it', () => {
+      expect(accessTokenIssuedAtMs({ iat: 1791792208, iatMs: 1791792208137 })).toBe(1791792208137);
+    });
+
+    test('a token issued before iatMs existed is placed at the start of its iat second', () => {
+      // Never later than the moment it was really issued: against a revocation
+      // stamp such a token can only come out older.
+      expect(accessTokenIssuedAtMs({ iat: 1791792208 })).toBe(1791792208000);
+      expect(accessTokenIssuedAtMs({ iat: 1791792208, iatMs: '1791792208137' })).toBe(1791792208000);
+    });
+
+    test('a token with no issue time at all counts as the oldest possible', () => {
+      expect(accessTokenIssuedAtMs({})).toBe(0);
+    });
+  });
+
   describe('generateRefreshToken', () => {
     test('should generate 64-character hex string', () => {
       const token = generateRefreshToken();
@@ -123,6 +158,40 @@ describe('jwt utilities', () => {
 
       // All should be unique
       expect(tokens.size).toBe(100);
+    });
+  });
+
+  describe('deriveSuccessorRefreshToken', () => {
+    const predecessor = 'a'.repeat(64);
+    const rowId = '7f9c2b4e-1d3a-4c5b-9e8f-0a1b2c3d4e5f';
+
+    test('has the shape of a generated token', () => {
+      expect(deriveSuccessorRefreshToken(predecessor, rowId)).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    test('is the same every time for the same predecessor and row — the grace window relies on it', () => {
+      expect(deriveSuccessorRefreshToken(predecessor, rowId))
+        .toBe(deriveSuccessorRefreshToken(predecessor, rowId));
+    });
+
+    test('depends on both the predecessor and the row id', () => {
+      const base = deriveSuccessorRefreshToken(predecessor, rowId);
+      expect(deriveSuccessorRefreshToken('b'.repeat(64), rowId)).not.toBe(base);
+      expect(deriveSuccessorRefreshToken(predecessor, '00000000-0000-4000-8000-000000000000'))
+        .not.toBe(base);
+    });
+
+    test('is keyed by the server secret: the inputs alone do not give it', () => {
+      // Whatever the database and a burned token reveal — the predecessor and
+      // the row id — a hash or an HMAC of them without the key is not the
+      // successor.
+      const derived = deriveSuccessorRefreshToken(predecessor, rowId);
+      const unkeyed = createHmac('sha256', '').update(`${rowId}\n${predecessor}`).digest('hex');
+      const keyedBySecretItself = createHmac('sha256', TEST_JWT_SECRET)
+        .update(`${rowId}\n${predecessor}`).digest('hex');
+      expect(derived).not.toBe(unkeyed);
+      // A label of its own: the secret is not used as it is.
+      expect(derived).not.toBe(keyedBySecretItself);
     });
   });
 

@@ -49,6 +49,26 @@ void main() {
       expect(review.authorAverageRating, 5.0);
     });
 
+    test('viewer_redacted: «скрыто от просмотрщика» читается флагом, по умолчанию — нет',
+        () {
+      // Пакет 2, пункт 1: скрытый отзыв приходит просмотрщику без автора и
+      // текста; флаг отличает «скрыто» от «пусто».
+      expect(
+        AdminReviewItem.fromJson(_json(<String, dynamic>{
+          'viewer_redacted': true,
+        })).viewerRedacted,
+        isTrue,
+      );
+      expect(AdminReviewItem.fromJson(_json(<String, dynamic>{})).viewerRedacted,
+          isFalse);
+      expect(
+        AdminReviewItem.fromJson(_json(<String, dynamic>{
+          'viewer_redacted': true,
+        })).copyWith(isVisible: true).viewerRedacted,
+        isTrue,
+      );
+    });
+
     test('отсутствующие поля дают null, а не нули', () {
       final review = AdminReviewItem.fromJson(_json(<String, dynamic>{}));
 

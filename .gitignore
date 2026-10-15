@@ -93,8 +93,12 @@ docs/
 # local working material, never for the public repo
 Menu-AI OCR/
 
-# All .md documentation gitignored — no exceptions
+# All .md documentation gitignored. Two deliberate exceptions, both at the root:
+# README.md (public description of the project) and ARCHITECTURE.md (how it is
+# built and why); every other .md stays local.
 **/*.md
+!/README.md
+!/ARCHITECTURE.md
 
 # Next.js web/ — build artifacts and runtime caches (Brief 2 foundation)
 # Note: package-lock.json трекается в ОБОИХ проектах — web и backend.
