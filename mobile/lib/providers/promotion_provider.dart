@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/models/promotion.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Promotion state provider for partner's promotion management
 /// Follows PartnerDashboardProvider patterns
@@ -26,6 +27,7 @@ class PromotionProvider with ChangeNotifier {
     _promotions = [];
     _isLoading = false;
     _error = null;
+    _actionError = null;
     notifyListeners();
   }
 
@@ -33,6 +35,7 @@ class PromotionProvider with ChangeNotifier {
   List<Promotion> _promotions = [];
   bool _isLoading = false;
   String? _error;
+  String? _actionError;
 
   // Getters
   List<Promotion> get promotions => _promotions;
@@ -41,8 +44,28 @@ class PromotionProvider with ChangeNotifier {
   List<Promotion> get expiredPromotions =>
       _promotions.where((p) => p.status != 'active').toList();
   int get activeCount => activePromotions.length;
+
+  /// Грузится список. Поднимает его только [fetchPromotions]: создание,
+  /// правка и завершение акции ждут ответа под своим индикатором (кнопка
+  /// экрана). До 13.10.2026 создание и правка поднимали и этот флаг, а при
+  /// отказе не опускали — пустой список крутил индикатор бесконечно.
   bool get isLoading => _isLoading;
+
+  /// Список не загрузился — экран списка показывает это на месте списка.
   String? get error => _error;
+
+  /// Почему не прошло действие с акцией (создать, изменить, завершить),
+  /// вернувшее `false`, — для плашки экрана, который его запускал. Читать
+  /// сразу после такого вызова.
+  ///
+  /// Отдельно от [error]: отказ в создании — не ошибка загрузки списка.
+  /// В общем поле пустой список после отказа показал бы его на месте списка
+  /// с кнопкой «Повторить», которая перечитывает список, а не создаёт акцию.
+  ///
+  /// Текст отказа пишет сервер, и он объясняет, что не так («Одновременно
+  /// может действовать не больше 3 акций…»). Свои фразы провайдера — только
+  /// там, где готовой фразы нет: сбой сервера, исключение не из транспорта.
+  String? get actionError => _actionError;
 
   /// Fetch all promotions for an establishment (partner view — includes inactive)
   Future<void> fetchPromotions(String establishmentId) async {
@@ -83,9 +106,7 @@ class PromotionProvider with ChangeNotifier {
     String? validFrom,
     String? validUntil,
   }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    _actionError = null;
 
     try {
       final formData = FormData.fromMap({
@@ -109,11 +130,10 @@ class PromotionProvider with ChangeNotifier {
         await fetchPromotions(establishmentId);
         return true;
       }
-      _error = 'Не удалось создать акцию';
+      _actionError = 'Не удалось создать акцию';
       return false;
     } catch (e) {
-      _error = 'Ошибка создания акции';
-      notifyListeners();
+      _actionError = userMessageOf(e, fallback: 'Ошибка создания акции');
       return false;
     }
   }
@@ -128,9 +148,7 @@ class PromotionProvider with ChangeNotifier {
     String? validFrom,
     String? validUntil,
   }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    _actionError = null;
 
     try {
       final formData = FormData.fromMap({
@@ -150,8 +168,7 @@ class PromotionProvider with ChangeNotifier {
       await fetchPromotions(establishmentId);
       return true;
     } catch (e) {
-      _error = 'Ошибка обновления акции';
-      notifyListeners();
+      _actionError = userMessageOf(e, fallback: 'Ошибка обновления акции');
       return false;
     }
   }
@@ -161,13 +178,14 @@ class PromotionProvider with ChangeNotifier {
     required String promotionId,
     required String establishmentId,
   }) async {
+    _actionError = null;
+
     try {
       await _apiClient.delete('/api/v1/partner/promotions/$promotionId');
       await fetchPromotions(establishmentId);
       return true;
     } catch (e) {
-      _error = 'Ошибка деактивации акции';
-      notifyListeners();
+      _actionError = userMessageOf(e, fallback: 'Ошибка деактивации акции');
       return false;
     }
   }

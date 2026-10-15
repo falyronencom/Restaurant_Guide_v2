@@ -15,6 +15,8 @@ class RetryOcrResult {
 
   /// Error code from backend when not rate-limited (e.g. NO_PDF_MENUS).
   final String? errorCode;
+
+  /// Готовая фраза для партнёра, если она есть. `null` — экран берёт свою.
   final String? errorMessage;
 
   RetryOcrResult.success({
@@ -37,7 +39,7 @@ class RetryOcrResult {
 
   RetryOcrResult.failure({
     required String code,
-    required String message,
+    String? message,
   })  : success = false,
         enqueuedJobs = 0,
         totalPdfs = 0,
@@ -134,14 +136,22 @@ class PartnerMenuService {
         if (err is Map<String, dynamic>) {
           return RetryOcrResult.failure(
             code: err['code']?.toString() ?? 'BAD_REQUEST',
-            message: err['message']?.toString() ?? 'Запрос отклонён',
           );
         }
       }
-      return RetryOcrResult.failure(
-        code: 'NETWORK',
-        message: e.message ?? 'Ошибка сети',
-      );
+      // Ответа сервера нет (нет связи, таймаут) — у транспорта готова русская
+      // фраза («Нет связи…»), она точнее общей. На всё прочее — фраза экрана:
+      // тексты сервера по меню пока английские. До 13.10.2026 здесь стоял
+      // `e.message` dio: у отказа, пересобранного транспортом, он пуст, и на
+      // 404 удалённой карточки партнёр читал «Ошибка сети»; у сбоя сервера
+      // после повторов это английский текст библиотеки, и он шёл на экран.
+      if (e.response == null && e.error is String) {
+        return RetryOcrResult.failure(
+          code: 'NETWORK',
+          message: e.error as String,
+        );
+      }
+      return RetryOcrResult.failure(code: 'REQUEST_FAILED');
     }
   }
 }
