@@ -8,7 +8,9 @@
  *        npm run clear-data -- --seed-only     — delete ONLY seed establishments
  *        npm run clear-data -- --force         — skip confirmation prompt
  *
- * --seed-only: Deletes only establishments owned by seed.data.generator@restaurantguide.by
+ * --seed-only: Deletes only establishments owned by the seed house (the partner
+ *              account flagged as a service account — lib/seedHouse.js; the
+ *              script stops if there is not exactly one)
  *              Safe to use when real partner data exists in the database.
  *
  * Safety: Prompts for confirmation before deleting unless --force flag used
@@ -17,6 +19,7 @@
 import pkg from 'pg';
 import readline from 'readline';
 import dotenv from 'dotenv';
+import { findSeedHouse } from './lib/seedHouse.js';
 
 const { Pool } = pkg;
 
@@ -50,18 +53,15 @@ function promptConfirmation(message) {
   });
 }
 
-const SEED_PARTNER_EMAIL = 'seed.data.generator@restaurantguide.by';
-
 /**
  * Get establishment count (all or seed-only)
  */
-async function getEstablishmentCount(seedOnly = false) {
+async function getEstablishmentCount(seedHouseId = null) {
   try {
-    if (seedOnly) {
+    if (seedHouseId) {
       const result = await pool.query(
-        `SELECT COUNT(*) FROM establishments
-         WHERE partner_id = (SELECT id FROM users WHERE email = $1)`,
-        [SEED_PARTNER_EMAIL]
+        'SELECT COUNT(*) FROM establishments WHERE partner_id = $1',
+        [seedHouseId],
       );
       return parseInt(result.rows[0].count);
     }
@@ -75,15 +75,14 @@ async function getEstablishmentCount(seedOnly = false) {
 
 /**
  * Clear establishments from database
- * @param {boolean} seedOnly - if true, delete only seed partner's establishments
+ * @param {string|null} seedHouseId - if set, delete only the seed house's establishments
  */
-async function clearEstablishments(seedOnly = false) {
+async function clearEstablishments(seedHouseId = null) {
   try {
-    if (seedOnly) {
+    if (seedHouseId) {
       const result = await pool.query(
-        `DELETE FROM establishments
-         WHERE partner_id = (SELECT id FROM users WHERE email = $1)`,
-        [SEED_PARTNER_EMAIL]
+        'DELETE FROM establishments WHERE partner_id = $1',
+        [seedHouseId],
       );
       return result.rowCount;
     }
@@ -109,7 +108,7 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════\n');
 
   if (seedOnly) {
-    console.log(`ℹ️  Mode: --seed-only (only ${SEED_PARTNER_EMAIL})\n`);
+    console.log(`ℹ️  Mode: --seed-only (only the seed house)\n`);
   }
 
   try {
@@ -117,9 +116,12 @@ async function main() {
     await pool.query('SELECT 1');
     console.log('✅ Database connection successful\n');
 
+    // The seed house by its flag; without exactly one the script stops here
+    const seedHouseId = seedOnly ? (await findSeedHouse(pool)).id : null;
+
     // Get counts
-    const targetCount = await getEstablishmentCount(seedOnly);
-    const totalCount = seedOnly ? await getEstablishmentCount(false) : targetCount;
+    const targetCount = await getEstablishmentCount(seedHouseId);
+    const totalCount = seedOnly ? await getEstablishmentCount(null) : targetCount;
 
     if (seedOnly) {
       console.log(`📊 Total establishments in database: ${totalCount}`);
@@ -155,7 +157,7 @@ async function main() {
     console.log('\n🗑️  Clearing establishments...');
 
     // Perform deletion
-    const deletedCount = await clearEstablishments(seedOnly);
+    const deletedCount = await clearEstablishments(seedHouseId);
 
     console.log('\n═══════════════════════════════════════════════════════');
     console.log(`✅ Successfully deleted ${deletedCount} ${seedOnly ? 'seed ' : ''}establishments`);

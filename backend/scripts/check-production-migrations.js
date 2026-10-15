@@ -18,10 +18,8 @@
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
-import pg from 'pg';
 import dotenv from 'dotenv';
-
-const { Client } = pg;
+import { ProductionClient } from './lib/productionDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -121,10 +119,8 @@ async function main() {
   console.log(`  Target: ${maskUrl(DATABASE_URL)}`);
   console.log('────────────────────────────────────────────────────────');
 
-  const client = new Client({
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
+  // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+  const client = new ProductionClient({ connectionString: DATABASE_URL });
 
   try {
     await client.connect();

@@ -46,12 +46,21 @@ const UNDEFINED_COLUMN = '42703';
 export const ACCOUNT_STATUS_TTL_SECONDS = 10;
 
 /**
- * Burn the account's refresh tokens, then stamp users.sessions_revoked_at.
- * Runs inside the caller's transaction.
+ * End everything that gave the account access: burn its refresh tokens,
+ * switch off its push devices, spend its unused password-reset links, then
+ * stamp users.sessions_revoked_at. Runs inside the caller's transaction.
+ *
+ * Push devices and reset links since 2026-10-15 (directive service_accounts,
+ * B4; completeness critic p. 4). A device left active keeps receiving the
+ * account's notices on the phone of whoever was signed in. A reset link
+ * mailed before the change works for its 30 minutes whatever happens to the
+ * password or the address after it was sent — consuming it checks the link
+ * and the account, not where the link went — so a password set by the
+ * operator could be overwritten through a link issued before it.
  *
  * @param {Object} client - pg client inside a transaction
  * @param {string} userId
- * @returns {Promise<{refreshTokens: number, revokedAt: Date|null}>}
+ * @returns {Promise<{refreshTokens: number, devices: number, resetLinks: number, revokedAt: Date|null}>}
  *   revokedAt — the stamp now in force; null when migration 035 is not applied
  */
 export async function endAllSessions(client, userId) {
@@ -59,6 +68,16 @@ export async function endAllSessions(client, userId) {
     'UPDATE refresh_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL',
     [userId],
   );
+  const devices = await client.query(
+    `UPDATE device_tokens SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = $1 AND is_active = TRUE`,
+    [userId],
+  );
+  const resetLinks = await client.query(
+    'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+    [userId],
+  );
+  const spent = { refreshTokens: burned.rowCount, devices: devices.rowCount, resetLinks: resetLinks.rowCount };
 
   await client.query('SAVEPOINT sessions_revoked_at');
   let stamped;
@@ -72,10 +91,10 @@ export async function endAllSessions(client, userId) {
   } catch (error) {
     if (error.code !== UNDEFINED_COLUMN) throw error;
     await client.query('ROLLBACK TO SAVEPOINT sessions_revoked_at');
-    return { refreshTokens: burned.rowCount, revokedAt: null };
+    return { ...spent, revokedAt: null };
   }
   await client.query('RELEASE SAVEPOINT sessions_revoked_at');
-  return { refreshTokens: burned.rowCount, revokedAt: stamped.rows[0].sessions_revoked_at };
+  return { ...spent, revokedAt: stamped.rows[0].sessions_revoked_at };
 }
 
 /**
@@ -126,9 +145,10 @@ export function setActiveAccountPassword(client, email, passwordHash) {
 /**
  * Report endAllSessions' result to the operator.
  *
- * @param {{refreshTokens: number, revokedAt: Date|null}} sessions
+ * @param {{refreshTokens: number, devices: number, resetLinks: number, revokedAt: Date|null}} sessions
  */
-export function reportEndedSessions({ refreshTokens, revokedAt }) {
+export function reportEndedSessions({ refreshTokens, devices = 0, resetLinks = 0, revokedAt }) {
+  console.log(`   Push devices switched off: ${devices}; unused password-reset links spent: ${resetLinks}.`);
   if (revokedAt) {
     console.log(`   Sessions ended: ${refreshTokens} refresh token(s) burned; access tokens issued before now are refused.`);
     console.log(`   A server process may still let an old access token through for up to ${ACCOUNT_STATUS_TTL_SECONDS} seconds`);

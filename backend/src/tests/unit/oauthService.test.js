@@ -25,6 +25,11 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const { verifyGoogleToken, verifyYandexToken } = await import(
   '../../services/oauthService.js'
 );
+const { DEFAULT_YANDEX_CLIENT_IDS } = await import('../../config/oauth.js');
+const logger = (await import('../../utils/logger.js')).default;
+
+/** The application our mobile app and website sign in through. */
+const OUR_YANDEX_APP = DEFAULT_YANDEX_CLIENT_IDS[0];
 
 describe('oauthService', () => {
   let originalFetch;
@@ -89,10 +94,24 @@ describe('oauthService', () => {
   });
 
   describe('verifyYandexToken', () => {
+    // Every answer names the application the token was issued to; ours unless
+    // a test says otherwise. A body passed with client_id: undefined has none.
     const yandexResponse = (body, ok = true, status = 200) => ({
       ok,
       status,
-      json: async () => body,
+      json: async () => ({ client_id: OUR_YANDEX_APP, ...body }),
+    });
+
+    const savedClientIds = process.env.YANDEX_CLIENT_ID;
+
+    beforeEach(() => {
+      // .env can leak into a local run; each test starts from the default.
+      delete process.env.YANDEX_CLIENT_ID;
+    });
+
+    afterAll(() => {
+      if (savedClientIds === undefined) delete process.env.YANDEX_CLIENT_ID;
+      else process.env.YANDEX_CLIENT_ID = savedClientIds;
     });
 
     test('calls the Yandex login API with the OAuth header and normalizes the response', async () => {
@@ -156,6 +175,70 @@ describe('oauthService', () => {
     test('throws OAUTH_INVALID_TOKEN on a transport failure', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
       await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+    });
+
+    describe('only tokens issued to our application', () => {
+      test('a token issued to another Yandex application is refused', async () => {
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: 'another-yandex-app', id: 1, default_email: 'victim@yandex.ru' })
+        );
+
+        await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+        // The other application's ID reaches the log: it is what tells a
+        // client of ours missing from YANDEX_CLIENT_ID apart from a stray token.
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Yandex token issued to another application',
+          { clientId: 'another-yandex-app' }
+        );
+      });
+
+      test('an answer that names no application is refused, not waved through', async () => {
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: undefined, id: 1, default_email: 'a@yandex.ru' })
+        );
+
+        await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Yandex token issued to another application',
+          { clientId: null }
+        );
+      });
+
+      test('the check comes before the e-mail: a foreign token without e-mail is still OAUTH_INVALID_TOKEN', async () => {
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: 'another-yandex-app', id: 1 })
+        );
+
+        await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+      });
+
+      test('YANDEX_CLIENT_ID lists the accepted applications and replaces the default', async () => {
+        process.env.YANDEX_CLIENT_ID = 'first-app, second-app';
+
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: 'second-app', id: 1, default_email: 'a@yandex.ru' })
+        );
+        await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'a@yandex.ru' });
+
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: OUR_YANDEX_APP, id: 1, default_email: 'a@yandex.ru' })
+        );
+        await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+      });
+
+      test('an empty YANDEX_CLIENT_ID keeps the default — it does not open the door to every application', async () => {
+        process.env.YANDEX_CLIENT_ID = ' , ';
+
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ client_id: 'another-yandex-app', id: 1, default_email: 'a@yandex.ru' })
+        );
+        await expect(verifyYandexToken('t')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+
+        global.fetch = jest.fn().mockResolvedValue(
+          yandexResponse({ id: 1, default_email: 'a@yandex.ru' })
+        );
+        await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'a@yandex.ru' });
+      });
     });
   });
 });

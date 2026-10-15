@@ -10,6 +10,7 @@
  */
 
 import { OAuth2Client } from 'google-auth-library';
+import { resolveYandexClientIds } from '../config/oauth.js';
 import logger from '../utils/logger.js';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -71,9 +72,15 @@ export async function verifyGoogleToken(idToken) {
  * Unlike Google (JWT-based), Yandex uses opaque OAuth tokens that must be
  * validated via API call. The token is sent in the Authorization header.
  *
+ * The answer names the application the token was issued to (client_id); only
+ * our own applications are accepted (config/oauth.js) — the counterpart of the
+ * audience check verifyGoogleToken makes. An answer without client_id is
+ * refused as well: the field is standard, and its absence is not a reason to
+ * skip the check.
+ *
  * @param {string} oauthToken - Yandex OAuth token from mobile SDK
  * @returns {Promise<Object>} Normalized user data
- * @throws {Error} If token is invalid or API call fails
+ * @throws {Error} If token is invalid, issued to another application, or API call fails
  */
 export async function verifyYandexToken(oauthToken) {
   try {
@@ -91,6 +98,19 @@ export async function verifyYandexToken(oauthToken) {
     }
 
     const data = await response.json();
+
+    // Read per call, like the other env resolvers: a test can vary it without
+    // reloading the module.
+    const acceptedClientIds = resolveYandexClientIds(process.env);
+    if (!acceptedClientIds.includes(data.client_id)) {
+      // The other application's ID is not a secret and is what tells an
+      // application of ours missing from YANDEX_CLIENT_ID apart from a stray
+      // token.
+      logger.warn('Yandex token issued to another application', {
+        clientId: data.client_id === undefined ? null : String(data.client_id),
+      });
+      throw new Error('OAUTH_INVALID_TOKEN');
+    }
 
     if (!data.default_email) {
       throw new Error('OAUTH_NO_EMAIL');

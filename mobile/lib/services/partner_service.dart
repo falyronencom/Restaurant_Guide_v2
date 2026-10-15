@@ -5,6 +5,14 @@ import 'package:restaurant_guide_mobile/services/api_client.dart';
 /// Partner-specific API service
 /// Handles partner dashboard operations
 /// Phase 5.2 - Partner Dashboard
+///
+/// Отказы транспорта уходят наверх как есть: в `DioException.error` уже
+/// лежит готовая фраза для партнёра (текст сервера или транспорта), её
+/// достаёт `userMessageOf` в провайдере. До 13.10.2026 каждый метод
+/// заворачивал исключение целиком — `Exception('Ошибка удаления: $e')`, — и
+/// партнёр читал `DioException [bad response]: null` перед фразой сервера.
+/// Свои исключения ниже (ответ не 200) готовой фразы не несут: вместо них
+/// провайдер покажет общую фразу действия.
 class PartnerService {
   final ApiClient _apiClient;
 
@@ -29,20 +37,16 @@ class PartnerService {
       return _getMockEstablishments();
     }
 
-    try {
-      final response = await _apiClient.get('/api/v1/partner/establishments');
+    final response = await _apiClient.get('/api/v1/partner/establishments');
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final establishmentsData = data['data']?['establishments'] as List? ?? [];
-        return establishmentsData
-            .map((e) => PartnerEstablishment.fromJson(e as Map<String, dynamic>))
-            .toList();
-      } else {
-        throw Exception('Не удалось загрузить заведения');
-      }
-    } catch (e) {
-      throw Exception('Ошибка загрузки: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      final establishmentsData = data['data']?['establishments'] as List? ?? [];
+      return establishmentsData
+          .map((e) => PartnerEstablishment.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } else {
+      throw Exception('Не удалось загрузить заведения');
     }
   }
 
@@ -57,19 +61,15 @@ class PartnerService {
       return _getMockEstablishmentDetails(id);
     }
 
-    try {
-      final response = await _apiClient.get('/api/v1/partner/establishments/$id');
+    final response = await _apiClient.get('/api/v1/partner/establishments/$id');
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        return PartnerEstablishment.fromJson(
-          data['data']?['establishment'] as Map<String, dynamic>,
-        );
-      } else {
-        throw Exception('Не удалось загрузить заведение');
-      }
-    } catch (e) {
-      throw Exception('Ошибка загрузки: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      return PartnerEstablishment.fromJson(
+        data['data']?['establishment'] as Map<String, dynamic>,
+      );
+    } else {
+      throw Exception('Не удалось загрузить заведение');
     }
   }
 
@@ -87,22 +87,18 @@ class PartnerService {
       return _updateMockEstablishment(id, updateData);
     }
 
-    try {
-      final response = await _apiClient.put(
-        '/api/v1/partner/establishments/$id',
-        data: updateData,
-      );
+    final response = await _apiClient.put(
+      '/api/v1/partner/establishments/$id',
+      data: updateData,
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        return PartnerEstablishment.fromJson(
-          data['data']?['establishment'] as Map<String, dynamic>,
-        );
-      } else {
-        throw Exception('Не удалось обновить заведение');
-      }
-    } catch (e) {
-      throw Exception('Ошибка обновления: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      return PartnerEstablishment.fromJson(
+        data['data']?['establishment'] as Map<String, dynamic>,
+      );
+    } else {
+      throw Exception('Не удалось обновить заведение');
     }
   }
 
@@ -112,15 +108,11 @@ class PartnerService {
 
   /// Submit an establishment for moderation (draft/rejected → pending)
   Future<void> submitForModeration(String id) async {
-    try {
-      final response = await _apiClient.dio.post(
-        '/api/v1/partner/establishments/$id/submit',
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Не удалось отправить на модерацию');
-      }
-    } catch (e) {
-      throw Exception('Ошибка отправки: $e');
+    final response = await _apiClient.dio.post(
+      '/api/v1/partner/establishments/$id/submit',
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Не удалось отправить на модерацию');
     }
   }
 
@@ -130,43 +122,31 @@ class PartnerService {
 
   /// Suspend an establishment (active → suspended)
   Future<void> suspendEstablishment(String id) async {
-    try {
-      final response = await _apiClient.dio.post(
-        '/api/v1/partner/establishments/$id/suspend',
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Не удалось приостановить заведение');
-      }
-    } catch (e) {
-      throw Exception('Ошибка приостановки: $e');
+    final response = await _apiClient.dio.post(
+      '/api/v1/partner/establishments/$id/suspend',
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Не удалось приостановить заведение');
     }
   }
 
   /// Resume a suspended establishment (suspended → pending)
   Future<void> resumeEstablishment(String id) async {
-    try {
-      final response = await _apiClient.dio.post(
-        '/api/v1/partner/establishments/$id/resume',
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Не удалось возобновить заведение');
-      }
-    } catch (e) {
-      throw Exception('Ошибка возобновления: $e');
+    final response = await _apiClient.dio.post(
+      '/api/v1/partner/establishments/$id/resume',
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Не удалось возобновить заведение');
     }
   }
 
   /// Delete an establishment permanently
   Future<void> deleteEstablishment(String id) async {
-    try {
-      final response = await _apiClient.dio.delete(
-        '/api/v1/partner/establishments/$id',
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Не удалось удалить заведение');
-      }
-    } catch (e) {
-      throw Exception('Ошибка удаления: $e');
+    final response = await _apiClient.dio.delete(
+      '/api/v1/partner/establishments/$id',
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Не удалось удалить заведение');
     }
   }
 
@@ -177,23 +157,19 @@ class PartnerService {
   /// Get analytics overview for all partner establishments
   /// period: "7d", "30d", "90d"
   Future<List<EstablishmentOverview>> getAnalyticsOverview(String period) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/partner/analytics/overview',
-        queryParameters: {'period': period},
-      );
+    final response = await _apiClient.get(
+      '/api/v1/partner/analytics/overview',
+      queryParameters: {'period': period},
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final list = data['data']?['establishments'] as List? ?? [];
-        return list
-            .map((e) => EstablishmentOverview.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      throw Exception('Не удалось загрузить аналитику');
-    } catch (e) {
-      throw Exception('Ошибка загрузки аналитики: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      final list = data['data']?['establishments'] as List? ?? [];
+      return list
+          .map((e) => EstablishmentOverview.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
+    throw Exception('Не удалось загрузить аналитику');
   }
 
   /// Get time-series trends for a specific establishment
@@ -201,41 +177,33 @@ class PartnerService {
     String establishmentId,
     String period,
   ) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/partner/analytics/trends',
-        queryParameters: {
-          'establishment_id': establishmentId,
-          'period': period,
-        },
-      );
+    final response = await _apiClient.get(
+      '/api/v1/partner/analytics/trends',
+      queryParameters: {
+        'establishment_id': establishmentId,
+        'period': period,
+      },
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        return AnalyticsTrends.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw Exception('Не удалось загрузить тренды');
-    } catch (e) {
-      throw Exception('Ошибка загрузки трендов: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      return AnalyticsTrends.fromJson(data['data'] as Map<String, dynamic>);
     }
+    throw Exception('Не удалось загрузить тренды');
   }
 
   /// Get rating distribution for a specific establishment
   Future<AnalyticsRatings> getAnalyticsRatings(String establishmentId) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/partner/analytics/ratings',
-        queryParameters: {'establishment_id': establishmentId},
-      );
+    final response = await _apiClient.get(
+      '/api/v1/partner/analytics/ratings',
+      queryParameters: {'establishment_id': establishmentId},
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        return AnalyticsRatings.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw Exception('Не удалось загрузить рейтинги');
-    } catch (e) {
-      throw Exception('Ошибка загрузки рейтингов: $e');
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      final data = response.data as Map<String, dynamic>;
+      return AnalyticsRatings.fromJson(data['data'] as Map<String, dynamic>);
     }
+    throw Exception('Не удалось загрузить рейтинги');
   }
 
   /// Track phone call click (fire-and-forget)

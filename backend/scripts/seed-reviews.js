@@ -19,6 +19,7 @@ import argon2 from 'argon2';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { findSeedHouse } from './lib/seedHouse.js';
 
 import {
   SEED_USERS,
@@ -51,7 +52,6 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-const SEED_PARTNER_EMAIL = 'seed.data.generator@restaurantguide.by';
 const SEED_RANDOM_SEED = 20260226; // deterministic seed
 
 // ─── Database Operations ───────────────────────────────────────────────────
@@ -60,16 +60,8 @@ const SEED_RANDOM_SEED = 20260226; // deterministic seed
  * Find seed partner account
  */
 async function getSeedPartner(client) {
-  const result = await client.query(
-    'SELECT id FROM users WHERE email = $1',
-    [SEED_PARTNER_EMAIL],
-  );
-  if (result.rows.length === 0) {
-    throw new Error(
-      `Seed partner not found (${SEED_PARTNER_EMAIL}). Run seed-establishments.js first.`,
-    );
-  }
-  return result.rows[0].id;
+  // By its flag, never by its address (lib/seedHouse.js); stops if absent.
+  return (await findSeedHouse(client)).id;
 }
 
 /**
