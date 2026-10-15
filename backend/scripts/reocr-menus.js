@@ -31,11 +31,10 @@
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
-import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 import { formatPlan, onlyMedia, planReocr } from './reocr-menus/plan.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
 const envPath = join(backendRoot, '.env.production');
@@ -57,7 +56,8 @@ const mediaIds = arg('media')?.split(',').map((s) => s.trim()).filter(Boolean);
 if (mediaIds && mediaIds.length === 0) { console.error('❌ --media is empty'); process.exit(1); }
 if (apply && !backupPath) { console.error('❌ --apply requires --backup=<file>'); process.exit(1); }
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function main() {
   await client.connect();

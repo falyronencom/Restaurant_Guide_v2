@@ -44,6 +44,14 @@ describe('parsePage', () => {
     expect(parsePage('x')).toBe(1);
     expect(parsePage(undefined)).toBe(1);
   });
+  // 12.10: /minsk?page=100000000000000000000 — the backend's OFFSET outgrew the
+  // database's bigint and the page went to the error screen.
+  it('reads a page past the 10 000 ceiling as page 1, the ceiling itself kept', () => {
+    expect(parsePage('10000')).toBe(10000);
+    expect(parsePage('10001')).toBe(1);
+    expect(parsePage('1000000000000000000')).toBe(1);
+    expect(parsePage('100000000000000000000')).toBe(1);
+  });
 });
 
 describe('asString / asFloat', () => {
@@ -164,5 +172,60 @@ describe('acceptedSearchParams — values the backend would reject are dropped',
       focus: 'gaijin',
     };
     expect(acceptedSearchParams(sp, CUISINES)).toEqual(sp);
+  });
+});
+
+// 12.10: /minsk?priceRange=%00 and ?search=%00 — the database cannot hold NUL
+// in text, the backend answered 500 and the page went to the error screen.
+describe('acceptedSearchParams — every value loses its control characters', () => {
+  const CUISINES = [{ slug: 'italian', name: 'Итальянская' }];
+  const chr = (code: number) => String.fromCharCode(code);
+  const NUL = chr(0);
+
+  it('drops a key whose value is nothing but control characters — any key', () => {
+    const accepted = acceptedSearchParams(
+      { priceRange: NUL, search: NUL + chr(9), sort_by: NUL, view: NUL },
+      CUISINES,
+    );
+    expect(Object.keys(accepted)).toEqual([]);
+  });
+
+  it('keeps the words around them — the phrase the smart endpoint would search', () => {
+    expect(
+      acceptedSearchParams({ search: `пицца${NUL} суши` }, CUISINES),
+    ).toEqual({ search: 'пицца суши' });
+  });
+
+  it('strips exactly U+0000–U+001F and U+007F: space and ~ beside them stay', () => {
+    expect(
+      acceptedSearchParams(
+        { search: `a${chr(0x1f)} b~${chr(0x7f)}c` },
+        CUISINES,
+      ),
+    ).toEqual({ search: 'a b~c' });
+    // Every code point below U+0100, in order: only the set goes.
+    const run = (from: number, to: number) =>
+      Array.from({ length: to - from + 1 }, (_, i) => chr(from + i)).join('');
+    expect(
+      acceptedSearchParams({ search: run(0x00, 0xff) }, CUISINES),
+    ).toEqual({ search: run(0x20, 0x7e) + run(0x80, 0xff) });
+  });
+
+  it('cleans each item of the array form and drops the items left empty', () => {
+    expect(
+      acceptedSearchParams({ priceRange: ['$', NUL, `$$${NUL}`] }, CUISINES),
+    ).toEqual({ priceRange: ['$', '$$'] });
+    expect(acceptedSearchParams({ priceRange: [NUL, NUL] }, CUISINES)).toEqual(
+      {},
+    );
+  });
+
+  it('a cuisine slug and a rating are read clean', () => {
+    expect(
+      acceptedSearchParams(
+        { cuisine: `italian${NUL}`, minRating: `4${NUL}` },
+        CUISINES,
+      ),
+    ).toEqual({ cuisine: 'italian', minRating: '4' });
   });
 });

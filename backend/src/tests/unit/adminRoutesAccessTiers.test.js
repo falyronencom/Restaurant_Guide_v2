@@ -37,6 +37,9 @@ const ACTION_TIER_READS = new Set(['/users/search']);
 /** Public routes of the file: no authenticate, no tier (rate-limited login). */
 const PUBLIC_ROUTES = new Set(['/auth/login']);
 
+/** The one router-level registration allowed: the default-closed gate. */
+const DEFAULT_CLOSED_GATE = 'router.use(defaultClosed);';
+
 const parseRoutes = (source) => {
   const pattern = /router\.(get|post|put|patch|delete)\(\s*'([^']+)'([\s\S]*?)\);/g;
   return [...source.matchAll(pattern)].map((m) => ({
@@ -67,8 +70,30 @@ describe('adminRoutes.js access tiers', () => {
     // `router.route('/x').post(...)`, `router.all(...)` or a mounted
     // sub-router (`router.use('/x', r)`) would carry any tier — or none —
     // without a single check here going red. Keep the file to the one form
-    // the guard reads. (Phase 3.5 review finding, 2026-09-08.)
-    expect(source).not.toMatch(/router\.(route|use|all)\(/);
+    // the guard reads. (Phase 3.5 review finding, 2026-09-08.) The single
+    // exception is the default-closed gate, checked by the next test.
+    const withoutGate = source.replace(DEFAULT_CLOSED_GATE, '');
+    expect(withoutGate).not.toMatch(/router\.(route|use|all)\(/);
+  });
+
+  test('the default-closed gate stands once, right after the public login', () => {
+    // Pack 2, point 5 (cloud critic 2A, B-4): the server, not only this
+    // test, closes the panel. A gate registered after any protected route
+    // would leave that route outside it; a second `use` would be a place to
+    // mount a sub-router unchecked.
+    const lf = source.replace(/\r\n/g, '\n');
+    expect(lf.split(DEFAULT_CLOSED_GATE)).toHaveLength(2);
+    const gateAt = lf.indexOf(DEFAULT_CLOSED_GATE);
+    const loginAt = lf.indexOf("router.post(\n  '/auth/login'");
+    expect(loginAt).toBeGreaterThan(-1);
+    expect(gateAt).toBeGreaterThan(loginAt);
+    const protectedAt = routes
+      .filter((r) => !PUBLIC_ROUTES.has(r.path))
+      .map((r) => lf.indexOf(`router.${r.method}(\n  '${r.path}'`));
+    // Every protected registration is found (else the position check is
+    // vacuous) and stands after the gate.
+    expect(protectedAt.every((at) => at > -1)).toBe(true);
+    expect(Math.min(...protectedAt)).toBeGreaterThan(gateAt);
   });
 
   test('public routes carry neither authenticate nor a tier', () => {

@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { getAccessToken, refreshSession } from '@/lib/auth/session';
+import { ApiError } from '@/lib/api/types';
+import { getAccessToken, refreshAccessToken } from '@/lib/auth/session';
 
 /*
  * Shared media streaming-proxy helper (Phase C Slice 1, Segment B). Forwards a
@@ -38,10 +39,15 @@ function accessTokenStale(token: string): boolean {
   }
 }
 
-async function freshAccessToken(): Promise<string | null> {
+/**
+ * Throws authedFetch's errors when there is no usable token: NO_SESSION for a
+ * session that is gone, SESSION_REFRESH_UNAVAILABLE when the refresh got no
+ * verdict (cookies intact — «Сессия истекла» would be a lie).
+ */
+async function freshAccessToken(): Promise<string> {
   const token = await getAccessToken();
   if (token && !accessTokenStale(token)) return token;
-  return refreshSession();
+  return refreshAccessToken();
 }
 
 export async function proxyMediaUpload(
@@ -56,8 +62,13 @@ export async function proxyMediaUpload(
     return jsonError('Expected multipart/form-data.', 400, 'INVALID_CONTENT_TYPE');
   }
 
-  const token = await freshAccessToken();
-  if (!token) return jsonError('Not authenticated.', 401, 'NO_SESSION');
+  let token: string;
+  try {
+    token = await freshAccessToken();
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    return jsonError(err.message, err.statusCode, err.errorCode);
+  }
 
   if (!request.body) return jsonError('Empty request body.', 400, 'FILE_REQUIRED');
 

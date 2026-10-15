@@ -15,6 +15,12 @@ class BadgesProvider with ChangeNotifier {
   AdminBadges? _badges;
   bool _isLoading = false;
 
+  /// Поколение аккаунта (пакет 2; решение Координатора 12.10.2026 — метка у
+  /// каждого провайдера реестра). Счётчики одинаковы для обеих ролей, но
+  /// ответ прежнего аккаунта не должен ни перекрыть свежий, ни снять флаг
+  /// загрузки, пока запрос вошедшего ещё в пути.
+  int _generation = 0;
+
   BadgesProvider({BadgesService? service})
       : _service = service ?? BadgesService() {
     AccountScope.register(resetAccountScope);
@@ -22,6 +28,7 @@ class BadgesProvider with ChangeNotifier {
 
   /// Сброс при смене аккаунта: счётчики перечитает шелл при следующем входе.
   void resetAccountScope() {
+    _generation++;
     _badges = null;
     _isLoading = false;
     notifyListeners();
@@ -33,14 +40,18 @@ class BadgesProvider with ChangeNotifier {
   Future<void> load() async {
     if (_isLoading) return;
     _isLoading = true;
+    final generation = _generation;
 
     try {
-      _badges = await _service.getBadges();
+      final badges = await _service.getBadges();
+      if (generation == _generation) _badges = badges;
     } catch (_) {
       // Молча: см. комментарий класса.
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 }

@@ -44,6 +44,17 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
     _linkController =
         TextEditingController(text: provider.data.instagram ?? '');
     _phoneController.addListener(_onPhoneChanged);
+
+    // A phone stored outside the wizard (legacy seed scripts wrote
+    // «+375 (29) 123-45-67») is shown formatted here but stays raw in the
+    // provider — the step check and the save would read another number than
+    // the partner sees. Hand the provider the number the field shows.
+    final shown = _phoneController.text.replaceAll(' ', '');
+    if (shown != (provider.data.phone ?? '')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) provider.updateBasicInfo(phone: shown);
+      });
+    }
   }
 
   @override
@@ -186,15 +197,32 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 description:
                     'Добавьте номер телефона для связи клиента с вами',
                 isRequired: true,
-                child: _buildTextField(
-                  controller: _phoneController,
-                  hint: '+375 29 123 45 67',
-                  keyboardType: TextInputType.phone,
-                  onChanged: (value) {
-                    // Strip spaces before saving — backend expects +375XXXXXXXXX
-                    final stripped = value.replaceAll(' ', '');
-                    provider.updateBasicInfo(phone: stripped);
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTextField(
+                      controller: _phoneController,
+                      hint: '+375 29 123 45 67',
+                      keyboardType: TextInputType.phone,
+                      onChanged: (value) {
+                        // Strip spaces before saving — backend expects +375XXXXXXXXX
+                        final stripped = value.replaceAll(' ', '');
+                        provider.updateBasicInfo(phone: stripped);
+                      },
+                    ),
+                    // Says why «Продолжить» is greyed out while the number
+                    // is incomplete or has a code the server refuses.
+                    if (provider.phoneError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        provider.phoneError!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.errorRed,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
 

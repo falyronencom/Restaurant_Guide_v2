@@ -8,7 +8,10 @@
  *   node backend/scripts/clear-reviews.js           # Interactive confirmation
  *   node backend/scripts/clear-reviews.js --force    # Skip confirmation
  *
- * Identifies seed data by email pattern: seed.user.N@restaurantguide.by
+ * Identifies seed data by email pattern: seed.user.N@seed-reviews.invalid
+ * (seed-data/reviews-config.js). Deletes only ordinary user accounts: never one
+ * that is a service account or owns a card — deleting an owner takes its cards
+ * with it (ON DELETE CASCADE; directive service_accounts 2026-10-15, B5).
  */
 
 import pg from 'pg';
@@ -31,7 +34,13 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-const SEED_USER_EMAIL_LIKE = 'seed.user.%@restaurantguide.by';
+const SEED_USER_EMAIL_LIKE = 'seed.user.%@seed-reviews.invalid';
+
+/** Seed review authors only: ordinary users, no cards, not a service account. */
+const SEED_USER_WHERE = `email LIKE $1
+  AND role = 'user'
+  AND NOT COALESCE((to_jsonb(users) ->> 'is_service_account')::boolean, false)
+  AND NOT EXISTS (SELECT 1 FROM establishments e WHERE e.partner_id = users.id)`;
 
 /**
  * Prompt user for confirmation
@@ -63,7 +72,7 @@ async function main() {
 
     // Count seed users and their reviews
     const usersResult = await client.query(
-      'SELECT id, name FROM users WHERE email LIKE $1',
+      `SELECT id, name FROM users WHERE ${SEED_USER_WHERE}`,
       [SEED_USER_EMAIL_LIKE],
     );
     const userIds = usersResult.rows.map(r => r.id);
@@ -133,7 +142,7 @@ async function main() {
 
     // Delete seed users (must be after reviews due to FK)
     const deleteUsersResult = await client.query(
-      'DELETE FROM users WHERE email LIKE $1',
+      `DELETE FROM users WHERE ${SEED_USER_WHERE}`,
       [SEED_USER_EMAIL_LIKE],
     );
     console.log(`👥 Deleted ${deleteUsersResult.rowCount} seed users`);

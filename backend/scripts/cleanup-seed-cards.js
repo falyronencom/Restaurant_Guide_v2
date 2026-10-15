@@ -1,13 +1,15 @@
 /**
- * Production cleanup — remove placeholder/test establishment cards before the
- * real seed fill-up.
+ * Production cleanup — remove every establishment card of the given owner
+ * accounts. Written for the one-off removal of placeholder/test cards before
+ * the real seed fill-up (done 18.07.2026).
  *
- * Targets (by OWNER, not by is_seed — the two groups differ):
- *   1. house  = seed.data.generator@restaurantguide.by  (77 placeholder cards)
- *   2. test   = evgenia.schasnovich@gmail.com           (12 test cards)
+ * Targets — by OWNER, not by is_seed: the accounts listed in --emails=. There
+ * is deliberately NO built-in list: the seed house (lib/seedHouse.js) now
+ * owns the real catalogue, and a
+ * default target would offer to delete it. Without --emails= the script stops
+ * before reading .env.production or touching the database.
  *
- * The USER ACCOUNTS ARE KEPT — only their establishments are deleted. The house
- * account stays (it owns the cards a collector will create through the cabinet).
+ * The USER ACCOUNTS ARE KEPT — only their establishments are deleted.
  *
  * Safety model (mirrors apply-migration-production.js + the seed-import rollback):
  *   - Reads DATABASE_URL from backend/.env.production (never printed).
@@ -18,21 +20,36 @@
  *   - Deletes inside a TRANSACTION; FKs cascade to media/reviews/favorites.
  *
  * Usage:
- *   node scripts/cleanup-seed-cards.js --report-only     # inspect, change nothing
- *   node scripts/cleanup-seed-cards.js                   # backup + confirm + delete
- *   node scripts/cleanup-seed-cards.js --yes             # skip the prompt
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --report-only  # inspect, change nothing
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com                # backup + confirm + delete
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --yes          # skip the prompt
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
 import { createInterface } from 'readline';
-import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
 const envPath = join(backendRoot, '.env.production');
+
+const args = process.argv.slice(2);
+const reportOnly = args.includes('--report-only');
+const skipConfirm = args.includes('--yes');
+
+/** Owners whose cards go — only from the command line, no default (see header). */
+const emailsArg = args.find((a) => a.startsWith('--emails='));
+const TARGET_EMAILS = emailsArg
+  ? emailsArg.slice('--emails='.length).split(',').map((e) => e.trim()).filter(Boolean)
+  : [];
+if (!TARGET_EMAILS.length) {
+  console.error('❌ No owner accounts given. List the accounts whose cards to delete:');
+  console.error('   node scripts/cleanup-seed-cards.js --emails=owner@example.com[,other@example.com] --report-only');
+  console.error('   Nothing was read or changed.');
+  process.exit(2);
+}
 
 if (!existsSync(envPath)) {
   console.error('❌ Missing backend/.env.production (needs DATABASE_URL).');
@@ -42,21 +59,6 @@ dotenv.config({ path: envPath });
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) { console.error('❌ DATABASE_URL not set.'); process.exit(1); }
-
-const args = process.argv.slice(2);
-const reportOnly = args.includes('--report-only');
-const skipConfirm = args.includes('--yes');
-
-/** Default targets = the original placeholder/test owners. Override with
- *  --emails=a@b.by,c@d.com to clean a different owner set (same safety rails). */
-const DEFAULT_TARGET_EMAILS = [
-  'seed.data.generator@restaurantguide.by',
-  'evgenia.schasnovich@gmail.com',
-];
-const emailsArg = args.find((a) => a.startsWith('--emails='));
-const TARGET_EMAILS = emailsArg
-  ? emailsArg.slice('--emails='.length).split(',').map((e) => e.trim()).filter(Boolean)
-  : DEFAULT_TARGET_EMAILS;
 
 const hostDisplay = (() => {
   try { const u = new URL(DATABASE_URL); return `${u.hostname}:${u.port}${u.pathname}`; }
@@ -71,7 +73,8 @@ function confirm(msg) {
   }));
 }
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function main() {
   await client.connect();
@@ -191,7 +194,7 @@ async function main() {
     const del = await client.query('DELETE FROM establishments WHERE id = ANY($1)', [cardIds]);
     await client.query('COMMIT');
     console.log(`\n✅ Deleted ${del.rowCount} establishments (cascade removed their media/reviews/favorites).`);
-    console.log('   User accounts were KEPT (house account intact for cabinet entry).');
+    console.log('   User accounts were KEPT.');
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('❌ Delete failed, rolled back:', e.message);

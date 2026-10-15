@@ -60,4 +60,55 @@ describe.each([
     const req = { params: params(), body: { name: `Кафе${'\uFE0E'.repeat(255)}` } };
     expect(await fieldErrors(chains, req)).toContain('name');
   });
+
+  // Restaurants commonly publish a city landline, and it is what guests call
+  // (decision of the Coordinator, 13.10.2026). Until then only 25/29/33/44
+  // passed: the partner was refused at the last wizard step, with a format
+  // hint their number already matched.
+  test.each([
+    ['Минск', '+375171234567'],
+    ['Минская область (Борисов)', '+375177123456'],
+    ['Гродно', '+375152123456'],
+    ['Брест', '+375162123456'],
+    ['Витебск', '+375212123456'],
+    ['Могилёв', '+375222123456'],
+    ['Бобруйск', '+375225123456'],
+    ['Гомель', '+375232123456'],
+  ])('city landline is accepted: %s %s', async (_city, phone) => {
+    const req = { params: params(), body: { phone } };
+    expect(await fieldErrors(chains, req)).not.toContain('phone');
+  });
+
+  test.each(['+375251234567', '+375291234567', '+375331234567', '+375441234567'])(
+    'mobile number is still accepted: %s',
+    async (phone) => {
+      const req = { params: params(), body: { phone } };
+      expect(await fieldErrors(chains, req)).not.toContain('phone');
+    },
+  );
+
+  // The mobile wizard prepends 375 to input that does not start with 3, so a
+  // number typed the domestic way arrives as +375 80… — a number that does not
+  // exist. «+375 and any 9 digits» would let it onto the card.
+  test.each([
+    ['«8 029 123 45 67» through the app formatter', '+375802912345'],
+    ['«8 017 123 45 67» through the app formatter', '+375801712345'],
+    ['one digit short', '+37517123456'],
+    ['one digit too many', '+3751712345678'],
+  ])('number that cannot be dialled is refused: %s', async (_label, phone) => {
+    const req = { params: params(), body: { phone } };
+    expect(await fieldErrors(chains, req)).toContain('phone');
+  });
+
+  // The app shows this refusal through a table keyed by the exact English text
+  // (mobile/lib/services/api_client.dart _validationMessages); installed builds
+  // cannot follow a change, so the text stays as it is.
+  test('phone refusal keeps the text the app translates', async () => {
+    const req = { params: params(), body: { phone: '+375802912345' } };
+    for (const chain of chains) {
+      await chain.run(req);
+    }
+    const phoneError = validationResult(req).array().find((e) => e.path === 'phone');
+    expect(phoneError?.msg).toBe('Phone must be in format +375XXXXXXXXX (Belarus number)');
+  });
 });

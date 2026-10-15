@@ -2,8 +2,9 @@
  * Partner cabinet — canonical write-side dictionaries (Phase C Slice 1, Segment B).
  *
  * Source of truth: backend/src/validators/establishmentValidation.js
- *   (VALID_CATEGORIES / VALID_CUISINES / VALID_CITIES / VALID_PRICE_RANGES,
- *    BELARUS_PHONE_REGEX). The wizard writes these Cyrillic names DIRECTLY
+ *   (VALID_CATEGORIES / VALID_CUISINES / VALID_CITIES / VALID_PRICE_RANGES)
+ *   and backend/src/constants/belarusPhone.js (BELARUS_PHONE_REGEX, which the
+ *   validator imports). The wizard writes these Cyrillic names DIRECTLY
  *   (Decision 2, ratified) — no internal-id layer. Any drift here surfaces as a
  *   backend 422, so these strings must match the validator's isIn() sets exactly.
  */
@@ -144,8 +145,10 @@ export const DAY_LABELS: Record<DayKey, string> = {
 
 // --- Contact / media limits ----------------------------------------------
 
-/** Mirrors backend BELARUS_PHONE_REGEX (+375 then 29|33|44|25 then 7 digits). */
-export const BELARUS_PHONE_RE = /^\+375(29|33|44|25)\d{7}$/;
+/** Mirrors backend BELARUS_PHONE_REGEX (constants/belarusPhone.js): +375, then a
+ *  mobile code 25|29|33|44 or a city/region area code 15x–17x|21x–23x, 9 digits
+ *  in all after 375. */
+export const BELARUS_PHONE_RE = /^\+375(25|29|33|44|1[5-7]|2[1-3])\d{7}$/;
 
 /**
  * Per-bucket media caps — mirror of the unified server MEDIA_LIMITS exported from
