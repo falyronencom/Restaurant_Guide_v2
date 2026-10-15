@@ -119,8 +119,10 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
             Icon(Icons.menu_book_outlined,
                 size: 72, color: AppTheme.textGrey.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
+            // Без программистского «распарсенных» (решение Координатора
+            // 15.10.2026).
             const Text(
-              'Распарсенных позиций пока нет',
+              'Распознанных позиций меню пока нет',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w500,
@@ -128,11 +130,13 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // Распознаются и фото меню, не только PDF (решение
+            // Координатора 15.10.2026).
             const Text(
-              'Если вы загрузили PDF меню в разделе «Медиа», '
+              'Если вы добавили фото меню или PDF в разделе «Медиа», '
               'распознавание выполняется автоматически в течение '
-              'нескольких минут. Если PDF ещё не загружен — загрузите '
-              'его в разделе «Медиа».',
+              'нескольких минут. Если ещё не добавили — добавьте их '
+              'в разделе «Медиа».',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: AppTheme.textGrey),
             ),
