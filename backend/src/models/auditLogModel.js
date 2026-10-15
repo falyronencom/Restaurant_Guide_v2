@@ -347,6 +347,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
         WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' THEN 'Заведение удалено партнёром'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
+        WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётки изменён'
         WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
         WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
         WHEN al.action = 'unhide_menu_item' AND al.entity_type = 'menu_item' THEN 'Показана позиция меню'

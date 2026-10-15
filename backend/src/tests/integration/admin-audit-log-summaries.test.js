@@ -43,6 +43,8 @@ const WRITTEN_ACTIONS = [
   ['unhide_menu_item', 'menu_item', 'Показана позиция меню'],
   ['dismiss_sanity_flag', 'menu_item', 'Снят флаг с позиции меню'],
   ['upgrade_user_to_partner', 'user', 'Пользователь повышен до партнёра'],
+  // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
+  ['change_email', 'user', 'Адрес e-mail учётки изменён'],
 ];
 
 let adminToken;
