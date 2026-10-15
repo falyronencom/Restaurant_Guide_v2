@@ -34,6 +34,7 @@ import * as NotificationService from './notificationService.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { parseModerationNotes } from '../utils/moderationNotes.js';
 import { isPanelRole } from '../config/panelRoles.js';
+import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
@@ -473,8 +474,16 @@ export async function refreshAccessToken(refreshToken) {
       return await handleReusedToken(tokenData, refreshToken);
     }
 
-    // Check if user account is still active
+    // A switched-off account: the presented session ends here rather than
+    // waiting — burned, so switching the account back on does not bring it
+    // back (directive service_accounts 2026-10-15, B4; critic 2B B2). NOW(),
+    // as the claim below writes used_at; replaced_by stays empty, so a later
+    // replay of it is never forgiven as a lost answer.
     if (!tokenData.is_active) {
+      await pool.query(
+        'UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL',
+        [tokenData.id],
+      );
       throw new Error('USER_ACCOUNT_INACTIVE');
     }
 
@@ -768,6 +777,23 @@ async function revokeAllSessions(client, userId) {
   );
   const revokedAt = await markSessionsRevoked(client, userId);
   return { tokenCount: burned.rowCount, revokedAt };
+}
+
+/**
+ * Switches off every push device of a user, in the caller's transaction: the
+ * account's notices must stop reaching the phone of whoever was signed in.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @returns {Promise<number>} devices switched off
+ */
+async function deactivateDevices(client, userId) {
+  const devices = await client.query(
+    `UPDATE device_tokens SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = $1 AND is_active = TRUE`,
+    [userId],
+  );
+  return devices.rowCount;
 }
 
 /**
@@ -1090,7 +1116,8 @@ export async function authenticateWithOAuth(providerData) {
     // 1. Look up existing OAuth user by provider + providerId
     const oauthLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at
+              oauth_provider_id, is_active, last_login_at, created_at,
+              ${serviceAccountFlagSql('users')} AS is_service_account
        FROM users
        WHERE auth_method = $1 AND oauth_provider_id = $2`,
       [provider, providerId],
@@ -1101,6 +1128,15 @@ export async function authenticateWithOAuth(providerData) {
 
       if (!user.is_active) {
         throw new Error('ACCOUNT_DEACTIVATED');
+      }
+
+      // A panel or service account linked before the one-door rule (or by
+      // hand) still does not get a session from a provider: it signs in by
+      // password, through its own door (config/serviceAccounts.js). Refused
+      // like an unproven link — the answer does not say what the account is.
+      if (isOperatorManaged(user)) {
+        logger.warn('OAuth login refused to an operator-managed account', { userId: user.id, provider });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
       }
 
       // Existing OAuth user — update last_login_at and return
@@ -1123,7 +1159,8 @@ export async function authenticateWithOAuth(providerData) {
     // 2. Check if email exists in users table
     const emailLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at, email_verified
+              oauth_provider_id, is_active, last_login_at, created_at, email_verified,
+              ${serviceAccountFlagSql('users')} AS is_service_account
        FROM users
        WHERE email = $1`,
       [email.toLowerCase().trim()],
@@ -1146,23 +1183,28 @@ export async function authenticateWithOAuth(providerData) {
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
       }
 
+      // A panel account (admin, viewer) or a service account (the seed house)
+      // is never handed over and never linked: it is created by the operator
+      // and signs in by password only. Linking would give whoever controls the
+      // provider account — or the mailbox behind the address — a session on
+      // the panel or the catalogue (directive service_accounts 2026-10-15,
+      // B1/B2; critic 2B S1, S2). Until then only the unconfirmed record was
+      // refused (review, 08.10.2026); a confirmed one — every account the
+      // operator's scripts create — was linked. Refused like an unproven link.
+      if (isOperatorManaged(existingUser)) {
+        logger.warn('OAuth login: operator-managed account not linked', {
+          userId: existingUser.id,
+          provider,
+        });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
       // 2c. The record's own e-mail was never confirmed: anyone can register
       // naming someone else's address, and the provider's verified e-mail is
       // the first proof of ownership this record has seen. The account passes
       // to the person signing in — nothing the registrant set up survives
       // (critics' pack 1, point 1; known since 02.10.2026 as N2 / F-09).
       if (!existingUser.email_verified) {
-        // A panel account (admin, viewer) is created by an operator and logs
-        // in by password only: handing it over would lock the panel out, and
-        // it is never a stranger's claim on an address. Refused like an
-        // unproven link (review, 08.10.2026).
-        if (isPanelRole(existingUser.role)) {
-          logger.warn('OAuth login: unconfirmed panel account not handed over', {
-            userId: existingUser.id,
-            provider,
-          });
-          throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
-        }
         const takenOver = await takeOverUnverifiedAccount(existingUser, {
           provider,
           providerId,
@@ -1296,7 +1338,33 @@ export async function upgradeUserToPartner(userId) {
       RETURNING id, email, phone, name, role, auth_method, created_at
     `;
 
-    const result = await pool.query(updateQuery, [new Date(), userId]);
+    let result;
+    if (isPanelRole(currentRole)) {
+      // Out of a panel role (a viewer made a partner from the panel): every
+      // session the account had was opened as a panel session and must not
+      // carry on as a partner's — sessions, push devices and unused reset
+      // links end with the change, in one transaction (directive
+      // service_accounts 2026-10-15, B4; critic 2B B2).
+      const client = await getClient();
+      try {
+        await client.query('BEGIN');
+        result = await client.query(updateQuery, [new Date(), userId]);
+        await revokeAllSessions(client, userId);
+        await deactivateDevices(client, userId);
+        await client.query(
+          'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+          [userId],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      result = await pool.query(updateQuery, [new Date(), userId]);
+    }
 
     // authenticate reads the role from the database (cached briefly): the
     // new role applies from the next request, whatever token is presented.
@@ -1522,7 +1590,12 @@ function hashResetToken(token) {
  * the same generic 200 regardless. Do not add distinguishing throws here.
  *
  * Flow:
- *   1. Look up active user by email — silently resolve if absent.
+ *   1. Look up active user by email — silently resolve if absent, and the
+ *      same way for an account whose access only the operator restores (a
+ *      panel role or a service account — config/serviceAccounts.js): no link,
+ *      no mail, the same answer at the same moment as for an unknown address,
+ *      after the same single query (directive service_accounts 2026-10-15, B2;
+ *      critic 2B S1).
  *   2. Per-user issue throttle: max 5 requests per hour (DB count), so an
  *      attacker cycling IPs still cannot bomb a victim's inbox.
  *   3. Invalidate prior active tokens (only the latest emailed link works).
@@ -1538,7 +1611,7 @@ function hashResetToken(token) {
  */
 export async function createPasswordResetToken(email) {
   const userResult = await pool.query(
-    `SELECT id, email, name
+    `SELECT id, email, name, role, ${serviceAccountFlagSql('users')} AS is_service_account
      FROM users
      WHERE email = $1 AND is_active = true`,
     [email.toLowerCase().trim()],
@@ -1550,6 +1623,13 @@ export async function createPasswordResetToken(email) {
   }
 
   const user = userResult.rows[0];
+
+  if (isOperatorManaged(user)) {
+    logger.warn('Password reset refused: access to this account is restored by the operator only', {
+      userId: user.id,
+    });
+    return;
+  }
 
   const recentCount = await countRecentResetRequests(user.id, 60);
   if (recentCount >= 5) {
@@ -1620,6 +1700,20 @@ export async function consumePasswordResetToken(token, newPassword) {
     throw new Error('INVALID_OR_EXPIRED_TOKEN');
   }
 
+  // A link issued before the account became operator-managed — or before
+  // this rule — does not set its password either: answered as a dead link,
+  // and the link is spent (claimed above).
+  const holder = await pool.query(
+    `SELECT role, ${serviceAccountFlagSql('users')} AS is_service_account FROM users WHERE id = $1`,
+    [resetToken.user_id],
+  );
+  if (isOperatorManaged(holder.rows[0])) {
+    logger.warn('Password reset link refused: access to this account is restored by the operator only', {
+      userId: resetToken.user_id,
+    });
+    throw new Error('INVALID_OR_EXPIRED_TOKEN');
+  }
+
   const passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
 
   const client = await getClient();
@@ -1637,8 +1731,12 @@ export async function consumePasswordResetToken(token, newPassword) {
     user = updateResult.rows[0];
     if (user) {
       // Force re-login everywhere: the reset link came from email ownership,
-      // any session created with the old password is no longer trustworthy
+      // any session created with the old password is no longer trustworthy.
+      // The push devices go with the sessions (directive service_accounts
+      // 2026-10-15, B4): a phone signed in with the old password stops
+      // receiving the account's notices.
       revoked = await revokeAllSessions(client, resetToken.user_id);
+      revoked.devices = await deactivateDevices(client, resetToken.user_id);
     }
     await client.query(user ? 'COMMIT' : 'ROLLBACK');
   } catch (error) {

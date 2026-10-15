@@ -11,6 +11,16 @@
  *     cached briefly per server process). Until then it checked the
  *     signature only and the token lived up to JWT_ACCESS_EXPIRY (4h).
  *
+ * And what it ends, since 2026-10-15 (directive service_accounts, B4; critic
+ * 2B B2): every session of the account, its push devices and its unused
+ * password-reset links (lib/operator-password.js endAllSessions), in the same
+ * transaction as the switch. Until then the switch wrote is_active only: the
+ * sessions were refused while the account was off and came back to life when
+ * it was switched on again — a revocation that could be undone by accident.
+ * Switching ON ends them too: an account switched off before this rule may
+ * still hold sessions from before, and switching it on must not revive them.
+ * Whoever uses the account signs in again.
+ *
  * Security model (mirrors set-partner-password.js):
  *   - Target database: with --production, DATABASE_URL from
  *     backend/.env.production (gitignored, user-managed; TLS to the pinned
@@ -31,6 +41,7 @@ import { createInterface } from 'readline';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { ProductionClient } from './lib/productionDb.js';
+import { reportEndedSessions, writePasswordEndingSessions } from './lib/operator-password.js';
 
 const { Client } = pg;
 
@@ -123,7 +134,7 @@ const main = async () => {
       }
     }
 
-    console.log(`Will set is_active = ${active} for ${account.email}.`);
+    console.log(`Will set is_active = ${active} for ${account.email}; every session, push device and unused reset link of the account ends.`);
     if (!active) {
       console.log('   Login and token refresh stop immediately; an access token already issued stops working within 10 seconds.');
     }
@@ -133,14 +144,16 @@ const main = async () => {
       return 1;
     }
 
-    const result = await client.query(
+    // The switch and the revocation in one transaction (the write helper of
+    // the password scripts: it ends the sessions of the row the write returns).
+    const { account: updated, sessions } = await writePasswordEndingSessions(client, async (tx) => (await tx.query(
       `UPDATE users SET is_active = $1, updated_at = NOW()
        WHERE id = $2
-       RETURNING email, role, is_active`,
+       RETURNING id, email, role, is_active`,
       [active, account.id],
-    );
-    const updated = result.rows[0];
+    )).rows[0]);
     console.log(`✅ ${updated.email} (${updated.role}) is now ${updated.is_active ? 'active' : 'inactive'}.`);
+    reportEndedSessions(sessions);
     return 0;
   } catch (error) {
     console.error('❌ Failed:', error.message);

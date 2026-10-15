@@ -5,7 +5,7 @@
  *
  * Targets — by OWNER, not by is_seed: the accounts listed in --emails=. There
  * is deliberately NO built-in list: the house account
- * seed.data.generator@restaurantguide.by now owns the real catalogue, and a
+ * the seed house (lib/seedHouse.js) now owns the real catalogue, and a
  * default target would offer to delete it. Without --emails= the script stops
  * before reading .env.production or touching the database.
  *
@@ -20,9 +20,9 @@
  *   - Deletes inside a TRANSACTION; FKs cascade to media/reviews/favorites.
  *
  * Usage:
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com --report-only  # inspect, change nothing
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com                # backup + confirm + delete
- *   node scripts/cleanup-seed-cards.js --emails=a@b.by,c@d.com --yes          # skip the prompt
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --report-only  # inspect, change nothing
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com                # backup + confirm + delete
+ *   node scripts/cleanup-seed-cards.js --emails=one@example.com,two@example.com --yes          # skip the prompt
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';

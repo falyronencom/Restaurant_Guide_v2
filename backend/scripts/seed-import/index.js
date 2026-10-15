@@ -20,7 +20,6 @@ import { existsSync, readFileSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { HOUSE_PARTNER_EMAIL } from './contract.js';
 import { pinValue, readPinnedCertificate } from '../lib/productionDb.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -129,7 +128,6 @@ async function main() {
     sheetPath: args.sheet,
     mediaRoot: args['media-root'],
     batchId: args['batch-id'] || `import-${Date.now()}`,
-    housePartnerEmail: args['house-email'] || HOUSE_PARTNER_EMAIL,
     mediaMode,
     allowIncomplete,
     reportOnly: !!args['report-only'],

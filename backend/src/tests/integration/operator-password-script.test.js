@@ -22,6 +22,11 @@
  * другой процесс и сбросить его не может (и говорит это в выводе). После
  * скрипта тест сбрасывает кэш сам — стоит за эти 10 с.
  *
+ * С 15.10 (директива service_accounts, Б4) смена пароля оператором гасит и
+ * push-устройства, и неиспользованные ссылки сброса: устройство и ссылка
+ * заводятся до скрипта, после — их нет. Учётки панели входят через вход
+ * панели: общий вход им сеанса не выдаёт (Б1).
+ *
  * Ещё: пароль и отзыв — одна транзакция; схема без 035 — refresh-токены всё
  * равно сожжены, скрипт предупреждает. Токены — из настоящих регистрации и
  * входа (почему — session-revocation.test.js).
@@ -39,6 +44,7 @@ import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { ACCOUNT_STATUS_TTL_MS, invalidateAccountStatus } from '../../services/accountStatus.js';
 import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
+import { isPanelRole } from '../../config/panelRoles.js';
 import {
   setActiveAccountPassword,
   writePasswordEndingSessions,
@@ -72,6 +78,12 @@ const openSession = async (role) => {
     await query('UPDATE users SET role = $2 WHERE id = $1', [userId, role]);
     invalidateAccountStatus(userId);
   }
+  // Push-устройство и живая ссылка сброса — их тоже гасит смена пароля оператором.
+  await query("INSERT INTO device_tokens (user_id, fcm_token, platform) VALUES ($1, $2, 'android')", [userId, `fcm-${randomUUID()}`]);
+  await query(
+    "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
+    [userId, randomUUID().replace(/-/g, '').padEnd(64, '0')],
+  );
   return {
     email,
     userId,
@@ -80,9 +92,12 @@ const openSession = async (role) => {
   };
 };
 
+/** Вход через дверь роли: учётке панели — вход панели (Б1). */
 const login = async (email, password) => {
+  const { rows: [account] } = await query('SELECT role FROM users WHERE email = $1', [email]);
+  const door = isPanelRole(account.role) ? '/api/v1/admin/auth/login' : '/api/v1/auth/login';
   const res = await request(app)
-    .post('/api/v1/auth/login')
+    .post(door)
     .send({ email, password })
     .expect(200);
   return { accessToken: res.body.data.accessToken, refreshToken: res.body.data.refreshToken };
@@ -104,6 +119,13 @@ const expectRevoked = (response) => {
 
 /** Сеанс, открытый до смены пароля, закрыт; вход с новым паролем работает. */
 const expectOldSessionEnded = async (account) => {
+  const { rows: [left] } = await query(
+    `SELECT (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1 AND is_active = TRUE) AS devices,
+            (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL) AS reset_links`,
+    [account.userId],
+  );
+  expect(left).toEqual({ devices: 0, reset_links: 0 });
+
   // Кэш статуса тёплый (touch до скрипта) и прожил бы до 10 с.
   invalidateAccountStatus(account.userId);
   expectRevoked(await touch(account.accessToken));
@@ -146,10 +168,8 @@ describe('create-admin.js: новый пароль существующей за
     const account = await openSession('user');
     await touch(account.accessToken).expect(200);
 
-    const res = run('create-admin.js', [], {
-      ADMIN_EMAIL: account.email,
+    const res = run('create-admin.js', [`--email=${account.email}`, '--promote', '--yes'], {
       ADMIN_PASSWORD: NEW_PASSWORD,
-      ADMIN_NAME: 'Admin',
     });
     expect({ status: res.status, stderr: res.stderr }).toEqual({ status: 0, stderr: '' });
 
@@ -178,7 +198,7 @@ describe('set-partner-password.js: его запись (скрипт пишет 
 
     const { account: updated, sessions } = await setPassword(account.email);
     expect(updated).toEqual({ id: account.userId, email: account.email });
-    expect(sessions.refreshTokens).toBe(1);
+    expect(sessions).toMatchObject({ refreshTokens: 1, devices: 1, resetLinks: 1 });
     expect(sessions.revokedAt).toBeInstanceOf(Date);
 
     await expectOldSessionEnded(account);

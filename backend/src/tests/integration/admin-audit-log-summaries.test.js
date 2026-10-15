@@ -45,6 +45,10 @@ const WRITTEN_ACTIONS = [
   ['upgrade_user_to_partner', 'user', 'Пользователь повышен до партнёра'],
   // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
   ['change_email', 'user', 'Адрес e-mail учётки изменён'],
+  // scripts/mark-service-account.js и scripts/create-admin.js, SQL-вставкой
+  ['mark_service_account', 'user', 'Учётка отмечена служебной'],
+  ['operator_create_admin', 'user', 'Создан администратор'],
+  ['operator_reset_admin', 'user', 'Администратору задан пароль'],
 ];
 
 let adminToken;
