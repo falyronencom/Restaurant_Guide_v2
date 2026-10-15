@@ -21,6 +21,7 @@ jest.unstable_mockModule('../../config/database.js', () => ({
 jest.unstable_mockModule('../../utils/jwt.js', () => ({
   generateAccessToken: jest.fn(),
   generateRefreshToken: jest.fn(),
+  deriveSuccessorRefreshToken: jest.fn(),
 }));
 jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },

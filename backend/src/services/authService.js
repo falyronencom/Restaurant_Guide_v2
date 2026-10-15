@@ -10,13 +10,19 @@
  * - Passwords are hashed using Argon2id with specific parameters for GPU resistance
  * - Constant-time operations prevent timing attacks
  * - Refresh tokens use strict rotation to prevent reuse attacks
+ * - Refresh tokens are stored as hashes (utils/refreshTokenStorage.js)
  * - All database operations use parameterized queries for SQL injection protection
  */
 
 import argon2 from 'argon2';
 import { pool, getClient } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
-import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  deriveSuccessorRefreshToken,
+} from '../utils/jwt.js';
+import { storedRefreshToken } from '../utils/refreshTokenStorage.js';
 import logger from '../utils/logger.js';
 import {
   invalidateAccountStatus,
@@ -28,6 +34,7 @@ import * as NotificationService from './notificationService.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { parseModerationNotes } from '../utils/moderationNotes.js';
 import { isPanelRole } from '../config/panelRoles.js';
+import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
   createCode as createVerificationCode,
@@ -97,6 +104,9 @@ const ACCESS_TOKEN_EXPIRES_IN_SECONDS = 14400;
  * comes with migration 035, which production applies by hand after this code
  * deploys, and a named column would fail every refresh until then
  * (services/accountStatus.js).
+ *
+ * $1 is storedRefreshToken(token): the table holds the token's hash, never
+ * the token (utils/refreshTokenStorage.js).
  */
 const REFRESH_TOKEN_ROW_SQL = `
   SELECT rt.id, rt.user_id, rt.token, rt.expires_at, rt.created_at, rt.used_at, rt.replaced_by,
@@ -219,9 +229,15 @@ export async function createUser(userData) {
  * @param {string} credentials.email - User's email (optional if phone provided)
  * @param {string} credentials.phone - User's phone (optional if email provided)
  * @param {string} credentials.password - Plain text password to verify
+ * @param {Object} [options]
+ * @param {boolean} [options.panelAccounts=true] - false on the shared login: a
+ *   panel account (admin, viewer) is answered there as a wrong password —
+ *   after the same verification, with no write and no extra query, so neither
+ *   the answer nor its timing nor last_login_at tells a right panel password
+ *   from a wrong one (directive service_accounts 2026-10-15, B1; Phase 3.5)
  * @returns {Promise<Object|null>} User object if credentials valid, null otherwise
  */
-export async function verifyCredentials(credentials) {
+export async function verifyCredentials(credentials, { panelAccounts = true } = {}) {
   const { email, phone, password } = credentials;
   
   try {
@@ -262,6 +278,13 @@ export async function verifyCredentials(credentials) {
         // either way the response would tell the account type apart.
         await argon2.verify(DUMMY_PASSWORD_HASH, password);
         failureReason = 'no_password';
+      }
+
+      if (isValidPassword && !panelAccounts && isPanelRole(user.role)) {
+        // A panel account on the shared login: the panel's own door only.
+        // Same path out as a wrong password below — nothing written.
+        isValidPassword = false;
+        failureReason = 'panel_account_on_shared_login';
       }
 
       if (isValidPassword) {
@@ -322,11 +345,20 @@ export async function verifyCredentials(credentials) {
  * 
  * The token pair allows secure, stateless authentication while maintaining the ability
  * to revoke access by invalidating refresh tokens in the database.
- * 
+ *
+ * The database receives the refresh token's hash, never the token
+ * (utils/refreshTokenStorage.js).
+ *
  * @param {Object} user - User object containing id and role
+ * @param {Object} [options]
+ * @param {string} [options.replaces] - The refresh token this pair rotates.
+ *   Set by refreshAccessToken only: the successor is then derived from it
+ *   (utils/jwt.js deriveSuccessorRefreshToken), so that a replay inside the
+ *   grace window can be handed the same successor again. A new session
+ *   starts from random bytes.
  * @returns {Promise<Object>} Object containing accessToken and refreshToken
  */
-export async function generateTokenPair(user) {
+export async function generateTokenPair(user, { replaces = null } = {}) {
   try {
     // Generate short-lived access token with user identity
     // This token is stateless and validated using JWT signature only
@@ -335,28 +367,30 @@ export async function generateTokenPair(user) {
       role: user.role,
       email: user.email || null,
     });
-    
-    // Generate long-lived refresh token
-    // This is a random string stored in database for server-side validation
-    const refreshToken = generateRefreshToken();
-    
+
     // Store refresh token in database with metadata
     // This allows us to track token usage and implement rotation
     const tokenId = randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30); // 30 days from now
-    
+
+    // Generate long-lived refresh token: random for a new session, derived
+    // from the predecessor and this row's id for a rotation
+    const refreshToken = replaces
+      ? deriveSuccessorRefreshToken(replaces, tokenId)
+      : generateRefreshToken();
+
     const query = `
       INSERT INTO refresh_tokens (
         id, user_id, token, expires_at, created_at, used_at
       )
       VALUES ($1, $2, $3, $4, $5, $6)
     `;
-    
+
     const values = [
       tokenId,
       user.id,
-      refreshToken,
+      storedRefreshToken(refreshToken),
       expiresAt,
       new Date(),
       null, // used_at starts as null, set when token is used for refresh
@@ -411,8 +445,9 @@ export async function generateTokenPair(user) {
  */
 export async function refreshAccessToken(refreshToken) {
   try {
-    // Look up the refresh token in database
-    const result = await pool.query(REFRESH_TOKEN_ROW_SQL, [refreshToken]);
+    // Look up the refresh token in database — by its hash
+    const lookup = storedRefreshToken(refreshToken);
+    const result = await pool.query(REFRESH_TOKEN_ROW_SQL, [lookup]);
 
     if (result.rows.length === 0) {
       logger.warn('Refresh token not found', { token: `${refreshToken.substring(0, 10)  }...` });
@@ -449,11 +484,19 @@ export async function refreshAccessToken(refreshToken) {
     // replaying a rotation whose answer it never received — handleReusedToken
     // separates the two by the grace window.
     if (tokenData.used_at !== null) {
-      return await handleReusedToken(tokenData);
+      return await handleReusedToken(tokenData, refreshToken);
     }
 
-    // Check if user account is still active
+    // A switched-off account: the presented session ends here rather than
+    // waiting — burned, so switching the account back on does not bring it
+    // back (directive service_accounts 2026-10-15, B4; critic 2B B2). NOW(),
+    // as the claim below writes used_at; replaced_by stays empty, so a later
+    // replay of it is never forgiven as a lost answer.
     if (!tokenData.is_active) {
+      await pool.query(
+        'UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL',
+        [tokenData.id],
+      );
       throw new Error('USER_ACCOUNT_INACTIVE');
     }
 
@@ -471,7 +514,7 @@ export async function refreshAccessToken(refreshToken) {
     // reverse order would leave a window where used_at is set and replaced_by
     // is still null: a replay arriving in that window would find no successor
     // to hand back and would revoke every session the user has.
-    const tokens = await generateTokenPair(user);
+    const tokens = await generateTokenPair(user, { replaces: refreshToken });
 
     // Atomic claim. `AND used_at IS NULL` is what makes two simultaneous
     // refreshes of the same token produce exactly one chain — the loser gets
@@ -494,7 +537,7 @@ export async function refreshAccessToken(refreshToken) {
       // replay, so the loser gets the winner's successor instead of a 403.
       await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [tokens.refreshTokenId]);
 
-      const reread = await pool.query(REFRESH_TOKEN_ROW_SQL, [refreshToken]);
+      const reread = await pool.query(REFRESH_TOKEN_ROW_SQL, [lookup]);
 
       if (reread.rows.length === 0) {
         throw new Error('INVALID_REFRESH_TOKEN');
@@ -512,7 +555,7 @@ export async function refreshAccessToken(refreshToken) {
       // answering one of them with "all your sessions are revoked" would be a
       // regression introduced by the claim, and it must not depend on whether
       // the grace window happens to be switched on.
-      return await handleReusedToken(reread.rows[0], { concurrentClaim: true });
+      return await handleReusedToken(reread.rows[0], refreshToken, { concurrentClaim: true });
     }
 
     logger.info('Access token refreshed successfully', {
@@ -537,6 +580,23 @@ export async function refreshAccessToken(refreshToken) {
 }
 
 /**
+ * The token of a successor row, recovered for a replay of its predecessor.
+ *
+ * Derived again from the presented token and the row's id
+ * (deriveSuccessorRefreshToken) and accepted only when it hashes to what the
+ * row holds. What the row holds is never handed out itself: anything else
+ * cannot be recovered, null.
+ *
+ * @param {Object} successorRow - Row of the window query (id, token)
+ * @param {string} presentedToken - The predecessor as the client sent it
+ * @returns {string|null}
+ */
+const successorTokenFor = (successorRow, presentedToken) => {
+  const derived = deriveSuccessorRefreshToken(presentedToken, successorRow.id);
+  return successorRow.token === storedRefreshToken(derived) ? derived : null;
+};
+
+/**
  * Decides what an already-used refresh token means.
  *
  * Strict rotation has a single verdict for a replay — theft — and pays for it
@@ -555,7 +615,11 @@ export async function refreshAccessToken(refreshToken) {
  * column already in hand keeps those paths, and a disabled window, free of
  * any extra query.
  *
+ * The successor's token is not in the database — only its hash is. It is
+ * derived again from the presented token (successorTokenFor below).
+ *
  * @param {Object} tokenData - Refresh-token row joined with its user
+ * @param {string} presentedToken - The refresh token as the client sent it
  * @param {Object} [options]
  * @param {boolean} [options.concurrentClaim=false] - Set by the caller that
  *   lost the atomic claim. Such a caller read the token as unused a round trip
@@ -564,7 +628,7 @@ export async function refreshAccessToken(refreshToken) {
  * @returns {Promise<Object>} Same shape as a normal refresh, when forgiven
  * @throws {Error} REFRESH_TOKEN_REUSE_DETECTED otherwise
  */
-async function handleReusedToken(tokenData, { concurrentClaim = false } = {}) {
+async function handleReusedToken(tokenData, presentedToken, { concurrentClaim = false } = {}) {
   const { seconds: graceSeconds } = resolveRefreshReuseGraceSeconds(process.env);
 
   // An inactive account is never handed a fresh access token: it falls through
@@ -600,11 +664,28 @@ async function handleReusedToken(tokenData, { concurrentClaim = false } = {}) {
     );
 
     const successor = replay.rows[0];
+    const successorToken = successor ? successorTokenFor(successor, presentedToken) : null;
+
+    // A live successor inside the window whose token cannot be recovered —
+    // after a JWT_SECRET change, for one. The replay is the kind the window
+    // forgives, so it is not treated as theft: this session ends (401), the
+    // account's other sessions are left alone.
+    if (successor
+      && !successorToken
+      && successor.used_at === null
+      && new Date(successor.expires_at) > new Date()) {
+      logger.warn('Refresh token replayed within grace window, successor not recoverable', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+        successorTokenId: successor.id,
+      });
+      throw new Error('INVALID_REFRESH_TOKEN');
+    }
 
     // The successor must still be the live end of the chain. Once it has been
     // used, the client demonstrably received it, and a replay of its
     // predecessor is no longer explained by a lost answer.
-    if (successor
+    if (successorToken
       && successor.used_at === null
       && new Date(successor.expires_at) > new Date()) {
       const user = {
@@ -639,7 +720,7 @@ async function handleReusedToken(tokenData, { concurrentClaim = false } = {}) {
 
       return {
         accessToken,
-        refreshToken: successor.token,
+        refreshToken: successorToken,
         expiresIn: ACCESS_TOKEN_EXPIRES_IN_SECONDS,
         user,
       };
@@ -667,10 +748,11 @@ async function handleReusedToken(tokenData, { concurrentClaim = false } = {}) {
  */
 export async function invalidateRefreshToken(refreshToken) {
   try {
-    // Mark token as used to prevent further refresh operations
+    // Mark token as used to prevent further refresh operations. Found by its
+    // hash — the only thing the table holds for it.
     const result = await pool.query(
       'UPDATE refresh_tokens SET used_at = $1 WHERE token = $2 AND used_at IS NULL',
-      [new Date(), refreshToken],
+      [new Date(), storedRefreshToken(refreshToken)],
     );
     
     const wasInvalidated = result.rowCount > 0;
@@ -708,6 +790,23 @@ async function revokeAllSessions(client, userId) {
   );
   const revokedAt = await markSessionsRevoked(client, userId);
   return { tokenCount: burned.rowCount, revokedAt };
+}
+
+/**
+ * Switches off every push device of a user, in the caller's transaction: the
+ * account's notices must stop reaching the phone of whoever was signed in.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @returns {Promise<number>} devices switched off
+ */
+async function deactivateDevices(client, userId) {
+  const devices = await client.query(
+    `UPDATE device_tokens SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = $1 AND is_active = TRUE`,
+    [userId],
+  );
+  return devices.rowCount;
 }
 
 /**
@@ -1030,7 +1129,8 @@ export async function authenticateWithOAuth(providerData) {
     // 1. Look up existing OAuth user by provider + providerId
     const oauthLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at
+              oauth_provider_id, is_active, last_login_at, created_at,
+              ${serviceAccountFlagSql('users')} AS is_service_account
        FROM users
        WHERE auth_method = $1 AND oauth_provider_id = $2`,
       [provider, providerId],
@@ -1038,6 +1138,16 @@ export async function authenticateWithOAuth(providerData) {
 
     if (oauthLookup.rows.length > 0) {
       const user = oauthLookup.rows[0];
+
+      // A panel or service account linked before the one-door rule (or by
+      // hand) still does not get a session from a provider: it signs in by
+      // password, through its own door (config/serviceAccounts.js). Refused
+      // like an unproven link — the answer does not say what the account is,
+      // nor whether it is switched off (checked first for that reason).
+      if (isOperatorManaged(user)) {
+        logger.warn('OAuth login refused to an operator-managed account', { userId: user.id, provider });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
 
       if (!user.is_active) {
         throw new Error('ACCOUNT_DEACTIVATED');
@@ -1063,7 +1173,8 @@ export async function authenticateWithOAuth(providerData) {
     // 2. Check if email exists in users table
     const emailLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at, email_verified
+              oauth_provider_id, is_active, last_login_at, created_at, email_verified,
+              ${serviceAccountFlagSql('users')} AS is_service_account
        FROM users
        WHERE email = $1`,
       [email.toLowerCase().trim()],
@@ -1071,6 +1182,15 @@ export async function authenticateWithOAuth(providerData) {
 
     if (emailLookup.rows.length > 0) {
       const existingUser = emailLookup.rows[0];
+
+      // Operator-managed: refused before anything else is said about it (below).
+      if (isOperatorManaged(existingUser)) {
+        logger.warn('OAuth login: operator-managed account not linked', {
+          userId: existingUser.id,
+          provider,
+        });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
 
       if (!existingUser.is_active) {
         throw new Error('ACCOUNT_DEACTIVATED');
@@ -1086,23 +1206,22 @@ export async function authenticateWithOAuth(providerData) {
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
       }
 
+      // A panel account (admin, viewer) or a service account (the seed house)
+      // is never handed over and never linked: it is created by the operator
+      // and signs in by password only. Linking would give whoever controls the
+      // provider account — or the mailbox behind the address — a session on
+      // the panel or the catalogue (directive service_accounts 2026-10-15,
+      // B1/B2; critic 2B S1, S2). Until then only the unconfirmed record was
+      // refused (review, 08.10.2026); a confirmed one — every account the
+      // operator's scripts create — was linked. Refused like an unproven link
+      // — checked above, before the switched-off answer.
+
       // 2c. The record's own e-mail was never confirmed: anyone can register
       // naming someone else's address, and the provider's verified e-mail is
       // the first proof of ownership this record has seen. The account passes
       // to the person signing in — nothing the registrant set up survives
       // (critics' pack 1, point 1; known since 02.10.2026 as N2 / F-09).
       if (!existingUser.email_verified) {
-        // A panel account (admin, viewer) is created by an operator and logs
-        // in by password only: handing it over would lock the panel out, and
-        // it is never a stranger's claim on an address. Refused like an
-        // unproven link (review, 08.10.2026).
-        if (isPanelRole(existingUser.role)) {
-          logger.warn('OAuth login: unconfirmed panel account not handed over', {
-            userId: existingUser.id,
-            provider,
-          });
-          throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
-        }
         const takenOver = await takeOverUnverifiedAccount(existingUser, {
           provider,
           providerId,
@@ -1236,7 +1355,33 @@ export async function upgradeUserToPartner(userId) {
       RETURNING id, email, phone, name, role, auth_method, created_at
     `;
 
-    const result = await pool.query(updateQuery, [new Date(), userId]);
+    let result;
+    if (isPanelRole(currentRole)) {
+      // Out of a panel role (a viewer made a partner from the panel): every
+      // session the account had was opened as a panel session and must not
+      // carry on as a partner's — sessions, push devices and unused reset
+      // links end with the change, in one transaction (directive
+      // service_accounts 2026-10-15, B4; critic 2B B2).
+      const client = await getClient();
+      try {
+        await client.query('BEGIN');
+        result = await client.query(updateQuery, [new Date(), userId]);
+        await revokeAllSessions(client, userId);
+        await deactivateDevices(client, userId);
+        await client.query(
+          'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+          [userId],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      result = await pool.query(updateQuery, [new Date(), userId]);
+    }
 
     // authenticate reads the role from the database (cached briefly): the
     // new role applies from the next request, whatever token is presented.
@@ -1462,7 +1607,12 @@ function hashResetToken(token) {
  * the same generic 200 regardless. Do not add distinguishing throws here.
  *
  * Flow:
- *   1. Look up active user by email — silently resolve if absent.
+ *   1. Look up active user by email — silently resolve if absent, and the
+ *      same way for an account whose access only the operator restores (a
+ *      panel role or a service account — config/serviceAccounts.js): no link,
+ *      no mail, the same answer at the same moment as for an unknown address,
+ *      after the same single query (directive service_accounts 2026-10-15, B2;
+ *      critic 2B S1).
  *   2. Per-user issue throttle: max 5 requests per hour (DB count), so an
  *      attacker cycling IPs still cannot bomb a victim's inbox.
  *   3. Invalidate prior active tokens (only the latest emailed link works).
@@ -1478,7 +1628,7 @@ function hashResetToken(token) {
  */
 export async function createPasswordResetToken(email) {
   const userResult = await pool.query(
-    `SELECT id, email, name
+    `SELECT id, email, name, role, ${serviceAccountFlagSql('users')} AS is_service_account
      FROM users
      WHERE email = $1 AND is_active = true`,
     [email.toLowerCase().trim()],
@@ -1490,6 +1640,13 @@ export async function createPasswordResetToken(email) {
   }
 
   const user = userResult.rows[0];
+
+  if (isOperatorManaged(user)) {
+    logger.warn('Password reset refused: access to this account is restored by the operator only', {
+      userId: user.id,
+    });
+    return;
+  }
 
   const recentCount = await countRecentResetRequests(user.id, 60);
   if (recentCount >= 5) {
@@ -1567,18 +1724,29 @@ export async function consumePasswordResetToken(token, newPassword) {
   let revoked;
   try {
     await client.query('BEGIN');
+    // Not for an account whose access only the operator restores (a panel
+    // role, the seed house): a link issued before it became one — or before
+    // this rule — is answered as a dead link, and stays spent (claimed
+    // above). The rule sits in the write itself, so an account promoted
+    // between the claim and this write is refused too (Phase 3.5, lens).
     const updateResult = await client.query(
       `UPDATE users
        SET password_hash = $1, updated_at = $2
        WHERE id = $3 AND is_active = true
+         AND role NOT IN ('admin', 'viewer')
+         AND NOT ${serviceAccountFlagSql('users')}
        RETURNING id, email, name`,
       [passwordHash, new Date(), resetToken.user_id],
     );
     user = updateResult.rows[0];
     if (user) {
       // Force re-login everywhere: the reset link came from email ownership,
-      // any session created with the old password is no longer trustworthy
+      // any session created with the old password is no longer trustworthy.
+      // The push devices go with the sessions (directive service_accounts
+      // 2026-10-15, B4): a phone signed in with the old password stops
+      // receiving the account's notices.
       revoked = await revokeAllSessions(client, resetToken.user_id);
+      revoked.devices = await deactivateDevices(client, resetToken.user_id);
     }
     await client.query(user ? 'COMMIT' : 'ROLLBACK');
   } catch (error) {
@@ -1589,6 +1757,16 @@ export async function consumePasswordResetToken(token, newPassword) {
   }
 
   if (!user) {
+    const holder = await pool.query(
+      `SELECT role, is_active, ${serviceAccountFlagSql('users')} AS is_service_account FROM users WHERE id = $1`,
+      [resetToken.user_id],
+    );
+    if (holder.rows[0]?.is_active && isOperatorManaged(holder.rows[0])) {
+      logger.warn('Password reset link refused: access to this account is restored by the operator only', {
+        userId: resetToken.user_id,
+      });
+      throw new Error('INVALID_OR_EXPIRED_TOKEN');
+    }
     throw new Error('USER_NOT_FOUND');
   }
 
