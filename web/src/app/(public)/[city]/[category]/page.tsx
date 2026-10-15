@@ -15,6 +15,7 @@ import {
   categoryPlural,
   cityGenitive,
 } from '@/lib/catalog-labels';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import {
   acceptedSearchParams,
   asFloat,
@@ -70,6 +71,15 @@ export async function generateMetadata({
   let categoryName = category;
   let live = true;
   try {
+    // The same check as the body: when it 404s, the tab says so too instead
+    // of «<slug> Минска».
+    const [cityValid, categoryValid] = await Promise.all([
+      validateCitySlug(city),
+      validateCategorySlug(category),
+    ]);
+    if (!cityValid || !categoryValid) {
+      return { title: NOT_FOUND_TITLE.category };
+    }
     const meta = await getMetadata();
     live = await isLiveCity(city);
     cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;

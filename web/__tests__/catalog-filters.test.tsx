@@ -361,6 +361,29 @@ describe('generateMetadata — filter-aware noindex + canonical', () => {
     });
     expect(meta.robots).toBeUndefined();
   });
+
+  it('an unknown category: the tab says «Категория не найдена», not «<slug> Минска»', async () => {
+    (validateCategorySlug as jest.Mock).mockResolvedValue(false);
+    const meta = await generateMetadata({
+      params: Promise.resolve({ city: 'minsk', category: 'zz-kategoriya' }),
+      searchParams: SP({}),
+    });
+    expect(meta.title).toBe('Категория не найдена');
+  });
+
+  it('an unknown city at the category level: the same page, the same tab', async () => {
+    (validateCitySlug as jest.Mock).mockResolvedValue(false);
+    const meta = await generateMetadata({
+      params: Promise.resolve({ city: 'zz-gorod', category: 'restorany' }),
+      searchParams: SP({}),
+    });
+    expect(meta.title).toBe('Категория не найдена');
+  });
+
+  it('a known category keeps the catalog heading as the title', async () => {
+    const meta = await generateMetadata({ params: P(), searchParams: SP({}) });
+    expect(meta.title).toBe('Рестораны Минска');
+  });
 });
 
 describe('CategoryPage — only cities with cards (Coordinator 01.10, А2)', () => {

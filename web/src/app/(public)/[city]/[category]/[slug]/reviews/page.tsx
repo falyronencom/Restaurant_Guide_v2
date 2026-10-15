@@ -14,6 +14,7 @@ import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { ReviewCard } from '@/components/establishment/ReviewCard';
 import { ReviewSchema } from '@/components/establishment/ReviewSchema';
 import { parsePage } from '@/lib/catalog-params';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import {
   formatRating,
   pluralizeReviews,
@@ -59,7 +60,7 @@ export async function generateMetadata({
 }: {
   params: Promise<Params>;
 }): Promise<Metadata> {
-  const { city, slug } = await params;
+  const { city, category, slug } = await params;
 
   let title = `Отзывы — ${slug}`;
   let description = `Отзывы о заведении в городе ${city}`;
@@ -67,10 +68,25 @@ export async function generateMetadata({
   let ogImageUrl: string | null = null;
 
   try {
+    // The page's own checks, in its order: an unknown city/category or a
+    // backend 404 render not-found.tsx, and the tab says the same.
+    const [cityValid, categoryValid] = await Promise.all([
+      validateCitySlug(city),
+      validateCategorySlug(category),
+    ]);
+    if (!cityValid || !categoryValid) {
+      return { title: NOT_FOUND_TITLE.establishment };
+    }
     const [detail, meta] = await Promise.all([
-      getCachedBySlug(slug),
+      // Only the card's own 404 is «не найдено» — the body maps exactly that
+      // one to notFound(); a 404 from anything else is an error there.
+      getCachedBySlug(slug).catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 404) return null;
+        throw err;
+      }),
       getMetadata(),
     ]);
+    if (!detail) return { title: NOT_FOUND_TITLE.establishment };
     const address = establishmentAddress(detail.establishment);
     const cityName =
       meta.cities.find((c) => c.slug === address.citySlug)?.name ??
@@ -84,9 +100,9 @@ export async function generateMetadata({
     canonical = `${address.path}/reviews`;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings, skip the OG
-    // image and the canonical (no card, no address to point at). The page
-    // render path calls notFound() cleanly if the slug truly is unknown.
+    // Backend hiccup — fall back to slug strings, skip the OG image and the
+    // canonical (no card, no address to point at); the page body surfaces the
+    // error boundary.
   }
 
   // canonical → clean /reviews on ALL pages (no ?page) per CAT-C-2.3, anchored on
