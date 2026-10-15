@@ -1,0 +1,259 @@
+/**
+ * Which accounts hold the panel and the catalogue, and whose mailbox each one
+ * stands on. Read only.
+ *
+ * Why: the panel's admin and the seed house that owns the platform's cards
+ * were found on addresses at domains the project does not own (2026-10-15,
+ * cloud critic 2B S1); whoever owns such a domain receives the system's mail
+ * to those accounts. This is the check that says how many are left — run
+ * after every change to the service accounts, and whenever in doubt. The
+ * answer it is for: «not on our mailboxes: 0».
+ *
+ * Lists every account that
+ *   - has a panel role (admin, viewer) or the partner role, OR
+ *   - owns at least one card, OR
+ *   - stands on a domain the scripts have used for accounts (test.com,
+ *     restaurantguide.by, example.com — scripts/lib/serviceAccounts.js),
+ * whatever else is true of it, with: address and domain, role, active or
+ * not, whether it has a password (never the value), sign-in method and
+ * provider link, live sessions, unspent password-reset links and e-mail
+ * codes, active push devices, cards owned, when it was created — and the
+ * verdict: on our mailbox or not. Ordinary user accounts elsewhere are only
+ * counted, by domain: they are people.
+ *
+ * What it prints about people: the operator's own mailbox is shown as a label,
+ * not as its value (the output is pasted into chats and reports); a partner
+ * on a domain that is neither ours nor a script domain is a person — the name
+ * part of the address is masked, the domain stays.
+ *
+ * Read only by construction: one READ ONLY transaction; the database refuses
+ * any write inside it.
+ *
+ * Target: with --production, DATABASE_URL from the environment or
+ * backend/.env.production, over TLS to the pinned certificate only
+ * (scripts/lib/productionDb.js); without it, the DB_* variables of a local
+ * database. The operator's mailbox comes from SERVICE_ACCOUNT_MAILBOXES in
+ * the same environment.
+ *
+ * Usage (from backend/):
+ *   node scripts/service-accounts-audit.js --production
+ *   From a git worktree (no .env.production there):
+ *   node --env-file=<main checkout>/backend/.env.production scripts/service-accounts-audit.js --production
+ *   --json: the same, as JSON (for tests and for diffing two runs)
+ */
+import pg from 'pg';
+import { ProductionClient, loadProductionEnvironment } from './lib/productionDb.js';
+import {
+  MAILBOXES_VARIABLE,
+  SCRIPT_LITERAL_DOMAINS,
+  displayAddress,
+  domainOf,
+  isOurAddress,
+  mailboxesFrom,
+  maskedAddress,
+  OUR_DOMAINS,
+} from './lib/serviceAccounts.js';
+
+const { Client } = pg;
+
+const args = process.argv.slice(2);
+const production = args.includes('--production');
+const asJson = args.includes('--json');
+
+const buildClient = () => {
+  if (production) {
+    const connectionString = loadProductionEnvironment();
+    return new ProductionClient({ connectionString });
+  }
+  return new Client({
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 5432,
+    database: process.env.DB_NAME || 'restaurant_guide_belarus',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres_dev_password',
+  });
+};
+
+/*
+ * Counts are of rows not yet spent (used_at empty), whatever their expiry:
+ * expiry columns are naive timestamps in the server's clock, and a count
+ * that does not depend on the reader's time zone is the stricter one. Live
+ * refresh tokens are counted a second time against the database's clock
+ * (unspent and not expired) — the sessions someone may actually hold.
+ */
+const ACCOUNTS_SQL = `
+  WITH cards AS (
+    SELECT partner_id,
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status = 'active')::int AS active
+    FROM establishments
+    GROUP BY partner_id
+  )
+  SELECT u.id, u.email, u.role, u.is_active, u.auth_method,
+         (u.oauth_provider_id IS NOT NULL) AS provider_linked,
+         (u.password_hash IS NOT NULL) AS has_password,
+         u.email_verified, u.created_at, u.last_login_at,
+         (to_jsonb(u) ->> 'sessions_revoked_at') AS sessions_revoked_at,
+         COALESCE(c.total, 0) AS cards,
+         COALESCE(c.active, 0) AS active_cards,
+         (SELECT COUNT(*)::int FROM refresh_tokens rt
+           WHERE rt.user_id = u.id AND rt.used_at IS NULL) AS unspent_refresh,
+         (SELECT COUNT(*)::int FROM refresh_tokens rt
+           WHERE rt.user_id = u.id AND rt.used_at IS NULL AND rt.expires_at > LOCALTIMESTAMP) AS live_refresh,
+         (SELECT COUNT(*)::int FROM password_reset_tokens pr
+           WHERE pr.user_id = u.id AND pr.used_at IS NULL) AS unspent_reset_links,
+         (SELECT COUNT(*)::int FROM email_verification_codes ev
+           WHERE ev.user_id = u.id AND ev.used_at IS NULL) AS unspent_email_codes,
+         (SELECT COUNT(*)::int FROM device_tokens dt
+           WHERE dt.user_id = u.id AND dt.is_active = TRUE) AS active_devices
+  FROM users u
+  LEFT JOIN cards c ON c.partner_id = u.id
+  WHERE u.role IN ('admin', 'viewer', 'partner')
+     OR COALESCE(c.total, 0) > 0
+     OR lower(split_part(u.email, '@', 2)) = ANY($1::text[])
+  ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'viewer' THEN 1 WHEN 'partner' THEN 2 ELSE 3 END,
+           COALESCE(c.total, 0) DESC, u.created_at
+`;
+
+const OTHER_USERS_SQL = `
+  WITH cards AS (SELECT DISTINCT partner_id FROM establishments)
+  SELECT COALESCE(NULLIF(lower(split_part(u.email, '@', 2)), ''), '(без e-mail)') AS domain,
+         COUNT(*)::int AS accounts
+  FROM users u
+  LEFT JOIN cards c ON c.partner_id = u.id
+  WHERE u.role NOT IN ('admin', 'viewer', 'partner')
+    AND c.partner_id IS NULL
+    AND NOT (lower(split_part(COALESCE(u.email, ''), '@', 2)) = ANY($1::text[]))
+  GROUP BY 1
+  ORDER BY 2 DESC, 1
+`;
+
+const MIGRATION_035_SQL = `
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'sessions_revoked_at'
+  ) AS applied
+`;
+
+/** What the output may show of an account's address. */
+const shownAddress = (row, mailboxes) => {
+  if (isOurAddress(row.email, mailboxes)) return displayAddress(row.email, mailboxes);
+  const scriptDomain = SCRIPT_LITERAL_DOMAINS.includes(domainOf(row.email));
+  // A partner elsewhere is a person (a business's contact): the domain is
+  // enough to classify, the name is not ours to print.
+  if (row.role === 'partner' && !scriptDomain) return maskedAddress(row.email);
+  return row.email || '(без e-mail)';
+};
+
+const describe = (row, mailboxes) => ({
+  id: row.id,
+  address: shownAddress(row, mailboxes),
+  domain: row.email ? domainOf(row.email) : null,
+  ours: isOurAddress(row.email, mailboxes),
+  role: row.role,
+  active: row.is_active === true,
+  hasPassword: row.has_password === true,
+  authMethod: row.auth_method,
+  providerLinked: row.provider_linked === true,
+  emailVerified: row.email_verified === true,
+  cards: row.cards,
+  activeCards: row.active_cards,
+  unspentRefreshTokens: row.unspent_refresh,
+  liveRefreshTokens: row.live_refresh,
+  unspentResetLinks: row.unspent_reset_links,
+  unspentEmailCodes: row.unspent_email_codes,
+  activeDevices: row.active_devices,
+  sessionsRevokedAt: row.sessions_revoked_at,
+  createdAt: row.created_at,
+  lastLoginAt: row.last_login_at,
+});
+
+const yesNo = (value) => (value ? 'да' : 'нет');
+
+const printReport = (report) => {
+  console.log('════════════════════════════════════════════════');
+  console.log('  СЛУЖЕБНЫЕ УЧЁТКИ — проверка (только чтение)');
+  console.log('════════════════════════════════════════════════');
+  console.log(`  База:        ${report.target}`);
+  console.log(`  Наши домены: ${OUR_DOMAINS.join(', ')}; ящиков Координатора в ${MAILBOXES_VARIABLE}: ${report.mailboxCount}`);
+  console.log(`  Миграция 035 (отзыв выданных сеансов): ${report.migration035 ? 'применена' : 'НЕ применена'}`);
+  console.log('');
+  report.accounts.forEach((a, i) => {
+    console.log(`${i + 1}. ${a.address}  — ${a.ours ? 'НАШ ящик' : 'НЕ наш ящик'}`);
+    console.log(`   роль ${a.role}, активна: ${yesNo(a.active)}, создана ${a.createdAt instanceof Date ? a.createdAt.toISOString().slice(0, 10) : a.createdAt}`);
+    console.log(`   вход: ${a.authMethod}; пароль есть: ${yesNo(a.hasPassword)}; провайдер привязан: ${yesNo(a.providerLinked)}; адрес подтверждён: ${yesNo(a.emailVerified)}`);
+    console.log(`   карточек: ${a.cards} (активных ${a.activeCards})`);
+    console.log(`   сеансов (непогашенных / из них не истёкших): ${a.unspentRefreshTokens} / ${a.liveRefreshTokens}; ссылок сброса: ${a.unspentResetLinks}; кодов подтверждения: ${a.unspentEmailCodes}; устройств push: ${a.activeDevices}`);
+  });
+  console.log('');
+  console.log('Прочие учётки (роль user, без карточек) — только счёт по доменам:');
+  report.otherUsersByDomain.forEach((d) => console.log(`   ${d.domain}: ${d.accounts}`));
+  console.log('');
+  console.log('════════════════════════════════════════════════');
+  const s = report.summary;
+  console.log(`  Учёток в перечне: ${s.listed}`);
+  console.log(`  Активных НЕ на наших ящиках: ${s.activeNotOurs}`);
+  console.log(`  Выключенных НЕ на наших ящиках (в счёт не входят): ${s.inactiveNotOurs}`);
+  console.log(`  На наших ящиках — непогашенных сеансов: ${s.oursUnspentRefreshTokens}, ссылок сброса: ${s.oursUnspentResetLinks}, кодов: ${s.oursUnspentEmailCodes}, привязок провайдера: ${s.oursProviderLinks}`);
+  console.log('════════════════════════════════════════════════');
+};
+
+const main = async () => {
+  let client;
+  try {
+    client = buildClient();
+  } catch (error) {
+    console.error(`❌ ${error.message}`);
+    return 1;
+  }
+  let mailboxes;
+  try {
+    mailboxes = await mailboxesFrom(process.env);
+  } catch (error) {
+    console.error(`❌ ${error.message}`);
+    return 1;
+  }
+
+  try {
+    await client.connect();
+  } catch (error) {
+    console.error(`❌ ${error.message}`);
+    return 1;
+  }
+  try {
+    await client.query('BEGIN TRANSACTION READ ONLY');
+    const accounts = (await client.query(ACCOUNTS_SQL, [SCRIPT_LITERAL_DOMAINS])).rows.map((row) => describe(row, mailboxes));
+    const otherUsersByDomain = (await client.query(OTHER_USERS_SQL, [SCRIPT_LITERAL_DOMAINS])).rows;
+    const migration035 = (await client.query(MIGRATION_035_SQL)).rows[0].applied;
+    await client.query('ROLLBACK');
+
+    const ours = accounts.filter((a) => a.ours);
+    const report = {
+      target: production ? `PRODUCTION (${client.host}:${client.port}/${client.database})` : `local ${client.host}:${client.port}/${client.database}`,
+      mailboxCount: mailboxes.length,
+      migration035,
+      accounts,
+      otherUsersByDomain,
+      summary: {
+        listed: accounts.length,
+        activeNotOurs: accounts.filter((a) => a.active && !a.ours).length,
+        inactiveNotOurs: accounts.filter((a) => !a.active && !a.ours).length,
+        oursUnspentRefreshTokens: ours.reduce((n, a) => n + a.unspentRefreshTokens, 0),
+        oursUnspentResetLinks: ours.reduce((n, a) => n + a.unspentResetLinks, 0),
+        oursUnspentEmailCodes: ours.reduce((n, a) => n + a.unspentEmailCodes, 0),
+        oursProviderLinks: ours.filter((a) => a.providerLinked).length,
+      },
+    };
+
+    if (asJson) console.log(JSON.stringify(report, null, 2));
+    else printReport(report);
+    return 0;
+  } catch (error) {
+    console.error('❌ Failed:', error.message);
+    return 1;
+  } finally {
+    await client.end();
+  }
+};
+
+process.exitCode = await main();

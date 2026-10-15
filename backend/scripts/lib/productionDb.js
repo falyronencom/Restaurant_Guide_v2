@@ -46,6 +46,39 @@ export const PRODUCTION_ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url
 
 const PIN_COMMAND = 'node scripts/pin-production-db-cert.js (из папки backend)';
 
+/**
+ * The production environment for a script: what the process already has,
+ * completed from backend/.env.production next to the scripts.
+ *
+ * Variables already set win — so a script run from a git worktree, which has
+ * no .env.production of its own, is pointed at the operator's file without
+ * copying it: `node --env-file=<main checkout>/backend/.env.production
+ * scripts/<script>.js --production`. The keys stay in the one file the
+ * operator keeps; nothing is written.
+ *
+ * @param {Object} [options]
+ * @param {Object} [options.env=process.env] - completed in place
+ * @param {string|null} [options.envFile=PRODUCTION_ENV_FILE]
+ * @returns {string} DATABASE_URL
+ * @throws {Error} code PRODUCTION_DB_URL_MISSING
+ */
+export const loadProductionEnvironment = ({ env = process.env, envFile = PRODUCTION_ENV_FILE } = {}) => {
+  if (envFile && existsSync(envFile)) {
+    const parsed = dotenv.parse(readFileSync(envFile));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (env[key] === undefined) env[key] = value;
+    }
+  }
+  if (!env.DATABASE_URL) {
+    throw errorWithCode(
+      'PRODUCTION_DB_URL_MISSING',
+      'DATABASE_URL рабочей базы не найден: нет ни в окружении, ни в backend/.env.production рядом со скриптом. ' +
+        'Из worktree: node --env-file=<основная папка>/backend/.env.production scripts/<скрипт>.js --production',
+    );
+  }
+  return env.DATABASE_URL;
+};
+
 /** OpenSSL verdicts that mean "this is not the pinned certificate". */
 const NOT_THE_PINNED_CERTIFICATE = new Set([
   'DEPTH_ZERO_SELF_SIGNED_CERT',
