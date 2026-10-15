@@ -456,6 +456,15 @@ const BAYESIAN_PRIOR_COUNT = 5;
 const BAYESIAN_PRIOR_RATING = 3.5;
 
 /**
+ * Взвешенный рейтинг для ORDER BY — один для всех сортировок и для карты.
+ * Пустой рейтинг (NULL) получает априорную оценку, как заведение без
+ * отзывов: голая формула с NULL даёт NULL, а при DESC Postgres ставит NULL
+ * первым. Пересчёт отзывов теперь пишет 0, но NULL мог остаться в строке
+ * от прежнего пересчёта — у скрытой карточки публичный API его не покажет.
+ */
+const WEIGHTED_RATING_SQL = `COALESCE((e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT}), ${BAYESIAN_PRIOR_RATING})`;
+
+/**
  * Helper: Build ORDER BY clause based on sort parameter
  *
  * Uses Bayesian weighted rating instead of raw average_rating:
@@ -478,7 +487,7 @@ function buildOrderByClause(sortBy, hasDistance = false) {
   END)`;
 
   // Bayesian weighted rating: plavnaya formula bez zhyostkikh porogov
-  const weightedRating = `(e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT})`;
+  const weightedRating = WEIGHTED_RATING_SQL;
 
   switch (sortBy) {
     case 'rating':
@@ -1293,7 +1302,7 @@ export async function searchByBounds({
     LEFT JOIN users u ON e.partner_id = u.id
     WHERE ${whereClause}
     ORDER BY
-      (e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT}) DESC,
+      ${WEIGHTED_RATING_SQL} DESC,
       e.review_count DESC,
       e.name ASC
     LIMIT $${paramIndex}

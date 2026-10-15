@@ -197,6 +197,28 @@ describe('buildOrderByClause', () => {
   });
 
   // =========================================================================
+  // NULL average_rating
+  // =========================================================================
+
+  // A NULL average_rating turns the bare formula into NULL, and Postgres puts
+  // NULL FIRST under DESC: such an establishment topped the rating sort and
+  // jumped ahead inside a price tier. Every mode falls back to the prior —
+  // the score of an establishment without reviews.
+  describe('weighted rating: NULL average_rating scores as the prior', () => {
+    const guarded = 'COALESCE((e.review_count * e.average_rating + 5 * 3.5) / (e.review_count + 5), 3.5) DESC';
+
+    test.each([
+      ['rating', true], ['rating', false],
+      ['price_asc', true], ['price_asc', false],
+      ['price_desc', true], ['price_desc', false],
+      ['distance', true], ['distance', false],
+      [undefined, true], [undefined, false],
+    ])('%s (hasDistance=%s)', (mode, hasDistance) => {
+      expect(buildOrderByClause(mode, hasDistance)).toContain(guarded);
+    });
+  });
+
+  // =========================================================================
   // CTE alias compatibility
   // =========================================================================
 
