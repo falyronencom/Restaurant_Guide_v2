@@ -286,10 +286,22 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await context.read<PromotionProvider>().deactivatePromotion(
-                    promotionId: promotion.id,
-                    establishmentId: widget.establishmentId,
-                  );
+              final provider = context.read<PromotionProvider>();
+              final messenger = ScaffoldMessenger.of(context);
+              final done = await provider.deactivatePromotion(
+                promotionId: promotion.id,
+                establishmentId: widget.establishmentId,
+              );
+              // До 13.10.2026 отказ здесь проглатывался: акция оставалась в
+              // списке, и партнёр не знал почему.
+              if (done || !mounted) return;
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                      provider.actionError ?? 'Ошибка деактивации акции'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
             },
             style: TextButton.styleFrom(foregroundColor: AppTheme.errorRed),
             child: const Text('Завершить'),

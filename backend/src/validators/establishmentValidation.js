@@ -19,6 +19,14 @@
 import { body, param, query } from 'express-validator';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 import { BELARUS_PHONE_REGEX } from '../constants/belarusPhone.js';
+import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
+
+// Field messages here stay in English where the app translates them itself
+// (mobile api_client.dart, _validationMessages — keyed on these very strings,
+// in builds already installed). The three it has no translation for — the
+// city list, an unknown category, an unknown cuisine — are the partner's
+// Russian texts (ESTABLISHMENT_REFUSALS; decision of the Coordinator,
+// 13.10.2026); the app shows them after the field name.
 
 /**
  * Valid city enum values for Belarus
@@ -87,7 +95,7 @@ export const validateCreate = [
     .notEmpty()
     .withMessage('City is required')
     .isIn(VALID_CITIES)
-    .withMessage(`City must be one of: ${VALID_CITIES.join(', ')}`),
+    .withMessage(ESTABLISHMENT_REFUSALS.invalidCity),
 
   // Address validation
   body('address')
@@ -140,7 +148,7 @@ export const validateCreate = [
     .custom((categories) => {
       const invalidCategories = categories.filter(cat => !VALID_CATEGORIES.includes(cat));
       if (invalidCategories.length > 0) {
-        throw new Error(`Invalid categories: ${invalidCategories.join(', ')}`);
+        throw new Error(ESTABLISHMENT_REFUSALS.unknownCategory);
       }
       return true;
     }),
@@ -152,7 +160,7 @@ export const validateCreate = [
     .custom((cuisines) => {
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
-        throw new Error(`Invalid cuisines: ${invalidCuisines.join(', ')}`);
+        throw new Error(ESTABLISHMENT_REFUSALS.unknownCuisine);
       }
       return true;
     }),
@@ -258,7 +266,7 @@ export const validateUpdate = [
     .custom((categories) => {
       const invalidCategories = categories.filter(cat => !VALID_CATEGORIES.includes(cat));
       if (invalidCategories.length > 0) {
-        throw new Error(`Invalid categories: ${invalidCategories.join(', ')}`);
+        throw new Error(ESTABLISHMENT_REFUSALS.unknownCategory);
       }
       return true;
     }),
@@ -271,7 +279,7 @@ export const validateUpdate = [
     .custom((cuisines) => {
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
-        throw new Error(`Invalid cuisines: ${invalidCuisines.join(', ')}`);
+        throw new Error(ESTABLISHMENT_REFUSALS.unknownCuisine);
       }
       return true;
     }),

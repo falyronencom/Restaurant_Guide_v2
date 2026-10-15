@@ -359,6 +359,20 @@ describe('CityPage generateMetadata — filter-aware noindex + canonical', () =>
     expect(meta.robots).toEqual({ index: false, follow: true });
     expect(meta.alternates?.canonical).toBe('/minsk');
   });
+
+  it('an unknown city: the tab says «Город не найден», not «Заведения <slug>»', async () => {
+    (validateCitySlug as jest.Mock).mockResolvedValue(false);
+    const meta = await generateMetadata({
+      params: Promise.resolve({ city: 'zz-gorod' }),
+      searchParams: SP({}),
+    });
+    expect(meta.title).toBe('Город не найден');
+  });
+
+  it('a known city keeps its heading as the title', async () => {
+    const meta = await generateMetadata({ params: P(), searchParams: SP({}) });
+    expect(meta.title).toBe('Заведения Минска');
+  });
 });
 
 describe('CityPage — only cities with cards (Coordinator 01.10, А2)', () => {

@@ -541,53 +541,56 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
 
   Future<void> _confirmBooking(Booking booking) async {
     final provider = context.read<BookingProvider>();
-    await provider.confirmBooking(widget.establishmentId, booking.id);
+    final refusal =
+        await provider.confirmBooking(widget.establishmentId, booking.id);
+    await _reportRefusal(refusal);
   }
 
-  void _showDeclineDialog(Booking booking) {
-    final controller = TextEditingController();
-    showDialog(
+  Future<void> _showDeclineDialog(Booking booking) async {
+    final reason = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Причина отклонения'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Укажите причину...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final reason = controller.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(ctx);
-              final provider = context.read<BookingProvider>();
-              await provider.declineBooking(
-                widget.establishmentId,
-                booking.id,
-                reason,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.errorRed,
-            ),
-            child: const Text('Отклонить'),
-          ),
-        ],
-      ),
-    ).then((_) => controller.dispose());
+      builder: (_) => const _DeclineReasonDialog(),
+    );
+    if (reason == null || !mounted) return;
+    final provider = context.read<BookingProvider>();
+    final refusal = await provider.declineBooking(
+      widget.establishmentId,
+      booking.id,
+      reason,
+    );
+    await _reportRefusal(refusal);
   }
 
   Future<void> _markNoShow(Booking booking) async {
     final provider = context.read<BookingProvider>();
-    await provider.markNoShow(widget.establishmentId, booking.id);
+    final refusal =
+        await provider.markNoShow(widget.establishmentId, booking.id);
+    await _reportRefusal(refusal);
+  }
+
+  /// Сервер не выполнил действие — сказать партнёру почему и перечитать
+  /// список.
+  ///
+  /// Отказ почти всегда значит, что экран устарел: срок ответа истёк и бронь
+  /// снята, гость её отменил, её обработали со второго телефона. После
+  /// перечитывания бронь переезжает в свой раздел или в историю; без него
+  /// кнопка оставалась на месте и молча не срабатывала сколько угодно раз.
+  ///
+  /// Перечитывает экран, а не провайдер, и уже после плашки: причина видна
+  /// сразу, не дожидаясь второго запроса — без связи это ещё до 30 секунд
+  /// таймаута.
+  Future<void> _reportRefusal(String? refusal) async {
+    if (refusal == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(refusal),
+        backgroundColor: AppTheme.errorRed,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    await context
+        .read<BookingProvider>()
+        .loadPartnerBookings(widget.establishmentId);
   }
 
   Future<void> _callPhone(String phone) async {
@@ -595,5 +598,61 @@ class _BookingsManagementScreenState extends State<BookingsManagementScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
+  }
+}
+
+/// Окно «Причина отклонения»; закрывается с текстом причины или без него
+/// («Отмена»).
+///
+/// Поле ввода принадлежит окну и уничтожается вместе с ним. До 13.10.2026
+/// его уничтожали, как только окно начинало закрываться, а анимация закрытия
+/// ещё перестраивала поле: в отладочной сборке — красный экран «A
+/// TextEditingController was used after being disposed».
+class _DeclineReasonDialog extends StatefulWidget {
+  const _DeclineReasonDialog();
+
+  @override
+  State<_DeclineReasonDialog> createState() => _DeclineReasonDialogState();
+}
+
+class _DeclineReasonDialogState extends State<_DeclineReasonDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Причина отклонения'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          hintText: 'Укажите причину...',
+          border: OutlineInputBorder(),
+        ),
+        maxLines: 3,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final reason = _controller.text.trim();
+            if (reason.isEmpty) return;
+            Navigator.pop(context, reason);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.errorRed,
+          ),
+          child: const Text('Отклонить'),
+        ),
+      ],
+    );
   }
 }

@@ -20,6 +20,7 @@ import {
   ratingColorClass,
 } from '@/lib/establishment-helpers';
 import { establishmentAddress } from '@/lib/establishment-path';
+import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
@@ -74,7 +75,7 @@ export async function generateMetadata({
 }: {
   params: Promise<Params>;
 }): Promise<Metadata> {
-  const { city, slug } = await params;
+  const { city, category, slug } = await params;
 
   let title = `${slug} — ${city}`;
   let description = `Заведение в городе ${city}`;
@@ -82,10 +83,25 @@ export async function generateMetadata({
   let ogImageUrl: string | null = null;
 
   try {
+    // The page's own checks, in its order: an unknown city/category or a
+    // backend 404 render not-found.tsx, and the tab says the same.
+    const [cityValid, categoryValid] = await Promise.all([
+      validateCitySlug(city),
+      validateCategorySlug(category),
+    ]);
+    if (!cityValid || !categoryValid) {
+      return { title: NOT_FOUND_TITLE.establishment };
+    }
     const [detail, meta] = await Promise.all([
-      getCachedBySlug(slug),
+      // Only the card's own 404 is «не найдено» — the body maps exactly that
+      // one to notFound(); a 404 from anything else is an error there.
+      getCachedBySlug(slug).catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 404) return null;
+        throw err;
+      }),
       getMetadata(),
     ]);
+    if (!detail) return { title: NOT_FOUND_TITLE.establishment };
     // Names and canonical come from the card, not from the address it was
     // requested under: a foreign city/category redirects (page body), and
     // the redirecting response points crawlers at the same address.
@@ -104,10 +120,9 @@ export async function generateMetadata({
     canonical = address.path;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings, skip the OG
-    // image override and the canonical (no card, no address to point at).
-    // Page render path will call notFound() cleanly if the slug truly
-    // doesn't exist.
+    // Backend hiccup — fall back to slug strings, skip the OG image override
+    // and the canonical (no card, no address to point at); the page body
+    // surfaces the error boundary.
   }
 
   // openGraph.title does NOT inherit title.template (Discovery F5) — set
