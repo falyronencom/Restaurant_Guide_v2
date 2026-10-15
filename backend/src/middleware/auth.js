@@ -4,6 +4,14 @@ import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
 
 /**
+ * What a client reads when authorize refuses (403): the account's role is not
+ * one the route admits — say a partner role taken away mid-session. Decision of
+ * the Coordinator, 15.10.2026. The app shows the response's message as is; the
+ * code FORBIDDEN stays what clients key on.
+ */
+export const INSUFFICIENT_ROLE_MESSAGE = 'Недостаточно прав для этого действия.';
+
+/**
  * Authentication middleware that verifies JWT access tokens.
  *
  * This middleware protects routes by ensuring that:
@@ -207,7 +215,7 @@ export const authorize = (allowedRoles) => {
 
       return res.status(403).json({
         success: false,
-        message: 'Insufficient permissions to access this resource',
+        message: INSUFFICIENT_ROLE_MESSAGE,
         error: {
           code: 'FORBIDDEN',
           details: {

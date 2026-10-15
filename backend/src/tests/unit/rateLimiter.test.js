@@ -12,7 +12,11 @@ jest.unstable_mockModule('../../config/redis.js', () => ({
   default: {},
 }));
 
-const { createRateLimiter } = await import('../../middleware/rateLimiter.js');
+const { createRateLimiter, rateLimiter } = await import('../../middleware/rateLimiter.js');
+
+// The app shows a 429's message as is (decision of the Coordinator,
+// 15.10.2026): one Russian text for both limiters, a literal here.
+const RATE_LIMIT_TEXT = 'Слишком много запросов. Попробуйте позже.';
 
 const buildResponse = () => {
   const res = {};
@@ -63,10 +67,51 @@ describe('rateLimiter middleware', () => {
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
-        error: expect.objectContaining({ code: 'RATE_LIMIT_EXCEEDED' }),
+        success: false,
+        message: RATE_LIMIT_TEXT,
+        error: expect.objectContaining({
+          code: 'RATE_LIMIT_EXCEEDED',
+          details: expect.objectContaining({ limit: 5, window: '60 seconds', retry_after: 12 }),
+        }),
       }),
     );
     expect(res.headers['X-RateLimit-Remaining']).toBe('0');
+  });
+});
+
+describe('global rateLimiter', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // server.js mounts it before any route's authenticate, so in production
+  // req.user is never set and only the IP branch runs; both are held here.
+  test.each([
+    ['an anonymous request, keyed by IP', { ip: '9.9.9.9' }, 'ratelimit:ip:9.9.9.9:', '1 hour'],
+    ['a signed-in request, keyed by account', { ip: '9.9.9.9', user: { userId: 'u-1' } }, 'ratelimit:user:u-1:', '1 minute'],
+  ])('over the limit: %s — 429 with the Russian text, the same code', async (_label, who, keyPrefix, window) => {
+    incrementWithExpiry.mockResolvedValueOnce(1000000);
+    getTTL.mockResolvedValueOnce(30);
+
+    const req = { ...who, method: 'POST', path: '/api/v1/partner/establishments' };
+    const res = buildResponse();
+    const next = jest.fn();
+
+    await rateLimiter(req, res, next);
+
+    expect(incrementWithExpiry.mock.calls[0][0].startsWith(keyPrefix)).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        message: RATE_LIMIT_TEXT,
+        error: expect.objectContaining({
+          code: 'RATE_LIMIT_EXCEEDED',
+          details: expect.objectContaining({ window, retry_after: 30 }),
+        }),
+      }),
+    );
   });
 });
 
