@@ -19,6 +19,7 @@ import { verifyGoogleToken, verifyYandexToken } from '../services/oauthService.j
 import {
   uploadAvatar as cloudinaryUploadAvatar,
   deleteImage,
+  hasPlainTransformations,
   isOwnedAsset,
   ownCloudPublicId,
   ownedFolders,
@@ -27,7 +28,15 @@ import logger from '../utils/logger.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
- * the ownership record — config/cloudinary.js, ownedFolders).
+ * the ownership record — config/cloudinary.js, ownedFolders) that shows that
+ * file and nothing else: a delivery URL may carry transformations that draw
+ * text, a remote file or another asset over it, and the site and the app show
+ * the stored link as is (review 02.10.2026, N3 — the rule card media follow).
+ * The link is stored as sent, so it must be exactly the address the checks
+ * read — origin, path and query, as for card media (establishmentService,
+ * mediaLinkRefusal): a dot segment the parser resolves
+ * (`l_text:…,co_red/../avatars/…`), a fragment or a user part would keep in
+ * the stored text something no check has seen.
  *
  * @param {*} url - Client-supplied avatar_url
  * @param {string} userId - Authenticated caller
@@ -35,7 +44,11 @@ import logger from '../utils/logger.js';
  */
 const isOwnAvatarUrl = (url, userId) => {
   const publicId = ownCloudPublicId(url);
-  return publicId !== null && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
+  if (publicId === null) return false;
+  const { origin, pathname, search } = new URL(url);
+  return `${origin}${pathname}${search}` === url
+    && hasPlainTransformations(url)
+    && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
 };
 
 /**
@@ -467,7 +480,8 @@ export async function logout(req, res, next) {
  * Request body:
  * - name (optional): New display name (max 100 chars)
  * - avatar_url (optional): null / '' to remove the avatar, or a link into the
- *   caller's own avatar folder on our cloud; any other value is ignored
+ *   caller's own avatar folder on our cloud that only resizes or reformats the
+ *   file; any other value is ignored
  *
  * Response:
  * - 200 OK: Updated user information
@@ -494,14 +508,15 @@ export async function updateProfile(req, res, next) {
     // POST /auth/avatar destroys the previous avatar by this link, and an
     // arbitrary link let any user get someone else's file destroyed (review
     // 02.10.2026, N1): a client may only clear the avatar or point into its own
-    // avatar folder. Neither client sends the field (the site sends { name },
+    // avatar folder, with a link that draws nothing over the file (N3).
+    // Neither client sends the field (the site sends { name },
     // the app sends the name only, in every version), so anything else is
     // ignored rather than refused — a client echoing a stored value must not
     // break a name change.
     let avatarUrl = avatar_url;
     if (avatarUrl !== undefined && avatarUrl !== null && avatarUrl !== ''
       && !isOwnAvatarUrl(avatarUrl, userId)) {
-      logger.warn('Profile update: avatar_url outside the caller\'s avatar folder ignored');
+      logger.warn('Profile update: avatar_url not a plain link into the caller\'s avatar folder ignored');
       avatarUrl = undefined;
     }
 
