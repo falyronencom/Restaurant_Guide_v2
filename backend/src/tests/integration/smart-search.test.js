@@ -145,12 +145,24 @@ describe('Smart Search - Input Validation', () => {
   });
 
   test('should sanitize query with control characters', async () => {
+    // NUL сюда не доходит: его отказывает фильтр на входе (400 — middleware/
+    // requestGuard.js, integration/request-guard). Прочие управляющие символы
+    // база принимает, поэтому статус 200 ничего не доказывает — доказывает
+    // выдача: слово, разорванное ими, после sanitizeQuery ищется целым.
+    // Слово взято из ОПИСАНИЯ «Кофе Тайм» («…в центре»), не из названия:
+    // сверка с названиями складывает фразу по буквам и нашла бы «ко…фе» и без
+    // sanitizeQuery (мутация «снимается только NUL» с таким словом выживала). /
+    // NUL is refused at the entrance; the other control characters are valid
+    // text for the database, so only the result set shows they were removed —
+    // through a description word, which the name matcher cannot rescue.
+    const controlChars = [0x01, 0x1f, 0x7f].map((code) => String.fromCharCode(code)).join('');
     const response = await request(app)
       .post('/api/v1/search/smart')
-      .send({ query: 'кофе\x00\x01 рядом' });
+      .send({ query: `цен${controlChars}тре`, city: 'Минск' });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
+    expect(response.body.data.establishments.map(e => e.name)).toEqual(['Кофе Тайм']);
   });
 
   test('should truncate query longer than 150 characters', async () => {
@@ -674,6 +686,12 @@ describe('Smart Search - фильтры экрана в теле запроса'
 
   test('явная сортировка применяется к выдаче', async () => {
     await seedIntent('поесть в минске', plainIntent({ sort: 'rating' }));
+    // Без цены — в конце и при «сначала дороже» (стратегия §2.4). Прежний
+    // `ELSE 5` ставил такую карточку первой: при DESC 5 > '$$$$' = 4.
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Без цены', gen_random_uuid()::text, 'Цена не указана', 'Минск', 'ул. Немига 3', 53.9, 27.55, ARRAY['Кафе'], ARRAY['Европейская'], 'active', $2::jsonb, NULL, NOW(), NOW())
+    `, [partnerId, defaultWorkingHours]);
 
     const response = await request(app)
       .post('/api/v1/search/smart')
@@ -682,7 +700,7 @@ describe('Smart Search - фильтры экрана в теле запроса'
     expect(response.status).toBe(200);
     // '$$$' Итальяно впереди двух '$'; порядок внутри яруса — по имени.
     expect(response.body.data.establishments.map(e => e.name))
-      .toEqual(['Итальяно', 'Бургер Хаус', 'Кофе Тайм']);
+      .toEqual(['Итальяно', 'Бургер Хаус', 'Кофе Тайм', 'Без цены']);
   });
 
   test('страница 2 отдаёт следующую карточку и честную пагинацию', async () => {

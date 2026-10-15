@@ -456,6 +456,15 @@ const BAYESIAN_PRIOR_COUNT = 5;
 const BAYESIAN_PRIOR_RATING = 3.5;
 
 /**
+ * Взвешенный рейтинг для ORDER BY — один для всех сортировок и для карты.
+ * Пустой рейтинг (NULL) получает априорную оценку, как заведение без
+ * отзывов: голая формула с NULL даёт NULL, а при DESC Postgres ставит NULL
+ * первым. Пересчёт отзывов теперь пишет 0, но NULL мог остаться в строке
+ * от прежнего пересчёта — у скрытой карточки публичный API его не покажет.
+ */
+const WEIGHTED_RATING_SQL = `COALESCE((e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT}), ${BAYESIAN_PRIOR_RATING})`;
+
+/**
  * Helper: Build ORDER BY clause based on sort parameter
  *
  * Uses Bayesian weighted rating instead of raw average_rating:
@@ -468,17 +477,19 @@ const BAYESIAN_PRIOR_RATING = 3.5;
  * @returns {string} SQL ORDER BY clause
  */
 function buildOrderByClause(sortBy, hasDistance = false) {
-  // Convert price range to numeric for sorting — NULL/missing sorts last (ELSE 5)
+  // Цена в число; карточка без цены даёт NULL и уходит в конец при ОБОИХ
+  // направлениях (стратегия §2.4) — поэтому NULLS LAST у обоих price_*.
+  // Число-заглушка вместо NULL так не умеет: прежний `ELSE 5` при DESC
+  // оказывался больше '$$$$' = 4, и карточки без цены вставали первыми.
   const priceToNum = `(CASE e.price_range
     WHEN '$' THEN 1
     WHEN '$$' THEN 2
     WHEN '$$$' THEN 3
     WHEN '$$$$' THEN 4
-    ELSE 5
   END)`;
 
   // Bayesian weighted rating: plavnaya formula bez zhyostkikh porogov
-  const weightedRating = `(e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT})`;
+  const weightedRating = WEIGHTED_RATING_SQL;
 
   switch (sortBy) {
     case 'rating':
@@ -489,15 +500,15 @@ function buildOrderByClause(sortBy, hasDistance = false) {
 
     case 'price_asc':
       if (hasDistance) {
-        return `${priceToNum} ASC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
+        return `${priceToNum} ASC NULLS LAST, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} ASC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} ASC NULLS LAST, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'price_desc':
       if (hasDistance) {
-        return `${priceToNum} DESC, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
+        return `${priceToNum} DESC NULLS LAST, distance_km ASC, ${weightedRating} DESC, e.name ASC`;
       }
-      return `${priceToNum} DESC, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
+      return `${priceToNum} DESC NULLS LAST, ${weightedRating} DESC, e.review_count DESC, e.name ASC`;
 
     case 'distance':
       if (hasDistance) {
@@ -1293,7 +1304,7 @@ export async function searchByBounds({
     LEFT JOIN users u ON e.partner_id = u.id
     WHERE ${whereClause}
     ORDER BY
-      (e.review_count * e.average_rating + ${BAYESIAN_PRIOR_COUNT} * ${BAYESIAN_PRIOR_RATING}) / (e.review_count + ${BAYESIAN_PRIOR_COUNT}) DESC,
+      ${WEIGHTED_RATING_SQL} DESC,
       e.review_count DESC,
       e.name ASC
     LIMIT $${paramIndex}

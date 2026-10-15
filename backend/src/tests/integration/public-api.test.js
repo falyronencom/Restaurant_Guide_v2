@@ -261,6 +261,21 @@ describe('Public API — GET /api/v1/public/establishments', () => {
     expect(response.body.error.code).toBe('INVALID_SLUG');
   });
 
+  test.each([
+    ['city', 'constructor'],
+    ['category', 'constructor'],
+    ['cuisines', '__proto__'],
+  ])('400 for %s=%s — a key of the object prototype is not a slug', async (param, value) => {
+    // До 13.10.2026 таблица слагов отвечала и за свой прототип: такой город
+    // проходил проверку, и каталог отвечал 200 с пустой выдачей.
+    const response = await request(app)
+      .get('/api/v1/public/establishments')
+      .query({ [param]: value })
+      .expect(400);
+
+    expect(response.body.error.code).toBe('INVALID_SLUG');
+  });
+
   test('pagination uses totalPages convention', async () => {
     const response = await request(app)
       .get('/api/v1/public/establishments')
@@ -546,6 +561,15 @@ describe('Public API — GET /api/v1/public/establishments/map', () => {
       .get('/api/v1/public/establishments/map')
       .query({ city: 'moscow' })
       .expect(400);
+  });
+
+  test('400 for city=__proto__ on map — a key of the object prototype is not a slug', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ city: '__proto__' })
+      .expect(400);
+
+    expect(response.body.error.code).toBe('INVALID_SLUG');
   });
 
   test('bounds enclosing the pin returns it', async () => {

@@ -9,6 +9,7 @@ import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { requestGuard } from './middleware/requestGuard.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
 import * as refreshTokenPruner from './services/refreshTokenPruner.js';
@@ -131,6 +132,13 @@ app.use(rateLimiter);
  * Serve uploaded files (avatars, images) as static assets.
  */
 app.use('/uploads', express.static(UPLOADS_ROOT));
+
+/**
+ * Request guard — before any route can reach the database: a NUL anywhere in
+ * the request is refused with 400, a page number past MAX_PAGE (the site's
+ * ceiling) or an offset past MAX_OFFSET with 422 (middleware/requestGuard.js).
+ */
+app.use('/api', requestGuard);
 
 /**
  * Mount API routes under /api prefix.

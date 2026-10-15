@@ -107,6 +107,20 @@ const CATEGORY_BY_SLUG = buildReverseMap(CATEGORY_SLUG_MAP);
 const CUISINE_BY_SLUG = buildReverseMap(CUISINE_SLUG_MAP);
 
 /**
+ * A map's own entry, or null. The maps are plain objects, and a plain object
+ * answers for its prototype too: `MAP['constructor']` is the Object function,
+ * `MAP['__proto__']` is Object.prototype — both truthy, so `?city=constructor`
+ * passed the slug check as a city and came back as an empty catalog (200)
+ * instead of 400 INVALID_SLUG (13.10.2026). Every helper below reads through
+ * this; the site closed the same class with Object.hasOwn in eac58c0.
+ *
+ * @param {Object} map
+ * @param {string} key
+ * @returns {string|null}
+ */
+const ownEntry = (map, key) => (Object.hasOwn(map, key) ? map[key] : null);
+
+/**
  * Convert city slug to canonical Cyrillic name.
  *
  * Mogilev edge case: 'mogilev' returns 'Могилев' (canonical without ё).
@@ -118,7 +132,7 @@ const CUISINE_BY_SLUG = buildReverseMap(CUISINE_SLUG_MAP);
  */
 export const citySlugToCyrillic = (slug) => {
   if (typeof slug !== 'string') return null;
-  return CANONICAL_CITY_BY_SLUG[slug.toLowerCase()] || null;
+  return ownEntry(CANONICAL_CITY_BY_SLUG, slug.toLowerCase());
 };
 
 /**
@@ -130,7 +144,7 @@ export const citySlugToCyrillic = (slug) => {
  */
 export const cityCyrillicToSlug = (cyrillic) => {
   if (typeof cyrillic !== 'string') return null;
-  return CITY_SLUG_MAP[cyrillic] || null;
+  return ownEntry(CITY_SLUG_MAP, cyrillic);
 };
 
 /**
@@ -141,7 +155,7 @@ export const cityCyrillicToSlug = (cyrillic) => {
  */
 export const categorySlugToCyrillic = (slug) => {
   if (typeof slug !== 'string') return null;
-  return CATEGORY_BY_SLUG[slug.toLowerCase()] || null;
+  return ownEntry(CATEGORY_BY_SLUG, slug.toLowerCase());
 };
 
 /**
@@ -152,7 +166,7 @@ export const categorySlugToCyrillic = (slug) => {
  */
 export const categoryCyrillicToSlug = (cyrillic) => {
   if (typeof cyrillic !== 'string') return null;
-  return CATEGORY_SLUG_MAP[cyrillic] || null;
+  return ownEntry(CATEGORY_SLUG_MAP, cyrillic);
 };
 
 /**
@@ -163,7 +177,7 @@ export const categoryCyrillicToSlug = (cyrillic) => {
  */
 export const cuisineSlugToCyrillic = (slug) => {
   if (typeof slug !== 'string') return null;
-  return CUISINE_BY_SLUG[slug.toLowerCase()] || null;
+  return ownEntry(CUISINE_BY_SLUG, slug.toLowerCase());
 };
 
 /**
@@ -174,7 +188,7 @@ export const cuisineSlugToCyrillic = (slug) => {
  */
 export const cuisineCyrillicToSlug = (cyrillic) => {
   if (typeof cyrillic !== 'string') return null;
-  return CUISINE_SLUG_MAP[cyrillic] || null;
+  return ownEntry(CUISINE_SLUG_MAP, cyrillic);
 };
 
 /**
