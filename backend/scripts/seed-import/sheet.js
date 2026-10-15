@@ -121,7 +121,7 @@ export function normalizeRow(raw, rowNum) {
   // phone / email / website (optional)
   const phone = (raw.phone ?? '').trim();
   rec.phone = phone || null;
-  if (phone && !PHONE_RE.test(phone)) err(`phone "${phone}" not +375XXXXXXXXX (9 digits)`);
+  if (phone && !PHONE_RE.test(phone)) err(`phone "${phone}" not +375 + mobile or city code + number (9 digits)`);
 
   const email = (raw.email ?? '').trim().toLowerCase();
   rec.email = email || null;

@@ -136,7 +136,13 @@ void main() {
 
     expect(deleted, isFalse,
         reason: 'экран показал бы «Заведение удалено» и ушёл назад');
-    expect(provider.error, contains(_refusal));
+    // Точным равенством: до 13.10.2026 здесь стояло `contains`, и оно
+    // зеленело вместе с приставкой «Ошибка удаления: DioException [bad
+    // response]: null / Error:», которую партнёр читал перед фразой.
+    expect(provider.actionError, _refusal);
+    expect(provider.error, isNull,
+        reason: 'отказ действия — не ошибка загрузки списка: по ней профиль '
+            'прячет список заведений');
     expect(provider.establishments.map((e) => e.id), [_id]);
     expect(wire.requests.where((r) => r.method == 'DELETE'), hasLength(1));
   });

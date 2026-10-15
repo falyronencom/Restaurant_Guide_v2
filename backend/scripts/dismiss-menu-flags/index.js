@@ -34,6 +34,7 @@ import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from '../lib/productionDb.js';
 import {
   Refusal,
   applyDismissal,
@@ -112,10 +113,8 @@ const buildClient = (production) => {
       console.error('❌ В backend/.env.production не задан DATABASE_URL.');
       process.exit(EXIT.USAGE);
     }
-    return new Client({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
+    // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+    return new ProductionClient({ connectionString: process.env.DATABASE_URL });
   }
   return new Client({
     host: process.env.DB_HOST || 'localhost',

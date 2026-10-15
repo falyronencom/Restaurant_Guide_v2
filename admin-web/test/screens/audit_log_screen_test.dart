@@ -78,6 +78,7 @@ AuditLogEntry _entry({
   String? entityId = '1a2b3c4d-0000-4000-8000-000000000000',
   String? adminName = 'Всеволод',
   String? adminEmail = 'vsevolod@nirivio.by',
+  String? actorRole,
   DateTime? createdAt,
   Map<String, dynamic>? entityContext,
   Map<String, dynamic>? oldData,
@@ -91,6 +92,7 @@ AuditLogEntry _entry({
       entityId: entityId,
       adminName: adminName,
       adminEmail: adminEmail,
+      actorRole: actorRole,
       createdAt: createdAt ?? DateTime.utc(2026, 7, 14, 6, 41),
       entityContext: entityContext,
       oldData: oldData,
@@ -393,6 +395,29 @@ void main() {
       // Правка данных ничего не открыла и не закрыла.
       await showAction('admin_update_coordinates', 'Координаты обновлены');
       expect(dotColor(tester), AppTheme.textSecondary);
+    });
+
+    testWidgets(
+        'просмотрщику исполнитель назван ролью, а не «не указан» '
+        '(пакет 2, пункт 2)', (tester) async {
+      // Сервер не отдаёт просмотрщику имя и e-mail исполнителя — только
+      // роль. «не указан» было бы неправдой: исполнитель известен.
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(adminName: null, adminEmail: null, actorRole: 'admin'),
+        _entry(
+          id: 'e2',
+          action: 'partner_delete_establishment',
+          summary: 'Заведение удалено партнёром',
+          adminName: null,
+          adminEmail: null,
+          actorRole: 'partner',
+        ),
+      ]);
+
+      expect(find.text('Администратор'), findsOneWidget);
+      expect(find.text('Партнёр'), findsOneWidget);
+      expect(find.text('не указан'), findsNothing);
     });
 
     testWidgets('свои действия помечены брендовым кружком, чужие — серым',

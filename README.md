@@ -2,7 +2,9 @@
 
 Гид по кафе и ресторанам Минска: поиск не только заведения, но и конкретного блюда с ценой. Меню заведений распознаются с фотографий и PDF с помощью ИИ.
 
-> **In English.** Nirivio is a restaurant guide for Minsk, Belarus, that lets people search for a specific dish and its price, not just a venue; menus are extracted from photos and PDFs with AI. The repository holds four parts: a Node.js/Express API on PostgreSQL + PostGIS, a Flutter mobile app, a Flutter Web moderation panel, and a Next.js public website with a partner cabinet. The product UI, code comments and commit messages are in Russian. Local setup and test commands are below; all rights reserved.
+> **In English.** Nirivio is a restaurant guide for Minsk, Belarus, that lets people search for a specific dish and its price, not just a venue; menus are extracted from photos and PDFs with AI. The repository holds four parts: a Node.js/Express API on PostgreSQL + PostGIS, a Flutter mobile app, a Flutter Web moderation panel, and a Next.js public website with a partner cabinet. The product UI, code comments and commit messages are in Russian. Local setup and test commands are below; how the system is built and why is in [ARCHITECTURE.md](ARCHITECTURE.md); all rights reserved.
+
+Как устроена система и почему именно так — карта частей и потоков, ключевые решения с причинами — в [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Состояние
 
