@@ -226,13 +226,18 @@ export async function login(req, res, next) {
       });
     }
     
-    // Verify credentials
+    // Verify credentials. A panel account (admin, viewer) gets a session
+    // through the panel's own login only — its role gate, its rate limit
+    // (directive service_accounts 2026-10-15, B1; critic 2B S2): here it is
+    // answered exactly as a wrong password, whether its password was right or
+    // not (verifyCredentials, panelAccounts: false), so this door — with its
+    // milder limit — cannot be used to test a panel password either.
     const user = await authService.verifyCredentials({
       email,
       phone,
       password,
-    });
-    
+    }, { panelAccounts: false });
+
     // If credentials invalid, return generic error message
     // We don't specify whether email/phone exists or password wrong
     // This prevents username enumeration attacks
