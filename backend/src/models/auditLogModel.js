@@ -351,6 +351,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'mark_service_account' AND al.entity_type = 'user' THEN 'Учётка отмечена служебной'
         WHEN al.action = 'operator_create_admin' AND al.entity_type = 'user' THEN 'Создан администратор'
         WHEN al.action = 'operator_reset_admin' AND al.entity_type = 'user' THEN 'Администратору задан пароль'
+        WHEN al.action = 'operator_promote_admin' AND al.entity_type = 'user' THEN 'Учётка повышена до администратора'
         WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
         WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
         WHEN al.action = 'unhide_menu_item' AND al.entity_type = 'menu_item' THEN 'Показана позиция меню'

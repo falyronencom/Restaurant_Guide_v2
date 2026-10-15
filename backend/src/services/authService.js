@@ -229,9 +229,15 @@ export async function createUser(userData) {
  * @param {string} credentials.email - User's email (optional if phone provided)
  * @param {string} credentials.phone - User's phone (optional if email provided)
  * @param {string} credentials.password - Plain text password to verify
+ * @param {Object} [options]
+ * @param {boolean} [options.panelAccounts=true] - false on the shared login: a
+ *   panel account (admin, viewer) is answered there as a wrong password —
+ *   after the same verification, with no write and no extra query, so neither
+ *   the answer nor its timing nor last_login_at tells a right panel password
+ *   from a wrong one (directive service_accounts 2026-10-15, B1; Phase 3.5)
  * @returns {Promise<Object|null>} User object if credentials valid, null otherwise
  */
-export async function verifyCredentials(credentials) {
+export async function verifyCredentials(credentials, { panelAccounts = true } = {}) {
   const { email, phone, password } = credentials;
   
   try {
@@ -272,6 +278,13 @@ export async function verifyCredentials(credentials) {
         // either way the response would tell the account type apart.
         await argon2.verify(DUMMY_PASSWORD_HASH, password);
         failureReason = 'no_password';
+      }
+
+      if (isValidPassword && !panelAccounts && isPanelRole(user.role)) {
+        // A panel account on the shared login: the panel's own door only.
+        // Same path out as a wrong password below — nothing written.
+        isValidPassword = false;
+        failureReason = 'panel_account_on_shared_login';
       }
 
       if (isValidPassword) {
@@ -1126,17 +1139,18 @@ export async function authenticateWithOAuth(providerData) {
     if (oauthLookup.rows.length > 0) {
       const user = oauthLookup.rows[0];
 
-      if (!user.is_active) {
-        throw new Error('ACCOUNT_DEACTIVATED');
-      }
-
       // A panel or service account linked before the one-door rule (or by
       // hand) still does not get a session from a provider: it signs in by
       // password, through its own door (config/serviceAccounts.js). Refused
-      // like an unproven link — the answer does not say what the account is.
+      // like an unproven link — the answer does not say what the account is,
+      // nor whether it is switched off (checked first for that reason).
       if (isOperatorManaged(user)) {
         logger.warn('OAuth login refused to an operator-managed account', { userId: user.id, provider });
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
+      if (!user.is_active) {
+        throw new Error('ACCOUNT_DEACTIVATED');
       }
 
       // Existing OAuth user — update last_login_at and return
@@ -1169,6 +1183,15 @@ export async function authenticateWithOAuth(providerData) {
     if (emailLookup.rows.length > 0) {
       const existingUser = emailLookup.rows[0];
 
+      // Operator-managed: refused before anything else is said about it (below).
+      if (isOperatorManaged(existingUser)) {
+        logger.warn('OAuth login: operator-managed account not linked', {
+          userId: existingUser.id,
+          provider,
+        });
+        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
       if (!existingUser.is_active) {
         throw new Error('ACCOUNT_DEACTIVATED');
       }
@@ -1190,14 +1213,8 @@ export async function authenticateWithOAuth(providerData) {
       // the panel or the catalogue (directive service_accounts 2026-10-15,
       // B1/B2; critic 2B S1, S2). Until then only the unconfirmed record was
       // refused (review, 08.10.2026); a confirmed one — every account the
-      // operator's scripts create — was linked. Refused like an unproven link.
-      if (isOperatorManaged(existingUser)) {
-        logger.warn('OAuth login: operator-managed account not linked', {
-          userId: existingUser.id,
-          provider,
-        });
-        throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
-      }
+      // operator's scripts create — was linked. Refused like an unproven link
+      // — checked above, before the switched-off answer.
 
       // 2c. The record's own e-mail was never confirmed: anyone can register
       // naming someone else's address, and the provider's verified e-mail is
@@ -1700,20 +1717,6 @@ export async function consumePasswordResetToken(token, newPassword) {
     throw new Error('INVALID_OR_EXPIRED_TOKEN');
   }
 
-  // A link issued before the account became operator-managed — or before
-  // this rule — does not set its password either: answered as a dead link,
-  // and the link is spent (claimed above).
-  const holder = await pool.query(
-    `SELECT role, ${serviceAccountFlagSql('users')} AS is_service_account FROM users WHERE id = $1`,
-    [resetToken.user_id],
-  );
-  if (isOperatorManaged(holder.rows[0])) {
-    logger.warn('Password reset link refused: access to this account is restored by the operator only', {
-      userId: resetToken.user_id,
-    });
-    throw new Error('INVALID_OR_EXPIRED_TOKEN');
-  }
-
   const passwordHash = await argon2.hash(newPassword, ARGON2_OPTIONS);
 
   const client = await getClient();
@@ -1721,10 +1724,17 @@ export async function consumePasswordResetToken(token, newPassword) {
   let revoked;
   try {
     await client.query('BEGIN');
+    // Not for an account whose access only the operator restores (a panel
+    // role, the seed house): a link issued before it became one — or before
+    // this rule — is answered as a dead link, and stays spent (claimed
+    // above). The rule sits in the write itself, so an account promoted
+    // between the claim and this write is refused too (Phase 3.5, lens).
     const updateResult = await client.query(
       `UPDATE users
        SET password_hash = $1, updated_at = $2
        WHERE id = $3 AND is_active = true
+         AND role NOT IN ('admin', 'viewer')
+         AND NOT ${serviceAccountFlagSql('users')}
        RETURNING id, email, name`,
       [passwordHash, new Date(), resetToken.user_id],
     );
@@ -1747,6 +1757,16 @@ export async function consumePasswordResetToken(token, newPassword) {
   }
 
   if (!user) {
+    const holder = await pool.query(
+      `SELECT role, is_active, ${serviceAccountFlagSql('users')} AS is_service_account FROM users WHERE id = $1`,
+      [resetToken.user_id],
+    );
+    if (holder.rows[0]?.is_active && isOperatorManaged(holder.rows[0])) {
+      logger.warn('Password reset link refused: access to this account is restored by the operator only', {
+        userId: resetToken.user_id,
+      });
+      throw new Error('INVALID_OR_EXPIRED_TOKEN');
+    }
     throw new Error('USER_NOT_FOUND');
   }
 

@@ -49,6 +49,7 @@ const WRITTEN_ACTIONS = [
   ['mark_service_account', 'user', 'Учётка отмечена служебной'],
   ['operator_create_admin', 'user', 'Создан администратор'],
   ['operator_reset_admin', 'user', 'Администратору задан пароль'],
+  ['operator_promote_admin', 'user', 'Учётка повышена до администратора'],
 ];
 
 let adminToken;

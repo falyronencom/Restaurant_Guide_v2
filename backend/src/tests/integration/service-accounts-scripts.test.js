@@ -95,6 +95,12 @@ describe('Б3: the seed house is found by its flag', () => {
     await expect(find()).rejects.toMatchObject({ code: 'SEED_HOUSE_AMBIGUOUS' });
   });
 
+  test('the import refuses --house-email instead of ignoring it', () => {
+    const result = run('seed-import/index.js', ['--house-email=someone@example.com', '--target=dryrun']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--house-email больше не поддерживается');
+  });
+
   test('a seed script without the house stops and creates no account', async () => {
     const result = run('seed-establishments-placeholder.js');
     expect(result.status).not.toBe(0);
@@ -210,15 +216,16 @@ describe('Б5: create-admin.js', () => {
     expect((await one('SELECT role FROM users WHERE id = $1', [id])).role).toBe('user');
   });
 
-  test('--promote: the session opened through the shared door does not become a panel session', async () => {
-    const id = await user({ email: 'guest@example.com' });
+  test('--promote: the session opened through the shared door does not become a panel session; the provider link goes', async () => {
+    const id = await user({ email: 'guest@example.com', provider: 'g-guest' });
     const login = await sharedLogin('guest@example.com').expect(200);
     const result = run('create-admin.js', ['--email=guest@example.com', '--promote', '--yes'], { ADMIN_PASSWORD: NEW_PASSWORD });
     expect(result.status).toBe(0);
-    expect((await one('SELECT role FROM users WHERE id = $1', [id])).role).toBe('admin');
+    expect(await one('SELECT role, oauth_provider_id FROM users WHERE id = $1', [id]))
+      .toEqual({ role: 'admin', oauth_provider_id: null });
     invalidateAccountStatus(id);
     expect((await refresh(login.body.data.refreshToken)).status).toBe(401);
-    expect((await one("SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'operator_reset_admin' AND entity_id = $1", [id])).n).toBe(1);
+    expect((await one("SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'operator_promote_admin' AND entity_id = $1", [id])).n).toBe(1);
   });
 });
 

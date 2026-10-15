@@ -24,7 +24,6 @@ import {
   ownedFolders,
 } from '../config/cloudinary.js';
 import logger from '../utils/logger.js';
-import { isPanelRole } from '../config/panelRoles.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
@@ -227,26 +226,22 @@ export async function login(req, res, next) {
       });
     }
     
-    // Verify credentials
+    // Verify credentials. A panel account (admin, viewer) gets a session
+    // through the panel's own login only — its role gate, its rate limit
+    // (directive service_accounts 2026-10-15, B1; critic 2B S2): here it is
+    // answered exactly as a wrong password, whether its password was right or
+    // not (verifyCredentials, panelAccounts: false), so this door — with its
+    // milder limit — cannot be used to test a panel password either.
     const user = await authService.verifyCredentials({
       email,
       phone,
       password,
-    });
-    
-    // A panel account (admin, viewer) gets a session through the panel's own
-    // login only — its role gate, its rate limit (directive service_accounts
-    // 2026-10-15, B1; critic 2B S2). Here it is answered exactly as a wrong
-    // password, whether its password was right or not, so this door — with
-    // its milder limit — cannot be used to test a panel password either.
-    if (user && isPanelRole(user.role)) {
-      logger.warn('Shared login refused to a panel account', { userId: user.id, role: user.role });
-    }
+    }, { panelAccounts: false });
 
     // If credentials invalid, return generic error message
     // We don't specify whether email/phone exists or password wrong
     // This prevents username enumeration attacks
-    if (!user || isPanelRole(user.role)) {
+    if (!user) {
       return res.status(401).json({
         success: false,
         error: {

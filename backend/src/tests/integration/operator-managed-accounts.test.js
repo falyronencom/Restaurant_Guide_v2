@@ -70,14 +70,16 @@ const googleSignIn = (email, sub = 'google-sub-42') => {
 };
 
 describe('Б1: the shared login does not open a session for a panel account', () => {
-  test.each(['admin', 'viewer'])('%s: a right password is answered exactly as a wrong one, and no session is created', async (role) => {
+  test.each(['admin', 'viewer'])('%s: a right password is answered exactly as a wrong one — no session, no last-login write', async (role) => {
     const id = await account({ email: `${role}@example.com`, role });
+    const before = (await query('SELECT last_login_at FROM users WHERE id = $1', [id])).rows[0];
     const right = await sharedLogin(`${role}@example.com`, PASSWORD);
     const wrong = await sharedLogin(`${role}@example.com`, WRONG);
     expect(right.status).toBe(401);
     expect(right.body).toEqual(wrong.body);
     expect(right.body.error.code).toBe('INVALID_CREDENTIALS');
     expect(await sessionsOf(id)).toBe(0);
+    expect((await query('SELECT last_login_at FROM users WHERE id = $1', [id])).rows[0]).toEqual(before);
   });
 
   test('the panel login and the panel session\'s refresh still work', async () => {
@@ -113,12 +115,25 @@ describe('Б1/Б2: Google/Yandex neither opens a session for nor links an operat
     expect(await sessionsOf(id)).toBe(0);
   });
 
-  test('a panel account already linked (before the rule, or by hand) gets no session from the provider', async () => {
-    const id = await account({ email: 'linked@example.com', role: 'admin' });
+  test.each([
+    ['a panel account', 'admin', false],
+    ['the seed house', 'partner', true],
+  ])('%s already linked (before the rule, or by hand) gets no session from the provider', async (_, role, service) => {
+    const id = await account({ email: 'linked@example.com', role, service });
     await query("UPDATE users SET auth_method = 'google', oauth_provider_id = 'google-sub-linked' WHERE id = $1", [id]);
     const res = await googleSignIn('somewhere-else@example.com', 'google-sub-linked');
     expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('OAUTH_EMAIL_NOT_VERIFIED');
     expect(await sessionsOf(id)).toBe(0);
+  });
+
+  test('a switched-off operator-managed account gets the same answer as a switched-on one', async () => {
+    const id = await account({ email: 'linked@example.com', role: 'admin' });
+    await query("UPDATE users SET auth_method = 'google', oauth_provider_id = 'google-sub-linked', is_active = false WHERE id = $1", [id]);
+    const linked = await googleSignIn('somewhere-else@example.com', 'google-sub-linked');
+    expect(linked.body.error.code).toBe('OAUTH_EMAIL_NOT_VERIFIED');
+    const byEmail = await googleSignIn('linked@example.com', 'google-sub-other');
+    expect(byEmail.body.error.code).toBe('OAUTH_EMAIL_NOT_VERIFIED');
   });
 
   test('an ordinary confirmed user is still linked and signed in', async () => {
@@ -183,6 +198,10 @@ describe('Б4: whatever takes access away takes all of it', () => {
     invalidateAccountStatus(id);
     const refused = await refresh(login.body.data.refreshToken);
     expect(refused.status).not.toBe(200);
+    const { rows: [burned] } = await query(
+      'SELECT COUNT(*)::int AS n FROM refresh_tokens WHERE user_id = $1 AND used_at IS NULL', [id],
+    );
+    expect(burned.n).toBe(0);
 
     await query('UPDATE users SET is_active = true WHERE id = $1', [id]);
     invalidateAccountStatus(id);
@@ -190,11 +209,15 @@ describe('Б4: whatever takes access away takes all of it', () => {
     expect(again.status).not.toBe(200);
   });
 
-  test('«make partner» on a viewer ends its sessions and push devices', async () => {
+  test('«make partner» on a viewer ends its sessions, push devices and reset links', async () => {
     const { accessToken: adminToken } = await createAdminAndGetToken();
     const id = await account({ email: 'viewer@example.com', role: 'viewer' });
     const login = await panelLogin('viewer@example.com').expect(200);
     await device(id);
+    await query(
+      "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
+      [id, randomUUID().replace(/-/g, '').padEnd(64, '0')],
+    );
 
     await request(app)
       .post(`/api/v1/admin/users/${id}/upgrade-to-partner`)
@@ -204,6 +227,10 @@ describe('Б4: whatever takes access away takes all of it', () => {
     const renewed = await refresh(login.body.data.refreshToken);
     expect(renewed.status).toBe(401);
     expect(await activeDevices(id)).toBe(0);
+    const { rows: [links] } = await query(
+      'SELECT COUNT(*)::int AS n FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL', [id],
+    );
+    expect(links.n).toBe(0);
   });
 
   test('a password reset by link switches off the push devices too', async () => {

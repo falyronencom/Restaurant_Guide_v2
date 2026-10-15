@@ -4,8 +4,8 @@
  * the real seed fill-up (done 18.07.2026).
  *
  * Targets — by OWNER, not by is_seed: the accounts listed in --emails=. There
- * is deliberately NO built-in list: the house account
- * the seed house (lib/seedHouse.js) now owns the real catalogue, and a
+ * is deliberately NO built-in list: the seed house (lib/seedHouse.js) now
+ * owns the real catalogue, and a
  * default target would offer to delete it. Without --emails= the script stops
  * before reading .env.production or touching the database.
  *

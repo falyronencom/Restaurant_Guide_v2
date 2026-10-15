@@ -96,6 +96,11 @@ function confirm(question) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // The house is found by its flag since 2026-10-15 (lib/seedHouse.js); an
+  // address given the old way would be silently ignored — refuse it instead.
+  if (args['house-email'] !== undefined) {
+    fail('--house-email больше не поддерживается: дом сида находится по признаку служебной учётки (scripts/mark-service-account.js).');
+  }
   const info = resolveTarget(args);
   const isLocalHost = ['localhost', '127.0.0.1'].includes(info.host);
 

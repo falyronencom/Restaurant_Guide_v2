@@ -25,9 +25,10 @@
  *   - the address is shown with its verdict — on our mailbox or not
  *     (lib/serviceAccounts.js); a panel account on a stranger's domain gets
  *     its password resets delivered to the stranger;
- *   - the journal records the creation or reset (operator_create_admin /
- *     operator_reset_admin), the address under user_email — withheld from the
- *     viewer role.
+ *   - the journal records the creation, reset or promotion
+ *     (operator_create_admin / operator_reset_admin / operator_promote_admin),
+ *     the address under user_email — withheld from the viewer role; a
+ *     Google/Yandex link of the account is dropped.
  *
  * Usage (PowerShell, from backend/):
  *   $env:ADMIN_PASSWORD = "choose-a-strong-password"
@@ -160,14 +161,20 @@ const main = async () => {
     let sessions = null;
     if (row) {
       ({ account, sessions } = await writePasswordEndingSessions(client, async (tx) => {
+        // A panel account signs in by password only: a Google/Yandex link the
+        // account had before is dropped, so none lies dormant should the role
+        // ever be taken away by hand (Phase 3.5, lens).
         const updated = (await tx.query(
           `UPDATE users
-           SET password_hash = $1, name = $2, role = 'admin', is_active = true, updated_at = NOW()
+           SET password_hash = $1, name = $2, role = 'admin', is_active = true,
+               oauth_provider_id = NULL,
+               auth_method = CASE WHEN auth_method IN ('google', 'yandex') THEN 'email' ELSE auth_method END,
+               updated_at = NOW()
            WHERE id = $3
            RETURNING id, email, role, name, is_active`,
           [passwordHash, name, row.id],
         )).rows[0];
-        await journal(tx, 'operator_reset_admin', row.id, {
+        await journal(tx, row.role === 'admin' ? 'operator_reset_admin' : 'operator_promote_admin', row.id, {
           old: { role: row.role, is_active: row.is_active },
           new: { user_email: updated.email, role: 'admin', is_active: true },
         });
