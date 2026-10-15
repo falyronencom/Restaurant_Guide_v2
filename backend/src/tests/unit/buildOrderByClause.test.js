@@ -176,8 +176,9 @@ describe('buildOrderByClause', () => {
   // Postgres puts NULL last under ASC but FIRST under DESC, so both price
   // directions spell NULLS LAST out. Tie-breakers after the price key are
   // the same as before the fix — literal strings, not rebuilt from the code.
+  // The weighted rating carries the NULL-rating guard (scores as the prior).
   describe('price sort: no-price last in both directions, tie-breakers unchanged', () => {
-    const weighted = '(e.review_count * e.average_rating + 5 * 3.5) / (e.review_count + 5)';
+    const weighted = 'COALESCE((e.review_count * e.average_rating + 5 * 3.5) / (e.review_count + 5), 3.5)';
 
     test.each([
       ['price_asc', true, `distance_km ASC, ${weighted} DESC, e.name ASC`],
