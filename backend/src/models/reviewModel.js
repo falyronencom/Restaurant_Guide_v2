@@ -518,11 +518,14 @@ export const hardDeleteReview = async (reviewId) => {
  * @returns {Promise<Object>} Object with updated average_rating and review_count
  */
 export const updateEstablishmentAggregates = async (establishmentId, client = pool) => {
+  // Без видимых отзывов AVG даёт NULL; пишем 0, как триггер
+  // update_establishment_metrics и заведение, у которого отзывов не было.
+  // NULL в сортировке «по рейтингу» при DESC вставал первым.
   const query = `
     UPDATE establishments
     SET
       average_rating = (
-        SELECT AVG(rating)::DECIMAL(3,2)
+        SELECT COALESCE(AVG(rating)::DECIMAL(3,2), 0)
         FROM reviews
         WHERE establishment_id = $1
         AND is_deleted = false

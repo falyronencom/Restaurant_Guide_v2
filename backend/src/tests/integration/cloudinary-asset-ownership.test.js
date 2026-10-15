@@ -139,7 +139,7 @@ describe('Путь A: POST /auth/avatar уничтожает прежний ав
   });
 });
 
-describe('Путь A: PUT /auth/profile принимает в avatar_url только удаление или ссылку в свою папку', () => {
+describe('Путь A: PUT /auth/profile принимает в avatar_url только удаление или ссылку в свою папку без рисующих преобразований', () => {
   test.each([
     ['фото чужой карточки', (other) => deliveryUrl(`establishments/temp/${other.id}/interior/victim0001`)],
     ['аватар другого пользователя', (other) => uploadedUrl(`avatars/${other.id}/face0001`, 'jpg')],
@@ -149,6 +149,27 @@ describe('Путь A: PUT /auth/profile принимает в avatar_url тол�
     ['шаг назад из своей папки', (other, self) =>
       uploadedUrl(`avatars/${self.id}/../${other.id}/face0001`, 'jpg')],
     ['не строка', () => 12345],
+    // Ссылка на свой файл может нести инструкции облака, которые рисуют поверх
+    // него другое: текст, файл с любого сайта, чужое фото. Такая картинка —
+    // тоже чужая. Файл в своей папке во всех трёх случаях.
+    ['своё фото, но поверх текст', (_other, self) =>
+      `https://res.cloudinary.com/test/image/upload/l_text:Arial_80:victim,co_red/v1759600000/avatars/${self.id}/face0003.jpg`],
+    ['своё фото, но поверх картинка со стороннего сайта', (_other, self) =>
+      `https://res.cloudinary.com/test/image/upload/l_fetch:aHR0cHM6Ly9pbWFnZXMuZXhhbXBsZS5vcmcvdmljdGltLnBuZw==,w_256/v1759600000/avatars/${self.id}/face0003.jpg`],
+    ['своё фото, но поверх аватар другого пользователя', (other, self) =>
+      `https://res.cloudinary.com/test/image/upload/l_avatars:${other.id}:face0001,fl_relative,w_1,h_1,c_fill/v1759600000/avatars/${self.id}/face0003.jpg`],
+    ['своё фото, но вторым шагом подложка чужого аватара', (other, self) =>
+      `https://res.cloudinary.com/test/image/upload/c_fill,w_256/u_avatars:${other.id}:face0001,w_256/v1759600000/avatars/${self.id}/face0003.jpg`],
+    // Проверки читают разобранную ссылку, а хранится присланный текст: шаг
+    // назад убирает слой из разобранной, но не из хранимой.
+    ['слой, спрятанный за шагом назад', (_other, self) =>
+      `https://res.cloudinary.com/test/image/upload/l_text:Arial_80:victim,co_red/../v1759600000/avatars/${self.id}/face0003.jpg`],
+    // Хвост после # и логин перед хостом проверки не читают вовсе — так же,
+    // как у медиа карточки, хранится только то, что прочитано.
+    ['слой в хвосте после #', (_other, self) =>
+      `https://res.cloudinary.com/test/image/upload/v1759600000/avatars/${self.id}/face0003.jpg#/../../l_text:Arial_80:victim,co_red/x`],
+    ['логин перед хостом', (_other, self) =>
+      `https://victim@res.cloudinary.com/test/image/upload/v1759600000/avatars/${self.id}/face0003.jpg`],
   ])('чужое значение игнорируется, имя меняется: %s', async (_label, foreignValue) => {
     const { user, token } = await newUser();
     const { partner: other } = await newPartner();
@@ -181,6 +202,9 @@ describe('Путь A: PUT /auth/profile принимает в avatar_url тол�
   test.each([
     ['другой ассет в своей папке', (self) => uploadedUrl(`avatars/${self.id}/face0004`, 'jpg'),
       (self) => uploadedUrl(`avatars/${self.id}/face0004`, 'jpg')],
+    ['свой файл: только размер и формат, метка ?_a=',
+      (self) => `https://res.cloudinary.com/test/image/upload/c_fill,w_256,h_256/f_auto,q_auto/v1759600000/avatars/${self.id}/face0004?_a=BAMAMiRg0`,
+      (self) => `https://res.cloudinary.com/test/image/upload/c_fill,w_256,h_256/f_auto,q_auto/v1759600000/avatars/${self.id}/face0004?_a=BAMAMiRg0`],
     ['null — удалить аватар', () => null, () => null],
     ['пустая строка — удалить аватар', () => '', () => null],
   ])('принимается: %s', async (_label, value, expected) => {
@@ -194,6 +218,30 @@ describe('Путь A: PUT /auth/profile принимает в avatar_url тол�
       .expect(200);
 
     expect((await storedUser(user.id)).avatar_url).toBe(expected(user));
+  });
+
+  // Отброшенное значение оставляет прежний аватар, и при эхе текущего значения
+  // отказ не виден. Поэтому перед эхом аватар снят: принятая ссылка вернётся в
+  // базу, отброшенная — нет.
+  test('ссылка, которую вернул POST /auth/avatar, принимается PUT вместе с новым именем', async () => {
+    const { user, token } = await newUser();
+    const uploaded = await request(app)
+      .post('/api/v1/auth/avatar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
+      .expect(200);
+    await setAvatar(user.id, null);
+
+    await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Новое Имя', avatar_url: uploaded.body.data.user.avatarUrl })
+      .expect(200);
+
+    expect(await storedUser(user.id)).toEqual({
+      name: 'Новое Имя',
+      avatar_url: `https://res.cloudinary.com/test/image/upload/v1759700000/avatars/${user.id}/fresh0001.jpg`,
+    });
   });
 });
 

@@ -19,7 +19,7 @@
 
 import { normalizeRow, contentHash } from './sheet.js';
 import { scanMedia, checkE1 } from './media.js';
-import { ALL_COLUMNS, HOUSE_PARTNER_EMAIL } from './contract.js';
+import { ALL_COLUMNS } from './contract.js';
 
 /**
  * @param {object} args
@@ -110,7 +110,6 @@ export async function preflight({ db, rows, headers, mediaRoot, housePartnerId, 
     rows: rows.length,
     ready: ready.length,
     errors: errors.length,
-    house_partner_email: HOUSE_PARTNER_EMAIL,
   };
   // If cross-partner collisions were appended, drop those from ready.
   if (errors.some((e) => e.includes('collides with existing real card'))) {

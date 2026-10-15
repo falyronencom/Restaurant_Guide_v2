@@ -145,12 +145,24 @@ describe('Smart Search - Input Validation', () => {
   });
 
   test('should sanitize query with control characters', async () => {
+    // NUL сюда не доходит: его отказывает фильтр на входе (400 — middleware/
+    // requestGuard.js, integration/request-guard). Прочие управляющие символы
+    // база принимает, поэтому статус 200 ничего не доказывает — доказывает
+    // выдача: слово, разорванное ими, после sanitizeQuery ищется целым.
+    // Слово взято из ОПИСАНИЯ «Кофе Тайм» («…в центре»), не из названия:
+    // сверка с названиями складывает фразу по буквам и нашла бы «ко…фе» и без
+    // sanitizeQuery (мутация «снимается только NUL» с таким словом выживала). /
+    // NUL is refused at the entrance; the other control characters are valid
+    // text for the database, so only the result set shows they were removed —
+    // through a description word, which the name matcher cannot rescue.
+    const controlChars = [0x01, 0x1f, 0x7f].map((code) => String.fromCharCode(code)).join('');
     const response = await request(app)
       .post('/api/v1/search/smart')
-      .send({ query: 'кофе\x00\x01 рядом' });
+      .send({ query: `цен${controlChars}тре`, city: 'Минск' });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
+    expect(response.body.data.establishments.map(e => e.name)).toEqual(['Кофе Тайм']);
   });
 
   test('should truncate query longer than 150 characters', async () => {

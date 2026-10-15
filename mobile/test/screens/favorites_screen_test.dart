@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/favorites/favorites_screen.dart';
@@ -32,6 +33,23 @@ Map<String, dynamic> _row(int i, {String city = 'Минск', double lat = 53.9}
   return row;
 }
 
+Establishment _place(String name, String? price) => Establishment(
+      id: name,
+      name: name,
+      category: 'Ресторан',
+      priceRange: price,
+      address: 'пр. Независимости, 43',
+      city: 'Минск',
+      status: 'active',
+      createdAt: DateTime(2026, 10, 13),
+      updatedAt: DateTime(2026, 10, 13),
+    );
+
+List<String> _sortedNames(List<Establishment> places, SortOption sort) =>
+    sortFavorites(places, sort, distanceKm: (_) => null)
+        .map((e) => e.name)
+        .toList();
+
 /// «Избранное» после редизайна 29.09.2026: обложка вместо белого AppBar и
 /// строки «Сортировка» (макет `2b`).
 void main() {
@@ -55,6 +73,67 @@ void main() {
           reason: 'подпись с одним городом была бы неправдой');
       expect(favoritesSubtitle(['Минск', null]), '2 места');
       expect(favoritesSubtitle([null]), '1 место');
+    });
+  });
+
+  // «Избранное» сортирует телефон сам: правило сервера «без цены — в конце
+  // при обоих направлениях» (стратегия §2.4, `NULLS LAST`) здесь повторено
+  // своим кодом.
+  group('Сортировка по цене', () {
+    // Место без цены — посередине: порядок «как пришли» не сошёл бы за
+    // верный ни в одном направлении.
+    final places = [
+      _place('Дорогое', r'$$$'),
+      _place('Без цены', null),
+      _place('Дешёвое', r'$'),
+    ];
+
+    test(r'«По цене ↑»: $ → $$$ → без цены', () {
+      expect(_sortedNames(places, SortOption.priceAsc),
+          ['Дешёвое', 'Дорогое', 'Без цены']);
+    });
+
+    test(r'«По цене ↓»: $$$ → $ → без цены', () {
+      expect(_sortedNames(places, SortOption.priceDesc),
+          ['Дорогое', 'Дешёвое', 'Без цены']);
+    });
+
+    test('пустая цена — то же, что её нет', () {
+      final withEmpty = [
+        _place('Без цены', null),
+        _place('Среднее', r'$$'),
+        _place('Пустая цена', ''),
+      ];
+      // Оба места без цены — в конце и в том порядке, в каком пришли.
+      for (final sort in [SortOption.priceAsc, SortOption.priceDesc]) {
+        expect(_sortedNames(withEmpty, sort),
+            ['Среднее', 'Без цены', 'Пустая цена'],
+            reason: sort.displayLabel);
+      }
+    });
+
+    test('внутри яруса — порядок, в каком пришли, и в длинном списке', () {
+      // 40 мест, а не 3: список до 33 Dart сортирует вставками, они равные
+      // не переставляют, и короткий список не отличил бы ключ с индексом от
+      // простого sort. Длиннее — быстрая сортировка, она порядок равных не
+      // хранит.
+      const prices = [r'$$', null, r'$', r'$$$'];
+      final many = [
+        for (var i = 0; i < 40; i++) _place('Место $i', prices[i % 4]),
+      ];
+      // Ожидание — по определению, а не повтором сортировки: ярусы по
+      // очереди, внутри яруса места в порядке входа.
+      List<String> byTiers(List<String?> order) => [
+            for (final price in order)
+              for (final e in many)
+                if (e.priceRange == price) e.name,
+          ];
+      expect(_sortedNames(many, SortOption.priceAsc),
+          byTiers([r'$', r'$$', r'$$$', null]),
+          reason: SortOption.priceAsc.displayLabel);
+      expect(_sortedNames(many, SortOption.priceDesc),
+          byTiers([r'$$$', r'$$', r'$', null]),
+          reason: SortOption.priceDesc.displayLabel);
     });
   });
 

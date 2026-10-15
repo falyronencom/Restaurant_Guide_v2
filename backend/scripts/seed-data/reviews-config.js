@@ -12,20 +12,25 @@
  */
 
 // ─── Seed User Profiles (12 accounts) ──────────────────────────────────────
+//
+// On a reserved domain that can never receive mail (RFC 2606 .invalid): nobody
+// can reset these accounts' passwords or claim their addresses. Until
+// 2026-10-15 they stood on a domain the project does not own (directive
+// service_accounts, B5).
 
 export const SEED_USERS = [
-  { name: 'Анна Петрова', email: 'seed.user.1@restaurantguide.by' },
-  { name: 'Дмитрий Козлов', email: 'seed.user.2@restaurantguide.by' },
-  { name: 'Елена Новикова', email: 'seed.user.3@restaurantguide.by' },
-  { name: 'Сергей Морозов', email: 'seed.user.4@restaurantguide.by' },
-  { name: 'Ольга Васильева', email: 'seed.user.5@restaurantguide.by' },
-  { name: 'Александр Лукашевич', email: 'seed.user.6@restaurantguide.by' },
-  { name: 'Наталья Соколова', email: 'seed.user.7@restaurantguide.by' },
-  { name: 'Иван Жуковский', email: 'seed.user.8@restaurantguide.by' },
-  { name: 'Мария Карпович', email: 'seed.user.9@restaurantguide.by' },
-  { name: 'Павел Шевченко', email: 'seed.user.10@restaurantguide.by' },
-  { name: 'Татьяна Борисенко', email: 'seed.user.11@restaurantguide.by' },
-  { name: 'Андрей Климович', email: 'seed.user.12@restaurantguide.by' },
+  { name: 'Анна Петрова', email: 'seed.user.1@seed-reviews.invalid' },
+  { name: 'Дмитрий Козлов', email: 'seed.user.2@seed-reviews.invalid' },
+  { name: 'Елена Новикова', email: 'seed.user.3@seed-reviews.invalid' },
+  { name: 'Сергей Морозов', email: 'seed.user.4@seed-reviews.invalid' },
+  { name: 'Ольга Васильева', email: 'seed.user.5@seed-reviews.invalid' },
+  { name: 'Александр Лукашевич', email: 'seed.user.6@seed-reviews.invalid' },
+  { name: 'Наталья Соколова', email: 'seed.user.7@seed-reviews.invalid' },
+  { name: 'Иван Жуковский', email: 'seed.user.8@seed-reviews.invalid' },
+  { name: 'Мария Карпович', email: 'seed.user.9@seed-reviews.invalid' },
+  { name: 'Павел Шевченко', email: 'seed.user.10@seed-reviews.invalid' },
+  { name: 'Татьяна Борисенко', email: 'seed.user.11@seed-reviews.invalid' },
+  { name: 'Андрей Климович', email: 'seed.user.12@seed-reviews.invalid' },
 ];
 
 export const SEED_USER_PASSWORD = process.env.SEED_PASSWORD || (() => {
@@ -33,7 +38,7 @@ export const SEED_USER_PASSWORD = process.env.SEED_PASSWORD || (() => {
   process.exit(1);
 })();
 
-export const SEED_USER_EMAIL_PATTERN = 'seed.user.%@restaurantguide.by';
+export const SEED_USER_EMAIL_PATTERN = 'seed.user.%@seed-reviews.invalid';
 
 // ─── Category → Review Group Mapping ───────────────────────────────────────
 //

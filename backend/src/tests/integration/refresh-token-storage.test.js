@@ -6,9 +6,8 @@
  * - every refresh token the API hands out is stored as its hash, never the
  *   token itself: registration, login, rotation, a replay inside the window
  * - what the table holds for a session does not open that session
- * - a session opened before hashing — its row holds the token itself — goes
- *   on working: refresh, the replay of a rotation made just before the
- *   deploy, logout. Nobody is signed out by the change
+ * - a row that holds the token itself, the way rows written before hashing
+ *   did, opens no session any more: the token is looked up only by its hash
  * - migration 036 hashes such rows in place, the sessions survive it, and it
  *   refuses to run before the new code has stored a single hash
  *
@@ -26,7 +25,6 @@ import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import {
   createTestUser,
-  generateTestAccessToken,
   storeRefreshToken,
 } from '../utils/auth.js';
 import { generateRefreshToken } from '../../utils/jwt.js';
@@ -70,7 +68,7 @@ const applyMigration036 = async () => {
   }
 };
 
-/** A row as the code before hashing wrote it: the token itself. */
+/** A row holding `token` as given — the token itself, as the code before hashing wrote it. */
 const insertRowAsBeforeHashing = async (userId, token, { usedSecondsAgo = null, replacedBy = null } = {}) => {
   const id = randomUUID();
   await query(
@@ -155,57 +153,39 @@ describe('refresh tokens are stored as hashes', () => {
   });
 });
 
-describe('a session opened before hashing', () => {
-  test('refreshes, and its successor is stored as a hash', async () => {
+describe('a row that holds the token itself no longer opens a session', () => {
+  test('the token is refused as unknown, and the row is left as it was', async () => {
     const user = await createTestUser(testUsers.regularUser);
     const oldToken = generateRefreshToken();
     await storeRefreshToken(user.id, oldToken, { asBeforeHashing: true });
 
-    const response = await refresh(oldToken).expect(200);
-    const successor = response.body.data.refreshToken;
+    const response = await refresh(oldToken).expect(401);
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
 
+    // Not found, so neither rotated nor taken for a replay: no successor, no
+    // burn, no alarm.
     const rows = await storedTokens(user.id);
-    expect(rows).toHaveLength(2);
-    const [old, next] = rows;
-    expect(old.token).toBe(oldToken);
-    expect(old.used_at).not.toBeNull();
-    expect(old.replaced_by).toBe(next.id);
-    expect(next.token).toBe(storedRefreshToken(successor));
-
-    await refresh(successor).expect(200);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].token).toBe(oldToken);
+    expect(rows[0].used_at).toBeNull();
   });
 
-  test('a rotation made just before the deploy is replayed with the successor its row holds', async () => {
+  test('a replayed rotation is not handed the successor its row holds', async () => {
     const user = await createTestUser(testUsers.regularUser);
-    // Both rows written by the code before hashing: the predecessor burned two
-    // seconds ago, its random successor live. The answer to that rotation was
-    // lost in the deploy, and the client replays.
-    const oldPredecessor = generateRefreshToken();
-    const oldSuccessor = generateRefreshToken();
-    const successorId = await insertRowAsBeforeHashing(user.id, oldSuccessor);
-    await insertRowAsBeforeHashing(user.id, oldPredecessor, { usedSecondsAgo: 2, replacedBy: successorId });
+    // A predecessor stored as a hash, burned two seconds ago, whose successor
+    // row holds a token itself. What a row holds is never handed out: the
+    // successor is derived from the replayed token or not given at all.
+    const predecessor = generateRefreshToken();
+    const rawSuccessor = generateRefreshToken();
+    const successorId = await insertRowAsBeforeHashing(user.id, rawSuccessor);
+    await insertRowAsBeforeHashing(user.id, storedRefreshToken(predecessor), {
+      usedSecondsAgo: 2,
+      replacedBy: successorId,
+    });
 
-    const replay = await refresh(oldPredecessor).expect(200);
-
-    expect(replay.body.data.refreshToken).toBe(oldSuccessor);
-    await refresh(oldSuccessor).expect(200);
-  });
-
-  test('is ended by logout', async () => {
-    const user = await createTestUser(testUsers.regularUser);
-    const oldToken = generateRefreshToken();
-    await storeRefreshToken(user.id, oldToken, { asBeforeHashing: true });
-
-    await request(app)
-      .post('/api/v1/auth/logout')
-      .set('Authorization', `Bearer ${generateTestAccessToken(user)}`)
-      .send({ refreshToken: oldToken })
-      .expect(200);
-
-    const [row] = await storedTokens(user.id);
-    expect(row.used_at).not.toBeNull();
-    const response = await refresh(oldToken).expect(403);
-    expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+    const replay = await refresh(predecessor).expect(401);
+    expect(replay.body.error.code).toBe('INVALID_TOKEN');
+    expect(JSON.stringify(replay.body)).not.toContain(rawSuccessor);
   });
 });
 
@@ -219,7 +199,6 @@ describe('migration 036', () => {
 
     const [row] = await storedTokens(user.id);
     expect(row.token).toBe(oldToken);
-    await refresh(oldToken).expect(200);
   });
 
   test('hashes every row written before hashing; the sessions survive it', async () => {
@@ -231,6 +210,10 @@ describe('migration 036', () => {
     await insertRowAsBeforeHashing(before.id, liveOld);
     await insertRowAsBeforeHashing(before.id, burnedOld, { usedSecondsAgo: 3600 });
     const fresh = await register(testUsers.regularUser2);
+
+    // Until 036 has run, that session is not found at all — the migration is
+    // what keeps it.
+    await refresh(liveOld).expect(401);
 
     await applyMigration036();
 
