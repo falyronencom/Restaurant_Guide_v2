@@ -18,10 +18,9 @@
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync, writeFileSync } from 'fs';
-import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
 const envPath = join(backendRoot, '.env.production');
@@ -42,7 +41,8 @@ function pdfTransform(url, w, h, crop) {
 }
 const isPdfUrl = (url) => url.split('?')[0].toLowerCase().endsWith('.pdf');
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function main() {
   await client.connect();

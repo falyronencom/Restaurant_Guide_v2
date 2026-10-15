@@ -19,6 +19,7 @@ import { verifyGoogleToken, verifyYandexToken } from '../services/oauthService.j
 import {
   uploadAvatar as cloudinaryUploadAvatar,
   deleteImage,
+  hasPlainTransformations,
   isOwnedAsset,
   ownCloudPublicId,
   ownedFolders,
@@ -27,7 +28,15 @@ import logger from '../utils/logger.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
- * the ownership record — config/cloudinary.js, ownedFolders).
+ * the ownership record — config/cloudinary.js, ownedFolders) that shows that
+ * file and nothing else: a delivery URL may carry transformations that draw
+ * text, a remote file or another asset over it, and the site and the app show
+ * the stored link as is (review 02.10.2026, N3 — the rule card media follow).
+ * The link is stored as sent, so it must be exactly the address the checks
+ * read — origin, path and query, as for card media (establishmentService,
+ * mediaLinkRefusal): a dot segment the parser resolves
+ * (`l_text:…,co_red/../avatars/…`), a fragment or a user part would keep in
+ * the stored text something no check has seen.
  *
  * @param {*} url - Client-supplied avatar_url
  * @param {string} userId - Authenticated caller
@@ -35,7 +44,11 @@ import logger from '../utils/logger.js';
  */
 const isOwnAvatarUrl = (url, userId) => {
   const publicId = ownCloudPublicId(url);
-  return publicId !== null && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
+  if (publicId === null) return false;
+  const { origin, pathname, search } = new URL(url);
+  return `${origin}${pathname}${search}` === url
+    && hasPlainTransformations(url)
+    && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
 };
 
 /**
@@ -226,13 +239,18 @@ export async function login(req, res, next) {
       });
     }
     
-    // Verify credentials
+    // Verify credentials. A panel account (admin, viewer) gets a session
+    // through the panel's own login only — its role gate, its rate limit
+    // (directive service_accounts 2026-10-15, B1; critic 2B S2): here it is
+    // answered exactly as a wrong password, whether its password was right or
+    // not (verifyCredentials, panelAccounts: false), so this door — with its
+    // milder limit — cannot be used to test a panel password either.
     const user = await authService.verifyCredentials({
       email,
       phone,
       password,
-    });
-    
+    }, { panelAccounts: false });
+
     // If credentials invalid, return generic error message
     // We don't specify whether email/phone exists or password wrong
     // This prevents username enumeration attacks
@@ -291,7 +309,7 @@ export async function login(req, res, next) {
  * 
  * Response:
  * - 200 OK: New token pair issued
- * - 401 Unauthorized: Invalid or expired token
+ * - 401 Unauthorized: Invalid, expired or revoked token
  * - 403 Forbidden: Token reuse detected (security alert)
  */
 export async function refresh(req, res, next) {
@@ -351,7 +369,22 @@ export async function refresh(req, res, next) {
         },
       });
     }
-    
+
+    if (error.message === 'REFRESH_TOKEN_REVOKED') {
+      // Issued before a password reset, a detected reuse or an account
+      // takeover ended every session of the account — the code authenticate
+      // answers such an access token with. 401, not the 403 of the reuse
+      // alarm: nothing was replayed, the session is simply over. Every client
+      // signs out on either.
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'TOKEN_REVOKED',
+          message: 'Refresh token has been revoked. Please log in again.',
+        },
+      });
+    }
+
     if (error.message === 'REFRESH_TOKEN_REUSE_DETECTED') {
       // This is a security incident - return 403 Forbidden
       return res.status(403).json({
@@ -387,7 +420,8 @@ export async function refresh(req, res, next) {
  * The access token continues to work until its natural expiration (4 hours,
  * JWT_ACCESS_EXPIRY): logging out ends the session's renewal, not the account.
  * Switching an account off is what stops its tokens at once — authenticate
- * checks the account on every request (services/accountStatus.js).
+ * checks the account on every request (services/accountStatus.js) — and so
+ * does ending all its sessions (password reset, detected token reuse).
  * 
  * This endpoint requires authentication via access token in Authorization header.
  * 
@@ -446,7 +480,8 @@ export async function logout(req, res, next) {
  * Request body:
  * - name (optional): New display name (max 100 chars)
  * - avatar_url (optional): null / '' to remove the avatar, or a link into the
- *   caller's own avatar folder on our cloud; any other value is ignored
+ *   caller's own avatar folder on our cloud that only resizes or reformats the
+ *   file; any other value is ignored
  *
  * Response:
  * - 200 OK: Updated user information
@@ -473,14 +508,15 @@ export async function updateProfile(req, res, next) {
     // POST /auth/avatar destroys the previous avatar by this link, and an
     // arbitrary link let any user get someone else's file destroyed (review
     // 02.10.2026, N1): a client may only clear the avatar or point into its own
-    // avatar folder. Neither client sends the field (the site sends { name },
+    // avatar folder, with a link that draws nothing over the file (N3).
+    // Neither client sends the field (the site sends { name },
     // the app sends the name only, in every version), so anything else is
     // ignored rather than refused — a client echoing a stored value must not
     // break a name change.
     let avatarUrl = avatar_url;
     if (avatarUrl !== undefined && avatarUrl !== null && avatarUrl !== ''
       && !isOwnAvatarUrl(avatarUrl, userId)) {
-      logger.warn('Profile update: avatar_url outside the caller\'s avatar folder ignored');
+      logger.warn('Profile update: avatar_url not a plain link into the caller\'s avatar folder ignored');
       avatarUrl = undefined;
     }
 
@@ -973,8 +1009,9 @@ export async function forgotPassword(req, res) {
  *
  * POST /api/v1/auth/reset-password
  *
- * Public endpoint. Validates the token, sets the new password, and revokes
- * all refresh tokens for the user (force re-login on every device).
+ * Public endpoint. Validates the token, sets the new password, and ends every
+ * session of the user: refresh tokens revoked, access tokens issued before the
+ * reset refused (force re-login on every device).
  *
  * Body:
  *  - token: raw token from the emailed link

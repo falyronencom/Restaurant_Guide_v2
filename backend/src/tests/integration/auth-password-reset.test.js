@@ -274,13 +274,16 @@ describe('POST /api/v1/auth/reset-password', () => {
       .expect(200);
 
     // The pre-reset session's refresh token must be dead (force re-login).
-    // Revocation sets used_at, so presenting the token again lands on the
-    // reuse-detection path: 403 TOKEN_REUSE_DETECTED (authController.refresh).
+    // It was created before the reset ended the account's sessions, so it is
+    // refused as revoked — 401 TOKEN_REVOKED — and not as a replay: until
+    // migration 035 it took the reuse-detection path (403), which revoked every
+    // session once more, the one opened after the reset included
+    // (session-revocation.test.js).
     const response = await request(app)
       .post('/api/v1/auth/refresh')
       .send({ refreshToken });
-    expect(response.status).toBe(403);
-    expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('TOKEN_REVOKED');
 
     // DB agrees: no live refresh tokens remain for the user
     const live = await query(

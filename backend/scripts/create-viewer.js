@@ -9,13 +9,17 @@
  *
  * Security model (mirrors set-partner-password.js):
  *   - Target database: with --production, DATABASE_URL from
- *     backend/.env.production (gitignored, user-managed, SSL enforced);
+ *     backend/.env.production (gitignored, user-managed; TLS to the pinned
+ *     certificate only — scripts/lib/productionDb.js);
  *     without it, the DB_* variables of a local database.
  *   - The password comes from the VIEWER_PASSWORD env var — never an
  *     argument, so it does not land in shell history. It is never printed.
  *   - Never touches an account of another role: this script cannot demote
  *     an admin by accident. To promote a viewer, use create-admin.js.
  *   - Requires typing "yes" to confirm (skip with --yes).
+ *   - A reset ends every session of the account, as a password reset does
+ *     (lib/operator-password.js): whoever was shown the old password is
+ *     signed out.
  *
  * Requires migration 034 (viewer in the users.role CHECK) on the target DB.
  *
@@ -35,6 +39,8 @@ import { createInterface } from 'readline';
 import pg from 'pg';
 import argon2 from 'argon2';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
+import { reportEndedSessions, writePasswordEndingSessions } from './lib/operator-password.js';
 
 const { Client } = pg;
 
@@ -83,10 +89,8 @@ const buildClient = () => {
       console.error('❌ DATABASE_URL not set in backend/.env.production');
       process.exit(1);
     }
-    return new Client({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
+    // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+    return new ProductionClient({ connectionString: process.env.DATABASE_URL });
   }
   return new Client({
     host: process.env.DB_HOST || 'localhost',
@@ -122,7 +126,7 @@ const main = async () => {
     }
 
     console.log(row
-      ? `Will RESET the viewer account ${email}: new password, name "${name}", active.`
+      ? `Will RESET the viewer account ${email}: new password, name "${name}", active; every session of the account ends.`
       : `Will CREATE the viewer account ${email} (name "${name}").`);
     console.log(`Target: ${production
       ? 'PRODUCTION (DATABASE_URL from backend/.env.production)'
@@ -135,15 +139,18 @@ const main = async () => {
 
     const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);
 
-    const result = row
-      ? await client.query(
+    let account;
+    let sessions = null;
+    if (row) {
+      ({ account, sessions } = await writePasswordEndingSessions(client, async (tx) => (await tx.query(
         `UPDATE users
          SET password_hash = $1, name = $2, is_active = true, updated_at = NOW()
          WHERE id = $3
          RETURNING id, email, role, name, is_active`,
         [passwordHash, name, row.id],
-      )
-      : await client.query(
+      )).rows[0]));
+    } else {
+      account = (await client.query(
         `INSERT INTO users (
            id, email, password_hash, name, role, auth_method,
            email_verified, is_active, created_at, updated_at
@@ -151,10 +158,11 @@ const main = async () => {
          VALUES (gen_random_uuid(), $1, $2, $3, 'viewer', 'email', true, true, NOW(), NOW())
          RETURNING id, email, role, name, is_active`,
         [email, passwordHash, name],
-      );
+      )).rows[0];
+    }
 
-    const account = result.rows[0];
     console.log(`✅ Viewer ${row ? 'updated' : 'created'}: ${account.email} (${account.name}), role ${account.role}, active ${account.is_active}`);
+    if (sessions) reportEndedSessions(sessions);
     console.log('   Sign in at the admin panel with this e-mail and the password you set.');
     return 0;
   } catch (error) {

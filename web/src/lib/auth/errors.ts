@@ -59,6 +59,10 @@ export function messageForCode(code: string | undefined, status: number): string
     case 'NO_SESSION':
       // authedFetch: no recoverable session behind the cookies.
       return 'Войдите, чтобы подтвердить почту.';
+    case 'SESSION_REFRESH_UNAVAILABLE':
+      // authedFetch: the session refresh got no answer — the session itself
+      // may be alive, so no «войдите» here.
+      return 'Сервер временно недоступен. Попробуйте ещё раз.';
     default:
       if (status === 429) return 'Слишком много попыток входа. Попробуйте позже.';
       // Neutral: this default also surfaces on the register form (e.g. 500),

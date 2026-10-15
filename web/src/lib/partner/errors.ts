@@ -63,6 +63,9 @@ const CODE_RU: Record<string, string> = {
   CONSTRAINT_VIOLATION:
     'Данные заведения нарушают ограничения. Проверьте корректность полей.',
   NO_SESSION: 'Сессия истекла. Войдите снова.',
+  // authedFetch / the media proxy: the session refresh got no answer — the
+  // session may be alive, so not «Сессия истекла».
+  SESSION_REFRESH_UNAVAILABLE: 'Сервер временно недоступен. Попробуйте ещё раз.',
   NETWORK: 'Сеть недоступна. Попробуйте позже.',
 };
 
