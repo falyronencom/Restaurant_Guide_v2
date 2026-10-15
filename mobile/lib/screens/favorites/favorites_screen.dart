@@ -159,7 +159,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget _buildList(EstablishmentsProvider provider) {
     final topInset = MediaQuery.paddingOf(context).top;
     final favorites = provider.favoriteEstablishments;
-    final sortedList = _sortedFavorites(favorites, provider);
+    final sortedList = sortFavorites(favorites, _currentSort,
+        distanceKm: (e) => _distanceKm(e, provider));
 
     return RefreshIndicator(
       // Индикатор тянется из-под полной обложки, а не из-под статус-бара.
@@ -300,39 +301,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
-  /// Sort favorites locally by selected option
-  List<Establishment> _sortedFavorites(
-      List<Establishment> favorites, EstablishmentsProvider provider) {
-    final sorted = List<Establishment>.from(favorites);
-    switch (_currentSort) {
-      case SortOption.rating:
-        sorted.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
-      case SortOption.priceAsc:
-        sorted.sort((a, b) => (a.priceRange ?? '').compareTo(b.priceRange ?? ''));
-      case SortOption.priceDesc:
-        sorted.sort((a, b) => (b.priceRange ?? '').compareTo(a.priceRange ?? ''));
-      case SortOption.distance:
-        // Чип обложки теперь называет выбранный порядок вслух — «По
-        // расстоянию» обязан сортировать. Места без расстояния (нет позиции
-        // или координат) — в конце, в прежнем порядке.
-        // List.sort нестабилен — прежний порядок держит индекс.
-        final keyed = [
-          for (var i = 0; i < sorted.length; i++)
-            (i, _distanceKm(sorted[i], provider), sorted[i]),
-        ];
-        keyed.sort((a, b) {
-          final (ia, da, _) = a;
-          final (ib, db, _) = b;
-          if (da != null && db != null && da != db) return da.compareTo(db);
-          if (da == null && db != null) return 1;
-          if (da != null && db == null) return -1;
-          return ia.compareTo(ib);
-        });
-        return [for (final (_, _, e) in keyed) e];
-    }
-    return sorted;
-  }
-
   /// Show sort options bottom sheet (same design as search results)
   void _showSortOptions() {
     showModalBottomSheet(
@@ -468,4 +436,77 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       ),
     );
   }
+}
+
+/// Порядок «Избранного» для выбранной сортировки. Сервер отдаёт избранное
+/// одним порядком (недавно добавленные выше), и сортирует его телефон сам —
+/// серверная сортировка поиска сюда не доходит.
+///
+/// [distanceKm] — расстояние до места или null, если его не узнать (нет
+/// позиции пользователя или координат места).
+List<Establishment> sortFavorites(
+  List<Establishment> favorites,
+  SortOption sort, {
+  required double? Function(Establishment) distanceKm,
+}) {
+  final sorted = List<Establishment>.from(favorites);
+  switch (sort) {
+    case SortOption.rating:
+      sorted.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+    case SortOption.priceAsc:
+      return _sortedByPrice(sorted, ascending: true);
+    case SortOption.priceDesc:
+      return _sortedByPrice(sorted, ascending: false);
+    case SortOption.distance:
+      // Чип обложки теперь называет выбранный порядок вслух — «По
+      // расстоянию» обязан сортировать. Места без расстояния (нет позиции
+      // или координат) — в конце, в прежнем порядке.
+      // List.sort нестабилен — прежний порядок держит индекс.
+      final keyed = [
+        for (var i = 0; i < sorted.length; i++)
+          (i, distanceKm(sorted[i]), sorted[i]),
+      ];
+      keyed.sort((a, b) {
+        final (ia, da, _) = a;
+        final (ib, db, _) = b;
+        if (da != null && db != null && da != db) return da.compareTo(db);
+        if (da == null && db != null) return 1;
+        if (da != null && db == null) return -1;
+        return ia.compareTo(ib);
+      });
+      return [for (final (_, _, e) in keyed) e];
+  }
+  return sorted;
+}
+
+/// «По цене»: ярусы `$` < `$$` < `$$$` < `$$$$` — в выбранном направлении,
+/// места без цены — в конце при обоих направлениях, как на сервере
+/// (`NULLS LAST`, стратегия §2.4). До 13.10.2026 «По цене ↑» ставил их
+/// первыми: без цены сравнивалась пустая строка, а она меньше `$`.
+List<Establishment> _sortedByPrice(
+  List<Establishment> favorites, {
+  required bool ascending,
+}) {
+  // List.sort нестабилен — прежний порядок внутри яруса держит индекс.
+  final keyed = [
+    for (var i = 0; i < favorites.length; i++)
+      (i, _priceOf(favorites[i]), favorites[i]),
+  ];
+  keyed.sort((a, b) {
+    final (ia, pa, _) = a;
+    final (ib, pb, _) = b;
+    if (pa != null && pb != null && pa != pb) {
+      return ascending ? pa.compareTo(pb) : pb.compareTo(pa);
+    }
+    if (pa == null && pb != null) return 1;
+    if (pa != null && pb == null) return -1;
+    return ia.compareTo(ib);
+  });
+  return [for (final (_, _, e) in keyed) e];
+}
+
+/// Цена места; пустая строка — то же, что цены нет.
+String? _priceOf(Establishment establishment) {
+  final price = establishment.priceRange;
+  return price == null || price.isEmpty ? null : price;
 }

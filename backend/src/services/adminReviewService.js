@@ -17,13 +17,49 @@ import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
 /**
+ * A review as the viewer receives it: the way an outsider sees reviews.
+ *
+ * - A visible review keeps what the public card shows — the author's name and
+ *   the text — and loses the e-mail (Coordinator decision 2026-09-08).
+ * - A hidden review keeps its place in the list with the mark is_visible:
+ *   false, the rating and the date, but carries nothing of the person: no
+ *   name, no e-mail, no author statistics, and no text — neither the author's
+ *   nor the partner's reply, which may quote it. A review is often hidden
+ *   precisely because its text says too much about someone.
+ * - Deleted reviews never reach this function: the model drops them for a
+ *   viewer in the WHERE (pack 2, point 1; cloud critic 2A, B-1).
+ *
+ * Keys stay, values become null: the panel's model reads every one of these
+ * as nullable. viewer_redacted tells the panel the empty fields are withheld,
+ * not absent — «no text, rating only» would be a false statement about the
+ * review (the same as partner_data_redacted on the establishment card).
+ *
+ * @param {Object} review - Row of AdminReviewModel.getAdminReviews
+ * @returns {Object}
+ */
+const toViewerReview = (review) => {
+  if (review.is_visible) {
+    return { ...review, author_email: null, viewer_redacted: false };
+  }
+  return {
+    ...review,
+    viewer_redacted: true,
+    author_name: null,
+    author_email: null,
+    author_review_count: null,
+    author_average_rating: null,
+    content: null,
+    partner_response: null,
+  };
+};
+
+/**
  * Get paginated admin reviews with filters
  *
  * A viewer — the read-only panel role that may be shown to a third party —
- * gets the reviews without the author's e-mail: the key stays, the value is
- * null, the same as the partner contacts on the establishment card
- * (Coordinator decision 2026-09-08, SDL CAT-C-2.11). The panel then shows
- * the author by name.
+ * gets the reviews through toViewerReview, without deleted ones, and may not
+ * ask for the reviews of one person (user_id): that is a dossier, not a
+ * moderation view (pack 2, point 1).
  *
  * @param {Object} params
  * @param {boolean} [params.viewer=false] - Caller is the read-only panel role
@@ -42,6 +78,14 @@ export const getReviews = async ({
   to,
   viewer = false,
 } = {}) => {
+  if (viewer && user_id) {
+    throw new AppError(
+      'Reviews of one person are not available in view mode',
+      403,
+      'VIEWER_PERSON_FILTER_FORBIDDEN',
+    );
+  }
+
   try {
     const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
     const offset = (Math.max(page, 1) - 1) * effectivePerPage;
@@ -55,6 +99,7 @@ export const getReviews = async ({
       sort,
       from,
       to,
+      viewer,
     };
 
     const [reviews, stats] = await Promise.all([
@@ -63,9 +108,7 @@ export const getReviews = async ({
     ]);
 
     return {
-      reviews: viewer
-        ? reviews.map((review) => ({ ...review, author_email: null }))
-        : reviews,
+      reviews: viewer ? reviews.map(toViewerReview) : reviews,
       meta: {
         total: stats.total,
         // Считаются по той же выборке, что и total: подпись экрана

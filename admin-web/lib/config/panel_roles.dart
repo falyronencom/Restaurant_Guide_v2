@@ -40,3 +40,18 @@ String panelRoleLabel(String role) => kPanelRoleLabels[role] ?? role;
 /// видеть не должен (`partner_data_redacted`). Пустая ячейка утверждала бы
 /// первое, и просмотрщик решил бы, что партнёр не заполнил контакты.
 const String kRedactedForViewerLabel = 'Скрыто в режиме просмотра';
+
+/// Кто действовал — ролью, в единственном числе: колонка «Кто» журнала.
+///
+/// Просмотрщику сервер не называет людей (пакет 2, пункт 2): имя и e-mail
+/// исполнителя приходят пустыми, остаётся `actor_role`. Без подписи колонка
+/// говорила бы «не указан», хотя исполнитель известен — просто не по имени.
+const Map<String, String> kActorRoleLabels = <String, String>{
+  kAdminRole: 'Администратор',
+  'partner': 'Партнёр',
+  'user': 'Пользователь',
+  kViewerRole: 'Только просмотр',
+};
+
+String? actorRoleLabel(String? role) =>
+    role == null ? null : (kActorRoleLabels[role] ?? role);

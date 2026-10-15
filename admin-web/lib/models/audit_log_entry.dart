@@ -10,6 +10,10 @@ class AuditLogEntry {
   final String? entityId;
   final String? adminName;
   final String? adminEmail;
+
+  /// Роль исполнителя (`users.role`). Просмотрщику — единственное, что о нём
+  /// известно: имя и e-mail сервер ему не отдаёт (пакет 2, пункт 2).
+  final String? actorRole;
   final DateTime createdAt;
   final Map<String, dynamic>? oldData;
   final Map<String, dynamic>? newData;
@@ -25,6 +29,7 @@ class AuditLogEntry {
     this.entityId,
     this.adminName,
     this.adminEmail,
+    this.actorRole,
     required this.createdAt,
     this.oldData,
     this.newData,
@@ -42,6 +47,7 @@ class AuditLogEntry {
       entityId: json['entity_id'] as String?,
       adminName: json['admin_name'] as String?,
       adminEmail: json['admin_email'] as String?,
+      actorRole: json['actor_role'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       oldData: json['old_data'] as Map<String, dynamic>?,
       newData: json['new_data'] as Map<String, dynamic>?,

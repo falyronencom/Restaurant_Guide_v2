@@ -21,10 +21,9 @@
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
-import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
 const envPath = join(backendRoot, '.env.production');
@@ -46,7 +45,8 @@ const fileExtension = (url) => {
 };
 const OCRABLE_EXTENSIONS = ['', 'pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'jfif'];
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function main() {
   await client.connect();

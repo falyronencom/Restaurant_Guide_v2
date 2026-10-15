@@ -19,11 +19,11 @@ import { preflight } from './preflight.js';
 import { processCard } from './pipeline.js';
 import { Geocoder } from './geocode.js';
 import { rollbackBatch } from './rollback.js';
+import { findSeedHouse } from '../lib/seedHouse.js';
 
-async function resolveHousePartnerId(email) {
-  const { rows } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-  if (!rows[0]) throw new Error(`house partner account not found: ${email}`);
-  return rows[0].id;
+/** The seed house by its flag; the import stops without exactly one (lib/seedHouse.js). */
+async function resolveHousePartnerId() {
+  return (await findSeedHouse(pool)).id;
 }
 
 /**
@@ -31,7 +31,6 @@ async function resolveHousePartnerId(email) {
  * @param {string} cfg.sheetPath
  * @param {string} cfg.mediaRoot
  * @param {string} cfg.batchId
- * @param {string} cfg.housePartnerEmail
  * @param {'real'|'stub'} cfg.mediaMode
  * @param {boolean} cfg.allowIncomplete
  * @param {boolean} cfg.reportOnly
@@ -62,7 +61,7 @@ export async function run(cfg) {
     }
 
     // ── Import / report-only ──────────────────────────────────────────────────
-    const housePartnerId = await resolveHousePartnerId(cfg.housePartnerEmail);
+    const housePartnerId = await resolveHousePartnerId();
     const text = readFileSync(cfg.sheetPath, 'utf8');
     const { headers, rows, delimiter } = parseCsv(text);
     log(`Parsed ${rows.length} rows (delimiter '${delimiter}', ${headers.length} columns).`);

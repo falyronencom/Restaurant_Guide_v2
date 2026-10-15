@@ -24,6 +24,10 @@ import logger from '../utils/logger.js';
  * @param {string} [params.to] - Date range end
  * @param {string} [params.sort='newest'] - Sort order
  * @param {boolean} [params.include_metadata=false] - Include IP/user-agent
+ * @param {boolean} [params.viewer=false] - Caller is the read-only panel role:
+ *   actors by role, no names of people, no opening of hidden texts, and no
+ *   filter by person — the actions of one named person are a dossier, not a
+ *   journal (pack 2, point 2)
  * @returns {Promise<Object>} { entries, meta: { total, page, per_page, pages } }
  */
 export const getAuditLog = async ({
@@ -36,7 +40,16 @@ export const getAuditLog = async ({
   to,
   sort = 'newest',
   include_metadata = false,
+  viewer = false,
 } = {}) => {
+  if (viewer && user_id) {
+    throw new AppError(
+      'Actions of one person are not available in view mode',
+      403,
+      'VIEWER_PERSON_FILTER_FORBIDDEN',
+    );
+  }
+
   try {
     const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
     const offset = (Math.max(page, 1) - 1) * effectivePerPage;
@@ -49,6 +62,7 @@ export const getAuditLog = async ({
       to,
       sort,
       include_metadata,
+      viewer,
     };
 
     const [entries, total] = await Promise.all([

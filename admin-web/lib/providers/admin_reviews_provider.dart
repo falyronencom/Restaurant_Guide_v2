@@ -23,6 +23,12 @@ class AdminReviewsProvider extends ChangeNotifier {
   /// Победил бы тот, кто ответил последним, а не тот, кого просили последним.
   int _requestSeq = 0;
 
+  /// Поколение аккаунта для ответов на действия (пакет 2, пункт 4; ревью
+  /// Phase 3.5). Откат держит копию отзыва, полученную прежним аккаунтом; у
+  /// администратора в ней автор и почта. Сброс сдвигает поколение, и ответ
+  /// на действие прежнего аккаунта — успех или ошибка — ничего не пишет.
+  int _generation = 0;
+
   // List state
   List<AdminReviewItem> _reviews = [];
   bool _isLoadingList = false;
@@ -136,13 +142,15 @@ class AdminReviewsProvider extends ChangeNotifier {
   /// «скрыть» or «показать» — and is sent to the server as is, so a repeat of
   /// the same request (the client retries 5xx) asks for the same state.
   Future<bool> setVisibility({required bool visible}) async {
-    if (_selectedId == null) return false;
+    final id = _selectedId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
 
     // Optimistic update: show the target state immediately for instant UI feedback
-    final index = _reviews.indexWhere((r) => r.id == _selectedId);
+    final index = _reviews.indexWhere((r) => r.id == id);
     final bool prevVisible = index >= 0 ? _reviews[index].isVisible : true;
     if (index >= 0) {
       final updated = _reviews[index].copyWith(isVisible: visible);
@@ -152,7 +160,8 @@ class AdminReviewsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _service.setVisibility(_selectedId!, isVisible: visible);
+      await _service.setVisibility(id, isVisible: visible);
+      if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
       notifyListeners();
       // Оптимистичная правка меняет один флаг, а действие меняет больше:
@@ -162,11 +171,16 @@ class AdminReviewsProvider extends ChangeNotifier {
       await loadReviews(page: _currentPage);
       return true;
     } catch (e) {
-      // Rollback: revert to previous visibility state
-      if (index >= 0 && index < _reviews.length) {
-        final reverted = _reviews[index].copyWith(isVisible: prevVisible);
-        _reviews[index] = reverted;
-        _selectedReview = reverted;
+      // После смены аккаунта откатывать нечего: список — уже нового, и
+      // по индексу в нём лежит чужая строка (ревью Phase 3.5 пакета 2).
+      if (generation != _generation) return false;
+      // Rollback: revert to previous visibility state — by id: the list may
+      // have been reloaded while the request was in flight.
+      final at = _reviews.indexWhere((r) => r.id == id);
+      if (at >= 0) {
+        final reverted = _reviews[at].copyWith(isVisible: prevVisible);
+        _reviews[at] = reverted;
+        if (_selectedId == id) _selectedReview = reverted;
       }
       _isSubmitting = false;
       _submitError = _extractMessage(e);
@@ -177,13 +191,15 @@ class AdminReviewsProvider extends ChangeNotifier {
 
   /// Delete the selected review (optimistic with rollback)
   Future<bool> deleteReview(String? reason) async {
-    if (_selectedId == null) return false;
+    final id = _selectedId;
+    if (id == null) return false;
+    final generation = _generation;
 
     _isSubmitting = true;
     _submitError = null;
 
     // Optimistic update: mark as deleted immediately
-    final index = _reviews.indexWhere((r) => r.id == _selectedId);
+    final index = _reviews.indexWhere((r) => r.id == id);
     AdminReviewItem? prevReview;
     if (index >= 0) {
       prevReview = _reviews[index];
@@ -194,7 +210,8 @@ class AdminReviewsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _service.deleteReview(_selectedId!, reason: reason);
+      await _service.deleteReview(id, reason: reason);
+      if (generation != _generation) return false; // аккаунт уже другой
       _isSubmitting = false;
       notifyListeners();
       // Удаление пересчитывает рейтинг заведения — панель обязана показать
@@ -202,10 +219,15 @@ class AdminReviewsProvider extends ChangeNotifier {
       await loadReviews(page: _currentPage);
       return true;
     } catch (e) {
-      // Rollback: restore original review state
-      if (index >= 0 && index < _reviews.length && prevReview != null) {
-        _reviews[index] = prevReview;
-        _selectedReview = prevReview;
+      // Сохранённая для отката копия получена прежним аккаунтом: после смены
+      // аккаунта (администратор → просмотрщик) она несла бы автора и почту в
+      // список нового (ревью Phase 3.5 пакета 2).
+      if (generation != _generation) return false;
+      // Rollback: restore original review state — by id, not by index.
+      final at = _reviews.indexWhere((r) => r.id == id);
+      if (at >= 0 && prevReview != null) {
+        _reviews[at] = prevReview;
+        if (_selectedId == id) _selectedReview = prevReview;
       }
       _isSubmitting = false;
       _submitError = _extractMessage(e);
@@ -278,6 +300,7 @@ class AdminReviewsProvider extends ChangeNotifier {
   /// для прежнего аккаунта, не лёг в состояние нового.
   void resetAccountScope() {
     _requestSeq++;
+    _generation++;
     _reviews = [];
     _isLoadingList = false;
     _listError = null;

@@ -19,8 +19,9 @@ import logger from '../utils/logger.js';
  * GET /api/v1/admin/reviews
  *
  * Returns paginated reviews with author and establishment info.
- * Admin can see all reviews including deleted and hidden. A viewer gets the
- * same list with author_email = null (see adminReviewService.getReviews).
+ * Admin can see all reviews including deleted and hidden. A viewer sees them
+ * as an outsider would: no deleted reviews, hidden ones without the person and
+ * the text, no filter by person (see adminReviewService.getReviews).
  */
 export const listReviews = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;

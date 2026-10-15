@@ -154,7 +154,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       // Show confirmation dialog if there's data
       if (provider.data.categories.isNotEmpty ||
           provider.data.cuisineTypes.isNotEmpty) {
-        _showExitConfirmation(context);
+        _showExitConfirmation(context, draftSaved: provider.hasCardOnServer);
       } else {
         Navigator.of(context).pop();
       }
@@ -165,7 +165,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   }
 
   /// Show exit confirmation dialog
-  void _showExitConfirmation(BuildContext context) {
+  void _showExitConfirmation(BuildContext context, {required bool draftSaved}) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -179,9 +179,14 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
-          'Введённые данные будут потеряны.',
-          style: TextStyle(),
+        content: Text(
+          // Карточка уже на сервере черновиком — выход её не теряет
+          // (решение Координатора 13.10.2026).
+          draftSaved
+              ? 'Заведение сохранено как черновик — отправить его на '
+                  'модерацию можно из профиля.'
+              : 'Введённые данные будут потеряны.',
+          style: const TextStyle(),
         ),
         actions: [
           TextButton(
@@ -392,14 +397,8 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
     debugPrint('SUBMIT: Creation result: $success');
 
     if (success && mounted) {
-      // Step 1: Update user role in AuthProvider (fast, no network call)
-      await authProvider.updateUserRole('partner');
-      debugPrint('SUBMIT: Role updated to partner');
-
-      // Step 2: Reset and reload partner dashboard to show new establishment
-      partnerDashboardProvider.reset();
-      await partnerDashboardProvider.loadEstablishments();
-      debugPrint('SUBMIT: Partner dashboard reloaded');
+      // Steps 1–2: role and dashboard
+      await _becomePartner(authProvider, partnerDashboardProvider);
 
       // Step 3: Show success message
       scaffoldMessenger.showSnackBar(
@@ -413,16 +412,41 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       // Step 4: Navigate back to profile
       debugPrint('SUBMIT: Navigating back...');
       navigator.pop();
-    } else if (mounted && provider.error != null) {
-      debugPrint('SUBMIT: Error - ${provider.error}');
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(provider.error!),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red,
-        ),
-      );
+    } else if (mounted) {
+      if (provider.error != null) {
+        debugPrint('SUBMIT: Error - ${provider.error}');
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(provider.error!),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      // Карточка уже на сервере, хоть и не отправлена: человек уже партнёр, а
+      // черновик должен быть виден в профиле — оттуда его можно отправить,
+      // если партнёр закроет мастер. До 13.10.2026 профиль показывал
+      // «Добавить заведение», пока партнёр не переключит вкладку.
+      if (provider.hasCardOnServer) {
+        await _becomePartner(authProvider, partnerDashboardProvider);
+      }
     }
+  }
+
+  /// Роль в приложении и список заведений — после того, как у человека
+  /// появилась карточка на сервере.
+  Future<void> _becomePartner(
+    AuthProvider authProvider,
+    PartnerDashboardProvider partnerDashboardProvider,
+  ) async {
+    // Step 1: Update user role in AuthProvider (fast, no network call)
+    await authProvider.updateUserRole('partner');
+    debugPrint('SUBMIT: Role updated to partner');
+
+    // Step 2: Reset and reload partner dashboard to show new establishment
+    partnerDashboardProvider.reset();
+    await partnerDashboardProvider.loadEstablishments();
+    debugPrint('SUBMIT: Partner dashboard reloaded');
   }
 
   /// Animate PageView to specific page

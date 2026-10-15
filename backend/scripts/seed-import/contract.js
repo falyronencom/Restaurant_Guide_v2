@@ -19,6 +19,7 @@
  */
 
 import { VALID_CATEGORIES, VALID_CUISINES, ATTRIBUTE_CANON } from '../../src/constants/establishmentVocab.js';
+import { BELARUS_PHONE_REGEX } from '../../src/constants/belarusPhone.js';
 
 export { VALID_CATEGORIES, VALID_CUISINES, ATTRIBUTE_CANON };
 
@@ -42,8 +43,11 @@ export const CITY_BOUNDS = {
   'Бобруйск': { latMin: 53.08, latMax: 53.22, lonMin: 29.10, lonMax: 29.40 },
 };
 
-/** House account that owns seed cards until a real partner claims them (CAT-E-2.1). */
-export const HOUSE_PARTNER_EMAIL = 'seed.data.generator@restaurantguide.by';
+/*
+ * The house account that owns seed cards until a real partner claims them
+ * (CAT-E-2.1) is found by its flag, not by an address: scripts/lib/seedHouse.js
+ * (directive service_accounts 2026-10-15, B3).
+ */
 
 /** Canon-8 cities (both ё/е variants of Mogilev accepted at input). */
 export const VALID_CITIES = [
@@ -97,8 +101,10 @@ export const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
 /** stable_id = media folder name (CAT-E-2.1): lowercase slug, 3–64 chars. */
 export const STABLE_ID_RE = /^[a-z0-9-]{3,64}$/;
 
-/** Belarus phone incl. city codes (e.g. +375 17 …). Digits only after +375. */
-export const PHONE_RE = /^\+375\d{9}$/;
+/** Belarus phone incl. city codes (e.g. +375 17 …) — the same rule the partner
+ *  validator applies, so a seeded card never holds a number its partner cannot
+ *  save back (the app resends the stored phone on every edit). */
+export const PHONE_RE = BELARUS_PHONE_REGEX;
 
 /** Coordinate literal: decimal POINT (never comma), ≥3 fractional digits — blocks
  *  the ru-Excel decimal-comma corruption and integer-truncation classes. */
