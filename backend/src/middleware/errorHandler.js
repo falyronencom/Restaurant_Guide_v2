@@ -23,6 +23,13 @@ export class AppError extends Error {
 }
 
 /**
+ * What a client reads when the server fails (5xx) and nobody wrote a sentence
+ * for a person: decision of the Coordinator, 13.10.2026. The original text
+ * stays in the log.
+ */
+export const SERVER_FAILURE_MESSAGE = 'Сбой на сервере. Попробуйте ещё раз через минуту.';
+
+/**
  * Centralized error handling middleware.
  * 
  * This is the last middleware in the chain and catches all errors that occur
@@ -119,6 +126,15 @@ export const errorHandler = (err, req, res, _next) => {
     statusCode = 400;
     errorCode = 'INVALID_JSON';
     message = 'Request body contains invalid JSON';
+  }
+
+  // A server failure goes out only as a sentence written for a person — an
+  // AppError in Russian (e.g. the wizard upload's «Не удалось загрузить
+  // файл…»). Anything else is a library's or the database's inner text, or a
+  // service's English text: apps and the admin show it as is (the guest's
+  // booking form, the wizard upload), so it is replaced. Logged above as is.
+  if (statusCode >= 500 && !(err.isOperational && /[А-Яа-яЁё]/.test(message))) {
+    message = SERVER_FAILURE_MESSAGE;
   }
 
   // In production, never expose internal error details or stack traces

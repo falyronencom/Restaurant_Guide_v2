@@ -14,6 +14,7 @@ import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as PartnerAnalyticsModel from '../models/partnerAnalyticsModel.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { BOOKING_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import logger from '../utils/logger.js';
 
 // ============================================================================
@@ -120,12 +121,13 @@ const isCalendarDate = (value) => {
  * whole ownership check — and it runs FIRST, before the booking is looked up or
  * its status read. Otherwise a foreign partner would learn from the different
  * codes and texts whether a booking exists and in which status it is. Same code
- * and text as bookingSettingsService.verifyOwnership.
+ * as bookingSettingsService.verifyOwnership (whose text is still English: the
+ * settings screens show their own text, 13.10.2026).
  */
 const assertOwnsEstablishment = async (establishmentId, partnerId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError('Establishment not found or not owned by you', 403, 'FORBIDDEN');
+    throw new AppError(BOOKING_REFUSALS.establishmentNotOwned, 403, 'FORBIDDEN');
   }
 };
 
@@ -325,13 +327,13 @@ export const confirmBooking = async (bookingId, partnerId, establishmentId) => {
 
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
-    throw new AppError('Booking not found', 404, 'NOT_FOUND');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 404, 'NOT_FOUND');
   }
   if (booking.establishment_id !== establishmentId) {
-    throw new AppError('Booking does not belong to this establishment', 403, 'FORBIDDEN');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 403, 'FORBIDDEN');
   }
   if (booking.status !== 'pending') {
-    throw new AppError(`Cannot confirm booking with status '${booking.status}'`, 400, 'INVALID_STATUS');
+    throw new AppError(BOOKING_REFUSALS.statusChanged(booking.status), 400, 'INVALID_STATUS');
   }
 
   const updated = await BookingModel.updateStatus(bookingId, {
@@ -365,18 +367,18 @@ export const declineBooking = async (bookingId, partnerId, establishmentId, reas
   await assertOwnsEstablishment(establishmentId, partnerId);
 
   if (!reason || !reason.trim()) {
-    throw new AppError('Decline reason is required', 400, 'VALIDATION_ERROR');
+    throw new AppError(BOOKING_REFUSALS.declineReasonRequired, 400, 'VALIDATION_ERROR');
   }
 
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
-    throw new AppError('Booking not found', 404, 'NOT_FOUND');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 404, 'NOT_FOUND');
   }
   if (booking.establishment_id !== establishmentId) {
-    throw new AppError('Booking does not belong to this establishment', 403, 'FORBIDDEN');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 403, 'FORBIDDEN');
   }
   if (booking.status !== 'pending') {
-    throw new AppError(`Cannot decline booking with status '${booking.status}'`, 400, 'INVALID_STATUS');
+    throw new AppError(BOOKING_REFUSALS.statusChanged(booking.status), 400, 'INVALID_STATUS');
   }
 
   const updated = await BookingModel.updateStatus(bookingId, {
@@ -450,13 +452,13 @@ export const markNoShow = async (bookingId, partnerId, establishmentId) => {
 
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
-    throw new AppError('Booking not found', 404, 'NOT_FOUND');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 404, 'NOT_FOUND');
   }
   if (booking.establishment_id !== establishmentId) {
-    throw new AppError('Booking does not belong to this establishment', 403, 'FORBIDDEN');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 403, 'FORBIDDEN');
   }
   if (booking.status !== 'confirmed') {
-    throw new AppError(`Cannot mark no-show for booking with status '${booking.status}'`, 400, 'INVALID_STATUS');
+    throw new AppError(BOOKING_REFUSALS.statusChanged(booking.status), 400, 'INVALID_STATUS');
   }
 
   const updated = await BookingModel.updateStatus(bookingId, { status: 'no_show' });
@@ -473,13 +475,13 @@ export const markCompleted = async (bookingId, partnerId, establishmentId) => {
 
   const booking = await BookingModel.getById(bookingId);
   if (!booking) {
-    throw new AppError('Booking not found', 404, 'NOT_FOUND');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 404, 'NOT_FOUND');
   }
   if (booking.establishment_id !== establishmentId) {
-    throw new AppError('Booking does not belong to this establishment', 403, 'FORBIDDEN');
+    throw new AppError(BOOKING_REFUSALS.bookingNotFound, 403, 'FORBIDDEN');
   }
   if (booking.status !== 'confirmed') {
-    throw new AppError(`Cannot complete booking with status '${booking.status}'`, 400, 'INVALID_STATUS');
+    throw new AppError(BOOKING_REFUSALS.statusChanged(booking.status), 400, 'INVALID_STATUS');
   }
 
   const updated = await BookingModel.updateStatus(bookingId, { status: 'completed' });

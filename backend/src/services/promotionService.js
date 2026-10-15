@@ -13,6 +13,7 @@ import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -31,7 +32,7 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
     throw new AppError(
-      'Establishment not found or access denied',
+      PROMOTION_REFUSALS.establishmentNotOwned,
       404,
       'ESTABLISHMENT_NOT_FOUND',
     );
@@ -41,7 +42,7 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
   const activeCount = await PromotionModel.getActiveCount(establishmentId);
   if (activeCount >= PromotionModel.MAX_ACTIVE_PROMOTIONS) {
     throw new AppError(
-      `Maximum ${PromotionModel.MAX_ACTIVE_PROMOTIONS} active promotions allowed per establishment`,
+      PROMOTION_REFUSALS.activeLimit(PromotionModel.MAX_ACTIVE_PROMOTIONS),
       400,
       'PROMOTION_LIMIT_EXCEEDED',
     );
@@ -52,14 +53,14 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
   if (file) {
     if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
       throw new AppError(
-        'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC',
+        PROMOTION_REFUSALS.invalidImageType,
         422,
         'INVALID_FILE_TYPE',
       );
     }
     if (!CloudinaryUtil.isValidImageSize(file.size)) {
       throw new AppError(
-        'File size exceeds 10MB limit',
+        PROMOTION_REFUSALS.imageTooLarge,
         422,
         'FILE_TOO_LARGE',
       );
@@ -120,7 +121,7 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
 export const getPartnerPromotions = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError('Establishment not found or not owned by you', 403, 'FORBIDDEN');
+    throw new AppError(PROMOTION_REFUSALS.establishmentNotOwned, 403, 'FORBIDDEN');
   }
   return PromotionModel.getPromotionsByEstablishment(establishmentId, true);
 };
@@ -137,14 +138,14 @@ export const getPartnerPromotions = async (partnerId, establishmentId) => {
 export const updatePromotion = async (partnerId, promotionId, data, file = null) => {
   const promotion = await PromotionModel.getPromotionById(promotionId);
   if (!promotion) {
-    throw new AppError('Promotion not found', 404, 'PROMOTION_NOT_FOUND');
+    throw new AppError(PROMOTION_REFUSALS.promotionNotFound, 404, 'PROMOTION_NOT_FOUND');
   }
 
   // Verify ownership via establishment
   const isOwner = await EstablishmentModel.checkOwnership(promotion.establishment_id, partnerId);
   if (!isOwner) {
     throw new AppError(
-      'Promotion not found or access denied',
+      PROMOTION_REFUSALS.promotionNotFound,
       404,
       'PROMOTION_NOT_FOUND',
     );
@@ -155,14 +156,14 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
   if (file) {
     if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
       throw new AppError(
-        'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC',
+        PROMOTION_REFUSALS.invalidImageType,
         422,
         'INVALID_FILE_TYPE',
       );
     }
     if (!CloudinaryUtil.isValidImageSize(file.size)) {
       throw new AppError(
-        'File size exceeds 10MB limit',
+        PROMOTION_REFUSALS.imageTooLarge,
         422,
         'FILE_TOO_LARGE',
       );
@@ -225,13 +226,13 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
 export const deactivatePromotion = async (partnerId, promotionId) => {
   const promotion = await PromotionModel.getPromotionById(promotionId);
   if (!promotion) {
-    throw new AppError('Promotion not found', 404, 'PROMOTION_NOT_FOUND');
+    throw new AppError(PROMOTION_REFUSALS.promotionNotFound, 404, 'PROMOTION_NOT_FOUND');
   }
 
   const isOwner = await EstablishmentModel.checkOwnership(promotion.establishment_id, partnerId);
   if (!isOwner) {
     throw new AppError(
-      'Promotion not found or access denied',
+      PROMOTION_REFUSALS.promotionNotFound,
       404,
       'PROMOTION_NOT_FOUND',
     );
