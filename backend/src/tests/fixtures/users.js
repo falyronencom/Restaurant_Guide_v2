@@ -174,9 +174,12 @@ export const edgeCaseUsers = {
  * login.yandex.ru/info body). QP4: the suite previously had no OAuth users.
  */
 export const oauthProviderResponses = {
-  // login.yandex.ru/info?format=json body (verifyYandexToken upstream)
+  // login.yandex.ru/info?format=json body (verifyYandexToken upstream).
+  // client_id — the application the token was issued to: ours by default
+  // (config/oauth.js DEFAULT_YANDEX_CLIENT_IDS).
   yandex: {
     id: 90210,
+    client_id: 'bad2912d12db4c59a71511239a68c564',
     default_email: 'yandex-user@yandex.ru',
     display_name: 'Яндекс Пользователь',
     default_avatar_id: 'av-yandex-1'

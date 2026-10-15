@@ -37,6 +37,7 @@ import app from '../../server.js';
 import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { invalidateAccountStatus, markSessionsRevoked } from '../../services/accountStatus.js';
+import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
 
 const GRACE_ENV = 'REFRESH_REUSE_GRACE_SECONDS';
 const originalGrace = process.env[GRACE_ENV];
@@ -224,7 +225,7 @@ describe('граница — миллисекунда метки', () => {
     // читает сравнение в authService; по этому чтению и ставится пара.
     const { rows: [row] } = await query(
       'SELECT created_at FROM refresh_tokens WHERE token = $1',
-      [account.refreshToken],
+      [storedRefreshToken(account.refreshToken)],
     );
     const createdAtMs = new Date(row.created_at).getTime();
 

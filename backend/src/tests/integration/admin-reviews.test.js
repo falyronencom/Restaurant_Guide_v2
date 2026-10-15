@@ -28,6 +28,7 @@ import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { setReviewVisibility } from '../../models/adminReviewModel.js';
+import * as adminReviewService from '../../services/adminReviewService.js';
 import {
   createAdminAndGetToken,
   createViewerAndGetToken,
@@ -243,6 +244,214 @@ describe('GET /api/v1/admin/reviews (#14)', () => {
       .expect(200);
 
     expect(response.body.data[0].author_email).toBe(reviewerEmail);
+  });
+});
+
+// ============================================================================
+// Просмотрщик видит отзывы как посторонний, без людей (пакет 2, пункт 1;
+// заход 2А облачного критика, B-1)
+// ============================================================================
+//
+// Роль «только просмотр» показывают людям вне проекта. Отзыв, удалённый
+// автором (или модератором), ей не отдаётся вовсе; скрытый модератором —
+// отдаётся с пометкой «скрыт» (is_visible: false), но без имени, почты,
+// статистики автора и без текста: скрытие часто и случается из-за того, что
+// в тексте есть лишнее о людях. Выборка «все отзывы одного человека»
+// просмотрщику закрыта. Администратору — как прежде.
+
+describe('GET /api/v1/admin/reviews — проекция просмотрщика (пакет 2, п. 1)', () => {
+  // Метки уникальны на прогон: проверка «не встречается нигде в ответе»
+  // имеет смысл, только если строку нельзя случайно встретить в чужом поле.
+  const HIDDEN_TEXT = `скрытый-текст-${randomUUID()}`;
+  const DELETED_TEXT = `удалённый-текст-${randomUUID()}`;
+  const HIDDEN_RESPONSE = `ответ-на-скрытый-${randomUUID()}`;
+
+  let viewerToken;
+  let hiddenAuthor;
+  let deletedAuthor;
+
+  // Почту база хранит в нижнем регистре — метка латиницей и строчными.
+  const createNamedAuthor = async (label, emailLabel) => {
+    const email = `${emailLabel}-${randomUUID()}@test.com`;
+    const name = `${label} ${randomUUID().slice(0, 8)}`;
+    const created = await createUserAndGetTokens({
+      email,
+      phone: null,
+      password: 'User123!@#',
+      name,
+      role: 'user',
+      authMethod: 'email',
+    });
+    return { id: created.user.id, email, name };
+  };
+
+  beforeAll(async () => {
+    // Свой просмотрщик с уникальной почтой: фикстурный viewer@test.com уже
+    // заводит тест выше, а таблица users между тестами не очищается.
+    viewerToken = (await createUserAndGetTokens({
+      email: `viewer-pack2-${randomUUID()}@test.com`,
+      phone: null,
+      password: 'Viewer123!@#',
+      name: 'Pack2 Viewer',
+      role: 'viewer',
+      authMethod: 'email',
+    })).accessToken;
+    hiddenAuthor = await createNamedAuthor('Автор-скрытого', 'hidden-author');
+    deletedAuthor = await createNamedAuthor('Автор-удалённого', 'deleted-author');
+  });
+
+  const seedThree = async () => {
+    const visible = await createTestReview(reviewerUserId, testEstablishmentId, { rating: 5 });
+    const hidden = await createTestReview(hiddenAuthor.id, testEstablishmentId, {
+      rating: 1,
+      content: HIDDEN_TEXT,
+      is_visible: false,
+      partner_response: HIDDEN_RESPONSE,
+    });
+    const deleted = await createTestReview(deletedAuthor.id, testEstablishmentId, {
+      rating: 2,
+      content: DELETED_TEXT,
+      is_deleted: true,
+    });
+    return { visible, hidden, deleted };
+  };
+
+  const asViewer = (url) => request(app).get(url).set('Authorization', `Bearer ${viewerToken}`);
+  const asAdmin = (url) => request(app).get(url).set('Authorization', `Bearer ${adminToken}`);
+
+  test('удалённый отзыв просмотрщику не отдаётся вовсе — ни в списке, ни в счётчике', async () => {
+    const { visible, hidden, deleted } = await seedThree();
+
+    const response = await asViewer('/api/v1/admin/reviews?page=1&per_page=20').expect(200);
+
+    const ids = response.body.data.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([visible.id, hidden.id]));
+    expect(ids).not.toContain(deleted.id);
+    expect(response.body.meta.total).toBe(2);
+    expect(JSON.stringify(response.body)).not.toContain(DELETED_TEXT);
+    expect(JSON.stringify(response.body)).not.toContain(deletedAuthor.name);
+  });
+
+  test('фильтр «Удалённые» просмотрщику пуст', async () => {
+    await seedThree();
+
+    const response = await asViewer('/api/v1/admin/reviews?status=deleted').expect(200);
+
+    expect(response.body.data).toHaveLength(0);
+    expect(response.body.meta.total).toBe(0);
+  });
+
+  test('скрытый отзыв — с пометкой «скрыт», но без автора, его признаков и текста', async () => {
+    const { hidden } = await seedThree();
+
+    const response = await asViewer('/api/v1/admin/reviews?status=hidden').expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    const row = response.body.data[0];
+    expect(row.id).toBe(hidden.id);
+    expect(row.is_visible).toBe(false);
+    expect(row.is_deleted).toBe(false);
+    expect(row.rating).toBe(1);
+    expect(row).toHaveProperty('author_name', null);
+    expect(row).toHaveProperty('author_email', null);
+    expect(row).toHaveProperty('author_review_count', null);
+    expect(row).toHaveProperty('author_average_rating', null);
+    expect(row).toHaveProperty('content', null);
+    expect(row).toHaveProperty('partner_response', null);
+    // Пустые поля — скрыты, а не отсутствуют: панель пишет «Скрыто в режиме
+    // просмотра», а не «отзыв без текста».
+    expect(row).toHaveProperty('viewer_redacted', true);
+    const body = JSON.stringify(response.body);
+    expect(body).not.toContain(hiddenAuthor.name);
+    expect(body).not.toContain(hiddenAuthor.email);
+    expect(body).not.toContain(HIDDEN_TEXT);
+    expect(body).not.toContain(HIDDEN_RESPONSE);
+  });
+
+  test('видимый отзыв просмотрщик видит как посторонний: имя и текст есть, почты нет', async () => {
+    const { visible } = await seedThree();
+
+    const response = await asViewer('/api/v1/admin/reviews?status=visible').expect(200);
+
+    const row = response.body.data.find((r) => r.id === visible.id);
+    expect(row.author_name).toBe('Test Reviewer');
+    expect(row.content).toBe('Test review content for admin testing');
+    expect(row).toHaveProperty('author_email', null);
+    expect(row).toHaveProperty('viewer_redacted', false);
+  });
+
+  test('выборка «все отзывы человека» просмотрщику отвергается', async () => {
+    await seedThree();
+
+    const response = await asViewer(`/api/v1/admin/reviews?user_id=${hiddenAuthor.id}`).expect(403);
+
+    expect(response.body.success).toBe(false);
+    expect(JSON.stringify(response.body)).not.toContain(HIDDEN_TEXT);
+  });
+
+  test('поиск по тексту не находит скрытый отзыв просмотрщику (иначе текст угадывается по совпадениям)', async () => {
+    await seedThree();
+
+    const response = await asViewer(
+      `/api/v1/admin/reviews?search=${encodeURIComponent(HIDDEN_TEXT.slice(0, 20))}`,
+    ).expect(200);
+
+    expect(response.body.data).toHaveLength(0);
+    expect(response.body.meta.total).toBe(0);
+  });
+
+  test('статистика автора у видимого отзыва не выдаёт его скрытые (ревью Phase 3.5)', async () => {
+    // Иначе разница «отзывов у автора» и его видимых строк называет число
+    // скрытых, а список скрытых — их оценку, заведение и дату: скрытый отзыв
+    // связывается с именем автора.
+    const other = await createPartnerWithEstablishment('active');
+    const author = await createNamedAuthor('Автор-двух', 'two-reviews-author');
+    await createTestReview(author.id, testEstablishmentId, { rating: 5 });
+    await createTestReview(author.id, other.establishment.id, { rating: 1, is_visible: false });
+
+    const viewer = await asViewer('/api/v1/admin/reviews?status=visible').expect(200);
+    const row = viewer.body.data.find((r) => r.author_name === author.name);
+    expect(row.author_review_count).toBe(1);
+    expect(row.author_average_rating).toBe(5);
+
+    const admin = await asAdmin('/api/v1/admin/reviews?status=visible').expect(200);
+    const adminRow = admin.body.data.find((r) => r.author_name === author.name);
+    expect(adminRow.author_review_count).toBe(2);
+    expect(adminRow.author_average_rating).toBe(3);
+  });
+
+  test('сервис сам, без общего слоя, отдаёт просмотрщику отзыв без почты автора', async () => {
+    // Два слоя — у каждого свой свидетель: общий слой (projections/
+    // viewerProjection.js) почту тоже гасит, и тест маршрута её не отличит.
+    await seedThree();
+
+    const { reviews } = await adminReviewService.getReviews({ viewer: true });
+
+    expect(reviews.length).toBe(2);
+    for (const review of reviews) {
+      expect(review.author_email).toBeNull();
+    }
+  });
+
+  test('администратору — как прежде: удалённые и скрытые с автором и текстом, фильтр по человеку работает', async () => {
+    const { hidden, deleted } = await seedThree();
+
+    const all = await asAdmin('/api/v1/admin/reviews?page=1&per_page=20').expect(200);
+    expect(all.body.meta.total).toBe(3);
+    const hiddenRow = all.body.data.find((r) => r.id === hidden.id);
+    expect(hiddenRow.author_name).toBe(hiddenAuthor.name);
+    expect(hiddenRow.author_email).toBe(hiddenAuthor.email);
+    expect(hiddenRow.content).toBe(HIDDEN_TEXT);
+    expect(hiddenRow.partner_response).toBe(HIDDEN_RESPONSE);
+    expect(all.body.data.find((r) => r.id === deleted.id).content).toBe(DELETED_TEXT);
+
+    const byPerson = await asAdmin(`/api/v1/admin/reviews?user_id=${hiddenAuthor.id}`).expect(200);
+    expect(byPerson.body.data.map((r) => r.id)).toEqual([hidden.id]);
+
+    const search = await asAdmin(
+      `/api/v1/admin/reviews?search=${encodeURIComponent(HIDDEN_TEXT.slice(0, 20))}`,
+    ).expect(200);
+    expect(search.body.data.map((r) => r.id)).toEqual([hidden.id]);
   });
 });
 

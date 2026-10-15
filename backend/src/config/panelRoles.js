@@ -14,10 +14,13 @@
  * placed into a tier changes nothing — authorize() answers 403 to any role
  * outside the tier of the route.
  *
- * What a viewer may still see is decided per projection with isViewer():
- * partner contact person / e-mail / registration document are redacted from
- * the establishment card, and the audit log never carries IP / user agent
- * for a viewer (same decision, 2026-09-08).
+ * What a viewer may still see: one layer under every read route —
+ * projections/viewerProjection.js, wired into the read tier — withholds the
+ * personal data of people (contacts and documents of partners, names and
+ * e-mails of moderators and review authors, IP / user agent). Decisions that
+ * depend on a row's state stay in the services with isViewer(): no deleted
+ * reviews, hidden ones without the person and the text, journal actors by
+ * role (pack 2, points 1–3, 2026-10; Coordinator decision 2026-09-08).
  */
 
 export const ADMIN_ROLE = 'admin';
