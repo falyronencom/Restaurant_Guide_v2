@@ -919,3 +919,82 @@ describe('Search System - удобство: значение не true не ро
       .toEqual(onEveryPath({ status: 200, names: [], total: 0 }));
   });
 });
+
+describe('Search System - сортировка по цене: карточки без цены — в конце при обоих направлениях', () => {
+  // Стратегия §2.4: заведения без цены уходят в конец и при «сначала дешевле»,
+  // и при «сначала дороже». Прежде цена переводилась в число через
+  // `CASE … ELSE 5`: при ASC пятёрка стояла в конце, а при DESC 5 > 4 — и
+  // карточка без цены вставала ПЕРВОЙ, выше '$$$$'. «Сначала дороже» зовут и
+  // сайт (каталог), и mobile (обе поисковые ручки).
+  //
+  // Порядок строит одна buildOrderByClause, но SQL у дверей разный: координаты
+  // без города — CTE с заменой алиаса `e.` → `ne.`; координаты с городом — так
+  // шлёт mobile; город без координат — searchWithoutLocation, через него же
+  // идёт публичный каталог сайта. /search/map по цене не сортирует вовсе.
+  //
+  // Все карточки в одной точке: расстояние на гео-путях у всех одно, и порядок
+  // решает цена, а внутри яруса — прежний тай-брейкер, взвешенный рейтинг.
+  // У «хвалёной» без цены он самый высокий: без ключа цены она встала бы первой.
+  // В ярусе «$» три карточки, и взвешенный рейтинг (4,43 > 3,5 > 3,06) ставит их
+  // иначе, чем число отзывов (40 > 10 > 0) и имя, — так видно, что внутри яруса
+  // с ценой порядок прежний.
+  const CARDS = [
+    // [имя, price_range, average_rating, review_count]
+    ['Дорогая', '$$$$', 0, 0],
+    ['Средняя', '$$', 0, 0],
+    ['Дешёвая, хвалёная', '$', 4.9, 10],
+    ['Дешёвая', '$', 0, 0],
+    ['Дешёвая, много отзывов', '$', 3.0, 40],
+    ['Без цены, хвалёная', null, 4.9, 40],
+    ['Без цены, без отзывов', null, 0, 0],
+  ];
+  const CHEAP_TIER = ['Дешёвая, хвалёная', 'Дешёвая', 'Дешёвая, много отзывов'];
+  const NO_PRICE_TIER = ['Без цены, хвалёная', 'Без цены, без отзывов'];
+
+  beforeEach(async () => {
+    for (const [name, priceRange, rating, reviews] of CARDS) {
+      await query(`
+        INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, average_rating, review_count, status, working_hours, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], $3, $4, $5, 'active', $6::jsonb, NOW(), NOW())
+      `, [partnerId, name, priceRange, rating, reviews, defaultWorkingHours]);
+    }
+  });
+
+  /** Одна сортировка через все двери, где выдачу можно упорядочить по цене. */
+  async function namesOnEveryDoor(sortBy) {
+    const names = (response) => {
+      expect(response.status).toBe(200);
+      return response.body.data.establishments.map((e) => e.name);
+    };
+    return {
+      byRadius: names(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ latitude: 53.9, longitude: 27.5, radius: 10, sort_by: sortBy })),
+      byRadiusInCity: names(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ latitude: 53.9, longitude: 27.5, city: 'Минск', sort_by: sortBy })),
+      byCity: names(await request(app)
+        .get('/api/v1/search/establishments')
+        .query({ city: 'Минск', sort_by: sortBy })),
+      publicCatalog: names(await request(app)
+        .get('/api/v1/public/establishments')
+        .query({ city: 'minsk', sort_by: sortBy })),
+    };
+  }
+
+  const onEveryDoor = (expected) => ({
+    byRadius: expected, byRadiusInCity: expected, byCity: expected, publicCatalog: expected,
+  });
+
+  test('«сначала дороже»: без цены — после «$», а не выше «$$$$»', async () => {
+    expect(await namesOnEveryDoor('price_desc')).toEqual(onEveryDoor([
+      'Дорогая', 'Средняя', ...CHEAP_TIER, ...NO_PRICE_TIER,
+    ]));
+  });
+
+  test('«сначала дешевле»: без цены — после «$$$$»', async () => {
+    expect(await namesOnEveryDoor('price_asc')).toEqual(onEveryDoor([
+      ...CHEAP_TIER, 'Средняя', 'Дорогая', ...NO_PRICE_TIER,
+    ]));
+  });
+});
