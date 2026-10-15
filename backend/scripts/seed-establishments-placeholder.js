@@ -24,6 +24,7 @@ import {
   generatePhone,
 } from './seed-data/content-templates.js';
 import { generateUniqueSlug } from '../src/utils/slugGenerator.js';
+import { findSeedHouse } from './lib/seedHouse.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -82,27 +83,17 @@ function generatePlaceholderImages(establishmentIndex, config) {
 }
 
 /**
- * Get or create dedicated seed partner account
+ * The seed partner account (the seed house) — found by its flag
+ * (lib/seedHouse.js). If it is not there the script stops: it never creates
+ * the house (directive service_accounts 2026-10-15, B3).
+ *
+ * @param {object} client - Database client
+ * @returns {Promise<string>} Partner UUID
  */
-async function getOrCreateSeedPartner(client) {
-  const email = 'seed.data.generator@restaurantguide.by';
-
-  const checkResult = await client.query('SELECT id FROM users WHERE email = $1', [email]);
-
-  if (checkResult.rows.length > 0) {
-    console.log('✓ Using existing seed partner account');
-    return checkResult.rows[0].id;
-  }
-
-  const insertResult = await client.query(
-    `INSERT INTO users (email, name, role, auth_method, email_verified, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [email, 'Seed Data Generator', 'partner', 'email', true, true]
-  );
-
-  console.log('✓ Created new seed partner account');
-  return insertResult.rows[0].id;
+async function getSeedPartner(client) {
+  const house = await findSeedHouse(client);
+  console.log('✓ Using the seed house account');
+  return house.id;
 }
 
 /**
@@ -343,7 +334,7 @@ async function seed() {
     await client.query('BEGIN');
 
     // Get or create seed partner
-    const partnerId = await getOrCreateSeedPartner(client);
+    const partnerId = await getSeedPartner(client);
 
     // Clean existing seed data if --clean flag
     if (cleanMode) {
