@@ -19,6 +19,13 @@ class AuditLogProvider extends ChangeNotifier {
   /// подсветка обещала фильтр, которого не было.
   static const String defaultPeriod = '30d';
 
+  /// Метка последнего запроса (пакет 2, пункт 4). Сервер отдаёт журнал
+  /// по роли спросившего: администратору — с именами и e-mail исполнителей,
+  /// просмотрщику — без. Сброс при смене аккаунта сдвигает метку, и поздний
+  /// ответ на запрос администратора не ложится в журнал просмотрщика; заодно
+  /// ответ на устаревший фильтр не перекрывает ответ на свежий.
+  int _requestSeq = 0;
+
   // List state
   List<AuditLogEntry> _entries = [];
   bool _isLoading = false;
@@ -90,6 +97,7 @@ class AuditLogProvider extends ChangeNotifier {
 
   /// Load audit log entries with current filters
   Future<void> loadEntries({int page = 1}) async {
+    final seq = ++_requestSeq;
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -103,6 +111,7 @@ class AuditLogProvider extends ChangeNotifier {
         from: _from,
         to: _to,
       );
+      if (seq != _requestSeq) return; // обогнали или сменился аккаунт
 
       _entries = result.entries;
       _currentPage = result.page;
@@ -116,6 +125,7 @@ class AuditLogProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     } catch (e) {
+      if (seq != _requestSeq) return;
       _isLoading = false;
       _error = _extractMessage(e);
       notifyListeners();
@@ -186,6 +196,7 @@ class AuditLogProvider extends ChangeNotifier {
   /// Сброс при смене аккаунта: выборка, фильтры, период и раскрытая строка
   /// принадлежат вошедшему.
   void resetAccountScope() {
+    _requestSeq++;
     _entries = [];
     _isLoading = false;
     _error = null;

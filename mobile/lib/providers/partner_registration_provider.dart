@@ -1,8 +1,8 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Partner Registration wizard state provider
 /// Manages the 6-step registration flow for establishment partners
@@ -189,16 +189,55 @@ class PartnerRegistrationProvider with ChangeNotifier {
   bool _validateBasicInfoStep() {
     final name = _data.name ?? '';
     final description = _data.description ?? '';
-    final phone = _data.phone ?? '';
     final priceRange = _data.priceRange;
 
-    // Basic requirements: name (2+ chars) and price range selected
-    // Description and phone are optional for now
+    // Basic requirements: name (2+ chars) and price range selected.
+    // Description and phone are optional; a phone, once typed, must be one
+    // the server accepts — see [phoneError].
     return name.length >= 2 &&
         (description.isEmpty || description.length >= 5) &&
-        (phone.isEmpty || phone.length >= 5) &&
+        phoneError == null &&
         priceRange != null &&
         priceRange.isNotEmpty;
+  }
+
+  /// Same rule as the server (backend/src/constants/belarusPhone.js): +375,
+  /// then a mobile code 25/29/33/44 or a city/region area code 15x–17x,
+  /// 21x–23x — 9 digits in all after 375. Until 13.10.2026 this step let any
+  /// phone of 5+ characters through, and the server refused a city landline
+  /// only at «Отправить», four steps later.
+  static final RegExp _belarusPhone =
+      RegExp(r'^\+375(25|29|33|44|1[5-7]|2[1-3])\d{7}$');
+
+  /// Shown when the number does not start with +375: the field prepends
+  /// 375 only to input that does not start with 3, so «33 123 45 67» stays
+  /// «+331 23 456 7».
+  static const phonePrefixMessage = 'Номер должен начинаться с +375.';
+
+  /// Shown under the phone field when the number has too few or too many
+  /// digits — including while it is still being typed.
+  static const phoneLengthMessage =
+      'После +375 должно быть 9 цифр: код и номер.';
+
+  /// Shown when the length is right but the code is not. Typically a number
+  /// typed the domestic way: the field prepends 375, so «8 029 …» becomes
+  /// «+375 80 …».
+  static const phoneCodeMessage =
+      'Неверный код после +375. Мобильный: 25, 29, 33 или 44; городской: '
+      'код города — 17 Минск, 152 Гродно, 232 Гомель… Номер вида 8 017… '
+      'вводите как +375 17…';
+
+  /// Message under the phone field on the «О заведении» step; null when the
+  /// phone is empty or valid. While it is set, the step cannot be left.
+  String? get phoneError {
+    final phone = (_data.phone ?? '').replaceAll(' ', '');
+    if (phone.isEmpty || _belarusPhone.hasMatch(phone)) return null;
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    // From the third digit on — «+3», «+37» are a country code being typed.
+    if (digits.length >= 3 && !digits.startsWith('375')) {
+      return phonePrefixMessage;
+    }
+    return digits.length == 12 ? phoneCodeMessage : phoneLengthMessage;
   }
 
   /// Validate Step 4: Media
@@ -525,14 +564,10 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      // Extract user-friendly message from DioException
-      String message;
-      if (e is DioException && e.error is String) {
-        message = e.error as String;
-      } else {
-        message = e.toString();
-      }
-      _setError(message);
+      _setError(userMessageOf(
+        e,
+        fallback: 'Не удалось отправить на верификацию. Попробуйте ещё раз.',
+      ));
       _isSubmitting = false;
       notifyListeners();
       return false;
@@ -561,7 +596,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Ошибка при сохранении: ${e.toString()}');
+      // Без приставки «Ошибка при сохранении:», как при создании карточки
+      // (решение Координатора 07.10.2026): партнёр читает ровно фразу,
+      // утверждённую для отказа, а красная плашка и незакрывшийся экран и
+      // так говорят, что изменения не сохранились.
+      _setError(userMessageOf(
+        e,
+        fallback: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
+      ));
       _isSubmitting = false;
       notifyListeners();
       return false;

@@ -34,12 +34,11 @@ import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { createInterface } from 'readline';
-import pg from 'pg';
 import argon2 from 'argon2';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 import { reportEndedSessions, setActiveAccountPassword } from './lib/operator-password.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = join(resolve(__dirname, '..'), '.env.production');
 
@@ -76,7 +75,8 @@ function confirm() {
   return new Promise((res) => rl.question('Set this password? Type "yes" to confirm: ', (a) => { rl.close(); res(a.trim().toLowerCase() === 'yes'); }));
 }
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function run() {
   await client.connect();

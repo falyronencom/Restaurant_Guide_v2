@@ -132,7 +132,11 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       );
     }
 
-    if (detail == null) return const SizedBox.shrink();
+    // Деталь другой карточки под этим выбором не показывается никогда:
+    // провайдеры это гарантируют (пакет 2, пункт 4), панель проверяет ещё раз.
+    if (detail == null || detail.id != selectedId) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       children: [
@@ -391,7 +395,7 @@ class ModerationEntityActions extends StatelessWidget {
   Future<void> _confirmSuspend(BuildContext context) async {
     final reason = await showDialog<String>(
       context: context,
-      builder: (_) => const _SuspendReasonDialog(),
+      builder: (_) => _SuspendReasonDialog(establishmentName: establishmentName),
     );
 
     if (reason == null) return; // закрыли, не подтвердив
@@ -403,7 +407,14 @@ class ModerationEntityActions extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Возобновить заведение?'),
-        content: Text(unsuspendOutcome(unsuspendReturnsTo)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _ConfirmTarget(establishmentName),
+            Text(unsuspendOutcome(unsuspendReturnsTo)),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -2073,6 +2084,28 @@ class _InfoField extends StatelessWidget {
   }
 }
 
+/// Над какой карточкой выполнится действие — первой строкой диалога
+/// подтверждения (пакет 2, пункт 4; Codex CL-4). Имя берётся из показанной
+/// детали, и действие уходит к ней же: модератор подтверждает то, что видит.
+class _ConfirmTarget extends StatelessWidget {
+  final String establishmentName;
+
+  const _ConfirmTarget(this.establishmentName);
+
+  @override
+  Widget build(BuildContext context) {
+    final name = establishmentName.trim();
+    if (name.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        '«$name»',
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
 /// Диалог приостановки — отдельным виджетом, потому что он владеет контроллером.
 ///
 /// Две причины, обе проверены на близнеце этого диалога в отзывах.
@@ -2092,7 +2125,9 @@ class _InfoField extends StatelessWidget {
 /// рядом, иначе кнопка читается как поломка. Теперь состояние кнопки следует
 /// за полем, а рядом написано, чего не хватает.
 class _SuspendReasonDialog extends StatefulWidget {
-  const _SuspendReasonDialog();
+  final String establishmentName;
+
+  const _SuspendReasonDialog({required this.establishmentName});
 
   @override
   State<_SuspendReasonDialog> createState() => _SuspendReasonDialogState();
@@ -2115,6 +2150,7 @@ class _SuspendReasonDialogState extends State<_SuspendReasonDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          _ConfirmTarget(widget.establishmentName),
           const Text('Заведение будет скрыто из поиска и каталога.'),
           const SizedBox(height: 12),
           TextField(

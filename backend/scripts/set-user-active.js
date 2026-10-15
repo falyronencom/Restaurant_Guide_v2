@@ -13,7 +13,8 @@
  *
  * Security model (mirrors set-partner-password.js):
  *   - Target database: with --production, DATABASE_URL from
- *     backend/.env.production (gitignored, user-managed, SSL enforced);
+ *     backend/.env.production (gitignored, user-managed; TLS to the pinned
+ *     certificate only — scripts/lib/productionDb.js);
  *     without it, the DB_* variables of a local database.
  *   - Refuses to deactivate the last active admin: the panel must keep at
  *     least one account that can act.
@@ -29,6 +30,7 @@ import { existsSync } from 'fs';
 import { createInterface } from 'readline';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 
 const { Client } = pg;
 
@@ -67,10 +69,8 @@ const buildClient = () => {
       console.error('❌ DATABASE_URL not set in backend/.env.production');
       process.exit(1);
     }
-    return new Client({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    });
+    // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+    return new ProductionClient({ connectionString: process.env.DATABASE_URL });
   }
   return new Client({
     host: process.env.DB_HOST || 'localhost',
