@@ -17,9 +17,12 @@
  * показывает только этот файл: инструкции облака в ней лишь меняют размер,
  * обрезку и формат, как у ссылок, которые строит сервер (наложение чужого фото,
  * файла с другого сайта или текста делает картинку чужой — находка ревью до
- * коммита). При правке проверяются только добавленные ссылки: фото карточек,
- * переданных владельцу со служебного аккаунта, лежат в папке служебного
- * аккаунта, и правка таких карточек не должна ломаться.
+ * коммита). Ссылка принимается только в том виде, в каком её читает проверка:
+ * шаг назад «..» в присланном тексте прятал слой от проверки, но не от базы
+ * (ревью правки аватара, 12.10.2026). При правке проверяются только
+ * добавленные ссылки: фото карточек, переданных владельцу со служебного
+ * аккаунта, лежат в папке служебного аккаунта, и правка таких карточек не
+ * должна ломаться.
  *
  * Здесь работает настоящий config/cloudinary.js; подменён только сетевой вызов
  * SDK — uploader.upload, через который маршрут временных загрузок кладёт файл
@@ -275,6 +278,11 @@ describe('Создание: чужая ссылка в любом поле — �
       deliveryUrl(`establishments/temp/${self.id}/../${other.id}/interior/victim0004`)],
     ['свой аватар — не медиа карточки', (self) => uploadedUrl(`avatars/${self.id}/face0001`, 'jpg')],
     ['не строка', () => 12345],
+    // Хвост после «#» и логин в адресе проверки не читают, а в базу они ложатся.
+    ['своя загрузка с хвостом после «#»', (self, other) =>
+      `${uploadedUrl(`establishments/temp/${self.id}/interior/own0001`, 'jpg')}#/../../l_establishments:temp:${other.id}:interior:victim0001/v1/own0001.jpg`],
+    ['своя загрузка с логином в адресе', (self) =>
+      uploadedUrl(`establishments/temp/${self.id}/interior/own0001`, 'jpg').replace('https://', 'https://victim@')],
   ])('фото интерьера: %s', async (_label, link) => {
     const { partner: self, token } = await newPartner();
     const { partner: other } = await newPartner();
@@ -303,6 +311,14 @@ describe('Создание: чужая ссылка в любом поле — �
       `d_establishments:temp:${other.id}:interior:victim0001,w_400/f_auto,q_auto/v1`],
     ['наложение после номера версии', (other) =>
       `v1/l_establishments:temp:${other.id}:interior:victim0001,w_1`],
+    // Проверки читают разобранный адрес, а в базу ложится присланный текст.
+    // Разбор сворачивает шаг назад вместе с сегментом перед ним, так что слой
+    // перед «..» проверки не видят, а в сохранённой ссылке он остаётся.
+    ['текст поверх, спрятанный за шагом назад', () => 'l_text:Arial_80:victim,co_red/../v1'],
+    ['наложение чужого фото, спрятанное за шагом назад', (other) =>
+      `l_establishments:temp:${other.id}:interior:victim0001,w_1/../v1`],
+    ['текст поверх за шагом назад через обратную косую черту', () => 'l_text:Arial_80:victim,co_red\\..\\v1'],
+    ['текст поверх за шагом назад, записанным кодами', () => 'l_text:Arial_80:victim,co_red/%2e%2e/v1'],
   ])('фото интерьера: своя загрузка, но %s', async (_label, beforeOwnFile) => {
     const { partner: self, token } = await newPartner();
     const { partner: other } = await newPartner();
@@ -323,12 +339,20 @@ describe('Создание: чужая ссылка в любом поле — �
     expectRefusal(await createCard(token, {
       interior_photos: [`https://res.cloudinary.com/test/image/upload/l_establishments:temp:${other.id}:interior:victim0007,w_1/v1/establishments/temp/${self.id}/interior/own0001`],
     }));
+    expectRefusal(await createCard(token, {
+      menu_pdfs: [{
+        url: uploadedUrl(`establishments/temp/${self.id}/menu_pdf/own0002`, 'pdf'),
+        thumbnail_url: `https://res.cloudinary.com/test/image/upload/l_text:Arial_80:victim,co_red/../c_fill,h_300,pg_1,w_400/f_jpg,q_auto/v1/establishments/temp/${self.id}/menu_pdf/own0002.jpg`,
+        file_name: 'menu.pdf',
+      }],
+    }));
 
     const refusals = warn.mock.calls.filter(([message]) => message === REFUSAL_LOG);
     expect(refusals).toEqual([
       [REFUSAL_LOG, { partnerId: self.id, bucket: 'menu', reason: 'outside_own_folders' }],
       [REFUSAL_LOG, { partnerId: self.id, bucket: 'primary', reason: 'not_our_cloud' }],
       [REFUSAL_LOG, { partnerId: self.id, bucket: 'interior', reason: 'transformation_not_allowed' }],
+      [REFUSAL_LOG, { partnerId: self.id, bucket: 'menu_pdf', reason: 'not_canonical' }],
     ]);
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/victim|example\.org/);
   });
@@ -466,6 +490,8 @@ describe('Правка: добавленная чужая ссылка — от�
       deliveryUrl(`establishments/${card.id}/../${otherCard.id}/interior/victim0004`)],
     ['своё фото с наложением чужого', () =>
       `https://res.cloudinary.com/test/image/upload/l_establishments:temp:${other.id}:interior:victim0009,w_1,h_1,c_fill/f_auto,q_auto/v1/establishments/temp/${self.id}/interior/own0003`],
+    ['своё фото с текстом поверх, спрятанным за шагом назад', () =>
+      `https://res.cloudinary.com/test/image/upload/l_text:Arial_80:victim,co_red/../v1/establishments/temp/${self.id}/interior/own0003`],
   ])('фото интерьера: %s — карточка и имя прежние', async (_label, foreign) => {
     const before = await mediaOf(card.id);
 
@@ -484,6 +510,10 @@ describe('Правка: добавленная чужая ссылка — от�
     ['PDF меню из загрузок другого партнёра', () =>
       uploadedUrl(`establishments/temp/${other.id}/menu_pdf/victim0006`, 'pdf')],
     ['фото меню со стороннего сайта', () => 'https://images.example.org/menu.jpg'],
+    // Превью PDF правка строит из текста ссылки: шаги назад из хвоста после «#»
+    // браузер развернул бы в слой чужого фото поверх первой страницы меню.
+    ['свой PDF с хвостом после «#», из которого строится превью', () =>
+      `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${self.id}/menu_pdf/own0004#/../../../../../../l_establishments:temp:${other.id}:interior:victim0010/v1/establishments/temp/${self.id}/menu_pdf/own0004.pdf`],
   ])('меню: %s', async (_label, foreign) => {
     const before = await mediaOf(card.id);
 

@@ -43,8 +43,11 @@ export const CITY_BOUNDS = {
   'Бобруйск': { latMin: 53.08, latMax: 53.22, lonMin: 29.10, lonMax: 29.40 },
 };
 
-/** House account that owns seed cards until a real partner claims them (CAT-E-2.1). */
-export const HOUSE_PARTNER_EMAIL = 'seed.data.generator@restaurantguide.by';
+/*
+ * The house account that owns seed cards until a real partner claims them
+ * (CAT-E-2.1) is found by its flag, not by an address: scripts/lib/seedHouse.js
+ * (directive service_accounts 2026-10-15, B3).
+ */
 
 /** Canon-8 cities (both ё/е variants of Mogilev accepted at input). */
 export const VALID_CITIES = [

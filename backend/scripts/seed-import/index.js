@@ -20,7 +20,6 @@ import { existsSync, readFileSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { HOUSE_PARTNER_EMAIL } from './contract.js';
 import { pinValue, readPinnedCertificate } from '../lib/productionDb.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,6 +96,11 @@ function confirm(question) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // The house is found by its flag since 2026-10-15 (lib/seedHouse.js); an
+  // address given the old way would be silently ignored — refuse it instead.
+  if (args['house-email'] !== undefined) {
+    fail('--house-email больше не поддерживается: дом сида находится по признаку служебной учётки (scripts/mark-service-account.js).');
+  }
   const info = resolveTarget(args);
   const isLocalHost = ['localhost', '127.0.0.1'].includes(info.host);
 
@@ -129,7 +133,6 @@ async function main() {
     sheetPath: args.sheet,
     mediaRoot: args['media-root'],
     batchId: args['batch-id'] || `import-${Date.now()}`,
-    housePartnerEmail: args['house-email'] || HOUSE_PARTNER_EMAIL,
     mediaMode,
     allowIncomplete,
     reportOnly: !!args['report-only'],
