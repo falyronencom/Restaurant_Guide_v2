@@ -13,6 +13,9 @@
  * verdict that is checked — what it is asked and what it does with the
  * answer. The rule itself, boundary included, is accountStatus.test.js and
  * session-revocation.test.js.
+ *
+ * authorize: the 403 a role the route does not admit gets — its text is a
+ * literal here.
  */
 
 import { jest } from '@jest/globals';
@@ -27,7 +30,7 @@ jest.unstable_mockModule('../../services/accountStatus.js', () => ({
   invalidateAccountStatus: jest.fn(),
 }));
 
-const { authenticate } = await import('../../middleware/auth.js');
+const { authenticate, authorize } = await import('../../middleware/auth.js');
 const { generateAccessToken } = await import('../../utils/jwt.js');
 
 const USER_ID = '7a1d2c3b-0000-4000-8000-000000000001';
@@ -126,5 +129,43 @@ describe('authenticate — a token issued before the account sessions were revok
     const { res } = await callAuthenticate(tokenFor('user'));
 
     expect(res.json.mock.calls[0][0].error.code).toBe('ACCOUNT_INACTIVE');
+  });
+});
+
+describe('authorize — a role the route does not admit', () => {
+  const callAuthorize = (allowedRoles, role) => {
+    const req = { user: { userId: USER_ID, role }, path: '/api/v1/partner/establishments' };
+    const res = {
+      status: jest.fn(function status() { return this; }),
+      json: jest.fn(function json() { return this; }),
+    };
+    const next = jest.fn();
+    authorize(allowedRoles)(req, res, next);
+    return { res, next };
+  };
+
+  test('is refused 403 FORBIDDEN with the Russian text the app shows as is', () => {
+    // Say a partner role taken away mid-session: the role comes from the
+    // database on every request. Text: decision of the Coordinator, 15.10.2026.
+    const { res, next } = callAuthorize(['partner'], 'user');
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0]).toEqual({
+      success: false,
+      message: 'Недостаточно прав для этого действия.',
+      error: {
+        code: 'FORBIDDEN',
+        details: { required_roles: ['partner'], your_role: 'user' },
+      },
+      timestamp: expect.any(String),
+    });
+  });
+
+  test('a role the route admits passes', () => {
+    const { res, next } = callAuthorize(['partner', 'admin'], 'admin');
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
   });
 });

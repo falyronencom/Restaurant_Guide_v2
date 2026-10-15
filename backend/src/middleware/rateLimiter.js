@@ -33,6 +33,14 @@ const RATE_LIMIT_WINDOW_UNAUTHENTICATED = parseInt(
 );
 
 /**
+ * What a client reads when a limiter refuses (429), the global one and every
+ * createRateLimiter alike: decision of the Coordinator, 15.10.2026. The app
+ * shows the response's message as is on the partner's screens and the guest's
+ * booking form; the code RATE_LIMIT_EXCEEDED stays what clients key on.
+ */
+export const RATE_LIMIT_MESSAGE = 'Слишком много запросов. Попробуйте позже.';
+
+/**
  * Generate Redis key for rate limiting counter.
  * 
  * Key format ensures proper namespacing and prevents collisions:
@@ -126,7 +134,7 @@ export const rateLimiter = async (req, res, next) => {
 
       return res.status(429).json({
         success: false,
-        message: 'Rate limit exceeded. Please try again later.',
+        message: RATE_LIMIT_MESSAGE,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
           details: {
@@ -209,7 +217,7 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
 
         return res.status(429).json({
           success: false,
-          message: 'Rate limit exceeded for this endpoint. Please try again later.',
+          message: RATE_LIMIT_MESSAGE,
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
             details: {
