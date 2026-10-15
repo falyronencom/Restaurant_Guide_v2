@@ -46,9 +46,9 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   pauseNotPublished: 'Приостановить можно только опубликованное заведение.',
   resumeNotPaused: 'Возобновить можно только приостановленное заведение.',
 
-  // Proposed 13.10.2026, awaiting the Coordinator's word. The approved
-  // «Нет доступа: это заведение принадлежит другому аккаунту.» does not hold
-  // for every case: the ownership check also refuses a card that no longer
+  // Approved by the Coordinator, 15.10.2026, replacing the wording of 13.10
+  // («Нет доступа: это заведение принадлежит другому аккаунту.»), which does
+  // not hold for every case: the ownership check also refuses a card that no longer
   // exists (a stale screen after the card was deleted), so this text covers
   // both. `notFound` is what opening such a card (GET) answers — there the
   // 404 deliberately does not tell a foreign card from a missing one, and
@@ -68,8 +68,8 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
     'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
 
   // The app's form does not let these happen: they come from a version
-  // mismatch between the app and the server, or a stale screen. Proposed
-  // 07.10.2026 (mostly the site's wording), awaiting the Coordinator's word.
+  // mismatch between the app and the server, or a stale screen. Mostly the
+  // site's wording; approved by the Coordinator, 15.10.2026.
   invalidCity: 'Выберите город из списка.',
   coordinatesOutsideBelarus:
     'Точка на карте за пределами Беларуси. Проверьте адрес или передвиньте точку на карте.',
@@ -91,8 +91,8 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
 
   // Server failures. The app shows its own text instead of these (the
   // transport passes a 5xx up without the server's message); they are Russian
-  // so that the rule above holds without exceptions. Proposed 07.10.2026,
-  // awaiting the Coordinator's word.
+  // so that the rule above holds without exceptions. Approved by the
+  // Coordinator, 15.10.2026.
   createFailed: 'Не удалось создать заведение. Попробуйте ещё раз позже.',
   updateFailed: 'Не удалось сохранить изменения. Попробуйте ещё раз позже.',
   submitFailed: 'Не удалось отправить на модерацию. Попробуйте ещё раз позже.',
