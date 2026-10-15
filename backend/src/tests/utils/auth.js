@@ -9,6 +9,7 @@
 
 import { pool } from '../../config/database.js';
 import { generateAccessToken, generateRefreshToken } from '../../utils/jwt.js';
+import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
 import argon2 from 'argon2';
 import { randomUUID } from 'crypto';
 
@@ -154,10 +155,17 @@ export function generateTestAccessToken(user) {
  * NOTE: Test helper uses simplified logic - deletes old tokens before inserting new one
  * Production code allows multiple active tokens per user for token rotation
  *
+ * Stored the way production stores it — as the token's hash
+ * (utils/refreshTokenStorage.js). `{ asBeforeHashing: true }` writes the token
+ * itself instead, the way rows written before hashing held it — such a row
+ * opens no session; the tests of migration 036 are what still need one.
+ *
  * @param {string} userId - User ID
  * @param {string} refreshToken - Refresh token
+ * @param {Object} [options]
+ * @param {boolean} [options.asBeforeHashing=false]
  */
-export async function storeRefreshToken(userId, refreshToken) {
+export async function storeRefreshToken(userId, refreshToken, { asBeforeHashing = false } = {}) {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
 
@@ -172,7 +180,11 @@ export async function storeRefreshToken(userId, refreshToken) {
   `;
 
   await pool.query(query, [
-    userId, refreshToken, utcTimestamp(expiresAt), utcTimestamp(), null
+    userId,
+    asBeforeHashing ? refreshToken : storedRefreshToken(refreshToken),
+    utcTimestamp(expiresAt),
+    utcTimestamp(),
+    null
   ]);
 }
 
