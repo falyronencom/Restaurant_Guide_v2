@@ -172,8 +172,14 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
                             EstablishmentStatus.suspended)
                           _buildSuspendedBanner(establishment),
 
-                        // Resubmit button for rejected or admin-suspended establishments
+                        // Send button for a draft; resubmit for rejected or
+                        // admin-suspended establishments. A draft is what
+                        // the wizard leaves when the card was created but
+                        // the send for moderation did not get through —
+                        // until 13.10.2026 it had no way to moderation here.
                         if (establishment.status ==
+                                EstablishmentStatus.draft ||
+                            establishment.status ==
                                 EstablishmentStatus.rejected ||
                             establishment.isSuspendedByAdmin)
                           _buildResubmitButton(context, establishment),
@@ -400,9 +406,10 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     return labels[key] ?? key;
   }
 
-  /// Build resubmit button for rejected establishments
+  /// Build send button: first send for a draft, resubmit otherwise
   Widget _buildResubmitButton(
       BuildContext context, PartnerEstablishment establishment) {
+    final isDraft = establishment.status == EstablishmentStatus.draft;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: SizedBox(
@@ -410,7 +417,9 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
         child: ElevatedButton.icon(
           onPressed: () => _handleResubmit(context, establishment),
           icon: const Icon(Icons.send, size: 18),
-          label: const Text('Отправить повторно на модерацию'),
+          label: Text(isDraft
+              ? 'Отправить на модерацию'
+              : 'Отправить повторно на модерацию'),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primaryOrange,
             foregroundColor: AppTheme.textOnPrimary,
@@ -435,14 +444,17 @@ class _EditEstablishmentScreenState extends State<EditEstablishmentScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = context.read<PartnerDashboardProvider>();
+    final isDraft = establishment.status == EstablishmentStatus.draft;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _backgroundColor,
-        title: const Text('Повторная модерация'),
-        content: const Text(
-          'Вы уверены, что хотите отправить заведение повторно на модерацию?',
+        title: Text(isDraft ? 'Отправка на модерацию' : 'Повторная модерация'),
+        content: Text(
+          isDraft
+              ? 'Отправить заведение на модерацию?'
+              : 'Вы уверены, что хотите отправить заведение повторно на модерацию?',
         ),
         actions: [
           TextButton(
