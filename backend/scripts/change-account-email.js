@@ -13,16 +13,25 @@
  * confirmation that does not match is refused — the operator writes what
  * they have just read, not what they remember.
  *
- * Only to an address of ours: a domain the project owns, or the operator's
- * mailbox from SERVICE_ACCOUNT_MAILBOXES (backend/.env.production — never in
- * the repository), or its tagged form on Gmail. A mistake is corrected by
- * moving again to another address of ours; never back to a stranger's domain.
- * The operator's mailbox is never printed — a label stands for it.
+ * Only to an address of ours: a mailbox the operator listed in
+ * SERVICE_ACCOUNT_MAILBOXES (backend/.env.production — never in the
+ * repository), or its tagged form on Gmail. A mistake is corrected by moving
+ * again to another address of ours; never back to a stranger's domain. The
+ * operator's mailbox is never printed — a label stands for it.
  *
- * After the move the account has no session anywhere; sign in with the new
- * address and the old password, or set a password with set-partner-password.js
- * / create-viewer.js. A server process may let an access token issued before
- * the move through for up to 10 seconds (its cached account status).
+ * Only a service account — a panel account, the flagged seed house, an
+ * account on a domain the scripts have used, or one already on our mailbox —
+ * unless --any-account is given: moving a person's account locks them out of
+ * their own address.
+ *
+ * After the move the account has no password, no phone, no session anywhere.
+ * Set a new password right away (set-partner-password.js --email=<new>, or
+ * create-viewer.js / create-admin.js for a panel account); whoever knew the
+ * old one — the owner of the old domain could have set it through a reset
+ * link — no longer gets in. A few seconds after the commit a second pass ends
+ * whatever a request that found the account by its old address just before
+ * the move wrote just after it. A server process may let an access token
+ * issued before the move through for up to 10 seconds (its cached status).
  *
  * Target: with --production, DATABASE_URL from the environment or
  * backend/.env.production, over TLS to the pinned certificate only
@@ -32,12 +41,13 @@
  * Usage (from backend/):
  *   node scripts/change-account-email.js --email=<current> --new-email=<new> [--production]
  *   node scripts/change-account-email.js --email=<current> --new-email=<new> --confirm-old=<current> [--production] [--yes]
+ *   --any-account: also a person's account (see above)
  *   From a git worktree: node --env-file=<main checkout>/backend/.env.production scripts/change-account-email.js … --production
  */
 import { createInterface } from 'readline';
 import pg from 'pg';
 import { ProductionClient, loadProductionEnvironment } from './lib/productionDb.js';
-import { applyEmailChange, planEmailChange } from './lib/accountEmail.js';
+import { SECOND_PASS_DELAY_MS, applyEmailChange, planEmailChange, secondPass } from './lib/accountEmail.js';
 import { displayAddress, mailboxesFrom } from './lib/serviceAccounts.js';
 import { ACCOUNT_STATUS_TTL_SECONDS, reportEndedSessions } from './lib/operator-password.js';
 
@@ -55,6 +65,7 @@ const newEmail = (option('new-email') || '').trim();
 const confirmOld = option('confirm-old');
 const production = hasFlag('production');
 const skipConfirm = hasFlag('yes');
+const allowAnyAccount = hasFlag('any-account');
 
 const usage = (problem) => {
   console.error(`❌ ${problem}`);
@@ -104,7 +115,7 @@ const main = async () => {
     return 1;
   }
   try {
-    const plan = await planEmailChange(client, { currentEmail, newEmail, mailboxes });
+    const plan = await planEmailChange(client, { currentEmail, newEmail, mailboxes, allowAnyAccount });
     const a = plan.account;
     const writing = confirmOld !== null;
 
@@ -114,12 +125,18 @@ const main = async () => {
     console.log(`  Target:   ${production
       ? `PRODUCTION (${client.host}:${client.port}/${client.database})`
       : `local ${client.host}:${client.port}/${client.database}`}`);
-    console.log(`  Account:  id ${a.id}, role ${a.role}, active ${a.is_active}, cards owned ${a.cards}`);
+    console.log(`  Account:  id ${a.id}, role ${a.role}, active ${a.is_active}, cards owned ${a.cards} — ${plan.reason}`);
     console.log(`  Sign-in:  ${a.auth_method}; password set: ${a.has_password}; Google/Yandex linked: ${a.provider_linked}`);
     console.log(`  Address:  ${displayAddress(plan.from, mailboxes)}  →  ${displayAddress(plan.to, mailboxes)}`);
     console.log('            (the new address as the login looks it up)');
-    console.log(`  Ends:     ${a.refresh_tokens} session(s), ${a.devices} push device(s), ${a.reset_links} reset link(s), ${a.email_codes} e-mail code(s)` +
+    console.log(`  Ends:     the password${a.has_password ? '' : ' (none set)'}${a.has_phone ? ', the phone' : ''}, ` +
+      `${a.refresh_tokens} session(s), ${a.devices} push device(s), ${a.reset_links} reset link(s), ${a.email_codes} e-mail code(s)` +
       `${a.provider_linked ? ', the Google/Yandex link' : ''}`);
+    console.log('  After:    set a new password right away (set-partner-password.js --email=<new address>)');
+    if (a.cards > 0) {
+      console.log(`  Cards:    the account owns ${a.cards} card(s). Seed and import scripts find the seed house by its flag`);
+      console.log('            (mark-service-account.js, after migration 037); until it is set they stop — do not run them.');
+    }
     console.log('  Journal:  change_email, old and new address (hidden from the viewer role)');
     console.log('════════════════════════════════════════════════');
 
@@ -137,9 +154,15 @@ const main = async () => {
     }
 
     const { account, ended, emailCodes } = await applyEmailChange(client, plan);
-    console.log(`✅ Moved: account ${account.id} (${account.role}) now stands on ${displayAddress(account.email, mailboxes)}; sign-in ${account.auth_method}.`);
+    console.log(`✅ Moved: account ${account.id} (${account.role}) now stands on ${displayAddress(account.email, mailboxes)}; sign-in ${account.auth_method}; password cleared.`);
     reportEndedSessions(ended);
     console.log(`   E-mail codes spent: ${emailCodes}.`);
+
+    await new Promise((resolveWait) => { setTimeout(resolveWait, SECOND_PASS_DELAY_MS); });
+    const second = await secondPass(client, account.id);
+    console.log(`   Second pass (${SECOND_PASS_DELAY_MS / 1000} s later): ${second.ended.refreshTokens} session(s), ` +
+      `${second.ended.resetLinks} reset link(s), ${second.ended.devices} device(s), ${second.emailCodes} code(s) written meanwhile — ended.`);
+    console.log('   Next: set a new password — set-partner-password.js --email=<the new address> (NEW_PASSWORD from the environment).');
     console.log(`   A server process may let an old access token through for up to ${ACCOUNT_STATUS_TTL_SECONDS} seconds.`);
     return 0;
   } catch (error) {

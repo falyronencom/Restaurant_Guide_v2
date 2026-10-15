@@ -8,13 +8,16 @@
  *     владелица карточки (какой бы ни была её роль) и каждая на домене из
  *     литералов скриптов — и только они; обычные учётки на прочих доменах
  *     только считаются по доменам;
- *   - вердикт «наш / не наш»: наши домены, ящик Координатора и его форма с
- *     меткой (Gmail) — наши; точка в имени ящика — не наш адрес;
- *   - счёт итога: активные не на наших ящиках; выключенные — отдельно;
+ *   - вердикт «наш / не наш»: ящик Координатора и его форма с меткой (Gmail) —
+ *     наши; точка в имени ящика — не наш адрес; адрес на домене проекта, не
+ *     внесённый в список ящиков, — «ящик не подтверждён», не наш;
+ *   - два итога: служебные (панель, признак, домен из литералов скриптов) не
+ *     на наших ящиках — и партнёры/владельцы карточек к классификации;
+ *     выключенные — отдельно;
  *   - непогашенные сеансы, ссылки сброса, коды, push, привязка провайдера —
  *     числами, у каждой учётки;
  *   - ящик Координатора в выводе — меткой, значение не печатается; адрес
- *     партнёра-человека — без имени до «@»;
+ *     партнёра или владельца карточки — человека — без имени до «@»;
  *   - первый прогон «красный»: учётки на чужих доменах видны как «не наши».
  *
  * Ожидаемые значения — литералы этого файла, не вывод кода.
@@ -37,14 +40,14 @@ const run = (args = ['--json'], env = {}) => spawnSync(process.execPath, [SCRIPT
   encoding: 'utf8',
 });
 
-const addUser = async ({ email, role = 'user', active = true, password = true, provider = null }) => {
+const addUser = async ({ email, role = 'user', active = true, password = true, provider = null, service = false, phone = null }) => {
   const id = randomUUID();
   await query(
     `INSERT INTO users (id, email, password_hash, name, role, auth_method, oauth_provider_id,
-                        email_verified, is_active, created_at, updated_at)
-     VALUES ($1, $2, $3, 'Проверка', $4, $5, $6, true, $7, NOW(), NOW())`,
+                        email_verified, is_active, is_service_account, phone, created_at, updated_at)
+     VALUES ($1, $2, $3, 'Проверка', $4, $5, $6, true, $7, $8, $9, NOW(), NOW())`,
     [id, email, password ? '$argon2id$v=19$m=16384,t=3,p=1$c2FsdHNhbHQ$aGFzaGhhc2g' : null,
-      role, provider ? 'google' : 'email', provider, active],
+      role, provider ? 'google' : 'email', provider, active, service, phone],
   );
   return id;
 };
@@ -100,8 +103,10 @@ describe('scripts/service-accounts-audit.js', () => {
       cardOwnerUser: await addUser({ email: 'owner-user@tut.by' }),
       // Посевной автор отзывов: user на домене из литералов скриптов — в перечне
       seedReviewer: await addUser({ email: 'seed.user.1@restaurantguide.by' }),
-      // Наш домен проекта — наш
+      // Домен проекта, но адрес не внесён в список ящиков — ящик не подтверждён, не наш
       viewerOurDomain: await addUser({ email: 'viewer@nirivio.by', role: 'viewer' }),
+      // Партнёр с признаком служебной на почтовом сервисе — служебная, не наша; с телефоном
+      flaggedHouse: await addUser({ email: 'house@yandex.ru', role: 'partner', service: true, phone: '+375291112233' }),
       // Ящик Координатора с точкой в имени — Gmail доставит, но это не та форма: не наш
       adminDotted: await addUser({ email: 'owner.b.ox+x@gmail.com', role: 'admin' }),
       // Обычные люди — только счёт
@@ -141,7 +146,7 @@ describe('scripts/service-accounts-audit.js', () => {
     const listed = parsed.accounts.map((a) => a.id).sort();
     const expected = [
       ids.adminForeign, ids.adminOurs, ids.viewerOff, ids.seedHouse, ids.partnerPerson,
-      ids.cardOwnerUser, ids.seedReviewer, ids.viewerOurDomain, ids.adminDotted,
+      ids.cardOwnerUser, ids.seedReviewer, ids.viewerOurDomain, ids.adminDotted, ids.flaggedHouse,
     ].sort();
     expect(listed).toEqual(expected);
     expect(parsed.otherUsersByDomain).toEqual([
@@ -150,29 +155,44 @@ describe('scripts/service-accounts-audit.js', () => {
     ]);
   });
 
-  test('says which addresses are ours: our domains and the mailbox with a tag; a dotted variant is not', () => {
+  test('says which addresses are ours: the listed mailbox with a tag; a dotted variant and an unlisted project address are not', () => {
     const accounts = byId(report().parsed);
     expect(accounts[ids.adminOurs].ours).toBe(true);
-    expect(accounts[ids.viewerOurDomain].ours).toBe(true);
+    expect(accounts[ids.viewerOurDomain].ours).toBe(false);
+    expect(accounts[ids.viewerOurDomain].verdict).toBe('домен проекта, ящик не подтверждён (не в SERVICE_ACCOUNT_MAILBOXES)');
+    // Listed itself, the same project address is ours.
+    const listed = JSON.parse(run(['--json'], { SERVICE_ACCOUNT_MAILBOXES: `${MAILBOX},viewer@nirivio.by` }).stdout);
+    expect(byId(listed)[ids.viewerOurDomain]).toMatchObject({ ours: true, verdict: 'НАШ ящик' });
     expect(accounts[ids.adminForeign].ours).toBe(false);
     expect(accounts[ids.seedHouse].ours).toBe(false);
     expect(accounts[ids.adminDotted].ours).toBe(false);
   });
 
-  test('counts active accounts not on our mailboxes; switched-off ones apart', () => {
+  test('two totals: service accounts not on our mailboxes, and accounts to classify; switched-off ones apart', () => {
     const { summary } = report().parsed;
-    // adminForeign, seedHouse, partnerPerson, cardOwnerUser, seedReviewer, adminDotted
-    expect(summary.activeNotOurs).toBe(6);
+    // adminForeign, seedHouse, seedReviewer, adminDotted, viewerOurDomain, flaggedHouse
+    expect(summary.serviceNotOurs).toBe(6);
+    // partnerPerson, cardOwnerUser
+    expect(summary.classifyNotOurs).toBe(2);
     // viewerOff
     expect(summary.inactiveNotOurs).toBe(1);
-    expect(summary.listed).toBe(9);
+    expect(summary.listed).toBe(10);
+  });
+
+  test('the kind of each account: panel, flag and script domain are service; a person-partner is to classify', () => {
+    const accounts = byId(report().parsed);
+    expect(accounts[ids.flaggedHouse]).toMatchObject({ kind: 'service', serviceFlag: true, hasPhone: true });
+    expect(accounts[ids.seedReviewer].kind).toBe('service');
+    expect(accounts[ids.viewerOurDomain].kind).toBe('service');
+    expect(accounts[ids.partnerPerson].kind).toBe('classify');
+    expect(accounts[ids.cardOwnerUser].kind).toBe('classify');
   });
 
   test('reports sessions, reset links, codes, push, provider links and cards per account', () => {
     const { parsed } = report();
     const accounts = byId(parsed);
     expect(accounts[ids.adminForeign]).toMatchObject({
-      unspentRefreshTokens: 2, liveRefreshTokens: 2, unspentResetLinks: 1, activeDevices: 1, hasPassword: true,
+      unspentRefreshTokens: 2, liveRefreshTokens: 2, unspentResetLinks: 1, resetLinksEver: 1, activeDevices: 1, hasPassword: true, hasPhone: false,
     });
     expect(accounts[ids.seedHouse]).toMatchObject({
       cards: 3, activeCards: 2, hasPassword: false, providerLinked: true, authMethod: 'google',
@@ -180,6 +200,7 @@ describe('scripts/service-accounts-audit.js', () => {
     expect(accounts[ids.seedReviewer].unspentEmailCodes).toBe(1);
     expect(parsed.summary.oursUnspentRefreshTokens).toBe(1);
     expect(parsed.migration035).toBe(true);
+    expect(parsed.migration037).toBe(true);
   });
 
   test('never prints the mailbox itself; masks a person-partner; shows foreign service addresses as they are', () => {
@@ -190,6 +211,7 @@ describe('scripts/service-accounts-audit.js', () => {
     const accounts = byId(parsed);
     expect(accounts[ids.adminOurs].address).toBe('[ящик Координатора]+admin');
     expect(accounts[ids.partnerPerson].address).toBe('i***@mail.ru');
+    expect(accounts[ids.cardOwnerUser].address).toBe('o***@tut.by');
     expect(accounts[ids.adminForeign].address).toBe('admin@test.com');
     expect(accounts[ids.seedHouse].address).toBe('seed.data.generator@restaurantguide.by');
   });
@@ -198,7 +220,14 @@ describe('scripts/service-accounts-audit.js', () => {
     const result = run([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('admin@test.com  — НЕ наш ящик');
-    expect(result.stdout).toContain('Активных НЕ на наших ящиках: 6');
+    expect(result.stdout).toContain('Служебных активных НЕ на наших ящиках: 6');
+    expect(result.stdout).not.toContain('не задан');
+  });
+
+  test('without the mailbox list the run says so first', () => {
+    const result = run([], { SERVICE_ACCOUNT_MAILBOXES: '' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('SERVICE_ACCOUNT_MAILBOXES не задан');
   });
 
   test('refuses a mailbox value the login would not accept', () => {

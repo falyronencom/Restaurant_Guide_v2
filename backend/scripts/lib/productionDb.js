@@ -46,15 +46,25 @@ export const PRODUCTION_ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url
 
 const PIN_COMMAND = 'node scripts/pin-production-db-cert.js (из папки backend)';
 
+/** Variables whose production value comes from .env.production, whatever else is set. */
+export const PRODUCTION_KEYS = Object.freeze(['DATABASE_URL', PIN_VARIABLE, 'SERVICE_ACCOUNT_MAILBOXES']);
+
 /**
  * The production environment for a script: what the process already has,
  * completed from backend/.env.production next to the scripts.
  *
- * Variables already set win — so a script run from a git worktree, which has
- * no .env.production of its own, is pointed at the operator's file without
- * copying it: `node --env-file=<main checkout>/backend/.env.production
- * scripts/<script>.js --production`. The keys stay in the one file the
- * operator keeps; nothing is written.
+ * A script run from a git worktree, which has no .env.production of its own,
+ * is pointed at the operator's file without copying it: `node
+ * --env-file=<main checkout>/backend/.env.production scripts/<script>.js
+ * --production`. The keys stay in the one file the operator keeps; nothing
+ * is written.
+ *
+ * Where the file next to the scripts exists, its values of PRODUCTION_KEYS win
+ * over the process environment: importing the server's modules loads
+ * backend/.env (utils/logger.js calls dotenv.config()), a developer's file,
+ * and its values must not pass for production's — a database address, the
+ * pin, the operator's mailboxes (Phase 3.5 review, 2026-10-15). Other
+ * variables already set win, as dotenv does.
  *
  * @param {Object} [options]
  * @param {Object} [options.env=process.env] - completed in place
@@ -66,7 +76,7 @@ export const loadProductionEnvironment = ({ env = process.env, envFile = PRODUCT
   if (envFile && existsSync(envFile)) {
     const parsed = dotenv.parse(readFileSync(envFile));
     for (const [key, value] of Object.entries(parsed)) {
-      if (env[key] === undefined) env[key] = value;
+      if (env[key] === undefined || PRODUCTION_KEYS.includes(key)) env[key] = value;
     }
   }
   if (!env.DATABASE_URL) {

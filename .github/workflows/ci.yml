@@ -86,6 +86,7 @@ jobs:
         # ради следующей миграции: на Railway её применяют вручную после мержа,
         # снапшот догоняет позже, а тестовой БД она нужна сразу, чтобы совпадать
         # с кодом. session-revocation.test.js сам проверяет, что код живёт и без 035.
+        # 037 (users.is_service_account) — как 031–035: код живёт и без неё (to_jsonb).
         # 036 — миграция данных, не схемы: в рецепт не входит (на пустой таблице
         # она намеренно отказывается), refresh-token-storage.test.js накатывает её сам.
         # 030 НЕ применяется намеренно: он dormant до real-500 (ROADMAP),
@@ -100,6 +101,7 @@ jobs:
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/033_menu_push_preference.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/034_viewer_role.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/035_sessions_revoked_at.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/037_service_account_flag.sql
 
       - name: Создать backend/.env.test
         # Файл гитигнорен, а setup-env.js и globalSetup.js читают его по пути.

@@ -9,17 +9,21 @@
  * included. The rule since then: a service account stands on a mailbox the
  * operator owns, and the scripts that create or move one refuse any other.
  *
- * "Ours" is one of two things:
- *   - an address at a domain the project owns (OUR_DOMAINS — named in the
- *     open repository, the project's own mail goes out from it);
- *   - the operator's own mailbox, named only in the operator's environment
- *     (SERVICE_ACCOUNT_MAILBOXES in backend/.env.production, gitignored) —
- *     never in the repository, which is public. Several service accounts
- *     cannot share one address (users_email_key), so on a provider that
- *     delivers «local+tag@» to «local@» — Gmail — the tagged forms of the
- *     mailbox are ours too. Only there: on a provider without sub-addressing
- *     «local+tag@» may be someone else's mailbox, and Yandex's own
- *     normalisation (below) strips the tag, so two accounts would collide.
+ * "Ours" is a mailbox the operator has named: SERVICE_ACCOUNT_MAILBOXES in the
+ * operator's environment (backend/.env.production, gitignored) — never in the
+ * repository, which is public. Several service accounts cannot share one
+ * address (users_email_key), so on a provider that delivers «local+tag@» to
+ * «local@» — Gmail — the tagged forms of a listed mailbox are ours too. Only
+ * there: on a provider without sub-addressing «local+tag@» may be someone
+ * else's mailbox, and Yandex's own normalisation (below) strips the tag, so
+ * two accounts would collide.
+ *
+ * A domain the project owns (OUR_DOMAINS) is not enough by itself: owning a
+ * domain is not receiving its mail — nirivio.by only sends, .com and .ru are
+ * not connected (memory reference_production) — and any local part there,
+ * a typo included, would pass. An address at one of them is ours only when
+ * it is listed itself (Phase 3.5 review, 2026-10-15). OUR_DOMAINS is what the
+ * repository may name (the e-mail literal guard, unit/emailLiteralDomains).
  *
  * An address is compared, and stored, in the form the login looks it up by:
  * the e-mail chain of validateLogin (src/validators/authValidation.js) is run
@@ -133,14 +137,17 @@ export function mailboxOf(email, mailboxes) {
 }
 
 /**
- * Whether an address is ours: at a domain we own, or on the operator's mailbox.
+ * Whether an address is ours: a mailbox the operator listed, or its Gmail
+ * tagged form (mailboxOf). A project domain alone is not (module comment).
  *
  * @param {string} email - login form
  * @param {string[]} mailboxes
  * @returns {boolean}
  */
-export const isOurAddress = (email, mailboxes) =>
-  Boolean(email) && (OUR_DOMAINS.includes(domainOf(email)) || mailboxOf(email, mailboxes) !== null);
+export const isOurAddress = (email, mailboxes) => Boolean(email) && mailboxOf(email, mailboxes) !== null;
+
+/** @param {string} email @returns {boolean} at a domain the project owns */
+export const isProjectDomain = (email) => Boolean(email) && OUR_DOMAINS.includes(domainOf(email));
 
 /**
  * An address as the operator's output may show it: the operator's mailbox is
