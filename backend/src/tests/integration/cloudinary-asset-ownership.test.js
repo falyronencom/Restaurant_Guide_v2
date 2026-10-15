@@ -164,6 +164,12 @@ describe('Путь A: PUT /auth/profile принимает в avatar_url тол�
     // назад убирает слой из разобранной, но не из хранимой.
     ['слой, спрятанный за шагом назад', (_other, self) =>
       `https://res.cloudinary.com/test/image/upload/l_text:Arial_80:victim,co_red/../v1759600000/avatars/${self.id}/face0003.jpg`],
+    // Хвост после # и логин перед хостом проверки не читают вовсе — так же,
+    // как у медиа карточки, хранится только то, что прочитано.
+    ['слой в хвосте после #', (_other, self) =>
+      `https://res.cloudinary.com/test/image/upload/v1759600000/avatars/${self.id}/face0003.jpg#/../../l_text:Arial_80:victim,co_red/x`],
+    ['логин перед хостом', (_other, self) =>
+      `https://victim@res.cloudinary.com/test/image/upload/v1759600000/avatars/${self.id}/face0003.jpg`],
   ])('чужое значение игнорируется, имя меняется: %s', async (_label, foreignValue) => {
     const { user, token } = await newUser();
     const { partner: other } = await newPartner();

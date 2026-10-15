@@ -32,9 +32,11 @@ import logger from '../utils/logger.js';
  * file and nothing else: a delivery URL may carry transformations that draw
  * text, a remote file or another asset over it, and the site and the app show
  * the stored link as is (review 02.10.2026, N3 — the rule card media follow).
- * The link is stored as sent, so it must already be in the form the checks
- * read: a dot segment the parser resolves (`l_text:…,co_red/../avatars/…`)
- * would keep a step in the stored text that no check has seen.
+ * The link is stored as sent, so it must be exactly the address the checks
+ * read — origin, path and query, as for card media (establishmentService,
+ * mediaLinkRefusal): a dot segment the parser resolves
+ * (`l_text:…,co_red/../avatars/…`), a fragment or a user part would keep in
+ * the stored text something no check has seen.
  *
  * @param {*} url - Client-supplied avatar_url
  * @param {string} userId - Authenticated caller
@@ -42,8 +44,9 @@ import logger from '../utils/logger.js';
  */
 const isOwnAvatarUrl = (url, userId) => {
   const publicId = ownCloudPublicId(url);
-  return publicId !== null
-    && new URL(url).href === url
+  if (publicId === null) return false;
+  const { origin, pathname, search } = new URL(url);
+  return `${origin}${pathname}${search}` === url
     && hasPlainTransformations(url)
     && isOwnedAsset(publicId, [ownedFolders.avatars(userId)]);
 };
