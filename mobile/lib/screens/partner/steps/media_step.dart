@@ -176,6 +176,7 @@ class _MediaStepState extends State<MediaStep> {
           onTap: photos.length < PartnerRegistrationProvider.maxInteriorPhotos
               ? () => _pickPhoto(provider)
               : null,
+          onTapInactive: _showPhotoLimitReached,
         ),
 
         const SizedBox(height: 16),
@@ -364,13 +365,16 @@ class _MediaStepState extends State<MediaStep> {
   }
 
   /// Build add button
+  /// Без [onTap] кнопка серая; [onTapInactive] — что сказать партнёру, если
+  /// он всё же нажал на серую.
   Widget _buildAddButton({
     required String label,
     required bool isLoading,
     required VoidCallback? onTap,
+    VoidCallback? onTapInactive,
   }) {
     return GestureDetector(
-      onTap: isLoading ? null : onTap,
+      onTap: isLoading ? null : (onTap ?? onTapInactive),
       child: Container(
         width: double.infinity,
         height: 48,
@@ -399,6 +403,24 @@ class _MediaStepState extends State<MediaStep> {
               ),
       ),
     );
+  }
+
+  /// Нажатие на серую «+ Добавить фото»: фото уже столько, сколько примет
+  /// сервер. Прежняя плашка убирается, чтобы повторные нажатия не копились.
+  void _showPhotoLimitReached() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Можно добавить не больше '
+            '${PartnerRegistrationProvider.maxInteriorPhotos} фото. '
+            'Удалите одно, чтобы добавить новое.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
   }
 
   /// Pick photo from gallery and upload to Cloudinary

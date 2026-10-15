@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
@@ -19,6 +20,16 @@ import '../support/wire_stand.dart';
 /// подсказки на экране. Тест, читающий предел из провайдера, согласился бы
 /// с провайдером и при старых 20.
 const _serverLimit = 30;
+
+/// Плашка на пределе — формулировка Координатора (15.10.2026).
+const _limitMessage =
+    'Можно добавить не больше 30 фото. Удалите одно, чтобы добавить новое.';
+
+/// Серый цвет надписи неактивной кнопки на шаге «Медиа».
+const _inactiveGrey = Color(0xFF9D9D9D);
+
+/// Канал галереи телефона (`image_picker`).
+const _pickerChannel = MethodChannel('plugins.flutter.io/image_picker');
 
 String _url(int i) =>
     'https://res.cloudinary.com/demo/image/upload/partner/interior_$i.jpg';
@@ -62,6 +73,20 @@ void main() {
   });
 
   group('шаг «Медиа»', () {
+    // Галерея отвечает `null` — партнёр закрыл её, ничего не выбрав. Так
+    // `_pickPhoto` заканчивается до загрузки, а тест видит сам факт открытия.
+    late List<MethodCall> pickerCalls;
+    setUp(() {
+      pickerCalls = [];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(_pickerChannel, (call) async {
+        pickerCalls.add(call);
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(_pickerChannel, null));
+    });
+
     Future<void> pumpMediaStep(
       WidgetTester tester,
       PartnerRegistrationProvider provider,
@@ -78,16 +103,18 @@ void main() {
       );
     }
 
-    /// Активна ли кнопка: неактивной экран передаёт `onTap: null`.
-    bool addPhotoEnabled(WidgetTester tester) {
-      final button = find
-          .ancestor(
-            of: find.text('+ Добавить фото'),
-            matching: find.byType(GestureDetector),
-          )
-          .first;
-      return tester.widget<GestureDetector>(button).onTap != null;
+    Future<void> tapAddPhoto(WidgetTester tester) async {
+      final button = find.text('+ Добавить фото');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pump();
+      // Плашка выезжает анимацией.
+      await tester.pump(const Duration(milliseconds: 750));
     }
+
+    /// Цвет надписи кнопки: на пределе кнопка серая.
+    Color? addPhotoColor(WidgetTester tester) =>
+        tester.widget<Text>(find.text('+ Добавить фото')).style?.color;
 
     /// Плитка фото в сетке карточки — то, что видит партнёр.
     Finder tileOf(String url) => find.byWidgetPredicate(
@@ -106,26 +133,63 @@ void main() {
       );
     });
 
-    // Что делает `_pickPhoto` после ответа сервера на загрузку: зовёт
-    // `addInteriorPhoto` и показывает «Фото успешно загружено». Выбор файла
-    // и сама загрузка здесь не нужны — дефект жил между кнопкой и провайдером.
-    for (final (seeded, enabledAfter) in [(20, true), (29, false)]) {
-      final added = seeded + 1;
-      testWidgets(
-          'при $seeded фото кнопка активна, и $added-е фото после загрузки '
-          'появляется в карточке', (tester) async {
-        final provider = _providerWith(seeded);
-        await pumpMediaStep(tester, provider);
+    // После ответа сервера на загрузку `_pickPhoto` зовёт `addInteriorPhoto`
+    // и показывает «Фото успешно загружено». Саму загрузку тест заменяет этим
+    // вызовом — дефект жил между кнопкой и провайдером.
+    testWidgets(
+        'при 20 фото кнопка открывает галерею, и 21-е фото после загрузки '
+        'появляется в карточке', (tester) async {
+      final provider = _providerWith(20);
+      await pumpMediaStep(tester, provider);
 
-        expect(addPhotoEnabled(tester), isTrue);
+      await tapAddPhoto(tester);
+      expect(pickerCalls.map((c) => c.method), ['pickImage']);
+      expect(addPhotoColor(tester), isNot(_inactiveGrey));
 
-        provider.addInteriorPhoto(_url(added));
-        await tester.pump();
+      provider.addInteriorPhoto(_url(21));
+      await tester.pump();
 
-        expect(provider.data.interiorPhotos, _photos(added));
-        expect(tileOf(_url(added)), findsOneWidget);
-        expect(addPhotoEnabled(tester), enabledAfter);
-      });
-    }
+      expect(provider.data.interiorPhotos, _photos(21));
+      expect(tileOf(_url(21)), findsOneWidget);
+      expect(find.text(_limitMessage), findsNothing);
+    });
+
+    testWidgets(
+        'при 29 фото кнопка открывает галерею; 30-е фото появляется в '
+        'карточке, после него кнопка серая и галерею не открывает',
+        (tester) async {
+      final provider = _providerWith(29);
+      await pumpMediaStep(tester, provider);
+
+      await tapAddPhoto(tester);
+      expect(pickerCalls, hasLength(1));
+
+      provider.addInteriorPhoto(_url(30));
+      await tester.pump();
+
+      expect(provider.data.interiorPhotos, _photos(30));
+      expect(tileOf(_url(30)), findsOneWidget);
+      expect(addPhotoColor(tester), _inactiveGrey);
+
+      await tapAddPhoto(tester);
+      expect(pickerCalls, hasLength(1));
+      expect(find.text(_limitMessage), findsOneWidget);
+    });
+
+    // Так открывается карточка, где уже 30 фото — например, набранных на
+    // сайте: партнёр жмёт на серую кнопку и должен понять, почему она серая.
+    testWidgets(
+        'при 30 фото нажатие на серую кнопку показывает плашку о пределе '
+        'и галерею не открывает', (tester) async {
+      await pumpMediaStep(tester, _providerWith(30));
+
+      expect(addPhotoColor(tester), _inactiveGrey);
+      expect(find.text(_limitMessage), findsNothing);
+
+      await tapAddPhoto(tester);
+
+      expect(find.text(_limitMessage), findsOneWidget);
+      expect(pickerCalls, isEmpty);
+    });
   });
 }
