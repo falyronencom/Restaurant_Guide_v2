@@ -198,3 +198,39 @@ describe('urlSlugs — Cuisine mappings', () => {
     expect(cuisineCyrillicToSlug('Мексиканская')).toBeNull();
   });
 });
+
+describe('urlSlugs — ключ прототипа объекта не слаг', () => {
+  // Таблицы — обычные объекты, а обычный объект отвечает и за свой прототип:
+  // `constructor` — функция Object, `__proto__` — Object.prototype; оба
+  // истинны, и `?city=constructor` проходил проверку слага как город (200 и
+  // пустая выдача вместо 400 INVALID_SLUG, 13.10.2026). После toLowerCase()
+  // из прототипа достижимы только строчные ключи — `constructor` и
+  // `__proto__`; обратные помощники регистр не меняют, им опасен любой.
+  // Имена берутся из самого прототипа, а не списком: запретный список из
+  // перечисленных имён прошёл бы список-тест (ревью 13.10).
+  const PROTOTYPE_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+  test('имена прототипа на месте — проверке есть что перебирать', () => {
+    expect(PROTOTYPE_NAMES).toEqual(expect.arrayContaining(['constructor', '__proto__', 'toString', 'isPrototypeOf']));
+  });
+
+  test.each([
+    ['citySlugToCyrillic', citySlugToCyrillic],
+    ['categorySlugToCyrillic', categorySlugToCyrillic],
+    ['cuisineSlugToCyrillic', cuisineSlugToCyrillic],
+  ])('%s: любое имя прототипа в любом регистре — null', (_name, toCyrillic) => {
+    for (const key of [...PROTOTYPE_NAMES, 'Constructor', '__PROTO__']) {
+      expect(toCyrillic(key)).toBeNull();
+    }
+  });
+
+  test.each([
+    ['cityCyrillicToSlug', cityCyrillicToSlug],
+    ['categoryCyrillicToSlug', categoryCyrillicToSlug],
+    ['cuisineCyrillicToSlug', cuisineCyrillicToSlug],
+  ])('%s: любое имя прототипа — null', (_name, toSlug) => {
+    for (const key of PROTOTYPE_NAMES) {
+      expect(toSlug(key)).toBeNull();
+    }
+  });
+});

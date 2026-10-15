@@ -8,6 +8,7 @@
 
 import * as PromotionService from '../services/promotionService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
 import logger from '../utils/logger.js';
 
@@ -28,7 +29,7 @@ export const createPromotion = asyncHandler(async (req, res) => {
     if (!establishment_id) {
       return res.status(400).json({
         success: false,
-        message: 'establishment_id is required',
+        message: PROMOTION_REFUSALS.establishmentRequired,
         error: { code: 'VALIDATION_ERROR' },
       });
     }
@@ -36,7 +37,7 @@ export const createPromotion = asyncHandler(async (req, res) => {
     if (!title || !title.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'title is required',
+        message: PROMOTION_REFUSALS.titleRequired,
         error: { code: 'VALIDATION_ERROR' },
       });
     }

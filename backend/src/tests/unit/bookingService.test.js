@@ -389,21 +389,21 @@ describe('confirmBooking', () => {
     BookingModel.getById.mockResolvedValue({ ...mockBooking, status: 'confirmed' });
 
     await expect(confirmBooking(BOOKING_ID, PARTNER_ID, EST_ID))
-      .rejects.toThrow("Cannot confirm booking with status 'confirmed'");
+      .rejects.toThrow('Бронь уже подтверждена. Обновите список броней.');
   });
 
   it('rejects when booking not found', async () => {
     BookingModel.getById.mockResolvedValue(null);
 
     await expect(confirmBooking(BOOKING_ID, PARTNER_ID, EST_ID))
-      .rejects.toThrow('Booking not found');
+      .rejects.toThrow('Бронь не найдена. Обновите список броней.');
   });
 
   it('rejects when booking belongs to different establishment', async () => {
     BookingModel.getById.mockResolvedValue({ ...mockBooking, establishment_id: 'other-est' });
 
     await expect(confirmBooking(BOOKING_ID, PARTNER_ID, EST_ID))
-      .rejects.toThrow('does not belong');
+      .rejects.toThrow('Бронь не найдена. Обновите список броней.');
   });
 });
 
@@ -428,14 +428,14 @@ describe('declineBooking', () => {
 
   it('rejects decline without reason', async () => {
     await expect(declineBooking(BOOKING_ID, PARTNER_ID, EST_ID, ''))
-      .rejects.toThrow('Decline reason is required');
+      .rejects.toThrow('Укажите причину отказа.');
   });
 
   it('rejects declining non-pending booking', async () => {
     BookingModel.getById.mockResolvedValue({ ...mockBooking, status: 'confirmed' });
 
     await expect(declineBooking(BOOKING_ID, PARTNER_ID, EST_ID, 'reason'))
-      .rejects.toThrow("Cannot decline booking with status 'confirmed'");
+      .rejects.toThrow('Бронь уже подтверждена. Обновите список броней.');
   });
 });
 
@@ -487,7 +487,7 @@ describe('markNoShow', () => {
     BookingModel.getById.mockResolvedValue({ ...mockBooking, status: 'pending' });
 
     await expect(markNoShow(BOOKING_ID, PARTNER_ID, EST_ID))
-      .rejects.toThrow("Cannot mark no-show for booking with status 'pending'");
+      .rejects.toThrow('Бронь ещё не подтверждена. Обновите список броней.');
   });
 });
 
@@ -508,7 +508,7 @@ describe('markCompleted', () => {
     BookingModel.getById.mockResolvedValue({ ...mockBooking, status: 'declined' });
 
     await expect(markCompleted(BOOKING_ID, PARTNER_ID, EST_ID))
-      .rejects.toThrow("Cannot complete booking with status 'declined'");
+      .rejects.toThrow('Бронь уже отклонена. Обновите список броней.');
   });
 });
 
