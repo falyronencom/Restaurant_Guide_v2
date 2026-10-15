@@ -136,6 +136,24 @@ export function mailboxOf(email, mailboxes) {
   return null;
 }
 
+const escapeLike = (text) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * The operator's addresses as SQL can match them — for a query that must find
+ * every account on the operator's mailbox (the audit): the mailboxes
+ * themselves, and LIKE patterns for their Gmail «+tag» forms (a non-empty tag,
+ * the mailbox's own local part escaped). Same rule as mailboxOf.
+ *
+ * @param {string[]} mailboxes - login forms
+ * @returns {{exact: string[], like: string[]}}
+ */
+export const mailboxSqlPatterns = (mailboxes) => ({
+  exact: [...mailboxes],
+  like: mailboxes
+    .filter((mailbox) => SUBADDRESSING_DOMAINS.includes(domainOf(mailbox)))
+    .map((mailbox) => `${escapeLike(localOf(mailbox))}+_%@${escapeLike(domainOf(mailbox))}`),
+});
+
 /**
  * Whether an address is ours: a mailbox the operator listed, or its Gmail
  * tagged form (mailboxOf). A project domain alone is not (module comment).

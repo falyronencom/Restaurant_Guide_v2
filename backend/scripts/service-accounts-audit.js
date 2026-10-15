@@ -61,6 +61,7 @@ import {
   domainOf,
   isOurAddress,
   isProjectDomain,
+  mailboxSqlPatterns,
   mailboxesFrom,
   maskedAddress,
   OUR_DOMAINS,
@@ -128,6 +129,8 @@ const ACCOUNTS_SQL = `
      OR COALESCE(c.total, 0) > 0
      OR lower(split_part(u.email, '@', 2)) = ANY($1::text[])
      OR COALESCE((to_jsonb(u) ->> 'is_service_account')::boolean, false)
+     OR lower(u.email) = ANY($2::text[])
+     OR lower(u.email) LIKE ANY($3::text[])
   ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'viewer' THEN 1 WHEN 'partner' THEN 2 ELSE 3 END,
            COALESCE(c.total, 0) DESC, u.created_at
 `;
@@ -141,6 +144,8 @@ const OTHER_USERS_SQL = `
   WHERE u.role NOT IN ('admin', 'viewer', 'partner')
     AND c.partner_id IS NULL
     AND NOT (lower(split_part(COALESCE(u.email, ''), '@', 2)) = ANY($1::text[]))
+    AND NOT (lower(COALESCE(u.email, '')) = ANY($2::text[]))
+    AND NOT (lower(COALESCE(u.email, '')) LIKE ANY($3::text[]))
   GROUP BY 1
   ORDER BY 2 DESC, 1
 `;
@@ -173,9 +178,12 @@ const shownAddress = (row, mailboxes) => {
 
 /**
  * Service account (its address must be ours) or an account for the operator
- * to classify (a partner or card owner who may be a person).
+ * to classify (a partner or card owner who may be a person). An account on
+ * the operator's mailbox is a service account whatever its role — the
+ * account given to Apple's reviewers is an ordinary user.
  */
-const kindOf = (row) => {
+const kindOf = (row, mailboxes) => {
+  if (isOurAddress(row.email, mailboxes)) return 'service';
   if (row.role === 'admin' || row.role === 'viewer') return 'service';
   if (row.is_service_account === true) return 'service';
   if (SCRIPT_LITERAL_DOMAINS.includes(domainOf(row.email))) return 'service';
@@ -194,7 +202,7 @@ const describe = (row, mailboxes) => ({
   domain: row.email ? domainOf(row.email) : null,
   ours: isOurAddress(row.email, mailboxes),
   verdict: verdictOf(row, mailboxes),
-  kind: kindOf(row),
+  kind: kindOf(row, mailboxes),
   serviceFlag: row.is_service_account === true,
   role: row.role,
   active: row.is_active === true,
@@ -278,8 +286,14 @@ const main = async () => {
   }
   try {
     await client.query('BEGIN TRANSACTION READ ONLY');
-    const accounts = (await client.query(ACCOUNTS_SQL, [SCRIPT_LITERAL_DOMAINS])).rows.map((row) => describe(row, mailboxes));
-    const otherUsersByDomain = (await client.query(OTHER_USERS_SQL, [SCRIPT_LITERAL_DOMAINS])).rows;
+    // Every account on the operator's mailbox is listed too, whatever its role
+    // (an ordinary user without cards — the Apple account — fell out of the
+    // list otherwise). The patterns follow mailboxOf exactly (escaped local
+    // part, Gmail tags only), so SQL and the verdict agree on what is ours.
+    const { exact, like } = mailboxSqlPatterns(mailboxes);
+    const params = [SCRIPT_LITERAL_DOMAINS, exact, like];
+    const accounts = (await client.query(ACCOUNTS_SQL, params)).rows.map((row) => describe(row, mailboxes));
+    const otherUsersByDomain = (await client.query(OTHER_USERS_SQL, params)).rows;
     const migration035 = (await client.query(MIGRATION_035_SQL)).rows[0].applied;
     const migration037 = (await client.query(MIGRATION_037_SQL)).rows[0].applied;
     await client.query('ROLLBACK');

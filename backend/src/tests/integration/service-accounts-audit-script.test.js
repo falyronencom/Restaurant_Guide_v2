@@ -109,6 +109,10 @@ describe('scripts/service-accounts-audit.js', () => {
       flaggedHouse: await addUser({ email: 'house@yandex.ru', role: 'partner', service: true, phone: '+375291112233' }),
       // Ящик Координатора с точкой в имени — Gmail доставит, но это не та форма: не наш
       adminDotted: await addUser({ email: 'owner.b.ox+x@gmail.com', role: 'admin' }),
+      // Учётка проверки Apple на ящике Координатора: обычная, без карточек — всё равно в перечне, служебная
+      appleOurs: await addUser({ email: 'owner.box+apple@gmail.com' }),
+      // Похожа на ящик own_er@ только через подстановочный символ LIKE — не наша (см. тест ниже)
+      wildcardLookalike: await addUser({ email: 'ownxer+q@gmail.com' }),
       // Обычные люди — только счёт
       person1: await addUser({ email: 'person1@gmail.com' }),
       person2: await addUser({ email: 'person2@gmail.com' }),
@@ -146,11 +150,11 @@ describe('scripts/service-accounts-audit.js', () => {
     const listed = parsed.accounts.map((a) => a.id).sort();
     const expected = [
       ids.adminForeign, ids.adminOurs, ids.viewerOff, ids.seedHouse, ids.partnerPerson,
-      ids.cardOwnerUser, ids.seedReviewer, ids.viewerOurDomain, ids.adminDotted, ids.flaggedHouse,
+      ids.cardOwnerUser, ids.seedReviewer, ids.viewerOurDomain, ids.adminDotted, ids.flaggedHouse, ids.appleOurs,
     ].sort();
     expect(listed).toEqual(expected);
     expect(parsed.otherUsersByDomain).toEqual([
-      { domain: 'gmail.com', accounts: 2 },
+      { domain: 'gmail.com', accounts: 3 },
       { domain: 'yandex.ru', accounts: 1 },
     ]);
   });
@@ -176,7 +180,7 @@ describe('scripts/service-accounts-audit.js', () => {
     expect(summary.classifyNotOurs).toBe(2);
     // viewerOff
     expect(summary.inactiveNotOurs).toBe(1);
-    expect(summary.listed).toBe(10);
+    expect(summary.listed).toBe(11);
   });
 
   test('the kind of each account: panel, flag and script domain are service; a person-partner is to classify', () => {
@@ -186,6 +190,23 @@ describe('scripts/service-accounts-audit.js', () => {
     expect(accounts[ids.viewerOurDomain].kind).toBe('service');
     expect(accounts[ids.partnerPerson].kind).toBe('classify');
     expect(accounts[ids.cardOwnerUser].kind).toBe('classify');
+  });
+
+  test('an ordinary user on the operator\'s mailbox is listed as a service account (the Apple account)', () => {
+    const accounts = byId(report().parsed);
+    expect(accounts[ids.appleOurs]).toMatchObject({
+      ours: true, kind: 'service', role: 'user', address: '[ящик Координатора]+apple',
+    });
+  });
+
+  test('a mailbox with LIKE wildcards in its name matches only itself and its tags', () => {
+    const result = run(['--json'], { SERVICE_ACCOUNT_MAILBOXES: 'own_er@gmail.com' });
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.accounts.map((a) => a.id)).not.toContain(ids.wildcardLookalike);
+    // …and it is counted with the other people: person1, person2, the lookalike,
+    // and owner.box+apple — not ours under this mailbox list.
+    expect(parsed.otherUsersByDomain).toContainEqual({ domain: 'gmail.com', accounts: 4 });
   });
 
   test('reports sessions, reset links, codes, push, provider links and cards per account', () => {
