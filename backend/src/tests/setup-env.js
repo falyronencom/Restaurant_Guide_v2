@@ -57,6 +57,13 @@ if (process.env.REFRESH_TOKEN_PRUNE_INTERVAL_MS === undefined) {
   process.env.REFRESH_TOKEN_PRUNE_INTERVAL_MS = '';
 }
 
+// Принимаемые приложения Яндекса: ключ есть в .env.example. Пустая строка =
+// «не задано» для резолвера (config/oauth.js), то есть тесты начинают с
+// умолчания, а не с настройки разработчика.
+if (process.env.YANDEX_CLIENT_ID === undefined) {
+  process.env.YANDEX_CLIENT_ID = '';
+}
+
 // Verify we're in test environment
 if (process.env.NODE_ENV !== 'test') {
   console.error('ERROR: Tests must run in NODE_ENV=test environment!');

@@ -38,6 +38,13 @@ class AdminReviewItem {
   final int? authorReviewCount;
   final double? authorAverageRating;
 
+  /// Пустые автор и текст означают «скрыто от просмотрщика», а не «их нет».
+  ///
+  /// Сервер отдаёт роли «только просмотр» скрытый модератором отзыв без
+  /// человека и без текста (пакет 2, пункт 1). Без этого флага экран написал
+  /// бы «Аноним» и «отзыв без текста» — неправду об отзыве.
+  final bool viewerRedacted;
+
   const AdminReviewItem({
     required this.id,
     required this.rating,
@@ -58,6 +65,7 @@ class AdminReviewItem {
     this.establishmentReviewCount,
     this.authorReviewCount,
     this.authorAverageRating,
+    this.viewerRedacted = false,
   });
 
   /// Каким станет рейтинг заведения, если этот отзыв убрать.
@@ -110,6 +118,7 @@ class AdminReviewItem {
       establishmentReviewCount: json['establishment_review_count'] as int?,
       authorReviewCount: json['author_review_count'] as int?,
       authorAverageRating: (json['author_average_rating'] as num?)?.toDouble(),
+      viewerRedacted: json['viewer_redacted'] == true,
     );
   }
 
@@ -142,6 +151,7 @@ class AdminReviewItem {
       establishmentReviewCount: establishmentReviewCount,
       authorReviewCount: authorReviewCount,
       authorAverageRating: authorAverageRating,
+      viewerRedacted: viewerRedacted,
     );
   }
 }

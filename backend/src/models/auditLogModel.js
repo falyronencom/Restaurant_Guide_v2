@@ -285,6 +285,10 @@ const buildAuditLogWhere = (filters) => {
  * @param {string} [filters.to] - Date range end (ISO string)
  * @param {string} [filters.sort] - 'newest' (default) or 'oldest'
  * @param {boolean} [filters.include_metadata] - Include ip_address and user_agent
+ * @param {boolean} [filters.viewer] - Caller is the read-only panel role: the
+ *   actor is named by role only (admin_name / admin_email null), the review
+ *   author is not named, and the opening of a review's text is given only
+ *   while the review is visible (pack 2, point 2; cloud critic 2A B-2, 2B B1)
  * @param {number} limit - Max items per page
  * @param {number} offset - Pagination offset
  * @returns {Promise<Array>} Array of audit log entry objects
@@ -297,6 +301,23 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
   const metadataColumns = filters.include_metadata
     ? ', al.ip_address, al.user_agent'
     : '';
+
+  // Columns about people. A viewer — the read-only role shown to people
+  // outside the project — learns what happened and when, and who acted only
+  // by role: a moderator's e-mail is a phishing target, and a partner who
+  // deleted a card is written into the same «admin» columns. The fragments are
+  // fixed SQL chosen by a boolean, never built from input.
+  const viewer = filters.viewer === true;
+  const actorColumns = viewer
+    ? 'NULL::text as admin_name, NULL::text as admin_email'
+    : 'u.name as admin_name, u.email as admin_email';
+  const reviewerName = viewer ? 'NULL::text' : 'reviewer.name';
+  // The opening of a review text: to a viewer only while the review is
+  // visible now — the log keeps entries of hiding and deleting, and the text
+  // they point at is exactly what was taken out of public view.
+  const textSnippet = viewer
+    ? 'CASE WHEN r.is_visible = TRUE AND r.is_deleted = FALSE THEN LEFT(r.text, 120) END'
+    : 'LEFT(r.text, 120)';
 
   const query = `
     SELECT
@@ -311,8 +332,9 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
       -- проде (TZ=UTC) совпадает, у разработчика уезжает на его часовой пояс.
       -- Сортировка и границы from/to ходят по сырой колонке и не затронуты.
       al.created_at AT TIME ZONE 'UTC' as created_at,
-      u.name as admin_name,
-      u.email as admin_email,
+      ${actorColumns},
+      -- Роль исполнителя: просмотрщику — вместо имени, администратору — рядом.
+      u.role as actor_role,
       CASE
         WHEN al.action = 'moderate_approve' AND al.entity_type = 'establishment' THEN 'Одобрено заведение'
         WHEN al.action = 'moderate_reject' AND al.entity_type = 'establishment' THEN 'Отклонено заведение'
@@ -348,9 +370,9 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
           )
         WHEN al.entity_type = 'review' THEN
           json_build_object(
-            'reviewer_name', reviewer.name,
+            'reviewer_name', ${reviewerName},
             'rating', r.rating,
-            'text_snippet', LEFT(r.text, 120),
+            'text_snippet', ${textSnippet},
             'establishment_name', e_review.name,
             'establishment_city', e_review.city
           )

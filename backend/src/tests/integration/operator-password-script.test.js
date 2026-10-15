@@ -38,6 +38,7 @@ import app from '../../server.js';
 import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { ACCOUNT_STATUS_TTL_MS, invalidateAccountStatus } from '../../services/accountStatus.js';
+import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
 import {
   setActiveAccountPassword,
   writePasswordEndingSessions,
@@ -191,7 +192,7 @@ describe('set-partner-password.js: его запись (скрипт пишет 
 
     const { rows: [token] } = await query(
       'SELECT used_at FROM refresh_tokens WHERE token = $1',
-      [account.refreshToken],
+      [storedRefreshToken(account.refreshToken)],
     );
     expect(token.used_at).toBeNull();
   });
@@ -243,7 +244,7 @@ describe('схема без миграции 035', () => {
 
       const { rows: [token] } = await query(
         'SELECT used_at FROM refresh_tokens WHERE token = $1',
-        [account.refreshToken],
+        [storedRefreshToken(account.refreshToken)],
       );
       expect(token.used_at).not.toBeNull();
 

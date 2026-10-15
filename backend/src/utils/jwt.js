@@ -85,12 +85,43 @@ export const generateAccessToken = (payload) => {
  * legitimate sessions for extended periods.
  * 
  * Implementation note: This generates the token string only. The calling code
- * must store this in the database with user_id and expiration timestamp.
- * 
+ * must store it — as a hash, utils/refreshTokenStorage.js — with user_id and
+ * expiration timestamp.
+ *
  * @returns {string} Cryptographically random 64-character hex string
  */
 export const generateRefreshToken = () => {
   return crypto.randomBytes(32).toString('hex');
+};
+
+/**
+ * Derives the refresh token of a rotation's successor from the token it
+ * replaces and the successor row's id.
+ *
+ * The database keeps only a hash of each refresh token, so the token of a
+ * successor cannot be read back from it. The reuse grace window needs exactly
+ * that: a replay of a burned token inside the window is answered with THE SAME
+ * successor (config/auth.js, authService.handleReusedToken). Derived this way,
+ * the successor is computed again from what the replaying client presents —
+ * and from nothing the database holds: the key is drawn from JWT_SECRET under
+ * a label of its own, the id is random per row, and the predecessor is stored
+ * only as its hash.
+ *
+ * Changing JWT_SECRET changes every successor derived from then on; a replay
+ * within the window of a rotation made under the old secret finds nothing to
+ * hand back and gets the verdict of a stale replay.
+ *
+ * @param {string} predecessorToken - The refresh token being rotated
+ * @param {string} successorId - Id of the successor's refresh_tokens row
+ * @returns {string} 64-character hex string, the shape of generateRefreshToken
+ */
+export const deriveSuccessorRefreshToken = (predecessorToken, successorId) => {
+  const key = crypto.createHmac('sha256', JWT_SECRET)
+    .update('refresh-token-successor/v1')
+    .digest();
+  return crypto.createHmac('sha256', key)
+    .update(`${successorId}\n${predecessorToken}`)
+    .digest('hex');
 };
 
 /**
