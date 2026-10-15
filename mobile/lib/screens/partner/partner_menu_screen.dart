@@ -119,8 +119,10 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
             Icon(Icons.menu_book_outlined,
                 size: 72, color: AppTheme.textGrey.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
+            // Без программистского «распарсенных» (решение Координатора
+            // 15.10.2026).
             const Text(
-              'Распарсенных позиций пока нет',
+              'Распознанных позиций меню пока нет',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w500,

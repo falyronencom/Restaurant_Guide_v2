@@ -10,8 +10,11 @@ import '../support/wire_stand.dart';
 /// Что читает партнёр на пустом экране «Меню».
 ///
 /// До 15.10.2026 подсказка звала загрузить именно PDF, хотя распознаются и
-/// фото меню. Текст — литерал решения Координатора 15.10.2026.
+/// фото меню, а заголовок говорил программистским «Распарсенных позиций».
+/// Тексты — литералы решений Координатора 15.10.2026.
 const _est = '11111111-2222-3333-4444-555555555555';
+
+const _title = 'Распознанных позиций меню пока нет';
 
 const _hint = 'Если вы добавили фото меню или PDF в разделе «Медиа», '
     'распознавание выполняется автоматически в течение нескольких минут. '
@@ -23,7 +26,7 @@ void main() {
     installWireStand((options) => jsonBody({'success': true, 'data': <dynamic>[]}));
   });
 
-  testWidgets('пустой список: подсказка зовёт добавить фото меню или PDF',
+  testWidgets('пустой список: заголовок без жаргона, подсказка — фото меню или PDF',
       (tester) async {
     final provider = PartnerMenuProvider();
     addTearDown(provider.dispose);
@@ -34,8 +37,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Экран дошёл до пустого состояния, а не застрял на загрузке или ошибке.
-    expect(find.text('Распарсенных позиций пока нет'), findsOneWidget);
+    expect(find.text(_title), findsOneWidget);
     expect(find.text(_hint), findsOneWidget);
   });
 }
