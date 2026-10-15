@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { cache } from 'react';
 
 import { ApiError } from '@/lib/api/types';
@@ -19,14 +19,16 @@ import {
   pluralizeReviews,
   ratingLabel,
 } from '@/lib/establishment-helpers';
+import { establishmentAddress } from '@/lib/establishment-path';
 
 /*
  * /[city]/[category]/[slug]/reviews — dedicated all-reviews page (Phase A).
  *
  * Server Component, one segment deeper than the establishment detail page;
- * reuses the same slug-validation → fetch → 404 chain. Renders the full
- * paginated review list vertically (the detail page's ReviewCarousel shows only
- * the first ~5 with a "Все N отзывов →" link pointing here).
+ * reuses the same slug-validation → fetch → 404 → own-address chain (a foreign
+ * city/category redirects to the card's own /reviews, keeping ?page). Renders
+ * the full paginated review list vertically (the detail page's ReviewCarousel
+ * shows only the first ~5 with a "Все N отзывов →" link pointing here).
  *
  * Two server-only fetches:
  *   - getCachedBySlug(slug): establishment entity (name, rating, count, slug) for
@@ -57,11 +59,11 @@ export async function generateMetadata({
 }: {
   params: Promise<Params>;
 }): Promise<Metadata> {
-  const { city, category, slug } = await params;
+  const { city, slug } = await params;
 
   let title = `Отзывы — ${slug}`;
   let description = `Отзывы о заведении в городе ${city}`;
-  let canonicalSlug = slug;
+  let canonical: string | null = null;
   let ogImageUrl: string | null = null;
 
   try {
@@ -69,30 +71,34 @@ export async function generateMetadata({
       getCachedBySlug(slug),
       getMetadata(),
     ]);
-    const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+    const address = establishmentAddress(detail.establishment);
+    const cityName =
+      meta.cities.find((c) => c.slug === address.citySlug)?.name ??
+      address.citySlug;
     const categoryName =
-      meta.categories.find((c) => c.slug === category)?.name ?? category;
+      meta.categories.find((c) => c.slug === address.categorySlug)?.name ??
+      address.categorySlug;
     const lowerCategory = categoryName.toLowerCase();
     title = `Отзывы — ${detail.establishment.name}`;
     description = `Все отзывы о «${detail.establishment.name}» — ${lowerCategory} в городе ${cityName}. Оценки и мнения посетителей.`;
-    canonicalSlug = detail.establishment.slug;
+    canonical = `${address.path}/reviews`;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings + skip OG image.
-    // The page render path calls notFound() cleanly if the slug truly is unknown.
+    // Slug invalid / backend hiccup — fall back to slug strings, skip the OG
+    // image and the canonical (no card, no address to point at). The page
+    // render path calls notFound() cleanly if the slug truly is unknown.
   }
 
   // canonical → clean /reviews on ALL pages (no ?page) per CAT-C-2.3, anchored on
-  // the establishment's own slug (not the raw route slug, F4). robots is NOT
-  // overridden — reviews carry no filters, and the global NOINDEX gate (root
-  // layout) governs pre-launch. metadataBase promotes the relative path →
-  // absolute. title.template ('%s | Nirivio') appends the brand suffix.
+  // the card's own address (establishmentAddress), not on the route segments
+  // (F4 for the slug). robots is NOT overridden — reviews carry no filters, and
+  // the global NOINDEX gate (root layout) governs pre-launch. metadataBase
+  // promotes the relative path → absolute. title.template ('%s | Nirivio')
+  // appends the brand suffix.
   return {
     title,
     description,
-    alternates: {
-      canonical: `/${city}/${category}/${canonicalSlug}/reviews`,
-    },
+    ...(canonical ? { alternates: { canonical } } : {}),
     openGraph: {
       title,
       description,
@@ -135,7 +141,16 @@ export default async function ReviewsPage({
   }
   const { establishment } = detailResult;
 
-  // 3. Paginated reviews + display metadata. getReviews is intentionally NOT
+  // 3. One address per card (as on the detail page): a known but foreign
+  //    city/category redirects permanently to the card's own /reviews, on the
+  //    same page of the list.
+  const address = establishmentAddress(establishment);
+  const reviewsPath = `${address.path}/reviews`;
+  if (address.path !== `/${city}/${category}/${slug}`) {
+    permanentRedirect(page > 1 ? `${reviewsPath}?page=${page}` : reviewsPath);
+  }
+
+  // 4. Paginated reviews + display metadata. getReviews is intentionally NOT
   //    caught: an empty list is handled below as a valid state, while a real
   //    fetch error must surface (error boundary), not look like "no reviews".
   const [reviewsResult, meta] = await Promise.all([
@@ -143,10 +158,12 @@ export default async function ReviewsPage({
     getMetadata(),
   ]);
 
-  const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+  const { citySlug, categorySlug } = address;
+  const cityName =
+    meta.cities.find((c) => c.slug === citySlug)?.name ?? citySlug;
   const categoryName =
-    meta.categories.find((c) => c.slug === category)?.name ?? category;
-  const detailHref = `/${city}/${category}/${establishment.slug}`;
+    meta.categories.find((c) => c.slug === categorySlug)?.name ?? categorySlug;
+  const detailHref = address.path;
   const averageRating = establishment.average_rating;
   const label = ratingLabel(averageRating);
   const total = reviewsResult.pagination.total;
@@ -158,8 +175,8 @@ export default async function ReviewsPage({
       <ReviewSchema
         establishment={establishment}
         reviews={reviewsResult.reviews}
-        citySlug={city}
-        categorySlug={category}
+        citySlug={citySlug}
+        categorySlug={categorySlug}
       />
 
       {/* Breadcrumbs — one level deeper than detail: …/{name → detail}/Отзывы */}
@@ -171,11 +188,14 @@ export default async function ReviewsPage({
           Главная
         </Link>
         <span aria-hidden='true'>/</span>
-        <Link href={`/${city}`} className='hover:text-foreground'>
+        <Link href={`/${citySlug}`} className='hover:text-foreground'>
           {cityName}
         </Link>
         <span aria-hidden='true'>/</span>
-        <Link href={`/${city}/${category}`} className='hover:text-foreground'>
+        <Link
+          href={`/${citySlug}/${categorySlug}`}
+          className='hover:text-foreground'
+        >
           {categoryName.toLowerCase()}
         </Link>
         <span aria-hidden='true'>/</span>
@@ -230,7 +250,7 @@ export default async function ReviewsPage({
       <CatalogPagination
         currentPage={reviewsResult.pagination.page}
         totalPages={reviewsResult.pagination.totalPages}
-        basePath={`/${city}/${category}/${establishment.slug}/reviews`}
+        basePath={reviewsPath}
         searchParams={{}}
       />
     </main>

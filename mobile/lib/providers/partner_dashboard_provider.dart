@@ -3,6 +3,7 @@ import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/partner_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Partner Dashboard state provider
 /// Manages partner's establishments list and operations
@@ -27,6 +28,7 @@ class PartnerDashboardProvider with ChangeNotifier {
     _isLoading = false;
     _isInitialized = false;
     _error = null;
+    _actionError = null;
     _selectedEstablishment = null;
     _isLoadingDetails = false;
     _detailsError = null;
@@ -46,6 +48,7 @@ class PartnerDashboardProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
+  String? _actionError;
 
   // Selected establishment for detail view
   PartnerEstablishment? _selectedEstablishment;
@@ -72,8 +75,20 @@ class PartnerDashboardProvider with ChangeNotifier {
   /// Whether initial load has completed
   bool get isInitialized => _isInitialized;
 
-  /// Current error message
+  /// Error from loading the establishments list
   String? get error => _error;
+
+  /// Текст отказа последнего действия экрана заведения: часы работы,
+  /// повторная отправка на модерацию, приостановка, возобновление, удаление.
+  /// Его показывает красная плашка — фраза сервера или транспорта целиком,
+  /// без приставки, а без готовой фразы — общая фраза действия (решение
+  /// Координатора 13.10.2026, то же правило, что у правки в мастере).
+  ///
+  /// Отдельно от [error]: по [error] профиль решает, показать список
+  /// заведений или «Не удалось загрузить данные…». До 13.10.2026 отказ
+  /// действия писался туда же и прятал список, пока партнёр не нажмёт
+  /// «Повторить» или не переключит вкладку.
+  String? get actionError => _actionError;
 
   /// Whether partner has any establishments
   bool get hasEstablishments => _establishments.isNotEmpty;
@@ -144,7 +159,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       debugPrint('PartnerDashboard: Loaded ${_establishments.length} establishments');
     } catch (e) {
       if (generation != _generation) return;
-      _error = e.toString().replaceFirst('Exception: ', '');
+      _error = userMessageOf(
+        e,
+        fallback: 'Не удалось загрузить заведения. Попробуйте ещё раз.',
+      );
       debugPrint('PartnerDashboard: Error loading establishments: $_error');
       // Keep existing data on error if we have any
       if (!_isInitialized) {
@@ -188,7 +206,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       _selectedEstablishment = details;
     } catch (e) {
       if (generation != _generation) return;
-      _detailsError = e.toString().replaceFirst('Exception: ', '');
+      _detailsError = userMessageOf(
+        e,
+        fallback: 'Не удалось загрузить заведение. Попробуйте ещё раз.',
+      );
       // Fallback: use establishment from already-loaded list (always update, not ??=)
       _selectedEstablishment = _establishments
           .where((est) => est.id == id)
@@ -212,7 +233,16 @@ class PartnerDashboardProvider with ChangeNotifier {
   // ============================================================================
 
   /// Update an establishment
-  Future<bool> updateEstablishment(String id, Map<String, dynamic> data) async {
+  ///
+  /// [failureMessage] — что прочтёт партнёр, если у отказа нет готовой фразы
+  /// (сбой сервера, обрыв ответа). Метод общий, а фраза — по тому, что
+  /// сохраняли: «Время работы сохранено» → «Не удалось сохранить время
+  /// работы…». Поэтому её передаёт вызывающий экран, а не придумывает метод.
+  Future<bool> updateEstablishment(
+    String id,
+    Map<String, dynamic> data, {
+    required String failureMessage,
+  }) async {
     try {
       final updated = await _partnerService.updateEstablishment(id, data);
 
@@ -230,9 +260,7 @@ class PartnerDashboardProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-      return false;
+      return _actionFailed(e, failureMessage);
     }
   }
 
@@ -264,9 +292,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-      return false;
+      return _actionFailed(
+        e,
+        'Не удалось отправить на модерацию. Попробуйте ещё раз.',
+      );
     }
   }
 
@@ -295,9 +324,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-      return false;
+      return _actionFailed(
+        e,
+        'Не удалось приостановить заведение. Попробуйте ещё раз.',
+      );
     }
   }
 
@@ -322,9 +352,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-      return false;
+      return _actionFailed(
+        e,
+        'Не удалось отправить заявку на возобновление. Попробуйте ещё раз.',
+      );
     }
   }
 
@@ -339,10 +370,19 @@ class PartnerDashboardProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-      return false;
+      return _actionFailed(
+        e,
+        'Не удалось удалить заведение. Попробуйте ещё раз.',
+      );
     }
+  }
+
+  /// Отказ действия экрана заведения: текст — в [actionError], список и его
+  /// [error] не трогаются.
+  bool _actionFailed(Object error, String fallback) {
+    _actionError = userMessageOf(error, fallback: fallback);
+    notifyListeners();
+    return false;
   }
 
   // ============================================================================
@@ -373,7 +413,10 @@ class PartnerDashboardProvider with ChangeNotifier {
       _analyticsTrends = trends;
     } catch (e) {
       if (generation != _generation) return;
-      _analyticsError = e.toString().replaceFirst('Exception: ', '');
+      _analyticsError = userMessageOf(
+        e,
+        fallback: 'Не удалось загрузить статистику. Попробуйте ещё раз.',
+      );
       debugPrint('PartnerDashboard: Analytics error: $_analyticsError');
     } finally {
       if (generation == _generation) {
@@ -395,7 +438,8 @@ class PartnerDashboardProvider with ChangeNotifier {
   // Error Handling
   // ============================================================================
 
-  /// Clear current error
+  /// Clear the list error ([error]); [actionError] is overwritten by the
+  /// next failed action and needs no clearing
   void clearError() {
     _error = null;
     notifyListeners();
@@ -411,6 +455,7 @@ class PartnerDashboardProvider with ChangeNotifier {
     _isLoading = false;
     _isInitialized = false;
     _error = null;
+    _actionError = null;
     _selectedEstablishment = null;
     _isLoadingDetails = false;
     _detailsError = null;

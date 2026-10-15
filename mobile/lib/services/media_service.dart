@@ -35,6 +35,14 @@ class UploadedMedia {
 /// This service handles image uploads during partner registration.
 /// Files are uploaded to the backend which then uploads them to Cloudinary
 /// and returns the CDN URLs.
+///
+/// Отказ транспорта уходит наверх как есть: готовую фразу для партнёра из
+/// него достаёт экран (`userMessageOf`). До 13.10.2026 сервис пересобирал
+/// отказ в `Exception(message)` и брал текст прямо из ответа сервера — в
+/// обход транспорта: при сбое сервера это был внутренний английский текст
+/// бэкенда, а экран печатал его после своей приставки и `Exception: `.
+/// Свои исключения (нет файла, ответ не той формы) готовой фразы не несут:
+/// вместо них экран покажет общую фразу.
 class MediaService {
   final ApiClient _apiClient;
 
@@ -72,48 +80,32 @@ class MediaService {
       'type': type,
     });
 
-    try {
-      final response = await _apiClient.dio.post(
-        '/api/v1/partner/media/upload',
-        data: formData,
-        options: Options(
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        ),
-        onSendProgress: (sent, total) {
-          if (onProgress != null && total > 0) {
-            onProgress(sent / total);
-          }
+    final response = await _apiClient.dio.post(
+      '/api/v1/partner/media/upload',
+      data: formData,
+      options: Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
         },
-      );
-
-      if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
-        final responseData = response.data as Map<String, dynamic>;
-
-        if (responseData['success'] == true && responseData['data'] != null) {
-          return UploadedMedia.fromJson(
-            responseData['data'] as Map<String, dynamic>,
-          );
+      ),
+      onSendProgress: (sent, total) {
+        if (onProgress != null && total > 0) {
+          onProgress(sent / total);
         }
+      },
+    );
+
+    if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
+      final responseData = response.data as Map<String, dynamic>;
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        return UploadedMedia.fromJson(
+          responseData['data'] as Map<String, dynamic>,
+        );
       }
-
-      throw Exception('Unexpected response format');
-    } on DioException catch (e) {
-      // Extract error message
-      String message = 'Failed to upload image';
-
-      if (e.response?.data is Map<String, dynamic>) {
-        final data = e.response!.data as Map<String, dynamic>;
-        message = data['message'] as String? ?? message;
-      } else if (e.error is String) {
-        message = e.error as String;
-      }
-
-      throw Exception(message);
-    } catch (e) {
-      rethrow;
     }
+
+    throw Exception('Unexpected response format');
   }
 
   /// Upload a PDF menu file for partner registration
@@ -142,47 +134,32 @@ class MediaService {
       'type': 'menu',
     });
 
-    try {
-      final response = await _apiClient.dio.post(
-        '/api/v1/partner/media/upload',
-        data: formData,
-        options: Options(
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        ),
-        onSendProgress: (sent, total) {
-          if (onProgress != null && total > 0) {
-            onProgress(sent / total);
-          }
+    final response = await _apiClient.dio.post(
+      '/api/v1/partner/media/upload',
+      data: formData,
+      options: Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
         },
-      );
-
-      if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
-        final responseData = response.data as Map<String, dynamic>;
-
-        if (responseData['success'] == true && responseData['data'] != null) {
-          return UploadedMedia.fromJson(
-            responseData['data'] as Map<String, dynamic>,
-          );
+      ),
+      onSendProgress: (sent, total) {
+        if (onProgress != null && total > 0) {
+          onProgress(sent / total);
         }
+      },
+    );
+
+    if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
+      final responseData = response.data as Map<String, dynamic>;
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        return UploadedMedia.fromJson(
+          responseData['data'] as Map<String, dynamic>,
+        );
       }
-
-      throw Exception('Unexpected response format');
-    } on DioException catch (e) {
-      String message = 'Failed to upload PDF';
-
-      if (e.response?.data is Map<String, dynamic>) {
-        final data = e.response!.data as Map<String, dynamic>;
-        message = data['message'] as String? ?? message;
-      } else if (e.error is String) {
-        message = e.error as String;
-      }
-
-      throw Exception(message);
-    } catch (e) {
-      rethrow;
     }
+
+    throw Exception('Unexpected response format');
   }
 
   /// Upload multiple images in parallel
