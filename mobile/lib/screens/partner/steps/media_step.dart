@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/services/media_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Step 4: Media Upload
 /// Allows user to upload establishment photos and menu
@@ -436,7 +437,10 @@ class _MediaStepState extends State<MediaStep> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при загрузке фото: $e'),
+            content: Text(userMessageOf(
+              e,
+              fallback: 'Не удалось загрузить фото. Попробуйте ещё раз.',
+            )),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
@@ -486,7 +490,10 @@ class _MediaStepState extends State<MediaStep> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка при загрузке фото: $e'),
+            content: Text(userMessageOf(
+              e,
+              fallback: 'Не удалось загрузить фото меню. Попробуйте ещё раз.',
+            )),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
@@ -538,7 +545,13 @@ class _MediaStepState extends State<MediaStep> {
 
       _showSnackBar('PDF меню загружено', isError: false);
     } catch (e) {
-      _showSnackBar('Ошибка при загрузке PDF: $e', isError: true);
+      _showSnackBar(
+        userMessageOf(
+          e,
+          fallback: 'Не удалось загрузить PDF меню. Попробуйте ещё раз.',
+        ),
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _isUploadingPdf = false);
