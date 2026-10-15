@@ -299,8 +299,10 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     } else if (result.errorCode == 'NO_PDF_MENUS') {
       messenger.showSnackBar(
         const SnackBar(
+          // Распознаются и фото меню, не только PDF (решение
+          // Координатора 15.10.2026).
           content: Text(
-              'Сначала загрузите PDF меню в разделе «Медиа»'),
+              'Сначала добавьте фото меню или PDF в разделе «Медиа»'),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
