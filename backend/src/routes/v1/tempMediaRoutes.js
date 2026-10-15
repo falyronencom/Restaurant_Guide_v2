@@ -22,10 +22,11 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate, authorize } from '../../middleware/auth.js';
-import { validate } from '../../middleware/errorHandler.js';
+import { AppError, validate } from '../../middleware/errorHandler.js';
 import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
+import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 import logger from '../../utils/logger.js';
 
 const router = express.Router();
@@ -134,7 +135,7 @@ router.post(
       if (!req.file) {
         return res.status(400).json({
           success: false,
-          message: 'No file uploaded',
+          message: UPLOAD_REFUSALS.fileRequired,
           error: {
             code: 'FILE_REQUIRED',
           },
@@ -149,7 +150,7 @@ router.post(
           fs.unlink(req.file.path, () => {});
           return res.status(422).json({
             success: false,
-            message: 'PDF uploads are only allowed for menu type',
+            message: UPLOAD_REFUSALS.pdfOnlyInMenu,
             error: { code: 'PDF_TYPE_MISMATCH' },
           });
         }
@@ -160,7 +161,7 @@ router.post(
           fs.unlink(req.file.path, () => {});
           return res.status(422).json({
             success: false,
-            message: 'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+            message: UPLOAD_REFUSALS.invalidFileType,
             error: { code: 'INVALID_FILE_TYPE' },
           });
         }
@@ -169,7 +170,7 @@ router.post(
           fs.unlink(req.file.path, () => {});
           return res.status(422).json({
             success: false,
-            message: 'PDF file size exceeds 60MB limit',
+            message: UPLOAD_REFUSALS.pdfTooLarge,
             error: { code: 'FILE_TOO_LARGE' },
           });
         }
@@ -219,7 +220,7 @@ router.post(
         fs.unlink(req.file.path, () => {});
         return res.status(422).json({
           success: false,
-          message: 'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+          message: UPLOAD_REFUSALS.invalidFileType,
           error: {
             code: 'INVALID_FILE_TYPE',
           },
@@ -230,7 +231,7 @@ router.post(
         fs.unlink(req.file.path, () => {});
         return res.status(422).json({
           success: false,
-          message: 'File size exceeds 10MB limit',
+          message: UPLOAD_REFUSALS.photoTooLarge,
           error: {
             code: 'FILE_TOO_LARGE',
           },
@@ -280,7 +281,10 @@ router.post(
         userId: req.user?.userId,
       });
 
-      next(error);
+      // Past the checks above a failure is the cloud's or ours, never the
+      // file's: the partner reads one sentence, the inner text stays in the
+      // log just written. The code stays what the error handler gave before.
+      return next(new AppError(UPLOAD_REFUSALS.uploadFailed, 500, error.code || 'INTERNAL_ERROR'));
     }
   },
 );
@@ -293,7 +297,7 @@ router.use((error, req, res, next) => {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
         success: false,
-        message: 'File size exceeds 10MB limit',
+        message: UPLOAD_REFUSALS.fileTooLarge,
         error: {
           code: 'FILE_TOO_LARGE',
         },
@@ -303,7 +307,7 @@ router.use((error, req, res, next) => {
     if (error.code === 'LIMIT_UNEXPECTED_FILE') {
       return res.status(400).json({
         success: false,
-        message: 'Unexpected field in file upload',
+        message: UPLOAD_REFUSALS.unexpectedField,
         error: {
           code: 'INVALID_UPLOAD_FIELD',
         },
@@ -319,10 +323,12 @@ router.use((error, req, res, next) => {
     });
   }
 
+  // The filter's own error text is English and internal; the partner reads
+  // the approved sentence.
   if (error.message && error.message.includes('Invalid file type')) {
     return res.status(422).json({
       success: false,
-      message: error.message,
+      message: UPLOAD_REFUSALS.invalidFileType,
       error: {
         code: 'INVALID_FILE_TYPE',
       },
