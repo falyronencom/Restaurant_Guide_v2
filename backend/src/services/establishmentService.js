@@ -69,11 +69,20 @@ function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = fal
  * Why `link` may not be attached by a caller owning `folders`, or null when it
  * may: a delivery URL on our cloud, showing only its own asset (an overlay or a
  * fetched layer would put another picture into a link to the partner's file),
- * and that asset inside the given folders.
+ * and that asset inside the given folders. The checks read the resolved host
+ * and path, while the link is stored as sent and the update path builds the
+ * PDF previews from its text, so the link must be exactly the address they
+ * read: no dot segment the parser resolves (`l_text:…,co_red/../v1/…` keeps in
+ * the stored text a layer no check has seen), no fragment (`own.pdf#/../../l_…`
+ * is outside every check, and a preview built from that text resolves it into
+ * a layer) and no user part. The query stays: our links carry `?_a=`, and
+ * nothing reads it.
  */
 const mediaLinkRefusal = (link, folders) => {
   const publicId = ownCloudPublicId(link);
   if (publicId === null) return 'not_our_cloud';
+  const { origin, pathname, search } = new URL(link);
+  if (`${origin}${pathname}${search}` !== link) return 'not_canonical';
   if (!hasPlainTransformations(link)) return 'transformation_not_allowed';
   if (!isOwnedAsset(publicId, folders)) return 'outside_own_folders';
   return null;

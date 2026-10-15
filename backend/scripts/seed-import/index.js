@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { HOUSE_PARTNER_EMAIL } from './contract.js';
+import { pinValue, readPinnedCertificate } from '../lib/productionDb.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -68,12 +68,21 @@ function resolveTarget(args) {
   const line = readFileSync(envPath, 'utf8').split('\n').find((l) => l.trim().startsWith('DATABASE_URL='));
   if (!line) fail('DATABASE_URL not set in backend/.env.production');
   const url = new URL(line.slice(line.indexOf('=') + 1).trim());
+  // The app pool reaches production only through the pinned certificate
+  // (src/config/databaseTls.js): without it, stop before anything connects.
+  let pinned;
+  try {
+    pinned = readPinnedCertificate({ env: {}, envFile: envPath });
+  } catch (error) {
+    fail(error.message);
+  }
   process.env.DB_HOST = url.hostname;
   process.env.DB_PORT = url.port || '5432';
   process.env.DB_NAME = url.pathname.replace(/^\//, '');
   process.env.DB_USER = decodeURIComponent(url.username);
   process.env.DB_PASSWORD = decodeURIComponent(url.password);
-  process.env.NODE_ENV = 'production'; // SSL on
+  process.env.DATABASE_TLS_CERT = pinValue(pinned.raw);
+  process.env.NODE_ENV = 'production'; // TLS on, to the pinned certificate
   return { target, host: url.hostname, db: process.env.DB_NAME };
 }
 
@@ -87,6 +96,11 @@ function confirm(question) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // The house is found by its flag since 2026-10-15 (lib/seedHouse.js); an
+  // address given the old way would be silently ignored — refuse it instead.
+  if (args['house-email'] !== undefined) {
+    fail('--house-email больше не поддерживается: дом сида находится по признаку служебной учётки (scripts/mark-service-account.js).');
+  }
   const info = resolveTarget(args);
   const isLocalHost = ['localhost', '127.0.0.1'].includes(info.host);
 
@@ -119,7 +133,6 @@ async function main() {
     sheetPath: args.sheet,
     mediaRoot: args['media-root'],
     batchId: args['batch-id'] || `import-${Date.now()}`,
-    housePartnerEmail: args['house-email'] || HOUSE_PARTNER_EMAIL,
     mediaMode,
     allowIncomplete,
     reportOnly: !!args['report-only'],

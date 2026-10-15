@@ -18,6 +18,7 @@
 
 import { body, param, query } from 'express-validator';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import { BELARUS_PHONE_REGEX } from '../constants/belarusPhone.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 
 // Field messages here stay in English where the app translates them itself
@@ -45,11 +46,8 @@ const VALID_PRICE_RANGES = ['$', '$$', '$$$'];
  */
 const VALID_STATUSES = ['draft', 'pending', 'active', 'suspended'];
 
-/**
- * Belarus phone number regex
- * Format: +375 (29/33/44/25) XXX-XX-XX
- */
-const BELARUS_PHONE_REGEX = /^\+375(29|33|44|25)\d{7}$/;
+// BELARUS_PHONE_REGEX (mobile operator codes + city/region area codes) is
+// imported from constants/belarusPhone.js — shared with the seed bulk-import.
 
 /**
  * Validation for creating a new establishment

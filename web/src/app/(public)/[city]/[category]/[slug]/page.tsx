@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { Suspense, cache } from 'react';
 
 import { ApiError } from '@/lib/api/types';
@@ -19,6 +19,7 @@ import {
   pluralizeReviews,
   ratingColorClass,
 } from '@/lib/establishment-helpers';
+import { establishmentAddress } from '@/lib/establishment-path';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
 import { AnchorNav } from '@/components/establishment/AnchorNav';
@@ -41,8 +42,9 @@ import { ReviewCarousel } from '@/components/establishment/ReviewCarousel';
  *
  * Server Component. Validates city+category slugs, fetches the full detail
  * via getBySlug (404 → notFound() through Next's not-found.tsx boundary),
- * then in parallel fetches menu items + reviews. Composes seven sections
- * into a Booking-inspired two-column layout (single-column on mobile).
+ * redirects every other address of the card to its own (establishmentAddress),
+ * then in parallel fetches menu items + reviews. Composes seven sections into
+ * a Booking-inspired two-column layout (single-column on mobile).
  *
  * `getCachedBySlug` wraps `getBySlug` in React.cache so both
  * `generateMetadata` and the page body share a single backend roundtrip per
@@ -72,10 +74,11 @@ export async function generateMetadata({
 }: {
   params: Promise<Params>;
 }): Promise<Metadata> {
-  const { city, category, slug } = await params;
+  const { city, slug } = await params;
 
   let title = `${slug} — ${city}`;
   let description = `Заведение в городе ${city}`;
+  let canonical: string | null = null;
   let ogImageUrl: string | null = null;
 
   try {
@@ -83,19 +86,28 @@ export async function generateMetadata({
       getCachedBySlug(slug),
       getMetadata(),
     ]);
-    const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+    // Names and canonical come from the card, not from the address it was
+    // requested under: a foreign city/category redirects (page body), and
+    // the redirecting response points crawlers at the same address.
+    const address = establishmentAddress(detail.establishment);
+    const cityName =
+      meta.cities.find((c) => c.slug === address.citySlug)?.name ??
+      address.citySlug;
     const categoryName =
-      meta.categories.find((c) => c.slug === category)?.name ?? category;
+      meta.categories.find((c) => c.slug === address.categorySlug)?.name ??
+      address.categorySlug;
     const lowerCategory = categoryName.toLowerCase();
     title = `${detail.establishment.name} — ${lowerCategory} в городе ${cityName}`;
     description = detail.establishment.description
       ? truncate(detail.establishment.description, 160)
       : `${detail.establishment.name} — ${lowerCategory} в городе ${cityName}. Меню, отзывы, контакты.`;
+    canonical = address.path;
     ogImageUrl = detail.establishment.primary_image_url;
   } catch {
-    // Slug invalid / backend hiccup — fall back to slug strings + skip OG
-    // image override. Page render path will call notFound() cleanly if the
-    // slug truly doesn't exist.
+    // Slug invalid / backend hiccup — fall back to slug strings, skip the OG
+    // image override and the canonical (no card, no address to point at).
+    // Page render path will call notFound() cleanly if the slug truly
+    // doesn't exist.
   }
 
   // openGraph.title does NOT inherit title.template (Discovery F5) — set
@@ -106,9 +118,7 @@ export async function generateMetadata({
   return {
     title,
     description,
-    alternates: {
-      canonical: `/${city}/${category}/${slug}`,
-    },
+    ...(canonical ? { alternates: { canonical } } : {}),
     openGraph: {
       title,
       description,
@@ -131,7 +141,9 @@ export default async function EstablishmentPage({
   const { city, category, slug } = await params;
 
   // 1. Validate city + category slugs in parallel (React.cache dedup via
-  //    getMetadata wrapper shared with validate* helpers).
+  //    getMetadata wrapper shared with validate* helpers). An unknown one is
+  //    a 404, not a redirect: only a known city/category makes a foreign
+  //    address of the card (step 3).
   const [cityValid, categoryValid] = await Promise.all([
     validateCitySlug(city),
     validateCategorySlug(category),
@@ -149,7 +161,26 @@ export default async function EstablishmentPage({
   }
   const { establishment } = detailResult;
 
-  // 3. Parallel fetches: menu + reviews + metadata. Menu/reviews tolerate
+  // 3. One address per card. The slug alone found it, so a known but foreign
+  //    city/category would open it as well — every such address redirects
+  //    permanently to the card's own, before menu and reviews are fetched.
+  //    (public)/loading.tsx streams this page, so the status is already 200
+  //    here (the reason notFound() answers 200 + noindex): Next sends the
+  //    redirect as <meta http-equiv="refresh" content="0;url=…"> plus a
+  //    client-side replace — checked on `next start`, 13.10.2026. Google reads
+  //    an instant meta refresh as a permanent redirect, Yandex as a temporary
+  //    one (its webmaster help, «Meta tags»); the response's canonical
+  //    (generateMetadata) names the same address for both.
+  //    The redirect is cached like the page (ISR, an hour) and nothing
+  //    revalidates a card on edit: when a card's address changes (city, or
+  //    its first category), the old and the new address can point at each
+  //    other until the older cache entry expires.
+  const address = establishmentAddress(establishment);
+  if (address.path !== `/${city}/${category}/${slug}`) {
+    permanentRedirect(address.path);
+  }
+
+  // 4. Parallel fetches: menu + reviews + metadata. Menu/reviews tolerate
   //    soft failures (return empty) — the page is still useful without them.
   const [menuItemsResult, reviewsResult, meta] = await Promise.all([
     getMenuItems(slug).catch(() => ({ menu_items: [] })),
@@ -167,9 +198,11 @@ export default async function EstablishmentPage({
     getMetadata(),
   ]);
 
-  const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;
+  const { citySlug, categorySlug } = address;
+  const cityName =
+    meta.cities.find((c) => c.slug === citySlug)?.name ?? citySlug;
   const categoryName =
-    meta.categories.find((c) => c.slug === category)?.name ?? category;
+    meta.categories.find((c) => c.slug === categorySlug)?.name ?? categorySlug;
   const displayCategory = establishment.categories[0]
     ? normalizeCategory(establishment.categories[0])
     : categoryName;
@@ -204,13 +237,13 @@ export default async function EstablishmentPage({
   return (
     <main className='mx-auto flex w-full max-w-6xl flex-1 flex-col gap-l p-l'>
       {/* JSON-LD place-level schema (Brief 5) — invisible script tag, Server
-          Component, MenuBlock injection pattern. citySlug/categorySlug use
-          URL params (authoritative for the URL the user navigated through;
-          establishment.city_slug/category_slug may be null for legacy seed). */}
+          Component, MenuBlock injection pattern. citySlug/categorySlug are
+          the card's own address (establishmentAddress — fallbacks for a card
+          outside the URL canon), the one canonical points at. */}
       <RestaurantSchema
         establishment={establishment}
-        citySlug={city}
-        categorySlug={category}
+        citySlug={citySlug}
+        categorySlug={categorySlug}
       />
 
       {/* Breadcrumbs */}
@@ -222,12 +255,12 @@ export default async function EstablishmentPage({
           Главная
         </Link>
         <span aria-hidden='true'>/</span>
-        <Link href={`/${city}`} className='hover:text-foreground'>
+        <Link href={`/${citySlug}`} className='hover:text-foreground'>
           {cityName}
         </Link>
         <span aria-hidden='true'>/</span>
         <Link
-          href={`/${city}/${category}`}
+          href={`/${citySlug}/${categorySlug}`}
           className='hover:text-foreground'
         >
           {categoryName.toLowerCase()}
@@ -336,10 +369,10 @@ export default async function EstablishmentPage({
               reviews={reviewsResult.reviews}
               totalCount={reviewsResult.pagination.total}
               averageRating={establishment.average_rating}
-              reviewsHref={`/${city}/${category}/${establishment.slug}/reviews`}
+              reviewsHref={`${address.path}/reviews`}
               establishmentId={establishment.id}
               establishmentName={establishment.name}
-              detailPath={`/${city}/${category}/${establishment.slug}`}
+              detailPath={address.path}
             />
           </section>
         </div>
@@ -354,7 +387,7 @@ export default async function EstablishmentPage({
           useSearchParams and this page is ISR (prod-build requirement). */}
       <Suspense fallback={null}>
         <EstablishmentMapOverlay
-          citySlug={city}
+          citySlug={citySlug}
           slug={establishment.slug}
           name={establishment.name}
           latitude={establishment.latitude}

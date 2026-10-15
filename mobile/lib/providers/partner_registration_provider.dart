@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 /// Partner Registration wizard state provider
 /// Manages the 6-step registration flow for establishment partners
@@ -13,6 +16,13 @@ class PartnerRegistrationProvider with ChangeNotifier {
   // ============================================================================
 
   static const int totalSteps = 7;
+
+  /// Предел фото заведения — тот же, что у сервера (`MEDIA_LIMITS.interior`
+  /// в backend/src/services/mediaService.js). Одно число на экран шага
+  /// «Медиа» и на [addInteriorPhoto]: когда экран держал 30, а провайдер 20,
+  /// фото с 21-го по 30-е загружались в облако, партнёр видел «Фото успешно
+  /// загружено», а в карточку они не попадали.
+  static const int maxInteriorPhotos = 30;
 
   // ============================================================================
   // State
@@ -182,16 +192,55 @@ class PartnerRegistrationProvider with ChangeNotifier {
   bool _validateBasicInfoStep() {
     final name = _data.name ?? '';
     final description = _data.description ?? '';
-    final phone = _data.phone ?? '';
     final priceRange = _data.priceRange;
 
-    // Basic requirements: name (2+ chars) and price range selected
-    // Description and phone are optional for now
+    // Basic requirements: name (2+ chars) and price range selected.
+    // Description and phone are optional; a phone, once typed, must be one
+    // the server accepts — see [phoneError].
     return name.length >= 2 &&
         (description.isEmpty || description.length >= 5) &&
-        (phone.isEmpty || phone.length >= 5) &&
+        phoneError == null &&
         priceRange != null &&
         priceRange.isNotEmpty;
+  }
+
+  /// Same rule as the server (backend/src/constants/belarusPhone.js): +375,
+  /// then a mobile code 25/29/33/44 or a city/region area code 15x–17x,
+  /// 21x–23x — 9 digits in all after 375. Until 13.10.2026 this step let any
+  /// phone of 5+ characters through, and the server refused a city landline
+  /// only at «Отправить», four steps later.
+  static final RegExp _belarusPhone =
+      RegExp(r'^\+375(25|29|33|44|1[5-7]|2[1-3])\d{7}$');
+
+  /// Shown when the number does not start with +375: the field prepends
+  /// 375 only to input that does not start with 3, so «33 123 45 67» stays
+  /// «+331 23 456 7».
+  static const phonePrefixMessage = 'Номер должен начинаться с +375.';
+
+  /// Shown under the phone field when the number has too few or too many
+  /// digits — including while it is still being typed.
+  static const phoneLengthMessage =
+      'После +375 должно быть 9 цифр: код и номер.';
+
+  /// Shown when the length is right but the code is not. Typically a number
+  /// typed the domestic way: the field prepends 375, so «8 029 …» becomes
+  /// «+375 80 …».
+  static const phoneCodeMessage =
+      'Неверный код после +375. Мобильный: 25, 29, 33 или 44; городской: '
+      'код города — 17 Минск, 152 Гродно, 232 Гомель… Номер вида 8 017… '
+      'вводите как +375 17…';
+
+  /// Message under the phone field on the «О заведении» step; null when the
+  /// phone is empty or valid. While it is set, the step cannot be left.
+  String? get phoneError {
+    final phone = (_data.phone ?? '').replaceAll(' ', '');
+    if (phone.isEmpty || _belarusPhone.hasMatch(phone)) return null;
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    // From the third digit on — «+3», «+37» are a country code being typed.
+    if (digits.length >= 3 && !digits.startsWith('375')) {
+      return phonePrefixMessage;
+    }
+    return digits.length == 12 ? phoneCodeMessage : phoneLengthMessage;
   }
 
   /// Validate Step 4: Media
@@ -377,7 +426,7 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Add an interior photo
   void addInteriorPhoto(String url) {
-    if (_data.interiorPhotos.length < 20) {
+    if (_data.interiorPhotos.length < maxInteriorPhotos) {
       final photos = List<String>.from(_data.interiorPhotos)..add(url);
       _data = _data.copyWith(interiorPhotos: photos);
 
@@ -495,41 +544,177 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   final EstablishmentsService _establishmentsService = EstablishmentsService();
 
+  /// Карточка, которую этот мастер уже создал на сервере, — её id.
+  ///
+  /// Отправка новой карточки — два запроса: создать черновик и отправить его
+  /// на модерацию. Если второй не дошёл (нет связи, сбой сервера), карточка
+  /// уже лежит у партнёра черновиком. До 13.10.2026 повторное «Отправить на
+  /// верификацию» создавало её заново, и сервер отказывал по-английски:
+  /// заведение с таким названием у партнёра уже есть (409
+  /// DUPLICATE_ESTABLISHMENT). Теперь повтор продолжает с созданной карточки.
+  String? _createdId;
+
+  /// Данные мастера, какими они ушли на сервер последний раз (JSON). Если
+  /// партнёр между попытками что-то поменял, повтор сначала сохраняет правки
+  /// в созданную карточку и только потом отправляет её.
+  String? _sentData;
+
+  /// Прошлая попытка создать карточку кончилась без ответа сервера: связь
+  /// оборвалась, сервер не ответил или упал. Карточка при этом могла
+  /// создаться, но её id приложение не узнало — повтор упрётся в то же
+  /// название.
+  bool _createOutcomeUnknown = false;
+
+  bool _cardOnServer = false;
+
+  /// У партнёра на сервере уже есть карточка: этот мастер её создал, или
+  /// сервер отказал «заведение с таким названием у вас уже есть». Значит,
+  /// человек уже партнёр (роль сервер меняет при первой карточке), даже если
+  /// отправка на модерацию не прошла. Экран по этому признаку обновляет роль
+  /// и список заведений, чтобы черновик был виден в профиле.
+  bool get hasCardOnServer => _cardOnServer;
+
+  /// Хвост к причине отказа, когда карточка создана, но не отправлена
+  /// (решение Координатора 13.10.2026).
+  static const _savedAsDraftTail = 'Заведение сохранено как черновик — '
+      'нажмите «Отправить на верификацию» ещё раз.';
+
+  /// Повтор после потерянного ответа упёрся в то же название (решение
+  /// Координатора 13.10.2026). «Возможно» — потому что 409 бывает и у
+  /// настоящего тёзки: второе заведение сети с тем же названием.
+  static const _alreadyCreatedHint =
+      'Заведение с таким названием уже есть в вашем профиле — возможно, оно '
+      'создалось при прошлой попытке. Откройте его в профиле и нажмите '
+      '«Отправить на модерацию».';
+
   /// Submit registration to API
   /// Returns true on success, false on failure
   Future<bool> submit() async {
+    // Второе нажатие, пока первое в пути, создало бы вторую карточку: сервер
+    // сверяет названия без защиты от одновременных запросов.
+    if (_isSubmitting) return false;
+
     if (!_validateSummaryStep()) {
       _setError('Пожалуйста, заполните все обязательные поля');
       return false;
     }
+
+    final data = jsonEncode(_data.toJson());
 
     _isSubmitting = true;
     _clearError();
     notifyListeners();
 
     try {
-      // Call API to create establishment (status: draft)
-      final result = await _establishmentsService.createEstablishment(_data);
+      if (_createdId == null) {
+        // Call API to create establishment (status: draft)
+        final result = await _establishmentsService.createEstablishment(_data);
+        _createdId = result.id;
+        _sentData = data;
+        _cardOnServer = true;
+      } else if (data != _sentData) {
+        await _establishmentsService.updateEstablishment(
+          _createdId!,
+          _dataForCreatedCard(),
+        );
+        _sentData = data;
+      }
 
       // Auto-submit for moderation (draft → pending)
-      await _establishmentsService.submitForModeration(result.id);
+      await _sendCreatedCard();
 
       _isSubmitting = false;
       notifyListeners();
       return true;
     } catch (e) {
-      // Extract user-friendly message from DioException
-      String message;
-      if (e is DioException && e.error is String) {
-        message = e.error as String;
-      } else {
-        message = e.toString();
-      }
-      _setError(message);
+      final reason =
+          userMessageOf(e, fallback: 'Не удалось отправить на верификацию.');
+      _setError(_createdId == null
+          ? _onCreateFailed(e)
+          // «Нажмите ещё раз» — только там, где повтор может помочь. Отказ
+          // правки (тёзка, точка вне города) повтор получит тот же: партнёру
+          // нужна причина, а не совет повторить.
+          : _retryMayHelp(e)
+              ? '$reason $_savedAsDraftTail'
+              : reason);
       _isSubmitting = false;
       notifyListeners();
       return false;
     }
+  }
+
+  /// Текст отказа создания; заодно запоминает, что о карточке теперь
+  /// известно.
+  String _onCreateFailed(Object error) {
+    final duplicate = _errorCodeOf(error) == 'DUPLICATE_ESTABLISHMENT';
+    if (duplicate) _cardOnServer = true;
+    final message = duplicate && _createOutcomeUnknown
+        ? _alreadyCreatedHint
+        : userMessageOf(
+            error,
+            fallback: 'Не удалось отправить на верификацию. Попробуйте ещё раз.',
+          );
+    // Отказ 4xx значит, что сервер разобрал запрос и карточку не создал. Всё
+    // прочее исхода не сообщает. Признак не сбрасывается: третья попытка
+    // упрётся в то же название, что и вторая.
+    if (!_isServerRefusal(error)) _createOutcomeUnknown = true;
+    return message;
+  }
+
+  /// Отправка созданной карточки на модерацию (черновик → на модерации).
+  ///
+  /// Отказ «статус уже не тот» значит, что карточка ушла раньше: прошлая
+  /// отправка дошла до сервера, а ответ потерялся. Цель достигнута — это
+  /// успех, а не ошибка.
+  Future<void> _sendCreatedCard() async {
+    try {
+      await _establishmentsService.submitForModeration(_createdId!);
+    } catch (e) {
+      if (_errorCodeOf(e) == 'INVALID_STATUS_FOR_SUBMISSION') return;
+      rethrow;
+    }
+  }
+
+  /// Данные мастера для правки уже созданной карточки (PUT).
+  ///
+  /// На сервере PDF-меню лежит в той же корзине «меню», что и фото меню, а
+  /// правка оставляет в корзине ровно те ссылки, что пришли в `menu_photos`:
+  /// без ссылок на PDF она бы их удалила. `menu_pdfs` — поле только
+  /// создания, правка его не читает. Поэтому PDF едут вместе с фото меню —
+  /// так же, как при правке из кабинета, куда сервер отдаёт PDF в
+  /// `menu_photos`.
+  PartnerRegistration _dataForCreatedCard() => _data.copyWith(
+        menuPhotos: [
+          ..._data.menuPhotos,
+          ..._data.menuPdfs.map((pdf) => pdf.url),
+        ],
+        menuPdfs: const [],
+      );
+
+  /// Код отказа из конверта ошибки бэкенда (`{error: {code}}`), если сервер
+  /// ответил.
+  static String? _errorCodeOf(Object error) {
+    if (error is! DioException) return null;
+    final body = error.response?.data;
+    if (body is! Map) return null;
+    final envelope = body['error'];
+    if (envelope is! Map) return null;
+    final code = envelope['code'];
+    return code is String ? code : null;
+  }
+
+  /// Сервер ответил отказом 4xx: запрос разобран и отклонён. Нет связи, нет
+  /// ответа, сбой 5xx исхода не сообщают — запрос мог успеть сделать своё.
+  static bool _isServerRefusal(Object error) {
+    final status = error is DioException ? error.response?.statusCode : null;
+    return status != null && status >= 400 && status < 500;
+  }
+
+  /// Повтор может помочь: ответа сервера нет (связь, таймаут), сбой 5xx или
+  /// лимит запросов (429). На прочий отказ 4xx повтор получит тот же отказ.
+  static bool _retryMayHelp(Object error) {
+    final status = error is DioException ? error.response?.statusCode : null;
+    return status == null || status >= 500 || status == 429;
   }
 
   // ============================================================================
@@ -554,7 +739,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Ошибка при сохранении: ${e.toString()}');
+      // Без приставки «Ошибка при сохранении:», как при создании карточки
+      // (решение Координатора 07.10.2026): партнёр читает ровно фразу,
+      // утверждённую для отказа, а красная плашка и незакрывшийся экран и
+      // так говорят, что изменения не сохранились.
+      _setError(userMessageOf(
+        e,
+        fallback: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
+      ));
       _isSubmitting = false;
       notifyListeners();
       return false;
@@ -569,6 +761,12 @@ class PartnerRegistrationProvider with ChangeNotifier {
   void reset() {
     _currentStep = 0;
     _data = const PartnerRegistration();
+    // Новая карточка — не продолжение прежней: иначе её отправка ушла бы в
+    // уже созданную.
+    _createdId = null;
+    _sentData = null;
+    _createOutcomeUnknown = false;
+    _cardOnServer = false;
     _isSubmitting = false;
     _clearError();
     notifyListeners();

@@ -27,13 +27,15 @@
  *   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD from .env
  *
  * Environment (production mode):
- *   DATABASE_URL — full postgres connection URL. SSL is enforced for Railway.
+ *   DATABASE_URL — full postgres connection URL. TLS to the pinned certificate
+ *   only (scripts/lib/productionDb.js).
  */
 
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { existsSync } from 'fs';
 import { generateUniqueSlug } from '../src/utils/slugGenerator.js';
+import { ProductionClient } from './lib/productionDb.js';
 
 // Production mode: load DATABASE_URL from explicit .env file if requested.
 // Falls back to the normal .env-driven local mode otherwise.
@@ -50,7 +52,8 @@ const usingDatabaseUrl = !!process.env.DATABASE_URL;
 const pool = usingDatabaseUrl
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }, // Railway requires SSL
+      // Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+      Client: ProductionClient,
     })
   : new Pool({
       host: process.env.DB_HOST || 'localhost',
@@ -72,7 +75,7 @@ async function backfillSlugs() {
     if (usingDatabaseUrl) {
       try {
         const u = new URL(process.env.DATABASE_URL);
-        console.log(`   Target: ${u.hostname}:${u.port}${u.pathname} (production mode, SSL)`);
+        console.log(`   Target: ${u.hostname}:${u.port}${u.pathname} (production mode, pinned TLS)`);
       } catch {
         console.log('   Target: (DATABASE_URL set but unparseable — proceeding)');
       }

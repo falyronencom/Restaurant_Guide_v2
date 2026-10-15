@@ -19,6 +19,10 @@ class AnalyticsTotalsProvider with ChangeNotifier {
   OverviewData? _overview;
   bool _isLoading = false;
 
+  /// Поколение аккаунта — как в BadgesProvider (решение Координатора
+  /// 12.10.2026: метка у каждого провайдера реестра).
+  int _generation = 0;
+
   AnalyticsTotalsProvider({AnalyticsService? service})
       : _service = service ?? AnalyticsService() {
     AccountScope.register(resetAccountScope);
@@ -26,6 +30,7 @@ class AnalyticsTotalsProvider with ChangeNotifier {
 
   /// Сброс при смене аккаунта: итоги перечитываются при следующем входе.
   void resetAccountScope() {
+    _generation++;
     _overview = null;
     _isLoading = false;
     notifyListeners();
@@ -38,16 +43,20 @@ class AnalyticsTotalsProvider with ChangeNotifier {
   Future<void> loadOnce() async {
     if (_overview != null || _isLoading) return;
     _isLoading = true;
+    final generation = _generation;
 
     try {
-      _overview = await _service.getOverview();
+      final overview = await _service.getOverview();
+      if (generation == _generation) _overview = overview;
     } catch (_) {
       // Молча. Итог в подписи вкладки — удобство, а не содержание экрана:
       // сообщать об ошибке дважды (здесь и в теле вкладки) значило бы
       // объявить сбоем то, что сбоем не является.
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 }

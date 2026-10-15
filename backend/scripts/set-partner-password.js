@@ -1,11 +1,15 @@
 /**
  * Set (or reset) a partner account's login password on production.
  *
- * Purpose: the seed house account (seed.data.generator@restaurantguide.by) was
- * created without a password (script-provisioned owner of seed cards), so nobody
+ * Purpose: the seed house account (the partner that owns the platform's cards)
+ * was created without a password (script-provisioned owner of seed cards), so nobody
  * can log into the web cabinet as it. This grants it a login so a collector can
  * enter cards through the partner form under the house account (ownership stays
  * with the platform → claim-model intact).
+ *
+ * --email is required: until 2026-10-15 it defaulted to the seed house's old
+ * address, at a domain the project does not own (directive service_accounts,
+ * B5). Works for any active account — a panel account too.
  *
  * Security model (mirrors apply-migration-production.js):
  *   - Reads DATABASE_URL from backend/.env.production (gitignored, user-managed).
@@ -23,23 +27,22 @@
  *
  * Usage (PowerShell):
  *   $env:NEW_PASSWORD = "choose-a-strong-password"
- *   node scripts/set-partner-password.js --email=seed.data.generator@restaurantguide.by
+ *   node scripts/set-partner-password.js --email=<account address>
  *   Remove-Item Env:\NEW_PASSWORD          # clear it from the session afterwards
  *
  * Usage (bash):
  *   NEW_PASSWORD='choose-a-strong-password' \
- *     node scripts/set-partner-password.js --email=seed.data.generator@restaurantguide.by
+ *     node scripts/set-partner-password.js --email=<account address>
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { createInterface } from 'readline';
-import pg from 'pg';
 import argon2 from 'argon2';
 import dotenv from 'dotenv';
+import { ProductionClient } from './lib/productionDb.js';
 import { reportEndedSessions, setActiveAccountPassword } from './lib/operator-password.js';
 
-const { Client } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = join(resolve(__dirname, '..'), '.env.production');
 
@@ -55,7 +58,11 @@ if (!DATABASE_URL) { console.error('❌ DATABASE_URL not set in .env.production'
 const args = process.argv.slice(2);
 const skipConfirm = args.includes('--yes');
 const emailArg = args.find((a) => a.startsWith('--email='));
-const email = emailArg ? emailArg.slice('--email='.length) : 'seed.data.generator@restaurantguide.by';
+const email = emailArg ? emailArg.slice('--email='.length).trim().toLowerCase() : '';
+if (!email || !email.includes('@')) {
+  console.error('❌ --email=<account address> is required.');
+  process.exit(1);
+}
 
 const password = process.env.NEW_PASSWORD;
 if (!password) {
@@ -76,7 +83,8 @@ function confirm() {
   return new Promise((res) => rl.question('Set this password? Type "yes" to confirm: ', (a) => { rl.close(); res(a.trim().toLowerCase() === 'yes'); }));
 }
 
-const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Only the server whose certificate is pinned (scripts/lib/productionDb.js)
+const client = new ProductionClient({ connectionString: DATABASE_URL });
 
 async function run() {
   await client.connect();

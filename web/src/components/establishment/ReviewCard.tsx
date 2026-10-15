@@ -1,39 +1,25 @@
-import Image from 'next/image';
 import { Star } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import type { PublicReview } from '@/lib/api/types';
+import { avatarSource } from '@/lib/avatar-source';
 import { formatDateRu } from '@/lib/establishment-helpers';
 import { cn } from '@/lib/utils';
 
+import { ReviewAvatar } from './ReviewAvatar';
+
 /**
  * ReviewCard — Server Component. Shared by the detail-page ReviewCarousel
- * (compact, clamped) and the /reviews route (full). Warm-beige card: colored
- * initial avatar + author + date, star rating on the right, body, and an
- * optional partner response with a brand left-rule.
+ * (compact, clamped) and the /reviews route (full). Warm-beige card: author
+ * avatar (photo or colored initial — the ReviewAvatar island) + author + date,
+ * star rating on the right, body, and an optional partner response with a
+ * brand left-rule.
  *
  * `actions` is an optional footer slot: the detail carousel injects the
  * own-review edit/delete island (Slice 2) into every card — the island decides
  * client-side whether to render, so the card itself adds no divider/wrapper.
  * The /reviews route passes nothing (R1: controls live on the detail top-5).
  */
-
-// Stable avatar tint by author name (design uses a small varied palette).
-const AVATAR_COLORS = [
-  'bg-brand',
-  'bg-success-status',
-  'bg-figma-navy',
-  'bg-[#A07A52]',
-] as const;
-
-function avatarColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  }
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
-
 export function ReviewCard({
   review,
   className,
@@ -53,24 +39,10 @@ export function ReviewCard({
       )}
     >
       <header className='flex items-center gap-3'>
-        <div
-          className={cn(
-            'relative flex size-[42px] shrink-0 items-center justify-center overflow-hidden rounded-full font-display text-[16px] font-bold text-text-on-primary',
-            avatarColor(review.author.name),
-          )}
-        >
-          {review.author.avatar_url ? (
-            <Image
-              src={review.author.avatar_url}
-              alt={review.author.name}
-              fill
-              sizes='42px'
-              className='object-cover'
-            />
-          ) : (
-            review.author.name.charAt(0).toUpperCase()
-          )}
-        </div>
+        <ReviewAvatar
+          name={review.author.name}
+          photo={avatarSource(review.author.avatar_url)}
+        />
         <div className='min-w-0'>
           <div className='text-[15px] font-semibold text-foreground'>
             {review.author.name}
