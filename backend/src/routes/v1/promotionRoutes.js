@@ -20,7 +20,9 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import * as PromotionController from '../../controllers/promotionController.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
+import { AppError } from '../../middleware/errorHandler.js';
 import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
+import { PROMOTION_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 
 const router = express.Router();
 
@@ -36,12 +38,16 @@ const storage = multer.diskStorage({
   },
 });
 
+// The refusal is an AppError: this router has no multer error handler of its
+// own (media and temp media do), so errorHandler sends it — 422
+// INVALID_FILE_TYPE, the code and text of the service's own type check.
+// Before 16.10.2026 it was a plain Error, which errorHandler answered with 500.
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, WebP, and HEIC images are allowed.'), false);
+    cb(new AppError(PROMOTION_REFUSALS.invalidImageType, 422, 'INVALID_FILE_TYPE'), false);
   }
 };
 

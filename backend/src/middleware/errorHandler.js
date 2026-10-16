@@ -58,10 +58,12 @@ export const errorHandler = (err, req, res, _next) => {
   let message = err.message || 'An unexpected error occurred';
   let details = err.details || null;
 
-  // multer's parsing errors — the limits in middleware/upload.js
-  // (MULTIPART_LIMITS), a malformed form — are the client's: 413 for an
-  // oversized file, 400 otherwise. Routes with their own multer handler
-  // answer before this; the avatar and promotion routes reach it.
+  // multer's own refusals — the limits in middleware/upload.js
+  // (MULTIPART_LIMITS), a field it cannot store — are the client's: 413 for
+  // an oversized file, 400 otherwise. Routes with their own multer handler
+  // answer before this; the avatar and promotion routes reach it. A form
+  // busboy cannot read at all is not a MulterError: createUpload turns it
+  // into its own AppError (400) before any of these.
   if (err.name === 'MulterError') {
     statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
   }

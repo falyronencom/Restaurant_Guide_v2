@@ -12,8 +12,10 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { AppError } from './errorHandler.js';
 import { bodyHasNul, bodyNulRefusal, textHasNul } from './requestGuard.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
+import logger from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +64,61 @@ export const MULTIPART_LIMITS = Object.freeze({
 });
 
 /**
+ * What a person reads when the server cannot read the form they sent (below).
+ * The app's next build shows a 400's text as is on the promotion form and the
+ * wizard's photo upload (installed builds: the wizard after «Ошибка при
+ * загрузке фото:», the promotion form its own text); the site has no text of
+ * its own for INVALID_FORMAT and shows its general one. The wording awaits
+ * the Coordinator's decision (proposed 16.10.2026).
+ */
+export const UNREADABLE_FORM_MESSAGE = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
+
+/**
+ * busboy's refusals of a form it cannot read as a whole: the body ends, by
+ * its own length, before the closing boundary (a truncated or empty form); a
+ * part header that is not `Name: value`; a multipart Content-Type busboy
+ * cannot parse (`boundary = x` — type-is, and so multer, lets the spaces
+ * through), without a boundary, or of a subtype other than form-data. busboy
+ * 1.6 raises them as plain Errors, told apart only by their text
+ * (lib/index.js, lib/types/multipart.js); multer hands them on as they are,
+ * and errorHandler, finding no status on them, answered 500 with an
+ * error-level stack (probe 16.10.2026). Only these become the client's
+ * refusal: a failed disk write, the route filter's refusal and anything else
+ * go on unchanged. So does multer's «Request aborted» for a connection
+ * dropped mid-send: Node's own request timeout ends a request with the same
+ * text, and that one is not the client's to answer for.
+ * unit/uploadNulGuard sends each form and holds this list against busboy's
+ * own source, so a busboy that renames or adds a refusal turns a test red,
+ * not a partner's form back into a 500.
+ */
+export const UNREADABLE_FORM_ERRORS = Object.freeze([
+  'Unexpected end of form',
+  'Malformed part header',
+  'Malformed content type',
+  'Multipart: Boundary not found',
+]);
+
+/** busboy's refusal of a multipart subtype it does not parse — the header follows the colon. */
+export const UNSUPPORTED_TYPE_ERROR_PREFIX = 'Unsupported content type: ';
+
+const isUnreadableForm = ({ message }) => typeof message === 'string'
+  && (UNREADABLE_FORM_ERRORS.includes(message) || message.startsWith(UNSUPPORTED_TYPE_ERROR_PREFIX));
+
+/**
+ * 400 INVALID_FORMAT with UNREADABLE_FORM_MESSAGE, sent by errorHandler as a
+ * client's error; busboy's own text goes to the log here, nowhere else.
+ */
+function unreadableFormRefusal(req, err) {
+  logger.warn('Multipart form not readable', {
+    reason: err.message,
+    path: req.path,
+    method: req.method,
+    correlationId: req.correlationId,
+  });
+  return new AppError(UNREADABLE_FORM_MESSAGE, 400, 'INVALID_FORMAT');
+}
+
+/**
  * The only way the backend builds multer: the avatar below and the routes
  * (establishment media, promotions, pre-registration temp media) take their
  * storage, fileFilter and limits through here (unit/uploadNulGuard holds it).
@@ -80,6 +137,12 @@ export const MULTIPART_LIMITS = Object.freeze({
  * A field name cannot carry NUL this far — busboy reads no `name*`, and a raw
  * NUL inside a part's header makes it reject the whole form as malformed.
  *
+ * A form busboy cannot read as a whole is refused here too — 400
+ * INVALID_FORMAT with UNREADABLE_FORM_MESSAGE, on every uploader at once;
+ * multer has already tried to remove what it wrote (a failed removal stays in
+ * err.storageErrors). The routes' own error handlers (media, temp media,
+ * avatar) pass the refusal on to errorHandler.
+ *
  * @param {Object} options - multer options ({ storage, fileFilter, limits })
  * @returns {{ single: (fieldName: string) => Function }} the routes take .single only
  */
@@ -97,7 +160,7 @@ export function createUpload({ fileFilter, ...options }) {
     single(fieldName) {
       const parse = upload.single(fieldName);
       return (req, res, next) => parse(req, res, (err) => {
-        if (err) return next(err);
+        if (err) return next(isUnreadableForm(err) ? unreadableFormRefusal(req, err) : err);
         if (!bodyHasNul(req.body)) return next();
         // discardTempUpload never rejects
         return discardTempUpload(req.file).then(() => next(bodyNulRefusal()));
