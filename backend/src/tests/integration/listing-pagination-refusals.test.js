@@ -151,7 +151,7 @@ describe('уведомления: страница ≥ 1, размер 1–50', 
     const one = await getNotifications('?page=1&limit=1');
     expect(one.status).toBe(200);
     expect(one.body.data.items).toHaveLength(1);
-    expect(one.body.data.pagination).toEqual({ page: 1, limit: 1, total: 2, pages: 2 });
+    expect(one.body.data.pagination).toEqual({ page: 1, limit: 1, total: 2, pages: 2, totalPages: 2 });
 
     const fifty = await getNotifications('?limit=50');
     expect(fifty.status).toBe(200);
@@ -165,6 +165,6 @@ describe('уведомления: страница ≥ 1, размер 1–50', 
     const res = await getNotifications('?page=1&limit=20');
     expect(res.status).toBe(200);
     expect(res.body.data.items).toHaveLength(2);
-    expect(res.body.data.pagination).toEqual({ page: 1, limit: 20, total: 2, pages: 1 });
+    expect(res.body.data.pagination).toEqual({ page: 1, limit: 20, total: 2, pages: 1, totalPages: 1 });
   });
 });

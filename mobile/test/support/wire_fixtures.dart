@@ -11,6 +11,9 @@
 ///   `backend/src/controllers/searchController.js`         — конверт поиска
 ///   `backend/src/services/searchService.js`               — блок pagination
 ///   `backend/src/services/reviewService.js`               — блок отзывов
+///   `backend/src/models/notificationModel.js`             — строка ленты
+///   `backend/src/controllers/notificationController.js`   — конверт ленты
+///   `backend/src/services/notificationService.js`         — блок ленты
 library;
 
 /// Строка списка заведений — полный набор ключей публичной проекции.
@@ -291,6 +294,60 @@ Map<String, dynamic> favoritesEnvelope({
     },
   };
 }
+
+/// Строка ленты уведомлений — ровно столбцы выборки
+/// `NotificationModel.getByUserId`: `id`, `type`, `title`, `message`,
+/// `establishment_id`, `review_id`, `is_read`, `created_at`. `user_id` в
+/// выборку ленты не входит.
+Map<String, dynamic> notificationRow({
+  String id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  String type = 'booking_received',
+  String title = 'Новая бронь',
+  String? message = 'Новая бронь на «Васильки» — 2 гост., 7 октября 19:00',
+  bool isRead = false,
+  String createdAt = '2026-10-07T16:00:00.000Z',
+}) =>
+    <String, dynamic>{
+      'id': id,
+      'type': type,
+      'title': title,
+      'message': message,
+      'establishment_id': '11111111-1111-4111-8111-111111111111',
+      'review_id': null,
+      'is_read': isRead,
+      'created_at': createdAt,
+    };
+
+/// Конверт `GET /api/v1/notifications`: `{ success, data: { items,
+/// pagination } }` — контроллер кладёт ответ
+/// `notificationService.getUserNotifications` под `data` как есть.
+///
+/// Внутри `pagination` — `page` / `limit` / `total` / `pages` и `totalPages`
+/// с тем же числом, что `pages`. Второе имя сервер шлёт с 16.10.2026:
+/// приложение с марта 2026 читает число страниц ленты как `totalPages`, а
+/// сервер называл его только `pages`. `withTotalPages: false` — ответ сервера
+/// до правки; его встречает любая сборка, пока правка не выкачена.
+Map<String, dynamic> notificationsEnvelope({
+  required List<Map<String, dynamic>> items,
+  int page = 1,
+  int limit = 20,
+  required int total,
+  required int pages,
+  bool withTotalPages = true,
+}) =>
+    <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'items': items,
+        'pagination': <String, dynamic>{
+          'page': page,
+          'limit': limit,
+          'total': total,
+          'pages': pages,
+          if (withTotalPages) 'totalPages': pages,
+        },
+      },
+    };
 
 /// Копия карты без указанного ключа — «поле пропало из проекции».
 Map<String, dynamic> without(Map<String, dynamic> row, String key) {

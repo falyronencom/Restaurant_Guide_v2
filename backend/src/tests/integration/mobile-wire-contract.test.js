@@ -45,6 +45,7 @@ import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 
 let partnerId;
+let partnerToken;
 let establishmentId;
 
 const workingHours = JSON.stringify({
@@ -55,6 +56,7 @@ const workingHours = JSON.stringify({
 beforeAll(async () => {
   const partner = await createUserAndGetTokens(testUsers.partner);
   partnerId = partner.user.id;
+  partnerToken = partner.accessToken;
 });
 
 beforeEach(async () => {
@@ -226,5 +228,44 @@ describe('Контракт провода с mobile — список отзыв�
       .expect(200);
 
     expect(Array.isArray(res.body.data.reviews)).toBe(true);
+  });
+});
+
+describe('Контракт провода с mobile — лента уведомлений', () => {
+  test('блок pagination несёт число страниц под обоими именами: pages и totalPages', async () => {
+    // Ровно случай из шапки файла — и он здесь не гипотеза. С марта 2026
+    // приложение считает, есть ли ещё страницы ленты, по `totalPages`
+    // (`notification_provider.dart`), а сервер называл это число только
+    // `pages`: ключа нет → единица → лента любой сборки кончалась на первых
+    // 20 уведомлениях, без ошибки. С 16.10.2026 сервер шлёт оба имени с одним
+    // числом. `totalPages` не убирать, пока живы сборки, которые его читают;
+    // `pages` — родное имя этого ответа, его не убирать тоже.
+    //
+    // 25 уведомлений при странице 20 — две страницы; запрос — ровно тот, что
+    // шлёт приложение (`page`, `limit=20`).
+    await query(`
+      INSERT INTO notifications (user_id, type, title, message, created_at)
+      SELECT $1, 'booking_received', 'Новая бронь', 'Новая бронь на «Васильки»',
+             NOW() - make_interval(mins => g)
+      FROM generate_series(1, 25) AS g
+    `, [partnerId]);
+
+    const feedPage = (page) => request(app)
+      .get('/api/v1/notifications')
+      .query({ page, limit: 20 })
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    const first = await feedPage(1);
+    expect(first.body.data.items).toHaveLength(20);
+    expect(first.body.data.pagination).toEqual({
+      page: 1, limit: 20, total: 25, pages: 2, totalPages: 2,
+    });
+
+    const second = await feedPage(2);
+    expect(second.body.data.items).toHaveLength(5);
+    expect(second.body.data.pagination).toEqual({
+      page: 2, limit: 20, total: 25, pages: 2, totalPages: 2,
+    });
   });
 });
