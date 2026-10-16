@@ -86,6 +86,7 @@ export const getUserNotifications = async (userId, filters = {}) => {
   }
 
   const { items, total } = await NotificationModel.getByUserId(userId, options);
+  const pages = Math.ceil(total / limit);
 
   return {
     items,
@@ -93,7 +94,14 @@ export const getUserNotifications = async (userId, filters = {}) => {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages,
+      // The same number under the name the app reads. Every mobile build
+      // since the feed appeared (March 2026) decides whether to load the next
+      // page by `totalPages` (notification_provider.dart) and, without it,
+      // stopped after the first 20. Both names stay: `pages` is this
+      // response's own, `totalPages` is what the builds already on phones
+      // read (guard: tests/integration/mobile-wire-contract.test.js).
+      totalPages: pages,
     },
   };
 };

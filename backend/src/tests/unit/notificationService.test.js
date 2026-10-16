@@ -197,7 +197,7 @@ describe('notificationService', () => {
 
       expect(result).toEqual({
         items: modelResult.items,
-        pagination: { page: 1, limit: 20, total: 1, pages: 1 },
+        pagination: { page: 1, limit: 20, total: 1, pages: 1, totalPages: 1 },
       });
       expect(NotificationModel.getByUserId).toHaveBeenCalledWith(userId, {
         limit: 20,
@@ -219,6 +219,7 @@ describe('notificationService', () => {
         limit: 10,
         total: 50,
         pages: 5,
+        totalPages: 5,
       });
     });
 
@@ -250,6 +251,9 @@ describe('notificationService', () => {
       const result = await getUserNotifications(userId, { page: 1, limit: 10 });
 
       expect(result.pagination.pages).toBe(3);
+      // The mobile app reads the count under this name (every build since
+      // March 2026) — a third page it is not told about is never loaded.
+      expect(result.pagination.totalPages).toBe(3);
     });
 
     test('should return 0 pages for empty results', async () => {
@@ -258,6 +262,7 @@ describe('notificationService', () => {
       const result = await getUserNotifications(userId);
 
       expect(result.pagination.pages).toBe(0);
+      expect(result.pagination.totalPages).toBe(0);
     });
   });
 
