@@ -194,7 +194,10 @@ describe('NUL в теле — на любой глубине, в ключах т
     expect(error).toBeInstanceOf(AppError);
     expect(error.statusCode).toBe(400);
     expect(error.code).toBe('INVALID_FORMAT');
-    expect(error.message).toBe('Request body contains a NUL character (U+0000)');
+    // Текст тела — для человека: приложение показывает текст отказа 400 как
+    // есть (акции, загрузка в мастере, правка карточки, вход; 16.10.2026) —
+    // поэтому «отправить», а не «сохранить»; у адреса — английский.
+    expect(error.message).toBe('В тексте есть невидимый символ, который нельзя отправить. Наберите текст заново и попробуйте ещё раз.');
   });
 
   test('все прочие коды ниже U+0100 и все типы JSON — пропускает', () => {

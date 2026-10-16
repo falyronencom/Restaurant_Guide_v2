@@ -23,7 +23,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { AppError, validate } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
 import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
@@ -67,7 +67,7 @@ const fileFilter = (req, file, cb) => {
  *
  * 60MB ceiling covers PDF menu uploads; images capped to 10MB in request handler.
  */
-const upload = multer({
+const upload = createUpload({
   storage,
   fileFilter,
   limits: {
@@ -277,14 +277,16 @@ router.post(
 
       logger.error('Error uploading temporary media', {
         error: error.message,
+        code: error.code,
         stack: error.stack,
         userId: req.user?.userId,
       });
 
       // Past the checks above a failure is the cloud's or ours, never the
-      // file's: the partner reads one sentence, the inner text stays in the
-      // log just written. The code stays what the error handler gave before.
-      return next(new AppError(UPLOAD_REFUSALS.uploadFailed, 500, error.code || 'INTERNAL_ERROR'));
+      // file's: the partner reads one sentence, the inner text and code stay
+      // in the log just written. The code is what the error handler gives any
+      // inner error of a 5xx — not the caught error's own (a Node ERR_* code).
+      return next(new AppError(UPLOAD_REFUSALS.uploadFailed, 500, 'INTERNAL_ERROR'));
     }
   },
 );

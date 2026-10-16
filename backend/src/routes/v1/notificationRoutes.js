@@ -12,7 +12,9 @@ import express from 'express';
 import * as NotificationController from '../../controllers/notificationController.js';
 import * as DeviceTokenController from '../../controllers/deviceTokenController.js';
 import * as NotificationPreferencesController from '../../controllers/notificationPreferencesController.js';
+import * as NotificationValidation from '../../validators/notificationValidation.js';
 import { authenticate } from '../../middleware/auth.js';
+import { validate } from '../../middleware/errorHandler.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
@@ -42,6 +44,8 @@ router.get(
   '/',
   readLimiter,
   authenticate,
+  NotificationValidation.validateGetNotifications,
+  validate,
   NotificationController.getNotifications,
 );
 

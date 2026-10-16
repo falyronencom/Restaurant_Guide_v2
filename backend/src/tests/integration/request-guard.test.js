@@ -40,7 +40,7 @@ const PAGE_NOT_A_NUMBER = fieldRefusal('page', 'Page must be a number');
 const OFFSET_TOO_LARGE = fieldRefusal('offset', 'Offset must not exceed 1000000');
 const OFFSET_NOT_A_NUMBER = fieldRefusal('offset', 'Offset must be a number');
 const URL_NUL = nulRefusal('Request URL contains a NUL character (U+0000)');
-const BODY_NUL = nulRefusal('Request body contains a NUL character (U+0000)');
+const BODY_NUL = nulRefusal('В тексте есть невидимый символ, который нельзя отправить. Наберите текст заново и попробуйте ещё раз.');
 
 let users;
 let establishment;

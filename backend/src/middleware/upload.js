@@ -12,6 +12,8 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { bodyHasNul, bodyNulRefusal, textHasNul } from './requestGuard.js';
+import { discardTempUpload } from '../utils/tempUpload.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +61,51 @@ export const MULTIPART_LIMITS = Object.freeze({
   fieldNestingDepth: 0,
 });
 
+/**
+ * The only way the backend builds multer: the avatar below and the routes
+ * (establishment media, promotions, pre-registration temp media) take their
+ * storage, fileFilter and limits through here (unit/uploadNulGuard holds it).
+ *
+ * On top of the route's options it applies the NUL rule of requestGuard to
+ * what multer parses inside the route, after that guard, with the same
+ * refusal (400 INVALID_FORMAT):
+ * - a file name holding U+0000 is refused in the file filter, before anything
+ *   is written: every route names its temp file after the client's extension,
+ *   and a path holding NUL cannot be written (busboy decodes `%00` in an
+ *   RFC 5987 `filename*`). The route's own filter runs after this check,
+ *   unchanged;
+ * - a text field holding U+0000 is refused once the form is parsed; the file
+ *   already written is discarded first (no controller will see it). Before
+ *   this, a NUL in a promotion's title reached PostgreSQL (22021 → 500).
+ * A field name cannot carry NUL this far — busboy reads no `name*`, and a raw
+ * NUL inside a part's header makes it reject the whole form as malformed.
+ *
+ * @param {Object} options - multer options ({ storage, fileFilter, limits })
+ * @returns {{ single: (fieldName: string) => Function }} the routes take .single only
+ */
+export function createUpload({ fileFilter, ...options }) {
+  const upload = multer({
+    ...options,
+    fileFilter: (req, file, cb) => {
+      if (textHasNul(file.originalname)) return cb(bodyNulRefusal());
+      if (fileFilter) return fileFilter(req, file, cb);
+      return cb(null, true);
+    },
+  });
+
+  return {
+    single(fieldName) {
+      const parse = upload.single(fieldName);
+      return (req, res, next) => parse(req, res, (err) => {
+        if (err) return next(err);
+        if (!bodyHasNul(req.body)) return next();
+        // discardTempUpload never rejects
+        return discardTempUpload(req.file).then(() => next(bodyNulRefusal()));
+      });
+    },
+  };
+}
+
 // Allowed image MIME types
 const ALLOWED_IMAGE_TYPES = [
   'image/jpeg',
@@ -95,7 +142,7 @@ const imageFilter = (req, file, cb) => {
 /**
  * Avatar upload middleware — single file, max 5MB
  */
-export const uploadAvatar = multer({
+export const uploadAvatar = createUpload({
   storage: avatarStorage,
   fileFilter: imageFilter,
   limits: {

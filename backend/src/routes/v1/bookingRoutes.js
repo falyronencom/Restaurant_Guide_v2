@@ -20,7 +20,9 @@
 
 import express from 'express';
 import * as BookingController from '../../controllers/bookingController.js';
+import * as BookingValidation from '../../validators/bookingValidation.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
+import { validate } from '../../middleware/errorHandler.js';
 
 // ============================================================================
 // Partner booking routes
@@ -33,6 +35,8 @@ partnerBookingRouter.use(authorize(['partner']));
 
 partnerBookingRouter.get(
   '/:establishmentId',
+  BookingValidation.validateGetPartnerBookings,
+  validate,
   BookingController.getPartnerBookings,
 );
 

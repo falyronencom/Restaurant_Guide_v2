@@ -27,7 +27,7 @@ import * as MediaController from '../../controllers/mediaController.js';
 import * as MediaValidation from '../../validators/mediaValidation.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
 
 const router = express.Router({ mergeParams: true });
 
@@ -97,7 +97,7 @@ const fileFilter = (req, file, cb) => {
  * being rejected. This is an acceptable trade-off: image size validation is
  * cheap and centralizing the check in the service keeps the pipeline uniform.
  */
-const upload = multer({
+const upload = createUpload({
   storage,
   fileFilter,
   limits: {

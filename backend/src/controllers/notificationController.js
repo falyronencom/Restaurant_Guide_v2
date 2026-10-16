@@ -19,9 +19,11 @@ export const getNotifications = asyncHandler(async (req, res) => {
   const userId = req.user.userId;
   const { page, limit, is_read, category } = req.query;
 
+  // Both are integers in range here: the route's validateGetNotifications
+  // refuses the rest (a page ≥ 1, a page size of 1–50).
   const filters = {};
   if (page) filters.page = parseInt(page, 10);
-  if (limit) filters.limit = Math.min(parseInt(limit, 10), 50);
+  if (limit) filters.limit = parseInt(limit, 10);
 
   if (typeof is_read !== 'undefined') {
     filters.is_read = is_read === 'true';
