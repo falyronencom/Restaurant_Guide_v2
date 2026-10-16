@@ -13,8 +13,9 @@
  * Ожидания — литералы утверждённых формулировок; коды и статусы проверяются
  * тоже — их не меняли.
  *
- * 16.10.2026: картинка не того формата получала 500 «Сбой на сервере» — теперь
- * утверждённый отказ про форматы картинки.
+ * 16.10.2026: картинка не того формата и название не строкой (поле дважды в
+ * форме, число или объект в JSON) получали 500 «Сбой на сервере» — теперь
+ * утверждённые отказы: про форматы картинки и «Укажите название акции.».
  */
 
 import { randomUUID } from 'crypto';
@@ -27,6 +28,7 @@ import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.j
 
 const NOT_FOUND = 'Акция не найдена — возможно, её уже удалили. Обновите список акций.';
 const NOT_OWNED = 'Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.';
+const TITLE_REQUIRED = 'Укажите название акции.';
 const IMAGE_TYPE = 'Этот формат не подходит: картинка акции — JPG, PNG, WebP или HEIC.';
 
 let est;
@@ -160,6 +162,9 @@ const spyServerErrors = () => {
   return () => spy.mock.calls.filter(([message]) => message === 'Server error occurred');
 };
 
+const titleOf = async (promotionId) => (
+  await query('SELECT title FROM promotions WHERE id = $1', [promotionId])).rows[0].title;
+
 describe('Картинка не того формата — текст про форматы, 422 (до правки 500)', () => {
   // Как у медиа карточки и временных загрузок: фильтр маршрута отказывает
   // до записи файла; код INVALID_FILE_TYPE — как у отказа сервиса акций.
@@ -208,5 +213,104 @@ describe('Картинка не того формата — текст про ф
 
     expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('INVALID_FILE_TYPE');
+  });
+});
+
+describe('Название не строкой — тот же отказ, что у пустого (до правки 500)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const expectTitleRefused = (res, serverErrors) => {
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.message).toBe(TITLE_REQUIRED);
+    expect(serverErrors()).toEqual([]);
+  };
+
+  test('новая акция: поле названия дважды в форме', async () => {
+    const serverErrors = spyServerErrors();
+    const res = await request(app)
+      .post('/api/v1/partner/promotions')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .field('establishment_id', est.id)
+      .field('title', 'Первое')
+      .field('title', 'Второе');
+
+    expectTitleRefused(res, serverErrors);
+  });
+
+  test.each([
+    ['число', 5],
+    ['объект', { ru: 'Скидка' }],
+    ['массив', ['Скидка']],
+    ['пустой массив', []],
+  ])('новая акция, JSON: %s', async (_label, title) => {
+    const serverErrors = spyServerErrors();
+    const res = await request(app)
+      .post('/api/v1/partner/promotions')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ establishment_id: est.id, title });
+
+    expectTitleRefused(res, serverErrors);
+  });
+
+  test('правка: поле названия дважды в форме — название прежнее', async () => {
+    const serverErrors = spyServerErrors();
+    const id = await insertPromotion(est.id, 'Прежнее название');
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/promotions/${id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .field('title', 'Первое')
+      .field('title', 'Второе');
+
+    expectTitleRefused(res, serverErrors);
+    expect(await titleOf(id)).toBe('Прежнее название');
+  });
+
+  test.each([
+    ['null', null],
+    ['число', 5],
+    ['объект', { ru: 'Скидка' }],
+    // Строка из пробелов не «не строка», но то же правило, что при создании:
+    // до правки она сохранялась пустым названием (200).
+    ['одни пробелы', '   '],
+  ])('правка, JSON: %s — название прежнее', async (_label, title) => {
+    const serverErrors = spyServerErrors();
+    const id = await insertPromotion(est.id, 'Прежнее название');
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/promotions/${id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title });
+
+    expectTitleRefused(res, serverErrors);
+    expect(await titleOf(id)).toBe('Прежнее название');
+  });
+
+  test('правка без названия — проходит, название прежнее', async () => {
+    const id = await insertPromotion(est.id, 'Прежнее название');
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/promotions/${id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ description: 'Новое описание' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.title).toBe('Прежнее название');
+    expect(res.body.data.description).toBe('Новое описание');
+  });
+
+  test('правка с названием — пробелы по краям убраны', async () => {
+    const id = await insertPromotion(est.id, 'Прежнее название');
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/promotions/${id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: '  Новое название  ' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.title).toBe('Новое название');
   });
 });

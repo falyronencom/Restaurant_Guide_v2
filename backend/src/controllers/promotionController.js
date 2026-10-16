@@ -13,6 +13,26 @@ import { discardTempUpload } from '../utils/tempUpload.js';
 import logger from '../utils/logger.js';
 
 /**
+ * A title the partner can read on the card: a string with something besides
+ * spaces. Anything else gets the refusal of an empty title, on create and
+ * update alike: a title field sent twice in the form arrives as an array, a
+ * JSON body can carry a number, an object or null. Until 16.10.2026 an array,
+ * a number or an object — and null on update — reached `.trim()` and came
+ * back as 500, and an update with spaces only saved an empty title.
+ *
+ * @param {*} value - req.body.title
+ * @returns {boolean}
+ */
+const isTitle = (value) => typeof value === 'string' && value.trim() !== '';
+
+/** 400 VALIDATION_ERROR «Укажите название акции.» */
+const refuseTitle = (res) => res.status(400).json({
+  success: false,
+  message: PROMOTION_REFUSALS.titleRequired,
+  error: { code: 'VALIDATION_ERROR' },
+});
+
+/**
  * POST /api/v1/partner/promotions
  * Create a new promotion (multipart/form-data for optional image).
  */
@@ -34,13 +54,7 @@ export const createPromotion = asyncHandler(async (req, res) => {
       });
     }
 
-    if (!title || !title.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: PROMOTION_REFUSALS.titleRequired,
-        error: { code: 'VALIDATION_ERROR' },
-      });
-    }
+    if (!isTitle(title)) return refuseTitle(res);
 
     promotion = await PromotionService.createPromotion(
       partnerId,
@@ -94,6 +108,9 @@ export const updatePromotion = asyncHandler(async (req, res) => {
   // the finally on every outcome, before the 200 leaves.
   let promotion;
   try {
+    // Absent means «leave as is»; present, it follows the create rule.
+    if (title !== undefined && !isTitle(title)) return refuseTitle(res);
+
     const updateData = {};
     if (title !== undefined) updateData.title = title.trim();
     if (description !== undefined) updateData.description = description;
