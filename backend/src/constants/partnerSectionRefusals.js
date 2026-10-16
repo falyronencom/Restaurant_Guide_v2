@@ -68,8 +68,10 @@ export const PROMOTION_REFUSALS = Object.freeze({
     `Одновременно может действовать не больше ${max} акций. Удалите одну из текущих, чтобы добавить новую.`,
   // Missing, or of another partner's establishment — one text for both.
   promotionNotFound: 'Акция не найдена — возможно, её уже удалили. Обновите список акций.',
-  // The route's upload filter refuses the same types and sizes first; these
-  // two answer only if the filter and the service ever disagree.
+  // Sent by the route's upload filter (routes/v1/promotionRoutes.js, from
+  // 16.10.2026) and by the service's own check; the route refuses an oversized
+  // file first with multer's limit. The service's two checks answer only if
+  // the route and the service ever disagree.
   invalidImageType: 'Этот формат не подходит: картинка акции — JPG, PNG, WebP или HEIC.',
   imageTooLarge: 'Картинка больше 10 МБ. Выберите фото поменьше.',
   establishmentRequired: 'Не выбрано заведение.',

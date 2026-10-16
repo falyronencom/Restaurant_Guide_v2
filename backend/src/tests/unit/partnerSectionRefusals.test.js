@@ -219,7 +219,7 @@ describe('Отказы партнёру вне карточки: исходни�
     expect(found.filter(cyrillicLiteral).length).toBeLessThanOrEqual(13);
   });
 
-  it('акции (promotionService.js, promotionController.js): каждый отказ — из PROMOTION_REFUSALS', () => {
+  it('акции (promotionService.js, promotionController.js, promotionRoutes.js): каждый отказ — из PROMOTION_REFUSALS', () => {
     const service = appErrorTexts(source('services/promotionService.js'));
     // Сторож разбора: отказы нашлись (11 на 13.10.2026).
     expect(service.length).toBeGreaterThanOrEqual(11);
@@ -230,5 +230,15 @@ describe('Отказы партнёру вне карточки: исходни�
     // Ответы с текстом нашлись (2 отказа на 13.10.2026).
     expect(controller.length).toBeGreaterThanOrEqual(2);
     expect(notFrom('PROMOTION_REFUSALS', controller)).toEqual([]);
+
+    // Фильтр картинки в маршруте: до 16.10.2026 он отказывал английской
+    // строкой, которую партнёр не видел вовсе — наружу уходило 500.
+    const routes = source('routes/v1/promotionRoutes.js');
+    expect(unreadMessageShapes(routes)).toEqual([]);
+    expect(notFrom('PROMOTION_REFUSALS', messageTexts(routes))).toEqual([]);
+    const routeRefusals = appErrorTexts(routes);
+    // Отказ фильтра нашёлся (1 на 16.10.2026).
+    expect(routeRefusals.length).toBeGreaterThanOrEqual(1);
+    expect(notFrom('PROMOTION_REFUSALS', routeRefusals)).toEqual([]);
   });
 });
