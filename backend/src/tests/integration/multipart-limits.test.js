@@ -19,6 +19,11 @@
  *
  * Сетевые вызовы SDK облака подменены: без лимитов запрос дошёл бы до загрузки
  * в облако, и тест падал бы на сети, а не на отсутствии лимита.
+ *
+ * Здесь же — форма, которую разборщик (busboy) не прочёл целиком: до правки
+ * 16.10.2026 каждый загрузчик отвечал на неё 500 и писал в журнал «Server
+ * error occurred»; теперь — отказ 400 через errorHandler. Формы отказа по
+ * одной — в unit/uploadNulGuard.test.js.
  */
 
 import fs from 'fs';
@@ -26,11 +31,13 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { v2 as cloudinarySdk } from 'cloudinary';
 import app from '../../server.js';
+import logger from '../../utils/logger.js';
 import { TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
 import { clearAllData } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 
 const JPEG = { filename: 'photo.jpg', contentType: 'image/jpeg' };
+const UNREADABLE_FORM = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
 
 let upload;
 let seq = 0;
@@ -205,6 +212,73 @@ describe('временные загрузки: вложенные имена и 
     expect(response.body.message).toBe('Too many parts');
     expect(upload).not.toHaveBeenCalled();
     await waitUntil(() => newEntriesSince(before).length === 0);
+    expect(newEntriesSince(before)).toEqual([]);
+  });
+});
+
+describe('форма оборвана посреди файла — 400 на каждом загрузчике, файл убран (до правки 500)', () => {
+  // Тело кончается по своей длине раньше закрывающей границы — форма обрезана;
+  // busboy: «Unexpected end of form». Файл к этому времени уже пишется на диск.
+  // (Обрыв самой связи multer называет «Request aborted» — он остаётся сбоем,
+  // см. middleware/upload.js.)
+  const truncatedForm = (fields, fileField) => {
+    const boundary = 'truncatedBoundary5c1d';
+    const parts = Object.entries(fields).map(([name, value]) => (
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+    parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${fileField}"; filename="photo.jpg"\r\n`
+      + `Content-Type: image/jpeg\r\n\r\n${'A'.repeat(4096)}`);
+    return { contentType: `multipart/form-data; boundary=${boundary}`, body: Buffer.from(parts.join('')) };
+  };
+
+  /** Загрузчик: кто шлёт и куда — у каждого маршрута свой путь ошибки до errorHandler. */
+  const LOADERS = [
+    ['аватар', 'user', async () => ({
+      method: 'post', path: '/api/v1/auth/avatar', fileField: 'avatar', fields: {},
+    })],
+    ['временные загрузки', 'user', async () => ({
+      method: 'post', path: '/api/v1/partner/media/upload', fileField: 'file', fields: { type: 'interior' },
+    })],
+    ['медиа карточки', 'partner', async (user) => {
+      const card = await createTestEstablishment(user.id);
+      return { method: 'post', path: `/api/v1/partner/establishments/${card.id}/media`, fileField: 'file', fields: { type: 'interior' } };
+    }],
+    ['акция: создание', 'partner', async (user) => {
+      const card = await createTestEstablishment(user.id);
+      return { method: 'post', path: '/api/v1/partner/promotions', fileField: 'image', fields: { establishment_id: card.id, title: 'Акция' } };
+    }],
+    ['акция: правка', 'partner', async (user, token) => {
+      const card = await createTestEstablishment(user.id);
+      const created = await request(app)
+        .post('/api/v1/partner/promotions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ establishment_id: card.id, title: 'Акция' })
+        .expect(201);
+      return { method: 'patch', path: `/api/v1/partner/promotions/${created.body.data.id}`, fileField: 'image', fields: { title: 'Правка' } };
+    }],
+  ];
+
+  test.each(LOADERS)('%s', async (_label, role, target) => {
+    const { user, token } = await newAccount(role);
+    const { method, path, fileField, fields } = await target(user, token);
+    const { contentType, body } = truncatedForm(fields, fileField);
+    const errorSpy = jest.spyOn(logger, 'error');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    const before = new Set(fs.readdirSync(TEMP_UPLOAD_DIR));
+
+    const response = await request(app)[method](path)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', contentType)
+      .send(body);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_FORMAT');
+    expect(response.body.message).toBe(UNREADABLE_FORM);
+    expect(upload).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls.filter(([message]) => message === 'Server error occurred')).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Client error occurred',
+      expect.objectContaining({ statusCode: 400, errorCode: 'INVALID_FORMAT' }),
+    );
     expect(newEntriesSince(before)).toEqual([]);
   });
 });
