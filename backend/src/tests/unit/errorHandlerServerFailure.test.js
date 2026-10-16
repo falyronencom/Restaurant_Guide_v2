@@ -88,6 +88,43 @@ describe('5xx: наружу — только фраза для человека'
   });
 });
 
+describe('5xx: наружу — общий код, подлинный — в журнале (16.10.2026)', () => {
+  // До правки код ответа брался из err.code как есть: у сырой ошибки базы это
+  // SQLSTATE (проба стенда — 22003, 2201W, 2201X, 22021 в теле 500), у ошибки
+  // диска или сети — код Node. Свой код несёт только AppError: его пишет
+  // сервер, и клиенты его знают.
+  test.each([
+    ['ошибка базы: значение вне диапазона', '22003', 'value "100000000000000000000" is out of range for type bigint'],
+    ['ошибка базы: отрицательный OFFSET', '2201X', 'OFFSET must not be negative'],
+    ['ошибка базы: NUL в тексте', '22021', 'invalid byte sequence for encoding "UTF8": 0x00'],
+    ['ошибка диска', 'ENOENT', 'ENOENT: no such file or directory'],
+  ])('%s → INTERNAL_ERROR, в журнале %s', (_label, innerCode, innerMessage) => {
+    const { status, body } = respond(Object.assign(new Error(innerMessage), { code: innerCode }));
+
+    expect(status).toBe(500);
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    const { stack: _devStack, ...visible } = body;
+    expect(JSON.stringify(visible)).not.toContain(innerCode);
+    expect(logError).toHaveBeenCalledWith(
+      'Server error occurred',
+      expect.objectContaining({ errorCode: innerCode, statusCode: 500, message: innerMessage }),
+    );
+  });
+
+  test('чужая ошибка со своим 5xx-статусом — тоже общий код', () => {
+    const { status, body } = respond(Object.assign(new Error('Bad gateway'), { statusCode: 502, code: 'ERR_BAD_RESPONSE' }));
+
+    expect(status).toBe(502);
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+  });
+
+  test('AppError 5xx — свой код уходит как написан', () => {
+    const { body } = respond(new AppError('Не удалось загрузить файл. Попробуйте ещё раз через минуту.', 500, 'MEDIA_UPLOAD_FAILED'));
+
+    expect(body.error.code).toBe('MEDIA_UPLOAD_FAILED');
+  });
+});
+
 describe('4xx правка не трогает', () => {
   test('английский AppError 404 — как был', () => {
     const { status, body } = respond(new AppError('Promotion not found', 404, 'PROMOTION_NOT_FOUND'));
@@ -109,5 +146,6 @@ describe('4xx правка не трогает', () => {
 
     expect(status).toBe(400);
     expect(body.message).toBe('Too many fields');
+    expect(body.error.code).toBe('LIMIT_FIELD_COUNT');
   });
 });

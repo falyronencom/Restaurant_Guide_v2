@@ -137,6 +137,15 @@ export const errorHandler = (err, req, res, _next) => {
     message = SERVER_FAILURE_MESSAGE;
   }
 
+  // The same for the code: an AppError's code is the server's own and the
+  // clients know it; any other error's code is the database's SQLSTATE
+  // (22003, 2201X, 22021… — every one outside the translations above) or a
+  // Node or library code. It goes out as INTERNAL_ERROR; the log above holds
+  // the original (16.10.2026).
+  if (statusCode >= 500 && !err.isOperational) {
+    errorCode = 'INTERNAL_ERROR';
+  }
+
   // In production, never expose internal error details or stack traces
   const isProduction = process.env.NODE_ENV === 'production';
   const sanitizedResponse = {

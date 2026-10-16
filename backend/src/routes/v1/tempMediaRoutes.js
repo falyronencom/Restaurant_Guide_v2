@@ -277,14 +277,16 @@ router.post(
 
       logger.error('Error uploading temporary media', {
         error: error.message,
+        code: error.code,
         stack: error.stack,
         userId: req.user?.userId,
       });
 
       // Past the checks above a failure is the cloud's or ours, never the
-      // file's: the partner reads one sentence, the inner text stays in the
-      // log just written. The code stays what the error handler gave before.
-      return next(new AppError(UPLOAD_REFUSALS.uploadFailed, 500, error.code || 'INTERNAL_ERROR'));
+      // file's: the partner reads one sentence, the inner text and code stay
+      // in the log just written. The code is what the error handler gives any
+      // inner error of a 5xx — not the caught error's own (a Node ERR_* code).
+      return next(new AppError(UPLOAD_REFUSALS.uploadFailed, 500, 'INTERNAL_ERROR'));
     }
   },
 );
