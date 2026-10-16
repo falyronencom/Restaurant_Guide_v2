@@ -15,8 +15,9 @@
  * Owners today: the media and promotion controllers (`finally` around the
  * service call), `validate` in middleware/errorHandler.js (a request rejected
  * by express-validator has already been written to disk by multer and never
- * reaches a controller), tempMediaRoutes and authController.uploadAvatar
- * (their own unlink calls, predating this helper).
+ * reaches a controller), createUpload in middleware/upload.js (a form refused
+ * for a NUL in a text field, after multer wrote the file), tempMediaRoutes and
+ * authController.uploadAvatar (their own unlink calls, predating this helper).
  */
 
 import fs from 'fs';

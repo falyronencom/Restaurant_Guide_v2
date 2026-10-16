@@ -27,8 +27,9 @@
  *
  * A refusal goes through errorHandler as a 4xx: a warning without a stack.
  *
- * Not covered: multipart fields. multer parses them inside the route, after
- * this guard — every multipart route sits behind authenticate.
+ * Multipart forms are parsed by multer inside the route, after this guard:
+ * createUpload (middleware/upload.js) applies the same NUL rule there — to
+ * the text fields and to the file name.
  */
 
 import { AppError } from './errorHandler.js';
@@ -51,6 +52,29 @@ export const MAX_PAGE = 10_000;
 export const MAX_OFFSET = 1_000_000;
 
 const NUL = String.fromCharCode(0);
+
+/**
+ * The refusal of U+0000 in a request body — JSON, a urlencoded form, or a
+ * multipart form (createUpload). In Russian: the app shows a 400's text as is
+ * on the promotion form, the wizard upload, the card edit and sign-in, so a
+ * person who pasted text with an invisible NUL reads this sentence
+ * (16.10.2026; on a form that saved, they read «Сбой на сервере…» before).
+ * «Отправить», not «сохранить»: sign-in and search save nothing. The URL's
+ * refusal stays English: no screen shows it.
+ */
+export const BODY_NUL_MESSAGE =
+  'В тексте есть невидимый символ, который нельзя отправить. Наберите текст заново и попробуйте ещё раз.';
+
+/** @returns {AppError} 400 INVALID_FORMAT with BODY_NUL_MESSAGE */
+export const bodyNulRefusal = () => new AppError(BODY_NUL_MESSAGE, 400, 'INVALID_FORMAT');
+
+/**
+ * @param {*} value
+ * @returns {boolean} true for a string holding U+0000
+ */
+export function textHasNul(value) {
+  return typeof value === 'string' && value.includes(NUL);
+}
 
 /**
  * `%00` is the only way U+0000 gets into a URL: a raw NUL byte does not get
@@ -152,7 +176,7 @@ export const requestGuard = (req, res, next) => {
     return next(new AppError('Request URL contains a NUL character (U+0000)', 400, 'INVALID_FORMAT'));
   }
   if (bodyHasNul(req.body)) {
-    return next(new AppError('Request body contains a NUL character (U+0000)', 400, 'INVALID_FORMAT'));
+    return next(bodyNulRefusal());
   }
 
   for (const source of [req.query, req.body]) {

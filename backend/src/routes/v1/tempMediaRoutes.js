@@ -23,7 +23,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { AppError, validate } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
 import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
@@ -67,7 +67,7 @@ const fileFilter = (req, file, cb) => {
  *
  * 60MB ceiling covers PDF menu uploads; images capped to 10MB in request handler.
  */
-const upload = multer({
+const upload = createUpload({
   storage,
   fileFilter,
   limits: {
