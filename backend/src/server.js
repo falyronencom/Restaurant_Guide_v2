@@ -7,7 +7,7 @@ import logger from './utils/logger.js';
 import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
-import { rateLimiter } from './middleware/rateLimiter.js';
+import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requestGuard } from './middleware/requestGuard.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
@@ -123,8 +123,10 @@ app.use((req, res, next) => {
 });
 
 /**
- * Global rate limiting middleware.
- * ...existing code...
+ * Global rate limiting middleware — ahead of every route, and so of every
+ * route's authenticate: it verifies the access token itself to count a
+ * signed-in request against its account, anything else against its address
+ * (middleware/rateLimiter.js).
  */
 app.use(rateLimiter);
 
@@ -221,6 +223,18 @@ const startServer = async () => {
     });
     if (refreshReuseGrace.warning) {
       logger.warn(`Refresh reuse grace window: ${refreshReuseGrace.warning}`);
+    }
+
+    // The global limiter's numbers as read from RATE_LIMIT_* (middleware/
+    // rateLimiter.js). Said at startup because the signed-in tier first counts
+    // from 16.10.2026: a value nobody looked at while it had no effect shows
+    // here, before it refuses anyone.
+    logger.info('Rate limiter tiers resolved', {
+      signedInPerAccount: globalRateLimitTiers.tiers.user,
+      anonymousPerAddress: globalRateLimitTiers.tiers.ip,
+    });
+    for (const warning of globalRateLimitTiers.warnings) {
+      logger.warn(`Rate limiter: ${warning}`);
     }
 
     // Test database connection

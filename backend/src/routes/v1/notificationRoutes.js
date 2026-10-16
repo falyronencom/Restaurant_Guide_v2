@@ -19,7 +19,9 @@ import { createRateLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
 
-// Rate limiters
+// Rate limiters. Each stands after authenticate, so it counts the signed-in
+// account (req.user); placed before it, it counted every request by address and
+// people behind one address shared one budget (16.10.2026).
 const readLimiter = createRateLimiter({
   limit: 100,
   windowSeconds: 60,
@@ -42,8 +44,8 @@ const writeLimiter = createRateLimiter({
  */
 router.get(
   '/',
-  readLimiter,
   authenticate,
+  readLimiter,
   NotificationValidation.validateGetNotifications,
   validate,
   NotificationController.getNotifications,
@@ -55,8 +57,8 @@ router.get(
  */
 router.get(
   '/unread-count',
-  readLimiter,
   authenticate,
+  readLimiter,
   NotificationController.getUnreadCount,
 );
 
@@ -66,8 +68,8 @@ router.get(
  */
 router.get(
   '/preferences',
-  readLimiter,
   authenticate,
+  readLimiter,
   NotificationPreferencesController.getPreferences,
 );
 
@@ -77,8 +79,8 @@ router.get(
  */
 router.put(
   '/read-all',
-  writeLimiter,
   authenticate,
+  writeLimiter,
   NotificationController.markAllAsRead,
 );
 
@@ -88,8 +90,8 @@ router.put(
  */
 router.put(
   '/device-token',
-  writeLimiter,
   authenticate,
+  writeLimiter,
   DeviceTokenController.registerToken,
 );
 
@@ -99,8 +101,8 @@ router.put(
  */
 router.put(
   '/preferences',
-  writeLimiter,
   authenticate,
+  writeLimiter,
   NotificationPreferencesController.updatePreferences,
 );
 
@@ -110,8 +112,8 @@ router.put(
  */
 router.delete(
   '/device-token',
-  writeLimiter,
   authenticate,
+  writeLimiter,
   DeviceTokenController.removeToken,
 );
 
@@ -125,8 +127,8 @@ router.delete(
  */
 router.put(
   '/:id/read',
-  writeLimiter,
   authenticate,
+  writeLimiter,
   NotificationController.markAsRead,
 );
 

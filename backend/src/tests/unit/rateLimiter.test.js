@@ -12,7 +12,14 @@ jest.unstable_mockModule('../../config/redis.js', () => ({
   default: {},
 }));
 
-const { createRateLimiter, rateLimiter } = await import('../../middleware/rateLimiter.js');
+const {
+  createRateLimiter,
+  createGlobalRateLimiter,
+  rateLimiter,
+  resolveRateLimitTiers,
+} = await import('../../middleware/rateLimiter.js');
+const { generateAccessToken } = await import('../../utils/jwt.js');
+const { default: jwt } = await import('jsonwebtoken');
 
 // The app shows a 429's message as is (decision of the Coordinator,
 // 15.10.2026): one Russian text for both limiters, a literal here.
@@ -79,16 +86,23 @@ describe('rateLimiter middleware', () => {
   });
 });
 
+/** A request as a signed-in client sends it: a genuine access token in the header. */
+const signedIn = (userId) => ({
+  headers: {
+    authorization: `Bearer ${generateAccessToken({ userId, email: `${userId}@test.com`, role: 'user' })}`,
+  },
+});
+
 describe('global rateLimiter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  // server.js mounts it before any route's authenticate, so in production
-  // req.user is never set and only the IP branch runs; both are held here.
+  // server.js mounts it before any route's authenticate, so req.user is never
+  // set there: a signed-in request is told by its token.
   test.each([
     ['an anonymous request, keyed by IP', { ip: '9.9.9.9' }, 'ratelimit:ip:9.9.9.9:', '1 hour'],
-    ['a signed-in request, keyed by account', { ip: '9.9.9.9', user: { userId: 'u-1' } }, 'ratelimit:user:u-1:', '1 minute'],
+    ['a signed-in request, keyed by account', { ip: '9.9.9.9', ...signedIn('u-1') }, 'ratelimit:user:u-1:', '1 minute'],
   ])('over the limit: %s — 429 with the Russian text, the same code', async (_label, who, keyPrefix, window) => {
     incrementWithExpiry.mockResolvedValueOnce(1000000);
     getTTL.mockResolvedValueOnce(30);
@@ -113,5 +127,157 @@ describe('global rateLimiter', () => {
       }),
     );
   });
+
+  test.each([
+    ['without an account id', {}],
+    ['with an empty account id', { userId: '' }],
+  ])('a genuine token %s is counted by address', async (_label, account) => {
+    const token = jwt.sign({ ...account, email: 'x@test.com', role: 'user', type: 'access' }, process.env.JWT_SECRET, {
+      issuer: 'restaurant-guide-belarus',
+      audience: 'restaurant-guide-api',
+      expiresIn: '4h',
+    });
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    getTTL.mockResolvedValueOnce(30);
+
+    const req = { ip: '9.9.9.9', headers: { authorization: `Bearer ${token}` }, method: 'GET', path: '/api/v1/auth/me' };
+    await rateLimiter(req, buildResponse(), jest.fn());
+
+    expect(incrementWithExpiry.mock.calls[0][0].startsWith('ratelimit:ip:9.9.9.9:')).toBe(true);
+  });
 });
 
+describe('global limiter: the window decides the bucket', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * One request at the moment `iso`: the key it was counted under and the
+   * expiry its counter got. `who` is called once the clock is set, so a token
+   * is issued at that moment, whatever the real clock says.
+   */
+  const countAt = async (limiter, iso, who) => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(iso));
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    getTTL.mockResolvedValueOnce(1);
+    const before = incrementWithExpiry.mock.calls.length;
+
+    await limiter({ ip: '9.9.9.9', method: 'GET', path: '/api/v1/auth/me', ...who() }, buildResponse(), jest.fn());
+
+    const [key, expirySeconds] = incrementWithExpiry.mock.calls[before];
+    return { key, expirySeconds };
+  };
+
+  // Buckets are windows laid end to end from the epoch: a bucket's first moment,
+  // its last, and the first of the next. The counter of a bucket expires when
+  // the bucket ends, whenever the bucket's first request came.
+  test.each([
+    ['signed in, 60 s', 'user', 60, 'ratelimit:user:u-1:',
+      ['2026-10-16T14:35:00.000Z', '2026-10-16T14:35:59.999Z', '2026-10-16T14:36:00.000Z'], [60, 1, 60]],
+    ['signed in, 120 s', 'user', 120, 'ratelimit:user:u-1:',
+      ['2026-10-16T14:34:00.000Z', '2026-10-16T14:35:59.400Z', '2026-10-16T14:36:00.000Z'], [120, 1, 120]],
+    ['by address, 3600 s', 'ip', 3600, 'ratelimit:ip:9.9.9.9:',
+      ['2026-10-16T14:00:00.000Z', '2026-10-16T14:59:59.999Z', '2026-10-16T15:00:00.000Z'], [3600, 1, 3600]],
+    ['by address, 7200 s', 'ip', 7200, 'ratelimit:ip:9.9.9.9:',
+      ['2026-10-16T14:00:00.000Z', '2026-10-16T15:59:59.500Z', '2026-10-16T16:00:00.000Z'], [7200, 1, 7200]],
+  ])('%s: one counter from the first to the last moment of a bucket, a new one after; expiry at the bucket end', async (
+    _label, tier, windowSeconds, keyPrefix, [first, last, next], expiries,
+  ) => {
+    const limiter = createGlobalRateLimiter({
+      user: { limit: 100, windowSeconds: tier === 'user' ? windowSeconds : 60 },
+      ip: { limit: 300, windowSeconds: tier === 'ip' ? windowSeconds : 3600 },
+    });
+    const who = tier === 'user' ? () => signedIn('u-1') : () => ({});
+
+    const counted = [
+      await countAt(limiter, first, who),
+      await countAt(limiter, last, who),
+      await countAt(limiter, next, who),
+    ];
+
+    expect(counted.every(({ key }) => key.startsWith(keyPrefix))).toBe(true);
+    expect(counted[1].key).toBe(counted[0].key);
+    expect(counted[2].key).not.toBe(counted[0].key);
+    expect(counted.map(({ expirySeconds }) => expirySeconds)).toEqual(expiries);
+  });
+
+  test.each([
+    [60, '1 minute'],
+    [3600, '1 hour'],
+    [120, '120 seconds'],
+  ])('a %i s window is named %p in the 429', async (windowSeconds, name) => {
+    const limiter = createGlobalRateLimiter({
+      user: { limit: 1, windowSeconds },
+      ip: { limit: 1, windowSeconds },
+    });
+    incrementWithExpiry.mockResolvedValueOnce(2);
+    getTTL.mockResolvedValueOnce(5);
+    const res = buildResponse();
+
+    await limiter({ ip: '9.9.9.9', method: 'GET', path: '/api/v1/auth/me' }, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json.mock.calls[0][0].error.details.window).toBe(name);
+  });
+});
+
+describe('resolveRateLimitTiers', () => {
+  const DEFAULTS = { user: { limit: 100, windowSeconds: 60 }, ip: { limit: 300, windowSeconds: 3600 } };
+
+  test('unset or empty: 100 a minute per account, 300 an hour per address', () => {
+    expect(resolveRateLimitTiers({})).toEqual({ tiers: DEFAULTS, warnings: [] });
+    expect(resolveRateLimitTiers({
+      RATE_LIMIT_AUTHENTICATED: '',
+      RATE_LIMIT_WINDOW_AUTHENTICATED: '',
+      RATE_LIMIT_UNAUTHENTICATED: '',
+      RATE_LIMIT_WINDOW_UNAUTHENTICATED: '',
+    })).toEqual({ tiers: DEFAULTS, warnings: [] });
+  });
+
+  test('whole numbers above zero are taken as given; a window up to a day, a limit without a ceiling', () => {
+    expect(resolveRateLimitTiers({
+      RATE_LIMIT_AUTHENTICATED: ' 250 ',
+      RATE_LIMIT_WINDOW_AUTHENTICATED: '120',
+      RATE_LIMIT_UNAUTHENTICATED: '1000000',
+      RATE_LIMIT_WINDOW_UNAUTHENTICATED: '86400',
+    })).toEqual({
+      tiers: { user: { limit: 250, windowSeconds: 120 }, ip: { limit: 1000000, windowSeconds: 86400 } },
+      warnings: [],
+    });
+  });
+
+  // Read as before 16.10.2026 (the number a value starts with), so a value that
+  // worked keeps its meaning — production's anonymous limit included.
+  test('the number a value starts with is taken, and a warning names what was dropped', () => {
+    expect(resolveRateLimitTiers({
+      RATE_LIMIT_AUTHENTICATED: '1.5',
+      RATE_LIMIT_WINDOW_AUTHENTICATED: '60s',
+      RATE_LIMIT_UNAUTHENTICATED: '3000 # prod',
+    })).toEqual({
+      tiers: { user: { limit: 1, windowSeconds: 60 }, ip: { limit: 3000, windowSeconds: 3600 } },
+      warnings: [
+        'RATE_LIMIT_AUTHENTICATED="1.5" is read as 1',
+        'RATE_LIMIT_WINDOW_AUTHENTICATED="60s" is read as 60',
+        'RATE_LIMIT_UNAUTHENTICATED="3000 # prod" is read as 3000',
+      ],
+    });
+  });
+
+  test('anything else, or a window above a day: the default, and a warning naming the variable', () => {
+    expect(resolveRateLimitTiers({
+      RATE_LIMIT_AUTHENTICATED: '-5',
+      RATE_LIMIT_WINDOW_AUTHENTICATED: '0',
+      RATE_LIMIT_UNAUTHENTICATED: 'abc',
+      RATE_LIMIT_WINDOW_UNAUTHENTICATED: '3600000',
+    })).toEqual({
+      tiers: DEFAULTS,
+      warnings: [
+        'RATE_LIMIT_AUTHENTICATED="-5" is not a whole number above zero; 100 is used',
+        'RATE_LIMIT_WINDOW_AUTHENTICATED="0" is not a whole number above zero; 60 is used',
+        'RATE_LIMIT_UNAUTHENTICATED="abc" is not a whole number above zero; 300 is used',
+        'RATE_LIMIT_WINDOW_UNAUTHENTICATED="3600000" is above 86400; 3600 is used',
+      ],
+    });
+  });
+});
