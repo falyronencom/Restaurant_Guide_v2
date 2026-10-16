@@ -125,6 +125,33 @@ export const deriveSuccessorRefreshToken = (predecessorToken, successorId) => {
 };
 
 /**
+ * Decodes an access token that verifies — the check behind verifyAccessToken,
+ * without its warning.
+ *
+ * For a caller that asks of every request whose genuine token it carries: the
+ * global rate limiter (middleware/rateLimiter.js) runs before any route, so a
+ * client still sending an expired token would log a second warning per request;
+ * authenticate verifies the same token again and logs the refusal itself.
+ *
+ * @param {string} token - JWT access token to verify
+ * @returns {Object} Decoded token payload with userId, email, role
+ * @throws {Error} If token is invalid, expired, malformed or not an access token
+ */
+export const decodeAccessToken = (token) => {
+  const decoded = jwt.verify(token, JWT_SECRET, {
+    issuer: 'restaurant-guide-belarus',
+    audience: 'restaurant-guide-api',
+  });
+
+  // Ensure this is an access token, not a refresh token somehow misused
+  if (decoded.type !== 'access') {
+    throw new Error('Invalid token type');
+  }
+
+  return decoded;
+};
+
+/**
  * Verifies and decodes an access token.
  *
  * Signature, expiry, issuer, audience and type only — no database access. The
@@ -139,17 +166,7 @@ export const deriveSuccessorRefreshToken = (predecessorToken, successorId) => {
  */
 export const verifyAccessToken = (token) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      issuer: 'restaurant-guide-belarus',
-      audience: 'restaurant-guide-api',
-    });
-
-    // Ensure this is an access token, not a refresh token somehow misused
-    if (decoded.type !== 'access') {
-      throw new Error('Invalid token type');
-    }
-
-    return decoded;
+    return decodeAccessToken(token);
   } catch (error) {
     logger.warn('Access token verification failed', { error: error.message });
     throw error;
