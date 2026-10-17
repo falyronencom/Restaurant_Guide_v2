@@ -88,18 +88,25 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
                 }
 
                 if (provider.notifications.isEmpty) {
+                  // A failed load is not an empty feed: «Нет уведомлений»
+                  // here would tell the user there is nothing to see.
+                  if (provider.errorMessage != null) {
+                    return _buildErrorState(provider);
+                  }
                   return _buildEmptyState();
                 }
 
                 final groups = _groupNotifications(provider.notifications);
+                final showFooter =
+                    provider.hasMore || provider.errorMessage != null;
 
                 return RefreshIndicator(
                   onRefresh: () =>
                       provider.fetchNotifications(refresh: true),
                   child: ListView.builder(
                     controller: _scrollController,
-                    itemCount: _countGroupedItems(groups) +
-                        (provider.hasMore ? 1 : 0),
+                    itemCount:
+                        _countGroupedItems(groups) + (showFooter ? 1 : 0),
                     itemBuilder: (context, index) {
                       return _buildGroupedItem(
                           context, groups, index, provider);
@@ -207,6 +214,38 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     );
   }
 
+  Widget _buildErrorState(NotificationProvider provider) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 64,
+              color: AppTheme.gray300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              provider.errorMessage!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppTheme.gray500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: provider.retry,
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ============================================================================
   // Grouping Logic
   // ============================================================================
@@ -266,9 +305,27 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     int index,
     NotificationProvider provider,
   ) {
-    // Loading indicator at the bottom
+    // Footer: the failed load with a retry, or the loading indicator
     final totalGroupedItems = _countGroupedItems(groups);
     if (index >= totalGroupedItems) {
+      if (provider.errorMessage != null) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            children: [
+              Text(
+                provider.errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: AppTheme.gray700),
+              ),
+              TextButton(
+                onPressed: provider.retry,
+                child: const Text('Повторить'),
+              ),
+            ],
+          ),
+        );
+      }
       return const Padding(
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator()),
