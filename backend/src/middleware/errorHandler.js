@@ -164,6 +164,20 @@ export const errorHandler = (err, req, res, _next) => {
     sanitizedResponse.error.details = details;
   }
 
+  // A limit's refusal names the limits held and when they renew: `details` in
+  // the body, as the limiters' own 429 carry them, and Retry-After — the daily
+  // upload allowance (DailyUploadLimitError, services/uploadAllowance.js).
+  if (statusCode === 429 && err.isOperational) {
+    if (details) {
+      sanitizedResponse.error.details = details;
+    }
+    // The body carries the term as the thrower wrote it; the header only a
+    // whole number of seconds above zero (RFC 9110 delay-seconds).
+    if (Number.isInteger(err.retryAfter) && err.retryAfter > 0) {
+      res.set('Retry-After', String(err.retryAfter));
+    }
+  }
+
   // In development, include stack trace for debugging
   if (!isProduction && err.stack) {
     sanitizedResponse.stack = err.stack.split('\n');

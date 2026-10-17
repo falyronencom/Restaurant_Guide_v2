@@ -34,7 +34,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const { incrementWithExpiry, decrement } = await import('../../config/redis.js');
 const { default: pool } = await import('../../config/database.js');
 const { default: logger } = await import('../../utils/logger.js');
-const { reserveDailyUpload } = await import('../../services/uploadAllowance.js');
+const { reserveDailyUpload, sendWithinDailyAllowance, DailyUploadLimitError } = await import('../../services/uploadAllowance.js');
 
 const MB = 1024 * 1024;
 const USER = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
@@ -190,5 +190,60 @@ describe('возврат резерва', () => {
     await result.giveBack();
 
     expect(decrement.mock.calls).toEqual([[FILES_KEY]]);
+  });
+});
+
+describe('sendWithinDailyAllowance — общий путь всех загрузчиков в облако', () => {
+  const TEXT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
+  const upload = { userId: USER, bytes: 2048, message: TEXT };
+
+  test('предел исчерпан — DailyUploadLimitError: 429, код, текст вызывающего, подробности, срок; облако не зовётся', async () => {
+    countersAfter(101, 7 * MB);
+    seedHouse(false);
+    const send = jest.fn();
+
+    const refusal = await sendWithinDailyAllowance(upload, send).catch((error) => error);
+
+    expect(refusal).toBeInstanceOf(DailyUploadLimitError);
+    expect(refusal.statusCode).toBe(429);
+    expect(refusal.code).toBe('RATE_LIMIT_EXCEEDED');
+    expect(refusal.message).toBe(TEXT);
+    expect(refusal.isOperational).toBe(true);
+    expect(refusal.details).toEqual({
+      files_limit: 100,
+      bytes_limit: 300 * MB,
+      retry_after: 43200,
+      reset_at: '2026-10-17T21:00:00.000Z',
+    });
+    expect(refusal.retryAfter).toBe(43200);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test('облако приняло — результат как есть, резерв не возвращается', async () => {
+    countersAfter(5, 4096);
+    const stored = { public_id: 'establishments/x/interior/abc' };
+
+    await expect(sendWithinDailyAllowance(upload, async () => stored)).resolves.toBe(stored);
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test('облако отказало явно (ответ 400) — резерв возвращается, ошибка та же', async () => {
+    countersAfter(5, 4096);
+    const refused = Object.assign(new Error('Failed to upload image: Invalid image file'), { httpCode: 400 });
+
+    await expect(sendWithinDailyAllowance(upload, async () => { throw refused; })).rejects.toBe(refused);
+    expect(decrement.mock.calls).toEqual([[FILES_KEY], [BYTES_KEY, 2048]]);
+  });
+
+  test.each([
+    ['ответ 502', 502],
+    ['таймаут SDK (499)', 499],
+    ['обрыв соединения — кода нет', undefined],
+  ])('исход неизвестен (%s) — резерв остаётся, ошибка та же', async (_label, httpCode) => {
+    countersAfter(5, 4096);
+    const failed = Object.assign(new Error('Failed to upload image: …'), { httpCode });
+
+    await expect(sendWithinDailyAllowance(upload, async () => { throw failed; })).rejects.toBe(failed);
+    expect(decrement).not.toHaveBeenCalled();
   });
 });

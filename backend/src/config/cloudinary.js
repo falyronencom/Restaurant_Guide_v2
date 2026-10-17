@@ -145,7 +145,7 @@ const uploadFailureOf = (error) => {
  * was stored. A 5xx, the SDK's timeout (499) or a failed connection leave the
  * outcome unknown: the file may be stored all the same (review 17.10.2026).
  *
- * @param {Error} error - Thrown by uploadImage or uploadPdf (carries httpCode)
+ * @param {Error} error - Thrown by uploadImage, uploadPdf or uploadAvatar (carries httpCode)
  * @returns {boolean}
  */
 export const cloudRefusedUpload = (error) => {
@@ -814,11 +814,13 @@ export const uploadAvatar = async (filePath, userId) => {
       secure_url: uploadResult.secure_url,
     };
   } catch (error) {
+    const failure = uploadFailureOf(error);
     logger.error('Error uploading avatar to Cloudinary', {
-      error: error.message,
+      error: failure.message,
+      httpCode: failure.httpCode,
       userId,
     });
-    throw new Error(`Failed to upload avatar: ${error.message}`);
+    throw Object.assign(new Error(`Failed to upload avatar: ${failure.message}`), { httpCode: failure.httpCode });
   }
 };
 

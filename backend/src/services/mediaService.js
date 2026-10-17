@@ -17,6 +17,8 @@ import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -67,7 +69,9 @@ const MAX_PDFS_PER_ESTABLISHMENT = 2;
  * @param {string} metadata.caption - Optional caption
  * @param {boolean} metadata.is_primary - Whether to set as primary photo
  * @returns {Promise<Object>} Created media record with all URLs
- * @throws {AppError} If validation fails or business rules violated
+ * @throws {AppError} If validation fails or business rules violated; 429
+ *   RATE_LIMIT_EXCEEDED (DailyUploadLimitError) once the account's daily upload
+ *   allowance is spent (services/uploadAllowance.js)
  */
 export const uploadMedia = async (partnerId, establishmentId, file, metadata) => {
   const { type, caption, is_primary = false } = metadata;
@@ -142,7 +146,12 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         );
       }
 
-      const pdfUploadResult = await CloudinaryUtil.uploadPdf(file.path, establishmentId);
+      // The account's daily upload allowance, shared with every uploader
+      // (services/uploadAllowance.js): a spent one is a 429 AppError.
+      const pdfUploadResult = await sendWithinDailyAllowance(
+        { userId: partnerId, bytes: file.size, message: UPLOAD_REFUSALS.dailyLimit },
+        () => CloudinaryUtil.uploadPdf(file.path, establishmentId),
+      );
 
       const position = await MediaModel.getNextPosition(establishmentId, 'menu');
 
@@ -217,11 +226,10 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       );
     }
 
-    // Upload to Cloudinary
-    const uploadResult = await CloudinaryUtil.uploadImage(
-      file.path,
-      establishmentId,
-      type,
+    // Upload to Cloudinary, within the account's daily upload allowance
+    const uploadResult = await sendWithinDailyAllowance(
+      { userId: partnerId, bytes: file.size, message: UPLOAD_REFUSALS.dailyLimit },
+      () => CloudinaryUtil.uploadImage(file.path, establishmentId, type),
     );
 
     // Generate URLs for all three resolutions
