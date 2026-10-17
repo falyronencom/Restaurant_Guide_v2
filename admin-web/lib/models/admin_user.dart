@@ -46,7 +46,8 @@ enum AdminUserProtection {
   /// Служебная учётка платформы, владелец карточек каталога.
   serviceAccount,
 
-  /// Партнёр с карточками: его блокировка решает судьбу карточек.
+  /// Партнёр с карточкой в каталоге или на модерации: его блокировка решает
+  /// судьбу карточек. Черновик не защищает — его заводит любой пользователь.
   partnerWithEstablishments,
 }
 
@@ -65,7 +66,13 @@ class AdminUser {
 
   /// Из них скрытые. Просмотрщику не приходит (`null`).
   final int? hiddenReviewCount;
+
+  /// Все карточки партнёра, в любом статусе.
   final int establishmentCount;
+
+  /// Карточки в каталоге или на модерации (`active`, `pending`, `suspended`) —
+  /// они, а не черновики, закрывают кнопку блокировки (`adminUserService`).
+  final int liveEstablishmentCount;
 
   /// Только у ответа `/users/:id`.
   final AdminUserBlockAction? lastBlockAction;
@@ -85,6 +92,7 @@ class AdminUser {
     this.reviewCount = 0,
     this.hiddenReviewCount,
     this.establishmentCount = 0,
+    this.liveEstablishmentCount = 0,
     this.lastBlockAction,
     this.viewerRedacted = false,
   });
@@ -104,6 +112,11 @@ class AdminUser {
       reviewCount: json['review_count'] as int? ?? 0,
       hiddenReviewCount: json['hidden_review_count'] as int?,
       establishmentCount: json['establishment_count'] as int? ?? 0,
+      // Без поля — осторожно: считаем живыми все карточки, кнопки не будет,
+      // а сервер всё равно решает сам.
+      liveEstablishmentCount: json['live_establishment_count'] as int? ??
+          json['establishment_count'] as int? ??
+          0,
       lastBlockAction: last is Map<String, dynamic>
           ? AdminUserBlockAction.fromJson(last)
           : null,
@@ -123,7 +136,7 @@ class AdminUser {
   AdminUserProtection? get protection {
     if (isPanelRole(role)) return AdminUserProtection.panelAccount;
     if (isServiceAccount) return AdminUserProtection.serviceAccount;
-    if (establishmentCount > 0) {
+    if (liveEstablishmentCount > 0) {
       return AdminUserProtection.partnerWithEstablishments;
     }
     return null;

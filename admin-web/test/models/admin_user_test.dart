@@ -46,6 +46,7 @@ void main() {
           role: role,
           isServiceAccount: service,
           establishmentCount: cards,
+          liveEstablishmentCount: cards,
         );
 
     expect(user('viewer').protection, AdminUserProtection.panelAccount);
@@ -58,6 +59,31 @@ void main() {
     expect(user('partner').protection, isNull);
     expect(user('partner', cards: 1).canResetName, isTrue);
     expect(user('admin').canResetName, isFalse);
+  });
+
+  test('защищают карточки в каталоге или на модерации, а не черновики', () {
+    AdminUser parse(Map<String, dynamic> extra) => AdminUser.fromJson(
+        <String, dynamic>{'id': 'p', 'role': 'partner', ...extra});
+
+    expect(
+      parse(<String, dynamic>{
+        'establishment_count': 2,
+        'live_establishment_count': 0,
+      }).protection,
+      isNull,
+    );
+    expect(
+      parse(<String, dynamic>{
+        'establishment_count': 2,
+        'live_establishment_count': 1,
+      }).protection,
+      AdminUserProtection.partnerWithEstablishments,
+    );
+    // Поля нет (ответ старого сервера) — осторожно: кнопки нет.
+    expect(
+      parse(<String, dynamic>{'establishment_count': 2}).protection,
+      AdminUserProtection.partnerWithEstablishments,
+    );
   });
 
   test('отзыв в панели несёт id автора', () {

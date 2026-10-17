@@ -17,6 +17,9 @@
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 import app from '../../server.js';
+import * as AdminUserService from '../../services/adminUserService.js';
+import * as ReviewService from '../../services/reviewService.js';
+import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
@@ -52,6 +55,22 @@ const person = async ({ name = 'Иван Тестов', phone = null, role = 'us
 const reviewState = async (id) => (await query(
   'SELECT is_visible, is_deleted FROM reviews WHERE id = $1', [id],
 )).rows[0];
+
+/**
+ * Ждать, пока чей-то запрос встанет в очередь за блокировкой строки: так тест
+ * знает, что гонка разыграна, а не угадывает паузой.
+ */
+const waitForLockWaiter = async () => {
+  for (let attempt = 0; attempt < 250; attempt += 1) {
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if (rows[0].n > 0) return;
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+  }
+  throw new Error('никто не ждёт блокировки строки');
+};
 
 const journal = async (userId, action) => (await query(
   `SELECT user_id, old_data, new_data FROM audit_log
@@ -236,7 +255,10 @@ describe('POST /admin/users/:id/block и /unblock', () => {
     expect(asSeen.body.data).toMatchObject({
       name: null, hidden_review_count: null, review_count: 0,
     });
-    expect(asSeen.body.data.last_block_action.admin_name).toBeNull();
+    // Причина — свободный текст модератора о человеке: просмотрщику нет.
+    expect(asSeen.body.data.last_block_action).toMatchObject({
+      action: 'user_block', admin_name: null, reason: null,
+    });
   });
 
   test('разблокировка возвращает только скрытое блокировкой', async () => {
@@ -261,17 +283,105 @@ describe('POST /admin/users/:id/block и /unblock', () => {
     expect(rating).toEqual({ r: 3, review_count: 2 });
 
     const [entry] = await journal(target.id, 'user_unblock');
-    expect(entry.new_data).toEqual({ is_active: true, reason: 'извинился', restored_review_ids: [visibleA.id] });
+    expect(entry.new_data).toEqual({
+      is_active: true, reason: 'извинился', restore_reviews: true, restored_review_ids: [visibleA.id],
+    });
 
     await request(app).post('/api/v1/auth/login')
       .send({ email: target.email, password: PASSWORD }).expect(200);
   });
 
   test('вторая блокировка после разблокировки возвращает свой список, а не первый', async () => {
+    // Отзыв, написанный между разблокировкой и второй блокировкой, есть только
+    // во втором списке: прочитай разблокировка первый — он остался бы скрытым.
+    const fifth = (await createPartnerWithEstablishment('active')).establishment;
+    const newer = await createTestReview(target.id, fifth.id, { rating: 4 });
+
     await asAdmin('post', `/users/${target.id}/block`, { reason: 'снова' }).expect(200);
+    expect(await reviewState(newer.id)).toEqual({ is_visible: false, is_deleted: false });
+
     await asAdmin('post', `/users/${target.id}/unblock`, { reason: 'снова прощён' }).expect(200);
+    expect(await reviewState(newer.id)).toEqual({ is_visible: true, is_deleted: false });
     expect(await reviewState(visibleA.id)).toEqual({ is_visible: true, is_deleted: false });
     expect(await reviewState(visibleB.id)).toEqual({ is_visible: false, is_deleted: false });
+  });
+
+  test('разблокировка без возврата отзывов: они остаются скрытыми решением модератора', async () => {
+    const other = await person({ name: 'Без Возврата' });
+    const review = await createTestReview(other.id, establishment.id, { rating: 1 });
+    await asAdmin('post', `/users/${other.id}/block`, { reason: 'мат в отзыве' }).expect(200);
+
+    const bad = await asAdmin('post', `/users/${other.id}/unblock`, { reason: 'x', restore_reviews: 'нет' })
+      .expect(422);
+    expect(bad.body.message).toMatch(/^Не понятно, возвращать ли отзывы/);
+
+    const { body } = await asAdmin('post', `/users/${other.id}/unblock`, {
+      reason: 'человека простили, отзыв — нет',
+      restore_reviews: false,
+    }).expect(200);
+    expect(body.data).toMatchObject({ is_active: true, changed: true, restored_reviews: 0 });
+    expect(await reviewState(review.id)).toEqual({ is_visible: false, is_deleted: false });
+    const [entry] = await journal(other.id, 'user_unblock');
+    expect(entry.new_data).toMatchObject({ restore_reviews: false, restored_review_ids: [] });
+
+    // Следующая блокировка застаёт отзыв уже скрытым — и её разблокировка его не вернёт.
+    await asAdmin('post', `/users/${other.id}/block`, { reason: 'снова' }).expect(200);
+    await asAdmin('post', `/users/${other.id}/unblock`, { reason: 'снова' }).expect(200);
+    expect(await reviewState(review.id)).toEqual({ is_visible: false, is_deleted: false });
+  });
+
+  test('отзыв, отправленный в момент блокировки, не остаётся видимым', async () => {
+    const racer = await person({ name: 'Отзыв В Полёте' });
+    const holder = await getClient();
+    let outcome;
+    try {
+      // Блокировка держит строку человека, пока прячет его отзывы.
+      await holder.query('BEGIN');
+      await holder.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [racer.id]);
+      const creating = ReviewService.createReview({
+        user_id: racer.id,
+        establishment_id: establishment.id,
+        rating: 1,
+        content: 'Отзыв, отправленный ровно в момент блокировки',
+      }).then(() => 'создан', (error) => error);
+      await waitForLockWaiter();
+      await holder.query('UPDATE users SET is_active = FALSE WHERE id = $1', [racer.id]);
+      await holder.query('COMMIT');
+      outcome = await creating;
+    } finally {
+      holder.release();
+    }
+
+    expect(outcome).toMatchObject({ statusCode: 403, code: 'USER_INACTIVE' });
+    const left = await query('SELECT COUNT(*)::int AS n FROM reviews WHERE user_id = $1', [racer.id]);
+    expect(left.rows[0].n).toBe(0);
+  });
+
+  test('блокировка, ждавшая чужое действие над человеком, в журнале — после него', async () => {
+    const contested = await person({ name: 'Очередь Журнала' });
+    const holder = await getClient();
+    let blocking;
+    try {
+      // Строку первым взял другой администратор (разблокировка) и пишет свою
+      // запись, пока блокировка ждёт; блокировка начала транзакцию раньше.
+      await holder.query('BEGIN');
+      await holder.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [contested.id]);
+      blocking = AdminUserService.blockUser(contested.id, 'очередь', admin.user.id);
+      await waitForLockWaiter();
+      await holder.query(
+        `INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_data, created_at)
+         VALUES ($1, 'user_unblock', 'user', $2, '{"reason": "раньше"}', clock_timestamp())`,
+        [admin.user.id, contested.id],
+      );
+      await holder.query('COMMIT');
+    } finally {
+      holder.release();
+    }
+    await blocking;
+
+    const { body } = await asAdmin('get', `/users/${contested.id}`).expect(200);
+    expect(body.data.is_active).toBe(false);
+    expect(body.data.last_block_action).toMatchObject({ action: 'user_block', reason: 'очередь' });
   });
 
   test('аккаунт, выключенный скриптом оператора, включается без возврата отзывов', async () => {
@@ -295,8 +405,12 @@ describe('кого кнопка не блокирует', () => {
       await query('UPDATE users SET is_service_account = TRUE WHERE id = $1', [seedHouse.id]);
       return seedHouse.id;
     }, /^Это служебная учётка платформы/],
-    ['партнёра с карточкой', async () => (await createPartnerWithEstablishment('draft')).partner.user.id,
-      /^У этого партнёра есть карточки заведений/],
+    ['партнёра с карточкой в каталоге', async () => (await createPartnerWithEstablishment('active')).partner.user.id,
+      /^У этого партнёра есть карточки заведений в каталоге или на модерации/],
+    ['партнёра с карточкой на модерации', async () => (await createPartnerWithEstablishment('pending')).partner.user.id,
+      /^У этого партнёра есть карточки заведений в каталоге или на модерации/],
+    ['приостановленного партнёра', async () => (await createPartnerWithEstablishment('suspended')).partner.user.id,
+      /^У этого партнёра есть карточки заведений в каталоге или на модерации/],
   ])('%s — отказ 409 с понятным текстом', async (_, targetId, message) => {
     const id = await targetId();
     const { body } = await asAdmin('post', `/users/${id}/block`, { reason: 'проверка' }).expect(409);
@@ -311,6 +425,19 @@ describe('кого кнопка не блокирует', () => {
     expect((await query('SELECT is_active FROM users WHERE id = $1', [partner.id])).rows[0].is_active)
       .toBe(false);
   });
+
+  test.each(['draft', 'rejected', 'archived'])(
+    'карточка в статусе %s не защищает: черновик заводит любой пользователь',
+    async (status) => {
+      const { partner } = await createPartnerWithEstablishment(status);
+      const card = await asAdmin('get', `/users/${partner.user.id}`).expect(200);
+      expect(card.body.data).toMatchObject({ establishment_count: 1, live_establishment_count: 0 });
+
+      await asAdmin('post', `/users/${partner.user.id}/block`, { reason: 'мусорный черновик' }).expect(200);
+      expect((await query('SELECT is_active FROM users WHERE id = $1', [partner.user.id])).rows[0].is_active)
+        .toBe(false);
+    },
+  );
 });
 
 describe('POST /admin/users/:id/reset-name', () => {
@@ -346,6 +473,14 @@ describe('POST /admin/users/:id/reset-name', () => {
 
     const asViewerLog = await asViewer('get', '/audit-log?entity_type=user&per_page=100').expect(200);
     expect(JSON.stringify(asViewerLog.body)).not.toContain('Матерное Имя');
+    // Ни причин, ни списков отзывов у действий над людьми: просмотрщик знает,
+    // что и когда, но не чьи отзывы были скрыты.
+    const people = asViewerLog.body.data;
+    expect(people.map((e) => e.action)).toEqual(expect.arrayContaining(['user_block', 'user_unblock']));
+    for (const entry of people) {
+      expect({ action: entry.action, old_data: entry.old_data, new_data: entry.new_data })
+        .toEqual({ action: entry.action, old_data: null, new_data: null });
+    }
   });
 
   test('учётку панели не переименовать', async () => {
@@ -356,19 +491,22 @@ describe('POST /admin/users/:id/reset-name', () => {
 });
 
 describe('отзывы в панели ведут к автору', () => {
-  test('у отзыва есть author_id; у скрытого просмотрщику — нет', async () => {
+  test('у отзыва есть author_id; просмотрщику — ни у видимого, ни у скрытого', async () => {
     const author = await person({ name: 'Автор Ссылки' });
     const { establishment } = await createPartnerWithEstablishment('active');
-    const visible = await createTestReview(author.id, establishment.id, { rating: 5 });
+    await createTestReview(author.id, establishment.id, { rating: 5 });
     const other = (await createPartnerWithEstablishment('active')).establishment;
-    const hidden = await createTestReview(author.id, other.id, { rating: 1, is_visible: false });
+    await createTestReview(author.id, other.id, { rating: 1, is_visible: false });
 
     const asAdminList = await asAdmin('get', `/reviews?user_id=${author.id}`).expect(200);
+    expect(asAdminList.body.data).toHaveLength(2);
     for (const review of asAdminList.body.data) expect(review.author_id).toBe(author.id);
 
-    const asViewerList = await asViewer('get', '/reviews?per_page=50').expect(200);
-    const byId = new Map(asViewerList.body.data.map((r) => [r.id, r]));
-    expect(byId.get(visible.id).author_id).toBe(author.id);
-    expect(byId.get(hidden.id).author_id).toBeNull();
+    // По одному отзыву на заведение: выборка не зависит от чужих отзывов в базе.
+    for (const place of [establishment.id, other.id]) {
+      const { body } = await asViewer('get', `/reviews?establishment_id=${place}`).expect(200);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].author_id).toBeNull();
+    }
   });
 });

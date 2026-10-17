@@ -12,6 +12,13 @@
 
 import pool from '../config/database.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
+import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
+
+/**
+ * The statuses as SQL literals — a fixed list from the code, never input: the
+ * column fragments below take no parameters.
+ */
+const CATALOGUE_TRACK_SQL = CATALOGUE_TRACK_STATUSES.map((status) => `'${status}'`).join(', ');
 import logger from '../utils/logger.js';
 
 /**
@@ -39,7 +46,11 @@ const userColumns = (viewer) => `
   u.created_at AT TIME ZONE 'UTC' AS created_at,
   counts.review_count,
   ${viewer ? 'NULL::int' : 'counts.hidden_review_count'} AS hidden_review_count,
-  (SELECT COUNT(*)::int FROM establishments e WHERE e.partner_id = u.id) AS establishment_count`;
+  (SELECT COUNT(*)::int FROM establishments e WHERE e.partner_id = u.id) AS establishment_count,
+  -- Cards in the catalogue or on moderation: these, not drafts, keep the
+  -- block button from a partner (adminUserService.lockTarget).
+  (SELECT COUNT(*)::int FROM establishments e
+    WHERE e.partner_id = u.id AND e.status IN (${CATALOGUE_TRACK_SQL})) AS live_establishment_count`;
 
 /**
  * Review counts of the person: every review not deleted, and of them the
@@ -160,7 +171,9 @@ export const getUserById = async (userId, { viewer = false } = {}) => {
       (
         SELECT json_build_object(
           'action', al.action,
-          'reason', al.new_data ->> 'reason',
+          -- The reason is the moderator's free text about a person and may
+          -- name them: not for a viewer (Phase 3.5 lens review).
+          'reason', ${viewer ? 'NULL::text' : "al.new_data ->> 'reason'"},
           'created_at', al.created_at AT TIME ZONE 'UTC',
           'admin_name', ${viewer ? 'NULL::text' : 'actor.name'}
         )

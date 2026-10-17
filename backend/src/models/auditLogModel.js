@@ -322,14 +322,23 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
     ? 'CASE WHEN r.is_visible = TRUE AND r.is_deleted = FALSE THEN LEFT(r.text, 120) END'
     : 'LEFT(r.text, 120)';
 
+  // What an action on a person's account carried — the person's old name, the
+  // moderator's reason, the reviews a block hid and an unblock showed — stays
+  // with an admin. A viewer learns that a person was blocked and when, not
+  // which reviews were theirs: the ids would tie a hidden review to the person
+  // again (Phase 3.5 review: regular and lens).
+  const changeColumns = viewer
+    ? `CASE WHEN al.entity_type = 'user' THEN NULL ELSE al.old_data END as old_data,
+      CASE WHEN al.entity_type = 'user' THEN NULL ELSE al.new_data END as new_data`
+    : 'al.old_data, al.new_data';
+
   const query = `
     SELECT
       al.id,
       al.action,
       al.entity_type,
       al.entity_id,
-      al.old_data,
-      al.new_data,
+      ${changeColumns},
       -- AT TIME ZONE 'UTC' обязателен: колонка — timestamp WITHOUT time zone,
       -- и node-pg читает такую метку как местное время своего процесса. В
       -- проде (TZ=UTC) совпадает, у разработчика уезжает на его часовой пояс.

@@ -507,7 +507,10 @@ class _Facts extends StatelessWidget {
           if (user.establishmentCount > 0)
             _Fact(
               label: 'Карточки заведений',
-              value: formatCount(user.establishmentCount),
+              value: user.liveEstablishmentCount == user.establishmentCount
+                  ? formatCount(user.establishmentCount)
+                  : '${formatCount(user.establishmentCount)}, в каталоге или '
+                      'на модерации ${formatCount(user.liveEstablishmentCount)}',
             ),
           if (user.createdAt != null)
             _Fact(
@@ -592,9 +595,9 @@ String protectionText(AdminUserProtection protection) => switch (protection) {
         'Это служебная учётка платформы — ей принадлежат карточки каталога. '
             'Её не блокируют и не переименовывают.',
       AdminUserProtection.partnerWithEstablishments =>
-        'У этого партнёра есть карточки заведений. Его блокировка решает и '
-            'их судьбу — это отдельное решение, этой кнопкой его не '
-            'заблокировать.',
+        'У этого партнёра есть карточки заведений в каталоге или на '
+            'модерации. Его блокировка решает и их судьбу — это отдельное '
+            'решение, этой кнопкой его не заблокировать.',
     };
 
 class _Actions extends StatelessWidget {
@@ -633,7 +636,8 @@ class _Actions extends StatelessWidget {
                       key: const ValueKey<String>('user-block'),
                       onPressed: busy
                           ? null
-                          : () => _ask(context, _ReasonDialog.block, provider.block),
+                          : () => _ask(context, _ReasonDialog.block,
+                              (answer) => provider.block(answer.reason)),
                       style: AppTheme.canonCtaL(
                           backgroundColor: AppTheme.errorRed),
                       icon: const Icon(Icons.block, size: 19),
@@ -643,8 +647,14 @@ class _Actions extends StatelessWidget {
                       key: const ValueKey<String>('user-unblock'),
                       onPressed: busy
                           ? null
-                          : () =>
-                              _ask(context, _ReasonDialog.unblock, provider.unblock),
+                          : () => _ask(
+                              context,
+                              _ReasonDialog.unblock,
+                              (answer) => provider.unblock(
+                                answer.reason,
+                                restoreReviews: answer.restoreReviews,
+                              ),
+                            ),
                       style: AppTheme.canonCtaOutlined(),
                       icon: const Icon(Icons.lock_open, size: 19),
                       label: const Text('Разблокировать'),
@@ -654,8 +664,8 @@ class _Actions extends StatelessWidget {
                 key: const ValueKey<String>('user-reset-name'),
                 onPressed: busy || user.name == 'Пользователь'
                     ? null
-                    : () => _ask(
-                        context, _ReasonDialog.resetName, provider.resetName),
+                    : () => _ask(context, _ReasonDialog.resetName,
+                        (answer) => provider.resetName(answer.reason)),
                 style: AppTheme.canonCtaOutlined(),
                 icon: const Icon(Icons.badge_outlined, size: 19),
                 label: const Text('Сбросить имя'),
@@ -686,15 +696,24 @@ class _Actions extends StatelessWidget {
   Future<void> _ask(
     BuildContext context,
     _ReasonDialog kind,
-    Future<bool> Function(String reason) act,
+    Future<bool> Function(_ReasonAnswer answer) act,
   ) async {
-    final reason = await showDialog<String>(
+    final answer = await showDialog<_ReasonAnswer>(
       context: context,
       builder: (_) => kind,
     );
-    if (reason == null || reason.isEmpty) return;
-    await act(reason);
+    if (answer == null || answer.reason.isEmpty) return;
+    await act(answer);
   }
+}
+
+/// Что модератор ответил в диалоге: причину и — у разблокировки — вернуть ли
+/// отзывы.
+class _ReasonAnswer {
+  final String reason;
+  final bool restoreReviews;
+
+  const _ReasonAnswer(this.reason, {this.restoreReviews = true});
 }
 
 /// Диалог с обязательной причиной. Контроллер — у самого диалога: освобождать
@@ -705,11 +724,15 @@ class _ReasonDialog extends StatefulWidget {
   final String confirm;
   final bool destructive;
 
+  /// Предложить «Вернуть отзывы, скрытые блокировкой» — у разблокировки.
+  final bool offerRestore;
+
   const _ReasonDialog({
     required this.title,
     required this.body,
     required this.confirm,
     this.destructive = false,
+    this.offerRestore = false,
   });
 
   static const _ReasonDialog block = _ReasonDialog(
@@ -721,9 +744,10 @@ class _ReasonDialog extends StatefulWidget {
 
   static const _ReasonDialog unblock = _ReasonDialog(
     title: 'Разблокировать пользователя?',
-    body: 'Человек снова сможет войти. Вернутся только отзывы, скрытые '
-        'блокировкой; скрытые модератором по одному останутся скрытыми.',
+    body: 'Человек снова сможет войти. Отзывы, скрытые модератором по одному, '
+        'останутся скрытыми в любом случае.',
     confirm: 'Разблокировать',
+    offerRestore: true,
   );
 
   static const _ReasonDialog resetName = _ReasonDialog(
@@ -739,6 +763,11 @@ class _ReasonDialog extends StatefulWidget {
 
 class _ReasonDialogState extends State<_ReasonDialog> {
   final _controller = TextEditingController();
+
+  /// Вернуть отзывы, скрытые блокировкой. По умолчанию — да: так задумана
+  /// разблокировка; снять — если блокировали за сами отзывы, иначе вернётся
+  /// и тот отзыв, из-за которого блокировали.
+  bool _restore = true;
 
   @override
   void initState() {
@@ -776,6 +805,19 @@ class _ReasonDialogState extends State<_ReasonDialog> {
                 labelText: 'Причина (обязательно)',
               ),
             ),
+            if (widget.offerRestore)
+              CheckboxListTile(
+                key: const ValueKey<String>('user-restore-reviews'),
+                value: _restore,
+                onChanged: (value) => setState(() => _restore = value ?? true),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Вернуть отзывы, скрытые блокировкой'),
+                subtitle: const Text(
+                  'Снимите, если блокировали за сами отзывы: тогда они '
+                  'останутся скрытыми.',
+                ),
+              ),
           ],
         ),
       ),
@@ -791,7 +833,10 @@ class _ReasonDialogState extends State<_ReasonDialog> {
               : null,
           // Без причины подтвердить нельзя: сервер всё равно откажет, а
           // кнопка, которая ничего не делает, читается как поломка.
-          onPressed: reason.isEmpty ? null : () => Navigator.of(context).pop(reason),
+          onPressed: reason.isEmpty
+              ? null
+              : () => Navigator.of(context)
+                  .pop(_ReasonAnswer(reason, restoreReviews: _restore)),
           child: Text(widget.confirm),
         ),
       ],

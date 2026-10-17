@@ -5,7 +5,7 @@
  *   GET  /api/v1/admin/users                    — find people (e-mail, phone, name)
  *   GET  /api/v1/admin/users/:id                — one person, with the latest block
  *   POST /api/v1/admin/users/:id/block          — block, body { reason }
- *   POST /api/v1/admin/users/:id/unblock        — unblock, body { reason }
+ *   POST /api/v1/admin/users/:id/unblock        — unblock, body { reason, restore_reviews? }
  *   POST /api/v1/admin/users/:id/reset-name     — name to «Пользователь», body { reason }
  *
  * Thin layer: the rules and the texts are in services/adminUserService.js.
@@ -50,13 +50,13 @@ export const blockUser = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: result });
 });
 
-/** POST /api/v1/admin/users/:id/unblock — body { reason } */
+/** POST /api/v1/admin/users/:id/unblock — body { reason, restore_reviews? } */
 export const unblockUser = asyncHandler(async (req, res) => {
   const result = await adminUserService.unblockUser(
     req.params.id,
     req.body?.reason,
     req.user.userId,
-    requestMeta(req),
+    { ...requestMeta(req), restoreReviews: req.body?.restore_reviews },
   );
   res.status(200).json({ success: true, data: result });
 });

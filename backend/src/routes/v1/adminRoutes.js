@@ -350,9 +350,10 @@ router.post(
 );
 
 /**
- * POST /api/v1/admin/users/:id/unblock — body { reason }
+ * POST /api/v1/admin/users/:id/unblock — body { reason, restore_reviews? }
  *
- * Switch the account on and show the reviews the block hid; journal.
+ * Switch the account on and show the reviews the block hid, unless
+ * restore_reviews is false; journal.
  */
 router.post(
   '/users/:id/unblock',

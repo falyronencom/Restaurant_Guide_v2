@@ -6,7 +6,8 @@ import 'package:restaurant_guide_admin_web/services/api_client.dart';
 ///
 /// Действия задают состояние явно, а не переключают: клиент повторяет запрос
 /// при 5xx (api_client.dart), и повтор «заблокировать» обязан снова означать
-/// «заблокировать». Сервер на повтор ничего не пишет второй раз.
+/// «заблокировать». Сервер на повтор ничего не пишет второй раз и отвечает
+/// `changed: false` — его действия возвращают этот флаг.
 class AdminUserService {
   final ApiClient _apiClient;
 
@@ -54,22 +55,40 @@ class AdminUserService {
     return AdminUser.fromJson(data['data'] as Map<String, dynamic>);
   }
 
-  /// POST /api/v1/admin/users/:id/block — `{ reason }`
-  Future<void> block(String id, {required String reason}) =>
+  /// POST /api/v1/admin/users/:id/block — `{ reason }`. `true` — заблокирован
+  /// этим запросом, `false` — уже был заблокирован.
+  Future<bool> block(String id, {required String reason}) =>
       _act(id, 'block', reason);
 
-  /// POST /api/v1/admin/users/:id/unblock — `{ reason }`
-  Future<void> unblock(String id, {required String reason}) =>
-      _act(id, 'unblock', reason);
+  /// POST /api/v1/admin/users/:id/unblock — `{ reason, restore_reviews }`.
+  ///
+  /// [restoreReviews] `false` — отзывы, скрытые блокировкой, остаются
+  /// скрытыми: блокируют часто за сами отзывы.
+  Future<bool> unblock(
+    String id, {
+    required String reason,
+    bool restoreReviews = true,
+  }) =>
+      _act(id, 'unblock', reason,
+          extra: <String, dynamic>{'restore_reviews': restoreReviews});
 
   /// POST /api/v1/admin/users/:id/reset-name — `{ reason }`
-  Future<void> resetName(String id, {required String reason}) =>
+  Future<bool> resetName(String id, {required String reason}) =>
       _act(id, 'reset-name', reason);
 
-  Future<void> _act(String id, String action, String reason) async {
-    await _apiClient.post(
+  Future<bool> _act(
+    String id,
+    String action,
+    String reason, {
+    Map<String, dynamic> extra = const <String, dynamic>{},
+  }) async {
+    final response = await _apiClient.post(
       '/api/v1/admin/users/$id/$action',
-      data: <String, dynamic>{'reason': reason},
+      data: <String, dynamic>{'reason': reason, ...extra},
     );
+    final body = response.data;
+    final data = body is Map<String, dynamic> ? body['data'] : null;
+    // Флаг потерян — считаем, что изменилось: так говорит и сам ответ 200.
+    return data is Map<String, dynamic> ? data['changed'] != false : true;
   }
 }

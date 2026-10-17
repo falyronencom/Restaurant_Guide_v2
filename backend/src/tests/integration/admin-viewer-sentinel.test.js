@@ -55,6 +55,8 @@ const WITHHELD_KEYS = [
   'partner_name', 'partner_email', 'partner_phone',
   'user_name', 'user_email', 'user_phone', 'owner_name', 'owner_email', 'owner_phone',
   'ip_address', 'user_agent',
+  // A block from the panel: the reviews it hid and an unblock showed again.
+  'hidden_review_ids', 'restored_review_ids',
 ];
 
 const tag = randomUUID().slice(0, 8);
@@ -78,6 +80,7 @@ const P = {
   contactFieldComment: `уточните контактное лицо ${tag}`,
   deletedText: `сторож-удалённый-текст-${tag}`,
   blockedName: `Заблокированный Сторожа ${tag}`,
+  blockedText: `сторож-текст-заблокированного-${tag}`,
 };
 
 const ids = {};
@@ -107,6 +110,7 @@ const personalValues = () => ({
   deletedText: P.deletedText,
   blockedName: P.blockedName,
   blockedEmail,
+  blockedText: P.blockedText,
 });
 
 /**
@@ -279,13 +283,19 @@ beforeAll(async () => {
      VALUES ($1, $2, 'Капучино', 0.5, $3::jsonb, 0)`,
     [ids.active, media.rows[0].id, JSON.stringify({ reason: 'price_below_threshold' })],
   );
-  // A person blocked and renamed from the panel: the journal entries name them
-  // to an admin (entity_context.user_name, old_data.user_name), not to a viewer.
+  // A person blocked, unblocked, blocked again and renamed from the panel. The
+  // journal names them to an admin (entity_context.user_name, old_data.user_name,
+  // the reason — written with the name in it), lists their hidden review, and
+  // gives a viewer none of it; the person's card gives a viewer no reason.
   const blocked = await author(P.blockedName, 'blocked');
   ids.blocked = blocked.id;
   blockedEmail = blocked.email;
-  await act('post', `/users/${blocked.id}/block`, { reason: 'проверка сторожа' }).expect(200);
-  await act('post', `/users/${blocked.id}/reset-name`, { reason: 'проверка сторожа' }).expect(200);
+  await createTestReview(blocked.id, ids.active, { rating: 1, content: P.blockedText });
+  const blockReason = { reason: `мат в отзыве, автор ${P.blockedName}` };
+  await act('post', `/users/${blocked.id}/block`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/unblock`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/block`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/reset-name`, blockReason).expect(200);
 
   const draft = await createPartnerWithEstablishment('draft');
   partnerEmail = draft.partner.user.email;

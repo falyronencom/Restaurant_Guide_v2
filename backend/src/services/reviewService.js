@@ -109,6 +109,20 @@ export const createReview = async (reviewData) => {
   let committed = false;
   try {
     const createdReview = await ReviewModel.executeInTransaction(async (client) => {
+      // The account again, inside the transaction and under a share lock: a
+      // block from the panel (adminUserService.blockUser) holds the row FOR
+      // UPDATE while it hides the person's reviews. Without this a request
+      // that passed the checks above before the block committed inserted its
+      // review after it — visible, and outside the block's list (Phase 3.5
+      // review). Now it waits for the block and is refused; or the block waits
+      // for it and hides the review with the others.
+      const account = await client.query(
+        'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+        [user_id],
+      );
+      if (account.rows[0]?.is_active !== true) {
+        throw new AppError('User account is inactive', 403, 'USER_INACTIVE');
+      }
       const created = await ReviewModel.createReview({
         user_id,
         establishment_id,
@@ -140,6 +154,9 @@ export const createReview = async (reviewData) => {
     if (!committed) {
       await decrement(rateLimitKey);
     }
+
+    // A refusal of the service itself (the account switched off meanwhile).
+    if (error instanceof AppError) throw error;
 
     // Handle specific database errors with better messages
     if (error.code === '23505') {

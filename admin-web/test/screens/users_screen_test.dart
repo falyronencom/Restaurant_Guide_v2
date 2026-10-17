@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +26,12 @@ class _FakeUserService implements AdminUserService {
   final List<String> calls = <String>[];
   Object? failWith;
 
+  /// Что сервер ответит в `changed`.
+  bool changed = true;
+
+  /// Если задан — действие ждёт его: запрос «в полёте».
+  Completer<bool>? pending;
+
   _FakeUserService(this.users, {Map<String, AdminUser>? cards})
       : cards = cards ?? {for (final u in users) u.id: u};
 
@@ -49,22 +57,29 @@ class _FakeUserService implements AdminUserService {
     return cards[id]!;
   }
 
-  Future<void> _act(String what, String id, String reason) async {
+  Future<bool> _act(String what, String id, String reason) async {
     calls.add('$what $id «$reason»');
     final error = failWith;
     if (error != null) throw error;
+    final wait = pending;
+    if (wait != null) return wait.future;
+    return changed;
   }
 
   @override
-  Future<void> block(String id, {required String reason}) =>
+  Future<bool> block(String id, {required String reason}) =>
       _act('block', id, reason);
 
   @override
-  Future<void> unblock(String id, {required String reason}) =>
-      _act('unblock', id, reason);
+  Future<bool> unblock(
+    String id, {
+    required String reason,
+    bool restoreReviews = true,
+  }) =>
+      _act('unblock', id, restoreReviews ? reason : '$reason; без отзывов');
 
   @override
-  Future<void> resetName(String id, {required String reason}) =>
+  Future<bool> resetName(String id, {required String reason}) =>
       _act('reset-name', id, reason);
 }
 
@@ -77,6 +92,7 @@ AdminUser _user({
   int reviewCount = 3,
   int? hiddenReviewCount = 0,
   int establishmentCount = 0,
+  int? liveEstablishmentCount,
   bool isServiceAccount = false,
   bool viewerRedacted = false,
   AdminUserBlockAction? lastBlockAction,
@@ -90,6 +106,7 @@ AdminUser _user({
       reviewCount: reviewCount,
       hiddenReviewCount: hiddenReviewCount,
       establishmentCount: establishmentCount,
+      liveEstablishmentCount: liveEstablishmentCount ?? establishmentCount,
       isServiceAccount: isServiceAccount,
       viewerRedacted: viewerRedacted,
       lastBlockAction: lastBlockAction,
@@ -175,6 +192,51 @@ void main() {
         findsOneWidget);
   });
 
+  Future<void> confirmWithReason(
+      WidgetTester tester, Key button, String reason) async {
+    await tester.tap(find.byKey(button));
+    await settle(tester);
+    await tester.enterText(
+        find.byKey(const ValueKey<String>('user-reason')), reason);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('user-reason-confirm')));
+    await settle(tester);
+  }
+
+  testWidgets('повтор: сервер ничего не менял — так и сказано', (tester) async {
+    final fake = await pumpScreen(tester, [_user()]);
+    fake.changed = false;
+    await openRow(tester, 'Злой Комментатор');
+    await confirmWithReason(
+        tester, const ValueKey<String>('user-block'), 'мат');
+    await settle(tester);
+
+    expect(find.text(kUserActionNothingChanged), findsOneWidget);
+    expect(find.text('Пользователь заблокирован, его отзывы скрыты'),
+        findsNothing);
+  });
+
+  testWidgets('итог действия не встаёт под другим человеком', (tester) async {
+    final first = _user(id: 'u1', name: 'Первый Человек');
+    final second = _user(id: 'u2', name: 'Второй Человек');
+    final fake = await pumpScreen(tester, [first, second]);
+    fake.pending = Completer<bool>();
+
+    await openRow(tester, 'Первый Человек');
+    await confirmWithReason(
+        tester, const ValueKey<String>('user-block'), 'мат');
+    expect(fake.calls, contains('block u1 «мат»'));
+
+    // Пока запрос в полёте, модератор открыл другого.
+    await openRow(tester, 'Второй Человек');
+    fake.pending!.complete(true);
+    await settle(tester);
+    await settle(tester);
+
+    expect(find.text('Пользователь заблокирован, его отзывы скрыты'),
+        findsNothing);
+  });
+
   testWidgets('отмена диалога ничего не отправляет', (tester) async {
     final fake = await pumpScreen(tester, [_user()]);
     await openRow(tester, 'Злой Комментатор');
@@ -209,6 +271,9 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('user-unblock')));
     await settle(tester);
+    // Галочка возврата отзывов стоит по умолчанию.
+    final restore = find.byKey(const ValueKey<String>('user-restore-reviews'));
+    expect(tester.widget<CheckboxListTile>(restore).value, isTrue);
     await tester.enterText(
         find.byKey(const ValueKey<String>('user-reason')), 'извинился');
     await tester.pump();
@@ -216,6 +281,36 @@ void main() {
     await settle(tester);
     await settle(tester);
     expect(fake.calls, contains('unblock u1 «извинился»'));
+  });
+
+  testWidgets('разблокировка без возврата отзывов — галочку можно снять',
+      (tester) async {
+    final fake = await pumpScreen(tester, [_user(isActive: false)]);
+    await openRow(tester, 'Злой Комментатор');
+
+    await tester.tap(find.byKey(const ValueKey<String>('user-unblock')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('user-restore-reviews')));
+    await tester.pump();
+    await tester.enterText(
+        find.byKey(const ValueKey<String>('user-reason')), 'простили');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('user-reason-confirm')));
+    await settle(tester);
+    await settle(tester);
+
+    expect(fake.calls, contains('unblock u1 «простили; без отзывов»'));
+    expect(find.text('Пользователь разблокирован, его отзывы остались скрытыми'),
+        findsOneWidget);
+  });
+
+  testWidgets('у блокировки галочки возврата нет', (tester) async {
+    await pumpScreen(tester, [_user()]);
+    await openRow(tester, 'Злой Комментатор');
+    await tester.tap(find.byKey(const ValueKey<String>('user-block')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey<String>('user-restore-reviews')),
+        findsNothing);
   });
 
   testWidgets('отказ сервера показан его словами, без кода', (tester) async {
@@ -260,7 +355,7 @@ void main() {
     (
       'партнёр с карточкой',
       _user(name: 'Владелец Кафе', role: 'partner', establishmentCount: 2),
-      'У этого партнёра есть карточки заведений',
+      'У этого партнёра есть карточки заведений в каталоге или на модерации',
     ),
   ]) {
     testWidgets('$label — кнопки блокировки нет, сказано почему',
@@ -280,6 +375,24 @@ void main() {
       );
     });
   }
+
+  testWidgets('партнёр с одним черновиком — кнопка блокировки есть',
+      (tester) async {
+    // Черновик заводит любой пользователь одним запросом: защищай он, всякий
+    // сделал бы себя неблокируемым.
+    await pumpScreen(tester, [
+      _user(
+        name: 'Автор Черновика',
+        role: 'partner',
+        establishmentCount: 1,
+        liveEstablishmentCount: 0,
+      ),
+    ]);
+    await openRow(tester, 'Автор Черновика');
+    expect(find.byKey(const ValueKey<String>('user-block')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('user-protection')), findsNothing);
+    expect(find.text('1, в каталоге или на модерации 0'), findsOneWidget);
+  });
 
   testWidgets('просмотрщик: без поиска, без кнопок, без имён', (tester) async {
     final redacted = _user(

@@ -63,6 +63,11 @@ export const VIEWER_WITHHELD_KEYS = Object.freeze(new Set([
   // Operator metadata of the journal
   'ip_address',
   'user_agent',
+  // The reviews a block from the panel hid and an unblock showed again
+  // (adminUserService): next to the person's id they tie hidden reviews to the
+  // person. The journal model withholds them first; this is the floor.
+  'hidden_review_ids',
+  'restored_review_ids',
 ]));
 
 /**

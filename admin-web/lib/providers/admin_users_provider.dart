@@ -133,9 +133,15 @@ class AdminUsersProvider extends ChangeNotifier {
         'Пользователь заблокирован, его отзывы скрыты',
       );
 
-  Future<bool> unblock(String reason) => _act(
-        (id) => _service.unblock(id, reason: reason),
-        'Пользователь разблокирован, отзывы, скрытые блокировкой, снова видны',
+  Future<bool> unblock(String reason, {bool restoreReviews = true}) => _act(
+        (id) => _service.unblock(
+          id,
+          reason: reason,
+          restoreReviews: restoreReviews,
+        ),
+        restoreReviews
+            ? 'Пользователь разблокирован, отзывы, скрытые блокировкой, снова видны'
+            : 'Пользователь разблокирован, его отзывы остались скрытыми',
       );
 
   Future<bool> resetName(String reason) => _act(
@@ -145,7 +151,11 @@ class AdminUsersProvider extends ChangeNotifier {
 
   /// Действие без оптимизма: блокировка трогает отзывы и рейтинг, и экран
   /// показывает то, что вернул сервер, а не догадку о нём.
-  Future<bool> _act(Future<void> Function(String id) call, String done) async {
+  ///
+  /// Итог — подпись под кнопками — пишется, только если на экране всё ещё
+  /// тот, над кем действовали: строки списка кликабельны и во время запроса,
+  /// и «Пользователь заблокирован» не должно встать под другим человеком.
+  Future<bool> _act(Future<bool> Function(String id) call, String done) async {
     final id = _selectedId;
     if (id == null || _isSubmitting) return false;
     final generation = _generation;
@@ -156,10 +166,13 @@ class AdminUsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await call(id);
+      final changed = await call(id);
       if (generation != _generation) return false;
       _isSubmitting = false;
-      _lastResult = done;
+      if (_selectedId == id) {
+        // Повтор или чужое действие раньше: сервер ничего не менял.
+        _lastResult = changed ? done : kUserActionNothingChanged;
+      }
       notifyListeners();
       await Future.wait(<Future<void>>[
         _loadDetail(),
@@ -169,7 +182,7 @@ class AdminUsersProvider extends ChangeNotifier {
     } catch (e) {
       if (generation != _generation) return false;
       _isSubmitting = false;
-      _submitError = describeUserActionError(e);
+      if (_selectedId == id) _submitError = describeUserActionError(e);
       notifyListeners();
       return false;
     }
@@ -218,6 +231,10 @@ class AdminUsersProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+/// Подпись, когда сервер ответил `changed: false`: так уже было.
+const String kUserActionNothingChanged =
+    'Ничего не изменилось: так уже было — возможно, это сделал другой модератор';
 
 final RegExp _cyrillic = RegExp('[А-Яа-яЁё]');
 

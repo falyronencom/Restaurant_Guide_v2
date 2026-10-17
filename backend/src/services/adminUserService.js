@@ -23,9 +23,20 @@
  *
  * Who cannot be blocked by this button: panel accounts (admin, viewer) and
  * the service account — their access is the operator's
- * (config/serviceAccounts.js) — and a partner who owns cards: blocking them
- * decides the fate of the cards, a separate product decision. Oneself — never.
- * The same accounts cannot be unblocked or renamed here either.
+ * (config/serviceAccounts.js) — and a partner whose card is in the catalogue
+ * or on moderation (CATALOGUE_TRACK_STATUSES: active, pending, suspended):
+ * blocking them decides the fate of the cards, a separate product decision. A
+ * draft, rejected or archived card does not protect: a user makes a draft in
+ * one request and becomes a partner by it (establishmentService, «partner
+ * registration»), so counting drafts would let anyone make themselves
+ * unblockable (Phase 3.5 lens review). The moderator who wants to block the
+ * author of a junk card on moderation rejects the card first. Oneself — never.
+ * Panel and service accounts cannot be unblocked or renamed here either.
+ *
+ * The journal time of an action is the moment it holds the account row
+ * (clock_timestamp() under the lock), not the start of its transaction: a
+ * block that began first but waited for an unblock must come after it in the
+ * journal, or «the latest of block and unblock» names the wrong one.
  *
  * Every action is idempotent: the panel's client repeats a request answered
  * with a 5xx, and the first attempt may have been applied. A repeat that finds
@@ -44,6 +55,7 @@ import * as ReviewModel from '../models/reviewModel.js';
 import { endAllAccess } from './authService.js';
 import { invalidateAccountStatus } from './accountStatus.js';
 import { PROVIDER_NAME_FALLBACK } from '../utils/userName.js';
+import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 import logger from '../utils/logger.js';
 
 /** The name a reset leaves — the same word a Google or Yandex login falls back to. */
@@ -62,7 +74,8 @@ export const USER_ACTION_REFUSALS = Object.freeze({
   SELF_ACTION: 'Нельзя заблокировать или переименовать самого себя',
   PANEL_ACCOUNT: 'Это учётка панели. Её включает и отключает оператор, не эта кнопка',
   SERVICE_ACCOUNT: 'Это служебная учётка платформы — ей принадлежат карточки каталога. Её не блокируют и не переименовывают',
-  PARTNER_WITH_ESTABLISHMENTS: 'У этого партнёра есть карточки заведений. Его блокировка решает и их судьбу — это отдельное решение, этой кнопкой его не заблокировать',
+  PARTNER_WITH_ESTABLISHMENTS: 'У этого партнёра есть карточки заведений в каталоге или на модерации. Его блокировка решает и их судьбу — это отдельное решение, этой кнопкой его не заблокировать',
+  RESTORE_FLAG_INVALID: 'Не понятно, возвращать ли отзывы: ожидается «да» или «нет»',
 });
 
 const refuse = (code, status) => new AppError(USER_ACTION_REFUSALS[code], status, code);
@@ -174,8 +187,10 @@ const lockTarget = async (client, userId, actorId, { refusePartnerWithEstablishm
 
   if (refusePartnerWithEstablishments) {
     const cards = await client.query(
-      'SELECT EXISTS (SELECT 1 FROM establishments WHERE partner_id = $1) AS has_cards',
-      [userId],
+      `SELECT EXISTS (
+         SELECT 1 FROM establishments WHERE partner_id = $1 AND status = ANY($2::text[])
+       ) AS has_cards`,
+      [userId, CATALOGUE_TRACK_STATUSES],
     );
     if (cards.rows[0].has_cards) throw refuse('PARTNER_WITH_ESTABLISHMENTS', 409);
   }
@@ -188,9 +203,11 @@ const lockTarget = async (client, userId, actorId, { refusePartnerWithEstablishm
  * a block carries the list the unblock reads back.
  */
 const writeAudit = async (client, { actorId, action, userId, oldData, newData, ipAddress, userAgent }) => {
+  // created_at is clock_timestamp(), not the column's CURRENT_TIMESTAMP (the
+  // start of the transaction) — see the module comment.
   const result = await client.query(
-    `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent)
-     VALUES ($1, $2, 'user', $3, $4, $5, $6, $7)
+    `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent, created_at)
+     VALUES ($1, $2, 'user', $3, $4, $5, $6, $7, clock_timestamp())
      RETURNING id`,
     [
       actorId,
@@ -301,9 +318,25 @@ export const blockUser = async (userId, rawReason, actorId, { ipAddress, userAge
 };
 
 /**
+ * Whether the unblock shows the reviews again: yes unless the moderator said
+ * no. A block is often made for the reviews themselves, and an unblock must
+ * not bring back the review it was made for (Phase 3.5 lens review): the
+ * moderator unticks «вернуть отзывы», and the reviews stay hidden as the
+ * moderator's decision — no block is in force over them any more.
+ *
+ * @param {*} raw - body.restore_reviews
+ * @returns {boolean}
+ */
+const normalizeRestoreFlag = (raw) => {
+  if (raw === undefined || raw === null) return true;
+  if (typeof raw !== 'boolean') throw refuse('RESTORE_FLAG_INVALID', 422);
+  return raw;
+};
+
+/**
  * Unblock a person: switch the account on and show again the reviews the
  * latest block hid — those still hidden, not deleted, and not taken over by a
- * moderator one by one since the block.
+ * moderator one by one since the block. With restoreReviews false, none.
  *
  * A block in force without a journal entry (switched off by the operator's
  * script) has no list: the account is switched on, no review is shown.
@@ -314,12 +347,18 @@ export const blockUser = async (userId, rawReason, actorId, { ipAddress, userAge
  * @param {string} userId
  * @param {*} rawReason
  * @param {string} actorId
- * @param {Object} [request] - { ipAddress, userAgent }
+ * @param {Object} [request] - { ipAddress, userAgent, restoreReviews }
  * @returns {Promise<{id: string, is_active: boolean, changed: boolean, restored_reviews: number}>}
  */
-export const unblockUser = async (userId, rawReason, actorId, { ipAddress, userAgent } = {}) => {
+export const unblockUser = async (
+  userId,
+  rawReason,
+  actorId,
+  { ipAddress, userAgent, restoreReviews: rawRestore } = {},
+) => {
   assertUserId(userId);
   const reason = normalizeReason(rawReason);
+  const restoreReviews = normalizeRestoreFlag(rawRestore);
 
   return inTransaction(userId, async (client) => {
     const target = await lockTarget(client, userId, actorId, { refusePartnerWithEstablishments: true });
@@ -342,7 +381,7 @@ export const unblockUser = async (userId, rawReason, actorId, { ipAddress, userA
     const hiddenIds = Array.isArray(block?.hidden_review_ids) ? block.hidden_review_ids : [];
 
     let restored = [];
-    if (hiddenIds.length > 0) {
+    if (restoreReviews && hiddenIds.length > 0) {
       // A review a moderator showed or hid one by one after the block is the
       // moderator's decision. Times are compared in SQL, column to column:
       // created_at is a naive timestamp (feedback_timezone_axis_naive_timestamps).
@@ -380,6 +419,7 @@ export const unblockUser = async (userId, rawReason, actorId, { ipAddress, userA
       newData: {
         is_active: true,
         reason,
+        restore_reviews: restoreReviews,
         restored_review_ids: restored.map((row) => row.id),
       },
       ipAddress,
