@@ -91,6 +91,8 @@ describe('reviewService', () => {
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
       ReviewModel.findReviewById.mockResolvedValue(mockReview);
       ReviewModel.executeInTransaction.mockImplementation((callback) => callback(TX_CLIENT));
+      // The account read again inside the transaction (FOR SHARE): active.
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: true }] });
       // The quota slot is reserved first: the counter answers the new value.
       incrementWithExpiry.mockResolvedValue(1);
       decrement.mockResolvedValue(0);
@@ -249,6 +251,24 @@ describe('reviewService', () => {
 
       // Verify aggregates updated during create flow, on the transaction client
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith('estab-123', TX_CLIENT);
+    });
+
+    test('the account switched off while the review was on its way: 403, no review, slot back', async () => {
+      // A block from the panel committed between the checks above and the
+      // transaction: the share-locked re-read sees it (Phase 3.5 review).
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: false }] });
+
+      await expect(createReview(validReviewData)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'USER_INACTIVE',
+      });
+
+      expect(TX_CLIENT.query).toHaveBeenCalledWith(
+        'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+        ['user-123'],
+      );
+      expect(ReviewModel.createReview).not.toHaveBeenCalled();
+      expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
     });
 
     test('a failed recalculation gives the quota slot back', async () => {

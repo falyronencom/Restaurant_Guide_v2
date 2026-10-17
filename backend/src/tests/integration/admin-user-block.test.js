@@ -473,10 +473,11 @@ describe('POST /admin/users/:id/reset-name', () => {
 
     const asViewerLog = await asViewer('get', '/audit-log?entity_type=user&per_page=100').expect(200);
     expect(JSON.stringify(asViewerLog.body)).not.toContain('Матерное Имя');
-    // Ни причин, ни списков отзывов у действий над людьми: просмотрщик знает,
-    // что и когда, но не чьи отзывы были скрыты.
-    const people = asViewerLog.body.data;
-    expect(people.map((e) => e.action)).toEqual(expect.arrayContaining(['user_block', 'user_unblock']));
+    // Ни причин, ни списков отзывов у блокировок и сбросов имени: просмотрщик
+    // знает, что и когда, но не чьи отзывы были скрыты.
+    const moderation = new Set(['user_block', 'user_unblock', 'user_reset_name']);
+    const people = asViewerLog.body.data.filter((e) => moderation.has(e.action));
+    expect(new Set(people.map((e) => e.action))).toEqual(moderation);
     for (const entry of people) {
       expect({ action: entry.action, old_data: entry.old_data, new_data: entry.new_data })
         .toEqual({ action: entry.action, old_data: null, new_data: null });

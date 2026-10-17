@@ -322,14 +322,18 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
     ? 'CASE WHEN r.is_visible = TRUE AND r.is_deleted = FALSE THEN LEFT(r.text, 120) END'
     : 'LEFT(r.text, 120)';
 
-  // What an action on a person's account carried — the person's old name, the
-  // moderator's reason, the reviews a block hid and an unblock showed — stays
-  // with an admin. A viewer learns that a person was blocked and when, not
-  // which reviews were theirs: the ids would tie a hidden review to the person
-  // again (Phase 3.5 review: regular and lens).
+  // What a block, an unblock or a name reset from the panel carried — the
+  // person's old name, the moderator's reason (free text about a person), the
+  // reviews the block hid and the unblock showed — stays with an admin. A
+  // viewer learns that a person was blocked and when, not which reviews were
+  // theirs: the ids would tie a hidden review to the person again (Phase 3.5
+  // review: regular and lens). Other entries are as they were: their personal
+  // keys go through the viewer projection. Fixed SQL chosen by a boolean.
   const changeColumns = viewer
-    ? `CASE WHEN al.entity_type = 'user' THEN NULL ELSE al.old_data END as old_data,
-      CASE WHEN al.entity_type = 'user' THEN NULL ELSE al.new_data END as new_data`
+    ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+          THEN NULL ELSE al.old_data END as old_data,
+      CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+          THEN NULL ELSE al.new_data END as new_data`
     : 'al.old_data, al.new_data';
 
   const query = `
