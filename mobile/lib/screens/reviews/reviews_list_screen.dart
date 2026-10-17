@@ -26,6 +26,10 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   List<Review> _reviews = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  /// Следующая страница не загрузилась: листание стоит, пока человек не
+  /// нажмёт «Повторить» внизу списка. Иначе каждая прокрутка у конца слала бы
+  /// новый запрос в сбой.
+  bool _loadMoreFailed = false;
   String? _error;
   int _currentPage = 1;
   int _totalPages = 1;
@@ -63,6 +67,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore &&
+        !_loadMoreFailed &&
         _currentPage < _totalPages) {
       _loadMoreReviews();
     }
@@ -73,6 +78,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _loadMoreFailed = false;
     });
 
     try {
@@ -102,6 +108,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
 
     setState(() {
       _isLoadingMore = true;
+      _loadMoreFailed = false;
     });
 
     try {
@@ -119,6 +126,7 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
     } catch (e) {
       setState(() {
         _isLoadingMore = false;
+        _loadMoreFailed = true;
       });
     }
   }
@@ -295,8 +303,11 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: _reviews.length + (_isLoadingMore ? 1 : 0),
+      itemCount: _reviews.length + (_isLoadingMore || _loadMoreFailed ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index == _reviews.length && _loadMoreFailed) {
+          return _buildLoadMoreFailed();
+        }
         if (index == _reviews.length) {
           return const Center(
             child: Padding(
@@ -310,6 +321,28 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
           child: _buildReviewCard(_reviews[index]),
         );
       },
+    );
+  }
+
+  /// Низ списка, когда следующая страница не загрузилась.
+  Widget _buildLoadMoreFailed() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        children: [
+          const Text(
+            'Не удалось загрузить ещё отзывы',
+            style: TextStyle(color: _creamColor),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loadMoreReviews,
+            style: TextButton.styleFrom(foregroundColor: _secondaryOrange),
+            child: const Text('Повторить'),
+          ),
+        ],
+      ),
     );
   }
 

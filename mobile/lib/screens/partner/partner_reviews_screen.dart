@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
 /// Partner Reviews Screen - view and filter establishment reviews
@@ -63,6 +64,9 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   List<Review> _filteredReviews = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
+  /// Следующая страница не загрузилась: листание стоит до «Повторить» внизу
+  /// списка, а не шлёт запрос в сбой на каждую прокрутку.
+  bool _loadMoreFailed = false;
   String? _error;
 
   // Pagination
@@ -91,6 +95,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore &&
+        !_loadMoreFailed &&
         _hasMore) {
       _loadMoreReviews();
     }
@@ -106,6 +111,7 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       _error = null;
       _currentPage = 1;
       _hasMore = true;
+      _loadMoreFailed = false;
     });
 
     try {
@@ -147,7 +153,10 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   Future<void> _loadMoreReviews() async {
     if (_isLoadingMore || !_hasMore) return;
 
-    setState(() => _isLoadingMore = true);
+    setState(() {
+      _isLoadingMore = true;
+      _loadMoreFailed = false;
+    });
 
     try {
       final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
@@ -170,7 +179,10 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
         _isLoadingMore = false;
       });
     } catch (e) {
-      setState(() => _isLoadingMore = false);
+      setState(() {
+        _isLoadingMore = false;
+        _loadMoreFailed = true;
+      });
     }
   }
 
@@ -501,8 +513,12 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _filteredReviews.length + (_isLoadingMore ? 1 : 0),
+        itemCount: _filteredReviews.length +
+            (_isLoadingMore || _loadMoreFailed ? 1 : 0),
         itemBuilder: (context, index) {
+          if (index == _filteredReviews.length && _loadMoreFailed) {
+            return _buildLoadMoreFailed();
+          }
           if (index == _filteredReviews.length) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -516,6 +532,28 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
             child: _buildReviewCard(_filteredReviews[index]),
           );
         },
+      ),
+    );
+  }
+
+  /// Низ списка, когда следующая страница не загрузилась.
+  Widget _buildLoadMoreFailed() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        children: [
+          const Text(
+            'Не удалось загрузить ещё отзывы',
+            style: TextStyle(fontSize: 14, color: _greyText),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loadMoreReviews,
+            style: TextButton.styleFrom(foregroundColor: _primaryOrange),
+            child: const Text('Повторить'),
+          ),
+        ],
       ),
     );
   }
@@ -820,8 +858,18 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                     : () async {
                         final navigator = Navigator.of(context);
                         setDialogState(() => isSubmitting = true);
-                        final success = await _reviewsService
-                            .deletePartnerResponse(review.id);
+                        // Отказ сервера и сбой сети доходят до человека
+                        // текстом (проход тестировщика 17.10, Х26).
+                        const fallback = 'Не удалось удалить ответ';
+                        var success = false;
+                        var failure = fallback;
+                        try {
+                          success = await _reviewsService
+                              .deletePartnerResponse(review.id);
+                        } catch (e) {
+                          failure =
+                              russianFailureText(e, fallback: fallback);
+                        }
                         if (success && mounted) {
                           navigator.pop();
                           _loadReviews();
@@ -835,8 +883,8 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                           setDialogState(() => isSubmitting = false);
                           if (mounted) {
                             ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Не удалось удалить ответ'),
+                              SnackBar(
+                                content: Text(failure),
                                 backgroundColor: Colors.red,
                               ),
                             );
