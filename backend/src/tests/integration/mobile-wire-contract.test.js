@@ -268,4 +268,46 @@ describe('Контракт провода с mobile — лента уведом�
       page: 2, limit: 20, total: 25, pages: 2, totalPages: 2,
     });
   });
+
+  test('строка ленты несёт id, type, title, is_read, created_at — под своими именами и своих типов', async () => {
+    // `NotificationModel.fromJson` подставляет умолчание за каждый пропавший
+    // ключ: без `created_at` — текущее время (уведомление навсегда «Только
+    // что»), без `is_read` — «прочитано» (точка «новое» гаснет), без `type` —
+    // «Новый отзыв» (не тот значок и не тот переход по нажатию), без `id` —
+    // пустая строка (отметка «прочитано» уходит в никуда, повторы на стыке
+    // страниц не отсекаются). Клиентский тест
+    // (`mobile/test/models/notification_contract_test.dart`) правку выборки
+    // `notificationModel.getByUserId` не заметит — заметит этот.
+    //
+    // Время вставлено на три дня назад и сверяется с тем, что вернула база
+    // через тот же драйвер: `created_at` — TIMESTAMP без пояса, и литерал с
+    // `Z` на входе дал бы сдвиг на пояс процесса — сравнение мерило бы ось
+    // времени, а не контракт.
+    const inserted = await query(`
+      INSERT INTO notifications (user_id, type, title, message, is_read, created_at)
+      VALUES ($1, 'booking_received', 'Новая бронь', 'Новая бронь на «Васильки»', false,
+              NOW() - INTERVAL '3 days')
+      RETURNING id, created_at
+    `, [partnerId]);
+    const createdAt = inserted.rows[0].created_at.toISOString();
+
+    const res = await request(app)
+      .get('/api/v1/notifications')
+      .query({ page: 1, limit: 20 })
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+
+    const row = res.body.data.items[0];
+    expect(row).toEqual(expect.objectContaining({
+      id: inserted.rows[0].id,
+      type: 'booking_received',
+      title: 'Новая бронь',
+      is_read: false,
+    }));
+    // Время — строкой ISO, и это время из базы, а не момент ответа.
+    expect(typeof row.created_at).toBe('string');
+    expect(new Date(row.created_at).toISOString()).toBe(createdAt);
+    expect(Date.now() - Date.parse(row.created_at))
+      .toBeGreaterThan(2 * 24 * 60 * 60 * 1000);
+  });
 });
