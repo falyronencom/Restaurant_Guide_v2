@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
 /// Maps exceptions to user-friendly Russian error messages.
 /// Reference pattern: write_review_screen.dart _getErrorMessage()
@@ -38,6 +39,26 @@ String getHumanErrorMessage(dynamic error) {
 String userMessageOf(Object error, {required String fallback}) {
   if (error is DioException && error.error is String) {
     return error.error as String;
+  }
+  return fallback;
+}
+
+/// Русский текст отказа или сбоя для человека — или [fallback].
+///
+/// Сначала русский текст сервера из тела ответа (общий разбор
+/// [russianServerText]: мат, лимит, блокировка), затем русская фраза, которую
+/// `ApiClient` положил в `DioException.error` («Нет связи…», «Необходима
+/// авторизация…», фраза по коду статуса). Английское на экран не идёт: часть
+/// отказов бэкенда пока английская («Review not found», «You can only delete
+/// your own reviews») — там [fallback].
+///
+/// Отличие от [userMessageOf]: та пропускает и английский текст сервера.
+String russianFailureText(Object error, {required String fallback}) {
+  if (error is DioException) {
+    final fromServer = russianServerText(error.response?.data);
+    if (fromServer != null) return fromServer;
+    final prepared = error.error;
+    if (prepared is String && hasCyrillic(prepared)) return prepared.trim();
   }
   return fallback;
 }

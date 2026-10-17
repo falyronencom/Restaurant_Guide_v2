@@ -65,6 +65,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   Establishment? _establishment;
   List<Review> _reviews = [];
   int _totalReviews = 0;
+  /// Отзывы не загрузились (сеть, сервер) — это не «отзывов нет».
+  bool _reviewsFailed = false;
+  bool _isRetryingReviews = false;
   bool _isLoading = true;
   String? _error;
 
@@ -128,16 +131,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         widget.establishmentId,
       );
 
-      // Fetch reviews
-      final reviewsResponse = await _reviewsService.getReviewsForEstablishment(
-        widget.establishmentId,
-        perPage: 5,
-      );
+      // Fetch reviews: their failure must not hide the place itself.
+      await _fetchReviews();
 
       setState(() {
         _establishment = establishment;
-        _reviews = reviewsResponse.data;
-        _totalReviews = reviewsResponse.meta.total;
         _isLoading = false;
       });
     } catch (e) {
@@ -146,6 +144,35 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Превью отзывов (5 штук). Сбой не выдаётся за «Пока нет отзывов»: блок
+  /// отзывов показывает «Не удалось загрузить отзывы» и «Повторить» (проход
+  /// тестировщика 17.10, Х5, Х23). Поля пишутся без `setState` — его делает
+  /// вызывающий.
+  Future<void> _fetchReviews() async {
+    try {
+      final reviewsResponse = await _reviewsService.getReviewsForEstablishment(
+        widget.establishmentId,
+        perPage: 5,
+      );
+      _reviews = reviewsResponse.data;
+      _totalReviews = reviewsResponse.meta.total;
+      _reviewsFailed = false;
+    } catch (e) {
+      _reviews = [];
+      _totalReviews = 0;
+      _reviewsFailed = true;
+    }
+  }
+
+  /// «Повторить» в блоке отзывов: перезапрашиваются только отзывы.
+  Future<void> _retryReviews() async {
+    if (_isRetryingReviews) return;
+    setState(() => _isRetryingReviews = true);
+    await _fetchReviews();
+    if (!mounted) return;
+    setState(() => _isRetryingReviews = false);
   }
 
   /// Toggle favorite status
@@ -1566,7 +1593,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   child: Row(
                     children: [
                       Text(
-                        reviewsCountLabel(_totalReviews),
+                        // Число неизвестно, пока отзывы не загрузились.
+                        _reviewsFailed
+                            ? 'Все отзывы'
+                            : reviewsCountLabel(_totalReviews),
                         style: const TextStyle(
                           fontSize: 14,
                           color: _backgroundColor,
@@ -1589,6 +1619,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           // Reviews carousel
           if (_reviews.isNotEmpty)
             _buildReviewsCarousel()
+          else if (_reviewsFailed)
+            _buildReviewsFailedState()
           else
             _buildNoReviewsState(),
 
@@ -1846,6 +1878,50 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           fontSize: 14,
           color: _backgroundColor,
         ),
+      ),
+    );
+  }
+
+  /// Отзывы не загрузились: сказать об этом и дать повторить.
+  Widget _buildReviewsFailedState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Не удалось загрузить отзывы',
+              style: TextStyle(
+                fontSize: 14,
+                color: _backgroundColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_isRetryingReviews)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _secondaryOrange,
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _retryReviews,
+              style: TextButton.styleFrom(
+                foregroundColor: _secondaryOrange,
+              ),
+              child: const Text(
+                'Повторить',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
