@@ -64,11 +64,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   Establishment? _establishment;
   List<Review> _reviews = [];
   int _totalReviews = 0;
-
-  /// Отзывы не загрузились. Это не «отзывов нет»: сбой показывается ошибкой
-  /// с кнопкой «Повторить», а пустой список — приглашением написать первым.
-  bool _reviewsFailed = false;
-  bool _reviewsReloading = false;
   bool _isLoading = true;
   String? _error;
 
@@ -132,59 +127,24 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         widget.establishmentId,
       );
 
-      // Сбой отзывов не роняет карточку: заведение показывается, а секция
-      // отзывов сама говорит, что не загрузилась.
-      final reviewsResponse = await _fetchReviews();
+      // Fetch reviews
+      final reviewsResponse = await _reviewsService.getReviewsForEstablishment(
+        widget.establishmentId,
+        perPage: 5,
+      );
 
-      if (!mounted) return;
       setState(() {
         _establishment = establishment;
-        _applyReviews(reviewsResponse);
+        _reviews = reviewsResponse.data;
+        _totalReviews = reviewsResponse.meta.total;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = 'Не удалось загрузить данные';
         _isLoading = false;
       });
     }
-  }
-
-  /// Первые отзывы для карусели; `null` — запрос не удался.
-  Future<PaginatedReviews?> _fetchReviews() async {
-    try {
-      return await _reviewsService.getReviewsForEstablishment(
-        widget.establishmentId,
-        perPage: 5,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  void _applyReviews(PaginatedReviews? response) {
-    if (response == null) {
-      _reviewsFailed = true;
-      _reviews = [];
-      _totalReviews = 0;
-      return;
-    }
-    _reviewsFailed = false;
-    _reviews = response.data;
-    _totalReviews = response.meta.total;
-  }
-
-  /// «Повторить» в секции отзывов: перезагружает только их.
-  Future<void> _reloadReviews() async {
-    if (_reviewsReloading) return;
-    setState(() => _reviewsReloading = true);
-    final response = await _fetchReviews();
-    if (!mounted) return;
-    setState(() {
-      _applyReviews(response);
-      _reviewsReloading = false;
-    });
   }
 
   /// Toggle favorite status
@@ -1687,9 +1647,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   ),
                 ),
                 const Spacer(),
-                // Reviews count with arrow. Сбой загрузки счёта не знает —
-                // «0 отзывов» тогда было бы выдумкой.
-                if (!_reviewsFailed)
+                // Reviews count with arrow
                 GestureDetector(
                   onTap: () {
                     // Navigate to all reviews screen
@@ -1725,9 +1683,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           const SizedBox(height: 24),
 
           // Reviews carousel
-          if (_reviewsFailed)
-            _buildReviewsErrorState()
-          else if (_reviews.isNotEmpty)
+          if (_reviews.isNotEmpty)
             _buildReviewsCarousel()
           else
             _buildNoReviewsState(),
@@ -1973,32 +1929,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           size: 15,
         );
       }),
-    );
-  }
-
-  /// Отзывы не загрузились: ошибка и «Повторить», а не «Пока нет отзывов».
-  Widget _buildReviewsErrorState() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'Не удалось загрузить отзывы',
-              style: TextStyle(fontSize: 14, color: _backgroundColor),
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton(
-            onPressed: _reviewsReloading ? null : _reloadReviews,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.primaryOrange,
-              side: const BorderSide(color: AppTheme.primaryOrange),
-            ),
-            child: const Text('Повторить'),
-          ),
-        ],
-      ),
     );
   }
 

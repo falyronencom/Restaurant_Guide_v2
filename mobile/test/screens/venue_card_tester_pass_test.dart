@@ -21,7 +21,7 @@ import '../support/wire_fixtures.dart';
 import '../support/wire_stand.dart';
 
 /// Карточка заведения по проходу тестировщика 17.10: пп. 11, 15, 28, 29, 46,
-/// 48 и сбой отзывов (Х5).
+/// 48, Х6.
 ///
 /// Геометрию меряем `getRect` на настоящих шрифтах — тема приложения
 /// обязательна (test/flutter_test_config.dart); без неё ширину текста не
@@ -113,8 +113,7 @@ void _useScreen(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-/// Хозяин ответа на отзывы: тест меняет его между нажатиями.
-int _reviewsStatus = 200;
+/// Ответ сервера на отзывы: тест кладёт сюда строки перед `_stand`.
 List<Map<String, dynamic>> _reviews = [];
 
 void _stand(Map<String, dynamic> row) {
@@ -124,10 +123,6 @@ void _stand(Map<String, dynamic> row) {
       return jsonBody({'success': true, 'data': row});
     }
     if (path == '/api/v1/establishments/$_id/reviews') {
-      if (_reviewsStatus != 200) {
-        // 400, а не 5xx: транспорт повторяет 5xx с паузами, и тест ждал бы.
-        return jsonBody({'success': false}, status: _reviewsStatus);
-      }
       return jsonBody(reviewsEnvelope(reviews: _reviews, total: 24));
     }
     if (path == '/api/v1/establishments/$_id/booking-settings') {
@@ -175,7 +170,6 @@ Color _over(Color top, Color bottom, double alpha) => Color.lerp(bottom, top, al
 
 void main() {
   setUp(() {
-    _reviewsStatus = 200;
     _reviews = [];
   });
 
@@ -304,60 +298,6 @@ void main() {
       ]) {
         expect(find.byIcon(icon), findsNothing, reason: '$icon');
       }
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  group('Х5 — сбой загрузки отзывов', () {
-    testWidgets('не «Пока нет отзывов»: ошибка и «Повторить» — и повтор работает',
-        (tester) async {
-      _reviewsStatus = 400;
-      _stand(_row());
-      await _pumpDetail(tester);
-
-      final error = find.text('Не удалось загрузить отзывы');
-      await tester.ensureVisible(error);
-      await tester.pumpAndSettle();
-      expect(error, findsOneWidget);
-      expect(find.text('Пока нет отзывов. Станьте первым!'), findsNothing);
-      expect(find.textContaining('0 отзыв'), findsNothing,
-          reason: 'счёт «0 отзывов» при сбое — выдумка');
-
-      _reviews = [reviewRow(authorName: 'Ирина')];
-      _reviewsStatus = 200;
-      await tester.tap(find.text('Повторить'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Не удалось загрузить отзывы'), findsNothing);
-      expect(find.text('Ирина'), findsOneWidget);
-      expect(find.text('24 отзыва'), findsOneWidget);
-    });
-
-    testWidgets('заведение без отзывов по-прежнему зовёт написать первым',
-        (tester) async {
-      _stand(_row());
-      await _pumpDetail(tester);
-      final empty = find.text('Пока нет отзывов. Станьте первым!');
-      await tester.ensureVisible(empty);
-      expect(empty, findsOneWidget);
-      expect(find.text('Не удалось загрузить отзывы'), findsNothing);
-    });
-
-    testWidgets('«Все отзывы»: сбой — ошибка с «Повторить», не пустой список',
-        (tester) async {
-      _reviewsStatus = 400;
-      _stand(_row());
-      _useScreen(tester);
-      await tester.pumpWidget(MaterialApp(
-        theme: AppTheme.lightTheme,
-        home:
-            ReviewsListScreen(establishment: Establishment.fromJson(_row())),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Не удалось загрузить отзывы'), findsOneWidget);
-      expect(find.text('Повторить'), findsOneWidget);
-      expect(find.text('Пока нет отзывов'), findsNothing);
     });
   });
 

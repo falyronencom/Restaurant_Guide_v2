@@ -82,7 +82,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         perPage: 10,
       );
 
-      if (!mounted) return;
       setState(() {
         _reviews = response.data;
         _totalPages = response.meta.totalPages;
@@ -90,7 +89,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = 'Не удалось загрузить отзывы';
         _isLoading = false;
@@ -113,19 +111,14 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         perPage: 10,
       );
 
-      if (!mounted) return;
       setState(() {
         _reviews.addAll(response.data);
         _currentPage++;
         _isLoadingMore = false;
       });
     } catch (e) {
-      // Подгрузка не удалась — дальше не листаем: иначе каждый скролл у края
-      // слал бы новый запрос. Раньше сбой выглядел как «страниц больше нет».
-      if (!mounted) return;
       setState(() {
         _isLoadingMore = false;
-        _totalPages = _currentPage;
       });
     }
   }
