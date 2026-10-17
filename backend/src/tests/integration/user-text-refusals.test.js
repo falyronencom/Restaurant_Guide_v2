@@ -102,11 +102,38 @@ describe('PUT /auth/profile — the name rule', () => {
   test.each([
     ['Belarusian letters', 'Алеся Ўладзіслаўна'],
     ['a hyphen and an apostrophe', "Мария-Анна О'Брайен"],
-    ['a typographic apostrophe', 'Мар’яна'],
     ['Latin letters', 'Jean-Luc'],
   ])('takes %s', async (_case, name) => {
     const res = await putName(name).expect(200);
     expect(res.body.data.user.name).toBe(name);
+  });
+
+  test('stores the iPhone\'s apostrophe as the plain one', async () => {
+    const res = await putName('Мар\u2019яна').expect(200);
+    expect(res.body.data.user.name).toBe("Мар'яна");
+  });
+
+  test('the name as stored is not checked again: a save with it passes', async () => {
+    // a provider name stored before the rule; the site sends it with every save
+    await query('UPDATE users SET name = $1 WHERE email = $2', ['ivan.petrov2001', testUsers.regularUser.email]);
+    try {
+      const res = await putName('ivan.petrov2001').expect(200);
+      expect(res.body.data.user.name).toBe('ivan.petrov2001');
+      // a new name is still under the rule
+      const refused = await putName('ivan.petrov2002').expect(400);
+      expect(refused.body.error.message).toBe(NAME_REFUSALS.NAME_CHARS);
+    } finally {
+      await query('UPDATE users SET name = $1 WHERE email = $2', [testUsers.regularUser.name, testUsers.regularUser.email]);
+    }
+  });
+
+  test('the stored name sent with another apostrophe is the same name', async () => {
+    await query('UPDATE users SET name = $1 WHERE email = $2', ['Мар\u2019яна,', testUsers.regularUser.email]);
+    try {
+      await putName("Мар'яна,").expect(200);
+    } finally {
+      await query('UPDATE users SET name = $1 WHERE email = $2', [testUsers.regularUser.name, testUsers.regularUser.email]);
+    }
   });
 
   test('stores the name with its spaces collapsed', async () => {

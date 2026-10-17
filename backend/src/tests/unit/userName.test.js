@@ -19,7 +19,6 @@ describe('checkUserName', () => {
     'Алеся Ўладзіслаўна',
     'Ёжик Ёлкин',
     "O'Brien",
-    'Мар’яна',
     "Мария-Анна О'Брайен-Иванова",
     'Jean-Luc Picard',
     'Zoë',
@@ -60,6 +59,10 @@ describe('checkUserName', () => {
     expect(checkUserName('  Анна \t  Мария  ')).toEqual({ name: 'Анна Мария' });
     expect(checkUserName('Анна\u2011Мария')).toEqual({ name: 'Анна-Мария' });
     expect(checkUserName('И\u0306осиф')).toEqual({ name: 'Йосиф' });
+    // the iPhone's ’ and the modifier ʼ are stored as the plain apostrophe
+    expect(checkUserName('Мар\u2019яна')).toEqual({ name: "Мар'яна" });
+    expect(checkUserName('Мар\u02BCяна')).toEqual({ name: "Мар'яна" });
+    expect(checkUserName('Мар\u2019\u2019яна').code).toBe('NAME_CHARS');
   });
 
   test('the refusals are Russian', () => {

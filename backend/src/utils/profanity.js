@@ -68,8 +68,13 @@ const LETTER = /\p{L}/u;
 const CYRILLIC_LETTER = /\p{Script=Cyrillic}/u;
 const LATIN_LETTER = /\p{Script=Latin}/u;
 
-/** Characters a reading keeps: letters, and the digits and signs of the tables. */
-const kept = (ch) => LETTER.test(ch) || ch in TO_CYRILLIC || ch in TO_LATIN;
+/**
+ * Characters a reading keeps: letters, and the digits and signs of the tables.
+ * A modifier letter is not one: ʼ (U+02BC) is an apostrophe to a reader, and
+ * «хʼуʼй» must read as «х'у'й».
+ */
+const MODIFIER_LETTER = /\p{Lm}/u;
+const kept = (ch) => (LETTER.test(ch) && !MODIFIER_LETTER.test(ch)) || ch in TO_CYRILLIC || ch in TO_LATIN;
 
 function toCyrillic(chars) {
   return chars.map((ch) => {

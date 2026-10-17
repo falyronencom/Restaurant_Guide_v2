@@ -24,7 +24,7 @@ import {
 } from '../utils/jwt.js';
 import { storedRefreshToken } from '../utils/refreshTokenStorage.js';
 import logger from '../utils/logger.js';
-import { checkUserName, providerDisplayName } from '../utils/userName.js';
+import { checkUserName, normalizeUserName, providerDisplayName } from '../utils/userName.js';
 import {
   invalidateAccountStatus,
   issuedBeforeRevocation,
@@ -895,7 +895,22 @@ export async function updateUserProfile(userId, profileData) {
   const values = [];
   let paramIndex = 1;
 
-  if (name !== undefined) {
+  // The rule is for a new name: the site and the app builds already installed
+  // send the name with every save, and a name stored before the rule — a
+  // provider's «ivan.petrov2001» — must not block the save of the rest. The
+  // name as stored, compared after the rule's normalization, is left alone.
+  let nameChanged = name !== undefined;
+  if (nameChanged && typeof name === 'string') {
+    const current = await pool.query(
+      'SELECT name FROM users WHERE id = $1 AND is_active = true',
+      [userId],
+    );
+    const stored = current.rows[0]?.name;
+    nameChanged = typeof stored !== 'string'
+      || normalizeUserName(stored) !== normalizeUserName(name);
+  }
+
+  if (nameChanged) {
     // The one name rule (utils/userName.js); the code thrown is the key of the
     // refusal the controller sends — NAME_EMPTY, NAME_LENGTH, NAME_CHARS,
     // NAME_PROFANE.

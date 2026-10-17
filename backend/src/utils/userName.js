@@ -34,19 +34,27 @@ export const PROVIDER_NAME_FALLBACK = 'Пользователь';
 
 /** A letter, with at most two combining marks (a decomposed «й» is one). */
 const LETTER = '\\p{L}\\p{M}{0,2}';
-/** Hyphens and apostrophes as typed, before they are read as one sign. */
-const SIGNS = "'’-";
+/** The apostrophes a keyboard types for ', each stored as '. */
+const APOSTROPHES = /[\u2019\u02BC]/gu;
+/** The signs allowed between letters, after normalization. */
+const SIGNS = "'-";
 const NAME_SHAPE = new RegExp(`^${LETTER}(?:[ ${SIGNS}]?${LETTER})*$`, 'u');
 
 /**
  * The name as stored: NFC, trimmed, every run of whitespace one space, the
- * typographic hyphens (U+2010, U+2011) the plain one.
+ * typographic hyphens (U+2010, U+2011) the plain one, and the apostrophes
+ * the plain one too — the iPhone types ’ (U+2019), the app sends ' (it
+ * replaces ’ and ʼ before sending), and one name must be one spelling.
  *
  * @param {string} raw
  * @returns {string}
  */
 export function normalizeUserName(raw) {
-  return String(raw).normalize('NFC').replace(/[\u2010\u2011]/gu, '-').trim().replace(/\s+/gu, ' ');
+  return String(raw).normalize('NFC')
+    .replace(/[\u2010\u2011]/gu, '-')
+    .replace(APOSTROPHES, "'")
+    .trim()
+    .replace(/\s+/gu, ' ');
 }
 
 /**
@@ -80,7 +88,7 @@ export function providerDisplayName(raw) {
   const words = normalizeUserName(raw)
     .replace(new RegExp(`[^\\p{L}\\p{M}${SIGNS}]+`, 'gu'), ' ')
     .split(' ')
-    .map((word) => word.replace(/['’-]{2,}/gu, (signs) => signs[0]).replace(/^['’-]+|['’-]+$/gu, ''))
+    .map((word) => word.replace(/['-]{2,}/gu, (signs) => signs[0]).replace(/^['-]+|['-]+$/gu, ''))
     .filter((word) => word.length > 0);
 
   let cleaned = '';
