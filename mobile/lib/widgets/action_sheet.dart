@@ -8,9 +8,15 @@ typedef ActionSheetItem = ({IconData icon, String label, VoidCallback onTap});
 /// Шторка выбора действия — держит человека в приложении до осознанного
 /// перехода (адрес, сайт, соцсеть, маршрут): выбор навигатора + «копировать».
 /// Нажатие сначала закрывает шторку, потом выполняет действие.
+///
+/// Шторка — в корневом навигаторе, поверх нижнего меню, как у карточки
+/// заведения. В навигаторе вкладки она делала экран вкладки «закрываемым»:
+/// вкладка «Карта» показывала под шторкой свою кнопку «назад» (A72,
+/// 17.10.2026).
 Future<void> showActionSheet(BuildContext context, List<ActionSheetItem> actions) {
   return showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: AppTheme.backgroundPrimary,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),

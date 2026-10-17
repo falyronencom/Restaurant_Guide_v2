@@ -118,6 +118,40 @@ void main() {
       expect(find.byType(ListTile), findsNWidgets(2));
     });
 
+    testWidgets(
+        'выбор открывается поверх всего приложения: навигатору вкладки '
+        'по-прежнему нечего закрывать', (tester) async {
+      // Вкладка живёт в своём навигаторе (main_navigation); экран «Карты»
+      // показывает кнопку «назад», когда его навигатор может закрыть экран.
+      final tabNavigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Navigator(
+          key: tabNavigator,
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 175,
+                  child: RouteButton(
+                    latitude: 53.9045,
+                    longitude: 27.5615,
+                    launch: (_) async {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.byType(RouteButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Маршрут в Яндекс.Картах'), findsOneWidget);
+      expect(tabNavigator.currentState!.canPop(), isFalse,
+          reason: 'шторка в навигаторе вкладки — у «Карты» всплывает «назад»');
+    });
+
     final choices = [
       ('Маршрут в Яндекс.Картах', RouteMode.driving,
           yandexRouteLinks(53.9045, 27.5615, RouteMode.driving)),
