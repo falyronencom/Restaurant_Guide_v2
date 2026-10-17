@@ -17,6 +17,23 @@ import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 
 /**
+ * The active (pending/processing) job of a media file, the newest one, or null.
+ *
+ * @param {string} mediaId - UUID of establishment_media row
+ * @returns {Promise<Object|null>}
+ */
+export const findActiveJob = async (mediaId) => {
+  const result = await pool.query(
+    `SELECT * FROM ocr_jobs
+     WHERE media_id = $1 AND status IN ('pending', 'processing')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [mediaId],
+  );
+  return result.rows[0] || null;
+};
+
+/**
  * Enqueue an OCR job for a media file.
  *
  * Idempotency: if an active (pending/processing) job already exists for this media,
@@ -25,27 +42,25 @@ import logger from '../utils/logger.js';
  * A 'processing' row orphaned by a dead process would satisfy this check forever;
  * the poller's stale sweep (reapStaleProcessingJobs) settles it within about an hour.
  *
+ * Called directly only by the allowance (services/ocrAllowance.js — every
+ * job a partner's request queues) and by the moderator's approval
+ * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list.
+ *
  * @param {Object} params
  * @param {string} params.establishmentId - UUID
  * @param {string} params.mediaId - UUID of establishment_media row
  * @returns {Promise<Object>} Job row (either newly created or pre-existing active)
  */
 export const enqueue = async ({ establishmentId, mediaId }) => {
-  const existing = await pool.query(
-    `SELECT * FROM ocr_jobs
-     WHERE media_id = $1 AND status IN ('pending', 'processing')
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [mediaId],
-  );
+  const existing = await findActiveJob(mediaId);
 
-  if (existing.rows.length > 0) {
+  if (existing) {
     logger.debug('OCR job already active for media, returning existing', {
-      jobId: existing.rows[0].id,
+      jobId: existing.id,
       mediaId,
-      status: existing.rows[0].status,
+      status: existing.status,
     });
-    return existing.rows[0];
+    return existing;
   }
 
   const result = await pool.query(
@@ -205,6 +220,24 @@ export const hasCompletedJobForMedia = async (mediaId) => {
     [mediaId],
   );
   return result.rowCount > 0;
+};
+
+/**
+ * The media of an establishment that have a completed (done) OCR job — the
+ * files already recognised. The partner's restart queues the others first
+ * (partnerMenuItemService.retryOcr), so that a daily allowance with a few
+ * places left goes to files never recognised, not to re-reading done ones.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<Set<string>>} media ids
+ */
+export const getMediaIdsWithCompletedJob = async (establishmentId) => {
+  const result = await pool.query(
+    `SELECT DISTINCT media_id FROM ocr_jobs
+     WHERE establishment_id = $1 AND status = 'done'`,
+    [establishmentId],
+  );
+  return new Set(result.rows.map((row) => row.media_id));
 };
 
 /**
