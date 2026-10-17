@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/analytics_totals_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
@@ -50,6 +51,7 @@ void main() {
     'AnalyticsTotalsProvider', // итоги полосы вкладок
     'AuditLogProvider', // выборка журнала, фильтры, раскрытая строка
     'AdminReviewsProvider', // отзывы, фильтры, выбранный отзыв
+    'AdminUsersProvider', // люди, поиск, выбранный человек и его блокировка
     'MenuItemsModerationProvider', // очередь позиций, фильтры, выбор
     'QualityHealthProvider', // снимок здоровья данных
     'BadgesProvider', // счётчики рейла
@@ -203,6 +205,7 @@ void main() {
         'AnalyticsTotalsProvider': () => AnalyticsTotalsProvider(),
         'AuditLogProvider': () => AuditLogProvider(),
         'AdminReviewsProvider': () => AdminReviewsProvider(),
+        'AdminUsersProvider': () => AdminUsersProvider(),
         'MenuItemsModerationProvider': () => MenuItemsModerationProvider(),
         'QualityHealthProvider': () => QualityHealthProvider(),
         'BadgesProvider': () => BadgesProvider(),
