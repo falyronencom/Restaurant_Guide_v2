@@ -58,9 +58,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   /// Что выбрано в прогулке, пока человек на вкладке. Карта под карточкой
   /// заведения снята (геолокацию держит только видимая карта), а новая
-  /// после «назад» начинает с этого выбора, со свежей позицией. Другая
-  /// вкладка и режим «Списком» выбор забывают: прогулка между заходами не
-  /// запоминается (Р5). Сборке не нужен — только следующей карте.
+  /// после «назад» начинает с этого выбора, со свежей позицией. Выбор
+  /// забывают другая вкладка, режим «Списком», выход из учётной записи и
+  /// пустое избранное: прогулка между заходами не запоминается (Р5). Сборке
+  /// не нужен — только следующей карте, поэтому меняется без setState.
   WalkChoice? _walkChoice;
 
   @override
@@ -159,6 +160,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           builder: (context, authProvider, child) {
             // Unauthenticated state - show login prompt
             if (!authProvider.isAuthenticated) {
+              _walkChoice = null; // вышел — прогулка не дождётся нового входа
               return _withStaticCover(_buildUnauthenticatedState());
             }
 
@@ -166,6 +168,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             return Consumer<EstablishmentsProvider>(
               builder: (context, provider, child) {
                 final onMap = _viewMode == FavoritesViewMode.map;
+                // Мест нет (убрали все, ошибка чтения) — карты нет, и прогулке
+                // не к чему вернуться.
+                if (provider.favoriteEstablishments.isEmpty) _walkChoice = null;
 
                 // Loading state
                 if (provider.isFavoritesLoading &&

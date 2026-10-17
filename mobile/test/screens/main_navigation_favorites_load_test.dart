@@ -367,6 +367,23 @@ void main() {
     await unmountPushHome(tester);
   });
 
+  testWidgets('чтение ещё идёт: возврат в приложение второго запроса не шлёт',
+      (tester) async {
+    final gate = Completer<void>();
+    heldReads['u-a'] = gate;
+    await pumpHome(tester, storedUser: userA);
+    expect(home.favoritesReads(), 1, reason: 'предпосылка: ответ придержан');
+
+    await leaveAndReturn(tester);
+    expect(home.favoritesReads(), 1, reason: 'идущее чтение не повторяется');
+
+    gate.complete();
+    await settlePush(tester);
+    expect(home.establishments.favoriteIds, {'p1', 'p2'});
+
+    await unmountPushHome(tester);
+  });
+
   testWidgets('избранное прочитано: возврат в приложение — ни одного запроса',
       (tester) async {
     await pumpHome(tester, storedUser: userA);

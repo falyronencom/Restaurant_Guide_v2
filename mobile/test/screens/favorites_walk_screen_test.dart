@@ -27,10 +27,18 @@ import '../support/fake_position_source.dart';
 import '../support/wire_fixtures.dart';
 import '../support/wire_stand.dart';
 
-/// Вход задаётся подменой одного признака, как в favorites_screen_test.
+/// Вход задаётся подменой одного признака, как в favorites_screen_test;
+/// выйти и войти — [signIn].
 class _Auth extends AuthProvider {
+  bool _signedIn = true;
+
   @override
-  bool get isAuthenticated => true;
+  bool get isAuthenticated => _signedIn;
+
+  void signIn(bool value) {
+    _signedIn = value;
+    notifyListeners();
+  }
 }
 
 const GeoPoint _me = (latitude: 53.9000, longitude: 27.5600);
@@ -99,9 +107,13 @@ void main() {
   late StubAdapter wire;
   late FakePositionSource source;
 
+  /// Что «сервер» отвечает на чтение избранного.
+  late List<Map<String, dynamic>> serverRows;
+
   setUp(() {
-    wire =
-        installWireStand((_) => jsonBody(favoritesEnvelope(favorites: _rows)));
+    serverRows = _rows;
+    wire = installWireStand(
+        (_) => jsonBody(favoritesEnvelope(favorites: serverRows)));
     SharedPreferences.setMockInitialValues({FavoritesViewModeStore.key: 'map'});
     source = FakePositionSource();
     final messenger =
@@ -114,11 +126,12 @@ void main() {
 
   /// [tab] — выбрана ли вкладка «Избранное». Оба признака — как их ставит
   /// главная (main_navigation): выбрана ли вкладка и TickerMode.
-  Future<void> pump(WidgetTester tester, {ValueNotifier<bool>? tab}) async {
+  Future<void> pump(WidgetTester tester,
+      {ValueNotifier<bool>? tab, _Auth? auth}) async {
     final selected = tab ?? ValueNotifier(true);
     await tester.pumpWidget(MultiProvider(
       providers: [
-        ChangeNotifierProvider<AuthProvider>(create: (_) => _Auth()),
+        ChangeNotifierProvider<AuthProvider>(create: (_) => auth ?? _Auth()),
         ChangeNotifierProvider(create: (_) => EstablishmentsProvider()),
       ],
       child: MaterialApp(
@@ -273,6 +286,60 @@ void main() {
     expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
     expect(find.text('5 мест · Минск'), findsOneWidget);
     expect(source.freshCalls, 1, reason: 'новая карта сама не включает');
+  });
+
+  testWidgets(
+      'под карточкой вышел из учётной записи — после нового входа прогулки '
+      'нет', (tester) async {
+    final auth = _Auth();
+    await pump(tester, auth: auth);
+    await walk(tester);
+
+    final navigator = await openCard(tester);
+    auth.signIn(false);
+    await tester.pump();
+    navigator.pop();
+    await tester.pumpAndSettle();
+    auth.signIn(true);
+    // Не pumpAndSettle: включись прогулка, полоса ожидания крутилась бы.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_walkChip, findsOneWidget, reason: 'прогулка не включилась сама');
+    expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
+    expect(source.freshCalls, 1);
+  });
+
+  testWidgets(
+      'под карточкой избранное опустело — «назад»: пусто; места вернулись — '
+      'прогулки нет', (tester) async {
+    await pump(tester);
+    await walk(tester);
+    final provider = Provider.of<EstablishmentsProvider>(
+        tester.element(find.byType(FavoritesScreen)),
+        listen: false);
+
+    final navigator = await openCard(tester);
+    serverRows = [];
+    provider.refreshFavorites();
+    await tester.pumpAndSettle();
+    expect(provider.favoriteEstablishments, isEmpty, reason: 'предпосылка');
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(FavoritesMap), findsNothing, reason: 'мест нет — карты нет');
+
+    serverRows = _rows;
+    provider.refreshFavorites();
+    // Места приходят через «загрузку»: карта рождается кадром позже, и ответ
+    // о доступе — ещё позже. Не pumpAndSettle: включись прогулка, полоса
+    // ожидания крутилась бы.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(_walkChip, findsOneWidget, reason: 'прогулка не включилась сама');
+    expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
+    expect(source.freshCalls, 1);
   });
 
   testWidgets('«Списком» и обратно «На карте» — прогулки нет', (tester) async {
