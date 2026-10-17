@@ -128,6 +128,7 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       r.partner_response,
       r.partner_response_at,
       CASE WHEN r.partner_response IS NOT NULL THEN true ELSE false END as has_partner_response,
+      r.user_id as author_id,
       u.name as author_name,
       u.email as author_email,
       e.name as establishment_name,

@@ -77,6 +77,7 @@ const P = {
   // field, not a person: it must reach the viewer (opaque moderation_notes).
   contactFieldComment: `уточните контактное лицо ${tag}`,
   deletedText: `сторож-удалённый-текст-${tag}`,
+  blockedName: `Заблокированный Сторожа ${tag}`,
 };
 
 const ids = {};
@@ -86,6 +87,7 @@ let partnerEmail; // the partner who deleted a card — written into the journal
 let cardPartnerAccountEmail; // the account e-mail of the card's partner — no read route shows it
 let hiddenAuthorEmail;
 let deletedAuthorEmail;
+let blockedEmail;
 
 /** Values a viewer must never receive and an admin receives somewhere. */
 const personalValues = () => ({
@@ -103,6 +105,8 @@ const personalValues = () => ({
   deletedAuthorEmail,
   hiddenText: P.hiddenText,
   deletedText: P.deletedText,
+  blockedName: P.blockedName,
+  blockedEmail,
 });
 
 /**
@@ -142,6 +146,16 @@ const READ_FIXTURES = {
     '/audit-log?per_page=50&include_metadata=true',
     '/audit-log?per_page=50&entity_type=review',
     { url: `/audit-log?user_id=${ids.moderator}`, viewer: 403 },
+  ],
+  '/users': () => [
+    '/users?per_page=50',
+    '/users?status=blocked',
+    { url: `/users?search=${encodeURIComponent(P.hiddenAuthor)}`, viewer: 403 },
+  ],
+  '/users/:id': () => [
+    `/users/${ids.hiddenAuthor}`,
+    `/users/${ids.blocked}`,
+    `/users/${ids.moderator}`,
   ],
   '/quality/health': () => ['/quality/health'],
   '/badges': () => ['/badges'],
@@ -265,6 +279,14 @@ beforeAll(async () => {
      VALUES ($1, $2, 'Капучино', 0.5, $3::jsonb, 0)`,
     [ids.active, media.rows[0].id, JSON.stringify({ reason: 'price_below_threshold' })],
   );
+  // A person blocked and renamed from the panel: the journal entries name them
+  // to an admin (entity_context.user_name, old_data.user_name), not to a viewer.
+  const blocked = await author(P.blockedName, 'blocked');
+  ids.blocked = blocked.id;
+  blockedEmail = blocked.email;
+  await act('post', `/users/${blocked.id}/block`, { reason: 'проверка сторожа' }).expect(200);
+  await act('post', `/users/${blocked.id}/reset-name`, { reason: 'проверка сторожа' }).expect(200);
+
   const draft = await createPartnerWithEstablishment('draft');
   partnerEmail = draft.partner.user.email;
   await query('UPDATE users SET name = $1 WHERE id = $2', [P.partnerName, draft.partner.user.id]);

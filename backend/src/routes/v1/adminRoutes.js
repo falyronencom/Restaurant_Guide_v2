@@ -35,6 +35,7 @@ import * as adminModerationController from '../../controllers/adminModerationCon
 import * as analyticsController from '../../controllers/analyticsController.js';
 import * as auditLogController from '../../controllers/auditLogController.js';
 import * as adminReviewController from '../../controllers/adminReviewController.js';
+import * as adminUserController from '../../controllers/adminUserController.js';
 import * as adminMenuItemController from '../../controllers/adminMenuItemController.js';
 import * as qualityHealthController from '../../controllers/qualityHealthController.js';
 import * as badgesController from '../../controllers/badgesController.js';
@@ -305,6 +306,71 @@ router.post(
   authenticate,
   writeAccess,
   adminModerationController.upgradeToPartner,
+);
+
+// ============================================================================
+// People: find, block, unblock, reset the name (tester walkthrough 17.10, p. 8)
+// ============================================================================
+
+/**
+ * GET /api/v1/admin/users?search=&status=active|blocked&page=1&per_page=20
+ *
+ * The people of the platform. Read tier: a viewer sees the list without names
+ * and contacts and may not search (adminUserService.getUsers).
+ */
+router.get(
+  '/users',
+  authenticate,
+  readAccess,
+  adminUserController.listUsers,
+);
+
+/**
+ * GET /api/v1/admin/users/:id
+ *
+ * One person with review counts and the latest block or unblock.
+ */
+router.get(
+  '/users/:id',
+  authenticate,
+  readAccess,
+  adminUserController.getUser,
+);
+
+/**
+ * POST /api/v1/admin/users/:id/block — body { reason }
+ *
+ * Switch the account off, end its access, hide its visible reviews; journal.
+ */
+router.post(
+  '/users/:id/block',
+  authenticate,
+  writeAccess,
+  adminUserController.blockUser,
+);
+
+/**
+ * POST /api/v1/admin/users/:id/unblock — body { reason }
+ *
+ * Switch the account on and show the reviews the block hid; journal.
+ */
+router.post(
+  '/users/:id/unblock',
+  authenticate,
+  writeAccess,
+  adminUserController.unblockUser,
+);
+
+/**
+ * POST /api/v1/admin/users/:id/reset-name — body { reason }
+ *
+ * The name becomes «Пользователь»; journal with the old name.
+ */
+router.post(
+  '/users/:id/reset-name',
+  authenticate,
+  writeAccess,
+  adminUserController.resetUserName,
 );
 
 // ============================================================================

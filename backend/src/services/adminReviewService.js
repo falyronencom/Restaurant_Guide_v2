@@ -23,7 +23,7 @@ import logger from '../utils/logger.js';
  *   the text — and loses the e-mail (Coordinator decision 2026-09-08).
  * - A hidden review keeps its place in the list with the mark is_visible:
  *   false, the rating and the date, but carries nothing of the person: no
- *   name, no e-mail, no author statistics, and no text — neither the author's
+ *   id, no name, no e-mail, no author statistics, and no text — neither the author's
  *   nor the partner's reply, which may quote it. A review is often hidden
  *   precisely because its text says too much about someone.
  * - Deleted reviews never reach this function: the model drops them for a
@@ -44,6 +44,8 @@ const toViewerReview = (review) => {
   return {
     ...review,
     viewer_redacted: true,
+    // The author's id would lead from a hidden review to the person's card.
+    author_id: null,
     author_name: null,
     author_email: null,
     author_review_count: null,
