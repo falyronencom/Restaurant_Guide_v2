@@ -311,3 +311,64 @@ describe('Контракт провода с mobile — лента уведом�
       .toBeGreaterThan(2 * 24 * 60 * 60 * 1000);
   });
 });
+
+describe('Контракт провода с mobile — что под чипами ленты', () => {
+  // Приложение шлёт `category=establishments` под чипом «Мои заведения» и
+  // `category=reviews` под «Мои отзывы». Состав — решение Координатора
+  // 17.10.2026 (вариант «А-узкий»): в «Мои заведения» — всё о своих местах,
+  // включая новый отзыв о месте и партнёрские брони; в «Мои отзывы» — только
+  // то, что случилось с отзывами, написанными самим пользователем. Брони
+  // гостя, «бронь истекла» (один тип и гостю, и партнёру) и акции — только
+  // во «Все». Список ниже — состав чипа целиком: лишний тип под чипом —
+  // такой же сбой, как пропавший.
+  const ALL_TYPES = [
+    'establishment_approved', 'establishment_rejected', 'establishment_suspended',
+    'establishment_unsuspended', 'establishment_claimed', 'menu_parsed',
+    'menu_item_hidden_by_admin', 'new_review', 'partner_response', 'review_hidden',
+    'review_deleted', 'booking_received', 'booking_confirmed', 'booking_declined',
+    'booking_expired', 'booking_cancelled', 'promotion_new',
+  ];
+
+  const typesUnder = async (category) => {
+    const res = await request(app)
+      .get('/api/v1/notifications')
+      .query({ page: 1, limit: 50, ...(category ? { category } : {}) })
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+    return res.body.data.items.map((n) => n.type).sort();
+  };
+
+  beforeEach(async () => {
+    await query(`
+      INSERT INTO notifications (user_id, type, title)
+      SELECT $1, t, 'Уведомление' FROM unnest($2::text[]) AS t
+    `, [partnerId, ALL_TYPES]);
+  });
+
+  test('«Мои заведения» — места партнёра, новый отзыв о месте, партнёрские брони', async () => {
+    expect(await typesUnder('establishments')).toEqual([
+      'booking_cancelled',
+      'booking_received',
+      'establishment_approved',
+      'establishment_claimed',
+      'establishment_rejected',
+      'establishment_suspended',
+      'establishment_unsuspended',
+      'menu_item_hidden_by_admin',
+      'menu_parsed',
+      'new_review',
+    ]);
+  });
+
+  test('«Мои отзывы» — только то, что случилось с отзывами самого пользователя', async () => {
+    expect(await typesUnder('reviews')).toEqual([
+      'partner_response',
+      'review_deleted',
+      'review_hidden',
+    ]);
+  });
+
+  test('«Все» — все типы, включая оставшиеся вне чипов', async () => {
+    expect(await typesUnder(null)).toEqual([...ALL_TYPES].sort());
+  });
+});

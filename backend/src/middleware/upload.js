@@ -68,8 +68,8 @@ export const MULTIPART_LIMITS = Object.freeze({
  * The app's next build shows a 400's text as is on the promotion form and the
  * wizard's photo upload (installed builds: the wizard after «Ошибка при
  * загрузке фото:», the promotion form its own text); the site has no text of
- * its own for INVALID_FORMAT and shows its general one. The wording awaits
- * the Coordinator's decision (proposed 16.10.2026).
+ * its own for INVALID_FORMAT and shows its general one. The wording was
+ * approved by the Coordinator on 16.10.2026 (PR #52).
  */
 export const UNREADABLE_FORM_MESSAGE = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
 

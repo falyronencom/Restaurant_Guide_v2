@@ -46,7 +46,7 @@ const VISION_FALLBACK_PAGE_LIMIT = 2;
  * pages (pdfTextExtractor, its text layer is the last attempt's backup); the
  * job's summary carries pages_total when pages were left unread.
  *
- * The number — proposed to the Coordinator on 17.10.2026, awaiting the word:
+ * The number — approved by the Coordinator on 17.10.2026 (PR #59):
  * the PDF menus checked in 2026 (the digital set of 19 Minsk places: 11 PDFs
  * of 1–9 pages, Zalkind and ZIZÚ 9; on production Zalkind's 9 pages were read
  * whole, 29.09) fit twice over; a menu read as photos holds 30 (MEDIA_LIMITS).
