@@ -9,7 +9,7 @@
  * Все моменты заданы в UTC-литералах: полночь Минска — это 21:00 UTC.
  */
 
-import { secondsUntilMinskMidnight } from '../../utils/minskDay.js';
+import { minskDate, secondsUntilMinskMidnight } from '../../utils/minskDay.js';
 
 describe('secondsUntilMinskMidnight — граница суток по Минску, не по процессу', () => {
   test.each([
@@ -19,7 +19,7 @@ describe('secondsUntilMinskMidnight — граница суток по Минс�
     ['полдень Минска (09:00:00Z)', '2026-10-11T09:00:00Z', 43200],
     ['полночь UTC — в Минске уже 03:00', '2026-10-11T00:00:00Z', 75600],
     ['зимняя дата — пояс без перевода часов, те же +3', '2026-01-15T20:59:30Z', 30],
-  ])('%s → %i с', (_label, iso, expected) => {
+  ])('%s: %s → %i с', (_label, iso, expected) => {
     expect(secondsUntilMinskMidnight(new Date(iso))).toBe(expected);
   });
 
@@ -29,5 +29,18 @@ describe('secondsUntilMinskMidnight — граница суток по Минс�
       expect(value).toBeGreaterThanOrEqual(1);
       expect(value).toBeLessThanOrEqual(86400);
     }
+  });
+});
+
+describe('minskDate — дата суток Минска для счётчиков суточного предела загрузок', () => {
+  test.each([
+    ['за секунду до полуночи Минска — ещё 17-е', '2026-10-17T20:59:59Z', '2026-10-17'],
+    ['полночь Минска — уже 18-е, в UTC ещё 17-е', '2026-10-17T21:00:00Z', '2026-10-18'],
+    ['полночь UTC — в Минске 03:00 того же дня', '2026-10-18T00:00:00Z', '2026-10-18'],
+    ['Новый год в Минске наступает в 21:00 UTC 31 декабря', '2025-12-31T21:00:00Z', '2026-01-01'],
+    ['за секунду до него — ещё старый год', '2025-12-31T20:59:59Z', '2025-12-31'],
+    ['однозначные месяц и день — с нулём впереди', '2026-03-04T12:00:00Z', '2026-03-04'],
+  ])('%s: %s → %s', (_label, iso, expected) => {
+    expect(minskDate(new Date(iso))).toBe(expected);
   });
 });

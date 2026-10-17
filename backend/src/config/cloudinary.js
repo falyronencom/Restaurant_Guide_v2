@@ -125,6 +125,35 @@ const PDF_PREVIEW_CONFIG = {
 };
 
 /**
+ * What the SDK says about a failed upload (cloudinary 2.8, lib/uploader.js):
+ * an answer with an error body rejects with `{ message, http_code }`; an
+ * unexpected status with `{ message, http_code, name: 'UnexpectedResponse' }`;
+ * a request that failed or timed out with `{ error: { message, http_code? } }`
+ * — 499 is the SDK's own timeout, 60 s without an answer.
+ *
+ * @param {Object} error - The SDK's rejection
+ * @returns {{ message: string|undefined, httpCode: number|undefined }}
+ */
+const uploadFailureOf = (error) => {
+  const inner = error?.error ?? error;
+  return { message: inner?.message, httpCode: inner?.http_code };
+};
+
+/**
+ * Whether the cloud refused an upload for certain: it answered 4xx with its
+ * error (an invalid file, a file over the plan's size, a rate limit) — nothing
+ * was stored. A 5xx, the SDK's timeout (499) or a failed connection leave the
+ * outcome unknown: the file may be stored all the same (review 17.10.2026).
+ *
+ * @param {Error} error - Thrown by uploadImage or uploadPdf (carries httpCode)
+ * @returns {boolean}
+ */
+export const cloudRefusedUpload = (error) => {
+  const code = error?.httpCode;
+  return Number.isInteger(code) && code >= 400 && code < 500 && code !== 499;
+};
+
+/**
  * Upload an image to Cloudinary
  * 
  * This function handles the complete upload workflow:
@@ -174,12 +203,14 @@ export const uploadImage = async (filePath, establishmentId, mediaType) => {
       format: uploadResult.format,
     };
   } catch (error) {
+    const failure = uploadFailureOf(error);
     logger.error('Error uploading image to Cloudinary', {
-      error: error.message,
+      error: failure.message,
+      httpCode: failure.httpCode,
       establishmentId,
       mediaType,
     });
-    throw new Error(`Failed to upload image: ${error.message}`);
+    throw Object.assign(new Error(`Failed to upload image: ${failure.message}`), { httpCode: failure.httpCode });
   }
 };
 
@@ -671,11 +702,13 @@ export const uploadPdf = async (filePath, establishmentId) => {
       pages: uploadResult.pages,
     };
   } catch (error) {
+    const failure = uploadFailureOf(error);
     logger.error('Error uploading PDF to Cloudinary', {
-      error: error.message,
+      error: failure.message,
+      httpCode: failure.httpCode,
       establishmentId,
     });
-    throw new Error(`Failed to upload PDF: ${error.message}`);
+    throw Object.assign(new Error(`Failed to upload PDF: ${failure.message}`), { httpCode: failure.httpCode });
   }
 };
 
