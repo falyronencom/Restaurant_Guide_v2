@@ -438,6 +438,8 @@ void main() {
           findsOneWidget);
       expect(pins(tester).last.mapId.value, 'marker_закрытое');
       expect(pins(tester).last.zIndex, 1.0);
+      expect(_sheet, findsOneWidget,
+          reason: 'под превью шторка остаётся в дереве — помнит прокрутку');
       expect(sheetVisible(tester), isFalse);
       expect(tester.widget<RouteButton>(find.byType(RouteButton)).mode,
           RouteMode.walking);
