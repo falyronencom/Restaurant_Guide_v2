@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
@@ -77,6 +78,15 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
     Navigator.of(context).pushNamed(
       '/establishment/$establishmentId',
       arguments: distanceKm != null ? {'distanceKm': distanceKm} : null,
+    );
+  }
+
+  /// Тап по адресу карточки: карта, сосредоточенная на этом заведении.
+  void _openOnMap(Establishment establishment) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MapScreen(focusedEstablishment: establishment),
+      ),
     );
   }
 
@@ -656,6 +666,12 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                       onTap: () => _navigateToDetail(establishment.id, distanceKm: distanceKm),
                       onFavoriteToggle: () => _toggleFavorite(establishment.id),
                       distanceKm: distanceKm,
+                      // Без координат показывать на карте нечего: адрес тогда
+                      // остаётся обычным текстом, а не пустой ссылкой.
+                      onAddressTap: establishment.latitude != null &&
+                              establishment.longitude != null
+                          ? () => _openOnMap(establishment)
+                          : null,
                     );
                   },
                   childCount: provider.establishments.length +

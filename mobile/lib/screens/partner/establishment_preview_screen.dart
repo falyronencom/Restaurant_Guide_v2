@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 
 /// Preview screen for partner to see how their establishment card will look
 /// Based on EstablishmentDetailScreen but with preview mode:
@@ -525,14 +526,16 @@ class _EstablishmentPreviewScreenState
   /// Build status line (Open/Closed with time)
   Widget _buildStatusLine() {
     final hours = data.weeklyWorkingHours;
-    String statusText = 'Время работы не указано';
+    var statusText = 'Время работы не указано';
+    String? untilSuffix;
 
     if (hours != null && hours.hasAnyHours) {
       // Find first open day
       for (int i = 0; i < 7; i++) {
         final day = hours.getDay(i);
         if (day.isOpen && day.openTime != null && day.closeTime != null) {
-          statusText = 'Открыто/до ${day.closeTime}';
+          statusText = 'Открыто';
+          untilSuffix = openUntilSuffix(day.closeTime!);
           break;
         }
       }
@@ -547,15 +550,15 @@ class _EstablishmentPreviewScreenState
         ),
         children: [
           TextSpan(
-            text: statusText.split('/').first,
+            text: statusText,
             style: const TextStyle(
               color: _greenStatus,
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (statusText.contains('/'))
+          if (untilSuffix != null)
             TextSpan(
-              text: '/${statusText.split('/').last}',
+              text: untilSuffix,
               style: const TextStyle(color: _backgroundColor),
             ),
         ],

@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 
 /// Reusable card component for displaying establishment information
@@ -16,6 +17,11 @@ class EstablishmentCard extends StatelessWidget {
   final VoidCallback? onFavoriteToggle;
   final double? distanceKm;
 
+  /// Тап по адресу. Задан — адрес подчёркнут и ведёт, куда скажет экран
+  /// (из выдачи — на карту); не задан — адрес обычный текст без подчёркивания,
+  /// а тап по нему, как и по остальной карточке, идёт в [onTap].
+  final VoidCallback? onAddressTap;
+
   const EstablishmentCard({
     super.key,
     required this.establishment,
@@ -23,6 +29,7 @@ class EstablishmentCard extends StatelessWidget {
     this.onTap,
     this.onFavoriteToggle,
     this.distanceKm,
+    this.onAddressTap,
   });
 
   // Figma colors
@@ -382,7 +389,7 @@ class EstablishmentCard extends StatelessWidget {
             ),
             if (closingTime != null && isOpen)
               TextSpan(
-                text: '/до $closingTime',
+                text: openUntilSuffix(closingTime),
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
                   fontWeight: FontWeight.w400,
@@ -410,24 +417,36 @@ class EstablishmentCard extends StatelessWidget {
     );
   }
 
-  /// Build address with underline (Figma design)
+  /// Build address (Figma design: подчёркнутый)
   /// Правый отступ резервирует место под иконку избранного в правом-нижнем
   /// углу — иначе длинный адрес заходит под неё. Переносится адрес только
   /// между словами — см. [_WholeWordText].
+  ///
+  /// Подчёркивание обещает ссылку, поэтому есть оно только у адреса с
+  /// обработчиком [onAddressTap]: тап по подчёркнутому адресу, уходящий на
+  /// страницу заведения, как раз и разбирал проход тестировщика 17.10, п. 12.
   Widget _buildAddress() {
+    final tappable = onAddressTap != null;
+    final text = _WholeWordText(
+      establishment.address,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: AppTheme.textPrimary,
+        decoration: tappable ? TextDecoration.underline : null,
+        height: 20 / 14,
+      ),
+      maxLines: 2,
+    );
     return Padding(
       padding: const EdgeInsets.only(right: _favoriteReserve),
-      child: _WholeWordText(
-        establishment.address,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: AppTheme.textPrimary,
-          decoration: TextDecoration.underline,
-          height: 20 / 14,
-        ),
-        maxLines: 2,
-      ),
+      child: tappable
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onAddressTap,
+              child: text,
+            )
+          : text,
     );
   }
 

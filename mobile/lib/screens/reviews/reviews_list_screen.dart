@@ -5,7 +5,7 @@ import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 
 /// Reviews List Screen - displays all reviews for an establishment
-/// Figma design: Dark background, review cards with reactions
+/// Figma design: Dark background, review cards
 class ReviewsListScreen extends StatefulWidget {
   final Establishment establishment;
 
@@ -29,11 +29,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   String? _error;
   int _currentPage = 1;
   int _totalPages = 1;
-
-  // Local reactions state (UI only - no backend yet)
-  final Map<String, int> _likes = {};  // Key is review UUID
-  final Map<String, int> _dislikes = {};  // Key is review UUID
-  final Map<String, String?> _userReactions = {}; // 'like', 'dislike', or null
 
   // Scroll controller for pagination
   final ScrollController _scrollController = ScrollController();
@@ -92,12 +87,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         _totalPages = response.meta.totalPages;
         _currentPage = 1;
         _isLoading = false;
-
-        // Initialize reactions with mock data (using hashCode for mock values)
-        for (final review in _reviews) {
-          _likes[review.id] = (review.id.hashCode.abs() % 10) + 1; // Mock likes
-          _dislikes[review.id] = review.id.hashCode.abs() % 3; // Mock dislikes
-        }
       });
     } catch (e) {
       setState(() {
@@ -126,58 +115,12 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         _reviews.addAll(response.data);
         _currentPage++;
         _isLoadingMore = false;
-
-        // Initialize reactions for new reviews (using hashCode for mock values)
-        for (final review in response.data) {
-          _likes[review.id] = (review.id.hashCode.abs() % 10) + 1;
-          _dislikes[review.id] = review.id.hashCode.abs() % 3;
-        }
       });
     } catch (e) {
       setState(() {
         _isLoadingMore = false;
       });
     }
-  }
-
-  /// Handle like tap
-  void _onLikeTap(String reviewId) {
-    setState(() {
-      final currentReaction = _userReactions[reviewId];
-
-      if (currentReaction == 'like') {
-        // Remove like
-        _userReactions[reviewId] = null;
-        _likes[reviewId] = (_likes[reviewId] ?? 1) - 1;
-      } else {
-        // Add like
-        if (currentReaction == 'dislike') {
-          _dislikes[reviewId] = (_dislikes[reviewId] ?? 1) - 1;
-        }
-        _userReactions[reviewId] = 'like';
-        _likes[reviewId] = (_likes[reviewId] ?? 0) + 1;
-      }
-    });
-  }
-
-  /// Handle dislike tap
-  void _onDislikeTap(String reviewId) {
-    setState(() {
-      final currentReaction = _userReactions[reviewId];
-
-      if (currentReaction == 'dislike') {
-        // Remove dislike
-        _userReactions[reviewId] = null;
-        _dislikes[reviewId] = (_dislikes[reviewId] ?? 1) - 1;
-      } else {
-        // Add dislike
-        if (currentReaction == 'like') {
-          _likes[reviewId] = (_likes[reviewId] ?? 1) - 1;
-        }
-        _userReactions[reviewId] = 'dislike';
-        _dislikes[reviewId] = (_dislikes[reviewId] ?? 0) + 1;
-      }
-    });
   }
 
   /// Show sort options
@@ -370,12 +313,11 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
     );
   }
 
-  /// Build review card (Figma style with reactions)
+  /// Build review card (Figma style). Реакций «палец вверх / вниз» здесь нет:
+  /// на сервере такой функции нет, а числа при кнопках когда-то брались из
+  /// хэша id — выдуманные (проход тестировщика 17.10, п. 28; решение
+  /// Координатора В1: убрать, пока функции нет).
   Widget _buildReviewCard(Review review) {
-    final likes = _likes[review.id] ?? 0;
-    final dislikes = _dislikes[review.id] ?? 0;
-    final userReaction = _userReactions[review.id];
-
     return Container(
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
@@ -436,12 +378,15 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
               Expanded(
                 child: Text(
                   review.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 16,
                     color: _creamColor,
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               // Stars and date
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -524,69 +469,6 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
               ),
             ),
           ],
-
-          const SizedBox(height: 12),
-
-          // Reactions row (likes/dislikes)
-          Row(
-            children: [
-              // Like button
-              GestureDetector(
-                onTap: () => _onLikeTap(review.id),
-                child: Row(
-                  children: [
-                    Icon(
-                      userReaction == 'like'
-                          ? Icons.thumb_up
-                          : Icons.thumb_up_outlined,
-                      size: 18,
-                      color: userReaction == 'like'
-                          ? _secondaryOrange
-                          : _greyText,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      likes.toString(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: userReaction == 'like'
-                            ? _secondaryOrange
-                            : _greyText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Dislike button
-              GestureDetector(
-                onTap: () => _onDislikeTap(review.id),
-                child: Row(
-                  children: [
-                    Icon(
-                      userReaction == 'dislike'
-                          ? Icons.thumb_down
-                          : Icons.thumb_down_outlined,
-                      size: 18,
-                      color: userReaction == 'dislike'
-                          ? _secondaryOrange
-                          : _greyText,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      dislikes.toString(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: userReaction == 'dislike'
-                            ? _secondaryOrange
-                            : _greyText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

@@ -29,8 +29,12 @@ import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
+import 'package:restaurant_guide_mobile/widgets/hero_scrim.dart';
 import 'package:restaurant_guide_mobile/widgets/status_bar_scrim.dart';
+import 'package:restaurant_guide_mobile/utils/establishment_share.dart';
 import 'package:restaurant_guide_mobile/utils/gallery_photos.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
+import 'package:restaurant_guide_mobile/utils/russian_plural.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -63,6 +67,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   bool _isLoading = true;
   String? _error;
 
+  /// Кнопка «Поделиться» — от её рамки iPad рисует всплывающее окно меню.
+  final GlobalKey _shareButtonKey = GlobalKey();
+
   // Gallery state
   int _currentPhotoIndex = 0;
   final PageController _galleryController = PageController();
@@ -77,6 +84,10 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   static const Color _greenStatus = AppTheme.statusGreen;
   static const Color _navyBlue = AppTheme.accentNavy;
   static const Color _greyText = AppTheme.textGrey;
+
+  /// «Закрыто» поверх фото. Обычный красный на тёмной подложке не читается
+  /// (около 2 : 1), светлый оттенок — читается так же, как зелёное «Открыто».
+  static const Color _closedOnPhoto = Color(0xFFFF8F85);
 
   /// На столько чипы под статусом отступают справа, чтобы не уехать под
   /// правую колонку героя: ширина бейджа рейтинга (50) + его отступ от края
@@ -345,26 +356,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   : _buildPrimaryImageFallback())
               : _buildNoPhotoPlaceholder(),
 
-          // Gradient overlay at bottom (IgnorePointer so swipe reaches PageView)
+          // Затемнение под текстом (IgnorePointer внутри — свайп достаёт до
+          // PageView). Доходит до названия: см. [HeroScrim].
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            height: 333,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.6),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            height: HeroScrim.height,
+            child: const HeroScrim(),
           ),
 
           // Page indicator dots (only if multiple photos in media array)
@@ -546,6 +545,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       child: Padding(
         padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
         child: Container(
+          key: _shareButtonKey,
           width: 55,
           height: 42,
           decoration: BoxDecoration(
@@ -567,30 +567,53 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
-  /// Share establishment info via native share sheet
-  void _shareEstablishment() {
-    if (_establishment == null) return;
+  /// Share establishment info via native share sheet: название, адрес и
+  /// ссылка на страницу заведения на сайте.
+  Future<void> _shareEstablishment() async {
+    final establishment = _establishment;
+    if (establishment == null) return;
+    await _shareText(
+      establishmentShareText(establishment),
+      subject: establishment.name,
+      origin: _shareButtonRect(),
+    );
+  }
 
-    final name = _establishment!.name;
-    final category = _establishment!.category.toLowerCase();
-    final address = '${_establishment!.address}, ${_establishment!.city}';
+  /// Рамка кнопки «Поделиться» в координатах экрана.
+  Rect? _shareButtonRect() {
+    final box = _shareButtonKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
 
-    final buffer = StringBuffer();
-    buffer.writeln('$name — $category');
-    buffer.writeln('📍 $address');
+  Rect? _screenBottomCenter() {
+    if (!mounted) return null;
+    final size = MediaQuery.sizeOf(context);
+    return Rect.fromLTWH(size.width / 2, size.height - 1, 1, 1);
+  }
 
-    if (_establishment!.phone != null && _establishment!.phone!.isNotEmpty) {
-      buffer.writeln('📞 ${_establishment!.phone}');
+  /// Открывает системное меню. Раньше вызов шёл без `await` и без ловли:
+  /// отказ плагина (на iPhone — «ничего не происходит», проход тестировщика
+  /// 17.10, п. 15) пропадал без следа. Теперь отказ виден, а текст остаётся
+  /// у человека — он скопирован в буфер.
+  ///
+  /// iPad рисует меню всплывающим окном от рамки: без неё плагин отказывает.
+  /// Не нашлась рамка кнопки (лист «Ссылка» её не знает) — берётся точка
+  /// внизу посередине экрана.
+  Future<void> _shareText(String text, {String? subject, Rect? origin}) async {
+    try {
+      await Share.share(
+        text,
+        subject: subject,
+        sharePositionOrigin: origin ?? _screenBottomCenter(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _copyToClipboard(
+        text,
+        'Меню «Поделиться» не открылось. Текст скопирован — вставьте его в сообщение',
+      );
     }
-
-    if (_establishment!.website != null &&
-        _establishment!.website!.isNotEmpty) {
-      buffer.writeln('🔗 ${_establishment!.website}');
-    }
-
-    buffer.writeln('\nНайдено в Restaurant Guide Belarus');
-
-    Share.share(buffer.toString());
   }
 
   /// Build favorite button
@@ -641,7 +664,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         // Cuisine
         if (_establishment!.cuisine != null)
           Opacity(
-            opacity: 0.7,
+            opacity: 0.85,
             child: Text(
               '{${_establishment!.cuisine!.toLowerCase()}}',
               style: const TextStyle(
@@ -845,7 +868,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       (
         icon: Icons.ios_share,
         label: 'Поделиться',
-        onTap: () => Share.share(url),
+        onTap: () => _shareText(url),
       ),
     ]);
   }
@@ -918,13 +941,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           TextSpan(
             text: isOpen ? 'Открыто' : 'Закрыто',
             style: TextStyle(
-              color: isOpen ? _greenStatus : Colors.red,
+              color: isOpen ? _greenStatus : _closedOnPhoto,
               fontWeight: FontWeight.w500,
             ),
           ),
           if (closingTime != null && isOpen)
             TextSpan(
-              text: '/до $closingTime',
+              text: openUntilSuffix(closingTime),
               style: const TextStyle(color: _backgroundColor),
             ),
         ],
@@ -1639,7 +1662,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   child: Row(
                     children: [
                       Text(
-                        '$_totalReviews отзывов',
+                        reviewsCountLabel(_totalReviews),
                         style: const TextStyle(
                           fontSize: 14,
                           color: _backgroundColor,
@@ -1802,15 +1825,21 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                   ),
                 ),
               const SizedBox(width: 10),
-              // Name
-              Text(
-                review.userName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: _backgroundColor,
+              // Name — занимает оставшееся место и обрывается многоточием;
+              // звёзды и дата стоят на месте. Без Expanded длинное имя брало
+              // свою естественную ширину и выталкивало их за край карточки.
+              Expanded(
+                child: Text(
+                  review.userName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: _backgroundColor,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               // Stars and date
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -2494,10 +2523,19 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             right: 16,
-            child: IconButton(
-              icon: const Icon(Icons.close,
-                  color: AppTheme.textOnPrimary, size: 28),
-              onPressed: () => Navigator.of(context).pop(),
+            // Подложка нужна: лист меню белый и доходит до верха экрана, белый
+            // крестик на нём пропадал (проход тестировщика 17.10, п. 46).
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                tooltip: 'Закрыть',
+                icon: const Icon(Icons.close,
+                    color: AppTheme.textOnPrimary, size: 28),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
             ),
           ),
 

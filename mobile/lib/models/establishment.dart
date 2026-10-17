@@ -49,6 +49,12 @@ String _toRussian(String value, Map<String, String> mapping) {
 /// Matches backend API response format
 class Establishment {
   final String id;  // UUID from backend (String for new API, kept for compatibility)
+  /// Адрес карточки на сайте: slug и slug города и категории из публичной
+  /// проекции. Любое из них может не прийти (старые ответы, карточка вне
+  /// словаря адресов) — тогда ссылку на сайт не строим.
+  final String? slug;
+  final String? citySlug;
+  final String? categorySlug;
   final String name;
   final String? description;
   final String category;  // Primary category (first from categories array)
@@ -78,6 +84,9 @@ class Establishment {
 
   Establishment({
     required this.id,
+    this.slug,
+    this.citySlug,
+    this.categorySlug,
     required this.name,
     this.description,
     required this.category,
@@ -124,6 +133,9 @@ class Establishment {
 
     return Establishment(
       id: json['id'].toString(),  // UUID as String
+      slug: json['slug'] as String?,
+      citySlug: json['city_slug'] as String?,
+      categorySlug: json['category_slug'] as String?,
       name: json['name'] as String,
       description: json['description'] as String?,
       category: categoriesList.isNotEmpty ? categoriesList.first : 'Ресторан',
@@ -295,6 +307,9 @@ class Establishment {
   /// Copy with modifications
   Establishment copyWith({
     String? id,
+    String? slug,
+    String? citySlug,
+    String? categorySlug,
     String? name,
     String? description,
     String? category,
@@ -320,6 +335,9 @@ class Establishment {
   }) {
     return Establishment(
       id: id ?? this.id,
+      slug: slug ?? this.slug,
+      citySlug: citySlug ?? this.citySlug,
+      categorySlug: categorySlug ?? this.categorySlug,
       name: name ?? this.name,
       description: description ?? this.description,
       category: category ?? this.category,

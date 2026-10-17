@@ -116,7 +116,7 @@ class RestaurantGuideApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Restaurant Guide Belarus',
+        title: 'NIRIVIO',
         debugShowCheckedModeBanner: false,
 
         // Application theme from Phase B
