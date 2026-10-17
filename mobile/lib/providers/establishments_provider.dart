@@ -118,6 +118,25 @@ class EstablishmentsProvider with ChangeNotifier {
   bool _isFavoritesLoading = false;
   String? _favoritesError;
 
+  /// Чтение избранного, которое идёт сейчас: второй вызов присоединяется
+  /// к нему, а не шлёт ещё один запрос. Чтение прежнего аккаунта не в счёт
+  /// — сброс аккаунта его забывает.
+  Future<void>? _favoritesRead;
+
+  /// Избранное этого аккаунта уже прочитано с сервера. Ставится удачным
+  /// чтением, снимается сбросом аккаунта.
+  bool _favoritesLoaded = false;
+
+  /// Номер последнего начатого чтения и последнего применённого: ответ
+  /// более раннего чтения, пришедший после более позднего, устарел и не
+  /// применяется — иначе он затёр бы свежее.
+  int _favoritesReadSeq = 0;
+  int _favoritesAppliedSeq = 0;
+
+  /// Номер последнего нажатия на сердечко по каждому месту: по нему ответ
+  /// сервера на добавление узнаёт, не нажали ли на то же место снова.
+  final Map<String, int> _favoriteTaps = {};
+
   EstablishmentsProvider({EstablishmentsService? service})
       : _service = service ?? EstablishmentsService() {
     AccountScope.register(resetAccountScope);
@@ -147,6 +166,9 @@ class EstablishmentsProvider with ChangeNotifier {
     _favoriteEstablishments = [];
     _isFavoritesLoading = false;
     _favoritesError = null;
+    _favoritesRead = null;
+    _favoritesLoaded = false;
+    _favoriteTaps.clear();
     _searchQuery = null;
     _searchIntent = null;
     _searchFallback = false;
@@ -708,6 +730,10 @@ class EstablishmentsProvider with ChangeNotifier {
   /// Toggle favorite status for establishment
   Future<void> toggleFavorite(String establishmentId) async {
     final wasFavorite = _favoriteIds.contains(establishmentId);
+    final tap = _favoriteTaps[establishmentId] =
+        (_favoriteTaps[establishmentId] ?? 0) + 1;
+    final readsBefore = _favoritesReadSeq;
+    final readRunning = _favoritesRead != null;
 
     // Store removed establishment for potential revert
     Establishment? removedEstablishment;
@@ -739,10 +765,15 @@ class EstablishmentsProvider with ChangeNotifier {
         // «Избранного» нет пина, у профиля не тот счёт (п. 40 прохода
         // тестировщика, 17.10.2026). Сняли сердечко снова, пока шёл ответ,
         // — читать нечего.
+        // Чтение, шедшее, пока сервер принимал добавление, снимок сервера
+        // взяло до него: его ответ мог стереть только что залитое сердечко.
+        // Нажали на то же место снова — читать нечего.
+        final readTouched = readRunning || _favoritesReadSeq != readsBefore;
         if (generation == _generation &&
-            _favoriteIds.contains(establishmentId) &&
-            !_favoriteEstablishments.any((e) => e.id == establishmentId)) {
-          await loadFavorites();
+            _favoriteTaps[establishmentId] == tap &&
+            (readTouched ||
+                !_favoriteEstablishments.any((e) => e.id == establishmentId))) {
+          await loadFavorites(fresh: true);
         }
       }
     } catch (e) {
@@ -767,18 +798,51 @@ class EstablishmentsProvider with ChangeNotifier {
     }
   }
 
-  /// Load favorites from server
-  Future<void> loadFavorites() async {
+  /// Load favorites from server.
+  ///
+  /// Чтение, которое уже идёт для этого аккаунта, не повторяется: вход
+  /// и первый кадр «Избранного» просят избранное в один и тот же момент,
+  /// а на сервер должен уйти один запрос. [fresh] — чтение обязано
+  /// начаться после события, которое могло изменить ответ сервера (место
+  /// только что добавлено): идущее чтение началось раньше и могло его не
+  /// увидеть.
+  Future<void> loadFavorites({bool fresh = false}) {
+    final running = _favoritesRead;
+    if (!fresh && running != null) return running;
+    late final Future<void> read;
+    read = _readFavorites().whenComplete(() {
+      if (identical(_favoritesRead, read)) _favoritesRead = null;
+    });
+    _favoritesRead = read;
+    return read;
+  }
+
+  /// Избранное известно приложению сразу после входа, а не после захода
+  /// на вкладку «Избранное»: счёт в профиле и сердечки в выдаче берутся
+  /// из него. Прочитано удачно — ничего не делает; идёт чтение —
+  /// присоединяется; не читалось или сорвалось — читает. Зовёт главная при
+  /// каждой смене аккаунта (вход, смена, профиль, дошедший после ответа 429);
+  /// сорвавшееся чтение само по себе не повторяется.
+  Future<void> ensureFavoritesLoaded() {
+    if (_favoritesLoaded) return Future<void>.value();
+    return loadFavorites();
+  }
+
+  Future<void> _readFavorites() async {
     _isFavoritesLoading = true;
     _favoritesError = null;
     notifyListeners();
 
     final generation = _generation;
+    final seq = ++_favoritesReadSeq;
     try {
       final favorites = await _service.getFavorites();
       if (generation != _generation) return; // account switched mid-flight
+      if (seq < _favoritesAppliedSeq) return; // позднее чтение уже применено
+      _favoritesAppliedSeq = seq;
       _favoriteEstablishments = favorites;
       _favoriteIds = favorites.map((e) => e.id).toSet();
+      _favoritesLoaded = true;
       _isFavoritesLoading = false;
       notifyListeners();
     } catch (e) {
