@@ -6,7 +6,6 @@ import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
-import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Authentication status enum
@@ -736,6 +735,8 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   static const String genericErrorMessage =
       'Произошла ошибка. Попробуйте снова.';
 
+  static final RegExp _cyrillic = RegExp('[А-Яа-яЁёІіЎў]');
+
   /// Текст отказа для человека — на входе, регистрации, кодах, правке
   /// профиля.
   ///
@@ -754,7 +755,7 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   String _extractErrorMessage(Object error) {
     final response = error is DioException ? error.response : null;
 
-    final serverText = russianServerText(response?.data);
+    final serverText = _russianServerText(response?.data);
     if (serverText != null) return serverText;
 
     final known = _knownErrorMessage(error, response);
@@ -763,11 +764,66 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     if (error is DioException &&
         error.type != DioExceptionType.badResponse &&
         error.error is String &&
-        hasCyrillic(error.error as String)) {
+        _cyrillic.hasMatch(error.error as String)) {
       return error.error as String;
     }
 
     return genericErrorMessage;
+  }
+
+  /// Русский текст отказа из тела ответа сервера, или `null`.
+  ///
+  /// Отказ проверки полей приходит в двух формах: `error.details` — объект
+  /// «поле → список фраз» (express-validator, регистрация) или список
+  /// `{field, message}`; рядом `error.message` — общая фраза. Берётся то,
+  /// что написано по-русски: по одной фразе на поле, затем общая. Английская
+  /// фраза сервера сюда не проходит — её переводит таблица
+  /// [_knownErrorMessage].
+  static String? _russianServerText(Object? data) {
+    if (data is! Map) return null;
+    final error = data['error'];
+    final fieldMessages = <String>[];
+
+    void addRussian(Object? message) {
+      if (message is String &&
+          _cyrillic.hasMatch(message) &&
+          !fieldMessages.contains(message.trim())) {
+        fieldMessages.add(message.trim());
+      }
+    }
+
+    if (error is Map) {
+      final details = error['details'];
+      if (details is Map) {
+        // Только списки фраз: у отказа лимитера (429) в `details` служебные
+        // поля — окно лимита строкой, срок, — и они не текст для человека.
+        for (final messages in details.values) {
+          if (messages is! List) continue;
+          final russian = messages.whereType<String>().where(
+                (m) => _cyrillic.hasMatch(m),
+              );
+          if (russian.isNotEmpty) addRussian(russian.first);
+        }
+      } else if (details is List) {
+        for (final item in details) {
+          addRussian(item is Map ? item['message'] : item);
+        }
+      }
+      if (fieldMessages.isNotEmpty) return fieldMessages.join('\n');
+
+      final message = error['message'];
+      if (message is String && _cyrillic.hasMatch(message)) {
+        return message.trim();
+      }
+    } else if (error is String && _cyrillic.hasMatch(error)) {
+      return error.trim();
+    }
+
+    final message = data['message'];
+    if (message is String && _cyrillic.hasMatch(message)) {
+      return message.trim();
+    }
+    return null;
   }
 
   /// Русская фраза для известного отказа, или `null`.
