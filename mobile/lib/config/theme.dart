@@ -52,6 +52,7 @@ class AppTheme {
   /// Figma-specific colors (design tokens from mockups)
   static const Color backgroundWarm = Color(0xFFF4F1EC);    // Beige background
   static const Color strokeGrey = Color(0xFFD2D2D2);        // Dividers/borders
+  static const Color strokeWarm = Color(0xFFE4DFD6);        // Warm border: walk mini-cards (web figmaDivider)
   static const Color primaryOrangeShadow = Color(0xFFD35620); // Button shadows (dark rust)
   static const Color textGrey = Color(0xFFABABAB);           // Secondary grey text
   static const Color statusGreen = Color(0xFF34C759);        // "Open" / success status
