@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
+import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
 /// Итог попытки обновить токен.
 ///
@@ -639,53 +640,51 @@ class ApiClient {
     'Establishment ID must be a valid UUID': 'Некорректный ID заведения',
   };
 
-  /// Translate a validation message to Russian
-  String _translateValidation(String field, String message) {
+  /// Русская фраза для известной английской проверки полей, или `null`.
+  ///
+  /// Только то, что есть в таблице: непереведённая английская фраза на экран
+  /// не идёт (раньше шла с именем поля — «content: Review content must be…»),
+  /// её место занимает русская фраза по статусу.
+  String? _translateValidation(String field, String message) {
+    final ruMessage = _validationMessages[message];
+    if (ruMessage == null) return null;
     final ruField = _fieldNames[field] ?? field;
-    final ruMessage = _validationMessages[message] ?? message;
     return ruField.isNotEmpty ? '$ruField: $ruMessage' : ruMessage;
   }
 
   /// Extract error message from response
+  ///
+  /// Порядок: (1) русский текст сервера — из `details` (список `{field,
+  /// message}` или объект «поле → фразы»), затем русский `error.message` —
+  /// как есть, без имени поля; (2) известная английская проверка — по таблице
+  /// с именем поля; (3) прочий `message` сервера, кроме общей английской
+  /// фразы проверки полей; (4) русская фраза по статусу.
   String _extractErrorMessage(Response? response) {
     if (response == null) {
       return 'Ошибка сервера. Попробуйте позже.';
     }
 
-    // Try to extract message from standardized error format
-    if (response.data is Map<String, dynamic>) {
-      final data = response.data as Map<String, dynamic>;
+    final russian = russianServerText(response.data);
+    if (russian != null) return russian;
 
-      // Check for backend standardized format
-      if (data.containsKey('error')) {
-        final error = data['error'];
-        if (error is Map<String, dynamic>) {
-          // Check for validation details array (422 responses)
-          if (error.containsKey('details')) {
-            final details = error['details'];
-            if (details is List && details.isNotEmpty) {
-              return details.map((d) {
-                if (d is Map<String, dynamic>) {
-                  final field = d['field'] as String? ?? '';
-                  final msg = d['message'] as String? ?? '';
-                  return _translateValidation(field, msg);
-                }
-                return d.toString();
-              }).join('\n');
-            }
-          }
-          if (error.containsKey('message')) {
-            return error['message'] as String;
-          }
-        }
-        if (error is String) {
-          return error;
-        }
-      }
+    if (response.data is Map) {
+      final data = response.data as Map;
+      final error = data['error'];
+      final isValidation = error is Map && error['code'] == 'VALIDATION_ERROR';
 
-      // Check for message field
-      if (data.containsKey('message')) {
-        return data['message'] as String;
+      final translated = refusalDetails(data)
+          .map((d) => _translateValidation(d.field, d.message))
+          .whereType<String>()
+          .toSet();
+      if (translated.isNotEmpty) return translated.join('\n');
+
+      // «Invalid input data» и «Validation failed» — не текст для человека.
+      if (!isValidation) {
+        if (error is Map && error['message'] is String) {
+          return error['message'] as String;
+        }
+        if (error is String) return error;
+        if (data['message'] is String) return data['message'] as String;
       }
     }
 
