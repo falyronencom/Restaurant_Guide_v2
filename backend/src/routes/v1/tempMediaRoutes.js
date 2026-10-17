@@ -27,7 +27,7 @@ import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middlewar
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
 import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
-import { reserveDailyUpload } from '../../services/uploadAllowance.js';
+import { DailyUploadLimitError, sendWithinDailyAllowance } from '../../services/uploadAllowance.js';
 import logger from '../../utils/logger.js';
 
 const router = express.Router();
@@ -100,56 +100,6 @@ const validateTempUpload = [
     .isIn(VALID_MEDIA_TYPES)
     .withMessage(`Media type must be one of: ${VALID_MEDIA_TYPES.join(', ')}`),
 ];
-
-/**
- * Send the checked file to the cloud within the account's daily allowance
- * (services/uploadAllowance.js): the reservation comes first, then `send`.
- *
- * A spent allowance is answered here — 429 RATE_LIMIT_EXCEEDED, the code of
- * every limit (the review quota's too), with UPLOAD_REFUSALS.dailyLimit, which
- * the app shows as is — and the result is null: the caller only returns. A
- * `send` that fails rethrows to the route's catch; the reservation goes back
- * only when the cloud refused the file for certain (cloudRefusedUpload) — a
- * file it did not take costs nothing. After a timeout or a 5xx the file may be
- * stored all the same, so the reservation stays spent: the review quota's rule,
- * an attempt that may have happened keeps its slot.
- *
- * @param {Object} req - Express request (req.user, req.file)
- * @param {Object} res - Express response
- * @param {() => Promise<Object>} send - The cloud call
- * @returns {Promise<Object|null>} What `send` returned, or null after refusing
- */
-const sendWithinDailyAllowance = async (req, res, send) => {
-  const allowance = await reserveDailyUpload(req.user.userId, req.file.size);
-  if (!allowance.granted) {
-    fs.unlink(req.file.path, () => {});
-    res.set('Retry-After', String(allowance.retryAfter));
-    res.status(429).json({
-      success: false,
-      message: UPLOAD_REFUSALS.dailyLimit,
-      error: {
-        code: 'RATE_LIMIT_EXCEEDED',
-        details: {
-          files_limit: allowance.limits.files,
-          bytes_limit: allowance.limits.bytes,
-          retry_after: allowance.retryAfter,
-          reset_at: allowance.resetAt,
-        },
-      },
-      timestamp: new Date().toISOString(),
-    });
-    return null;
-  }
-
-  try {
-    return await send();
-  } catch (error) {
-    if (CloudinaryUtil.cloudRefusedUpload(error)) {
-      await allowance.giveBack();
-    }
-    throw error;
-  }
-};
 
 /**
  * Upload a temporary media file
@@ -229,13 +179,10 @@ router.post(
           });
         }
 
-        const pdfUploadResult = await sendWithinDailyAllowance(req, res, () => CloudinaryUtil.uploadPdf(
-          req.file.path,
-          `temp/${userId}`,
-        ));
-        if (!pdfUploadResult) {
-          return undefined;
-        }
+        const pdfUploadResult = await sendWithinDailyAllowance(
+          { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit },
+          () => CloudinaryUtil.uploadPdf(req.file.path, `temp/${userId}`),
+        );
 
         const urlValue = pdfUploadResult.secure_url;
         const thumbnailUrl = CloudinaryUtil.generatePdfThumbnailUrl(pdfUploadResult.public_id);
@@ -295,14 +242,10 @@ router.post(
         });
       }
 
-      const uploadResult = await sendWithinDailyAllowance(req, res, () => CloudinaryUtil.uploadImage(
-        req.file.path,
-        `temp/${userId}`,
-        type,
-      ));
-      if (!uploadResult) {
-        return undefined;
-      }
+      const uploadResult = await sendWithinDailyAllowance(
+        { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit },
+        () => CloudinaryUtil.uploadImage(req.file.path, `temp/${userId}`, type),
+      );
 
       const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
 
@@ -333,6 +276,12 @@ router.post(
       // Clean up file if it exists
       if (req.file && req.file.path) {
         fs.unlink(req.file.path, () => {});
+      }
+
+      // The day's allowance is spent: the client's refusal (429), sent by
+      // errorHandler with its details and Retry-After — not a failure.
+      if (error instanceof DailyUploadLimitError) {
+        return next(error);
       }
 
       logger.error('Error uploading temporary media', {

@@ -24,6 +24,8 @@ import {
   ownCloudPublicId,
   ownedFolders,
 } from '../config/cloudinary.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -584,6 +586,8 @@ export async function updateProfile(req, res, next) {
  * - 200 OK: Avatar uploaded, returns new avatar URL
  * - 400 Bad Request: No file or invalid file type
  * - 401 Unauthorized: Not authenticated
+ * - 429 RATE_LIMIT_EXCEEDED: the account's daily upload allowance is spent
+ *   (services/uploadAllowance.js; the app shows its own text for the avatar)
  */
 export async function uploadAvatar(req, res, next) {
   const tempFilePath = req.file?.path;
@@ -604,8 +608,13 @@ export async function uploadAvatar(req, res, next) {
     const currentUser = await authService.findUserById(userId);
     const oldAvatarUrl = currentUser?.avatar_url;
 
-    // Upload new avatar to Cloudinary
-    const uploadResult = await cloudinaryUploadAvatar(tempFilePath, userId);
+    // Upload new avatar to Cloudinary, within the account's daily upload
+    // allowance, shared with every uploader (services/uploadAllowance.js): a
+    // spent one is a 429 AppError, passed on to errorHandler below.
+    const uploadResult = await sendWithinDailyAllowance(
+      { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit },
+      () => cloudinaryUploadAvatar(tempFilePath, userId),
+    );
     const avatarUrl = uploadResult.secure_url;
 
     // Update avatar_url in database with absolute Cloudinary URL

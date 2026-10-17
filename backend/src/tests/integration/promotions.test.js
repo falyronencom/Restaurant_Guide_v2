@@ -25,6 +25,9 @@ let pool;
 let cloudinary;
 
 jest.unstable_mockModule('../../config/cloudinary.js', () => ({
+  // Named-imported by services/uploadAllowance.js (the daily upload allowance):
+  // the cloud never refuses here.
+  cloudRefusedUpload: jest.fn(() => false),
   uploadImage: jest.fn(async () => ({
     public_id: 'test-promo-public-id',
     secure_url: 'https://res.cloudinary.com/test/promotions/test.jpg',

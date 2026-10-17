@@ -24,6 +24,15 @@
 const ESTABLISHMENT_NOT_OWNED =
   'Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.';
 
+/**
+ * The account's daily upload allowance is spent (services/uploadAllowance.js);
+ * it is renewed at Minsk midnight. One sentence for every uploader — the
+ * wizard's upload, the card's media, a promotion's picture, the avatar —
+ * approved by the Coordinator on 17.10.2026 («Согласен со всеми рекомендациями
+ * по PR #54»).
+ */
+const DAILY_UPLOAD_LIMIT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
+
 /** A booking's present status, as the partner reads it when an action is refused. */
 const BOOKING_STATUS_PHRASES = {
   pending: 'Бронь ещё не подтверждена.',
@@ -76,12 +85,15 @@ export const PROMOTION_REFUSALS = Object.freeze({
   imageTooLarge: 'Картинка больше 10 МБ. Выберите фото поменьше.',
   establishmentRequired: 'Не выбрано заведение.',
   titleRequired: 'Укажите название акции.',
+  dailyUploadLimit: DAILY_UPLOAD_LIMIT,
 });
 
 /**
  * The wizard's photo and PDF upload — POST /api/v1/partner/media/upload
  * (routes/v1/tempMediaRoutes.js). The app shows the text after its own prefix
- * «Ошибка при загрузке фото:» until its next build.
+ * «Ошибка при загрузке фото:» until its next build. `dailyLimit` also answers
+ * the card's media (services/mediaService.js) and the avatar
+ * (controllers/authController.js) — one allowance for every uploader.
  */
 export const UPLOAD_REFUSALS = Object.freeze({
   fileRequired: 'Файл не выбран.',
@@ -95,8 +107,7 @@ export const UPLOAD_REFUSALS = Object.freeze({
   // The cloud or the server failed after the file passed every check; the
   // inner text goes to the log only.
   uploadFailed: 'Не удалось загрузить файл. Попробуйте ещё раз через минуту.',
-  // The account's daily allowance is spent (services/uploadAllowance.js); it
-  // is renewed at Minsk midnight. Proposed 17.10.2026 — the wording awaits the
-  // Coordinator's word.
-  dailyLimit: 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.',
+  // The account's daily allowance is spent — the same sentence answers the
+  // card's media and the avatar (DAILY_UPLOAD_LIMIT above).
+  dailyLimit: DAILY_UPLOAD_LIMIT,
 });

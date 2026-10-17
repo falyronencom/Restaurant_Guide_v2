@@ -10,12 +10,19 @@
  * global limiter (100 requests a minute per account) stood between one
  * account and the whole month's quota: a hundred 60 MB menus a minute.
  *
+ * Who counts: every upload of a file to the cloud, through one allowance per
+ * account — the wizard's upload (routes/v1/tempMediaRoutes.js, PR #54), the
+ * card's media (mediaService), a promotion's picture (promotionService) and
+ * the avatar (authController.uploadAvatar); the Coordinator's word of
+ * 17.10.2026 on the second three: one counter, so that switching uploaders
+ * does not open a fresh allowance. Each sends through sendWithinDailyAllowance.
+ *
  * What is counted: a file the server is about to send to the cloud — after
  * every check of the file itself has passed, right before the cloud call. A
  * file refused for its type or size costs nothing; so does one the cloud
- * refused for certain — the route gives its reservation back. After a timeout
- * or a 5xx the reservation stays spent: the file may be stored all the same
- * (routes/v1/tempMediaRoutes.js, config/cloudinary.js cloudRefusedUpload).
+ * refused for certain — its reservation goes back. After a timeout or a 5xx
+ * the reservation stays spent: the file may be stored all the same
+ * (config/cloudinary.js cloudRefusedUpload; the review quota's rule).
  *
  * How: two counters in Redis per account and Minsk day — files and bytes. The
  * reservation is taken first and checked after, as the review quota does
@@ -26,12 +33,12 @@
  * expire at Minsk midnight, so a reservation given back after midnight
  * returns to its own day, never to the new one.
  *
- * Whose limits: every account the upload routes admit gets the regular ones;
- * the seed house (users.is_service_account — config/serviceAccounts.js), the
- * account the catalogue is filled through, gets its own, higher ones. Panel
- * accounts never reach these routes (they admit user and partner only). The
- * service flag is read from the database only once an account has passed the
- * regular limits — every other upload costs no query.
+ * Whose limits: every account gets the regular ones — a panel account too,
+ * which reaches only the avatar; the seed house (users.is_service_account —
+ * config/serviceAccounts.js), the account the catalogue is filled through,
+ * gets its own, higher ones. The service flag is read from the database only
+ * once an account has passed the regular limits — every other upload costs no
+ * query.
  *
  * Redis unavailable: the upload goes on without a limit, like every limiter
  * here (config/redis.js answers «first increment» and skips the give-back).
@@ -43,17 +50,20 @@
  * the same account at that moment can be refused although one place remains.
  */
 
+import { cloudRefusedUpload } from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { decrement, incrementWithExpiry } from '../config/redis.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
+import { AppError } from '../middleware/errorHandler.js';
 import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import logger from '../utils/logger.js';
 
 const MEGABYTE = 1024 * 1024;
 
 /**
- * Per Minsk day. The numbers are the recommendation of 17.10.2026 and await
- * the Coordinator's word. Cloudinary's billing documentation: a credit is a
+ * Per Minsk day. The numbers: recommended and approved by the Coordinator on
+ * 17.10.2026 («Согласен со всеми рекомендациями по PR #54»). Cloudinary's
+ * billing documentation: a credit is a
  * gigabyte stored, or 1000 transformations; every upload is one
  * transformation, every size of it shown for the first time one more (the
  * route hands out three sizes of a photo).
@@ -172,4 +182,56 @@ export const reserveDailyUpload = async (userId, bytes) => {
   }
 
   return { granted: true, giveBack };
+};
+
+/**
+ * A spent allowance, as every uploader answers it: 429 RATE_LIMIT_EXCEEDED —
+ * the code of every limit, the review quota's too — with the uploader's own
+ * sentence. errorHandler sends `details` (the limits held and when they
+ * renew) and a Retry-After header from `retryAfter`.
+ */
+export class DailyUploadLimitError extends AppError {
+  /**
+   * @param {string} message - The sentence the uploader's clients read
+   * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string }} refusal
+   */
+  constructor(message, refusal) {
+    super(message, 429, 'RATE_LIMIT_EXCEEDED', {
+      files_limit: refusal.limits.files,
+      bytes_limit: refusal.limits.bytes,
+      retry_after: refusal.retryAfter,
+      reset_at: refusal.resetAt,
+    });
+    this.retryAfter = refusal.retryAfter;
+  }
+}
+
+/**
+ * Send a checked file to the cloud within the account's daily allowance: the
+ * reservation comes first, then `send`. A spent allowance throws
+ * DailyUploadLimitError and `send` is never called. A `send` that fails
+ * rethrows; the reservation goes back only when the cloud refused the file
+ * for certain (cloudRefusedUpload) — after a timeout or a 5xx the file may be
+ * stored all the same, so the reservation stays spent.
+ *
+ * @param {{ userId: string, bytes: number, message: string }} upload - Whose
+ *   allowance, the file's size, and the sentence a refusal carries
+ * @param {() => Promise<Object>} send - The cloud call
+ * @returns {Promise<Object>} What `send` returned
+ * @throws {DailyUploadLimitError} When the allowance is spent
+ */
+export const sendWithinDailyAllowance = async ({ userId, bytes, message }, send) => {
+  const allowance = await reserveDailyUpload(userId, bytes);
+  if (!allowance.granted) {
+    throw new DailyUploadLimitError(message, allowance);
+  }
+
+  try {
+    return await send();
+  } catch (error) {
+    if (cloudRefusedUpload(error)) {
+      await allowance.giveBack();
+    }
+    throw error;
+  }
 };

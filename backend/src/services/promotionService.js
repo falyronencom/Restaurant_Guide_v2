@@ -14,6 +14,7 @@ import * as CloudinaryUtil from '../config/cloudinary.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -26,6 +27,8 @@ import logger from '../utils/logger.js';
  * @param {Object} data - Promotion data (title, description, terms_and_conditions, valid_from, valid_until)
  * @param {Object|null} file - Uploaded image file (from multer), or null
  * @returns {Promise<Object>} Created promotion
+ * @throws {AppError} 429 RATE_LIMIT_EXCEEDED (DailyUploadLimitError) when an image
+ *   comes and the account's daily upload allowance is spent (services/uploadAllowance.js)
  */
 export const createPromotion = async (partnerId, establishmentId, data, file = null) => {
   // Verify ownership
@@ -66,10 +69,11 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
       );
     }
 
-    const uploadResult = await CloudinaryUtil.uploadImage(
-      file.path,
-      establishmentId,
-      'promotions',
+    // The account's daily upload allowance, shared with every uploader
+    // (services/uploadAllowance.js): a spent one is a 429 AppError.
+    const uploadResult = await sendWithinDailyAllowance(
+      { userId: partnerId, bytes: file.size, message: PROMOTION_REFUSALS.dailyUploadLimit },
+      () => CloudinaryUtil.uploadImage(file.path, establishmentId, 'promotions'),
     );
     const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
     imageUrls = {
@@ -134,6 +138,8 @@ export const getPartnerPromotions = async (partnerId, establishmentId) => {
  * @param {Object} data - Fields to update
  * @param {Object|null} file - New image file, or null
  * @returns {Promise<Object>} Updated promotion
+ * @throws {AppError} 429 RATE_LIMIT_EXCEEDED (DailyUploadLimitError) when a new
+ *   image comes and the account's daily upload allowance is spent
  */
 export const updatePromotion = async (partnerId, promotionId, data, file = null) => {
   const promotion = await PromotionModel.getPromotionById(promotionId);
@@ -169,10 +175,10 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
       );
     }
 
-    const uploadResult = await CloudinaryUtil.uploadImage(
-      file.path,
-      promotion.establishment_id,
-      'promotions',
+    // Within the account's daily upload allowance, as on create
+    const uploadResult = await sendWithinDailyAllowance(
+      { userId: partnerId, bytes: file.size, message: PROMOTION_REFUSALS.dailyUploadLimit },
+      () => CloudinaryUtil.uploadImage(file.path, promotion.establishment_id, 'promotions'),
     );
     const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
     imageUrls = {
