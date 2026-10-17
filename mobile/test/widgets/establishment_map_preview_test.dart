@@ -21,9 +21,11 @@
 // (test/flutter_test_config.dart).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/widgets/action_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/map/establishment_map_preview.dart';
 
 const double _statusBar = 47;
@@ -436,6 +438,61 @@ void main() {
         ]) {
           expect(tester.getRect(text).right, lessThanOrEqualTo(close.left));
         }
+      });
+    }
+
+    // «Маршрут» (этап 3) — вторая кнопка строки: вторична к «Подробнее», но
+    // той же высоты, и подписи обеих помещаются целиком.
+    final routeButton = find.byType(RouteButton);
+
+    /// Подпись шире своего места — движок молча режет её многоточием.
+    void expectLabelFits(WidgetTester tester, String label) {
+      final paragraph = tester.renderObject<RenderParagraph>(find.text(label));
+      expect(paragraph.getMinIntrinsicWidth(double.infinity),
+          lessThanOrEqualTo(paragraph.constraints.maxWidth),
+          reason: '«$label» не помещается в кнопку');
+    }
+
+    testWidgets('«Маршрут» рядом с «Подробнее»: та же высота, строка поровну',
+        (tester) async {
+      await _pump(
+        tester,
+        _Calls(),
+        secondaryAction: const RouteButton(latitude: 53.9, longitude: 27.56),
+      );
+
+      final details = tester.getRect(_detailsButton);
+      final route = tester.getRect(routeButton);
+      expect(route.height, details.height);
+      expect(route.top, details.top);
+      expect(details.width, 175);
+      expect(route.left, 16 + 175 + 8);
+      expect(route.right, 390 - 16);
+    });
+
+    for (final width in [320.0, 360.0, 390.0]) {
+      testWidgets('крупный текст ×1,2 при ширине ${width.toInt()}: обе кнопки '
+          'целиком, одной высоты', (tester) async {
+        await _pump(
+          tester,
+          _Calls(),
+          width: width,
+          textScale: 1.2,
+          establishment: _place(
+            name: 'Кафе на углу улицы Кирова',
+            address: 'улица Кирова, 13, корпус 2, вход со двора',
+          ),
+          secondaryAction: const RouteButton(latitude: 53.9, longitude: 27.56),
+        );
+
+        expect(tester.takeException(), isNull);
+        final details = tester.getRect(_detailsButton);
+        final route = tester.getRect(routeButton);
+        expect(route.height, details.height);
+        expect(route.right, width - 16);
+        expect(details.bottom, _screenHeight - _homeBar - 16);
+        expectLabelFits(tester, 'Подробнее');
+        expectLabelFits(tester, 'Маршрут');
       });
     }
   });

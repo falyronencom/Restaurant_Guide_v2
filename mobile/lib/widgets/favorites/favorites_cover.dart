@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
 
 /// Обложка экрана «Избранное»: фото приложения с каноничным затемнением,
 /// заголовок и чипы поверх него (макет `2b`, handoff 29.09.2026).
@@ -17,7 +18,8 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 ///
 /// [collapse] — доля сжатия от 0 (полная, 163 под статус-баром) до 1
 /// (компактная, 93): при скролле списка чипы уходят, заголовок уменьшается
-/// 25 → 22, скругление угла сходит на нет.
+/// 25 → 22, скругление угла сходит на нет. Режим «На карте» (макет `3a`) —
+/// та же компактная обложка с тумблером режимов в [trailing].
 class FavoritesCover extends StatelessWidget {
   const FavoritesCover({
     super.key,
@@ -26,6 +28,8 @@ class FavoritesCover extends StatelessWidget {
     this.subtitle,
     this.sortLabel,
     this.onSortTap,
+    this.onMapTap,
+    this.trailing,
   });
 
   /// Высота статус-бара: обложка уходит под него.
@@ -41,6 +45,15 @@ class FavoritesCover extends StatelessWidget {
   /// сортировать нечего.
   final String? sortLabel;
   final VoidCallback? onSortTap;
+
+  /// Чип «На карте» рядом с сортировкой; `null` — чипа нет. Показывается
+  /// только вместе с чипом сортировки: пустому «Избранному» на карте
+  /// показывать нечего.
+  final VoidCallback? onMapTap;
+
+  /// Справа от заголовка, прижат к низу вместе с ним — тумблер
+  /// «Списком / На карте» в режиме карты.
+  final Widget? trailing;
 
   /// Высота под статус-баром: полная (макет — 210 с баром 47) и компактная.
   static const double expandedBodyHeight = 163;
@@ -100,61 +113,191 @@ class FavoritesCover extends StatelessWidget {
             // обычный кегль). ×1.3 ещё помещается в обе высоты.
             child: MediaQuery.withClampedTextScaling(
               maxScaleFactor: 1.3,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    'Избранное',
-                    maxLines: 1,
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplayFamily,
-                      fontSize: lerpDouble(25, 22, t),
-                      fontWeight: FontWeight.w400,
-                      height: 1.1,
-                      color: Colors.white,
-                    ),
-                  ),
-                  if (subtitle != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 7),
-                      child: Text(
-                        subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: AppTheme.fontBodyFamily,
-                          fontSize: lerpDouble(14, 13, t),
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white.withValues(alpha: 0.78),
-                        ),
-                      ),
-                    ),
-                  if (sortLabel != null && chipsGone < 1)
-                    ClipRect(
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        heightFactor: 1 - chipsGone,
-                        child: Opacity(
-                          opacity: 1 - chipsGone,
-                          child: Padding(
-                            // 16 макета минус 5 невидимого поля зоны тапа чипа.
-                            padding: const EdgeInsets.only(top: 11),
-                            child: FavoritesCoverChip(
-                              icon: Icons.compare_arrows,
-                              rotateIcon: true,
-                              label: sortLabel!,
-                              onTap: onSortTap,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  Expanded(child: _titleBlock(t, chipsGone)),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 12),
+                    trailing!,
+                  ],
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _titleBlock(double t, double chipsGone) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Рядом с тумблером на узком экране и крупном шрифте
+        // заголовок ужимается, а не обрезается.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Избранное',
+            maxLines: 1,
+            style: TextStyle(
+              fontFamily: AppTheme.fontDisplayFamily,
+              fontSize: lerpDouble(25, 22, t),
+              fontWeight: FontWeight.w400,
+              height: 1.1,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        if (subtitle != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 7),
+            child: Text(
+              subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppTheme.fontBodyFamily,
+                fontSize: lerpDouble(14, 13, t),
+                fontWeight: FontWeight.w400,
+                color: Colors.white.withValues(alpha: 0.78),
+              ),
+            ),
+          ),
+        if (sortLabel != null && chipsGone < 1)
+          ClipRect(
+            child: Align(
+              alignment: Alignment.topLeft,
+              heightFactor: 1 - chipsGone,
+              child: Opacity(
+                opacity: 1 - chipsGone,
+                child: Padding(
+                  // 16 макета минус 5 невидимого поля зоны тапа чипа.
+                  padding: const EdgeInsets.only(top: 11),
+                  // На узком экране с крупным шрифтом два чипа не помещаются
+                  // в строку (320 dp, ×1,2) — ряд ужимается целиком, подписи
+                  // остаются полными.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FavoritesCoverChip(
+                          icon: Icons.compare_arrows,
+                          rotateIcon: true,
+                          label: sortLabel!,
+                          onTap: onSortTap,
+                        ),
+                        if (onMapTap != null) ...[
+                          const SizedBox(width: 8),
+                          FavoritesCoverChip(
+                            icon: Icons.map,
+                            label: 'На карте',
+                            onTap: onMapTap,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Тумблер «Списком | На карте» компактной обложки (макет `3a`). Слова — те
+/// же, что у переключателя на сайте (`ResultsSwitcher.tsx`).
+///
+/// Видимая плашка — по макету: отступ 3, радиус 9, стекло белое 16 % с
+/// рамкой 38 %; сегмент 6 / 11, радиус 7; активный — белый с тёмной
+/// подписью 13/w600. Зона нажатия каждого сегмента — его половина плашки и
+/// ещё [tapOverhang] невидимого поля сверху и снизу, как у чипов.
+class FavoritesViewToggle extends StatelessWidget {
+  const FavoritesViewToggle({
+    super.key,
+    required this.mode,
+    required this.onChanged,
+  });
+
+  final FavoritesViewMode mode;
+  final ValueChanged<FavoritesViewMode> onChanged;
+
+  /// Невидимое поле нажатия над и под плашкой.
+  static const double tapOverhang = 3;
+
+  /// Внутренний отступ плашки 3 + рамка 1.
+  static const double _inset = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          top: tapOverhang,
+          bottom: tapOverhang,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.38)),
+            ),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _segment('Списком', FavoritesViewMode.list, first: true),
+            _segment('На карте', FavoritesViewMode.map, first: false),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _segment(String label, FavoritesViewMode value, {required bool first}) {
+    final active = mode == value;
+    return Semantics(
+      button: true,
+      selected: active,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: active ? null : () => onChanged(value),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            first ? _inset : 0,
+            tapOverhang + _inset,
+            first ? 0 : _inset,
+            tapOverhang + _inset,
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 11),
+            decoration: active
+                ? BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(7),
+                  )
+                : null,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: AppTheme.fontBodyFamily,
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                color: active
+                    ? AppTheme.textDark
+                    : Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -235,12 +378,14 @@ class FavoritesCoverHeaderDelegate extends SliverPersistentHeaderDelegate {
     this.subtitle,
     this.sortLabel,
     this.onSortTap,
+    this.onMapTap,
   });
 
   final double topInset;
   final String? subtitle;
   final String? sortLabel;
   final VoidCallback? onSortTap;
+  final VoidCallback? onMapTap;
 
   @override
   double get maxExtent => topInset + FavoritesCover.expandedBodyHeight;
@@ -257,6 +402,7 @@ class FavoritesCoverHeaderDelegate extends SliverPersistentHeaderDelegate {
       subtitle: subtitle,
       sortLabel: sortLabel,
       onSortTap: onSortTap,
+      onMapTap: onMapTap,
     );
   }
 
@@ -265,7 +411,8 @@ class FavoritesCoverHeaderDelegate extends SliverPersistentHeaderDelegate {
       oldDelegate.topInset != topInset ||
       oldDelegate.subtitle != subtitle ||
       oldDelegate.sortLabel != sortLabel ||
-      oldDelegate.onSortTap != onSortTap;
+      oldDelegate.onSortTap != onSortTap ||
+      oldDelegate.onMapTap != onMapTap;
 }
 
 /// «1 место · 2 места · 5 мест · 11 мест · 21 место».

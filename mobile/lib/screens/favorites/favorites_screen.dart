@@ -6,6 +6,8 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_cover.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_map.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -16,6 +18,12 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 /// Сверху во всех состояниях — обложка [FavoritesCover] (макет `2b`,
 /// 29.09.2026). В списке она сжимается при скролле; в остальных состояниях
 /// стоит полной, без чипа сортировки — сортировать нечего.
+///
+/// Второй режим — «На карте» (макет `3a`, этап 3, 17.10.2026): компактная
+/// обложка с тумблером «Списком / На карте» и карта сохранённых мест.
+/// Режим запоминается (решение Координатора Р5). Пустому и гостевому
+/// «Избранному» показывать на карте нечего: у них список и без чипа «На
+/// карте», какой бы режим ни был запомнен.
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
 
@@ -29,9 +37,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   // Local sort state for favorites
   SortOption _currentSort = SortOption.rating;
 
+  /// Режим до чтения запомненного — список. Запомненный читается при
+  /// создании экрана, а экран вкладки создаётся вместе с главной, задолго до
+  /// первого нажатия.
+  FavoritesViewMode _viewMode = FavoritesViewMode.list;
+
   @override
   void initState() {
     super.initState();
+    _restoreViewMode();
     // Load favorites when screen initializes (if authenticated)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadFavoritesIfAuthenticated();
@@ -45,6 +59,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       context.read<EstablishmentsProvider>().loadFavorites();
     }
   }
+
+  Future<void> _restoreViewMode() async {
+    final saved = await FavoritesViewModeStore.load();
+    if (!mounted || saved == _viewMode) return;
+    setState(() => _viewMode = saved);
+  }
+
+  void _setViewMode(FavoritesViewMode mode) {
+    if (mode == _viewMode) return;
+    setState(() => _viewMode = mode);
+    FavoritesViewModeStore.save(mode);
+  }
+
+  void _showMap() => _setViewMode(FavoritesViewMode.map);
 
   /// Navigate to establishment detail screen
   void _navigateToDetail(String establishmentId) {
@@ -109,18 +137,24 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             // Authenticated - show favorites with provider
             return Consumer<EstablishmentsProvider>(
               builder: (context, provider, child) {
+                final onMap = _viewMode == FavoritesViewMode.map;
+
                 // Loading state
                 if (provider.isFavoritesLoading &&
                     provider.favoriteEstablishments.isEmpty) {
-                  return _withStaticCover(
-                    const Center(child: CircularProgressIndicator()),
-                  );
+                  const spinner = Center(child: CircularProgressIndicator());
+                  return onMap
+                      ? _withCompactCover(spinner)
+                      : _withStaticCover(spinner);
                 }
 
                 // Error state
                 if (provider.favoritesError != null &&
                     provider.favoriteEstablishments.isEmpty) {
-                  return _withStaticCover(_buildErrorState(theme, provider));
+                  final error = _buildErrorState(theme, provider);
+                  return onMap
+                      ? _withCompactCover(error)
+                      : _withStaticCover(error);
                 }
 
                 // Empty state (authenticated)
@@ -129,7 +163,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   return _withStaticCover(_buildEmptyAuthenticatedState());
                 }
 
-                return _buildList(provider);
+                return onMap ? _buildMapMode(provider) : _buildList(provider);
               },
             );
           },
@@ -149,6 +183,50 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
         Expanded(child: body),
       ],
+    );
+  }
+
+  /// Компактная обложка с тумблером режимов над телом режима карты:
+  /// картой, загрузкой или ошибкой. 93 под статус-баром, угол без
+  /// скругления — карта стыкуется вплотную.
+  Widget _withCompactCover(Widget body, {String? subtitle}) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Column(
+      children: [
+        SizedBox(
+          height: topInset + FavoritesCover.collapsedBodyHeight,
+          child: FavoritesCover(
+            topInset: topInset,
+            collapse: 1,
+            subtitle: subtitle,
+            trailing: FavoritesViewToggle(
+              mode: _viewMode,
+              onChanged: _setViewMode,
+            ),
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  /// Режим «На карте». Карта существует, только пока вкладку видно: скрытую
+  /// вкладку main_navigation гасит TickerMode, а вкладку под другим экраном
+  /// (карточка заведения) — Overlay. Невидимая нативная карта была бы второй
+  /// живой рядом с картой вкладки «Карта». Снова видно — новая карта, камера
+  /// опять охватывает все места.
+  Widget _buildMapMode(EstablishmentsProvider provider) {
+    final favorites = provider.favoriteEstablishments;
+    final visible = TickerMode.of(context);
+    return _withCompactCover(
+      visible
+          ? FavoritesMap(
+              establishments: favorites,
+              city: provider.selectedCity,
+              onDetails: (e) => _navigateToDetail(e.id),
+            )
+          : const SizedBox.expand(),
+      subtitle: favoritesSubtitle(favorites.map((e) => e.city).toList()),
     );
   }
 
@@ -177,6 +255,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   favorites.map((e) => e.city).toList()),
               sortLabel: _currentSort.displayLabel,
               onSortTap: _showSortOptions,
+              onMapTap: _showMap,
             ),
           ),
           SliverPadding(
