@@ -29,6 +29,10 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  /// Плашка отказа стоит над полями, а кнопка «Продолжить» — внизу формы:
+  /// после отказа экран прокручивается к плашке, иначе её можно не увидеть.
+  final _errorBannerKey = GlobalKey();
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -57,13 +61,25 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
 
-      await authProvider.registerWithEmail(
+      final name = normalizeName(_nameController.text);
+      final ok = await authProvider.registerWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
-        name: _nameController.text.trim(),
+        name: name,
       );
 
       if (!mounted) return;
+
+      // Отказ сервера (почта или номер заняты, имя не прошло правило, лимит
+      // попыток, нет связи) провайдер не бросает, а возвращает `false` с
+      // текстом в `errorMessage`. Раньше результат не читался, и экран при
+      // любом отказе открывал ввод кода от письма, которого не было
+      // (проход тестировщика 17.10, Х1). Теперь — остаёмся на форме.
+      if (!ok) {
+        _showError(authProvider.errorMessage ??
+            'Не удалось зарегистрироваться. Попробуйте ещё раз.');
+        return;
+      }
 
       // Check if auto-login succeeded (no verification needed)
       if (authProvider.isAuthenticated) {
@@ -81,14 +97,12 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
           '/auth/email-verification',
           arguments: {
             'email': _emailController.text.trim(),
-            'name': _nameController.text.trim(),
+            'name': name,
           },
         );
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = getHumanErrorMessage(e);
-      });
+      if (mounted) _showError(getHumanErrorMessage(e));
     } finally {
       if (mounted) {
         setState(() {
@@ -96,6 +110,19 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
         });
       }
     }
+  }
+
+  void _showError(String message) {
+    setState(() => _errorMessage = message);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final banner = _errorBannerKey.currentContext;
+      if (banner == null) return;
+      Scrollable.ensureVisible(
+        banner,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.1,
+      );
+    });
   }
 
   @override
@@ -157,6 +184,7 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
                 // Error banner
                 if (_errorMessage != null)
                   Padding(
+                    key: _errorBannerKey,
                     padding: const EdgeInsets.only(bottom: 16),
                     child: ErrorBanner(
                       message: _errorMessage!,
@@ -200,13 +228,10 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
                   textInputAction: TextInputAction.next,
                   validator: validatePassword,
                   enabled: !_isLoading,
-                  onChanged: (_) {
-                    // Rebuild to update password strength indicator
-                    setState(() {});
-                  },
                 ),
 
-                // Password strength indicator
+                // Требования к паролю — видны с пустого поля, отмечаются по
+                // мере ввода; полоса надёжности — с первого символа.
                 ValueListenableBuilder(
                   valueListenable: _passwordController,
                   builder: (context, value, child) {
@@ -214,18 +239,6 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
                       password: value.text,
                     );
                   },
-                ),
-
-                const SizedBox(height: 4),
-
-                // Password helper text
-                Text(
-                  'Пароль должен быть не менее 8 знаков',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 13,
-                    height: 1.15, // 15/13
-                    color: AppTheme.strokeGrey,
-                  ),
                 ),
 
                 const SizedBox(height: 18),

@@ -6,6 +6,8 @@ import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/custom_text_field.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
+import 'package:restaurant_guide_mobile/widgets/forms/social_sign_in_buttons.dart';
+import 'package:restaurant_guide_mobile/widgets/forms/submit_button.dart';
 
 /// Login Screen
 /// User enters email/phone and password to sign in
@@ -22,7 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
-  bool _isOAuthLoading = false;
+  SocialSignIn? _oauthInProgress;
   String? _errorMessage;
 
   @override
@@ -120,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleGoogleSignIn() async {
     setState(() {
-      _isOAuthLoading = true;
+      _oauthInProgress = SocialSignIn.google;
       _errorMessage = null;
     });
 
@@ -144,14 +146,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isOAuthLoading = false);
+        setState(() => _oauthInProgress = null);
       }
     }
   }
 
   Future<void> _handleYandexSignIn() async {
     setState(() {
-      _isOAuthLoading = true;
+      _oauthInProgress = SocialSignIn.yandex;
       _errorMessage = null;
     });
 
@@ -175,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isOAuthLoading = false);
+        setState(() => _oauthInProgress = null);
       }
     }
   }
@@ -183,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isAnyLoading = _isLoading || _isOAuthLoading;
+    final isAnyLoading = _isLoading || _oauthInProgress != null;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
@@ -312,171 +314,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 32),
 
                 // Login button
-                ElevatedButton(
+                SubmitButton(
+                  label: 'Войти',
                   onPressed: isAnyLoading ? null : _handleSubmit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryOrange,
-                    minimumSize: const Size(double.infinity, 48),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                AppTheme.textOnPrimary),
-                          ),
-                        )
-                      : Text(
-                          'Войти',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.backgroundWarm,
-                          ),
-                        ),
+                  isLoading: _isLoading,
                 ),
 
                 const SizedBox(height: 48),
 
-                // Social login divider
-                Center(
-                  child: Text(
-                    'Или используйте:',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 15,
-                      height: 1.53, // 23/15
-                      color: Colors.black.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Google login button
-                OutlinedButton(
-                  onPressed: isAnyLoading ? null : _handleGoogleSignIn,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 45),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(11.301),
-                    ),
-                    side:
-                        const BorderSide(color: AppTheme.textPrimary, width: 1),
-                    backgroundColor: AppTheme.backgroundPrimary,
-                  ),
-                  child: _isOAuthLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[300],
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'G',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.textOnPrimary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Продолжить с Google',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontSize: 15,
-                                height: 1.33, // 20/15
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Yandex login button
-                OutlinedButton(
-                  onPressed: isAnyLoading ? null : _handleYandexSignIn,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 45),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(11.301),
-                    ),
-                    side:
-                        const BorderSide(color: AppTheme.textPrimary, width: 1),
-                    backgroundColor: AppTheme.backgroundPrimary,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Продолжить с Яндекс',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 15,
-                          height: 1.33, // 20/15
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Apple login button (disabled placeholder)
-                ElevatedButton(
-                  onPressed: null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    minimumSize: const Size(double.infinity, 45),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(11.301),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.apple,
-                        color: AppTheme.textOnPrimary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Продолжить с Apple',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 15,
-                          height: 1.33, // 20/15
-                          color: AppTheme.textOnPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
+                SocialSignInButtons(
+                  onGoogle: _handleGoogleSignIn,
+                  onYandex: _handleYandexSignIn,
+                  inProgress: _oauthInProgress,
+                  enabled: !_isLoading,
                 ),
 
                 const SizedBox(height: 32),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Edit Profile Screen - allows user to edit their profile
 /// Figma design: Edit Profile (third frame)
@@ -24,6 +25,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isSaving = false;
   String? _selectedImagePath;
 
+  /// Имя, которым поле заполнено при открытии, — то, что уже сохранено.
+  /// `null` — поле ещё не заполнено.
+  String? _savedName;
+
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
@@ -38,10 +43,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = context.read<AuthProvider>().currentUser;
       if (user != null) {
-        _nameController.text = user.name ?? '';
+        _savedName = user.name ?? '';
+        _nameController.text = _savedName!;
       }
     });
   }
+
+  /// Человек имя не менял: в поле то же, что сохранено (после приведения к
+  /// одному виду — пробелы, апостроф).
+  ///
+  /// Правило имени действует на запись НОВОГО имени; уже сохранённые не
+  /// трогаем (решение Trunk 17.10.2026, директива П7). Имя от Google или
+  /// Яндекса — начало адреса почты вроде «ivan.petrov2001» — правилу не
+  /// отвечает, и без этой проверки «Сохранить» не срабатывал бы, пока человек
+  /// его не переименует.
+  bool _nameUnchanged(String? value) =>
+      _savedName != null &&
+      normalizeName(value ?? '') == normalizeName(_savedName!);
 
   @override
   void dispose() {
@@ -149,13 +167,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Имя не менялось — отправлять нечего: аватар уходит на сервер сразу при
+    // выборе (`_pickImage`), а сохранённое имя не переписываем. Запрос с тем
+    // же именем сервер проверил бы правилом, которому старое имя может не
+    // отвечать.
+    if (_nameUnchanged(_nameController.text)) {
+      Navigator.of(context).pop();
+      return;
+    }
+
     setState(() {
       _isSaving = true;
     });
 
     try {
       final success = await context.read<AuthProvider>().updateProfile(
-            name: _nameController.text.trim(),
+            name: normalizeName(_nameController.text),
           );
 
       if (mounted) {
@@ -371,12 +398,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           label: 'Имя',
           controller: _nameController,
           isEditable: true,
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return 'Введите имя';
-            }
-            return null;
-          },
+          // То же правило, что при регистрации и на сервере. Раньше здесь
+          // проверялось только «не пусто»: проходили запятые и имя из 500
+          // знаков, а отказ сервера доходил как «Произошла ошибка»
+          // (проход тестировщика 17.10, пп. 32, 49). Неизменённое имя не
+          // проверяется — см. [_nameUnchanged].
+          validator: (value) =>
+              _nameUnchanged(value) ? null : validateName(value),
         ),
 
         const SizedBox(height: 8),
@@ -452,6 +480,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         fontSize: 15,
                         color: _greyText,
                       ),
+                      // Текст правила имени длиннее строки — в одну строку
+                      // он обрезался бы многоточием.
+                      errorMaxLines: 3,
                     ),
                   )
                 else
