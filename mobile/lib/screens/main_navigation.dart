@@ -115,6 +115,12 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     }
     context.read<NotificationProvider>().startPolling();
     unawaited(pushService.registerDevice());
+    // Избранное читается сразу: счёт в профиле и сердечки в выдаче верны, не
+    // дожидаясь захода на вкладку «Избранное» (п. 40 прохода тестировщика,
+    // 17.10.2026). Само не повторяет чтение, если оно уже удалось: профиль,
+    // дошедший после ответа 429, меняет ключ аккаунта с '' на id, но
+    // аккаунт тот же.
+    unawaited(context.read<EstablishmentsProvider>().ensureFavoritesLoaded());
   }
 
   /// Обработчики push: пришёл при открытом приложении и нажатие на push.
