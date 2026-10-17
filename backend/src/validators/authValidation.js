@@ -15,6 +15,7 @@
 
 import { body, validationResult } from 'express-validator';
 import logger from '../utils/logger.js';
+import { checkUserName, normalizeUserName } from '../utils/userName.js';
 
 /**
  * Belarus phone number patterns
@@ -73,11 +74,17 @@ function handleValidationErrors(req, res, next) {
       path: req.path, 
     });
     
+    // A refusal written for a person (the name's, utils/userName.js) is also
+    // the summary: a client that reads only `message` shows it as is. The
+    // English field texts stay in `details` only, as before.
+    const personText = errors.array().map((error) => error.msg)
+      .find((msg) => typeof msg === 'string' && /[А-Яа-яЁё]/.test(msg));
+
     return res.status(422).json({
       success: false,
       error: {
         code: 'VALIDATION_ERROR',
-        message: 'Invalid input data',
+        message: personText ?? 'Invalid input data',
         details: formattedErrors,
       },
     });
@@ -93,15 +100,15 @@ function handleValidationErrors(req, res, next) {
  * Either email or phone must be provided based on auth_method.
  */
 export const validateRegister = [
-  // Name validation
+  // Name: the one rule of every path that writes it (utils/userName.js) —
+  // one Russian refusal, then the name stored as the rule normalized it.
   body('name')
-    .trim()
-    .notEmpty()
-    .withMessage('Name is required')
-    .isLength({ min: 2, max: 100 })
-    .withMessage('Name must be between 2 and 100 characters')
-    .matches(/^[a-zA-Zа-яА-ЯёЁ\s'-]+$/)
-    .withMessage('Name can only contain letters, spaces, hyphens and apostrophes'),
+    .custom((value) => {
+      const verdict = checkUserName(value);
+      if (verdict.code) throw new Error(verdict.message);
+      return true;
+    })
+    .customSanitizer((value) => (typeof value === 'string' ? normalizeUserName(value) : value)),
   
   // Email validation (optional but must be valid if provided)
   body('email')

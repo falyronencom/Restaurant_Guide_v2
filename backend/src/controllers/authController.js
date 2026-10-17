@@ -27,6 +27,7 @@ import {
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
 import logger from '../utils/logger.js';
+import { NAME_REFUSALS } from '../utils/userName.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
@@ -480,7 +481,8 @@ export async function logout(req, res, next) {
  * At least one field must be provided.
  *
  * Request body:
- * - name (optional): New display name (max 100 chars)
+ * - name (optional): New display name — letters, space, hyphen, apostrophe,
+ *   2–50 characters, no мат (utils/userName.js)
  * - avatar_url (optional): null / '' to remove the avatar, or a link into the
  *   caller's own avatar folder on our cloud that only resizes or reformats the
  *   file; any other value is ignored
@@ -546,16 +548,12 @@ export async function updateProfile(req, res, next) {
     });
 
   } catch (error) {
-    if (error.message === 'NAME_EMPTY') {
+    // The name rule's refusals, in Russian: the app and the site show the
+    // message as is. Same status and shape as before.
+    if (Object.hasOwn(NAME_REFUSALS, error.message)) {
       return res.status(400).json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Name cannot be empty' },
-      });
-    }
-    if (error.message === 'NAME_TOO_LONG') {
-      return res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Name must be 100 characters or fewer' },
+        error: { code: 'VALIDATION_ERROR', message: NAME_REFUSALS[error.message] },
       });
     }
     if (error.message === 'AVATAR_URL_TOO_LONG') {

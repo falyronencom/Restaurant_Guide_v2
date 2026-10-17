@@ -24,6 +24,7 @@ import {
 } from '../utils/jwt.js';
 import { storedRefreshToken } from '../utils/refreshTokenStorage.js';
 import logger from '../utils/logger.js';
+import { checkUserName, providerDisplayName } from '../utils/userName.js';
 import {
   invalidateAccountStatus,
   issuedBeforeRevocation,
@@ -881,7 +882,7 @@ export async function findUserById(userId) {
  *
  * @param {string} userId - The ID of the user to update
  * @param {Object} profileData - Fields to update
- * @param {string} [profileData.name] - New display name (max 100 chars)
+ * @param {string} [profileData.name] - New display name (the name rule, utils/userName.js)
  * @param {string} [profileData.avatarUrl] - New avatar URL (max 500 chars)
  * @returns {Promise<Object>} Updated user object
  * @throws {Error} If user not found or validation fails
@@ -895,14 +896,15 @@ export async function updateUserProfile(userId, profileData) {
   let paramIndex = 1;
 
   if (name !== undefined) {
-    if (!name || name.trim().length === 0) {
-      throw new Error('NAME_EMPTY');
-    }
-    if (name.trim().length > 100) {
-      throw new Error('NAME_TOO_LONG');
+    // The one name rule (utils/userName.js); the code thrown is the key of the
+    // refusal the controller sends — NAME_EMPTY, NAME_LENGTH, NAME_CHARS,
+    // NAME_PROFANE.
+    const verdict = checkUserName(name);
+    if (verdict.code) {
+      throw new Error(verdict.code);
     }
     setClauses.push(`name = $${paramIndex++}`);
-    values.push(name.trim());
+    values.push(verdict.name);
   }
 
   if (avatarUrl !== undefined) {
@@ -1123,7 +1125,11 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
  * @returns {Promise<Object>} { user, accessToken, refreshToken, expiresIn }
  */
 export async function authenticateWithOAuth(providerData) {
-  const { providerId, email, name, avatarUrl, emailVerified, provider } = providerData;
+  const { providerId, email, avatarUrl, emailVerified, provider } = providerData;
+  // A provider's name is written under the same name rule as a typed one, but
+  // never refuses a login: cleaned, or the neutral fallback (utils/userName.js).
+  // Only a new account and a taken-over record write it.
+  const name = providerDisplayName(providerData.name);
 
   try {
     // 1. Look up existing OAuth user by provider + providerId
