@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
+import 'package:restaurant_guide_mobile/widgets/forms/social_sign_in_buttons.dart';
 
 /// Method Selection Screen
 /// User chooses registration method: Email, Phone, or OAuth
@@ -13,92 +15,114 @@ class MethodSelectionScreen extends StatefulWidget {
 }
 
 class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
-  bool _isOAuthLoading = false;
+  SocialSignIn? _oauthInProgress;
+  String? _errorMessage;
 
-  Future<void> _handleGoogleSignIn() async {
-    setState(() => _isOAuthLoading = true);
+  Future<void> _handleGoogleSignIn() => _signIn(
+        SocialSignIn.google,
+        (auth) => auth.loginWithGoogle(),
+        'Ошибка входа через Google',
+      );
+
+  Future<void> _handleYandexSignIn() => _signIn(
+        SocialSignIn.yandex,
+        (auth) => auth.loginWithYandex(),
+        'Ошибка входа через Яндекс',
+      );
+
+  /// Вход через сервис. Отказ — красной плашкой над кнопками, как на «Входе»:
+  /// раньше здесь была всплывающая строка внизу, а на «Входе» — плашка.
+  Future<void> _signIn(
+    SocialSignIn provider,
+    Future<bool> Function(AuthProvider auth) signIn,
+    String fallback,
+  ) async {
+    setState(() {
+      _oauthInProgress = provider;
+      _errorMessage = null;
+    });
 
     try {
       final authProvider = context.read<AuthProvider>();
-      final success = await authProvider.loginWithGoogle();
+      final success = await signIn(authProvider);
 
       if (success && mounted) {
         Navigator.of(context)
             .pushNamedAndRemoveUntil('/home', (route) => false);
       } else if (!success && mounted) {
-        _showError(authProvider.errorMessage ?? 'Ошибка входа через Google');
+        setState(() => _errorMessage = authProvider.errorMessage ?? fallback);
       }
     } catch (e) {
       if (mounted) {
-        _showError('Ошибка входа через Google');
+        setState(() => _errorMessage = fallback);
       }
     } finally {
       if (mounted) {
-        setState(() => _isOAuthLoading = false);
+        setState(() => _oauthInProgress = null);
       }
     }
   }
 
-  Future<void> _handleYandexSignIn() async {
-    setState(() => _isOAuthLoading = true);
-
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final success = await authProvider.loginWithYandex();
-
-      if (success && mounted) {
-        Navigator.of(context)
-            .pushNamedAndRemoveUntil('/home', (route) => false);
-      } else if (!success && mounted) {
-        _showError(authProvider.errorMessage ?? 'Ошибка входа через Яндекс');
-      }
-    } catch (e) {
-      if (mounted) {
-        _showError('Ошибка входа через Яндекс');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isOAuthLoading = false);
-      }
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+  /// На главный экран гостем — «Пропустить» первого запуска.
+  void _skip() {
+    Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
     // «Регистрация» первого запуска — корень стека (её открывает заставка),
     // и системное «Назад» здесь закрывало приложение. Ведём туда же, куда
-    // стрелка в шапке: на главный экран гостем. Открытая со «Входа» —
-    // обычный шаг назад.
+    // «Пропустить» в шапке: на главный экран гостем. Открытая со «Входа» или
+    // из профиля — обычный шаг назад.
+    // Первый ли это экран своего маршрута, а не «пуст ли весь стек»: экран,
+    // перестроенный под открытой поверх регистрацией по почте, иначе счёл
+    // бы себя открытым со «Входа» и потерял «Пропустить».
+    final isFirstLaunch = ModalRoute.of(context)?.isFirst ?? true;
     return PopScope(
-      canPop: Navigator.of(context).canPop(),
+      canPop: !isFirstLaunch,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        Navigator.of(context)
-            .pushNamedAndRemoveUntil('/home', (route) => false);
+        _skip();
       },
-      child: _buildScreen(context),
+      child: _buildScreen(context, isFirstLaunch: isFirstLaunch),
     );
   }
 
-  Widget _buildScreen(BuildContext context) {
+  Widget _buildScreen(BuildContext context, {required bool isFirstLaunch}) {
     final theme = Theme.of(context);
+    final isOAuthLoading = _oauthInProgress != null;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundWarm,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundWarm,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
-          onPressed: () => Navigator.of(context)
-                      .pushNamedAndRemoveUntil('/home', (route) => false),
-        ),
+        // Первый запуск: «Назад» некуда, стрелки нет — есть «Пропустить»
+        // (проход тестировщика 17.10, пп. 2, 43). Раньше стрелка здесь
+        // всегда вела на «Поиск», и открытая из профиля через «Вход»
+        // регистрация не возвращала на «Вход» (п. 18).
+        automaticallyImplyLeading: false,
+        leading: isFirstLaunch
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppTheme.textDark),
+                tooltip: 'Назад',
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+        actions: [
+          if (isFirstLaunch)
+            TextButton(
+              onPressed: isOAuthLoading ? null : _skip,
+              child: Text(
+                'Пропустить',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textDark,
+                ),
+              ),
+            ),
+        ],
         title: Text(
           'Регистрация',
           style: theme.textTheme.headlineSmall?.copyWith(
@@ -130,7 +154,7 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
 
               // Email button
               OutlinedButton(
-                onPressed: _isOAuthLoading
+                onPressed: isOAuthLoading
                     ? null
                     : () {
                         Navigator.pushNamed(context, '/auth/email-registration');
@@ -159,7 +183,7 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
 
               // Phone button
               OutlinedButton(
-                onPressed: _isOAuthLoading
+                onPressed: isOAuthLoading
                     ? null
                     : () {
                         Navigator.pushNamed(context, '/auth/phone-registration');
@@ -186,108 +210,19 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
 
               const SizedBox(height: 48),
 
-              // OAuth section
-              Text(
-                'Или используйте:',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 15,
-                  color: Colors.black.withValues(alpha: 0.7),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Google button
-              OutlinedButton(
-                onPressed: _isOAuthLoading ? null : _handleGoogleSignIn,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(
-                    color: AppTheme.textPrimary,
-                    width: 1,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: ErrorBanner(
+                    message: _errorMessage!,
+                    onDismiss: () => setState(() => _errorMessage = null),
                   ),
                 ),
-                child: _isOAuthLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Продолжить с Google',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontSize: 15,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
 
-              const SizedBox(height: 12),
-
-              // Yandex button
-              OutlinedButton(
-                onPressed: _isOAuthLoading ? null : _handleYandexSignIn,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(
-                    color: AppTheme.textPrimary,
-                    width: 1,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Продолжить с Яндекс',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Apple button (disabled placeholder)
-              ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Вход через Apple скоро будет доступен'),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Продолжить с Apple',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                        color: AppTheme.textOnPrimary,
-                      ),
-                    ),
-                  ],
-                ),
+              SocialSignInButtons(
+                onGoogle: _handleGoogleSignIn,
+                onYandex: _handleYandexSignIn,
+                inProgress: _oauthInProgress,
               ),
 
               const SizedBox(height: 32),

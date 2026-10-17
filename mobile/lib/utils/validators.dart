@@ -1,12 +1,16 @@
-/// Form validation utilities
-/// Provides validators for email, phone, password, and other inputs
+/// Проверки полей форм: почта, телефон, пароль, имя, код.
+///
+/// Все тексты — по-русски: их читает человек под полем формы. До 17.10.2026
+/// здесь были английские фразы («Name must be at least 2 characters»), и на
+/// одном экране соседствовали два языка (проход тестировщика 17.10, пп. 20,
+/// 38). Сторож — `test/utils/validators_language_test.dart`.
 library;
 
 /// Email validation
 /// Returns null if valid, error message if invalid
 String? validateEmail(String? value) {
   if (value == null || value.isEmpty) {
-    return 'Email is required';
+    return 'Введите почту';
   }
 
   // RFC 5322 compliant regex (simplified)
@@ -15,7 +19,7 @@ String? validateEmail(String? value) {
   );
 
   if (!emailRegex.hasMatch(value)) {
-    return 'Please enter a valid email address';
+    return 'Проверьте адрес почты: в нём нужны «@» и домен';
   }
 
   return null;
@@ -26,7 +30,7 @@ String? validateEmail(String? value) {
 /// Returns null if valid, error message if invalid
 String? validateBelarusPhone(String? value) {
   if (value == null || value.isEmpty) {
-    return 'Phone number is required';
+    return 'Введите номер телефона';
   }
 
   // Remove all non-digit characters for validation
@@ -34,13 +38,13 @@ String? validateBelarusPhone(String? value) {
 
   // Belarus: +375 XX XXX XX XX (12 digits total with country code)
   if (!digitsOnly.startsWith('375') || digitsOnly.length != 12) {
-    return 'Please enter a valid Belarus phone number';
+    return 'Введите номер полностью: +375 и ещё 9 цифр';
   }
 
   // Check operator prefix (25, 29, 33, 44)
   final operatorPrefix = digitsOnly.substring(3, 5);
   if (!['25', '29', '33', '44'].contains(operatorPrefix)) {
-    return 'Phone number must start with 25, 29, 33, or 44';
+    return 'Код оператора — 25, 29, 33 или 44';
   }
 
   return null;
@@ -65,62 +69,120 @@ String unformatBelarusPhone(String phone) {
   return '+$digitsOnly';
 }
 
+/// Требование к паролю: что показать человеку и как проверить.
+class PasswordRequirement {
+  const PasswordRequirement(this.label, this._test);
+
+  /// Строка списка под полем пароля.
+  final String label;
+  final bool Function(String password) _test;
+
+  bool isMetBy(String password) => _test(password);
+}
+
+/// Требования к паролю — те же, что на сервере (`authValidation.js`,
+/// `validateRegister`): от 8 символов, заглавная и строчная ЛАТИНСКИЕ буквы,
+/// цифра. Сервер проверяет `[A-Z]` и `[a-z]`, поэтому «Пароль123» он не
+/// примет — список говорит «латинская» прямо, иначе человек с русской
+/// раскладкой не поймёт отказ. Один список питает и проверку поля
+/// ([validatePassword]), и перечень под полем (`PasswordStrengthIndicator`),
+/// чтобы они не разошлись.
+final List<PasswordRequirement> passwordRequirements = [
+  PasswordRequirement('Не меньше 8 символов', (p) => p.length >= 8),
+  PasswordRequirement(
+      'Заглавная латинская буква (A–Z)', (p) => RegExp(r'[A-Z]').hasMatch(p)),
+  PasswordRequirement(
+      'Строчная латинская буква (a–z)', (p) => RegExp(r'[a-z]').hasMatch(p)),
+  PasswordRequirement('Цифра', (p) => RegExp(r'[0-9]').hasMatch(p)),
+];
+
 /// Password validation with complexity rules
 /// Returns null if valid, error message if invalid
 String? validatePassword(String? value) {
   if (value == null || value.isEmpty) {
-    return 'Password is required';
+    return 'Введите пароль';
   }
 
-  if (value.length < 8) {
-    return 'Password must be at least 8 characters';
-  }
-
-  // Check for at least one uppercase letter
-  if (!RegExp(r'[A-Z]').hasMatch(value)) {
-    return 'Password must contain at least one uppercase letter';
-  }
-
-  // Check for at least one lowercase letter
-  if (!RegExp(r'[a-z]').hasMatch(value)) {
-    return 'Password must contain at least one lowercase letter';
-  }
-
-  // Check for at least one digit
-  if (!RegExp(r'[0-9]').hasMatch(value)) {
-    return 'Password must contain at least one number';
+  for (final requirement in passwordRequirements) {
+    if (!requirement.isMetBy(value)) {
+      return 'Пароль не подходит: нужно — ${_lowerFirst(requirement.label)}';
+    }
   }
 
   return null;
 }
+
+String _lowerFirst(String text) =>
+    text.isEmpty ? text : text[0].toLowerCase() + text.substring(1);
 
 /// Password match validation
 /// Returns null if passwords match, error message if not
 String? validatePasswordMatch(String? value, String? password) {
   if (value == null || value.isEmpty) {
-    return 'Please confirm your password';
+    return 'Повторите пароль';
   }
 
   if (value != password) {
-    return 'Passwords do not match';
+    return 'Пароли не совпадают';
   }
 
   return null;
 }
 
-/// Name validation for profile
-/// Returns null if valid, error message if invalid
+/// Наименьшая и наибольшая длина имени — как на сервере.
+const int nameMinLength = 2;
+const int nameMaxLength = 50;
+
+/// Отказ имени с недопустимыми знаками — та же фраза, что у сервера.
+const String nameCharactersMessage =
+    'Имя может содержать только буквы, пробел, дефис и апостроф';
+
+/// Апострофы, которые ставит клавиатура вместо прямого `'`: iPhone с
+/// «умной пунктуацией» (включена по умолчанию) печатает `’` (U+2019),
+/// белорусская и украинская раскладки — `ʼ` (U+02BC).
+final RegExp _typographicApostrophes = RegExp('[’ʼ]');
+
+/// Имя в том виде, в каком оно уходит на сервер: без пробелов по краям,
+/// пробелы внутри — по одному, апостроф — прямой `'`.
+///
+/// Сервер принимает только прямой апостроф; без замены «O’Brien», набранное
+/// на iPhone, получило бы отказ за знак, которого человек не видит.
+String normalizeName(String value) => value
+    .trim()
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .replaceAll(_typographicApostrophes, "'");
+
+/// Буквы любого алфавита; пробел, дефис и апостроф — только между буквами.
+final RegExp _namePattern = RegExp(r"^\p{L}+(?:[ '\-]\p{L}+)*$", unicode: true);
+
+/// Только разрешённые знаки — без требования к их порядку.
+final RegExp _nameAllowedChars = RegExp(r"^[\p{L} '\-]+$", unicode: true);
+
+/// Проверка имени — одно правило для регистрации и правки профиля, то же,
+/// что на сервере (решение Координатора 17.10.2026, В4): буквы любого
+/// алфавита (кириллица с «ё», «і», «ў», латиница), пробел, дефис и апостроф
+/// между буквами, длина 2–50. Главный судья — сервер; здесь проверка для
+/// удобства, отказ сервера экран показывает своим текстом.
 String? validateName(String? value) {
-  if (value == null || value.isEmpty) {
-    return 'Name is required';
+  final name = normalizeName(value ?? '');
+  if (name.isEmpty) {
+    return 'Введите имя';
   }
 
-  if (value.trim().length < 2) {
-    return 'Name must be at least 2 characters';
+  if (!_nameAllowedChars.hasMatch(name)) {
+    return nameCharactersMessage;
   }
 
-  if (value.trim().length > 50) {
-    return 'Name must be less than 50 characters';
+  if (!_namePattern.hasMatch(name)) {
+    return 'Пробел, дефис и апостроф — только между буквами';
+  }
+
+  if (name.length < nameMinLength) {
+    return 'Имя — не короче $nameMinLength букв';
+  }
+
+  if (name.length > nameMaxLength) {
+    return 'Имя — не длиннее $nameMaxLength символов';
   }
 
   return null;
@@ -182,15 +244,15 @@ double getPasswordStrengthProgress(String password) {
 /// Returns null if valid, error message if invalid
 String? validateVerificationCode(String? value) {
   if (value == null || value.isEmpty) {
-    return 'Verification code is required';
+    return 'Введите код';
   }
 
   if (value.length != 6) {
-    return 'Verification code must be 6 digits';
+    return 'Код — 6 цифр';
   }
 
   if (!RegExp(r'^[0-9]{6}$').hasMatch(value)) {
-    return 'Verification code must contain only numbers';
+    return 'Код состоит только из цифр';
   }
 
   return null;

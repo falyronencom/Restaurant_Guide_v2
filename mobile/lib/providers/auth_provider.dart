@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
+import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Authentication status enum
 enum AuthenticationStatus {
@@ -730,18 +731,120 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     _authMethod = null;
   }
 
-  /// Extract user-friendly error message from exception
-  String _extractErrorMessage(Object error) {
-    final errorStr = error.toString();
+  /// Общая фраза — когда ни сервер, ни таблица не дали текста.
+  static const String genericErrorMessage =
+      'Произошла ошибка. Попробуйте снова.';
 
-    // Extract message from DioException format
-    if (errorStr.contains('DioException')) {
-      // Try to extract the actual error message
-      final match = RegExp(r'error:\s*(.+?)(?:\n|$)').firstMatch(errorStr);
-      if (match != null) {
-        return match.group(1) ?? 'Ошибка авторизации';
+  static final RegExp _cyrillic = RegExp('[А-Яа-яЁёІіЎў]');
+
+  /// Текст отказа для человека — на входе, регистрации, кодах, правке
+  /// профиля.
+  ///
+  /// Порядок:
+  /// 1. Русский текст сервера из тела ответа — как есть: сервер знает про
+  ///    случай больше клиента (правило имени, лимит попыток, блокировка).
+  /// 2. Таблица известных кодов и английских фраз сервера — русской фразой.
+  /// 3. Русская фраза транспорта, если ответа не было (нет связи, таймаут).
+  /// 4. Общая фраза [genericErrorMessage].
+  ///
+  /// До 17.10.2026 первым шагом искалось `error:` со строчной буквы, а
+  /// `DioException.toString()` пишет `Error:` — текст сервера не находился
+  /// никогда, и русские отказы 429/403 и правка имени доходили до экрана общей
+  /// фразой (проход тестировщика 17.10, п. 32; память
+  /// `feedback_server_text_visible_only_if_client_shows_it`).
+  String _extractErrorMessage(Object error) {
+    final response = error is DioException ? error.response : null;
+
+    final serverText = _russianServerText(response?.data);
+    if (serverText != null) return serverText;
+
+    final known = _knownErrorMessage(error, response);
+    if (known != null) return known;
+
+    if (error is DioException &&
+        error.type != DioExceptionType.badResponse &&
+        error.error is String &&
+        _cyrillic.hasMatch(error.error as String)) {
+      return error.error as String;
+    }
+
+    return genericErrorMessage;
+  }
+
+  /// Русский текст отказа из тела ответа сервера, или `null`.
+  ///
+  /// Отказ проверки полей приходит в двух формах: `error.details` — объект
+  /// «поле → список фраз» (express-validator, регистрация) или список
+  /// `{field, message}`; рядом `error.message` — общая фраза. Берётся то,
+  /// что написано по-русски: по одной фразе на поле, затем общая. Английская
+  /// фраза сервера сюда не проходит — её переводит таблица
+  /// [_knownErrorMessage].
+  static String? _russianServerText(Object? data) {
+    if (data is! Map) return null;
+    final error = data['error'];
+    final fieldMessages = <String>[];
+
+    void addRussian(Object? message) {
+      if (message is String &&
+          _cyrillic.hasMatch(message) &&
+          !fieldMessages.contains(message.trim())) {
+        fieldMessages.add(message.trim());
       }
     }
+
+    if (error is Map) {
+      final details = error['details'];
+      if (details is Map) {
+        // Только списки фраз: у отказа лимитера (429) в `details` служебные
+        // поля — окно лимита строкой, срок, — и они не текст для человека.
+        for (final messages in details.values) {
+          if (messages is! List) continue;
+          final russian = messages.whereType<String>().where(
+                (m) => _cyrillic.hasMatch(m),
+              );
+          if (russian.isNotEmpty) addRussian(russian.first);
+        }
+      } else if (details is List) {
+        for (final item in details) {
+          addRussian(item is Map ? item['message'] : item);
+        }
+      }
+      if (fieldMessages.isNotEmpty) return fieldMessages.join('\n');
+
+      final message = error['message'];
+      if (message is String && _cyrillic.hasMatch(message)) {
+        return message.trim();
+      }
+    } else if (error is String && _cyrillic.hasMatch(error)) {
+      return error.trim();
+    }
+
+    final message = data['message'];
+    if (message is String && _cyrillic.hasMatch(message)) {
+      return message.trim();
+    }
+    return null;
+  }
+
+  /// Русская фраза для известного отказа, или `null`.
+  ///
+  /// Сервер отдаёт большинство отказов входа по-английски с кодом в теле
+  /// (`INVALID_CREDENTIALS`, `EMAIL_EXISTS`). Таблица ищет код и фразы в
+  /// тексте исключения, в коде и фразах из тела ответа: у `DioException`,
+  /// пересобранного транспортом, в `toString()` нет ни кода статуса, ни кода
+  /// из тела — только фраза из `error`.
+  String? _knownErrorMessage(Object error, Response<dynamic>? response) {
+    final body = response?.data;
+    final bodyError = body is Map ? body['error'] : null;
+    final errorStr = [
+      error.toString(),
+      if (bodyError is Map) ...[
+        '${bodyError['code'] ?? ''}',
+        '${bodyError['message'] ?? ''}',
+        '${bodyError['details'] ?? ''}',
+      ],
+    ].join('\n');
+    final status = response?.statusCode;
 
     // OAuth-specific errors
     if (errorStr.contains('cancelled') || errorStr.contains('CANCELED')) {
@@ -786,25 +889,54 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     if (errorStr.contains('EMAIL_ALREADY_VERIFIED')) {
       return 'Email уже подтверждён.';
     }
+    // Отказы входа через Google и Яндекс — раньше код из тела в таблицу не
+    // попадал, и все три доходили общей фразой. Стоят до `NO_EMAIL`:
+    // `OAUTH_NO_EMAIL` содержит его подстрокой.
+    if (errorStr.contains('OAUTH_NO_EMAIL')) {
+      return 'Сервис входа не передал адрес почты. Войдите другим способом.';
+    }
+    if (errorStr.contains('OAUTH_EMAIL_NOT_VERIFIED')) {
+      return 'Почта в этом сервисе не подтверждена. Подтвердите её там или '
+          'войдите другим способом.';
+    }
+    if (errorStr.contains('ACCOUNT_DEACTIVATED')) {
+      return 'Аккаунт отключён. Напишите в поддержку.';
+    }
     if (errorStr.contains('NO_EMAIL')) {
       return 'На аккаунте нет email-адреса.';
     }
     if (errorStr.contains('Code expired') || errorStr.contains('CODE_EXPIRED')) {
       return 'Код подтверждения истёк. Запросите новый код.';
     }
-    if (errorStr.contains('404')) {
+    // Правило имени: английские фразы сервера до его перевода на русский.
+    if (errorStr.contains('Name can only contain')) {
+      return nameCharactersMessage;
+    }
+    if (errorStr.contains('Name must be')) {
+      return 'Имя — от $nameMinLength до $nameMaxLength символов';
+    }
+    if (errorStr.contains('Name cannot be empty') ||
+        errorStr.contains('Name is required')) {
+      return 'Введите имя';
+    }
+    // Коды статуса — по ответу, а не по подстроке: «500» встречается и в
+    // тексте («must be 500 characters or fewer»).
+    if (status == 404) {
       return 'Сервис недоступен. Попробуйте позже.';
     }
-    if (errorStr.contains('429') || errorStr.contains('Too many requests')) {
+    if (status == 429 || errorStr.contains('Too many requests')) {
       return 'Слишком много попыток. Подождите немного и попробуйте снова.';
     }
-    if (errorStr.contains('500')) {
+    if (status != null && status >= 500) {
       return 'Ошибка сервера. Попробуйте позже.';
+    }
+    if (errorStr.contains('VALIDATION_ERROR')) {
+      return 'Проверьте введённые данные.';
     }
     if (errorStr.contains('Network') || errorStr.contains('Connection')) {
       return 'Ошибка сети. Проверьте подключение к интернету.';
     }
 
-    return 'Произошла ошибка. Попробуйте снова.';
+    return null;
   }
 }

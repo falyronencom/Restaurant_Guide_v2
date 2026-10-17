@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/utils/validators.dart';
 
 /// Edit Profile Screen - allows user to edit their profile
 /// Figma design: Edit Profile (third frame)
@@ -155,7 +156,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     try {
       final success = await context.read<AuthProvider>().updateProfile(
-            name: _nameController.text.trim(),
+            name: normalizeName(_nameController.text),
           );
 
       if (mounted) {
@@ -371,12 +372,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           label: 'Имя',
           controller: _nameController,
           isEditable: true,
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return 'Введите имя';
-            }
-            return null;
-          },
+          // То же правило, что при регистрации и на сервере. Раньше здесь
+          // проверялось только «не пусто»: проходили запятые и имя из 500
+          // знаков, а отказ сервера доходил как «Произошла ошибка»
+          // (проход тестировщика 17.10, пп. 32, 49).
+          validator: validateName,
         ),
 
         const SizedBox(height: 8),
@@ -452,6 +452,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         fontSize: 15,
                         color: _greyText,
                       ),
+                      // Текст правила имени длиннее строки — в одну строку
+                      // он обрезался бы многоточием.
+                      errorMaxLines: 3,
                     ),
                   )
                 else
