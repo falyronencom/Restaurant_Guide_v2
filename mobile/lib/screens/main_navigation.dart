@@ -331,7 +331,13 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
                     child: _buildTabNavigator(2, const MapScreen()),
                   )
                 : const SizedBox.shrink(),
-            _buildTabNavigator(3, const FavoritesScreen()),
+            // Тот же признак видимости — «Избранному»: его карта существует,
+            // только пока вкладку видно (две живые нативные карты в стопке
+            // вкладок), а прогулка (этап 4) не тратит геолокацию на скрытой.
+            TickerMode(
+              enabled: _currentIndex == 3,
+              child: _buildTabNavigator(3, const FavoritesScreen()),
+            ),
             _buildTabNavigator(4, const ProfileScreen()),
           ],
         ),

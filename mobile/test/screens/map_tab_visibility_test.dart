@@ -15,6 +15,7 @@ import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dar
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
+import 'package:restaurant_guide_mobile/screens/favorites/favorites_screen.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
@@ -101,5 +102,26 @@ void main() {
     await tester.tap(tab('Карта'));
     await tester.pump();
     expect(mapTickerEnabled(tester), isTrue, reason: 'карту снова видно');
+  });
+
+  // Этап 3 (17.10.2026): у «Избранного» своя карта, и она существует, только
+  // пока вкладку видно — признак тот же.
+  testWidgets('вкладка «Избранное» видит TickerMode: скрыта — выключен, '
+      'показана — включён', (tester) async {
+    await pumpHome(tester);
+    bool favoritesTickerEnabled() => TickerMode.of(
+        tester.element(find.byType(FavoritesScreen, skipOffstage: false)));
+
+    expect(favoritesTickerEnabled(), isFalse,
+        reason: 'на старте открыт «Поиск», «Избранное» построено, но скрыто');
+
+    await tester.tap(tab('Избранное'));
+    await tester.pump();
+    expect(favoritesTickerEnabled(), isTrue, reason: '«Избранное» видно');
+
+    await tester.tap(tab('Карта'));
+    await tester.pump();
+    expect(favoritesTickerEnabled(), isFalse,
+        reason: 'ушли на «Карту» — карта «Избранного» не должна жить рядом');
   });
 }

@@ -26,6 +26,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
+import 'package:restaurant_guide_mobile/widgets/action_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
@@ -757,71 +758,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
   }
 
-  /// Bottom-sheet выбора действия — держит пользователя в приложении до
-  /// осознанного перехода (адрес/сайт/соцсеть): выбор навигатора + «копировать».
-  void _showActionSheet(
-      List<({IconData icon, String label, VoidCallback onTap})> actions) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.backgroundPrimary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.strokeGrey,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            for (final a in actions)
-              ListTile(
-                leading: Icon(a.icon, color: AppTheme.textPrimary),
-                title: Text(
-                  a.label,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  a.onTap();
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Адрес → выбор навигатора / копирование (вместо мгновенного ухода в карты).
   void _showAddressSheet() {
     final address = _establishment!.address;
     final lat = _establishment!.latitude;
     final lng = _establishment!.longitude;
-    final hasCoords = lat != null && lng != null;
-    _showActionSheet([
-      if (hasCoords)
-        (
-          icon: Icons.navigation_outlined,
-          label: 'Маршрут в Яндекс.Картах',
-          onTap: () => _launchYandexRoute(lat, lng),
-        ),
-      if (hasCoords)
-        (
-          icon: Icons.navigation_outlined,
-          label: 'Маршрут в Google Картах',
-          onTap: () => _launchGoogleRoute(lat, lng),
-        ),
+    showActionSheet(context, [
+      if (lat != null && lng != null) ...routeSheetItems(lat, lng),
       (
         icon: Icons.copy_outlined,
         label: 'Скопировать адрес',
@@ -835,7 +778,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     final info = _parseSocialLink(url);
     final openLabel =
         info.$2 == 'Сайт' ? 'Открыть сайт' : 'Открыть в ${info.$2}';
-    _showActionSheet([
+    showActionSheet(context, [
       (icon: info.$1, label: openLabel, onTap: () => _launchSocialUrl(url)),
       (
         icon: Icons.copy_outlined,
@@ -848,45 +791,6 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         onTap: () => Share.share(url),
       ),
     ]);
-  }
-
-  /// Маршрут в Яндекс.Картах: приложение → веб-карты.
-  ///
-  /// `rtext` — единственный параметр Яндекса, который берёт широту ПЕРВОЙ
-  /// (в отличие от `pt`/`ll`); `~` вместо точки старта значит «старт не задан»,
-  /// и Яндекс подставляет текущее положение. Ссылка та же, что на веб-витрине
-  /// (`web/src/lib/establishment-helpers.ts`), чтобы обе площадки вели в одно
-  /// место. Прежний `pt=` показывал точку на карте, а не строил маршрут.
-  ///
-  /// Схема `yandexmaps` объявлена в `AndroidManifest.xml` (`<queries>`) и в
-  /// `Info.plist` (`LSApplicationQueriesSchemes`) — без объявления обе
-  /// платформы отвечают на [canLaunchUrl] отказом, и ветка приложения
-  /// недостижима.
-  Future<void> _launchYandexRoute(double? lat, double? lng) async {
-    if (lat == null || lng == null) return;
-    final appUrl =
-        Uri.parse('yandexmaps://maps.yandex.ru/?rtext=~$lat,$lng&rtt=auto');
-    final webUrl =
-        Uri.parse('https://yandex.by/maps/?rtext=~$lat,$lng&rtt=auto');
-    if (await canLaunchUrl(appUrl)) {
-      await launchUrl(appUrl);
-    } else {
-      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  /// Маршрут в Google Картах: схема приложения → универсальная ссылка.
-  Future<void> _launchGoogleRoute(double? lat, double? lng) async {
-    if (lat == null || lng == null) return;
-    final appUrl = Uri.parse(
-        'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving');
-    final webUrl = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
-    if (await canLaunchUrl(appUrl)) {
-      await launchUrl(appUrl);
-    } else {
-      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-    }
   }
 
   /// Скопировать текст в буфер обмена + подтверждение.

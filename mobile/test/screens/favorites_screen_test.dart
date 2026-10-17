@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
@@ -8,6 +11,8 @@ import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/screens/favorites/favorites_screen.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_cover.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_map.dart';
+import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
 
 import '../support/wire_fixtures.dart';
 import '../support/wire_stand.dart';
@@ -44,6 +49,19 @@ Establishment _place(String name, String? price) => Establishment(
       createdAt: DateTime(2026, 10, 13),
       updatedAt: DateTime(2026, 10, 13),
     );
+
+/// Чип сортировки — с повёрнутой иконкой; рядом может стоять «На карте».
+final _sortChip = find.byWidgetPredicate(
+    (w) => w is FavoritesCoverChip && w.rotateIcon,
+    description: 'чип сортировки');
+final _mapChip = find.widgetWithText(FavoritesCoverChip, 'На карте');
+final _toggle = find.byType(FavoritesViewToggle);
+
+/// Провайдер, который навсегда «грузит» избранное.
+class _AlwaysLoading extends EstablishmentsProvider {
+  @override
+  bool get isFavoritesLoading => true;
+}
 
 List<String> _sortedNames(List<Establishment> places, SortOption sort) =>
     sortFavorites(places, sort, distanceKm: (_) => null)
@@ -139,26 +157,56 @@ void main() {
 
   group('Экран', () {
     late Map<String, dynamic> Function() envelope;
+    late StubAdapter wire;
+    late int status;
 
     setUp(() {
       envelope = () => favoritesEnvelope(favorites: []);
-      installWireStand((_) => jsonBody(envelope()));
+      status = 200;
+      wire = installWireStand((_) => jsonBody(envelope(), status: status));
+      SharedPreferences.setMockInitialValues({});
+      // Карта — платформенный вид: здесь она не рождается, строится только
+      // виджет.
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, (_) async => null);
+      addTearDown(() => messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, null));
     });
 
+    /// [visible] — признак видимости вкладки (TickerMode, как в
+    /// main_navigation).
     Future<EstablishmentsProvider> pump(
       WidgetTester tester, {
       required bool signedIn,
+      EstablishmentsProvider? provider,
+      ValueNotifier<bool>? visible,
+      bool settle = true,
     }) async {
-      final establishments = EstablishmentsProvider();
+      final establishments = provider ?? EstablishmentsProvider();
+      final shown = visible ?? ValueNotifier(true);
       await tester.pumpWidget(MultiProvider(
         providers: [
           ChangeNotifierProvider<AuthProvider>(
               create: (_) => _Auth(signedIn: signedIn)),
           ChangeNotifierProvider.value(value: establishments),
         ],
-        child: const MaterialApp(home: FavoritesScreen()),
+        child: MaterialApp(
+          home: ValueListenableBuilder<bool>(
+            valueListenable: shown,
+            builder: (context, enabled, child) =>
+                TickerMode(enabled: enabled, child: child!),
+            child: const FavoritesScreen(),
+          ),
+        ),
       ));
-      await tester.pumpAndSettle();
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump();
+      }
       return establishments;
     }
 
@@ -203,7 +251,7 @@ void main() {
           favoritesEnvelope(favorites: [for (var i = 0; i < 3; i++) _row(i)]);
       await pump(tester, signedIn: true);
 
-      await tester.tap(find.byType(FavoritesCoverChip));
+      await tester.tap(_sortChip);
       await tester.pumpAndSettle();
       await tester.tap(find.text('По цене ↑'));
       await tester.pumpAndSettle();
@@ -216,9 +264,9 @@ void main() {
       envelope = () => favoritesEnvelope(favorites: [_row(0)]);
       await pump(tester, signedIn: true);
 
-      final tap = tester.getRect(find.byType(FavoritesCoverChip));
+      final tap = tester.getRect(_sortChip);
       final plate = tester.getRect(find.descendant(
-        of: find.byType(FavoritesCoverChip),
+        of: _sortChip,
         matching: find.byType(Container),
       ));
       expect(plate.height, FavoritesCoverChip.visibleHeight);
@@ -368,7 +416,7 @@ void main() {
       provider.setUserLocation(53.90, 27.5619);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byType(FavoritesCoverChip));
+      await tester.tap(_sortChip);
       await tester.pumpAndSettle();
       await tester.tap(find.text('По расстоянию'));
       await tester.pumpAndSettle();
@@ -380,6 +428,366 @@ void main() {
       // Места без расстояния — в конце и в порядке, в котором пришли
       // (рейтинг «Без координат 2» ниже, но по рейтингу здесь не сортируют).
       expect(names, ['Ближнее', 'Дальнее', 'Без координат', 'Без координат 2']);
+    });
+
+    // Этап 3 (17.10.2026): второй режим — «На карте» (макет `3a`).
+    group('Списком / На карте', () {
+      const statusBar = 47.0;
+      const screen = Size(390, 844);
+
+      void withStatusBar(WidgetTester tester) {
+        tester.view.physicalSize = screen;
+        tester.view.devicePixelRatio = 1;
+        tester.view.padding = const FakeViewPadding(top: statusBar);
+        addTearDown(tester.view.reset);
+      }
+
+      List<Map<String, dynamic>> rows(int n) =>
+          [for (var i = 0; i < n; i++) _row(i)];
+
+      Future<String?> savedMode() async =>
+          (await SharedPreferences.getInstance())
+              .getString(FavoritesViewModeStore.key);
+
+      double fontSizeOf(WidgetTester tester, String text) => tester
+          .renderObject<RenderParagraph>(find.text(text))
+          .text
+          .style!
+          .fontSize!;
+
+      testWidgets('чип «На карте» с иконкой карты — рядом с сортировкой, '
+          'через 8', (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+
+        final sort = tester.getRect(_sortChip);
+        final map = tester.getRect(_mapChip);
+        expect(map.left, sort.right + 8);
+        expect(map.center.dy, sort.center.dy);
+        expect(
+            find.descendant(of: _mapChip, matching: find.byIcon(Icons.map)),
+            findsOneWidget);
+      });
+
+      testWidgets(
+          '«На карте» → компактная обложка 47 + 93 с тумблером и карта до '
+          'низа; «Списком» → полная обложка и список', (tester) async {
+        withStatusBar(tester);
+        envelope = () => favoritesEnvelope(favorites: rows(12));
+        await pump(tester, signedIn: true);
+
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+
+        final cover = tester.getRect(find.byType(FavoritesCover));
+        expect(cover.top, 0);
+        expect(cover.height, statusBar + FavoritesCover.collapsedBodyHeight);
+        expect(_toggle, findsOneWidget);
+        expect(find.byType(FavoritesMap), findsOneWidget);
+        expect(find.byType(EstablishmentCard), findsNothing);
+        expect(find.byType(FavoritesCoverChip), findsNothing);
+        final map = tester.getRect(find.byType(FavoritesMap));
+        expect(map.top, cover.bottom, reason: 'карта стыкуется с обложкой');
+        expect(map.bottom, screen.height);
+        // Компактная обложка: заголовок 22, подпись 13, угол без скругления.
+        expect(fontSizeOf(tester, 'Избранное'), 22);
+        expect(fontSizeOf(tester, '12 мест · Минск'), 13);
+        final clip = tester.widget<ClipRRect>(find
+            .descendant(
+                of: find.byType(FavoritesCover),
+                matching: find.byType(ClipRRect))
+            .first);
+        expect(clip.borderRadius,
+            const BorderRadius.only(bottomLeft: Radius.circular(0)));
+
+        await tester.tap(find.text('Списком'));
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(find.byType(FavoritesCover)).height,
+            statusBar + FavoritesCover.expandedBodyHeight);
+        expect(find.byType(EstablishmentCard), findsWidgets);
+        expect(find.byType(FavoritesMap), findsNothing);
+        expect(_toggle, findsNothing);
+        expect(_mapChip, findsOneWidget);
+      });
+
+      testWidgets(
+          'тумблер: зона нажатия сегмента на 3 выше и ниже плашки; активный '
+          '— белый с тёмной подписью', (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+
+        final plate = tester.getRect(find
+            .descendant(of: _toggle, matching: find.byType(DecoratedBox))
+            .first);
+        final listTap = tester.getRect(find
+            .ancestor(
+                of: find.text('Списком'),
+                matching: find.byType(GestureDetector))
+            .first);
+        expect(listTap.top, plate.top - 3);
+        expect(listTap.bottom, plate.bottom + 3);
+
+        Color? colorOf(String label) => tester
+            .renderObject<RenderParagraph>(find.text(label))
+            .text
+            .style!
+            .color;
+        expect(colorOf('На карте'), const Color(0xFF3E3E3E));
+        expect(colorOf('Списком'), Colors.white.withValues(alpha: 0.85));
+      });
+
+      testWidgets(
+          'выбор режима запоминается: новый экран открывается так, как ушли',
+          (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+        expect(await savedMode(), 'map');
+
+        // Экран закрыт и открыт заново (перезапуск приложения).
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester, signedIn: true);
+        expect(find.byType(FavoritesMap), findsOneWidget);
+        expect(_toggle, findsOneWidget);
+
+        await tester.tap(find.text('Списком'));
+        await tester.pumpAndSettle();
+        expect(await savedMode(), 'list');
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester, signedIn: true);
+        expect(find.byType(FavoritesMap), findsNothing);
+        expect(find.byType(EstablishmentCard), findsWidgets);
+      });
+
+      testWidgets('ничего не запомнено — список', (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+        expect(find.byType(FavoritesMap), findsNothing);
+        expect(_mapChip, findsOneWidget);
+      });
+
+      for (final signedIn in [true, false]) {
+        testWidgets(
+            '${signedIn ? 'пусто у вошедшего' : 'гость'}: чипа «На карте» '
+            'нет; запомненная карта — пустое состояние под полной обложкой',
+            (tester) async {
+          SharedPreferences.setMockInitialValues(
+              {FavoritesViewModeStore.key: 'map'});
+          await pump(tester, signedIn: signedIn);
+
+          expect(find.text('Здесь будут ваши места'), findsOneWidget);
+          expect(find.byType(FavoritesCoverChip), findsNothing);
+          expect(_toggle, findsNothing);
+          expect(find.byType(FavoritesMap), findsNothing);
+          expect(tester.getRect(find.byType(FavoritesCover)).height,
+              FavoritesCover.expandedBodyHeight);
+        });
+      }
+
+      testWidgets(
+          'на карте убрали все места — пустое состояние списком, карты нет',
+          (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(2));
+        final provider = await pump(tester, signedIn: true);
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+        expect(find.byType(FavoritesMap), findsOneWidget);
+
+        envelope = () => favoritesEnvelope(favorites: []);
+        // Без await: ответ стенда приходит по часам теста, их крутит pump.
+        provider.refreshFavorites();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Здесь будут ваши места'), findsOneWidget);
+        expect(find.byType(FavoritesMap), findsNothing);
+        expect(_toggle, findsNothing);
+      });
+
+      testWidgets(
+          'загрузка в режиме карты — под компактной обложкой с тумблером',
+          (tester) async {
+        SharedPreferences.setMockInitialValues(
+            {FavoritesViewModeStore.key: 'map'});
+        await pump(tester,
+            signedIn: true, provider: _AlwaysLoading(), settle: false);
+
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(_toggle, findsOneWidget);
+        expect(tester.getRect(find.byType(FavoritesCover)).height,
+            FavoritesCover.collapsedBodyHeight);
+        // Запрос избранного, начатый экраном, доходит до конца.
+        await tester.pump(const Duration(seconds: 1));
+      });
+
+      testWidgets(
+          'ошибка в режиме карты — под компактной обложкой с тумблером',
+          (tester) async {
+        SharedPreferences.setMockInitialValues(
+            {FavoritesViewModeStore.key: 'map'});
+        status = 500;
+        envelope = () => {'success': false};
+        await pump(tester, signedIn: true);
+
+        expect(find.text('Ошибка загрузки'), findsOneWidget);
+        expect(find.text('Повторить'), findsOneWidget);
+        expect(_toggle, findsOneWidget);
+        expect(tester.getRect(find.byType(FavoritesCover)).height,
+            FavoritesCover.collapsedBodyHeight);
+      });
+
+      testWidgets(
+          'стенд сети: вход в карту и переключения — ни одного запроса',
+          (tester) async {
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+        final before = wire.requests.length;
+        expect(before, greaterThan(0),
+            reason: 'предпосылка: избранное пришло через этот стенд');
+
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Списком'));
+        await tester.pumpAndSettle();
+        await tester.tap(_mapChip);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(FavoritesMap), findsOneWidget);
+        expect(wire.requests.length, before,
+            reason: wire.requests.skip(before).map((r) => r.path).join(', '));
+      });
+
+      testWidgets(
+          'вкладку не видно — нативной карты нет; снова видно — новая карта',
+          (tester) async {
+        SharedPreferences.setMockInitialValues(
+            {FavoritesViewModeStore.key: 'map'});
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        final visible = ValueNotifier(true);
+        await pump(tester, signedIn: true, visible: visible);
+        final first = tester.state(find.byType(FavoritesMap));
+
+        visible.value = false;
+        await tester.pump();
+        expect(find.byType(FavoritesMap), findsNothing);
+        expect(_toggle, findsOneWidget, reason: 'режим остаётся картой');
+
+        visible.value = true;
+        await tester.pump();
+        expect(find.byType(FavoritesMap), findsOneWidget);
+        expect(
+            identical(tester.state(find.byType(FavoritesMap)), first), isFalse,
+            reason: 'новая карта — камера снова охватывает все места');
+      });
+
+      testWidgets(
+          'поверх вкладки открыт другой экран (карточка заведения) — карты '
+          'нет; вернулись — карта снова', (tester) async {
+        SharedPreferences.setMockInitialValues(
+            {FavoritesViewModeStore.key: 'map'});
+        envelope = () => favoritesEnvelope(favorites: rows(3));
+        await pump(tester, signedIn: true);
+        expect(find.byType(FavoritesMap), findsOneWidget);
+
+        final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+        navigator.push(MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Карточка заведения'))));
+        await tester.pumpAndSettle();
+        expect(find.byType(FavoritesMap, skipOffstage: false), findsNothing);
+
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(find.byType(FavoritesMap), findsOneWidget);
+      });
+
+      // Крупный системный шрифт: обложка ограничивает его ×1,3, поэтому ×2
+      // проверяет то же, что ×1,3. Подписи чипов и тумблера ширину не
+      // ограничивают (ряд чипов в FittedBox, тумблер — негибкий сосед):
+      // переполнение ловит takeException, экранный край — getRect, который
+      // учитывает сжатие.
+
+      Future<void> pumpCover(WidgetTester tester, double width, double scale,
+          FavoritesCover cover, double bodyHeight) async {
+        tester.view.physicalSize = Size(width, 844);
+        tester.view.devicePixelRatio = 1;
+        tester.view.padding = const FakeViewPadding(top: statusBar);
+        addTearDown(tester.view.reset);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpWidget(MaterialApp(
+          home: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(height: statusBar + bodyHeight, child: cover),
+          ),
+        ));
+      }
+
+      for (final width in [320.0, 360.0, 390.0]) {
+        for (final scale in [1.2, 2.0]) {
+          testWidgets(
+              'шрифт ×$scale, ширина ${width.toInt()}: оба чипа целиком',
+              (tester) async {
+            await pumpCover(
+              tester,
+              width,
+              scale,
+              FavoritesCover(
+                topInset: statusBar,
+                subtitle: '12 мест · Минск',
+                sortLabel: 'По расстоянию',
+                onSortTap: () {},
+                onMapTap: () {},
+              ),
+              FavoritesCover.expandedBodyHeight,
+            );
+            expect(tester.takeException(), isNull);
+            expect(
+                tester.getRect(_mapChip).right, lessThanOrEqualTo(width - 16));
+          });
+
+          testWidgets(
+              'шрифт ×$scale, ширина ${width.toInt()}: тумблер целиком, '
+              'заголовок с ним не сталкивается', (tester) async {
+            await pumpCover(
+              tester,
+              width,
+              scale,
+              FavoritesCover(
+                topInset: statusBar,
+                collapse: 1,
+                subtitle: '12 мест · Минск',
+                trailing: FavoritesViewToggle(
+                  mode: FavoritesViewMode.map,
+                  onChanged: (_) {},
+                ),
+              ),
+              FavoritesCover.collapsedBodyHeight,
+            );
+            expect(tester.takeException(), isNull);
+            final toggle = tester.getRect(_toggle);
+            expect(toggle.right, lessThanOrEqualTo(width - 16));
+            expect(toggle.top, greaterThanOrEqualTo(statusBar));
+            // Заголовок ужимается, а не уходит под тумблер: рамка текста —
+            // с учётом сжатия (getRect переводит углы в экранные)...
+            final title = tester.getRect(find.text('Избранное'));
+            expect(title.right, lessThanOrEqualTo(toggle.left - 12));
+            // ...и не обрезан: текст получил всю ширину, какую хочет. Без
+            // ужатия одна строка заголовка молча режется по краю места.
+            final paragraph =
+                tester.renderObject<RenderParagraph>(find.text('Избранное'));
+            expect(paragraph.size.width,
+                greaterThanOrEqualTo(
+                    paragraph.getMaxIntrinsicWidth(double.infinity) - 0.01),
+                reason: 'заголовок обрезан');
+            expect(tester.getRect(find.text('Избранное')).top,
+                greaterThanOrEqualTo(statusBar));
+          });
+        }
+      }
     });
   });
 }

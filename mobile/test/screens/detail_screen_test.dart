@@ -1,8 +1,8 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -43,8 +43,12 @@ void main() {
   const statusBar = 24; // dp = px при devicePixelRatio 1
   const width = 360;
   final shot = GlobalKey();
+  // Координаты места: без них карточка не предлагает маршрут и не строит
+  // мини-карту (платформенный вид).
+  var withCoords = false;
 
   setUp(() {
+    withCoords = false;
     installWireStand((options) {
       final path = options.uri.path;
       if (path == '/api/v1/search/establishments/$id') {
@@ -66,8 +70,8 @@ void main() {
           // Без фото и без координат: сетевая картинка и карта Яндекса
           // в тесте не работают, герой рисует серую заглушку.
           ..['primary_image_url'] = null
-          ..['latitude'] = null
-          ..['longitude'] = null;
+          ..['latitude'] = withCoords ? 53.9023 : null
+          ..['longitude'] = withCoords ? 27.5619 : null;
         return jsonBody({'success': true, 'data': row});
       }
       if (path == '/api/v1/establishments/$id/reviews') {
@@ -240,6 +244,41 @@ void main() {
       expect(find.byType(BookingBottomSheet), findsOneWidget);
       expect(find.text('Чтобы забронировать столик, войдите в аккаунт.'),
           findsNothing);
+    });
+  });
+
+  // Этап 3 (17.10.2026): выбор навигатора вынесен в общий код (его зовёт и
+  // кнопка «Маршрут» на картах) — адресная шторка карточки прежняя.
+  group('адресная шторка', () {
+    Future<List<String>> openSheet(WidgetTester tester) async {
+      await pumpDetail(tester);
+      await tester.tap(find.text('пр. Независимости, 43').first);
+      await tester.pumpAndSettle();
+      return [
+        for (final tile in tester.widgetList<ListTile>(find.byType(ListTile)))
+          (tile.title! as Text).data!,
+      ];
+    }
+
+    testWidgets('с координатами: два маршрута и «Скопировать адрес»',
+        (tester) async {
+      withCoords = true;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, (_) async => null);
+      addTearDown(() => messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, null));
+
+      expect(await openSheet(tester), [
+        'Маршрут в Яндекс.Картах',
+        'Маршрут в Google Картах',
+        'Скопировать адрес',
+      ]);
+    });
+
+    testWidgets('без координат: только «Скопировать адрес»', (tester) async {
+      expect(await openSheet(tester), ['Скопировать адрес']);
     });
   });
 }

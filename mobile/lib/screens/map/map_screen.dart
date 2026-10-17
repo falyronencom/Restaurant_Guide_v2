@@ -8,11 +8,13 @@ import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
-import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/widgets/action_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/map/establishment_map_preview.dart';
+import 'package:restaurant_guide_mobile/widgets/map/establishment_pins.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_camera.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_clustering.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
-import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
+import 'package:restaurant_guide_mobile/widgets/map/map_preview_dock.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_search_plaque.dart';
 
 /// Map screen displaying establishments on Yandex Map
@@ -33,9 +35,8 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  // Default center: Minsk, Belarus
-  static const Point _defaultCenter = Point(latitude: 53.9006, longitude: 27.5590);
-  static const double _defaultZoom = 13.0;
+  // Default center and zoom: the selected city (Minsk without one), whole.
+  static const double _defaultZoom = kCityZoom;
 
   // One request covers the whole visible city. At the old 100 a city view
   // with more cards than that silently lost the lowest-rated ones, and a
@@ -55,10 +56,10 @@ class _MapScreenState extends State<MapScreen> {
   List<Establishment> _establishments = [];
 
   /// The map widget, kept between builds and replaced only when the pins
-  /// change ([_rebuildMap]). Every update of a YandexMap re-hashes all its
-  /// pins, image bytes included (the plugin diffs map objects through
-  /// equatable, which does not cache hashCode): a fresh widget on each build
-  /// would pay that on every frame of dragging the preview card.
+  /// change ([_rebuildMap]). Every update of a YandexMap re-diffs all its
+  /// pins (the plugin compares map objects through sets on each update): a
+  /// fresh widget on each build would pay that on every rebuild of this
+  /// screen — a loading plaque, a fetch that brings back the same pins.
   late Widget _map = _buildMap();
 
   /// What the pins on the map show: [pinContent] as of the last
@@ -299,25 +300,44 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // Establishment preview card (inline, no modal barrier)
-          if (_selectedEstablishment != null)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: EstablishmentMapPreview(
-                establishment: _selectedEstablishment!,
-                onClose: _dismissPreview,
-                onDetails: () {
-                  // Сначала запомнить: _dismissPreview обнуляет выбор. Второе
-                  // нажатие до кадра застаёт выбор уже пустым — не переходим.
-                  final establishment = _selectedEstablishment;
-                  if (establishment == null) return;
-                  _dismissPreview();
-                  _navigateToDetail(establishment);
-                },
+          // Preview card (inline, no modal barrier) and the «my location»
+          // button: the button stands above an open card, never over it.
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: MapPreviewDock(
+              preview: _selectedEstablishment == null
+                  ? null
+                  : EstablishmentMapPreview(
+                      establishment: _selectedEstablishment!,
+                      onClose: _dismissPreview,
+                      onDetails: () {
+                        // Сначала запомнить: _dismissPreview обнуляет выбор.
+                        // Второе нажатие до кадра застаёт выбор уже пустым —
+                        // не переходим.
+                        final establishment = _selectedEstablishment;
+                        if (establishment == null) return;
+                        _dismissPreview();
+                        _navigateToDetail(establishment);
+                      },
+                      // Пины — только у мест с координатами.
+                      secondaryAction: RouteButton(
+                        latitude: _selectedEstablishment!.latitude!,
+                        longitude: _selectedEstablishment!.longitude!,
+                      ),
+                    ),
+              locationButton: FloatingActionButton(
+                mini: true,
+                backgroundColor: AppTheme.backgroundPrimary,
+                onPressed: _goToMyLocation,
+                child: const Icon(
+                  Icons.my_location,
+                  color: _primaryOrange,
+                ),
               ),
             ),
+          ),
 
           // Back button (only when pushed as standalone route, not as tab)
           if (Navigator.of(context).canPop())
@@ -341,21 +361,6 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-
-          // My location button
-          Positioned(
-            bottom: 24,
-            right: 16,
-            child: FloatingActionButton(
-              mini: true,
-              backgroundColor: AppTheme.backgroundPrimary,
-              onPressed: _goToMyLocation,
-              child: const Icon(
-                Icons.my_location,
-                color: _primaryOrange,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -432,13 +437,7 @@ class _MapScreenState extends State<MapScreen> {
     if (currentCity != _lastCity && _mapController != null) {
       _lastCity = currentCity;
       // Animate camera to new city center
-      final Point target;
-      if (currentCity != null) {
-        final (lat, lon) = CityOptions.coordinatesFor(currentCity);
-        target = Point(latitude: lat, longitude: lon);
-      } else {
-        target = _defaultCenter;
-      }
+      final target = cityCenter(currentCity);
       _mapController!.moveCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: target, zoom: _defaultZoom),
@@ -480,40 +479,20 @@ class _MapScreenState extends State<MapScreen> {
       initialZoom = kFocusZoom;
     } else {
       // Check selected city from provider
-      final selectedCity = context.read<EstablishmentsProvider>().selectedCity;
-      if (selectedCity != null) {
-        final (lat, lon) = CityOptions.coordinatesFor(selectedCity);
-        initialTarget = Point(latitude: lat, longitude: lon);
-      } else {
-        initialTarget = _defaultCenter;
-      }
+      initialTarget =
+          cityCenter(context.read<EstablishmentsProvider>().selectedCity);
       initialZoom = _defaultZoom;
     }
 
-    // On real iOS devices the native map view can silently ignore moveCamera
-    // if called before the native view is fully initialized.  We fire an
-    // immediate attempt (works when tile cache is warm, e.g. Minsk after using
-    // the map tab), then retry after a longer delay for cold regions.
-    final cameraPosition = CameraPosition(
-      target: initialTarget,
-      zoom: initialZoom,
+    // Two attempts with pauses: real iPhones silently drop an early
+    // moveCamera (see settleInitialCamera).
+    final ready = await settleInitialCamera(
+      () => controller.moveCamera(
+        CameraOnPoint(initialTarget, initialZoom).toCameraUpdate(),
+      ),
+      isMounted: () => mounted,
     );
-
-    // Attempt 1: immediate (often succeeds for cached tile regions)
-    await controller.moveCamera(
-      CameraUpdate.newCameraPosition(cameraPosition),
-    );
-
-    // Attempt 2: after native view is reliably ready
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    await controller.moveCamera(
-      CameraUpdate.newCameraPosition(cameraPosition),
-    );
-
-    // Let the map settle before enabling user-driven camera tracking
-    await Future.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
+    if (!ready) return;
 
     // Now safe to respond to user camera movements
     _initialCameraReady = true;
@@ -708,21 +687,10 @@ class _MapScreenState extends State<MapScreen> {
   /// Камера — на найденное: одно заведение — в центр крупно (как карта из
   /// карточки заведения), несколько — в рамку вокруг всех.
   void _fitCameraTo(List<Establishment> establishments) {
-    final points = [
-      for (final e in establishments)
-        if (e.latitude != null && e.longitude != null)
-          Point(latitude: e.latitude!, longitude: e.longitude!),
-    ];
-    if (points.isEmpty || _mapController == null) return;
-    final CameraUpdate update = points.length == 1
-        ? CameraUpdate.newCameraPosition(
-            CameraPosition(target: points.single, zoom: kFocusZoom),
-          )
-        : CameraUpdate.newGeometry(
-            Geometry.fromBoundingBox(clusterExtent(points)!),
-          );
+    final framing = framePoints(establishmentPoints(establishments));
+    if (framing == null || _mapController == null) return;
     _mapController!.moveCamera(
-      update,
+      framing.toCameraUpdate(),
       animation: const MapAnimation(
         type: MapAnimationType.smooth,
         duration: 0.8,
@@ -810,60 +778,13 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  List<PlacemarkMapObject> _createPlacemarks(List<Establishment> establishments) {
-    final valid = establishments
-        .where((e) => e.latitude != null && e.longitude != null)
-        .toList();
-
-    // Sort: selected marker last so it renders on top of others
-    if (_selectedEstablishment != null) {
-      final selectedId = _selectedEstablishment!.id;
-      valid.sort((a, b) {
-        if (a.id == selectedId) return 1;
-        if (b.id == selectedId) return -1;
-        return 0;
-      });
-    }
-
-    return valid.map((establishment) {
-      final bool selected = _selectedEstablishment?.id == establishment.id;
-      final markerBytes = _markerGenerator.getMarkerImage(
-        isOpen: establishment.isCurrentlyOpen,
-        isSelected: selected,
+  List<PlacemarkMapObject> _createPlacemarks(List<Establishment> establishments) =>
+      buildEstablishmentPins(
+        establishments,
+        selectedId: _selectedEstablishment?.id,
+        markers: _markerGenerator,
+        onTap: _onPinTap,
       );
-
-      return EstablishmentPin(
-        mapId: MapObjectId('marker_${establishment.id}'),
-        point: Point(
-          latitude: establishment.latitude!,
-          longitude: establishment.longitude!,
-        ),
-        zIndex: selected ? 1.0 : 0.0,
-        // The tap belongs to the topmost pin. Without this MapKit hands it on
-        // to the other objects under the finger (plugin docs), so on
-        // overlapping pins more than one would answer.
-        consumeTapEvents: true,
-        icon: markerBytes != null
-            ? PlacemarkIcon.single(
-                PlacemarkIconStyle(
-                  image: BitmapDescriptor.fromBytes(markerBytes),
-                  scale: 1.0,
-                  anchor: MapMarkerPainter.anchor,
-                ),
-              )
-            : PlacemarkIcon.single(
-                PlacemarkIconStyle(
-                  image: BitmapDescriptor.fromAssetImage('packages/yandex_mapkit/assets/place.png'),
-                  scale: 2.0,
-                ),
-              ),
-        opacity: 1.0,
-        onTap: (PlacemarkMapObject self, Point point) {
-          _onPinTap(establishment.id);
-        },
-      );
-    }).toList();
-  }
 
   /// A pin carries only its establishment's id: pins outlive the list they
   /// were built from (a refetch with the same pins keeps them), so the
@@ -903,14 +824,8 @@ class _MapScreenState extends State<MapScreen> {
 
   void _goToDefaultLocation() {
     // Use selected city center if available, otherwise Minsk default
-    final selectedCity = context.read<EstablishmentsProvider>().selectedCity;
-    final Point target;
-    if (selectedCity != null) {
-      final (lat, lon) = CityOptions.coordinatesFor(selectedCity);
-      target = Point(latitude: lat, longitude: lon);
-    } else {
-      target = _defaultCenter;
-    }
+    final target =
+        cityCenter(context.read<EstablishmentsProvider>().selectedCity);
 
     _mapController?.moveCamera(
       CameraUpdate.newCameraPosition(
