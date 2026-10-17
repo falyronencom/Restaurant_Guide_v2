@@ -136,12 +136,14 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       // отзывов сама говорит, что не загрузилась.
       final reviewsResponse = await _fetchReviews();
 
+      if (!mounted) return;
       setState(() {
         _establishment = establishment;
         _applyReviews(reviewsResponse);
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Не удалось загрузить данные';
         _isLoading = false;
@@ -624,16 +626,26 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
+  Rect? _screenBottomCenter() {
+    if (!mounted) return null;
+    final size = MediaQuery.sizeOf(context);
+    return Rect.fromLTWH(size.width / 2, size.height - 1, 1, 1);
+  }
+
   /// Открывает системное меню. Раньше вызов шёл без `await` и без ловли:
   /// отказ плагина (на iPhone — «ничего не происходит», проход тестировщика
   /// 17.10, п. 15) пропадал без следа. Теперь отказ виден, а текст остаётся
   /// у человека — он скопирован в буфер.
+  ///
+  /// iPad рисует меню всплывающим окном от рамки: без неё плагин отказывает.
+  /// Не нашлась рамка кнопки (лист «Ссылка» её не знает) — берётся точка
+  /// внизу посередине экрана.
   Future<void> _shareText(String text, {String? subject, Rect? origin}) async {
     try {
       await Share.share(
         text,
         subject: subject,
-        sharePositionOrigin: origin,
+        sharePositionOrigin: origin ?? _screenBottomCenter(),
       );
     } catch (_) {
       if (!mounted) return;

@@ -95,6 +95,10 @@ Map<String, dynamic> _row({
       workingHours: hours ?? {for (final d in _weekdays) d: '00:00-00:00'},
       media: media,
     )
+      // Как отдаёт бэкенд для «Ресторан» (`CATEGORY_SLUG_MAP`); у общей
+      // фикстуры здесь другое значение, и тест закрепил бы адрес, которого
+      // на сайте нет.
+      ..['category_slug'] = 'restaurants'
       // Сетевая картинка и карта Яндекса в тесте не работают.
       ..['primary_image_url'] = null
       ..['latitude'] = null
@@ -384,13 +388,31 @@ void main() {
       final sent = share.calls.single;
       final text = sent['text'] as String;
       expect(text, startsWith('Васильки — ресторан\n'));
-      expect(text, contains('https://cheerful-nature-production-71c6.up.railway.app/minsk/restoran/vasilki-minsk'),
+      expect(text, contains('https://cheerful-nature-production-71c6.up.railway.app/minsk/restaurants/vasilki-minsk'),
           reason: 'нет ссылки на страницу заведения на сайте');
       expect(text, endsWith('Найдено в NIRIVIO'));
       expect(text, isNot(contains('Restaurant Guide Belarus')));
       // Для iPad меню рисуется от рамки кнопки (55 × 42).
       expect(sent['originWidth'], 55.0);
       expect(sent['originHeight'], 42.0);
+    });
+
+    testWidgets('«Поделиться» в листе ссылки на сайт тоже несёт рамку для iPad',
+        (tester) async {
+      final share = _ShareChannel()..install();
+      _stand(_row());
+      await _pumpDetail(tester);
+
+      await tester.tap(find.text('Сайт'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Поделиться'));
+      await tester.pump();
+
+      expect(share.calls, hasLength(1));
+      expect(share.calls.single['text'], 'https://vasilki.by');
+      // Рамки кнопки у листа нет — меню рисуется от точки внизу экрана.
+      expect(share.calls.single['originWidth'], 1.0);
+      expect(share.calls.single['originHeight'], 1.0);
     });
 
     testWidgets('отказ меню виден: плашка, а текст остаётся в буфере',
@@ -432,7 +454,7 @@ void main() {
       expect(status, findsOneWidget);
       expect(
           (tester.widget(status) as RichText).text.toPlainText(),
-          'Открыто · до 00:00');
+          'Открыто\u00A0· до 00:00');
     });
   });
 
@@ -487,6 +509,9 @@ void main() {
       await _pumpDetail(tester);
 
       final scrim = tester.getRect(find.byType(HeroScrim));
+      // Полоса на экране той высоты, по которой считается контраст: иначе
+      // смена высоты в экране оставила бы расчёт на старой шкале.
+      expect(scrim.height, HeroScrim.height);
       final failures = <String>[];
 
       void check(String what, Rect rect, Color text, double need,

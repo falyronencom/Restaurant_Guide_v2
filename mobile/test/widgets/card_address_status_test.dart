@@ -63,7 +63,7 @@ void main() {
           w is RichText && w.text.toPlainText().startsWith('Открыто'));
       expect(status, findsOneWidget);
       expect((tester.widget(status) as RichText).text.toPlainText(),
-          'Открыто · до 00:00');
+          'Открыто\u00A0· до 00:00');
     });
 
     testWidgets('превью партнёра: «Открыто · до 22:00»', (tester) async {
@@ -96,7 +96,7 @@ void main() {
           w is RichText && w.text.toPlainText().startsWith('Открыто'));
       expect(status, findsOneWidget);
       expect((tester.widget(status) as RichText).text.toPlainText(),
-          'Открыто · до 22:00');
+          'Открыто\u00A0· до 22:00');
     });
   });
 

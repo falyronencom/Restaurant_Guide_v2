@@ -168,7 +168,13 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
         _isLoadingMore = false;
       });
     } catch (e) {
-      setState(() => _isLoadingMore = false);
+      // Подгрузка не удалась — дальше не листаем: иначе каждый скролл у края
+      // слал бы новый запрос. Раньше сбой выглядел как «страниц больше нет».
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+        _hasMore = false;
+      });
     }
   }
 
