@@ -8,7 +8,15 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 
-// Entity type → notification type groupings for category filtering
+// Entity type → notification type groupings for category filtering.
+//
+// `establishments` and `reviews` are the app's feed chips «Мои заведения» and
+// «Мои отзывы» (the controller accepts only these two). «Мои заведения» holds
+// what happens to the partner's own places — including a new review about
+// one and the partner-side booking events; «Мои отзывы» holds what happens to
+// reviews the user wrote. Guest-side bookings, `booking_expired` (one type
+// goes to both guest and partner) and promotions stay in «Все» only.
+// Coordinator's decision 17.10.2026 (variant «А-узкий»).
 const CATEGORY_TYPES = {
   establishments: [
     'establishment_approved',
@@ -18,9 +26,11 @@ const CATEGORY_TYPES = {
     'establishment_claimed',
     'menu_parsed',
     'menu_item_hidden_by_admin',
+    'new_review',
+    'booking_received',
+    'booking_cancelled',
   ],
   reviews: [
-    'new_review',
     'partner_response',
     'review_hidden',
     'review_deleted',
