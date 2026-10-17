@@ -21,6 +21,11 @@ class ReviewsService {
   /// [establishmentId] - The establishment ID
   /// [page] - Page number (default: 1)
   /// [perPage] - Items per page (default: 10)
+  ///
+  /// Сбой запроса пробрасывается вызывающему. Раньше он глотался и отдавался
+  /// пустым списком — карточка заведения писала «Пока нет отзывов» при
+  /// упавшей сети, а ветка ошибки с «Повторить» на «Все отзывы» была
+  /// недостижима (проход тестировщика 17.10, Х5).
   Future<PaginatedReviews> getReviewsForEstablishment(
     String establishmentId, {
     int page = 1,
@@ -29,35 +34,21 @@ class ReviewsService {
     DateTime? dateFrom,
     DateTime? dateTo,
   }) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/establishments/$establishmentId/reviews',
-        queryParameters: {
-          'page': page,
-          'per_page': perPage,
-          if (sort != null) 'sort': sort,
-          if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
-          if (dateTo != null) 'date_to': dateTo.toIso8601String(),
-        },
-      );
+    final response = await _apiClient.get(
+      '/api/v1/establishments/$establishmentId/reviews',
+      queryParameters: {
+        'page': page,
+        'per_page': perPage,
+        if (sort != null) 'sort': sort,
+        if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
+        if (dateTo != null) 'date_to': dateTo.toIso8601String(),
+      },
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        return PaginatedReviews.fromJson(response.data as Map<String, dynamic>);
-      } else {
-        throw Exception('Unexpected response format');
-      }
-    } catch (e) {
-      // Return empty reviews on error
-      return PaginatedReviews(
-        data: [],
-        meta: ReviewsPaginationMeta(
-          total: 0,
-          page: 1,
-          perPage: perPage,
-          totalPages: 0,
-        ),
-      );
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      return PaginatedReviews.fromJson(response.data as Map<String, dynamic>);
     }
+    throw Exception('Unexpected response format');
   }
 
   /// Get a single review by ID

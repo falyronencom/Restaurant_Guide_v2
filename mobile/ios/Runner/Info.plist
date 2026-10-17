@@ -81,7 +81,7 @@
 	</array>
 	<!-- Location permissions for finding nearby restaurants -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Restaurant Guide Belarus использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>
+	<string>NIRIVIO использует вашу геолокацию для поиска ближайших заведений и отображения расстояния до них</string>
 	<!-- Camera and photo library permissions for profile and establishment photos -->
 	<key>NSCameraUsageDescription</key>
 	<string>Приложение использует камеру для съёмки фотографий профиля и заведений</string>
