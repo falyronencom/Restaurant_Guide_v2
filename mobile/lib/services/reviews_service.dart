@@ -21,6 +21,12 @@ class ReviewsService {
   /// [establishmentId] - The establishment ID
   /// [page] - Page number (default: 1)
   /// [perPage] - Items per page (default: 10)
+  ///
+  /// Сбой (нет сети, отказ или сбой сервера, чужая форма ответа) летит
+  /// наверх. До 17.10.2026 он превращался в пустую страницу, и карточка
+  /// заведения писала «Пока нет отзывов. Станьте первым!», а до «Повторить»
+  /// на экране всех отзывов было не добраться (проход тестировщика 17.10,
+  /// Х5, Х23). Экран отличает «отзывов нет» от «не загрузилось» сам.
   Future<PaginatedReviews> getReviewsForEstablishment(
     String establishmentId, {
     int page = 1,
@@ -29,37 +35,23 @@ class ReviewsService {
     DateTime? dateFrom,
     DateTime? dateTo,
   }) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/establishments/$establishmentId/reviews',
-        queryParameters: {
-          'page': page,
-          // The server reads the page size as `limit` only (default 10):
-          // under `per_page` the card's five-review preview got ten.
-          'limit': perPage,
-          if (sort != null) 'sort': sort,
-          if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
-          if (dateTo != null) 'date_to': dateTo.toIso8601String(),
-        },
-      );
+    final response = await _apiClient.get(
+      '/api/v1/establishments/$establishmentId/reviews',
+      queryParameters: {
+        'page': page,
+        // The server reads the page size as `limit` only (default 10):
+        // under `per_page` the card's five-review preview got ten.
+        'limit': perPage,
+        if (sort != null) 'sort': sort,
+        if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
+        if (dateTo != null) 'date_to': dateTo.toIso8601String(),
+      },
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        return PaginatedReviews.fromJson(response.data as Map<String, dynamic>);
-      } else {
-        throw Exception('Unexpected response format');
-      }
-    } catch (e) {
-      // Return empty reviews on error
-      return PaginatedReviews(
-        data: [],
-        meta: ReviewsPaginationMeta(
-          total: 0,
-          page: 1,
-          perPage: perPage,
-          totalPages: 0,
-        ),
-      );
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      return PaginatedReviews.fromJson(response.data as Map<String, dynamic>);
     }
+    throw Exception('Unexpected response format');
   }
 
   /// Get a single review by ID
@@ -140,13 +132,13 @@ class ReviewsService {
   }
 
   /// Delete a review (requires authentication)
+  ///
+  /// Отказ и сбой летят наверх `DioException`: человек должен прочесть, что
+  /// ответил сервер, а не гадать, почему отзыв остался (проход тестировщика
+  /// 17.10, Х26). `false` — только непонятный успешный ответ.
   Future<bool> deleteReview(String reviewId) async {  // UUID from backend
-    try {
-      final response = await _apiClient.delete('/api/v1/reviews/$reviewId');
-      return response.statusCode == 200 || response.statusCode == 204;
-    } catch (e) {
-      return false;
-    }
+    final response = await _apiClient.delete('/api/v1/reviews/$reviewId');
+    return response.statusCode == 200 || response.statusCode == 204;
   }
 
   // ============================================================================
@@ -183,13 +175,12 @@ class ReviewsService {
   /// Delete partner response from a review (requires partner authentication)
   ///
   /// [reviewId] - The review ID (UUID)
+  ///
+  /// Отказ и сбой летят наверх — см. [deleteReview].
   Future<bool> deletePartnerResponse(String reviewId) async {
-    try {
-      final response = await _apiClient.delete('/api/v1/reviews/$reviewId/response');
-      return response.statusCode == 200 || response.statusCode == 204;
-    } catch (e) {
-      return false;
-    }
+    final response =
+        await _apiClient.delete('/api/v1/reviews/$reviewId/response');
+    return response.statusCode == 200 || response.statusCode == 204;
   }
 
   // ============================================================================
@@ -201,33 +192,25 @@ class ReviewsService {
   /// [userId] - UUID of the user
   /// [page] - Page number (default: 1)
   /// [limit] - Items per page (default: 20)
+  ///
+  /// Сбой летит наверх — см. [getReviewsForEstablishment]: «Мои отзывы» не
+  /// выдают его за «У вас пока нет отзывов».
   Future<UserReviewsResponse> getUserReviews({
     required String userId,
     int page = 1,
     int limit = 20,
   }) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/users/$userId/reviews',
-        queryParameters: {
-          'page': page,
-          'limit': limit,
-        },
-      );
+    final response = await _apiClient.get(
+      '/api/v1/users/$userId/reviews',
+      queryParameters: {
+        'page': page,
+        'limit': limit,
+      },
+    );
 
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        return UserReviewsResponse.fromJson(response.data as Map<String, dynamic>);
-      } else {
-        throw Exception('Unexpected response format');
-      }
-    } catch (e) {
-      // Return empty reviews on error
-      return UserReviewsResponse(
-        reviews: [],
-        total: 0,
-        page: 1,
-        totalPages: 0,
-      );
+    if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+      return UserReviewsResponse.fromJson(response.data as Map<String, dynamic>);
     }
+    throw Exception('Unexpected response format');
   }
 }
