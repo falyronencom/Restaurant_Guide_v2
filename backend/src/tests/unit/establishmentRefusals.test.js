@@ -44,6 +44,7 @@ const latinWords = (text) =>
  */
 const CALLS = {
   photoLimit: [['interior', 30], ['menu', 30]],
+  pdfLimit: [[2]],
   incomplete: [
     [['name', 'city', 'address', 'coordinates', 'categories', 'cuisines', 'working_hours']],
     // Поле, которого нет в списке названий, не должно выйти к партнёру по-английски.
