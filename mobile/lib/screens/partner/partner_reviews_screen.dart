@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
 /// Partner Reviews Screen - view and filter establishment reviews
 /// Figma design: Profile/Admin (Отзывы) frame
@@ -894,8 +896,15 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
                         setDialogState(() => isSubmitting = false);
                         if (mounted) {
                           ScaffoldMessenger.of(this.context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Не удалось отправить ответ'),
+                            SnackBar(
+                              // Сервер объясняет отказ сам (мат в ответе) —
+                              // показываем его слова, а не общую фразу.
+                              content: Text(
+                                (e is DioException
+                                        ? russianServerText(e.response?.data)
+                                        : null) ??
+                                    'Не удалось отправить ответ',
+                              ),
                               backgroundColor: Colors.red,
                             ),
                           );

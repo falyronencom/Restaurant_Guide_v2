@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
 /// Write Review Screen - allows authenticated users to submit reviews
 /// Figma design: Light background, 5-star rating, text field, submit button
@@ -168,8 +169,9 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     }
 
     if (statusCode == 422) {
-      // Validation error
-      return 'Проверьте правильность заполнения формы';
+      // Сервер объясняет отказ сам (мат в тексте отзыва) — читаем его слова.
+      return russianServerText(responseData) ??
+          'Проверьте правильность заполнения формы';
     }
 
     // Network error

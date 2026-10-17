@@ -160,6 +160,13 @@ describe('notificationModel', () => {
       expect(params).toContain('establishment_suspended');
       expect(params).toContain('establishment_unsuspended');
       expect(params).toContain('establishment_claimed');
+      // «Мои заведения» — и новый отзыв о заведении, и партнёрские брони
+      // (решение Координатора 17.10.2026, «А-узкий»).
+      expect(params).toContain('new_review');
+      expect(params).toContain('booking_received');
+      expect(params).toContain('booking_cancelled');
+      expect(params).not.toContain('booking_confirmed');
+      expect(params).not.toContain('promotion_new');
     });
 
     test('should apply category filter for reviews', async () => {
@@ -170,7 +177,7 @@ describe('notificationModel', () => {
       await NotificationModel.getByUserId(userId, { category: 'reviews' });
 
       const params = mockQuery.mock.calls[0][1];
-      expect(params).toContain('new_review');
+      expect(params).not.toContain('new_review');
       expect(params).toContain('partner_response');
       expect(params).toContain('review_hidden');
       expect(params).toContain('review_deleted');
