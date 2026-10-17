@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
@@ -10,6 +9,7 @@ import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/widgets/map/establishment_map_preview.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_clustering.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
@@ -48,8 +48,6 @@ class _MapScreenState extends State<MapScreen> {
 
   // Colors
   static const Color _primaryOrange = AppTheme.primaryOrange;
-  static const Color _creamBackground = AppTheme.backgroundWarm;
-  static const Color _starYellow = Color(0xFFFFB800);
 
   YandexMapController? _mapController;
   final EstablishmentsService _establishmentsService = EstablishmentsService();
@@ -102,9 +100,6 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Currently selected establishment for inline preview (replaces modal bottom sheet)
   Establishment? _selectedEstablishment;
-
-  /// Drag offset for swipe-to-dismiss gesture (0 = resting, positive = dragged down)
-  double _previewDragOffset = 0.0;
 
   /// Track last known city to detect changes when returning to map tab
   String? _lastCity;
@@ -310,7 +305,18 @@ class _MapScreenState extends State<MapScreen> {
               bottom: 0,
               left: 0,
               right: 0,
-              child: _buildPreviewContent(_selectedEstablishment!),
+              child: EstablishmentMapPreview(
+                establishment: _selectedEstablishment!,
+                onClose: _dismissPreview,
+                onDetails: () {
+                  // Сначала запомнить: _dismissPreview обнуляет выбор. Второе
+                  // нажатие до кадра застаёт выбор уже пустым — не переходим.
+                  final establishment = _selectedEstablishment;
+                  if (establishment == null) return;
+                  _dismissPreview();
+                  _navigateToDetail(establishment);
+                },
+              ),
             ),
 
           // Back button (only when pushed as standalone route, not as tab)
@@ -870,7 +876,6 @@ class _MapScreenState extends State<MapScreen> {
   void _showEstablishmentPreview(Establishment establishment) {
     setState(() {
       _selectedEstablishment = establishment;
-      _previewDragOffset = 0.0;
       _rebuildMap();
     });
   }
@@ -880,211 +885,6 @@ class _MapScreenState extends State<MapScreen> {
       _selectedEstablishment = null;
       _rebuildMap();
     });
-  }
-
-  Widget _buildPreviewContent(Establishment establishment) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (details) {
-        setState(() {
-          // Only allow downward drag (clamp to >= 0)
-          _previewDragOffset = (_previewDragOffset + details.delta.dy).clamp(0.0, double.infinity);
-        });
-      },
-      onVerticalDragEnd: (details) {
-        // Dismiss if dragged far enough (>80px) or fast enough (>200 px/s)
-        if (_previewDragOffset > 80 || (details.primaryVelocity ?? 0) > 200) {
-          _previewDragOffset = 0.0;
-          _dismissPreview();
-        } else {
-          // Snap back to resting position
-          setState(() => _previewDragOffset = 0.0);
-        }
-      },
-      child: Transform.translate(
-        offset: Offset(0, _previewDragOffset),
-        child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _creamBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          // Content row with close button
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Thumbnail
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                child: SizedBox(
-                  width: 100,
-                  height: 100,
-                  child: establishment.thumbnailUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: establishment.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            color: Colors.grey[200],
-                            child: const Icon(Icons.restaurant, color: Colors.grey),
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            color: Colors.grey[200],
-                            child: const Icon(Icons.restaurant, color: Colors.grey),
-                          ),
-                        )
-                      : Container(
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.restaurant, color: Colors.grey, size: 40),
-                        ),
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Name
-                    Text(
-                      establishment.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    // Rating
-                    if (establishment.rating != null)
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: _starYellow, size: 18),
-                          const SizedBox(width: 4),
-                          Text(
-                            establishment.rating!.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    const SizedBox(height: 4),
-
-                    // Category
-                    Text(
-                      establishment.category,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    // Address
-                    Text(
-                      establishment.address,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // Close button
-              GestureDetector(
-                onTap: _dismissPreview,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close,
-                    size: 18,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                _dismissPreview();
-                _navigateToDetail(establishment);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryOrange,
-                foregroundColor: AppTheme.textOnPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                ),
-              ),
-              child: const Text(
-                'Подробнее',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-
-          // Bottom padding for safe area
-          SizedBox(height: MediaQuery.of(context).padding.bottom),
-        ],
-      ),
-    ),  // closes Transform.translate
-    ),  // closes GestureDetector
-    );
   }
 
   void _navigateToDetail(Establishment establishment) {

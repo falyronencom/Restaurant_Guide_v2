@@ -59,6 +59,7 @@ async function errorOf(res: Response): Promise<{ code?: string }> {
 beforeEach(() => {
   jest.clearAllMocks();
   mockServerFetch.mockReset();
+  upstreamFetch.mockReset();
   process.env.API_URL = 'http://backend.test';
   global.fetch = upstreamFetch as unknown as typeof fetch;
 });
@@ -146,5 +147,66 @@ describe('proxyMediaUpload — refreshing the access token', () => {
     ];
     expect(url).toBe('http://backend.test/api/v1/partner/media/upload');
     expect(init.headers.authorization).toBe('Bearer fresh');
+  });
+});
+
+/** An access JWT valid for another hour — the proxy streams without refreshing. */
+const VALID_ACCESS = [
+  'h',
+  Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString(
+    'base64url',
+  ),
+  's',
+].join('.');
+
+describe('proxyMediaUpload — a backend refusal passes through with its term', () => {
+  const REFUSAL = {
+    success: false,
+    message: 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.',
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      details: {
+        files_limit: 100,
+        bytes_limit: 314572800,
+        retry_after: 43200,
+        reset_at: '2026-10-17T21:00:00.000Z',
+      },
+    },
+  };
+
+  it('429 of the daily upload allowance: status, body and Retry-After as the backend sent them', async () => {
+    cookies({ rg_at: VALID_ACCESS, rg_rt: 'rt' });
+    upstreamFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(REFUSAL), {
+        status: 429,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'retry-after': '43200',
+        },
+      }),
+    );
+
+    const res = await proxyMediaUpload(upload(), '/api/v1/partner/media/upload');
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('43200');
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(await res.json()).toEqual(REFUSAL);
+    expect(mockServerFetch).not.toHaveBeenCalled();
+  });
+
+  it('a refusal without Retry-After gets none from the proxy', async () => {
+    cookies({ rg_at: VALID_ACCESS, rg_rt: 'rt' });
+    upstreamFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false, error: { code: 'FILE_TOO_LARGE' } }), {
+        status: 422,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const res = await proxyMediaUpload(upload(), '/api/v1/partner/media/upload');
+
+    expect(res.status).toBe(422);
+    expect(res.headers.get('retry-after')).toBeNull();
   });
 });
