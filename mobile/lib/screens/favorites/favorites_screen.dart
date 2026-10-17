@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
+import 'package:restaurant_guide_mobile/services/position_tracker.dart';
+import 'package:restaurant_guide_mobile/utils/walk_reach.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_cover.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_map.dart';
@@ -24,8 +26,15 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 /// Режим запоминается (решение Координатора Р5). Пустому и гостевому
 /// «Избранному» показывать на карте нечего: у них список и без чипа «На
 /// карте», какой бы режим ни был запомнен.
+///
+/// Над картой — прогулка (макет `3b`, этап 4): пока она включена и позиция
+/// известна, подпись обложки — «рядом · N из M». Прогулка не запоминается
+/// (Р5): её держит карта, а карта новая при каждом показе.
 class FavoritesScreen extends StatefulWidget {
-  const FavoritesScreen({super.key});
+  const FavoritesScreen({super.key, this.positionSource});
+
+  /// Откуда прогулка берёт позицию; `null` — телефон. Подменяется в тестах.
+  final PositionSource? positionSource;
 
   @override
   State<FavoritesScreen> createState() => _FavoritesScreenState();
@@ -41,6 +50,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// создании экрана, а экран вкладки создаётся вместе с главной, задолго до
   /// первого нажатия.
   FavoritesViewMode _viewMode = FavoritesViewMode.list;
+
+  /// Прогулка, о которой сообщила карта; годна, только пока жива сообщившая
+  /// карта ([FavoritesWalk.isLive]).
+  FavoritesWalk? _walk;
 
   @override
   void initState() {
@@ -218,15 +231,31 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget _buildMapMode(EstablishmentsProvider provider) {
     final favorites = provider.favoriteEstablishments;
     final visible = TickerMode.of(context);
+    final walk = _walk;
+    // «рядом · N из M» — той же функцией и из тех же мест, что шторка
+    // прогулки; M — все места, и без координат тоже.
+    final reach = visible && walk != null && walk.isLive
+        ? walkReach(
+            favorites,
+            from: walk.position,
+            minutes: walk.minutes,
+            openNowOnly: walk.openNowOnly,
+          )
+        : null;
     return _withCompactCover(
       visible
           ? FavoritesMap(
               establishments: favorites,
               city: provider.selectedCity,
               onDetails: (e) => _navigateToDetail(e.id),
+              positionSource:
+                  widget.positionSource ?? const DevicePositionSource(),
+              onWalkChanged: (walk) => setState(() => _walk = walk),
             )
           : const SizedBox.expand(),
-      subtitle: favoritesSubtitle(favorites.map((e) => e.city).toList()),
+      subtitle: reach != null
+          ? favoritesWalkSubtitle(reach)
+          : favoritesSubtitle(favorites.map((e) => e.city).toList()),
     );
   }
 

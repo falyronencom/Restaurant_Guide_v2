@@ -63,9 +63,12 @@ void main() {
   YandexMap mapWidget(WidgetTester tester) =>
       tester.widget<YandexMap>(find.byType(YandexMap));
 
+  /// Коллекция пинов — по своему id: рядом на карте стоит слой прогулки.
   List<PlacemarkMapObject> pins(WidgetTester tester) {
-    final collection =
-        mapWidget(tester).mapObjects.single as MapObjectCollection;
+    final collection = mapWidget(tester)
+        .mapObjects
+        .whereType<MapObjectCollection>()
+        .singleWhere((c) => c.mapId.value == 'favorite_pins');
     return collection.mapObjects.cast<PlacemarkMapObject>();
   }
 

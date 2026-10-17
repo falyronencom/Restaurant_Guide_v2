@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/utils/walk_reach.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
 
 /// Обложка экрана «Избранное»: фото приложения с каноничным затемнением,
@@ -442,3 +443,8 @@ String favoritesSubtitle(List<String?> cities) {
   if (only == null || only.trim().isEmpty) return count;
   return '$count · $only';
 }
+
+/// Подзаголовок обложки в прогулке (макет `3b`): «рядом · N из M» — N мест
+/// в шторке, M — все места «Избранного», и без координат тоже.
+String favoritesWalkSubtitle(WalkReach reach) =>
+    'рядом · ${reach.shown} из ${reach.total}';
