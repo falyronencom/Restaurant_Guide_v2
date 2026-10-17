@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
+import { isRuleName, personText } from '@/lib/api/person-text';
 import {
   sendVerificationCode,
   verifyEmailCode,
@@ -203,7 +204,7 @@ export async function registerAction(
   const returnTo = guardReturnTo(formData.get('returnTo')?.toString());
 
   const fieldErrors: Record<string, string> = {};
-  if (name.length < 2 || name.length > 100) {
+  if (!isRuleName(name)) {
     fieldErrors.name = FIELD_TEXTS_RU.name;
   }
   if (!EMAIL_RE.test(email)) {
@@ -515,7 +516,7 @@ function mapAuthError(err: unknown): LoginResult {
  * validator texts are English and never surface in the UI).
  */
 const FIELD_TEXTS_RU = {
-  name: 'Имя: от 2 до 100 символов — буквы, пробелы, дефисы, апострофы.',
+  name: 'Имя: от 2 до 50 символов — только буквы, пробел, дефис и апостроф.',
   email: 'Введите корректный email.',
   password: 'Пароль: минимум 8 символов, заглавная и строчная буквы, цифра.',
 } as const;
@@ -607,16 +608,23 @@ function mapVerifyError(
   };
 }
 
-/** `details` is `{field: [English messages]}` — only the keys are trusted. */
+/**
+ * `details` is `{field: [messages]}`. An English message is replaced by the
+ * field's text; a Russian one — the name rule's, the мат refusal (backend
+ * utils/userName.js) — is shown as is: the site's text cannot say it.
+ */
 function mapValidationDetails(
   details: unknown,
 ): Record<string, string> | undefined {
   if (typeof details !== 'object' || details === null) return undefined;
   const fieldErrors: Record<string, string> = {};
-  for (const field of Object.keys(details)) {
-    if (field in FIELD_TEXTS_RU) {
-      fieldErrors[field] = FIELD_TEXTS_RU[field as keyof typeof FIELD_TEXTS_RU];
-    }
+  for (const [field, messages] of Object.entries(details)) {
+    if (!(field in FIELD_TEXTS_RU)) continue;
+    const own = Array.isArray(messages)
+      ? messages.map(personText).find(Boolean)
+      : undefined;
+    fieldErrors[field] =
+      own ?? FIELD_TEXTS_RU[field as keyof typeof FIELD_TEXTS_RU];
   }
   return Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined;
 }

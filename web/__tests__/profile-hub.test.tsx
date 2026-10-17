@@ -158,8 +158,32 @@ it('surfaces a russified error on a failed save', async () => {
   await user.click(screen.getByRole('button', { name: 'Сохранить' }));
 
   expect(
-    await screen.findByText('Имя должно быть от 1 до 100 символов.'),
+    await screen.findByText(
+      'Имя: от 2 до 50 символов — только буквы, пробел, дефис и апостроф.',
+    ),
   ).toBeInTheDocument();
+  expect(mockApplySession).not.toHaveBeenCalled();
+});
+
+it("shows the server's own refusal of the name as is (the name rule, мат)", async () => {
+  mockLoadProfile.mockResolvedValue({ ok: true, profile: profile() });
+  mockUpdateProfile.mockResolvedValue({
+    ok: false,
+    code: 'VALIDATION_ERROR',
+    message: 'Имя содержит недопустимые слова',
+  });
+  const user = userEvent.setup();
+  render(<ProfileHub />);
+
+  const input = await screen.findByLabelText('Имя');
+  await user.clear(input);
+  await user.type(input, 'Другое имя');
+  await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+  expect(
+    await screen.findByText('Имя содержит недопустимые слова'),
+  ).toBeInTheDocument();
+  expect(input).toHaveAttribute('maxLength', '50');
   expect(mockApplySession).not.toHaveBeenCalled();
 });
 

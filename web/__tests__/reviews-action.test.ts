@@ -120,6 +120,23 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     });
   });
 
+  it("shows the server's Russian refusal of the text as is (мат)", async () => {
+    const text = 'Текст содержит нецензурные выражения — уберите их, пожалуйста';
+    createReviewMock.mockRejectedValue(
+      new ApiError(422, 'Validation failed', 'VALIDATION_ERROR', [
+        { field: 'content', message: text, value: '…' },
+      ]),
+    );
+
+    const result = await createReviewAction(INPUT);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      fieldErrors: { content: text },
+    });
+  });
+
   it('maps a non-ApiError (transport) to NETWORK', async () => {
     createReviewMock.mockRejectedValue(new Error('boom'));
 
@@ -193,6 +210,19 @@ describe('updateReviewAction — error mapping (never revalidates)', () => {
       fieldErrors: { rating: expect.stringMatching(/от 1 до 5/) },
     });
     expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("an edit refused for мат shows the server's text", async () => {
+    const text = 'Текст содержит нецензурные выражения — уберите их, пожалуйста';
+    updateReviewMock.mockRejectedValue(
+      new ApiError(422, 'Validation failed', 'VALIDATION_ERROR', [
+        { field: 'content', message: text, value: '…' },
+      ]),
+    );
+
+    const result = await updateReviewAction(UPDATE_INPUT);
+
+    expect(result).toMatchObject({ ok: false, fieldErrors: { content: text } });
   });
 
   it('maps a non-ApiError (transport) to NETWORK', async () => {

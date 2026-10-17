@@ -7,6 +7,7 @@ import {
   deleteReview,
   updateReview,
 } from '@/lib/api/endpoints/reviews';
+import { personText } from '@/lib/api/person-text';
 import { ApiError } from '@/lib/api/types';
 
 /*
@@ -149,9 +150,10 @@ function mapReviewError(
 /**
  * The backend `validate` middleware (errorHandler.js:198) emits `details` as an
  * ARRAY `[{field, message, value}, …]` (express-validator `.array()`, wired at
- * reviewRoutes.js:60) — NOT a `{field: [messages]}` object. Only the `field` key
- * is trusted; the English validator message is replaced with the Russian
- * per-field text. Verified against the real wire (Phase 3.5).
+ * reviewRoutes.js:60) — NOT a `{field: [messages]}` object. An English
+ * validator message is replaced with the Russian per-field text; a Russian one
+ * — the мат refusal (backend validators/reviewValidation.js, 17.10.2026) — is
+ * shown as is. Verified against the real wire (Phase 3.5).
  */
 function mapValidationDetails(
   details: unknown,
@@ -164,7 +166,8 @@ function mapValidationDetails(
         ? String((entry as { field: unknown }).field)
         : undefined;
     if (field && field in FIELD_TEXTS_RU) {
-      fieldErrors[field] = FIELD_TEXTS_RU[field];
+      const own = personText((entry as { message?: unknown }).message);
+      fieldErrors[field] = own ?? fieldErrors[field] ?? FIELD_TEXTS_RU[field];
     }
   }
   return Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined;
