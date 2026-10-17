@@ -57,8 +57,8 @@ import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import logger from '../utils/logger.js';
 
 /**
- * Jobs per Minsk day. Proposed to the Coordinator on 17.10.2026 — awaiting
- * the word. A job costs about a cent a photo or a page at the price of
+ * Jobs per Minsk day. Approved by the Coordinator on 17.10.2026 (PR #59).
+ * A job costs about a cent a photo or a page at the price of
  * google/gemini-3.8-flash on 17.10.2026 ($0.825 a million tokens in, $4.125
  * out; measured 28.09.2026: ≈ 1 950 tokens in and ≈ 1 700–1 950 out for the
  * two calls of a page), a dense page up to about five; a PDF is read up to
