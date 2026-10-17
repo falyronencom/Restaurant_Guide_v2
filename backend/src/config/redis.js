@@ -233,18 +233,22 @@ export const disconnectRedis = async () => {
  * without a window in its name (the review quota) lives expirySeconds after
  * its FIRST increment, whatever happens to it later.
  *
+ * A step other than one (the daily upload allowance counts bytes) goes as
+ * INCRBY; a step of one stays INCR, the command every limiter has always sent.
+ *
  * @param {string} key - Redis key for the counter
  * @param {number} expirySeconds - Seconds until key expires, counted from the key's first increment
+ * @param {number} [amount] - Step, a whole number; 1 by default
  * @returns {Promise<number>} New counter value after increment
  */
-export const incrementWithExpiry = async (key, expirySeconds) => {
+export const incrementWithExpiry = async (key, expirySeconds, amount = 1) => {
   try {
     // isReady, not isOpen: while the client reconnects it stays open, and a
     // MULTI would wait in its queue — disableOfflineQueue does not cover MULTI.
     // The global limiter runs before every route: every request would wait.
     if (!redisClient.isReady) {
       logger.warn('Redis client not ready, skipping increment', { key });
-      return 1; // Return 1 as if it's the first increment
+      return amount; // As if it's the first increment
     }
     // The expiry is set when the key is born (SET NX) and never pushed back by
     // a later increment: the review quota reserves a slot on every attempt
@@ -254,7 +258,11 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
     // in the name and roll over regardless.
     const multi = redisClient.multi();
     multi.set(key, '0', { EX: expirySeconds, NX: true });
-    multi.incr(key);
+    if (amount === 1) {
+      multi.incr(key);
+    } else {
+      multi.incrBy(key, amount);
+    }
     const results = await withRedisDeadline(multi.exec());
     return results[1]; // Return the incremented value
   } catch (error) {
@@ -262,8 +270,8 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
       error: error.message,
       key,
     });
-    // Return 1 instead of throwing to allow tests to continue
-    return 1;
+    // As if it's the first increment, instead of throwing: the caller goes on without a limit
+    return amount;
   }
 };
 
@@ -278,15 +286,18 @@ export const incrementWithExpiry = async (key, expirySeconds) => {
  * «wait» or «throw».
  *
  * @param {string} key - Redis key for the counter
+ * @param {number} [amount] - Step, the one the reservation took; 1 by default (DECR), else DECRBY
  * @returns {Promise<number>} Counter value after the decrement (0 when skipped)
  */
-export const decrement = async (key) => {
+export const decrement = async (key, amount = 1) => {
   try {
     if (!redisClient.isReady) {
       logger.warn('Redis client not ready, skipping decrement', { key });
       return 0;
     }
-    const value = await withRedisDeadline(redisClient.decr(key));
+    const value = await withRedisDeadline(
+      amount === 1 ? redisClient.decr(key) : redisClient.decrBy(key, amount),
+    );
     if (value < 0) {
       await withRedisDeadline(redisClient.del(key));
       return 0;

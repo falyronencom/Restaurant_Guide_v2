@@ -95,4 +95,8 @@ export const UPLOAD_REFUSALS = Object.freeze({
   // The cloud or the server failed after the file passed every check; the
   // inner text goes to the log only.
   uploadFailed: 'Не удалось загрузить файл. Попробуйте ещё раз через минуту.',
+  // The account's daily allowance is spent (services/uploadAllowance.js); it
+  // is renewed at Minsk midnight. Proposed 17.10.2026 — the wording awaits the
+  // Coordinator's word.
+  dailyLimit: 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.',
 });
