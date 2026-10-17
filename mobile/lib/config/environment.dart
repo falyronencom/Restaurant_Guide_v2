@@ -26,6 +26,17 @@ class Environment {
     }
   }
 
+  /// Адрес сайта — на него ведёт ссылка из «Поделиться».
+  ///
+  /// Подставляется при сборке: `--dart-define=SITE_URL=https://…`. Умолчание —
+  /// тот же адрес, что `SITE_URL` у сайта на Railway: пока основной домен не
+  /// привязан к сайту, ссылка ведёт на него. Когда привяжут `nirivio.by`,
+  /// меняется эта строка (или флаг сборки) — больше нигде.
+  static const String siteBaseUrl = String.fromEnvironment(
+    'SITE_URL',
+    defaultValue: 'https://cheerful-nature-production-71c6.up.railway.app',
+  );
+
   /// Google Maps API key
   static const String googleMapsApiKey = String.fromEnvironment(
     'GOOGLE_MAPS_API_KEY',

@@ -1125,6 +1125,105 @@ describe('OCR pipeline integration', () => {
       expect(calls.structurer).toEqual([PAGE_IMAGE_TEXT]);
     });
 
+    // A PDF is read up to its first PDF_PAGE_LIMIT pages (review of PR #56,
+    // finding 2): every page is a vision call and a structurer call, and the
+    // daily allowances count files, not pages.
+    describe('the page limit: the first 20 pages of a PDF', () => {
+      const firstPages = (count) => Array.from({ length: count }, (_, i) => [page(i + 1)]);
+
+      test('a PDF of 20 pages — every page is read; the summary as before', async () => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 20 });
+        const { fetchMock, calls } = routedFetch();
+        global.fetch = fetchMock;
+
+        const { job } = await runJob(mediaId);
+
+        expect(calls.vision).toEqual(firstPages(20));
+        expect(job.result_summary).toEqual({
+          strategy: 'vision_pdf',
+          items_count: 4,
+          flagged_count: 0,
+          confidence_avg: 0.95,
+          pages_count: 20,
+          categories_carried: 0,
+        });
+      });
+
+      test('a PDF of 21 pages — the first 20 are read, pdf-parse is told so; the summary names the 21', async () => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 21 });
+        const { fetchMock, calls } = routedFetch();
+        global.fetch = fetchMock;
+
+        const { result, job } = await runJob(mediaId);
+
+        expect(result).toMatchObject({ success: true, itemCount: 4 });
+        expect(calls.vision).toEqual(firstPages(20));
+        expect(pdfParseModule.default).toHaveBeenCalledWith(expect.anything(), { max: 20 });
+        expect(job.result_summary).toEqual({
+          strategy: 'vision_pdf',
+          items_count: 4,
+          flagged_count: 0,
+          confidence_avg: 0.95,
+          pages_count: 20,
+          pages_total: 21,
+          categories_carried: 0,
+        });
+      });
+
+      test('last attempt, a PDF of 21 pages: the text layer of the first 20 stands in', async () => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        // What pdf-parse returns when told to stop at page 20: the text of 20 pages.
+        const firstPagesText = TEXT_LAYER.repeat(7);
+        pdfParseModule.default.mockResolvedValue({ text: firstPagesText, numpages: 21 });
+        const { fetchMock, calls } = routedFetch({
+          visionFails: true,
+          itemsByText: new Map([[firstPagesText, TEXT_LAYER_ITEMS]]),
+        });
+        global.fetch = fetchMock;
+
+        const { job } = await runJob(mediaId, { lastAttempt: true });
+
+        expect(job.status).toBe('done');
+        expect(calls.vision).toEqual(firstPages(20));
+        expect(calls.structurer).toEqual([firstPagesText]);
+        expect(job.result_summary).toEqual({
+          strategy: 'pdf_text_layer',
+          items_count: 4,
+          flagged_count: 0,
+          confidence_avg: 0.9,
+          vision_error: 'page 1 of 20: OpenRouter vision call failed: 500 upstream failure',
+          pages_count: 20,
+          pages_total: 21,
+          categories_carried: 0,
+        });
+      });
+
+      // The text layer goes to one structurer call: the page limit bounds its
+      // pages, not its length (review of PR #56 by the lens, finding 2a) — the
+      // structurer reads at most 200 000 characters, 10 000 a page for 20 pages.
+      test.each([
+        ['200 000 characters — read whole', 200000, 200000],
+        ['200 001 characters — the first 200 000 are read', 200001, 200000],
+      ])('last attempt, a text layer of %s', async (_label, length, read) => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        const textLayer = TEXT_LAYER.repeat(Math.ceil(length / TEXT_LAYER.length)).slice(0, length);
+        pdfParseModule.default.mockResolvedValue({ text: textLayer, numpages: 1 });
+        const { fetchMock, calls } = routedFetch({
+          visionFails: true,
+          itemsByText: new Map([[textLayer.slice(0, read), TEXT_LAYER_ITEMS]]),
+        });
+        global.fetch = fetchMock;
+
+        const { job } = await runJob(mediaId, { lastAttempt: true });
+
+        expect(job.status).toBe('done');
+        expect(calls.structurer.map((text) => text.length)).toEqual([read]);
+        expect(calls.structurer[0]).toBe(textLayer.slice(0, read));
+      });
+    });
+
     test.each([
       ['pdf-parse fails', () => pdfParseModule.default.mockRejectedValue(new Error('bad XRef entry'))],
       ['pdf-parse counts 0 pages', () => pdfParseModule.default.mockResolvedValue({ text: '', numpages: 0 })],

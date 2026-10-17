@@ -432,6 +432,196 @@ describe('Establishments System - Create Establishment', () => {
       expect(jobsAfter.rows).toHaveLength(2);
     });
 
+    // A menu file is recognised once per card, however its link is spelled
+    // (review of PR #56, finding 1): recognition is paid per call, and a save
+    // that named a file of the card anew — another version, size or query —
+    // used to delete its row, with the job and the dishes, and queue it again.
+    describe('one menu file — one row and one recognition per card', () => {
+      const menuRows = async (estId) => (await query(
+        "SELECT id, url, file_type FROM establishment_media WHERE establishment_id = $1 AND type = 'menu' ORDER BY position, created_at",
+        [estId],
+      )).rows;
+      const createCard = async (media = {}) => {
+        const created = await request(app)
+          .post('/api/v1/partner/establishments')
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send({ ...testEstablishments[0], ...media })
+          .expect(201);
+        return created.body.data.establishment.id;
+      };
+      const saveMenu = (estId, menuPhotos, extra = {}) => request(app)
+        .put(`/api/v1/partner/establishments/${estId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ menu_photos: menuPhotos, ...extra });
+      /** The same file as photoUrls(1, 'menu')[0]: no size and format steps, another version and query. */
+      const respelled = () => `https://res.cloudinary.com/test/image/upload/v2/establishments/temp/${partnerId}/menu/p0?_a=other`;
+      const pdf = (name) => `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partnerId}/menu_pdf/${name}.pdf`;
+
+      test('PUT: a file the card already has, linked in another spelling, keeps its row, its job and its dishes', async () => {
+        const estId = await createCard();
+        const [menuPhoto] = photoUrls(1, 'menu');
+        await saveMenu(estId, [menuPhoto]).expect(200);
+        const [job] = await pollOcrJobs(estId, 1);
+        const [row] = await menuRows(estId);
+        // Recognised: the job is done and the file has a dish.
+        await query("UPDATE ocr_jobs SET status = 'done', completed_at = NOW() WHERE media_id = $1", [job.media_id]);
+        await query(
+          "INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn) VALUES ($1, $2, 'Борщ', 12)",
+          [estId, row.id],
+        );
+
+        await saveMenu(estId, [respelled()]).expect(200);
+
+        expect(await menuRows(estId)).toEqual([{ id: row.id, url: menuPhoto, file_type: 'image' }]);
+        const jobs = await query('SELECT media_id, status FROM ocr_jobs WHERE establishment_id = $1', [estId]);
+        expect(jobs.rows).toEqual([{ media_id: row.id, status: 'done' }]);
+        const dishes = await query('SELECT item_name FROM menu_items WHERE media_id = $1', [row.id]);
+        expect(dishes.rows).toEqual([{ item_name: 'Борщ' }]);
+      });
+
+      test('PUT: the same file twice in the list — one row and one job; so are two spellings of one new file', async () => {
+        const estId = await createCard();
+        const [menuPhoto] = photoUrls(1, 'menu');
+
+        await saveMenu(estId, [menuPhoto, menuPhoto, respelled()]).expect(200);
+
+        const rows = await menuRows(estId);
+        expect(rows.map((m) => m.url)).toEqual([menuPhoto]);
+        const jobs = await pollOcrJobs(estId, 1);
+        expect(jobs.map((j) => j.media_id)).toEqual([rows[0].id]);
+      });
+
+      test('PUT: two menu PDFs are accepted', async () => {
+        const estId = await createCard();
+
+        await saveMenu(estId, [pdf('a'), pdf('b')]).expect(200);
+
+        expect((await menuRows(estId)).map((m) => [m.url, m.file_type])).toEqual([[pdf('a'), 'pdf'], [pdf('b'), 'pdf']]);
+      });
+
+      test('PUT: a third menu PDF is refused before any write — 403 PDF_LIMIT_EXCEEDED, the card as it was', async () => {
+        const estId = await createCard();
+        const [hall] = photoUrls(1, 'interior');
+        await saveMenu(estId, [pdf('a'), pdf('b')], { interior_photos: [hall] }).expect(200);
+        const before = await menuRows(estId);
+
+        // The same save also removes the hall photo and renames the card.
+        const response = await saveMenu(estId, [pdf('a'), pdf('b'), pdf('c')], { interior_photos: [], name: 'Новое имя' })
+          .expect(403);
+
+        expect(response.body.error.code).toBe('PDF_LIMIT_EXCEEDED');
+        expect(response.body.message).toBe('Можно добавить не больше 2 файлов меню в формате PDF.');
+        expect(await menuRows(estId)).toEqual(before);
+        const interior = await query(
+          "SELECT url FROM establishment_media WHERE establishment_id = $1 AND type = 'interior'",
+          [estId],
+        );
+        expect(interior.rows).toEqual([{ url: hall }]);
+        const card = await query('SELECT name FROM establishments WHERE id = $1', [estId]);
+        expect(card.rows[0].name).toBe(testEstablishments[0].name);
+      });
+
+      test('PUT: interior photos still match by the link as sent — a photo in another spelling becomes the cover as sent', async () => {
+        const estId = await createCard();
+        const [hall] = photoUrls(1, 'interior');
+        const hallRespelled = `https://res.cloudinary.com/test/image/upload/v2/establishments/temp/${partnerId}/interior/p0`;
+        await request(app)
+          .put(`/api/v1/partner/establishments/${estId}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send({ interior_photos: [hall], primary_photo: hall })
+          .expect(200);
+
+        await request(app)
+          .put(`/api/v1/partner/establishments/${estId}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send({ interior_photos: [hallRespelled], primary_photo: hallRespelled })
+          .expect(200);
+
+        const interior = await query(
+          "SELECT url FROM establishment_media WHERE establishment_id = $1 AND type = 'interior'",
+          [estId],
+        );
+        expect(interior.rows).toEqual([{ url: hallRespelled }]);
+        const card = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
+        expect(card.rows[0].primary_image_url).toBe(hallRespelled);
+      });
+
+      test('a PDF\'s file linked without an extension is refused — as a photo it would be read whole (422 INVALID_FILE_TYPE)', async () => {
+        const pdfFile = `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partnerId}/menu_pdf/a`;
+        const estId = await createCard();
+
+        const save = await saveMenu(estId, [pdfFile]).expect(422);
+        const create = await request(app)
+          .post('/api/v1/partner/establishments')
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send({ ...testEstablishments[0], name: 'Другое имя', menu_photos: [pdfFile] })
+          .expect(422);
+
+        for (const response of [save, create]) {
+          expect(response.body.error.code).toBe('INVALID_FILE_TYPE');
+          expect(response.body.message).toBe('Этот формат не подходит: фото — JPG, PNG, WebP или HEIC, меню — ещё и PDF.');
+        }
+        expect(await menuRows(estId)).toEqual([]);
+      });
+
+      test('PUT: replacing one of two PDFs with another is not over the limit', async () => {
+        const estId = await createCard();
+        await saveMenu(estId, [pdf('a'), pdf('b')]).expect(200);
+
+        await saveMenu(estId, [pdf('a'), pdf('c')]).expect(200);
+
+        expect((await menuRows(estId)).map((m) => m.url)).toEqual([pdf('a'), pdf('c')]);
+      });
+
+      test('PUT: a card that already holds three PDFs saves an edit that adds none', async () => {
+        const estId = await createCard();
+        for (const [index, name] of ['a', 'b', 'c'].entries()) {
+          await query(
+            `INSERT INTO establishment_media (establishment_id, type, file_type, url, position)
+             VALUES ($1, 'menu', 'pdf', $2, $3)`,
+            [estId, pdf(name), index],
+          );
+        }
+        const [menuPhoto] = photoUrls(1, 'menu');
+
+        await saveMenu(estId, [pdf('a'), pdf('b'), pdf('c'), menuPhoto]).expect(200);
+
+        expect((await menuRows(estId)).map((m) => m.url)).toEqual([pdf('a'), pdf('b'), pdf('c'), menuPhoto]);
+      });
+
+      test('create: the same menu photo twice — one row and one job', async () => {
+        const [menuPhoto] = photoUrls(1, 'menu');
+
+        const estId = await createCard({ menu_photos: [menuPhoto, respelled()] });
+
+        const rows = await menuRows(estId);
+        expect(rows.map((m) => m.url)).toEqual([menuPhoto]);
+        const jobs = await pollOcrJobs(estId, 1);
+        expect(jobs.map((j) => j.media_id)).toEqual([rows[0].id]);
+      });
+
+      test('create: the same menu PDF twice — one row', async () => {
+        const estId = await createCard({ menu_pdfs: [{ url: pdf('a') }, { url: pdf('a') }] });
+
+        expect((await menuRows(estId)).map((m) => [m.url, m.file_type])).toEqual([[pdf('a'), 'pdf']]);
+      });
+
+      test('create: two PDFs are kept, a third is dropped as before; a repeated one takes no place', async () => {
+        const estId = await createCard({ menu_pdfs: [{ url: pdf('a') }, { url: pdf('a') }, { url: pdf('b') }, { url: pdf('c') }] });
+
+        expect((await menuRows(estId)).map((m) => m.url)).toEqual([pdf('a'), pdf('b')]);
+      });
+
+      test('create: a menu photo naming the file of a menu PDF is not a second file', async () => {
+        // The first page of the PDF as a picture — the same file of the cloud.
+        const firstPage = `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partnerId}/menu_pdf/a.jpg`;
+
+        const estId = await createCard({ menu_pdfs: [{ url: pdf('a') }], menu_photos: [firstPage] });
+
+        expect((await menuRows(estId)).map((m) => [m.url, m.file_type])).toEqual([[pdf('a'), 'pdf']]);
+      });
+    });
+
     // Regression (MARKS, 2026-07-20): an .ai URL in the menu bucket lands as
     // file_type='image' and renders broken everywhere. The URL extension gate
     // must reject it before any DB write.

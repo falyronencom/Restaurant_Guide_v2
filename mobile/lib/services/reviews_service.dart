@@ -34,7 +34,9 @@ class ReviewsService {
         '/api/v1/establishments/$establishmentId/reviews',
         queryParameters: {
           'page': page,
-          'per_page': perPage,
+          // The server reads the page size as `limit` only (default 10):
+          // under `per_page` the card's five-review preview got ten.
+          'limit': perPage,
           if (sort != null) 'sort': sort,
           if (dateFrom != null) 'date_from': dateFrom.toIso8601String(),
           if (dateTo != null) 'date_to': dateTo.toIso8601String(),

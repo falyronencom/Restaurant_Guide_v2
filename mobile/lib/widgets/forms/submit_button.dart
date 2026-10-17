@@ -4,6 +4,11 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 /// Primary submit button with loading state
 /// Shows loading indicator when isLoading is true
 /// Disabled when isLoading is true to prevent double-submission
+///
+/// Главная кнопка форм входа и регистрации («Войти», «Продолжить») — одна на
+/// все три формы. Раньше «Войти» была оранжевой со скруглением 8, «Продолжить»
+/// на регистрации по почте — цвета темы со скруглением 12, а по телефону —
+/// чёрной (проход тестировщика 17.10, п. 17).
 class SubmitButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -28,15 +33,19 @@ class SubmitButton extends StatelessWidget {
 
     Widget buttonChild;
 
+    final labelStyle = theme.textTheme.titleMedium?.copyWith(
+      fontSize: 18,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.backgroundWarm,
+    );
+
     if (isLoading) {
-      buttonChild = SizedBox(
+      buttonChild = const SizedBox(
         height: 20,
         width: 20,
         child: CircularProgressIndicator(
           strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(
-            theme.colorScheme.onPrimary,
-          ),
+          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.textOnPrimary),
         ),
       );
     } else if (icon != null) {
@@ -45,20 +54,21 @@ class SubmitButton extends StatelessWidget {
         children: [
           Icon(icon),
           const SizedBox(width: 8),
-          Text(label),
+          Text(label, style: labelStyle),
         ],
       );
     } else {
-      buttonChild = Text(label);
+      buttonChild = Text(label, style: labelStyle);
     }
 
     final button = ElevatedButton(
       onPressed: isLoading ? null : onPressed,
       style: ElevatedButton.styleFrom(
+        backgroundColor: AppTheme.primaryOrange,
         minimumSize: Size(isFullWidth ? double.infinity : 0, minHeight),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
       ),
       child: buttonChild,

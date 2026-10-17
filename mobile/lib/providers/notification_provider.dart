@@ -17,9 +17,17 @@ class NotificationProvider with ChangeNotifier {
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
   bool _hasMore = true;
-  int _currentPage = 1;
+
+  /// Last page that actually arrived (0 — none yet). Advanced only on a
+  /// successful answer: a load that fails leaves it in place, so the next
+  /// scroll asks for the same page again instead of skipping it.
+  int _loadedPage = 0;
   String? _currentCategory;
   String? _errorMessage;
+
+  /// Whether the load that failed last was a reload from page 1 — so
+  /// [retry] repeats the same kind of load.
+  bool _failedOnRefresh = false;
   Timer? _pollingTimer;
   bool _isAuthenticated = false;
 
@@ -28,6 +36,12 @@ class NotificationProvider with ChangeNotifier {
   /// answer can never show the previous account's data (pack 1 of the critics'
   /// findings, point 4 — Codex C2; the pattern of PartnerDashboardProvider).
   int _generation = 0;
+
+  /// Bumped by every list load. A reload from page 1 (filter change,
+  /// pull-to-refresh) starts even while another load is in flight; the
+  /// earlier one then finds a newer ticket and drops its answer — otherwise
+  /// the filter shown and the list under it would disagree.
+  int _listTicket = 0;
 
   NotificationProvider({NotificationService? service})
       : _service = service ?? NotificationService() {
@@ -70,10 +84,11 @@ class NotificationProvider with ChangeNotifier {
     _unreadCount = 0;
     _notifications = [];
     _isLoading = false;
-    _currentPage = 1;
+    _loadedPage = 0;
     _hasMore = true;
     _currentCategory = null;
     _errorMessage = null;
+    _failedOnRefresh = false;
     notifyListeners();
   }
 
@@ -107,16 +122,17 @@ class NotificationProvider with ChangeNotifier {
   // Notification list
   // ============================================================================
 
-  /// Fetch notifications (supports pull-to-refresh and category filter)
+  /// Fetch notifications (supports pull-to-refresh and category filter).
+  ///
+  /// `refresh: true` reloads from page 1 and supersedes a load in flight;
+  /// otherwise the next page after the last one that arrived is appended,
+  /// and a call while a load is in flight is ignored.
   Future<void> fetchNotifications({bool refresh = false}) async {
     if (!_isAuthenticated) return;
-    if (_isLoading) return;
+    if (_isLoading && !refresh) return;
 
-    if (refresh) {
-      _currentPage = 1;
-      _hasMore = true;
-    }
-
+    final page = refresh ? 1 : _loadedPage + 1;
+    final ticket = ++_listTicket;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -124,11 +140,12 @@ class NotificationProvider with ChangeNotifier {
     final generation = _generation;
     try {
       final result = await _service.getNotifications(
-        page: _currentPage,
+        page: page,
         limit: 20,
         category: _currentCategory,
       );
       if (generation != _generation) return; // account switched mid-flight
+      if (ticket != _listTicket) return; // superseded by a newer reload
 
       final items = result['items'] as List<NotificationModel>;
       final pagination = result['pagination'] as Map<String, dynamic>;
@@ -136,37 +153,61 @@ class NotificationProvider with ChangeNotifier {
       if (refresh) {
         _notifications = items;
       } else {
-        _notifications = [..._notifications, ...items];
+        // The server pages by offset: a notification created between two
+        // loads shifts the feed, and the last row of the previous page comes
+        // again at the top of this one. Keep the first copy only.
+        final seen = {for (final n in _notifications) n.id};
+        _notifications = [
+          ..._notifications,
+          ...items.where((n) => seen.add(n.id)),
+        ];
       }
+      _loadedPage = page;
 
       final totalPages = pagination['totalPages'] as int? ?? 1;
-      _hasMore = _currentPage < totalPages;
+      _hasMore = page < totalPages;
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
       if (generation != _generation) return;
+      if (ticket != _listTicket) return;
       _isLoading = false;
       _errorMessage = 'Не удалось загрузить уведомления';
+      _failedOnRefresh = refresh;
       notifyListeners();
     }
   }
 
-  /// Load next page
+  /// Load next page.
+  ///
+  /// Does nothing after a failed load: the screen calls this on every scroll
+  /// tick near the bottom, and retrying from there would fire a request per
+  /// tick. The way on is [retry] — the screen's «Повторить» button.
   Future<void> loadMore() async {
-    if (!_hasMore || _isLoading) return;
-    _currentPage++;
+    if (!_hasMore || _isLoading || _errorMessage != null) return;
     await fetchNotifications();
   }
+
+  /// Repeat the load that failed last.
+  Future<void> retry() =>
+      fetchNotifications(refresh: _failedOnRefresh || _loadedPage == 0);
 
   // ============================================================================
   // Category filter
   // ============================================================================
 
-  /// Switch category filter and refresh list
+  /// Switch category filter and refresh list.
+  ///
+  /// The previous filter's list is dropped at once: kept on screen during
+  /// the load, it would stand under the new chip — and stay there if the
+  /// load fails.
   void setCategory(String? category) {
     if (_currentCategory == category) return;
     _currentCategory = category;
+    _notifications = [];
+    _loadedPage = 0;
+    _hasMore = true;
     fetchNotifications(refresh: true);
   }
 
@@ -178,7 +219,8 @@ class NotificationProvider with ChangeNotifier {
   Future<void> markAsRead(String notificationId) async {
     // Find and update locally first (optimistic)
     final index = _notifications.indexWhere((n) => n.id == notificationId);
-    if (index != -1 && !_notifications[index].isRead) {
+    final markedHere = index != -1 && !_notifications[index].isRead;
+    if (markedHere) {
       _notifications[index] = _notifications[index].copyWith(isRead: true);
       if (_unreadCount > 0) _unreadCount--;
       notifyListeners();
@@ -189,13 +231,18 @@ class NotificationProvider with ChangeNotifier {
       await _service.markAsRead(notificationId);
     } catch (_) {
       // Revert on failure — unless the account changed meanwhile: the list
-      // being reverted is already gone.
-      if (generation != _generation) return;
-      if (index != -1) {
-        _notifications[index] = _notifications[index].copyWith(isRead: false);
-        _unreadCount++;
-        notifyListeners();
+      // being reverted is already gone. Nothing to revert if the row was
+      // already read. The row is looked up again by id: a reload or a filter
+      // change during the request replaces the list, and the old index would
+      // point at another row — or past the end.
+      if (generation != _generation || !markedHere) return;
+      _unreadCount++;
+      final current = _notifications.indexWhere((n) => n.id == notificationId);
+      if (current != -1) {
+        _notifications[current] =
+            _notifications[current].copyWith(isRead: false);
       }
+      notifyListeners();
     }
   }
 
