@@ -20,9 +20,8 @@ import 'package:yandex_mapkit/yandex_mapkit.dart';
 /// ли открытые. Хозяину — для подписи обложки «рядом · N из M», которую он
 /// считает той же [walkReach], что и шторка.
 ///
-/// [isLive] — жива ли карта, сообщившая прогулку: новая карта начинает без
-/// прогулки (решение Р5 — прогулка не запоминается), и сообщённое прежней
-/// картой к ней не относится.
+/// [isLive] — жива ли карта, сообщившая прогулку: позиция прежней карты к
+/// новой не относится — новая сама узнаёт свежую и сообщит её.
 class FavoritesWalk {
   const FavoritesWalk({
     required this.position,
@@ -39,6 +38,11 @@ class FavoritesWalk {
   bool get isLive => _isLive();
 }
 
+/// Что человек выбрал в прогулке: минуты и «Открыто сейчас». Хозяин карты
+/// хранит выбор, пока человек на вкладке: под карточкой заведения карта
+/// снята, а новая после «назад» начинает с него ([FavoritesMap.initialWalk]).
+typedef WalkChoice = ({int minutes, bool openNowOnly});
+
 /// Карта «Избранного» (макет `3a`): пины сохранённых мест с координатами,
 /// по тапу — та же карточка-превью, что на вкладке «Карта», с «Маршрутом».
 ///
@@ -54,8 +58,9 @@ class FavoritesWalk {
 /// Хозяин держит карту на экране, только пока её видно: невидимая нативная
 /// карта — вторая живая рядом с картой вкладки «Карта». Новая карта при
 /// каждом показе снова охватывает все места; открытая карточка закрывается,
-/// прогулка выключена, а геолокация, которую прогулка держала, выключается
-/// вместе с прежней картой.
+/// а геолокация, которую прогулка держала, выключается вместе с прежней
+/// картой. Прогулка на новой карте — выключена, если хозяин не передал
+/// [initialWalk]: тогда она включается заново, со свежей позицией.
 class FavoritesMap extends StatefulWidget {
   const FavoritesMap({
     super.key,
@@ -64,6 +69,8 @@ class FavoritesMap extends StatefulWidget {
     this.city,
     this.positionSource = const DevicePositionSource(),
     this.onWalkChanged,
+    this.initialWalk,
+    this.onWalkChoiceChanged,
   });
 
   /// Все места избранного; без координат пинами не становятся.
@@ -81,6 +88,16 @@ class FavoritesMap extends StatefulWidget {
   /// Прогулка изменилась: `null` — выключена или позиции ещё нет. Зовётся
   /// только из событий (нажатие, новая позиция), никогда из сборки.
   final ValueChanged<FavoritesWalk?>? onWalkChanged;
+
+  /// С какой прогулкой карта начинает; `null` — выключена. Читается один
+  /// раз, при создании карты: включается, только если разрешение дано, —
+  /// без системного вопроса.
+  final WalkChoice? initialWalk;
+
+  /// Выбор прогулки изменился: включили, сменили минуты или «Открыто
+  /// сейчас», выключили (`null`). В отличие от [onWalkChanged], не ждёт
+  /// позиции. Зовётся только из событий, никогда из сборки.
+  final ValueChanged<WalkChoice?>? onWalkChoiceChanged;
 
   @override
   State<FavoritesMap> createState() => _FavoritesMapState();
@@ -194,6 +211,20 @@ class _FavoritesMapState extends State<FavoritesMap> {
     }
     if (!mounted) return;
     setState(() => _access = access);
+    _resumeWalk(access);
+  }
+
+  /// Прогулка, с которой хозяин просит начать ([FavoritesMap.initialWalk]):
+  /// разрешение дано — включается, как по нажатию; нет — выбор забыт.
+  void _resumeWalk(LocationAccess access) {
+    final choice = widget.initialWalk;
+    if (choice == null || _walking) return;
+    if (access != LocationAccess.granted) {
+      widget.onWalkChoiceChanged?.call(null);
+      return;
+    }
+    _openNowOnly = choice.openNowOnly;
+    _startWalk(choice.minutes);
   }
 
   @override
@@ -354,6 +385,7 @@ class _FavoritesMapState extends State<FavoritesMap> {
     // Минуты сменились при известной позиции — круг другой, камера по нему.
     _frameWalkAfterLayout();
     _reportWalk();
+    _reportChoice();
   }
 
   void _stopWalk() {
@@ -368,11 +400,13 @@ class _FavoritesMapState extends State<FavoritesMap> {
       _syncCircle();
     });
     _reportWalk();
+    _reportChoice();
   }
 
   void _toggleOpenNow() {
     setState(() => _openNowOnly = !_openNowOnly);
     _reportWalk();
+    _reportChoice();
   }
 
   void _onPosition(GeoPoint position) {
@@ -448,6 +482,13 @@ class _FavoritesMapState extends State<FavoritesMap> {
             openNowOnly: _openNowOnly,
             isLive: () => mounted,
           ));
+  }
+
+  void _reportChoice() {
+    final minutes = _walkMinutes;
+    widget.onWalkChoiceChanged?.call(minutes == null
+        ? null
+        : (minutes: minutes, openNowOnly: _openNowOnly));
   }
 
   /// Камера — на круг, когда шторка уже разложена с местами: её высота

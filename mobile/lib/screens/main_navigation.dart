@@ -16,6 +16,7 @@ import 'package:restaurant_guide_mobile/services/push_notification_service.dart'
 import 'package:restaurant_guide_mobile/screens/establishment/detail_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_reviews_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_menu_screen.dart';
+import 'package:restaurant_guide_mobile/widgets/selected_tab_scope.dart';
 
 /// Main navigation screen with bottom tab bar
 /// Manages tab switching and maintains separate navigation stacks per tab
@@ -87,11 +88,16 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
 
   /// Возврат в приложение — повод повторить регистрацию адреса, если она
   /// сорвалась (при запуске сети могло не быть), и перечитать разрешение на
-  /// уведомления (его могли поменять в настройках телефона).
+  /// уведомления (его могли поменять в настройках телефона). Так же —
+  /// дочитать избранное, если чтение при входе или запуске сорвалось (не было
+  /// сети): иначе до захода на вкладку «Избранное» в профиле 0 и сердечки
+  /// пустые. Прочитано удачно — запроса нет.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _signedInAccount != null) {
       PushNotificationService().refreshOnResume();
+      unawaited(
+          context.read<EstablishmentsProvider>().ensureFavoritesLoaded());
     }
   }
 
@@ -340,9 +346,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
             // Тот же признак видимости — «Избранному»: его карта существует,
             // только пока вкладку видно (две живые нативные карты в стопке
             // вкладок), а прогулка (этап 4) не тратит геолокацию на скрытой.
-            TickerMode(
-              enabled: _currentIndex == 3,
-              child: _buildTabNavigator(3, const FavoritesScreen()),
+            // Выбрана ли вкладка — отдельно: TickerMode гаснет и под карточкой
+            // заведения, а прогулка там ждёт «назад» и выключается только с
+            // другой вкладкой.
+            SelectedTabScope(
+              selected: _currentIndex == 3,
+              child: TickerMode(
+                enabled: _currentIndex == 3,
+                child: _buildTabNavigator(3, const FavoritesScreen()),
+              ),
             ),
             _buildTabNavigator(4, const ProfileScreen()),
           ],

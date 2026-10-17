@@ -95,13 +95,16 @@ void main() {
 
   late FakePositionSource source;
   late List<FavoritesWalk?> reported;
+  late List<WalkChoice?> choices;
 
   setUp(() {
     source = FakePositionSource();
     reported = [];
+    choices = [];
   });
 
-  Future<void> pumpMap(WidgetTester tester, List<Establishment> places) async {
+  Future<void> pumpMap(WidgetTester tester, List<Establishment> places,
+      {WalkChoice? initialWalk}) async {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.lightTheme,
       home: Scaffold(
@@ -110,6 +113,8 @@ void main() {
           onDetails: (_) {},
           positionSource: source,
           onWalkChanged: reported.add,
+          initialWalk: initialWalk,
+          onWalkChoiceChanged: choices.add,
         ),
       ),
     ));
@@ -587,6 +592,73 @@ void main() {
       expect(find.text('Не удалось точно определить, где вы'), findsOneWidget);
       expect(reported.last, isNull);
     });
+  });
+
+  // Карта под карточкой заведения снята, а новая после «назад» начинает с
+  // прежнего выбора (хвост 2, 17.10.2026): хозяин хранит выбор, карта — нет.
+  group('прежний выбор прогулки', () {
+    testWidgets(
+        'выбор сообщается хозяину: включили, «Открыто сейчас», сменили '
+        'минуты, выключили', (tester) async {
+      await walkHere(tester, [_a]);
+      await tester.tap(_openChip);
+      await tester.pump();
+      await tester.tap(_chipWith('15 минут'));
+      await tester.pumpAndSettle();
+      await choose(tester, '30 минут');
+      await tester.tap(_chipWith('30 минут'));
+      await tester.pumpAndSettle();
+      await choose(tester, 'Выключить прогулку');
+
+      expect(choices, [
+        (minutes: 15, openNowOnly: false),
+        (minutes: 15, openNowOnly: true),
+        (minutes: 30, openNowOnly: true),
+        null,
+      ]);
+    });
+
+    testWidgets(
+        'новая карта с прежним выбором: 10 минут и «Открыто сейчас» '
+        'включены, свежая позиция и поток, без системного вопроса',
+        (tester) async {
+      await pumpMap(tester, [_a, _b],
+          initialWalk: (minutes: 10, openNowOnly: true));
+
+      expect(chipActive(tester, _chipWith('10 минут')), isTrue);
+      expect(chipActive(tester, _openChip), isTrue);
+      expect(source.freshCalls, 1, reason: 'свежая позиция, как при включении');
+      expect(source.streamFilters, [50]);
+      expect(source.requestCalls, 0);
+      expect(find.text('Ищем, где вы…'), findsOneWidget);
+
+      source.completeFresh(_me);
+      await deliver(tester);
+      expect(reported.last?.minutes, 10);
+      expect(reported.last?.openNowOnly, isTrue);
+      expect(walkObjects(tester), isNotEmpty);
+    });
+
+    for (final access in [
+      LocationAccess.askable,
+      LocationAccess.denied,
+      LocationAccess.off,
+    ]) {
+      testWidgets(
+          'новая карта с прежним выбором, доступа нет (${access.name}) — '
+          'прогулка не включается, выбор забыт, вопроса нет', (tester) async {
+        source.accessValue = access;
+        await pumpMap(tester, [_a],
+            initialWalk: (minutes: 15, openNowOnly: false));
+
+        expect(_openChip, findsNothing);
+        expect(_sheet, findsNothing);
+        expect(source.freshCalls, 0);
+        expect(source.requestCalls, 0);
+        expect(source.listening, isFalse);
+        expect(choices, [null]);
+      });
+    }
   });
 
   group('крупный шрифт', () {

@@ -10,6 +10,7 @@ import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_cover.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_map.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
+import 'package:restaurant_guide_mobile/widgets/selected_tab_scope.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
@@ -55,6 +56,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// карта ([FavoritesWalk.isLive]).
   FavoritesWalk? _walk;
 
+  /// Что выбрано в прогулке, пока человек на вкладке. Карта под карточкой
+  /// заведения снята (геолокацию держит только видимая карта), а новая
+  /// после «назад» начинает с этого выбора, со свежей позицией. Другая
+  /// вкладка и режим «Списком» выбор забывают: прогулка между заходами не
+  /// запоминается (Р5). Сборке не нужен — только следующей карте.
+  WalkChoice? _walkChoice;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +81,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!SelectedTabScope.of(context)) _walkChoice = null;
+  }
+
   Future<void> _restoreViewMode() async {
     final saved = await FavoritesViewModeStore.load();
     if (!mounted || saved == _viewMode) return;
@@ -81,6 +95,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   void _setViewMode(FavoritesViewMode mode) {
     if (mode == _viewMode) return;
+    if (mode == FavoritesViewMode.list) _walkChoice = null;
     setState(() => _viewMode = mode);
     FavoritesViewModeStore.save(mode);
   }
@@ -227,7 +242,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// вкладку main_navigation гасит TickerMode, а вкладку под другим экраном
   /// (карточка заведения) — Overlay. Невидимая нативная карта была бы второй
   /// живой рядом с картой вкладки «Карта». Снова видно — новая карта, камера
-  /// опять охватывает все места.
+  /// опять охватывает все места; прогулка — та, что была ([_walkChoice]).
   Widget _buildMapMode(EstablishmentsProvider provider) {
     final favorites = provider.favoriteEstablishments;
     final visible = TickerMode.of(context);
@@ -251,6 +266,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               positionSource:
                   widget.positionSource ?? const DevicePositionSource(),
               onWalkChanged: (walk) => setState(() => _walk = walk),
+              initialWalk: _walkChoice,
+              onWalkChoiceChanged: (choice) => _walkChoice = choice,
             )
           : const SizedBox.expand(),
       subtitle: reach != null

@@ -22,8 +22,10 @@ import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
+import 'package:restaurant_guide_mobile/screens/favorites/favorites_screen.dart';
 import 'package:restaurant_guide_mobile/screens/main_navigation.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
+import 'package:restaurant_guide_mobile/widgets/selected_tab_scope.dart';
 
 import '../support/push_home_stand.dart';
 import '../support/wire_fixtures.dart';
@@ -321,6 +323,95 @@ void main() {
     expect(home.establishments.favoriteEstablishments, hasLength(1),
         reason: 'счёт профиля — длина этого списка');
     expect(home.favoritesReads(), 2, reason: 'по одному чтению на аккаунт');
+
+    await unmountPushHome(tester);
+  });
+
+  // ── Возврат в приложение (хвост 3, 17.10.2026) ──
+  //
+  // Чтение при входе или запуске могло сорваться (не было сети). До правки
+  // его повторяли только заход на вкладку «Избранное» и смена аккаунта, а
+  // до того в профиле 0 и сердечки пустые.
+
+  /// Приложение ушло в фон и вернулось.
+  Future<void> leaveAndReturn(WidgetTester tester) async {
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await settlePush(tester);
+  }
+
+  testWidgets('чтение при запуске сорвалось: возврат в приложение — один '
+      'запрос, избранное прочитано', (tester) async {
+    failFavorites = true;
+    await pumpHome(tester, storedUser: userA);
+    expect(home.favoritesReads(), 1, reason: 'предпосылка: читали при запуске');
+    expect(home.establishments.favoriteIds, isEmpty,
+        reason: 'предпосылка: чтение сорвалось');
+
+    failFavorites = false;
+    await leaveAndReturn(tester);
+
+    expect(home.favoritesReads(), 2, reason: 'возврат — одно новое чтение');
+    expect(home.establishments.favoriteIds, {'p1', 'p2'});
+    expect(home.establishments.favoriteEstablishments, hasLength(2),
+        reason: 'счёт профиля — длина этого списка');
+
+    await unmountPushHome(tester);
+  });
+
+  testWidgets('избранное прочитано: возврат в приложение — ни одного запроса',
+      (tester) async {
+    await pumpHome(tester, storedUser: userA);
+    expect(home.establishments.favoriteIds, {'p1', 'p2'}, reason: 'предпосылка');
+    final before = home.favoritesReads();
+
+    await leaveAndReturn(tester);
+    await leaveAndReturn(tester);
+
+    expect(home.favoritesReads(), before);
+
+    await unmountPushHome(tester);
+  });
+
+  testWidgets('гость: возврат в приложение — ни одного запроса избранного',
+      (tester) async {
+    await pumpHome(tester);
+
+    await leaveAndReturn(tester);
+
+    expect(home.favoritesReads(), 0);
+
+    await unmountPushHome(tester);
+  });
+
+  // Прогулка «Избранного» различает «вкладку накрыла карточка» и «выбрали
+  // другую вкладку» по этому признаку (хвост 2, 17.10.2026); тесты экрана
+  // ставят его сами, а здесь — что его ставит главная.
+  testWidgets('«Избранное» знает, выбрана ли его вкладка', (tester) async {
+    await pumpHome(tester);
+    bool selected() => SelectedTabScope.of(
+        tester.element(find.byType(FavoritesScreen, skipOffstage: false)));
+    Future<void> tapTab(String label) async {
+      await tester.tap(find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.text(label),
+      ));
+      await tester.pump();
+    }
+
+    expect(selected(), isFalse, reason: 'на старте выбран «Поиск»');
+    await tapTab('Избранное');
+    expect(selected(), isTrue);
+    await tapTab('Профиль');
+    expect(selected(), isFalse);
 
     await unmountPushHome(tester);
   });

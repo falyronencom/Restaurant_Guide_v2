@@ -19,7 +19,7 @@ import '../support/wire_stand.dart';
 /// Геолокация в тесте не нужна и канала у неё нет.
 class _NoLocation extends EstablishmentsProvider {
   @override
-  Future<bool> fetchUserLocation() async => false;
+  Future<bool> refreshUserLocationSilently() async => false;
 }
 
 /// Вход задаётся одним признаком: экран смотрит только на `isAuthenticated`.
