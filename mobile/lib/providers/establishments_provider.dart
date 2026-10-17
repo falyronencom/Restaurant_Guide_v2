@@ -733,6 +733,17 @@ class EstablishmentsProvider with ChangeNotifier {
         await _service.removeFromFavorites(establishmentId);
       } else {
         await _service.addToFavorites(establishmentId);
+        // Места не было ни в выдаче, ни в списке (сердечко в карточке
+        // заведения, открытой с карты или из «Избранного»): список дополнить
+        // нечем, и без чтения с сервера он молча отстаёт — у карты
+        // «Избранного» нет пина, у профиля не тот счёт (п. 40 прохода
+        // тестировщика, 17.10.2026). Сняли сердечко снова, пока шёл ответ,
+        // — читать нечего.
+        if (generation == _generation &&
+            _favoriteIds.contains(establishmentId) &&
+            !_favoriteEstablishments.any((e) => e.id == establishmentId)) {
+          await loadFavorites();
+        }
       }
     } catch (e) {
       // Revert on error — unless the account changed meanwhile (an expired
