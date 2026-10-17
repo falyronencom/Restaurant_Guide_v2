@@ -89,12 +89,14 @@ export async function proxyMediaUpload(
     return jsonError(message, 502, 'UPSTREAM_UNREACHABLE');
   }
 
-  // Pass the backend envelope (status + JSON) through verbatim.
+  // Pass the backend envelope (status + JSON) through verbatim — and the
+  // Retry-After of a refusal with it: the account's daily upload allowance
+  // (429) names when it renews, in the header and in the body's details.
   const text = await upstream.text();
-  return new Response(text, {
-    status: upstream.status,
-    headers: {
-      'content-type': upstream.headers.get('content-type') ?? 'application/json',
-    },
-  });
+  const headers: Record<string, string> = {
+    'content-type': upstream.headers.get('content-type') ?? 'application/json',
+  };
+  const retryAfter = upstream.headers.get('retry-after');
+  if (retryAfter) headers['retry-after'] = retryAfter;
+  return new Response(text, { status: upstream.status, headers });
 }

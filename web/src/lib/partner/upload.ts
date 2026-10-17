@@ -1,16 +1,48 @@
 import type { TempMediaResponse } from '@/lib/api/types';
 import { messageForEstablishmentError } from '@/lib/partner/errors';
 
+/** When a refused upload may be tried again, as the backend names it. */
+type RetryTerm = { retryAfter?: number; resetAt?: string };
+
+const positiveWhole = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+
+/**
+ * The term of a refusal that names one — the account's daily upload allowance
+ * and the request limiter both answer 429 with it: seconds in
+ * `error.details.retry_after` and in the Retry-After header the proxy passes
+ * on, the moment in `error.details.reset_at`. The body wins; the header covers
+ * a body without details, and only as whole seconds (an HTTP-date is not
+ * read). A refusal without a term gets none. Carried for the cabinet to show;
+ * the message is unchanged. Which limit refused is in the code and details,
+ * not in the term.
+ */
+function retryTermOf(
+  res: Response,
+  details: { retry_after?: unknown; reset_at?: unknown } | undefined,
+): RetryTerm {
+  const term: RetryTerm = {};
+  const header = res.headers.get('retry-after');
+  const retryAfter =
+    positiveWhole(details?.retry_after) ??
+    positiveWhole(header !== null && /^\d+$/.test(header) ? Number(header) : undefined);
+  if (retryAfter !== undefined) term.retryAfter = retryAfter;
+  if (typeof details?.reset_at === 'string') term.resetAt = details.reset_at;
+  return term;
+}
+
 /** Russify an upload failure by backend code; a raw 413 is the Railway edge cap. */
 function uploadFailure(
   code: string | undefined,
   status: number,
-): { ok: false; message: string } {
+  term: RetryTerm = {},
+): { ok: false; message: string } & RetryTerm {
   return {
     ok: false,
     message: messageForEstablishmentError(
       code ?? (status === 413 ? 'HTTP_413' : undefined),
     ),
+    ...term,
   };
 }
 
@@ -25,7 +57,7 @@ function uploadFailure(
 
 export type UploadResult =
   | { ok: true; media: TempMediaResponse }
-  | { ok: false; message: string };
+  | ({ ok: false; message: string } & RetryTerm);
 
 /*
  * Pre-flight extension check, mirroring the backend allow-list (temp-upload +
@@ -67,12 +99,16 @@ export async function uploadMedia(
       | {
           success?: boolean;
           data?: TempMediaResponse;
-          error?: { message?: string; code?: string };
+          error?: {
+            message?: string;
+            code?: string;
+            details?: { retry_after?: unknown; reset_at?: unknown };
+          };
         }
       | null;
 
     if (!res.ok || !json?.success || !json.data) {
-      return uploadFailure(json?.error?.code, res.status);
+      return uploadFailure(json?.error?.code, res.status, retryTermOf(res, json?.error?.details));
     }
     return { ok: true, media: json.data };
   } catch {
@@ -106,11 +142,15 @@ export async function uploadMediaToEstablishment(
     const json = (await res.json().catch(() => null)) as {
       success?: boolean;
       data?: Partial<TempMediaResponse>;
-      error?: { message?: string; code?: string };
+      error?: {
+        message?: string;
+        code?: string;
+        details?: { retry_after?: unknown; reset_at?: unknown };
+      };
     } | null;
 
     if (!res.ok || !json?.success || !json.data?.url) {
-      return uploadFailure(json?.error?.code, res.status);
+      return uploadFailure(json?.error?.code, res.status, retryTermOf(res, json?.error?.details));
     }
     // Accessed directly (not via an alias) so json.data.url stays narrowed to string.
     return {
