@@ -164,4 +164,20 @@ describe('updateProfile', () => {
     });
     expect(mockWriteUser).not.toHaveBeenCalled();
   });
+
+  it("carries the server's Russian refusal of the name to the form", async () => {
+    mockPutProfileName.mockRejectedValue(
+      new ApiError(
+        400,
+        'Имя может содержать только буквы, пробел, дефис и апостроф',
+        'VALIDATION_ERROR',
+      ),
+    );
+    await expect(updateProfile('Анна, К.')).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: 'Имя может содержать только буквы, пробел, дефис и апостроф',
+    });
+    expect(mockWriteUser).not.toHaveBeenCalled();
+  });
 });

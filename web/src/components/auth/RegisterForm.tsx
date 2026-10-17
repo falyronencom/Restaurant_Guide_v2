@@ -56,7 +56,7 @@ export function RegisterForm({ returnTo }: { returnTo: string }) {
           autoComplete="name"
           required
           minLength={2}
-          maxLength={100}
+          maxLength={50}
           defaultValue={values?.name}
           aria-invalid={fieldErrors?.name ? true : undefined}
           aria-describedby={fieldErrors?.name ? 'register-name-error' : undefined}

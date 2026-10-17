@@ -11,6 +11,20 @@
  */
 
 import { body, param, query } from 'express-validator';
+import { containsProfanity } from '../utils/profanity.js';
+
+/**
+ * The refusal of a review or an owner's reply with мат (decision of the
+ * Coordinator, 17.10.2026, В8): the text is not saved, the person reads why.
+ * Russian, unlike the field texts around it: no client has it in a table, and
+ * the app and the site show a Russian validator message as is.
+ */
+export const PROFANE_TEXT_MESSAGE = 'Текст содержит нецензурные выражения — уберите их, пожалуйста';
+
+const withoutProfanity = (value) => {
+  if (containsProfanity(value)) throw new Error(PROFANE_TEXT_MESSAGE);
+  return true;
+};
 
 /**
  * Validation for creating a new review
@@ -43,7 +57,9 @@ export const validateCreateReview = [
     .notEmpty()
     .withMessage('Review content is required')
     .isLength({ min: 1, max: 1000 })
-    .withMessage('Review content must be between 1 and 1000 characters'),
+    .withMessage('Review content must be between 1 and 1000 characters')
+    .bail()
+    .custom(withoutProfanity),
 ];
 
 /**
@@ -171,7 +187,9 @@ export const validateUpdateReview = [
     .optional()
     .trim()
     .isLength({ min: 1, max: 1000 })
-    .withMessage('Review content must be between 1 and 1000 characters'),
+    .withMessage('Review content must be between 1 and 1000 characters')
+    .bail()
+    .custom(withoutProfanity),
 
   // Custom validation to ensure at least one field is being updated
   body()
@@ -230,7 +248,9 @@ export const validatePartnerResponse = [
     .notEmpty()
     .withMessage('Response text is required')
     .isLength({ min: 10, max: 1000 })
-    .withMessage('Response text must be between 10 and 1000 characters'),
+    .withMessage('Response text must be between 10 and 1000 characters')
+    .bail()
+    .custom(withoutProfanity),
 ];
 
 /**

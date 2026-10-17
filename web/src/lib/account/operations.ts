@@ -2,6 +2,7 @@ import 'server-only';
 
 import { getFavorites } from '@/lib/api/endpoints/favorites';
 import { getMe, putProfileName } from '@/lib/api/endpoints/profile';
+import { personText } from '@/lib/api/person-text';
 import { ApiError } from '@/lib/api/types';
 import { getSessionUser, writeUser } from '@/lib/auth/session';
 import type {
@@ -71,6 +72,12 @@ export async function updateProfile(name: string): Promise<UpdateProfileResult> 
     await writeUser(user);
     return { ok: true, user };
   } catch (err) {
-    return { ok: false, code: codeFromError(err) };
+    // The name rule's refusal (backend utils/userName.js) is Russian and goes
+    // to the form as is: it alone says why — a sign, the length, мат.
+    const message =
+      err instanceof ApiError ? personText(err.message) : undefined;
+    return message
+      ? { ok: false, code: codeFromError(err), message }
+      : { ok: false, code: codeFromError(err) };
   }
 }

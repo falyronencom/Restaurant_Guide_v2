@@ -128,6 +128,9 @@ describe('registerAction — pre-validation (no network call)', () => {
     ['password without digits', { ...VALID_FIELDS, password: 'NoDigitsHere' }, 'password'],
     ['malformed email', { ...VALID_FIELDS, email: 'not-an-email' }, 'email'],
     ['too-short name', { ...VALID_FIELDS, name: 'Я' }, 'name'],
+    ['name with a comma and a dot', { ...VALID_FIELDS, name: 'Анна, К.' }, 'name'],
+    ['name with digits', { ...VALID_FIELDS, name: 'Иван2000' }, 'name'],
+    ['51-letter name', { ...VALID_FIELDS, name: 'А'.repeat(51) }, 'name'],
   ])('%s → per-field Russian error, serverFetch untouched', async (_label, fields, field) => {
     const result = await registerAction(null, formDataOf(fields));
 
@@ -184,6 +187,31 @@ describe('registerAction — backend error mapping', () => {
     expect(fieldErrors?.name).toMatch(/[А-Яа-яЁё]/);
     expect(fieldErrors?.email).toBeUndefined();
     expect(message).not.toMatch(/[A-Za-z]/); // no English leaks into the summary
+  });
+
+  it("shows the server's Russian refusal of the name as is (мат)", async () => {
+    serverFetchMock.mockRejectedValue(
+      new ApiError(422, 'Имя содержит недопустимые слова', 'VALIDATION_ERROR', {
+        name: ['Имя содержит недопустимые слова'],
+      }),
+    );
+
+    const result = await registerAction(null, formDataOf(VALID_FIELDS));
+
+    expect(
+      (result as { fieldErrors?: Record<string, string> }).fieldErrors?.name,
+    ).toBe('Имя содержит недопустимые слова');
+  });
+
+  it('takes a Belarusian name with і and ў in the pre-check', async () => {
+    serverFetchMock.mockRejectedValue(new Error('fetch failed'));
+    const result = await registerAction(
+      null,
+      formDataOf({ ...VALID_FIELDS, name: 'Алеся Ўладзіслаўна' }),
+    );
+    // reached the network: the pre-check let the name through
+    expect(serverFetchMock).toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: false, code: 'NETWORK' });
   });
 
   it('maps a transport failure to the network message', async () => {

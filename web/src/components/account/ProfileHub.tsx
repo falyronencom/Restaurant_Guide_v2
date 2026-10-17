@@ -40,7 +40,7 @@ const AUTH_METHOD_LABELS: Record<string, string> = {
 
 function saveMessageForCode(code: string): string {
   if (code === 'VALIDATION_ERROR') {
-    return 'Имя должно быть от 1 до 100 символов.';
+    return 'Имя: от 2 до 50 символов — только буквы, пробел, дефис и апостроф.';
   }
   if (code === 'NETWORK') {
     return 'Не удалось сохранить: проверьте соединение и попробуйте ещё раз.';
@@ -111,7 +111,7 @@ export function ProfileHub() {
       router.replace('/login?returnTo=/profile');
       return;
     }
-    setSaveError(saveMessageForCode(res.code));
+    setSaveError(res.message ?? saveMessageForCode(res.code));
   };
 
   const handleLogout = async () => {
@@ -157,7 +157,7 @@ export function ProfileHub() {
             <Input
               id="profile-name"
               value={name}
-              maxLength={100}
+              maxLength={50}
               onChange={(event) => {
                 setName(event.target.value);
                 setSaved(false);

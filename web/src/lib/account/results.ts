@@ -27,4 +27,5 @@ export type LoadProfileResult =
 
 export type UpdateProfileResult =
   | { ok: true; user: SessionUser }
-  | { ok: false; code: string };
+  /** `message`: the backend's Russian refusal of the name, shown as is. */
+  | { ok: false; code: string; message?: string };
