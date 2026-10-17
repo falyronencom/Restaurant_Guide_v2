@@ -1,4 +1,5 @@
 import { incrementWithExpiry, getTTL } from '../config/redis.js';
+import { RATE_LIMIT_MESSAGE } from '../constants/rateLimitRefusal.js';
 import { decodeAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
 import dotenv from 'dotenv';
@@ -94,11 +95,10 @@ export const resolveRateLimitTiers = (env) => {
 
 /**
  * What a client reads when a limiter refuses (429), the global one and every
- * createRateLimiter alike: decision of the Coordinator, 15.10.2026. The app
- * shows the response's message as is on the partner's screens and the guest's
- * booking form; the code RATE_LIMIT_EXCEEDED stays what clients key on.
+ * createRateLimiter alike — constants/rateLimitRefusal.js (decision of the
+ * Coordinator, 15.10.2026).
  */
-export const RATE_LIMIT_MESSAGE = 'Слишком много запросов. Попробуйте позже.';
+export { RATE_LIMIT_MESSAGE };
 
 /**
  * The bucket a moment falls in: windows of `windowSeconds` laid end to end from

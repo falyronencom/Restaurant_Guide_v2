@@ -79,6 +79,11 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   unknownCuisine: 'Такой кухни нет в списке. Выберите кухню заново.',
   photoLimit: (bucket, limit) =>
     `Можно добавить не больше ${limit} ${PHOTO_BUCKET_NAMES[bucket] ?? 'фото'}.`,
+  // A save that adds a third menu PDF (review of PR #56, finding 1: the limit
+  // of the card's upload now holds on the save too). The app and the site do
+  // not let a partner pick a third one. Proposed 17.10.2026 — awaits the
+  // Coordinator's word.
+  pdfLimit: (limit) => `Можно добавить не больше ${limit} файлов меню в формате PDF.`,
   invalidFileType:
     'Этот формат не подходит: фото — JPG, PNG, WebP или HEIC, меню — ещё и PDF.',
   incomplete: (missingFields) =>
