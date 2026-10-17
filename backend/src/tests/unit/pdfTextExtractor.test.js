@@ -248,3 +248,56 @@ describe('extractText — downloads only from this project\'s cloud', () => {
     expect(global.fetch.mock.calls[0][0]).toBe(url);
   });
 });
+
+describe('extractText — the page limit', () => {
+  // The orchestrator reads only the first pages of a long PDF (ocrService
+  // PDF_PAGE_LIMIT, review of PR #56, finding 2). pdf-parse is told the same
+  // limit, so the text layer — the last attempt's backup — is extracted from
+  // those pages only, and it is judged by them: a text spread over 20 pages
+  // read is not «12 characters a page» of a 100-page document.
+  const PDF_URL = 'https://res.cloudinary.com/test/image/upload/v1/establishments/x/menu_pdf/menu.pdf';
+  /** 59 characters with digits — one page of a menu's text layer (MIN_AVG_CHARS_PER_PAGE is 50). */
+  const PAGE_TEXT = 'Борщ украинский 15 руб. Салат Цезарь 12 руб. Кофе 4 руб....';
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test('pdf-parse reads the first maxPages pages; the text layer is judged by those pages', async () => {
+    // A 100-page document; pdf-parse returns the text of the 20 pages it read.
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(20), numpages: 100 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), { max: 20 });
+    expect(result).toMatchObject({ pageCount: 100, pagesParsed: 20, hasTextLayer: true });
+  });
+
+  test('a document within the limit — every page parsed', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(3), numpages: 3 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    expect(result).toMatchObject({ pageCount: 3, pagesParsed: 3, hasTextLayer: true });
+  });
+
+  test('no limit given — pdf-parse reads every page, as before', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(30), numpages: 30 });
+
+    const result = await extractText(PDF_URL);
+
+    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), { max: 0 });
+    expect(result).toMatchObject({ pageCount: 30, pagesParsed: 30, hasTextLayer: true });
+  });
+});

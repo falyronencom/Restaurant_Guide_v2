@@ -121,28 +121,38 @@ const hasUsableTextLayer = (text, pageCount) => {
  * layer is usable — the caller renders that many pages for vision OCR and keeps
  * a usable text layer as the backup for a failed image read.
  *
+ * `maxPages` bounds the work as the caller bounds its reading
+ * (ocrService.PDF_PAGE_LIMIT): pdf-parse extracts the text of the first
+ * `maxPages` pages only (its `max` option; 0 — every page) and still reports
+ * the document's page count. The text layer is judged by the pages it covers.
+ *
  * Never throws on "no text layer" — that's an expected signal for scanned PDFs.
  * Only throws on fetch or parse failures.
  *
  * @param {string} pdfUrl - Cloudinary PDF URL
- * @returns {Promise<{ text: string, pageCount: number, hasTextLayer: boolean }>}
+ * @param {Object} [options]
+ * @param {number} [options.maxPages=0] - Pages to extract the text of; 0 — all
+ * @returns {Promise<{ text: string, pageCount: number, pagesParsed: number, hasTextLayer: boolean }>}
+ *   pageCount — the document's pages; pagesParsed — the pages the text comes from
  */
-export const extractText = async (pdfUrl) => {
+export const extractText = async (pdfUrl, { maxPages = 0 } = {}) => {
   const buffer = await fetchPdfBuffer(pdfUrl);
-  const parsed = await pdfParse(buffer);
+  const parsed = await pdfParse(buffer, { max: maxPages });
 
   const text = parsed.text || '';
   const pageCount = parsed.numpages || 0;
-  const hasTextLayer = hasUsableTextLayer(text, pageCount);
+  const pagesParsed = maxPages > 0 ? Math.min(pageCount, maxPages) : pageCount;
+  const hasTextLayer = hasUsableTextLayer(text, pagesParsed);
 
   logger.debug('PDF text extraction complete', {
     pdfUrl,
     pageCount,
+    pagesParsed,
     textLength: text.length,
     hasTextLayer,
   });
 
-  return { text, pageCount, hasTextLayer };
+  return { text, pageCount, pagesParsed, hasTextLayer };
 };
 
 export {

@@ -17,6 +17,7 @@ import * as OcrJobModel from '../models/ocrJobModel.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
+import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 
 /**
@@ -129,11 +130,21 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
 /**
  * Re-run OCR for all OCR-eligible menu media of an establishment owned by the
  * partner: PDF menus plus menu photos (vision_image strategy).
- * Idempotency in OcrJobModel.enqueue ensures existing pending/processing jobs
- * are not duplicated. A re-read replaces the rows of each file but keeps the
+ * A file whose job is pending or processing keeps that job (it counts as
+ * queued). A re-read replaces the rows of each file but keeps the
  * moderator's «Скрыть» on dishes read again under the same name
  * (MenuItemModel.replaceForMedia) — a partner cannot bring back a hidden dish
  * by re-running the recognition.
+ *
+ * Every new job comes out of the partner's daily recognition allowance
+ * (services/ocrAllowance.js), shared with the card's create, save and upload;
+ * the route's own limit (five restarts a day) still holds. Files never
+ * recognised are queued first. A restart that the spent allowance leaves with
+ * nothing queued is refused — DailyOcrLimitError, 429 with Retry-After until
+ * Minsk midnight; one that queued part of the files answers how many, as
+ * before («запущено N из M»). The files are queued one after another: a
+ * reservation waits for Redis at most its deadline (config/redis.js), and
+ * queuing them at once would take that many pool connections.
  *
  * Contract note: the error code NO_PDF_MENUS and the response key totalPdfs
  * predate menu-photo support and are kept verbatim — mobile matches on the
@@ -143,6 +154,7 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
  * @returns {Promise<{enqueuedJobs: number, totalPdfs: number}>}
+ * @throws {DailyOcrLimitError} When the allowance left nothing queued
  */
 export const retryOcr = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -163,11 +175,27 @@ export const retryOcr = async (partnerId, establishmentId) => {
     );
   }
 
+  // Files never recognised first, each group in its own order (the sort is
+  // stable): with a few places left in the allowance, they go to the files
+  // that have no dishes yet, not to re-reading recognised ones.
+  const recognised = await OcrJobModel.getMediaIdsWithCompletedJob(establishmentId);
+  const queueOrder = [...eligibleMedia]
+    .sort((a, b) => Number(recognised.has(a.id)) - Number(recognised.has(b.id)));
+
   let enqueuedJobs = 0;
-  for (const media of eligibleMedia) {
+  let refusal = null;
+  for (const media of queueOrder) {
     try {
-      await OcrJobModel.enqueue({ establishmentId, mediaId: media.id });
-      enqueuedJobs += 1;
+      const result = await enqueueWithinDailyAllowance({
+        userId: partnerId,
+        establishmentId,
+        mediaId: media.id,
+      });
+      if (result.queued) {
+        enqueuedJobs += 1;
+      } else {
+        refusal = result.refusal;
+      }
     } catch (err) {
       logger.error('Failed to enqueue OCR job during retry', {
         error: err.message,
@@ -183,6 +211,10 @@ export const retryOcr = async (partnerId, establishmentId) => {
     totalEligibleMedia: eligibleMedia.length,
     enqueuedJobs,
   });
+
+  if (enqueuedJobs === 0 && refusal) {
+    throw new DailyOcrLimitError(refusal);
+  }
 
   return { enqueuedJobs, totalPdfs: eligibleMedia.length };
 };

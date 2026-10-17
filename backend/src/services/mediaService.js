@@ -13,11 +13,11 @@
 
 import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
-import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import logger from '../utils/logger.js';
 
@@ -38,9 +38,10 @@ const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
 
 /**
  * Maximum PDF menu files per establishment (1 primary + 1 supplementary,
- * e.g. main menu + wine list). Enforced before Cloudinary upload.
+ * e.g. main menu + wine list). Enforced before Cloudinary upload, and on the
+ * card's create and save (establishmentService).
  */
-const MAX_PDFS_PER_ESTABLISHMENT = 2;
+export const MAX_PDFS_PER_ESTABLISHMENT = 2;
 
 /**
  * Upload a new media file for an establishment
@@ -176,9 +177,10 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         bytes: pdfUploadResult.bytes,
       });
 
-      // Fire-and-forget OCR job enqueue. Idempotency in OcrJobModel.enqueue
-      // ensures a retry on the same media does not create duplicates.
-      OcrJobModel.enqueue({ establishmentId, mediaId: pdfRecord.id })
+      // Fire-and-forget OCR job enqueue, within the partner's daily recognition
+      // allowance (services/ocrAllowance.js); an active job of the same media
+      // is returned, not doubled.
+      enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: pdfRecord.id })
         .catch((err) => logger.error('Failed to enqueue OCR job after PDF upload', {
           error: err.message,
           mediaId: pdfRecord.id,
@@ -257,10 +259,10 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     }
 
     // Menu photos feed the same OCR pipeline as PDF menus (vision_image
-    // strategy). Fire-and-forget; idempotency in OcrJobModel.enqueue protects
-    // against duplicates.
+    // strategy), within the partner's daily recognition allowance.
+    // Fire-and-forget; an active job of the same media is returned, not doubled.
     if (type === 'menu') {
-      OcrJobModel.enqueue({ establishmentId, mediaId: mediaRecord.id })
+      enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: mediaRecord.id })
         .catch((err) => logger.error('Failed to enqueue OCR job after menu photo upload', {
           error: err.message,
           mediaId: mediaRecord.id,

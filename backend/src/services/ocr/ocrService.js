@@ -3,10 +3,10 @@
  *
  * Executes the full OCR pipeline for a single job:
  *   1. Fetch job + associated media
- *   2. For PDFs: read every page as an image — one vision call per page
- *      (Cloudinary pg_N URLs), all pages at once; pdf-parse supplies the page
- *      count and the text layer, which is used only when the image read fails
- *      (extractPageTexts)
+ *   2. For PDFs: read the pages as images, up to PDF_PAGE_LIMIT — one vision
+ *      call per page (Cloudinary pg_N URLs), all pages at once; pdf-parse
+ *      supplies the page count and the text layer of those pages, which is used
+ *      only when the image read fails (extractPageTexts)
  *   3. For photos (file_type='image' with type='menu'): one vision call
  *   4. Run the LLM structurer on the text of each page — one call per page,
  *      all pages at once — and join the pages into one array of menu items
@@ -38,6 +38,34 @@ import { generatePdfPageImageUrl } from '../../config/cloudinary.js';
 const VISION_FALLBACK_PAGE_LIMIT = 2;
 
 /**
+ * The pages of a PDF read at most — the first ones (review of PR #56,
+ * finding 2). Every page read is a vision call and a structurer call to
+ * OpenRouter, about a cent at the price of 17.10.2026, and the daily
+ * allowances count files, not pages: without a limit a small file of many
+ * pages costs as many calls as it has pages. pdf-parse is held to the same
+ * pages (pdfTextExtractor, its text layer is the last attempt's backup); the
+ * job's summary carries pages_total when pages were left unread.
+ *
+ * The number — proposed to the Coordinator on 17.10.2026, awaiting the word:
+ * the PDF menus checked in 2026 (the digital set of 19 Minsk places: 11 PDFs
+ * of 1–9 pages, Zalkind and ZIZÚ 9; on production Zalkind's 9 pages were read
+ * whole, 29.09) fit twice over; a menu read as photos holds 30 (MEDIA_LIMITS).
+ */
+const PDF_PAGE_LIMIT = 20;
+
+/**
+ * The characters of a PDF's text layer the structurer reads at most, when the
+ * text layer stands in for a failed image read (the last attempt): it goes to
+ * one call as one text, and the page limit bounds its pages, not its length —
+ * a call reads whatever it is given, up to the model's context, and is paid
+ * for it (review of PR #56 by the lens, finding 2a). The densest menu page read
+ * in 2026 (the digital set, 86 pages) carried 7 354 characters, the next
+ * 3 416: ten thousand a page, for PDF_PAGE_LIMIT pages. A longer text layer is
+ * cut, and the log says so.
+ */
+const TEXT_LAYER_CHAR_LIMIT = PDF_PAGE_LIMIT * 10000;
+
+/**
  * Upper bound of one job's wall-clock time, from the stage timeouts: the PDF
  * download (pdfTextExtractor.PDF_FETCH_TIMEOUT_MS), the image read and the
  * structuring; pdf-parse and the DB writes are seconds at most. Every page has
@@ -66,7 +94,9 @@ const JOB_DURATION_BOUND_MS = pdfTextExtractor.PDF_FETCH_TIMEOUT_MS +
   llmStructurer.REQUEST_TIMEOUT_MS;
 
 /**
- * Build the list of image URLs to send to vision OCR, given a PDF media record.
+ * Build the list of image URLs to send to vision OCR, given a PDF media record:
+ * every page up to PDF_PAGE_LIMIT, or the first VISION_FALLBACK_PAGE_LIMIT
+ * when the page count is unknown.
  *
  * @param {Object} media - establishment_media row (file_type='pdf')
  * @param {number} knownPageCount - Page count from pdf-parse metadata, or 0 if unknown
@@ -74,7 +104,7 @@ const JOB_DURATION_BOUND_MS = pdfTextExtractor.PDF_FETCH_TIMEOUT_MS +
  */
 const buildPdfPageUrls = (media, knownPageCount) => {
   const pageCount = knownPageCount > 0
-    ? knownPageCount
+    ? Math.min(knownPageCount, PDF_PAGE_LIMIT)
     : VISION_FALLBACK_PAGE_LIMIT;
 
   const urls = [];
@@ -155,7 +185,9 @@ const readPagesAsImages = async (pageUrls) => {
  *
  * pdf-parse still runs first: its page count decides how many pages are
  * rendered (unknown → VISION_FALLBACK_PAGE_LIMIT, strategy
- * 'vision_pdf_no_metadata'), and its text layer is the last resort. An image
+ * 'vision_pdf_no_metadata'; more than PDF_PAGE_LIMIT → the first
+ * PDF_PAGE_LIMIT, the document's count returned as pagesTotal), and its text
+ * layer — of those first pages only — is the last resort. An image
  * read that fails — an error or a timeout on any page, or every page blank —
  * fails the attempt like any other error, and the retry usually reads the
  * pages; only on the job's last attempt (`textLayerBackup`) does a usable text
@@ -174,16 +206,17 @@ const readPagesAsImages = async (pageUrls) => {
  * @param {Object} [options]
  * @param {boolean} [options.textLayerBackup=false] - Last attempt: a failed
  *   image read of a PDF falls back to its text layer
- * @returns {Promise<{ pageTexts: string[], strategy: string, pagesCount?: number, visionError?: string }>}
+ * @returns {Promise<{ pageTexts: string[], strategy: string, pagesCount?: number, pagesTotal?: number, visionError?: string }>}
  *   pageTexts — one text per page read as an image (a photo is one page), or
  *   the whole text layer as one text; pagesCount — PDFs only: the pages read
- *   as images, or the pages the text layer covers
+ *   as images, or the pages the text layer covers; pagesTotal — a PDF longer
+ *   than PDF_PAGE_LIMIT: its page count
  */
 const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
   if (media.file_type === 'pdf') {
     let parseResult = null;
     try {
-      parseResult = await pdfTextExtractor.extractText(media.url);
+      parseResult = await pdfTextExtractor.extractText(media.url, { maxPages: PDF_PAGE_LIMIT });
     } catch (error) {
       logger.warn('pdf-parse failed, reading PDF pages as images without the page count', {
         mediaId: media.id,
@@ -191,12 +224,23 @@ const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
       });
     }
 
-    const pageUrls = buildPdfPageUrls(media, parseResult?.pageCount || 0);
+    const pageCount = parseResult?.pageCount || 0;
+    const cut = pageCount > PDF_PAGE_LIMIT;
+    if (cut) {
+      logger.warn('PDF longer than the page limit — only its first pages are read', {
+        mediaId: media.id,
+        pageCount,
+        pageLimit: PDF_PAGE_LIMIT,
+      });
+    }
+
+    const pageUrls = buildPdfPageUrls(media, pageCount);
     try {
       return {
         pageTexts: await readPagesAsImages(pageUrls),
-        strategy: parseResult?.pageCount > 0 ? 'vision_pdf' : 'vision_pdf_no_metadata',
+        strategy: pageCount > 0 ? 'vision_pdf' : 'vision_pdf_no_metadata',
         pagesCount: pageUrls.length,
+        ...(cut && { pagesTotal: pageCount }),
       };
     } catch (error) {
       if (!textLayerBackup || !parseResult?.hasTextLayer) throw error;
@@ -205,10 +249,18 @@ const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
         pageCount: parseResult.pageCount,
         error: error.message,
       });
+      if (parseResult.text.length > TEXT_LAYER_CHAR_LIMIT) {
+        logger.warn('PDF text layer longer than the limit — only its beginning is structured', {
+          mediaId: media.id,
+          textLength: parseResult.text.length,
+          charLimit: TEXT_LAYER_CHAR_LIMIT,
+        });
+      }
       return {
-        pageTexts: [parseResult.text],
+        pageTexts: [parseResult.text.slice(0, TEXT_LAYER_CHAR_LIMIT)],
         strategy: 'pdf_text_layer',
-        pagesCount: parseResult.pageCount,
+        pagesCount: parseResult.pagesParsed,
+        ...(cut && { pagesTotal: pageCount }),
         visionError: error.message,
       };
     }
@@ -308,11 +360,14 @@ const structurePages = async (pageTexts) => {
  * @param {string|null} [details.visionError] - Why the image read of a PDF
  *   failed, when its text layer was used instead (strategy 'pdf_text_layer')
  * @param {number} [details.pagesCount] - PDFs: pages read (extractPageTexts)
+ * @param {number} [details.pagesTotal] - PDFs longer than PDF_PAGE_LIMIT: the
+ *   document's page count — the pages past pages_count were not read
  * @param {number} [details.categoriesCarried] - PDFs: items whose section was
  *   carried over a page break (carryCategoriesAcrossPages)
- * @returns {Object} pages_count and categories_carried appear for PDFs only
+ * @returns {Object} pages_count and categories_carried appear for PDFs only,
+ *   pages_total for a PDF cut at PDF_PAGE_LIMIT only
  */
-const buildResultSummary = (items, strategy, { visionError = null, pagesCount, categoriesCarried } = {}) => {
+const buildResultSummary = (items, strategy, { visionError = null, pagesCount, pagesTotal, categoriesCarried } = {}) => {
   const totalCount = items.length;
   const flaggedCount = items.filter((it) => it.sanity_flag !== null).length;
 
@@ -329,7 +384,11 @@ const buildResultSummary = (items, strategy, { visionError = null, pagesCount, c
     flagged_count: flaggedCount,
     confidence_avg: confidenceAvg,
     ...(visionError && { vision_error: visionError.slice(0, 200) }),
-    ...(pagesCount != null && { pages_count: pagesCount, categories_carried: categoriesCarried }),
+    ...(pagesCount != null && {
+      pages_count: pagesCount,
+      ...(pagesTotal != null && { pages_total: pagesTotal }),
+      categories_carried: categoriesCarried,
+    }),
   };
 };
 
@@ -427,7 +486,7 @@ export const processJob = async (jobId) => {
 
     // The text layer of a PDF is the last resort: an image read that fails on
     // an earlier attempt goes back to the queue (markFailed) and is retried.
-    const { pageTexts, strategy, pagesCount, visionError } = await extractPageTexts(media, {
+    const { pageTexts, strategy, pagesCount, pagesTotal, visionError } = await extractPageTexts(media, {
       textLayerBackup: job.attempts >= job.max_attempts,
     });
 
@@ -459,7 +518,9 @@ export const processJob = async (jobId) => {
       newItems: flaggedItems,
     });
 
-    const summary = buildResultSummary(flaggedItems, strategy, { visionError, pagesCount, categoriesCarried });
+    const summary = buildResultSummary(flaggedItems, strategy, {
+      visionError, pagesCount, pagesTotal, categoriesCarried,
+    });
 
     await ocrJobModel.markDone(jobId, summary);
 
@@ -512,5 +573,7 @@ export {
   carryCategoriesAcrossPages,
   notifyPartnerIfBatchFinished,
   JOB_DURATION_BOUND_MS,
+  PDF_PAGE_LIMIT,
+  TEXT_LAYER_CHAR_LIMIT,
   VISION_FALLBACK_PAGE_LIMIT,
 };

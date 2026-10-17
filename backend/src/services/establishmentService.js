@@ -12,7 +12,6 @@
 
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
-import * as OcrJobModel from '../models/ocrJobModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -25,7 +24,8 @@ import {
 } from '../utils/moderationNotes.js';
 import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
-import { MEDIA_LIMITS } from './mediaService.js';
+import { MAX_PDFS_PER_ESTABLISHMENT, MEDIA_LIMITS } from './mediaService.js';
+import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import {
@@ -42,6 +42,12 @@ import {
 } from '../config/cloudinary.js';
 
 /**
+ * Whether a link names a PDF's file on our cloud: uploadPdf files every PDF —
+ * a card's and a partner's temp upload alike — in a menu_pdf/ folder.
+ */
+const namesPdfFile = (url) => /\/menu_pdf\/[^/]+$/.test(ownCloudPublicId(url) ?? '');
+
+/**
  * Reject media URLs whose file extension is outside the allow-list, BEFORE any
  * DB write. The upload endpoints gate by extension too, but the create/update
  * payloads carry raw URLs, so this is the authoritative check for what lands in
@@ -56,8 +62,14 @@ function assertValidMediaUrlExtensions(urls, { allowImage = true, allowPdf = fal
     // system-generated and valid for image buckets. An extension, when
     // present, must be on the allow-list (rejects .ai/.txt — MARKS). PDF
     // URLs (uploadPdf secure_url) always carry .pdf, so the pdf-only bucket
-    // keeps requiring it.
-    const valid = (allowImage && (fileExtension(url) === '' || hasValidImageExtension(url)))
+    // keeps requiring it — and so does a link to a PDF's file anywhere: our
+    // uploads keep PDFs in menu_pdf/ folders, and such a file named without an
+    // extension is delivered as the PDF itself, which as a «photo» would be
+    // stored and recognised whole, past the PDF limit and the page limit
+    // (review of PR #56 by the lens, finding 2b). One page drawn as a picture
+    // (.jpg) stays a photo.
+    const extensionless = fileExtension(url) === '' && !namesPdfFile(url);
+    const valid = (allowImage && (extensionless || hasValidImageExtension(url)))
       || (allowPdf && hasValidPdfExtension(url));
     if (!valid) {
       throw new AppError(ESTABLISHMENT_REFUSALS.invalidFileType, 422, 'INVALID_FILE_TYPE');
@@ -121,6 +133,34 @@ function assertOwnMediaUrls(linksByBucket, folders, logContext) {
 /** Optional single links (cover, PDF previews): absent when undefined, null or ''. */
 const presentLinks = (...links) => links.filter((link) => link !== undefined && link !== null && link !== '');
 
+/** A menu link to a PDF: uploadPdf's secure_url ends in .pdf. */
+const isPdfLink = (url) => url.split('?')[0].toLowerCase().endsWith('.pdf');
+
+/**
+ * The cloud file a menu link names — its public_id on our cloud — or, for a
+ * link anywhere else, the link itself. Links that differ only in version,
+ * size, format or query name one file, and the first page of a PDF drawn as a
+ * picture names the PDF.
+ *
+ * A card's menu file is recognised once (review of PR #56, finding 1):
+ * recognition is paid per call, and a save that named a file of the card in
+ * another spelling used to delete its row — with its job and its dishes,
+ * cascading — and queue it again; a list naming one file twice queued it
+ * twice.
+ */
+const menuFileKey = (url) => ownCloudPublicId(url) ?? url;
+
+/** The links of a list, each file once: the first link of a file is kept. */
+const oneLinkPerFile = (links, keyOf) => {
+  const seen = new Set();
+  return links.filter((link) => {
+    const key = keyOf(link);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 /**
  * Build the establishment_media type/url triplet for a synced menu URL. Menu PDFs
  * (uploaded to menu_pdf/, url ends in .pdf) must carry file_type='pdf' and derived
@@ -130,7 +170,7 @@ const presentLinks = (...links) => links.filter((link) => link !== undefined && 
  * so the two vehicles agree.
  */
 function buildMenuMediaFields(url) {
-  const isPdf = url.split('?')[0].toLowerCase().endsWith('.pdf');
+  const isPdf = isPdfLink(url);
   if (!isPdf) {
     return { file_type: 'image', url, thumbnail_url: url, preview_url: url };
   }
@@ -376,6 +416,15 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       primary: presentLinks(primary_photo),
     }, [ownedFolders.partnerUploads(partnerId)], { partnerId });
 
+    // Each menu file once (menuFileKey): a file named twice — in one list or in
+    // both — would be stored and recognised twice. PDFs keep their limit, as
+    // before; a menu photo naming a PDF's file is that PDF.
+    const menuPdfs = oneLinkPerFile(Array.isArray(menu_pdfs) ? menu_pdfs : [], (pdf) => menuFileKey(pdf.url))
+      .slice(0, MAX_PDFS_PER_ESTABLISHMENT);
+    const pdfFiles = new Set(menuPdfs.map((pdf) => menuFileKey(pdf.url)));
+    const menuPhotos = oneLinkPerFile(Array.isArray(menu_photos) ? menu_photos : [], menuFileKey)
+      .filter((url) => !pdfFiles.has(menuFileKey(url)));
+
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
     if (isDuplicate) {
@@ -426,16 +475,14 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     }
 
     // Add menu photos
-    if (Array.isArray(menu_photos) && menu_photos.length > 0) {
-      menu_photos.forEach((url, index) => {
-        allPhotos.push({
-          url,
-          type: 'menu',
-          position: index,
-          is_primary: url === primary_photo,
-        });
+    menuPhotos.forEach((url, index) => {
+      allPhotos.push({
+        url,
+        type: 'menu',
+        position: index,
+        is_primary: url === primary_photo,
       });
-    }
+    });
 
     // Insert all photos into establishment_media
     if (allPhotos.length > 0) {
@@ -457,16 +504,18 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       logger.info('Media saved to establishment_media', {
         establishmentId: establishment.id,
         interiorCount: interior_photos?.length || 0,
-        menuCount: menu_photos?.length || 0,
+        menuCount: menuPhotos.length,
       });
 
       // Menu photos enter the OCR pipeline in parity with PDF menus below
-      // (vision_image strategy). Fire-and-forget — enqueue failure must not
-      // fail registration finalization. allPhotos[i] corresponds to
-      // mediaRecords[i] (Promise.all preserves order).
+      // (vision_image strategy), within the partner's daily recognition
+      // allowance (services/ocrAllowance.js). Fire-and-forget — enqueue
+      // failure must not fail registration finalization. allPhotos[i]
+      // corresponds to mediaRecords[i] (Promise.all preserves order).
       mediaRecords.forEach((record, index) => {
         if (allPhotos[index].type === 'menu') {
-          OcrJobModel.enqueue({
+          enqueueWithinDailyAllowance({
+            userId: partnerId,
             establishmentId: establishment.id,
             mediaId: record.id,
           }).catch((err) => logger.error('Failed to enqueue OCR job for menu photo on registration finalize', {
@@ -480,8 +529,8 @@ export const createEstablishment = async (partnerId, establishmentData) => {
 
     // Persist PDF menu files separately — they carry thumbnail_url/preview_url
     // generated from Cloudinary pg_1 transformations, not plain duplicates of url.
-    if (Array.isArray(menu_pdfs) && menu_pdfs.length > 0) {
-      const pdfPromises = menu_pdfs.slice(0, 2).map((pdf, index) =>
+    if (menuPdfs.length > 0) {
+      const pdfPromises = menuPdfs.map((pdf, index) =>
         MediaModel.createMedia({
           establishment_id: establishment.id,
           type: 'menu',
@@ -499,14 +548,16 @@ export const createEstablishment = async (partnerId, establishmentData) => {
 
       logger.info('PDF menus saved to establishment_media', {
         establishmentId: establishment.id,
-        pdfCount: Math.min(menu_pdfs.length, 2),
+        pdfCount: menuPdfs.length,
       });
 
-      // Fire-and-forget: enqueue OCR jobs for newly persisted PDF menus.
-      // Temp uploads do not create establishment_media rows; they are materialised here
-      // at registration finalization, so this is the earliest valid enqueue point.
+      // Fire-and-forget: enqueue OCR jobs for newly persisted PDF menus, within
+      // the partner's daily recognition allowance. Temp uploads do not create
+      // establishment_media rows; they are materialised here at registration
+      // finalization, so this is the earliest valid enqueue point.
       for (const record of pdfRecords) {
-        OcrJobModel.enqueue({
+        enqueueWithinDailyAllowance({
+          userId: partnerId,
           establishmentId: establishment.id,
           mediaId: record.id,
         }).catch((err) => logger.error('Failed to enqueue OCR job on registration finalize', {
@@ -982,6 +1033,29 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const primaryPhotoUrl = updates.primary_photo || null;
 
+      // What the save changes in each bucket, worked out before the first write.
+      // A menu link is matched by the cloud file it names (menuFileKey): a file
+      // the card already has keeps its row — with its job and its dishes — and a
+      // file named twice is added once. Two rows of one file from before (only a
+      // forged request or two saves at once made them) stay while the list
+      // names the file and go together. Interior photos match by the link as
+      // sent: the cover is chosen by its link (setPrimaryPhoto below).
+      const plans = [];
+      for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
+        if (updates[field] === undefined) continue;
+        const keyOf = type === 'menu' ? menuFileKey : (url) => url;
+        const newUrls = type === 'menu' ? oneLinkPerFile(updates[field] || [], keyOf) : (updates[field] || []);
+        const existingOfType = existingMedia.filter(m => m.type === type);
+        const existingKeys = new Set(existingOfType.map(m => keyOf(m.url)));
+        const newKeys = new Set(newUrls.map(keyOf));
+        plans.push({
+          type,
+          existingOfType,
+          toDelete: existingOfType.filter(m => !newKeys.has(keyOf(m.url))),
+          toInsert: newUrls.filter(url => !existingKeys.has(keyOf(url))),
+        });
+      }
+
       // Format and ownership gates on newly added URLs only — existing rows stay
       // untouched (legacy-safe: a card transferred from the service account keeps
       // its photos in that account's folder), and both run before the first DB
@@ -990,26 +1064,33 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       // link must be the partner's own temp upload or a file of this very card
       // (a PDF attached through POST /:id/media).
       const ownFolders = [ownedFolders.establishment(establishmentId), ownedFolders.partnerUploads(partnerId)];
-      for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
-        if (updates[field] === undefined) continue;
-        const existingUrlsOfType = existingMedia
-          .filter(m => m.type === type)
-          .map(m => m.url);
-        const addedUrls = (updates[field] || []).filter(url => !existingUrlsOfType.includes(url));
-        assertValidMediaUrlExtensions(addedUrls, { allowPdf: type === 'menu' });
-        assertOwnMediaUrls({ [type]: addedUrls }, ownFolders, { partnerId, establishmentId });
+      for (const { type, toInsert } of plans) {
+        assertValidMediaUrlExtensions(toInsert, { allowPdf: type === 'menu' });
+        assertOwnMediaUrls({ [type]: toInsert }, ownFolders, { partnerId, establishmentId });
+      }
+
+      // Two menu PDFs per card on this path too, as on the card's own upload
+      // (mediaService) — checked before any write. Only a save that adds a PDF is
+      // held to it: a card holding more from before is not refused an edit that
+      // adds none.
+      const menuPlan = plans.find(plan => plan.type === 'menu');
+      if (menuPlan) {
+        const addedPdfs = menuPlan.toInsert.filter(isPdfLink).length;
+        const keptPdfs = menuPlan.existingOfType
+          .filter(m => m.file_type === 'pdf' && !menuPlan.toDelete.includes(m))
+          .length;
+        if (addedPdfs > 0 && keptPdfs + addedPdfs > MAX_PDFS_PER_ESTABLISHMENT) {
+          throw new AppError(
+            ESTABLISHMENT_REFUSALS.pdfLimit(MAX_PDFS_PER_ESTABLISHMENT),
+            403,
+            'PDF_LIMIT_EXCEEDED',
+          );
+        }
       }
 
       // Sync each media type
-      for (const [field, type] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
-        if (updates[field] === undefined) continue;
-
-        const newUrls = updates[field] || [];
-        const existingOfType = existingMedia.filter(m => m.type === type);
-        const existingUrls = existingOfType.map(m => m.url);
-
+      for (const { type, existingOfType, toDelete, toInsert } of plans) {
         // Delete removed media
-        const toDelete = existingOfType.filter(m => !newUrls.includes(m.url));
         for (const media of toDelete) {
           await MediaModel.deleteMedia(media.id);
         }
@@ -1017,7 +1098,6 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         // Insert new media. Menu URLs may be PDFs (uploaded to menu_pdf/) — they
         // need file_type='pdf' + pg_1 preview/thumbnail via buildMenuMediaFields,
         // otherwise the raw .pdf lands in an <img> and Cloudinary 401s it.
-        const toInsert = newUrls.filter(url => !existingUrls.includes(url));
         for (let i = 0; i < toInsert.length; i++) {
           const url = toInsert[i];
           const mediaFields = type === 'menu'
@@ -1033,10 +1113,12 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
 
           // Cabinet cards add menus through this sync path (two-stage create →
           // autosave PUT), so newly inserted menu media must enter the OCR
-          // pipeline here in parity with createEstablishment. Fire-and-forget;
-          // idempotency in OcrJobModel.enqueue protects against duplicates.
+          // pipeline here in parity with createEstablishment, within the
+          // partner's daily recognition allowance (services/ocrAllowance.js).
+          // Fire-and-forget; an active job of the file is returned, not doubled.
           if (type === 'menu') {
-            OcrJobModel.enqueue({
+            enqueueWithinDailyAllowance({
+              userId: partnerId,
               establishmentId,
               mediaId: record.id,
             }).catch((err) => logger.error('Failed to enqueue OCR job for menu media on update sync', {
@@ -1049,7 +1131,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
 
         // Update primary flag if needed
         if (primaryPhotoUrl) {
-          const keptOfType = existingOfType.filter(m => newUrls.includes(m.url));
+          const keptOfType = existingOfType.filter(m => !toDelete.includes(m));
           for (const media of keptOfType) {
             if ((media.url === primaryPhotoUrl) !== media.is_primary) {
               await MediaModel.updateMedia(media.id, { is_primary: media.url === primaryPhotoUrl });
