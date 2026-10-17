@@ -57,6 +57,7 @@ class AppTheme {
   static const Color statusGreen = Color(0xFF34C759);        // "Open" / success status
   static const Color textDark = Color(0xFF3E3E3E);           // Dark text (near-black)
   static const Color accentNavy = Color(0xFF3631C0);         // Navy blue accent
+  static const Color ratingStar = Color(0xFFFFB800);         // Rating star (map preview card)
 
   /// Splash «кокарда» palette (NIRIVIO splash, SDL CAT-C-1.4, lab «Заставка
   /// NIRIVIO» v7, light stage). The three bands of the launcher cockade on a
