@@ -29,3 +29,15 @@ export type UpdateProfileResult =
   | { ok: true; user: SessionUser }
   /** `message`: the backend's Russian refusal of the name, shown as is. */
   | { ok: false; code: string; message?: string };
+
+/** May the account be deleted now (brief В1). `refusal.message` is Russian. */
+export type AccountDeletionCheckResult =
+  | {
+      ok: true;
+      allowed: boolean;
+      refusal: { code: string; message: string } | null;
+    }
+  | { ok: false; code: string };
+
+/** Delete the account (brief В1): a refusal is its code only (operations). */
+export type DeleteAccountResult = { ok: true } | { ok: false; code: string };

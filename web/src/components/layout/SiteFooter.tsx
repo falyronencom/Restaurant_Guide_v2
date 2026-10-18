@@ -58,6 +58,13 @@ export function SiteFooter({ cities }: Props) {
 
         <div className="flex flex-col gap-s" aria-label="О сервисе">
           <span className="text-label-m text-text-secondary">О сервисе</span>
+          {/* The page Google Play links to (brief В1, 18.10.2026). */}
+          <Link
+            href="/udalenie-uchetki"
+            className="text-body-m text-foreground transition-colors hover:text-brand-dark"
+          >
+            Как удалить учётку
+          </Link>
           {/* Legal pages (о нас, контакты, правовая информация) are a separate
               pre-launch compliance item — wire real hrefs when those routes
               exist. Placeholder keeps the footer column complete. */}
