@@ -85,6 +85,31 @@ export const ATTRIBUTE_CANON = Object.freeze([
   'accessible_environment',
 ]);
 
+/**
+ * Categories whose card may carry no cuisine (decision of the Coordinator В5,
+ * 17.10.2026: a bar or a club need not pick a cuisine). Every other category
+ * keeps the rule «1–3 cuisines».
+ */
+export const CUISINE_OPTIONAL_CATEGORIES = Object.freeze(['Бар', 'Клуб']);
+
+const CUISINE_OPTIONAL_SET = new Set(CUISINE_OPTIONAL_CATEGORIES);
+
+/**
+ * Whether a card with these categories must name at least one cuisine.
+ *
+ * A cuisine may be left out only when EVERY category is a bar or a club: a card
+ * that is a bar and a restaurant follows the restaurant's rule. No categories
+ * (or not a list) → required, the stricter answer.
+ *
+ * @param {unknown} categories
+ * @returns {boolean}
+ */
+export const isCuisineRequired = (categories) => !(
+  Array.isArray(categories)
+  && categories.length > 0
+  && categories.every((category) => CUISINE_OPTIONAL_SET.has(category))
+);
+
 const CATEGORY_SET = new Set(VALID_CATEGORIES);
 const CUISINE_SET = new Set(VALID_CUISINES);
 const ATTRIBUTE_SET = new Set(ATTRIBUTE_CANON);

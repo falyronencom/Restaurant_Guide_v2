@@ -17,6 +17,7 @@ import {
   updateEstablishmentAction,
 } from '@/lib/partner/client';
 import { clientCompleteness } from '@/lib/partner/completeness';
+import { isCuisineRequired } from '@/lib/partner/constants';
 import { CONTACT_LABELS, acceptedForm, contactErrors } from '@/lib/partner/contacts';
 import {
   WIZARD_DRAFT_PREFIX,
@@ -572,6 +573,9 @@ export function EstablishmentWizard(props: Props) {
             saveLabel={saveLabel}
             error={error}
             notice={notice}
+            cuisineOptional={
+              form.categories.length > 0 && !isCuisineRequired(form.categories)
+            }
           />
         </div>
       </div>

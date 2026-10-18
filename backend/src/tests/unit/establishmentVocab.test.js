@@ -24,6 +24,8 @@ import {
   isValidCategory,
   isValidCuisine,
   isCanonAttributeKey,
+  isCuisineRequired,
+  CUISINE_OPTIONAL_CATEGORIES,
 } from '../../constants/establishmentVocab.js';
 import { CATEGORY_SLUG_MAP, CUISINE_SLUG_MAP } from '../../constants/urlSlugs.js';
 
@@ -152,6 +154,37 @@ describe('establishmentVocab — DB CHECK parity (migration ↔ JS canon)', () =
     if (cats !== null) {
       expect([...cats].sort()).toEqual([...VALID_CATEGORIES].sort());
       expect([...cuis].sort()).toEqual([...VALID_CUISINES].sort());
+    }
+  });
+});
+
+// Решение Координатора В5 (17.10.2026): кухня необязательна для бара и клуба.
+describe('isCuisineRequired', () => {
+  test.each([
+    [['Бар']],
+    [['Клуб']],
+    [['Бар', 'Клуб']],
+  ])('%j — кухню можно не выбирать', (categories) => {
+    expect(isCuisineRequired(categories)).toBe(false);
+  });
+
+  test.each([
+    [['Ресторан']],
+    [['Бар', 'Ресторан']],
+    [['Клуб', 'Кафе']],
+    [['Паб']],
+    [['Кальянная']],
+    [[]],
+    [undefined],
+    [null],
+    ['Бар'],
+  ])('%j — кухня обязательна', (categories) => {
+    expect(isCuisineRequired(categories)).toBe(true);
+  });
+
+  test('бар и клуб — канонические категории', () => {
+    for (const category of CUISINE_OPTIONAL_CATEGORIES) {
+      expect(VALID_CATEGORIES).toContain(category);
     }
   });
 });

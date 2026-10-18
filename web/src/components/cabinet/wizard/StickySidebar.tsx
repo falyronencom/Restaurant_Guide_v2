@@ -43,6 +43,7 @@ export function StickySidebar({
   saveLabel,
   error,
   notice,
+  cuisineOptional = false,
 }: {
   e1: E1Checklist;
   completeness: number;
@@ -54,6 +55,8 @@ export function StickySidebar({
   saveLabel: string;
   error: string | null;
   notice: string | null;
+  /** A bar or a club: the checklist item does not ask for a cuisine (decision В5). */
+  cuisineOptional?: boolean;
 }) {
   const score = serverScore ?? completeness;
   const clamped = Math.max(0, Math.min(100, score));
@@ -93,7 +96,9 @@ export function StickySidebar({
                 <span
                   className={cn(done ? 'text-foreground' : 'text-figma-text-grey')}
                 >
-                  {it.label}
+                  {it.key === 'classification' && cuisineOptional
+                    ? 'Категория (кухня — по желанию)'
+                    : it.label}
                 </span>
               </li>
             );
