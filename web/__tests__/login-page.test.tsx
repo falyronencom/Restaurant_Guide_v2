@@ -99,6 +99,18 @@ describe('auth_error from the Yandex callback', () => {
     );
   });
 
+  it("«Отмена» on Yandex's page → says the sign-in was cancelled", async () => {
+    render(
+      await LoginPage({
+        searchParams: Promise.resolve({ auth_error: 'yandex_cancelled' }),
+      }),
+    );
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+      'data-error',
+      'Вход через Яндекс отменён. Попробуйте ещё раз или войдите другим способом.',
+    );
+  });
+
   it('a closed account keeps its own text', async () => {
     render(
       await LoginPage({
