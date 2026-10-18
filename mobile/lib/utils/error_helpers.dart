@@ -49,8 +49,8 @@ String userMessageOf(Object error, {required String fallback}) {
 /// [russianServerText]: мат, лимит, блокировка), затем русская фраза, которую
 /// `ApiClient` положил в `DioException.error` («Нет связи…», «Необходима
 /// авторизация…», фраза по коду статуса). Английское на экран не идёт: часть
-/// отказов бэкенда пока английская («Review not found», «You can only delete
-/// your own reviews») — там [fallback].
+/// отказов бэкенда ещё английская — там [fallback]. Отказы удаления и правки
+/// отзыва и ответа владельца сервер отдаёт по-русски с 18.10.2026.
 ///
 /// Отличие от [userMessageOf]: та пропускает и английский текст сервера.
 String russianFailureText(Object error, {required String fallback}) {
