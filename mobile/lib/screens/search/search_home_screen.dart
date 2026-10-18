@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/widgets/default_city_button.dart';
 import 'package:restaurant_guide_mobile/widgets/filter_icon_button.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_bar.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_suggestions.dart';
@@ -146,41 +147,33 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                           color: AppTheme.textPrimary,
                         ),
                       ),
-                      // Reset button (right)
-                      Positioned(
-                        right: 16,
-                        child: GestureDetector(
-                          onTap: () {
-                            setModalState(() {
-                              tempSelectedCity = 'Минск';
-                            });
-                          },
-                          child: const Text(
-                            'Сброс',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
 
                 // Section title
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Ваш город',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textPrimary,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 12, 16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Ваш город',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
                       ),
-                    ),
+                      DefaultCityButton(
+                        onTap: () {
+                          setModalState(() {
+                            tempSelectedCity = BelarusCities.defaultCity;
+                          });
+                        },
+                      ),
+                    ],
                   ),
                 ),
 

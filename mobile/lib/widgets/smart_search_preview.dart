@@ -94,15 +94,40 @@ class SmartSearchPreview extends StatelessWidget {
   }
 
   Widget _buildResults(BuildContext context, SmartSearchProvider provider) {
+    // Совпадения отдельно от запасной выдачи (решение Координатора В3,
+    // 17.10.2026): «Buno», которого нет, — «ничего не найдено», а город ниже —
+    // «Возможно, вам подойдут», а не три карточки под видом совпадений.
+    final matchedShown = provider.matchedShown;
+    final nothingMatched = provider.matchedTotal == 0;
+    final matched = provider.smartResults.take(matchedShown);
+    final suggested = provider.smartResults.skip(matchedShown);
+
     return Container(
       decoration: _panelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Intent header
+          if (nothingMatched)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                'По запросу «${provider.lastQuery}» ничего не найдено',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+          // Intent header — прочтение фразы; без совпадений оно ничего не
+          // объясняет и выдавало бы запасную выдачу за ответ.
           if (provider.parsedIntent != null &&
-              !provider.isFallback)
+              !provider.isFallback &&
+              !nothingMatched)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
@@ -117,8 +142,26 @@ class SmartSearchPreview extends StatelessWidget {
               ),
             ),
 
-          // Result cards
-          ...provider.smartResults.map(
+          // Result cards: совпадения, затем «Возможно, вам подойдут»
+          ...matched.map(
+            (e) => _ResultCard(
+              establishment: e,
+              onTap: () => onEstablishmentTap(e.id),
+            ),
+          ),
+          if (suggested.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 2),
+              child: Text(
+                'Возможно, вам подойдут',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.gray700,
+                ),
+              ),
+            ),
+          ...suggested.map(
             (e) => _ResultCard(
               establishment: e,
               onTap: () => onEstablishmentTap(e.id),

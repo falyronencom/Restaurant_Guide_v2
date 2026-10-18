@@ -16,7 +16,12 @@ class FilterScreen extends StatelessWidget {
   static const Color _primaryOrange = AppTheme.primaryOrange;
   static const Color _selectedOrange = AppTheme.primaryOrangeDark;
   static const Color _greyStroke = AppTheme.strokeGrey;
-  static const Color _greyText = AppTheme.textGrey;
+  /// Рамка невыбранной кнопки «Время работы» и карточки категории/кухни:
+  /// 4,09 : 1 на бежевом фоне (норма для границ элементов — 3 : 1). Прежняя
+  /// strokeGrey (1,34 : 1) и серый текст #ABABAB (2,04 : 1) делали обычное
+  /// невыбранное похожим на выключенное (сверка находок тестировщика, 17.10,
+  /// пункт 36). Выключенное — бледно-серый текст (Colors.grey.shade400).
+  static const Color _unselectedStroke = AppTheme.gray600;
 
   @override
   Widget build(BuildContext context) {
@@ -510,16 +515,18 @@ class _HoursButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
           border: isSelected
               ? null
-              : Border.all(color: FilterScreen._greyStroke, width: 1.3),
+              : Border.all(color: FilterScreen._unselectedStroke, width: 1.3),
         ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
             fontSize: 15,
+            // Невыбранное — чёрным, как подпись карточки категории
+            // (18,6 : 1); выбранное — на оранжевой заливке.
             color: isSelected
                 ? FilterScreen._backgroundColor
-                : FilterScreen._greyText,
+                : AppTheme.textPrimary,
           ),
         ),
       ),
@@ -626,7 +633,7 @@ class _CategoryCard extends StatelessWidget {
           border: Border.all(
             color: isSelected
                 ? FilterScreen._selectedOrange
-                : FilterScreen._greyStroke,
+                : FilterScreen._unselectedStroke,
             width: isSelected ? 2 : 1,
           ),
           boxShadow: [

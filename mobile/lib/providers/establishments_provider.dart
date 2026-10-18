@@ -67,6 +67,14 @@ class EstablishmentsProvider with ChangeNotifier {
   /// null — искали по фильтрам, строка была пуста.
   SmartSearchIntent? _searchIntent;
   bool _searchFallback = false;
+
+  /// Сколько первых заведений общей умной выдачи совпали с фразой (В3,
+  /// 17.10.2026); null — искали по фильтрам или сервер поля не прислал.
+  int? _searchMatchedTotal;
+
+  /// Номер в общей выдаче, с которого начинается загруженный список: после
+  /// возврата на последнюю существующую страницу список начинается не с нуля.
+  int _loadedFrom = 0;
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String? _error;
@@ -172,6 +180,7 @@ class EstablishmentsProvider with ChangeNotifier {
     _searchQuery = null;
     _searchIntent = null;
     _searchFallback = false;
+    _searchMatchedTotal = null;
     notifyListeners();
   }
 
@@ -190,6 +199,19 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Последняя выдача собрана в обход AI (он был недоступен)
   bool get searchFallback => _searchFallback;
+
+  /// Сколько первых заведений общей выдачи совпали с фразой; остальное —
+  /// «Возможно, вам подойдут» (решение Координатора В3, 17.10.2026). null —
+  /// делить нечего: искали без фразы или сервер поля не прислал.
+  int? get searchMatchedTotal => _searchMatchedTotal;
+
+  /// С какого места загруженного списка начинается «Возможно, вам подойдут»;
+  /// null — вся выдача совпадения (или делить нечего).
+  int? get suggestionsStartIndex {
+    final matched = _searchMatchedTotal;
+    if (matched == null || matched >= totalResults) return null;
+    return (matched - _loadedFrom).clamp(0, _establishments.length);
+  }
 
   /// Whether establishments are being loaded (initial load)
   bool get isLoading => _isLoading;
@@ -396,6 +418,7 @@ class EstablishmentsProvider with ChangeNotifier {
         );
         _searchIntent = smart.intent;
         _searchFallback = smart.fallback;
+        _searchMatchedTotal = smart.matchedTotal;
         result = PaginatedEstablishments(
           data: smart.results,
           meta: PaginationMeta(
@@ -408,6 +431,7 @@ class EstablishmentsProvider with ChangeNotifier {
       } else {
         _searchIntent = null;
         _searchFallback = false;
+        _searchMatchedTotal = null;
         result = await _service.searchEstablishments(
           page: page,
           perPage: _pageSize,
@@ -432,6 +456,7 @@ class EstablishmentsProvider with ChangeNotifier {
         _isLoadingMore = false;
       } else {
         _establishments = result.data;
+        _loadedFrom = (result.meta.page - 1) * result.meta.perPage;
         _isLoading = false;
       }
 
