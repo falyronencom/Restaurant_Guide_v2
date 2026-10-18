@@ -530,6 +530,19 @@ class EstablishmentsProvider with ChangeNotifier {
     return false;
   }
 
+  /// Обновить позицию человека, только если разрешение уже дано: без
+  /// системного вопроса и без смены сортировки поиска. Для экранов, которым
+  /// позиция нужна лишь для расстояния «от вас», — карточка заведения
+  /// звала [fetchUserLocation], и открытие карточки спрашивало разрешение и
+  /// переводило поиск «по расстоянию» (17.10.2026). Позиции нет — известная
+  /// остаётся прежней.
+  Future<bool> refreshUserLocationSilently() async {
+    final position = await _locationService.getPositionWithoutPrompt();
+    if (position == null) return false;
+    setUserLocation(position.latitude, position.longitude);
+    return true;
+  }
+
   /// Set city filter and persist to SharedPreferences
   void setCity(String? city) {
     _selectedCity = city;

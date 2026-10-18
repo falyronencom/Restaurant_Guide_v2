@@ -54,33 +54,59 @@ class LocationService {
         return null;
       }
 
-      // Try cached position first (instant on emulator)
-      debugPrint('LocationService: trying getLastKnownPosition()...');
-      Position? position = await Geolocator.getLastKnownPosition();
-
-      if (position != null) {
-        if (kDebugMode) {
-          debugPrint('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
-        }
-        _lastKnownPosition = position;
-        return position;
-      }
-
-      // Fallback to fresh GPS (may timeout on emulator)
-      debugPrint('LocationService: no cache, trying getCurrentPosition()...');
-      _lastKnownPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 5),
-      );
-
-      if (kDebugMode) {
-        debugPrint('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
-      }
-      return _lastKnownPosition;
+      return await _readPosition();
     } catch (e) {
       debugPrint('LocationService: Error getting position: $e');
       return null;
     }
+  }
+
+  /// Позиция без системного вопроса: разрешение уже дано — как
+  /// [getCurrentPosition]; не дано или геолокация выключена — `null`, и
+  /// система ничего не спрашивает. Для экранов, где позиция — лишь
+  /// подробность (расстояние «от вас» в карточке заведения): вопрос о
+  /// разрешении там задавался при каждом открытии, пока человек дважды не
+  /// откажет (17.10.2026). / Position without the system prompt.
+  Future<Position?> getPositionWithoutPrompt() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return null;
+      }
+      return await _readPosition();
+    } catch (e) {
+      debugPrint('LocationService: Error getting position: $e');
+      return null;
+    }
+  }
+
+  /// Разрешение уже есть: сохранённая позиция, без неё — свежая.
+  Future<Position?> _readPosition() async {
+    // Try cached position first (instant on emulator)
+    debugPrint('LocationService: trying getLastKnownPosition()...');
+    Position? position = await Geolocator.getLastKnownPosition();
+
+    if (position != null) {
+      if (kDebugMode) {
+        debugPrint('LocationService: got cached position: ${position.latitude}, ${position.longitude}');
+      }
+      _lastKnownPosition = position;
+      return position;
+    }
+
+    // Fallback to fresh GPS (may timeout on emulator)
+    debugPrint('LocationService: no cache, trying getCurrentPosition()...');
+    _lastKnownPosition = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.medium,
+      timeLimit: const Duration(seconds: 5),
+    );
+
+    if (kDebugMode) {
+      debugPrint('LocationService: got fresh position: ${_lastKnownPosition?.latitude}, ${_lastKnownPosition?.longitude}');
+    }
+    return _lastKnownPosition;
   }
 
   /// Check if permission is permanently denied (user must go to Settings)

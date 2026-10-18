@@ -1,5 +1,6 @@
 // Прогулка на экране «Избранного» (этап 4): подпись обложки «рядом · N из
-// M», прогулка не запоминается (Р5) и не ходит в сеть.
+// M», прогулка не запоминается между заходами (Р5), но переживает карточку
+// заведения поверх (хвост 2, 17.10.2026), и не ходит в сеть.
 //
 // Экран целиком: места приходят через стенд сети, как с сервера; позиция —
 // подставной источник. Модель кадров та же, что в favorites_walk_test.dart:
@@ -20,15 +21,24 @@ import 'package:restaurant_guide_mobile/widgets/favorites/favorites_map.dart';
 import 'package:restaurant_guide_mobile/widgets/favorites/favorites_view_mode.dart';
 import 'package:restaurant_guide_mobile/widgets/map/establishment_map_preview.dart';
 import 'package:restaurant_guide_mobile/widgets/map/walk_controls.dart';
+import 'package:restaurant_guide_mobile/widgets/selected_tab_scope.dart';
 
 import '../support/fake_position_source.dart';
 import '../support/wire_fixtures.dart';
 import '../support/wire_stand.dart';
 
-/// Вход задаётся подменой одного признака, как в favorites_screen_test.
+/// Вход задаётся подменой одного признака, как в favorites_screen_test;
+/// выйти и войти — [signIn].
 class _Auth extends AuthProvider {
+  bool _signedIn = true;
+
   @override
-  bool get isAuthenticated => true;
+  bool get isAuthenticated => _signedIn;
+
+  void signIn(bool value) {
+    _signedIn = value;
+    notifyListeners();
+  }
 }
 
 const GeoPoint _me = (latitude: 53.9000, longitude: 27.5600);
@@ -97,9 +107,13 @@ void main() {
   late StubAdapter wire;
   late FakePositionSource source;
 
+  /// Что «сервер» отвечает на чтение избранного.
+  late List<Map<String, dynamic>> serverRows;
+
   setUp(() {
-    wire =
-        installWireStand((_) => jsonBody(favoritesEnvelope(favorites: _rows)));
+    serverRows = _rows;
+    wire = installWireStand(
+        (_) => jsonBody(favoritesEnvelope(favorites: serverRows)));
     SharedPreferences.setMockInitialValues({FavoritesViewModeStore.key: 'map'});
     source = FakePositionSource();
     final messenger =
@@ -110,23 +124,38 @@ void main() {
         SystemChannels.platform_views, null));
   });
 
-  Future<void> pump(WidgetTester tester, {ValueNotifier<bool>? visible}) async {
-    final shown = visible ?? ValueNotifier(true);
+  /// [tab] — выбрана ли вкладка «Избранное». Оба признака — как их ставит
+  /// главная (main_navigation): выбрана ли вкладка и TickerMode.
+  Future<void> pump(WidgetTester tester,
+      {ValueNotifier<bool>? tab, _Auth? auth}) async {
+    final selected = tab ?? ValueNotifier(true);
     await tester.pumpWidget(MultiProvider(
       providers: [
-        ChangeNotifierProvider<AuthProvider>(create: (_) => _Auth()),
+        ChangeNotifierProvider<AuthProvider>(create: (_) => auth ?? _Auth()),
         ChangeNotifierProvider(create: (_) => EstablishmentsProvider()),
       ],
       child: MaterialApp(
         home: ValueListenableBuilder<bool>(
-          valueListenable: shown,
-          builder: (context, enabled, child) =>
-              TickerMode(enabled: enabled, child: child!),
+          valueListenable: selected,
+          builder: (context, enabled, child) => SelectedTabScope(
+            selected: enabled,
+            child: TickerMode(enabled: enabled, child: child!),
+          ),
           child: FavoritesScreen(positionSource: source),
         ),
       ),
     ));
     await tester.pumpAndSettle();
+  }
+
+  /// Карточка заведения поверх — так её открывает «Подробнее»: корневой
+  /// навигатор, непрозрачный экран.
+  Future<NavigatorState> openCard(WidgetTester tester) async {
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Карточка заведения'))));
+    await tester.pumpAndSettle();
+    return navigator;
   }
 
   Future<void> choose(WidgetTester tester, String label) async {
@@ -170,20 +199,20 @@ void main() {
   });
 
   testWidgets(
-      'прогулка не запоминается: вкладку скрыли — геолокация выключена; '
-      'вернули — чип «Пешком», подпись обычная', (tester) async {
-    final visible = ValueNotifier(true);
-    await pump(tester, visible: visible);
+      'прогулка не запоминается: другая вкладка — геолокация выключена; '
+      'вернулись — чип «Пешком», подпись обычная', (tester) async {
+    final tab = ValueNotifier(true);
+    await pump(tester, tab: tab);
     await walk(tester);
     expect(find.text('рядом · 3 из 5'), findsOneWidget);
     expect(source.listening, isTrue);
 
-    visible.value = false;
+    tab.value = false;
     await tester.pump();
     expect(find.byType(FavoritesMap), findsNothing);
     expect(source.listening, isFalse);
 
-    visible.value = true;
+    tab.value = true;
     await tester.pump();
     await tester.pump();
     expect(_walkChip, findsOneWidget);
@@ -196,22 +225,121 @@ void main() {
   });
 
   testWidgets(
-      'поверх открыт другой экран — геолокация выключена; вернулись — '
-      'прогулки нет', (tester) async {
+      '«Подробнее» → «назад»: под карточкой геолокация выключена; после — '
+      'те же минуты и «Открыто сейчас», свежая позиция', (tester) async {
     await pump(tester);
     await walk(tester);
+    await tester.tap(find.widgetWithText(MapFilterChip, 'Открыто сейчас'));
+    await tester.pump();
     expect(source.listening, isTrue);
+    expect(source.freshCalls, 1, reason: 'предпосылка');
 
-    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
-    navigator.push(MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(body: Text('Карточка заведения'))));
-    await tester.pumpAndSettle();
+    final navigator = await openCard(tester);
+    expect(find.byType(FavoritesMap), findsNothing,
+        reason: 'геолокацию держит только видимая карта');
     expect(source.listening, isFalse);
 
     navigator.pop();
+    // Не pumpAndSettle: пока ищем позицию, полоса ожидания крутится.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+        tester
+            .widget<MapFilterChip>(
+                find.widgetWithText(MapFilterChip, '15 минут'))
+            .active,
+        isTrue);
+    expect(
+        tester
+            .widget<MapFilterChip>(
+                find.widgetWithText(MapFilterChip, 'Открыто сейчас'))
+            .active,
+        isTrue);
+    expect(source.freshCalls, 2, reason: 'вернулись — свежая позиция заново');
+    expect(source.listening, isTrue, reason: 'и поток заново');
+    expect(source.requestCalls, 0, reason: 'без системного вопроса');
+    expect(find.text('5 мест · Минск'), findsOneWidget,
+        reason: 'до свежей позиции считать не от чего');
+
+    // Человек отошёл, пока смотрел карточку: круг — от новой позиции.
+    source.completeFresh(pointAtDistance(_me, 5000, 0));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('рядом · 1 из 5'), findsOneWidget);
+  });
+
+  testWidgets(
+      'под карточкой ушли на другую вкладку — прогулка выключена',
+      (tester) async {
+    final tab = ValueNotifier(true);
+    await pump(tester, tab: tab);
+    await walk(tester);
+
+    final navigator = await openCard(tester);
+    // Вкладку под карточкой меняет нажатие на push (switchToTab).
+    tab.value = false;
+    await tester.pump();
+    navigator.pop();
     await tester.pumpAndSettle();
+    tab.value = true;
+    await tester.pumpAndSettle();
+
     expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
     expect(find.text('5 мест · Минск'), findsOneWidget);
+    expect(source.freshCalls, 1, reason: 'новая карта сама не включает');
+  });
+
+  testWidgets(
+      'под карточкой вышел из учётной записи — после нового входа прогулки '
+      'нет', (tester) async {
+    final auth = _Auth();
+    await pump(tester, auth: auth);
+    await walk(tester);
+
+    final navigator = await openCard(tester);
+    auth.signIn(false);
+    await tester.pump();
+    navigator.pop();
+    await tester.pumpAndSettle();
+    auth.signIn(true);
+    // Не pumpAndSettle: включись прогулка, полоса ожидания крутилась бы.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_walkChip, findsOneWidget, reason: 'прогулка не включилась сама');
+    expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
+    expect(source.freshCalls, 1);
+  });
+
+  testWidgets(
+      'под карточкой избранное опустело — «назад»: пусто; места вернулись — '
+      'прогулки нет', (tester) async {
+    await pump(tester);
+    await walk(tester);
+    final provider = Provider.of<EstablishmentsProvider>(
+        tester.element(find.byType(FavoritesScreen)),
+        listen: false);
+
+    final navigator = await openCard(tester);
+    serverRows = [];
+    provider.refreshFavorites();
+    await tester.pumpAndSettle();
+    expect(provider.favoriteEstablishments, isEmpty, reason: 'предпосылка');
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(FavoritesMap), findsNothing, reason: 'мест нет — карты нет');
+
+    serverRows = _rows;
+    provider.refreshFavorites();
+    // Места приходят через «загрузку»: карта рождается кадром позже, и ответ
+    // о доступе — ещё позже. Не pumpAndSettle: включись прогулка, полоса
+    // ожидания крутилась бы.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(_walkChip, findsOneWidget, reason: 'прогулка не включилась сама');
+    expect(tester.widget<MapFilterChip>(_walkChip).active, isFalse);
+    expect(source.freshCalls, 1);
   });
 
   testWidgets('«Списком» и обратно «На карте» — прогулки нет', (tester) async {

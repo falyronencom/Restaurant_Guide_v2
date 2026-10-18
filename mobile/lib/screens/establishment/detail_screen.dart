@@ -102,10 +102,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   void initState() {
     super.initState();
     _loadData();
-    // Request user location for distance calculation
+    // Позиция — только для расстояния «от вас»: без системного вопроса и без
+    // смены сортировки поиска (не fetchUserLocation — тот делает и то и
+    // другое). Разрешения нет — карточка без расстояния.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        context.read<EstablishmentsProvider>().fetchUserLocation();
+        context.read<EstablishmentsProvider>().refreshUserLocationSilently();
       } catch (e) {
         // Silently handle - location is optional feature
       }
