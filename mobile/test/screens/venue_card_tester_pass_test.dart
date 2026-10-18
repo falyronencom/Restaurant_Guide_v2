@@ -36,7 +36,7 @@ final _longWithSpaces = List.filled(30, 'Длинноеимя').join(' ');
 
 class _NoLocation extends EstablishmentsProvider {
   @override
-  Future<bool> fetchUserLocation() async => false;
+  Future<bool> refreshUserLocationSilently() async => false;
 }
 
 class _Auth extends AuthProvider {

@@ -80,7 +80,7 @@ Future<void> toEnd(WidgetTester tester, Finder list) async {
 /// Геолокация в тесте не нужна и канала у неё нет.
 class _NoLocation extends EstablishmentsProvider {
   @override
-  Future<bool> fetchUserLocation() async => false;
+  Future<bool> refreshUserLocationSilently() async => false;
 }
 
 class _Guest extends AuthProvider {

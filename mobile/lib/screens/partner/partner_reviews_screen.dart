@@ -50,10 +50,11 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     'По рейтингу (низкий)',
   ];
 
-  // Sort option → backend param mapping
+  // Sort option → backend param mapping. «По дате (старые)» сервер не знает:
+  // см. [_oldestFirst].
   static const Map<String, String> _sortMapping = {
     'По дате (новые)': 'newest',
-    'По дате (старые)': 'newest', // load newest, reverse client-side
+    'По дате (старые)': 'newest',
     'По рейтингу (высокий)': 'highest',
     'По рейтингу (низкий)': 'lowest',
   };
@@ -70,8 +71,14 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   String? _error;
 
   // Pagination
+  /// Последняя загруженная страница сервера. При «По дате (старые)» страницы
+  /// идут от последней к первой, и номер убывает.
   int _currentPage = 1;
-  bool _hasMore = true;
+  int _totalPages = 1;
+  /// Номер загрузки с первой страницы: растёт при смене сортировки, периода,
+  /// «Повторить» и после ответа на отзыв. Ответ, пришедший на прежний номер,
+  /// опоздал — его не показывать, иначе страницы разных порядков смешаются.
+  int _generation = 0;
   static const int _perPage = 10;
 
   // Scroll controller for pagination
@@ -101,47 +108,85 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
     }
   }
 
-  /// Map UI sort option to backend sort param
+  /// Порядок задаёт сервер: переставить загруженное значило бы упорядочить
+  /// только первую страницу, а следующие дописать в порядке «сначала новые»
+  /// (проход тестировщика 17.10, Х39 — тот же способ, что у «Все отзывы»,
+  /// Х31). «По дате (старые)» сервер не знает, поэтому страницы порядка
+  /// «сначала новые» берутся с последней к первой и каждая разворачивается —
+  /// так это порядок всех отзывов за период, а не загруженных.
+  bool get _oldestFirst => _sortOption == 'По дате (старые)';
   String get _backendSort => _sortMapping[_sortOption] ?? 'newest';
+  bool get _hasMore =>
+      _oldestFirst ? _currentPage > 1 : _currentPage < _totalPages;
+  int get _nextPage => _oldestFirst ? _currentPage - 1 : _currentPage + 1;
+
+  /// Список короче экрана не прокрутить, и подгрузка по прокрутке не
+  /// сработает. При «По дате (старые)» первой идёт последняя страница
+  /// сервера, в ней бывает один отзыв — после отрисовки проверить и догрузить.
+  void _loadMoreIfShort() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) _onScroll();
+    });
+  }
+
+  Future<PaginatedReviews> _fetchPage(int page) {
+    // Server-side date filtering: start of dateFrom day → end of dateTo day
+    final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+    final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+    return _reviewsService.getReviewsForEstablishment(
+      widget.establishmentId,
+      page: page,
+      perPage: _perPage,
+      sort: _backendSort,
+      dateFrom: from,
+      dateTo: to,
+    );
+  }
+
+  /// Страница в порядке показа, без отзывов, которые уже в списке: если
+  /// между запросами отзывов стало больше или меньше, страницы по смещению
+  /// сдвигаются, и отзыв с края прежней страницы приходит снова.
+  List<Review> _shown(List<Review> page, {List<Review> after = const []}) {
+    final seen = {for (final review in after) review.id};
+    final ordered = _oldestFirst ? page.reversed : page;
+    return [for (final review in ordered) if (seen.add(review.id)) review];
+  }
 
   /// Load first page of reviews from API
   Future<void> _loadReviews() async {
+    final generation = ++_generation;
     setState(() {
       _isLoading = true;
       _error = null;
-      _currentPage = 1;
-      _hasMore = true;
+      // Подгрузка прежней сортировки или периода, если шла, уже не в счёт.
+      _isLoadingMore = false;
       _loadMoreFailed = false;
     });
 
     try {
-      // Server-side date filtering: start of dateFrom day → end of dateTo day
-      final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
-      final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
-
-      final result = await _reviewsService.getReviewsForEstablishment(
-        widget.establishmentId,
-        page: 1,
-        perPage: _perPage,
-        sort: _backendSort,
-        dateFrom: from,
-        dateTo: to,
-      );
-
-      final reviews = result.data;
-
-      // Client-side reverse for "oldest first" (backend only supports 'newest')
-      if (_sortOption == 'По дате (старые)') {
-        reviews.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      var page = 1;
+      var result = await _fetchPage(page);
+      // «По дате (старые)»: первая страница сказала, сколько их; самые старые
+      // отзывы — на последней.
+      if (_oldestFirst &&
+          generation == _generation &&
+          result.meta.totalPages > 1) {
+        page = result.meta.totalPages;
+        result = await _fetchPage(page);
       }
+      if (!mounted || generation != _generation) return;
 
+      final reviews = _shown(result.data);
       setState(() {
         _reviews = reviews;
         _filteredReviews = reviews;
-        _hasMore = result.meta.page < result.meta.totalPages;
+        _totalPages = result.meta.totalPages;
+        _currentPage = page;
         _isLoading = false;
       });
+      _loadMoreIfShort();
     } catch (e) {
+      if (!mounted || generation != _generation) return;
       setState(() {
         _error = 'Не удалось загрузить отзывы';
         _isLoading = false;
@@ -153,32 +198,26 @@ class _PartnerReviewsScreenState extends State<PartnerReviewsScreen> {
   Future<void> _loadMoreReviews() async {
     if (_isLoadingMore || !_hasMore) return;
 
+    final generation = _generation;
+    final page = _nextPage;
     setState(() {
       _isLoadingMore = true;
       _loadMoreFailed = false;
     });
 
     try {
-      final from = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
-      final to = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
-
-      final result = await _reviewsService.getReviewsForEstablishment(
-        widget.establishmentId,
-        page: _currentPage + 1,
-        perPage: _perPage,
-        sort: _backendSort,
-        dateFrom: from,
-        dateTo: to,
-      );
+      final result = await _fetchPage(page);
+      if (!mounted || generation != _generation) return;
 
       setState(() {
-        _currentPage++;
-        _reviews.addAll(result.data);
+        _reviews.addAll(_shown(result.data, after: _reviews));
         _filteredReviews = List.from(_reviews);
-        _hasMore = result.meta.page < result.meta.totalPages;
+        _currentPage = page;
         _isLoadingMore = false;
       });
+      _loadMoreIfShort();
     } catch (e) {
+      if (!mounted || generation != _generation) return;
       setState(() {
         _isLoadingMore = false;
         _loadMoreFailed = true;
