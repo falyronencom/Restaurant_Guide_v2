@@ -214,6 +214,16 @@ describe('pin tool helpers', () => {
       .toBe('postgresql://u:p@h:5/db?application_name=x');
   });
 
+  // Each parameter through which node-pg lets a connection string replace the
+  // ssl option, one by one — the line above shows two of them.
+  test.each(['ssl', 'sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'sslcrl', 'uselibpqcompat'])(
+    'withoutTlsParameters drops %s',
+    (name) => {
+      expect(withoutTlsParameters(`postgresql://u:p@h:5/db?${name}=0&application_name=x`))
+        .toBe('postgresql://u:p@h:5/db?application_name=x');
+    },
+  );
+
   test('an address that cannot be cleaned is refused, not used as it is', async () => {
     expect(() => withoutTlsParameters('not a url ?sslmode=disable'))
       .toThrow(expect.objectContaining({ code: 'PRODUCTION_DB_URL_UNREADABLE' }));

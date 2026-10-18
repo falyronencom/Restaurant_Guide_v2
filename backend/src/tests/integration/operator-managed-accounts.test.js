@@ -168,8 +168,15 @@ describe('Б2: «forgot password» issues nothing for an operator-managed accoun
     expect(await links(id)).toBe(1);
   });
 
-  test('a link issued earlier does not set a panel account\'s password', async () => {
-    const id = await account({ email: 'admin@example.com', role: 'admin' });
+  // Б2 names three holders: the two panel roles and the seed house (flag 037).
+  // Each is its own clause of the guard, so each is its own row here; each
+  // signs in afterwards through its own door with the old password.
+  test.each([
+    ['admin', 'admin', false, (email) => panelLogin(email, PASSWORD)],
+    ['viewer', 'viewer', false, (email) => panelLogin(email, PASSWORD)],
+    ['the seed house', 'partner', true, (email) => sharedLogin(email, PASSWORD)],
+  ])('a link issued earlier does not set the password of an operator-managed account: %s', async (_, role, service, signIn) => {
+    const id = await account({ email: 'held@example.com', role, service });
     const raw = randomBytes(32).toString('hex');
     await query(
       "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
@@ -177,7 +184,7 @@ describe('Б2: «forgot password» issues nothing for an operator-managed accoun
     );
     const res = await request(app).post('/api/v1/auth/reset-password').send({ token: raw, password: 'Taken9Over!pass' });
     expect(res.status).toBe(410);
-    await panelLogin('admin@example.com', PASSWORD).expect(200);
+    await signIn('held@example.com').expect(200);
     const { rows: [link] } = await query('SELECT used_at FROM password_reset_tokens WHERE user_id = $1', [id]);
     expect(link.used_at).not.toBeNull();
   });

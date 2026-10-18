@@ -28,6 +28,37 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
 const { buildOrderByClause, BAYESIAN_PRIOR_COUNT, BAYESIAN_PRIOR_RATING } =
   await import('../../services/searchService.js');
 
+/**
+ * The sort keys of an ORDER BY clause, in order, by name: the clause is split
+ * at its top-level commas (the weighted-rating expression has commas inside
+ * parentheses), and each key is named by the column it sorts on. The titles
+ * below name these sequences; toContain alone cannot see their order.
+ */
+const keysOf = (clause) => {
+  const keys = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of clause) {
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth -= 1;
+    if (ch === ',' && depth === 0) {
+      keys.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  keys.push(current.trim());
+  return keys.map((key) => {
+    if (key.includes('average_rating')) return 'weighted';
+    if (key.startsWith('distance_km')) return 'distance';
+    if (key.startsWith('e.review_count')) return 'review_count';
+    if (key.startsWith('e.base_score')) return 'base_score';
+    if (key.startsWith('e.name')) return 'name';
+    return key;
+  });
+};
+
 describe('buildOrderByClause', () => {
   // =========================================================================
   // Constants
@@ -77,6 +108,7 @@ describe('buildOrderByClause', () => {
     test('with distance: weighted + review_count + distance + name', () => {
       const result = buildOrderByClause('rating', true);
 
+      expect(keysOf(result)).toEqual(['weighted', 'review_count', 'distance', 'name']);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.review_count DESC');
       expect(result).toContain('distance_km ASC');
@@ -86,6 +118,7 @@ describe('buildOrderByClause', () => {
     test('without distance: weighted + review_count + base_score + name', () => {
       const result = buildOrderByClause('rating', false);
 
+      expect(keysOf(result)).toEqual(['weighted', 'review_count', 'base_score', 'name']);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.review_count DESC');
       expect(result).toContain('e.base_score DESC');
@@ -102,6 +135,7 @@ describe('buildOrderByClause', () => {
     test('with distance: distance + base_score + weighted + name', () => {
       const result = buildOrderByClause('distance', true);
 
+      expect(keysOf(result)).toEqual(['distance', 'base_score', 'weighted', 'name']);
       expect(result).toMatch(/^distance_km ASC/);
       expect(result).toContain('e.base_score DESC');
       expect(result).toContain('e.review_count * e.average_rating');
@@ -111,6 +145,8 @@ describe('buildOrderByClause', () => {
     test('without distance: falls back to weighted rating sort', () => {
       const result = buildOrderByClause('distance', false);
 
+      // The weighted rating sort, key for key: the same sequence as rating.
+      expect(keysOf(result)).toEqual(['weighted', 'review_count', 'base_score', 'name']);
       expect(result).toContain('e.review_count * e.average_rating');
       expect(result).toContain('e.review_count DESC');
       expect(result).toContain('e.base_score DESC');
@@ -246,13 +282,17 @@ describe('buildOrderByClause', () => {
     const sortModes = ['rating', 'price_asc', 'price_desc', 'distance'];
 
     sortModes.forEach(mode => {
-      test(`${mode} with distance: all e. prefixes convert to ne.`, () => {
+      // searchService turns every «e.» into «ne.» for the CTE of the radius
+      // search; that is enough only if every column the clause names is
+      // «e.»-prefixed. After the replace no ref can start with «e.» any more,
+      // so a check on the replaced text passes whatever the clause says: the
+      // check runs on the original.
+      test(`${mode} with distance: every column ref is e.-prefixed, so all convert to ne.`, () => {
         const original = buildOrderByClause(mode, true);
-        const aliased = original.replaceAll('e.', 'ne.');
 
-        const columnRefs = aliased.match(/\b[a-z]+\.[a-z_]+/g) || [];
-        const badRefs = columnRefs.filter(ref => ref.startsWith('e.'));
-        expect(badRefs).toEqual([]);
+        const columnRefs = original.match(/\b[a-z_]+\.[a-z_]+/g) || [];
+        expect(columnRefs.length).toBeGreaterThan(0);
+        expect(columnRefs.filter((ref) => !ref.startsWith('e.'))).toEqual([]);
       });
     });
   });

@@ -259,6 +259,48 @@ describe('один счётчик на все двери учётки', () => {
     expect(refusalsFor(card)).toHaveLength(1);
     expect(await counter(card)).toBe(100);
   });
+
+  // У PDF меню свои места постановки в тех же дверях: создание карточки со
+  // списком PDF (establishmentService) и загрузка PDF в медиа (mediaService).
+  // Счётчик — после каждой двери: дверь, считающая не в тот ключ, видна сразу.
+  test('PDF меню: создание с PDF и загрузка PDF в медиа тратят тот же предел', async () => {
+    const partner = await newAccount();
+    await queuedToday(partner, 98);
+    const pdfLink = (name) =>
+      `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partner.id}/menu_pdf/${name}.pdf`;
+
+    const created = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partner.token}`)
+      .send({ ...testEstablishments[0], menu_pdfs: [{ url: pdfLink('a') }] })
+      .expect(201);
+    const card = { ...partner, establishmentId: created.body.data.establishment.id };
+    await settled(card, card.establishmentId);
+    expect(await jobsOf(card.establishmentId)).toHaveLength(1);
+    expect(await counter(card)).toBe(99);
+
+    cloudinarySdk.uploader.upload.mockImplementation(async (_filePath, options) => {
+      const id = randomUUID();
+      return {
+        public_id: `${options.folder}/${id}`,
+        secure_url: `https://res.cloudinary.com/test/image/upload/v1760000000/${options.folder}/${id}.pdf`,
+        format: 'pdf',
+        bytes: 2048,
+        pages: 1,
+      };
+    });
+    const uploadedPdf = await request(app)
+      .post(`/api/v1/partner/establishments/${card.establishmentId}/media`)
+      .set('Authorization', `Bearer ${card.token}`)
+      .field('type', 'menu')
+      .attach('file', Buffer.from('%PDF-1.4 fake'), { filename: 'menu.pdf', contentType: 'application/pdf' });
+    expect(uploadedPdf.status).toBe(201);
+    await settled(card, card.establishmentId);
+
+    expect(await jobsOf(card.establishmentId)).toHaveLength(2);
+    expect(refusalsFor(card)).toEqual([]);
+    expect(await counter(card)).toBe(100);
+  });
 });
 
 describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', () => {
@@ -367,5 +409,31 @@ describe('одобрение модератором — не дверь парт
     }
     expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: mediaId }]);
     expect(await counter(partner)).toBe(100);
+  });
+
+  // «Нераспознанное» — то, у чего нет готового задания (status 'done'):
+  // распознанное раньше одобрение не ставит заново. Модель, что это решает
+  // (OcrJobModel.hasCompletedJobForMedia), в юнит-тесте одобрения подменена;
+  // здесь — её настоящий запрос. Второй файл без задания — знак, что
+  // одобрение дошло до постановки.
+  test('одобрение не ставит заново меню, распознанное раньше; нераспознанное — ставит', async () => {
+    const partner = await newPartnerWithCard();
+    const recognised = await insertMenuFile(partner, 'done-before');
+    await query(
+      "INSERT INTO ocr_jobs (establishment_id, media_id, status) VALUES ($1, $2, 'done')",
+      [partner.establishmentId, recognised],
+    );
+    const fresh = await insertMenuFile(partner, 'never-read');
+    await query("UPDATE establishments SET status = 'pending' WHERE id = $1", [partner.establishmentId]);
+    const admin = await newAccount({ role: 'admin' });
+
+    await adminService.moderateEstablishment(partner.establishmentId, { action: 'approve', adminUserId: admin.id });
+
+    const deadline = realNow.call(Date) + 5000;
+    while ((await jobsOf(partner.establishmentId)).length < 2 && realNow.call(Date) < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const jobs = (await jobsOf(partner.establishmentId)).map((job) => job.media_id);
+    expect(jobs.sort()).toEqual([recognised, fresh].sort());
   });
 });

@@ -135,6 +135,12 @@ describe('refresh tokens are stored as hashes', () => {
     // only its hash — and that successor works.
     const replay = await refresh(registration.body.data.refreshToken).expect(200);
     expect(replay.body.data.refreshToken).toBe(successor);
+    // The access token minted for the replay works too — it is what the
+    // client uses first after the lost answer.
+    await request(app)
+      .get('/api/v1/notifications/unread-count')
+      .set('Authorization', `Bearer ${replay.body.data.accessToken}`)
+      .expect(200);
     await refresh(successor).expect(200);
   });
 

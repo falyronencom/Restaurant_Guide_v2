@@ -637,11 +637,33 @@ describe('GET /api/v1/admin/audit-log — проекция просмотрщи�
     // Общий слой ответа (projections/viewerProjection.js) тоже гасит
     // admin_name / admin_email / reviewer_name, и тест маршрута не отличит,
     // какой из двух слоёв сработал. Этот тест держит SQL-слой.
-    const entries = await AuditLogModel.getAuditLogEntries({ viewer: true }, 50, 0);
+    // Third person the model names: the account an action was about
+    // (entity_type 'user' — a block, a name reset). Its entry is written here
+    // directly; the shared layer nulls user_name too, so only this run sees
+    // the model's own choice.
+    const targetName = `Человек Под Блокировкой ${randomUUID().slice(0, 8)}`;
+    const target = await createUserAndGetTokens({
+      email: `audit-target-${randomUUID().slice(0, 8)}@test.com`, password: 'Target123!@#', name: targetName, role: 'user',
+    });
+    const { rows: [written] } = await query(
+      `INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_data)
+       VALUES ($1, 'user_block', 'user', $2, '{}'::jsonb) RETURNING id`,
+      [moderatorId, target.user.id],
+    );
+    let adminEntries;
+    let entries;
+    try {
+      adminEntries = await AuditLogModel.getAuditLogEntries({}, 50, 0);
+      entries = await AuditLogModel.getAuditLogEntries({ viewer: true }, 50, 0);
+    } finally {
+      // The tests below count the moderator's entries: this one is not theirs.
+      await query('DELETE FROM audit_log WHERE id = $1', [written.id]);
+    }
+    expect(JSON.stringify(adminEntries)).toContain(targetName); // the entry names the person to an admin
     const body = JSON.stringify(entries);
 
     expect(entries.length).toBeGreaterThan(0);
-    for (const value of [MODERATOR_NAME, MODERATOR_EMAIL, PARTNER_NAME, partnerEmail, HIDDEN_AUTHOR]) {
+    for (const value of [MODERATOR_NAME, MODERATOR_EMAIL, PARTNER_NAME, partnerEmail, HIDDEN_AUTHOR, targetName]) {
       expect({ value, present: body.includes(value) }).toEqual({ value, present: false });
     }
   });

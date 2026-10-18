@@ -207,7 +207,7 @@ describe('the memory limit', () => {
     });
   }, 40000);
 
-  test('resident memory above the limit (read from /proc on Linux) kills the child at the next sample', async () => {
+  test('resident memory above the limit (read from /proc on Linux) at the first sample, when the child is ready, kills it', async () => {
     const pids = new Set();
     const limitMb = 64;
     const started = Date.now();
@@ -225,6 +225,30 @@ describe('the memory limit', () => {
 
     expect(error).toMatchObject({ code: PDF_PARSE_LIMIT, reason: 'memory' });
     expect(Date.now() - started).toBeLessThan(MEMORY_SAMPLE_INTERVAL_MS + 2000);
+    expect(await waitUntilGone([...pids][0])).toBe(true);
+  }, 15000);
+
+  // The first reading is taken when the child is ready; a parse whose memory
+  // grows only after it took the file is caught by the periodic sample.
+  test('resident memory that crosses the limit after the first sample kills the child at the next periodic sample', async () => {
+    const pids = new Set();
+    const limitMb = 64;
+    let readings = 0;
+
+    const error = await parsePdfIsolated(Buffer.from('%PDF'), {
+      maxPages: 20,
+      timeoutMs: 10000,
+      memoryLimitMb: limitMb,
+      childModule: child('silent'),
+      readResident: (pid) => {
+        pids.add(pid);
+        readings += 1;
+        return readings === 1 ? limitMb * 1024 * 1024 : limitMb * 1024 * 1024 + 1;
+      },
+    }).catch((e) => e);
+
+    expect(error).toMatchObject({ code: PDF_PARSE_LIMIT, reason: 'memory' });
+    expect(readings).toBeGreaterThanOrEqual(2); // the kill came from a later sample
     expect(await waitUntilGone([...pids][0])).toBe(true);
   }, 15000);
 
@@ -314,6 +338,8 @@ describe('classifyChildEnd — how an end the runner did not cause counts', () =
     ['SIGKILL from outside, memory never read', { exitSignal: 'SIGKILL' }, null, 'PDF parse process was killed from outside (SIGKILL, resident memory unknown)'],
     ['Ctrl+C reaching the child', { exitSignal: 'SIGINT' }, null, 'PDF parse process ended without a result (signal SIGINT)'],
     ['a platform stop', { exitSignal: 'SIGTERM' }, null, 'PDF parse process ended without a result (signal SIGTERM)'],
+    // The third stop from outside the runner names: a closed terminal session.
+    ['a closed session', { exitSignal: 'SIGHUP' }, null, 'PDF parse process ended without a result (signal SIGHUP)'],
     ['exit code 0 with no answer', { code: 0 }, null, 'PDF parse process ended without a result (exit code 0)'],
     ['a crash, exit code 3', { code: 3 }, 'exit', 'PDF parse process ended without a result (exit code 3)'],
     ['a crash, SIGSEGV', { exitSignal: 'SIGSEGV' }, 'exit', 'PDF parse process ended without a result (signal SIGSEGV)'],

@@ -53,6 +53,22 @@ const SENSITIVE_FIELDS = [
   'moderated_at',
 ];
 
+/**
+ * «Non-active» is every status but 'active' — the schema's CHECK
+ * (establishments_status_check) lists draft, pending, rejected, suspended and
+ * archived next to it. One card of each, at the Minsk point the other
+ * fixtures use, so a filter that hid only drafts would show the rest.
+ */
+const NON_ACTIVE_STATUSES = ['draft', 'pending', 'rejected', 'suspended', 'archived'];
+const insertNonActiveCards = async (prefix) => {
+  for (const status of NON_ACTIVE_STATUSES) {
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, $3, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', $4, $5::jsonb, NOW(), NOW())
+    `, [partnerId, `${prefix} ${status}`, `${prefix.toLowerCase().replace(/\s+/g, '-')}-${status}`, status, defaultWorkingHours]);
+  }
+};
+
 const assertNoSensitiveFields = (obj) => {
   for (const field of SENSITIVE_FIELDS) {
     expect(obj).not.toHaveProperty(field);
@@ -105,13 +121,17 @@ describe('Public API — GET /api/v1/public/metadata', () => {
 
     expect(Array.isArray(response.body.data.cities)).toBe(true);
     expect(response.body.data.cities.length).toBe(7); // 7 unique cities (Mogilev deduplicated)
-    for (const c of response.body.data.cities) {
-      expect(c).toHaveProperty('slug');
-      expect(c).toHaveProperty('name');
-    }
-
     expect(response.body.data.categories.length).toBe(15);
     expect(response.body.data.cuisines.length).toBe(12);
+
+    // { slug, name } in each of the three arrays, and each a non-empty string:
+    // a key that is present with null would pass toHaveProperty.
+    for (const list of ['cities', 'categories', 'cuisines']) {
+      for (const item of response.body.data[list]) {
+        expect({ list, slug: typeof item.slug, name: typeof item.name, empty: !item.slug || !item.name })
+          .toEqual({ list, slug: 'string', name: 'string', empty: false });
+      }
+    }
   });
 
   test('Mogilev exposed once with canonical name without ё', () => {
@@ -164,12 +184,14 @@ describe('Public API — GET /api/v1/public/establishments', () => {
   });
 
   test('does NOT include draft/non-active establishments', async () => {
+    await insertNonActiveCards('Catalog Hidden');
     const response = await request(app)
       .get('/api/v1/public/establishments')
       .expect(200);
 
     const names = response.body.data.establishments.map(e => e.name);
-    expect(names).not.toContain('Inactive Draft');
+    expect(names).toContain('Минский Ресторан'); // the listing is not empty
+    expect(names.filter((name) => name === 'Inactive Draft' || name.startsWith('Catalog Hidden'))).toEqual([]);
   });
 
   test('city slug "minsk" returns Минск establishments', async () => {
@@ -548,12 +570,14 @@ describe('Public API — GET /api/v1/public/establishments/map', () => {
   });
 
   test('excludes non-active establishments', async () => {
+    await insertNonActiveCards('Map Hidden');
     const response = await request(app)
       .get('/api/v1/public/establishments/map')
       .expect(200);
 
     const names = response.body.data.establishments.map(e => e.name);
-    expect(names).not.toContain('Map Draft');
+    expect(names).toContain('Map Pin Minsk');
+    expect(names.filter((name) => name === 'Map Draft' || name.startsWith('Map Hidden'))).toEqual([]);
   });
 
   test('400 for invalid city slug on map', async () => {
@@ -600,13 +624,15 @@ describe('Public API — GET /api/v1/public/establishments/map', () => {
   });
 
   test('bounds search still excludes non-active establishments', async () => {
+    await insertNonActiveCards('Bounds Hidden');
     const response = await request(app)
       .get('/api/v1/public/establishments/map')
       .query({ swLat: 53, neLat: 54, swLon: 27, neLon: 28 })
       .expect(200);
 
     const names = response.body.data.establishments.map((e) => e.name);
-    expect(names).not.toContain('Map Draft');
+    expect(names).toContain('Map Pin Minsk');
+    expect(names.filter((name) => name === 'Map Draft' || name.startsWith('Bounds Hidden'))).toEqual([]);
   });
 
   test('bounds marker carries preview-card fields', async () => {
@@ -683,6 +709,13 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug', () =>
   test('404 for non-active establishment slug', async () => {
     await request(app)
       .get(`/api/v1/public/establishments/by-slug/${draftSlug}`)
+      .expect(404);
+  });
+
+  test.each(NON_ACTIVE_STATUSES)('404 for non-active establishment slug: %s', async (status) => {
+    await insertNonActiveCards('Slug Hidden');
+    await request(app)
+      .get(`/api/v1/public/establishments/by-slug/slug-hidden-${status}`)
       .expect(404);
   });
 });

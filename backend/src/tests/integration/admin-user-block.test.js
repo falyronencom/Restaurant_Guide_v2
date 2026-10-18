@@ -167,6 +167,14 @@ describe('POST /admin/users/:id/block и /unblock', () => {
 
   beforeAll(async () => {
     target = await person({ name: 'Матерщинник' });
+    // Что блокировка гасит кроме сеансов (директива Б4, authService.endAllAccess):
+    // телефон с push и неиспользованную ссылку сброса пароля.
+    await query("INSERT INTO device_tokens (user_id, fcm_token, platform) VALUES ($1, $2, 'android')",
+      [target.id, `fcm-${randomUUID()}`]);
+    await query(
+      "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
+      [target.id, `hash-${randomUUID()}`],
+    );
     establishment = (await createPartnerWithEstablishment('active')).establishment;
     otherEstablishment = (await createPartnerWithEstablishment('active')).establishment;
 
@@ -185,12 +193,15 @@ describe('POST /admin/users/:id/block и /unblock', () => {
   });
 
   test('без причины — отказ по-русски, и ничего не меняется', async () => {
-    for (const reason of [undefined, '', '   ']) {
-      const { body } = await asAdmin('post', `/users/${target.id}/block`, { reason }).expect(422);
-      expect(body.message).toBe('Укажите причину');
+    // Обе кнопки описания: и блокировка, и разблокировка — у каждой своя проверка причины.
+    for (const action of ['block', 'unblock']) {
+      for (const reason of [undefined, '', '   ']) {
+        const { body } = await asAdmin('post', `/users/${target.id}/${action}`, { reason }).expect(422);
+        expect({ action, message: body.message }).toEqual({ action, message: 'Укажите причину' });
+      }
+      const long = await asAdmin('post', `/users/${target.id}/${action}`, { reason: 'я'.repeat(501) }).expect(422);
+      expect(long.body.message).toMatch(/^Причина длиннее 500 символов/);
     }
-    const long = await asAdmin('post', `/users/${target.id}/block`, { reason: 'я'.repeat(501) }).expect(422);
-    expect(long.body.message).toMatch(/^Причина длиннее 500 символов/);
     expect((await query('SELECT is_active FROM users WHERE id = $1', [target.id])).rows[0].is_active)
       .toBe(true);
   });
@@ -234,6 +245,17 @@ describe('POST /admin/users/:id/block и /unblock', () => {
       [target.id],
     );
     expect(live.rows[0].n).toBe(0);
+
+    // «push выключен» — и ссылка сброса, выданная до блокировки, погашена.
+    // Строки были (первые два числа), действующих не осталось (вторые два).
+    const { rows: [left] } = await query(
+      `SELECT (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1) AS devices,
+              (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1) AS links,
+              (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1 AND is_active = TRUE) AS active_devices,
+              (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL) AS live_links`,
+      [target.id],
+    );
+    expect(left).toEqual({ devices: 1, links: 1, active_devices: 0, live_links: 0 });
   });
 
   test('повтор блокировки ничего не пишет второй раз', async () => {

@@ -22,9 +22,18 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+// The client id is read once, when the module loads: set before the import, so
+// the audience the library is asked to check can be seen (and restored after).
+const OUR_GOOGLE_CLIENT_ID = 'our-app.apps.googleusercontent.com';
+const originalGoogleClientId = process.env.GOOGLE_CLIENT_ID;
+process.env.GOOGLE_CLIENT_ID = OUR_GOOGLE_CLIENT_ID;
 const { verifyGoogleToken, verifyYandexToken } = await import(
   '../../services/oauthService.js'
 );
+afterAll(() => {
+  if (originalGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
+  else process.env.GOOGLE_CLIENT_ID = originalGoogleClientId;
+});
 const { DEFAULT_YANDEX_CLIENT_IDS } = await import('../../config/oauth.js');
 const logger = (await import('../../utils/logger.js')).default;
 
@@ -70,6 +79,19 @@ describe('oauthService', () => {
         emailVerified: true,
         provider: 'google',
       });
+    });
+
+    // The library checks the signature always, the audience only when it is
+    // given one: without it an id_token minted for any other Google app
+    // would sign in here. The mock answers for the library, so what is
+    // checked is what our code asks of it.
+    test('asks the library to check the token against our client id (audience)', async () => {
+      mockVerifyIdToken.mockResolvedValue(makeTicket({ sub: 's', email: 'a@b.by', email_verified: true }));
+
+      await verifyGoogleToken('id-token');
+
+      expect(mockVerifyIdToken).toHaveBeenCalledTimes(1);
+      expect(mockVerifyIdToken).toHaveBeenCalledWith({ idToken: 'id-token', audience: OUR_GOOGLE_CLIENT_ID });
     });
 
     test('throws OAUTH_NO_EMAIL when the payload carries no email', async () => {
@@ -215,10 +237,13 @@ describe('oauthService', () => {
       test('YANDEX_CLIENT_ID lists the accepted applications and replaces the default', async () => {
         process.env.YANDEX_CLIENT_ID = 'first-app, second-app';
 
-        global.fetch = jest.fn().mockResolvedValue(
-          yandexResponse({ client_id: 'second-app', id: 1, default_email: 'a@yandex.ru' })
-        );
-        await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'a@yandex.ru' });
+        // Every listed application, each one on its own — not only the last.
+        for (const listed of ['first-app', 'second-app']) {
+          global.fetch = jest.fn().mockResolvedValue(
+            yandexResponse({ client_id: listed, id: 1, default_email: 'a@yandex.ru' })
+          );
+          await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'a@yandex.ru' });
+        }
 
         global.fetch = jest.fn().mockResolvedValue(
           yandexResponse({ client_id: OUR_YANDEX_APP, id: 1, default_email: 'a@yandex.ru' })

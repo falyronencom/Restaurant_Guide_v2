@@ -807,15 +807,16 @@ describe('Promotion Authentication', () => {
       .expect(401);
   });
 
-  test('should reject non-partner users', async () => {
-    // Use test helper to create a regular user with 'user' role
+  // Every role that is not a partner — the panel roles too: the route admits
+  // the partner role alone (promotionRoutes.js, authorize(['partner'])).
+  test.each(['user', 'viewer', 'admin'])('should reject non-partner users: %s', async (role) => {
     const { createUserAndGetTokens } = await import('../utils/auth.js');
     const userResult = await createUserAndGetTokens({
-      email: `user-${Date.now()}@test.com`,
+      email: `${role}-${Date.now()}@test.com`,
       phone: `+37529${Math.floor(1000000 + Math.random() * 9000000)}`,
       password: 'Test123!@#',
-      name: 'Regular User',
-      role: 'user',
+      name: 'Not A Partner',
+      role,
     });
 
     await request(app)

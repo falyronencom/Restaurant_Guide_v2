@@ -194,6 +194,29 @@ describe('extractText — download timeout', () => {
     expect(mockPdfParse).not.toHaveBeenCalled();
   });
 
+  // «Stalled» has two phases: no headers (above) and headers but no body. The
+  // timer must stay armed through the body read, or a body that stops after
+  // the headers is bounded only by the HTTP client's own defaults.
+  test('a body stalled after the headers is aborted at PDF_FETCH_TIMEOUT_MS too', async () => {
+    jest.useFakeTimers();
+    global.fetch = jest.fn(async (url, { signal }) => ({
+      ok: true,
+      arrayBuffer: () => new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('This operation was aborted')));
+      }),
+    }));
+
+    const outcome = extractText(PDF_URL).then(() => 'resolved', (error) => error.message);
+
+    await jest.advanceTimersByTimeAsync(PDF_FETCH_TIMEOUT_MS - 1);
+    expect(global.fetch.mock.calls[0][1].signal.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(global.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+
+    expect(await outcome).toBe('This operation was aborted');
+    expect(mockPdfParse).not.toHaveBeenCalled();
+  });
+
   test('a completed download clears its timer', async () => {
     jest.useFakeTimers();
     global.fetch = jest.fn(async () => okResponse());

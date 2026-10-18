@@ -193,6 +193,32 @@ describe('Контракт провода с mobile — карточка зав�
     expect(missing).toEqual([]);
   });
 
+  // Строка медиа детали: EstablishmentMedia.fromJson (mobile/lib/models/
+  // establishment.dart) приводит эти поля без запасного значения — пропажа
+  // любого роняет разбор всей карточки. У карточки фикстуры медиа нет, и тест
+  // выше их не видит: здесь одна строка медиа.
+  test('строка медиа детали несёт поля, которые приложение разбирает без запаса', async () => {
+    const image = 'https://res.cloudinary.com/test/image/upload/v1/establishments/wire/x.jpg';
+    await query(
+      `INSERT INTO establishment_media (establishment_id, type, file_type, url, thumbnail_url, preview_url, position, is_primary)
+       VALUES ($1, 'interior', 'image', $2, $2, $2, 0, true)`,
+      [establishmentId, image],
+    );
+    const res = await request(app)
+      .get(`/api/v1/search/establishments/${establishmentId}`)
+      .expect(200);
+
+    const [media] = res.body.data.media;
+    expect(media).toBeDefined();
+    expect({
+      id: typeof media.id,
+      establishment_id: typeof media.establishment_id,
+      type: typeof media.type,
+      position: Number.isInteger(media.position),
+      created_at: typeof media.created_at === 'string' && !Number.isNaN(Date.parse(media.created_at)),
+    }).toEqual({ id: 'string', establishment_id: 'string', type: 'string', position: true, created_at: true });
+  });
+
   test('деталь несёт working_hours — иначе подпись «Открыто» врёт', async () => {
     // При отсутствии часов приложение падает на `status == "active"` и
     // рисует «Открыто» круглые сутки. Это молчаливая неправда, а не пробел.
@@ -370,5 +396,43 @@ describe('Контракт провода с mobile — что под чипам
 
   test('«Все» — все типы, включая оставшиеся вне чипов', async () => {
     expect(await typesUnder(null)).toEqual([...ALL_TYPES].sort());
+  });
+});
+
+describe('Лента и отметки уведомлений — только свои', () => {
+  // Владельца держит условие WHERE модели (notificationModel.js); её юнит-тест
+  // видит подстроки SQL на подменённом пуле. Здесь — живая база и два
+  // аккаунта: что видит и что меняет один, другого не касается.
+  test('лента, счётчик, отметка одного и «прочитать все» трогают только уведомления своего аккаунта', async () => {
+    const other = await createUserAndGetTokens({
+      email: `notif-other-${Date.now()}@test.com`, password: 'Other123!@#', name: 'Другой', role: 'user',
+    });
+    const insert = async (userId, title) => (await query(
+      `INSERT INTO notifications (user_id, type, title, message)
+       VALUES ($1, 'booking_received', $2, 'текст') RETURNING id`,
+      [userId, title],
+    )).rows[0].id;
+    const mine = await insert(partnerId, 'Моё');
+    await insert(partnerId, 'Моё второе');
+    const theirs = await insert(other.user.id, 'Чужое');
+    await insert(other.user.id, 'Чужое второе');
+    const asPartner = (method, url) => request(app)[method](url).set('Authorization', `Bearer ${partnerToken}`);
+
+    const feed = await asPartner('get', '/api/v1/notifications').expect(200);
+    expect(feed.body.data.items.map((n) => n.title).sort()).toEqual(['Моё', 'Моё второе']);
+    const count = await asPartner('get', '/api/v1/notifications/unread-count').expect(200);
+    expect(count.body.data.count).toBe(2);
+
+    await asPartner('put', `/api/v1/notifications/${theirs}/read`).expect(404);
+    await asPartner('put', `/api/v1/notifications/${mine}/read`).expect(200);
+    await asPartner('put', '/api/v1/notifications/read-all').expect(200);
+
+    const { rows } = await query('SELECT title, is_read FROM notifications ORDER BY title');
+    expect(rows).toEqual([
+      { title: 'Моё', is_read: true },
+      { title: 'Моё второе', is_read: true },
+      { title: 'Чужое', is_read: false },
+      { title: 'Чужое второе', is_read: false },
+    ]);
   });
 });
