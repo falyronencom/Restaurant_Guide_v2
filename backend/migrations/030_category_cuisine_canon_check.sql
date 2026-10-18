@@ -7,7 +7,8 @@
 --
 -- SELF-CONTAINED + IDEMPOTENT (re-runnable). Two phases in one transaction:
 --   1. Normalize legacy/stray values → canon (array_replace replay + dedupe).
---   2. DROP IF EXISTS + ADD the two canon CHECK constraints.
+--   2. DROP IF EXISTS + ADD the two canon CHECK constraints (cuisines may be
+--      empty only for a bar or a club — decision В5, 17.10.2026).
 --
 -- TRIGGER DISCIPLINE: apply AFTER the placeholder-seed wipe. Placeholder rows
 -- carry English tokens (restaurant/cafe/european/…) and two unmappable strays
@@ -123,10 +124,24 @@ ALTER TABLE establishments ADD CONSTRAINT establishments_categories_canon_check 
   )
 );
 
--- cuisines is NOT NULL → no NULL branch; reject empty array; subset-canon.
+-- cuisines is NOT NULL → no NULL branch; subset-canon. An empty array is
+-- allowed only for a bar or a club — decision of the Coordinator В5
+-- (17.10.2026), the same rule as the server's isCuisineRequired
+-- (src/constants/establishmentVocab.js): EVERY category is 'Бар' or 'Клуб'.
+-- Subset (<@), not overlap (&&): a card that is a bar AND a restaurant follows
+-- the restaurant's rule and needs a cuisine. NULL or empty categories → a
+-- cuisine is needed: the explicit IS NOT NULL keeps the OR branch FALSE rather
+-- than NULL (a NULL CHECK result would admit the row).
 ALTER TABLE establishments DROP CONSTRAINT IF EXISTS establishments_cuisines_canon_check;
 ALTER TABLE establishments ADD CONSTRAINT establishments_cuisines_canon_check CHECK (
-  cuisines <> '{}'::varchar[]
+  (
+    cuisines <> '{}'::varchar[]
+    OR (
+      categories IS NOT NULL
+      AND categories <> '{}'::varchar[]
+      AND categories <@ ARRAY['Бар','Клуб']::varchar[]
+    )
+  )
   AND cuisines <@ ARRAY[
     'Народная','Авторская','Азиатская','Американская','Вегетарианская','Японская',
     'Грузинская','Итальянская','Смешанная','Европейская','Китайская','Восточная'

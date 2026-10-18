@@ -14,6 +14,8 @@
  * Verifies the constraint semantics that guard Cyrillic-canon-at-rest:
  *   - canon values accepted; non-canon / empty / NULL-element rejected;
  *     NULL categories accepted (nullable column);
+ *   - an empty cuisines array only for a bar or a club (every category 'Бар'
+ *     or 'Клуб' — decision В5, 17.10.2026, the server's isCuisineRequired);
  *   - the normalize + dedupe replay repairs legacy English + the 'Кальян' stray
  *     and collapses the duplicate it can produce;
  *   - the migrations are idempotent (re-runnable);
@@ -149,10 +151,47 @@ describe('canon CHECK — accept / reject', () => {
     ).rejects.toMatchObject({ code: '23514' });
   });
 
-  test('rejects an empty cuisines array', async () => {
+  test('rejects an empty cuisines array for a restaurant', async () => {
     await expect(
       insertEst(scratchPool, {
         name: 'A5', slug: 'a5', categories: ['Ресторан'], cuisines: [],
+      }),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  // Decision В5 (17.10.2026): a bar or a club may have no cuisine — the same
+  // rule as the server (establishmentVocab.isCuisineRequired).
+  test.each([
+    ['A8', ['Бар']],
+    ['A9', ['Клуб']],
+    ['A10', ['Бар', 'Клуб']],
+  ])('accepts an empty cuisines array for %s %j', async (name, categories) => {
+    await expect(
+      insertEst(scratchPool, {
+        name, slug: name.toLowerCase(), categories, cuisines: [],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  // Overlap is not enough: a bar that is also a restaurant follows the
+  // restaurant's rule, as on the server.
+  test.each([
+    ['A11', ['Бар', 'Ресторан']],
+    ['A12', ['Клуб', 'Кафе']],
+    ['A13', ['Паб']],
+    ['A14', null],
+  ])('rejects an empty cuisines array for %s %j', async (name, categories) => {
+    await expect(
+      insertEst(scratchPool, {
+        name, slug: name.toLowerCase(), categories, cuisines: [],
+      }),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  test('a bar still cannot store a non-canonical cuisine', async () => {
+    await expect(
+      insertEst(scratchPool, {
+        name: 'A15', slug: 'a15', categories: ['Бар'], cuisines: ['cocktails'],
       }),
     ).rejects.toMatchObject({ code: '23514' });
   });
