@@ -144,6 +144,24 @@ it('refused at the deletion itself — asks the check again and shows its text',
   expect(mockOnEnded).not.toHaveBeenCalled();
 });
 
+it.each([
+  ['ACCOUNT_OPERATOR_MANAGED', 'Эту учётку удаляет оператор платформы. Напишите в поддержку: support@nirivio.by'],
+  ['ACCOUNT_INACTIVE', 'Учётка отключена. Напишите в поддержку: support@nirivio.by'],
+])('refused at the deletion with %s — asks the check again and shows its text', async (code, text) => {
+  mockCheck
+    .mockResolvedValueOnce({ ok: true, allowed: true, refusal: null })
+    .mockResolvedValueOnce({ ok: true, allowed: false, refusal: { code, message: text } });
+  mockDelete.mockResolvedValue({ ok: false, code });
+  const user = await open();
+
+  await confirmWith(user, 'УДАЛИТЬ');
+
+  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(mockCheck).toHaveBeenCalledTimes(2);
+  expect(mockMarkAnonymous).not.toHaveBeenCalled();
+  expect(mockOnEnded).not.toHaveBeenCalled();
+});
+
 it('the deletion failed on the network — a message, the form stays', async () => {
   mockCheck.mockResolvedValue({ ok: true, allowed: true, refusal: null });
   mockDelete.mockResolvedValue({ ok: false, code: 'NETWORK' });
