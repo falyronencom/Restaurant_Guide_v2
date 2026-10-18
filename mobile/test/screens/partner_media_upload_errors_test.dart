@@ -157,6 +157,33 @@ void main() {
   }
 
   group('Фото интерьера', () {
+    testWidgets('загрузилось — фото в карточке интерьера, плашка успеха',
+        (tester) async {
+      // Путь «загрузилось → фото в карточке» не исполнял ни один тест: тест
+      // предела фото подменяет загрузку прямым вызовом провайдера. Ответ —
+      // как у маршрута загрузки (`tempMediaRoutes.js`, 201).
+      const url = 'https://res.cloudinary.com/demo/image/upload/temp/u1/new.jpg';
+      respond = (_) => jsonBody(<String, dynamic>{
+            'success': true,
+            'data': <String, dynamic>{
+              'url': url,
+              'thumbnail_url': url,
+              'preview_url': url,
+              'public_id': 'temp/u1/new',
+              'file_type': 'image',
+            },
+          }, status: 201);
+
+      await tapAdd(tester, '+ Добавить фото');
+
+      expect(await snackBarText(tester), 'Фото успешно загружено');
+      final provider = tester
+          .element(find.byType(MediaStep))
+          .read<PartnerRegistrationProvider>();
+      expect(provider.data.interiorPhotos, [url]);
+      expect(provider.data.menuPhotos, isEmpty);
+    });
+
     testWidgets('без сети — фраза транспорта', (tester) async {
       respond = _noNetwork;
 

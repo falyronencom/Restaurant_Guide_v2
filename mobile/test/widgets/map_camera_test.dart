@@ -4,6 +4,8 @@
 // передают: охват точек (значения — литералами), центр города, состав и
 // порядок пинов, и порядок двух установок камеры по часам теста.
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
@@ -25,6 +27,20 @@ Establishment _place(String id, {double? lat, double? lng}) => Establishment(
       createdAt: DateTime(2026, 10, 17),
       updatedAt: DateTime(2026, 10, 17),
     );
+
+/// Генератор картинок пинов, который записывает, о чём его спросили.
+class _RecordingMarkers implements MapMarkerGenerator {
+  final calls = <({bool isOpen, bool isSelected})>[];
+
+  @override
+  Uint8List? getMarkerImage({required bool isOpen, bool isSelected = false}) {
+    calls.add((isOpen: isOpen, isSelected: isSelected));
+    return null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   group('кто становится пином', () {
@@ -68,9 +84,12 @@ void main() {
 
     test('несколько — рамка вокруг всех плюс 30 % пролёта с каждой стороны',
         () {
+      // Три места, крайние — не первые: рамка «вокруг всех», а не вокруг
+      // первых двух. Первое лежит внутри.
       final framing = framePoints(const [
-        Point(latitude: 53.90, longitude: 27.50),
-        Point(latitude: 53.92, longitude: 27.56),
+        Point(latitude: 53.91, longitude: 27.53),
+        Point(latitude: 53.90, longitude: 27.56),
+        Point(latitude: 53.92, longitude: 27.50),
       ]);
       expect(framing, isA<CameraOnBox>());
       final box = (framing as CameraOnBox).box;
@@ -184,6 +203,31 @@ void main() {
           ['marker_a', 'marker_b', 'marker_c']);
       expect(pins.every((p) => p.zIndex == 0.0), isTrue);
       expect(pins.every((p) => p.consumeTapEvents), isTrue);
+    });
+
+    test('цвет пина — от «открыто сейчас» и от выбора, у каждого места свой',
+        () {
+      // Серый у закрытого и жёлтый у выбранного — картинку пина выбирает
+      // генератор по двум признакам места. Картинок в тестах генератор не
+      // рисует, а остальные проверки пинов смотрят на id, порядок и слой, —
+      // признаки, которые он получает, не видел никто. Без часов работы
+      // «открыто» — это «карточка активна», от часов машины не зависит.
+      final markers = _RecordingMarkers();
+      final open = _place('open', lat: 53.90, lng: 27.50);
+      final closed =
+          _place('closed', lat: 53.91, lng: 27.51).copyWith(status: 'suspended');
+
+      buildEstablishmentPins(
+        [open, closed],
+        selectedId: 'open',
+        markers: markers,
+        onTap: (_) {},
+      );
+
+      expect(markers.calls, [
+        (isOpen: false, isSelected: false), // закрытое — серое, выбранное последним
+        (isOpen: true, isSelected: true),
+      ]);
     });
 
     test('нажатие сообщает id своего места', () {

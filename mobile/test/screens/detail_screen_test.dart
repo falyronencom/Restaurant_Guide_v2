@@ -97,11 +97,12 @@ void main() {
     WidgetTester tester, {
     bool signedIn = false,
     TargetPlatform platform = TargetPlatform.android,
+    double inset = 24,
   }) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(360, 800);
-    tester.view.padding = const FakeViewPadding(top: 24);
-    tester.view.viewPadding = const FakeViewPadding(top: 24);
+    tester.view.padding = FakeViewPadding(top: inset);
+    tester.view.viewPadding = FakeViewPadding(top: inset);
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(RepaintBoundary(
@@ -133,7 +134,8 @@ void main() {
   }
 
   /// Сколько пикселей полосы системной строки отличаются от фона экрана.
-  Future<int> foreignPixelsUnderStatusBar(WidgetTester tester) async {
+  Future<int> foreignPixelsUnderStatusBar(WidgetTester tester,
+      {int rows = statusBar}) async {
     final boundary =
         shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     late ByteData bytes;
@@ -146,7 +148,7 @@ void main() {
     final r = (bg.r * 255).round(), g = (bg.g * 255).round();
     final b = (bg.b * 255).round();
     var foreign = 0;
-    for (var y = 0; y < statusBar; y++) {
+    for (var y = 0; y < rows; y++) {
       for (var x = 0; x < width; x++) {
         final i = (y * width + x) * 4;
         final same = (bytes.getUint8(i) - r).abs() <= 2 &&
@@ -169,21 +171,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('прокрученная страница не заходит под системную строку',
-      (tester) async {
-    await pumpDetail(tester);
+  // Высота строки — та, что даёт телефон: 24 у Android, 47 у iPhone с
+  // «чёлкой». Одна высота не отличит полосу по отступу телефона от полосы
+  // на 24 навсегда.
+  for (final inset in [24, 47]) {
+    testWidgets(
+        'прокрученная страница не заходит под системную строку '
+        '(строка $inset)', (tester) async {
+      await pumpDetail(tester, inset: inset.toDouble());
 
-    // 40 — кнопка «назад» у строки; 560 — низ героя с адресом и
-    // расстоянием; 900 — описание и меню.
-    final foreign = <double, int>{};
-    for (final offset in [40.0, 560.0, 900.0]) {
-      await scrollTo(tester, offset);
-      foreign[offset] = await foreignPixelsUnderStatusBar(tester);
-    }
+      // 40 — кнопка «назад» у строки; 560 — низ героя с адресом и
+      // расстоянием; 900 — описание и меню.
+      final foreign = <double, int>{};
+      for (final offset in [40.0, 560.0, 900.0]) {
+        await scrollTo(tester, offset);
+        foreign[offset] = await foreignPixelsUnderStatusBar(tester, rows: inset);
+      }
 
-    expect(foreign, {40.0: 0, 560.0: 0, 900.0: 0},
-        reason: 'под часами видно содержимое страницы');
-  });
+      expect(foreign, {40.0: 0, 560.0: 0, 900.0: 0},
+          reason: 'под часами видно содержимое страницы');
+    });
+  }
 
   testWidgets('вверху страницы фото героя по-прежнему уходит под часы',
       (tester) async {
