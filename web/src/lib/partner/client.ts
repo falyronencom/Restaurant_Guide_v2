@@ -84,6 +84,10 @@ export function retryOcrAction(id: string): Promise<WriteResult> {
   );
 }
 
+export function resumeEstablishmentAction(id: string): Promise<WriteResult> {
+  return postPartner<WriteResult>(`${BASE}/${encodeURIComponent(id)}/resume`);
+}
+
 export function deleteEstablishmentAction(id: string): Promise<WriteResult> {
   return postPartner<WriteResult>(`${BASE}/${encodeURIComponent(id)}/delete`);
 }

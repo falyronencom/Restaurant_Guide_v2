@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { deleteEstablishmentAction } from '@/lib/partner/client';
-import { messageForEstablishmentError } from '@/lib/partner/errors';
+import { refusalMessage } from '@/lib/partner/errors';
 
 /*
  * Delete control for a draft/rejected cabinet card (CAT-C-3.x B4). Confirm dialog
@@ -47,7 +47,7 @@ export function DeleteEstablishmentButton({
       onDeleted(establishmentId); // unmounts this card — no further state needed
     } else {
       setDeleting(false);
-      setError(messageForEstablishmentError(r.code));
+      setError(refusalMessage(r));
     }
   };
 

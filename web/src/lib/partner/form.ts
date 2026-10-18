@@ -24,6 +24,7 @@ import {
   DEFAULT_CITY_CENTER,
   type DayKey,
 } from '@/lib/partner/constants';
+import { contactValue } from '@/lib/partner/contacts';
 
 /** An uploaded establishment/menu photo (temp-upload result, minus PDF fields). */
 export type WizardPhoto = {
@@ -149,11 +150,13 @@ export function toCreatePayload(
 
   const description = form.description.trim();
   if (description) payload.description = description;
-  const phone = form.phone.replace(/\s/g, '');
+  // A contact that does not pass the form's check is left out — the backend
+  // would refuse the whole save for it (contacts.ts, С6).
+  const phone = contactValue(form, 'phone');
   if (phone) payload.phone = phone;
-  const email = form.email.trim();
+  const email = contactValue(form, 'email');
   if (email) payload.email = email;
-  const website = form.website.trim();
+  const website = contactValue(form, 'website');
   if (website) payload.website = website;
   if (form.priceRange) payload.price_range = form.priceRange;
   if (Object.keys(attributes).length > 0) payload.attributes = attributes;
@@ -174,16 +177,26 @@ export function toCreatePayload(
  * included (even empty) so the backend's delete-missing/insert-new sync can
  * remove media the partner deleted. menu_pdfs are excluded — PUT does not process
  * them (asymmetry Q1); post-create PDFs go through POST /:id/media in Commit 4.
+ *
+ * Erasing (сверка находок тестировщика с сайтом, 18.10, пункт С7). For the
+ * backend an absent field means «leave as stored», and toCreatePayload leaves
+ * empty optionals out — so a phone the partner erased came back after a
+ * reload. `saved` is what the server holds (the card as loaded, then each
+ * accepted save): an optional field that is empty in the form and filled in
+ * `saved` is sent as the backend's «erase» — '' for the description, {} for
+ * the amenities, null for the phone, email, website and average check. Only
+ * then: a field that was never filled is not sent, as before.
  */
 export function toUpdatePayload(
   form: WizardFormState,
+  saved?: WizardFormState | null,
 ): UpdateEstablishmentPayload {
   const create = toCreatePayload(form);
   // PUT does not process menu_pdfs (asymmetry Q1) — drop it. Image arrays are
   // ALWAYS sent (even empty) so the backend's delete-missing sync can remove
   // media the partner deleted.
   delete create.menu_pdfs;
-  return {
+  const payload: UpdateEstablishmentPayload = {
     ...create,
     interior_photos: form.interiorPhotos.map((p) => p.url),
     // menu_photos MUST include the menu PDF urls: the PUT media-sync deletes any
@@ -194,6 +207,19 @@ export function toUpdatePayload(
       ...form.menuPdfs.map((p) => p.url),
     ],
   };
+  if (saved) {
+    const erased = (now: string, before: string) =>
+      now.trim() === '' && before.trim() !== '';
+    if (erased(form.description, saved.description)) payload.description = '';
+    if (erased(form.phone, saved.phone)) payload.phone = null;
+    if (erased(form.email, saved.email)) payload.email = null;
+    if (erased(form.website, saved.website)) payload.website = null;
+    if (erased(form.priceRange, saved.priceRange)) payload.price_range = null;
+    if (form.attributes.length === 0 && saved.attributes.length > 0) {
+      payload.attributes = {};
+    }
+  }
+  return payload;
 }
 
 function isPdfUrl(url: string): boolean {

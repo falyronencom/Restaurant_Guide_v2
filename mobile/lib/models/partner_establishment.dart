@@ -333,10 +333,12 @@ class PartnerEstablishment {
     return categories.map((c) => _getCategoryName(c)).join(', ');
   }
 
-  /// Get cuisine display name (all cuisines in braces, comma-separated)
+  /// Get cuisine display name (all cuisines, comma-separated)
+  /// Без фигурных скобок — как у гостя в списке и в карточке (находка
+  /// 18.10.2026: «{Авторская}» читалось как сбой).
   String get cuisineDisplayName {
     if (cuisineTypes.isEmpty) return '';
-    return '{${cuisineTypes.map((c) => _getCuisineName(c)).join(', ')}}';
+    return cuisineTypes.map((c) => _getCuisineName(c)).join(', ');
   }
 
   /// Helper to get category name from ID

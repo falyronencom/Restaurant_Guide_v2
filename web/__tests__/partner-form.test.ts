@@ -106,6 +106,68 @@ describe('toUpdatePayload', () => {
   });
 });
 
+/*
+ * Стёртое при правке доходит до сервера (сверка находок тестировщика с сайтом,
+ * 18.10, пункт С7). Для сервера отсутствующее поле — «не менять», поэтому
+ * стёртое шлётся явно: '' для описания, {} для удобств, null для телефона,
+ * почты, сайта и среднего чека — и только если на сервере значение было.
+ */
+describe('toUpdatePayload — стёртые поля', () => {
+  const filled = (): WizardFormState => ({
+    ...emptyForm(),
+    name: 'Кафе',
+    city: 'Минск',
+    street: 'ул. 1',
+    categories: ['Кафе'],
+    cuisines: ['Народная'],
+    description: 'Уютное кафе',
+    phone: '+375291234567',
+    email: 'info@kafe.by',
+    website: 'kafe.by',
+    priceRange: '$$',
+    attributes: ['wifi'],
+  });
+  const erased = (): WizardFormState => ({
+    ...filled(),
+    description: '  ',
+    phone: '',
+    email: '',
+    website: '',
+    priceRange: '',
+    attributes: [],
+  });
+
+  it('шлёт «стереть» для каждого поля, которое было заполнено на сервере', () => {
+    const u = toUpdatePayload(erased(), filled());
+    expect(u.description).toBe('');
+    expect(u.phone).toBeNull();
+    expect(u.email).toBeNull();
+    expect(u.website).toBeNull();
+    expect(u.price_range).toBeNull();
+    expect(u.attributes).toEqual({});
+  });
+
+  it('не шлёт пустое поле, которого на сервере и не было', () => {
+    const u = toUpdatePayload(erased(), erased());
+    for (const key of ['description', 'phone', 'email', 'website', 'price_range', 'attributes']) {
+      expect(key in u).toBe(false);
+    }
+  });
+
+  it('без сведений о сервере (нет `saved`) — как раньше, пустое не шлётся', () => {
+    const u = toUpdatePayload(erased());
+    expect('phone' in u).toBe(false);
+    expect('description' in u).toBe(false);
+  });
+
+  it('заполненное шлётся значением, не «стереть»', () => {
+    const u = toUpdatePayload(filled(), erased());
+    expect(u.phone).toBe('+375291234567');
+    expect(u.price_range).toBe('$$');
+    expect(u.attributes).toEqual({ wifi: true });
+  });
+});
+
 function detail(
   over: Partial<PartnerEstablishmentDetail>,
 ): PartnerEstablishmentDetail {

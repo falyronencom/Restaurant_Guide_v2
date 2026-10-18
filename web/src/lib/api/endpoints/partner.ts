@@ -91,6 +91,20 @@ export async function submitEstablishment(
 }
 
 /**
+ * Resume an establishment the partner paused (suspended → active). The server
+ * refuses a moderator's suspension (403 ADMIN_SUSPENDED).
+ */
+export async function resumeEstablishment(
+  id: string,
+): Promise<EstablishmentWriteResult> {
+  const data = await authedFetch<{ establishment: EstablishmentWriteResult }>(
+    `${BASE}/${encodeURIComponent(id)}/resume`,
+    { method: 'POST' },
+  );
+  return data.establishment;
+}
+
+/**
  * Re-enqueue OCR for the establishment's menu media — the recovery for the
  * PUT-media-sync asymmetry (menu photos added via PUT do not auto-enqueue OCR;
  * see Segment A Completion Report). POST /:id/retry-ocr.

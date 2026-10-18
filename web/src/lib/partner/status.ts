@@ -27,7 +27,10 @@ export const STATUS_ORDER: readonly EstablishmentStatus[] = [
 
 /**
  * True for an ADMIN suspension (carries a suspend_reason). A self-suspension has
- * no suspend_reason and is read-only in the wizard (resume is out of slice).
+ * no suspend_reason: read-only in the wizard until the partner resumes it
+ * (the cabinet's «Возобновить показ»); an admin suspension is edited and sent
+ * to moderation again — the partner may not resume it (backend 403
+ * ADMIN_SUSPENDED).
  */
 export function isAdminSuspended(notes: ModerationNotes): boolean {
   return !!notes && typeof notes.suspend_reason === 'string';

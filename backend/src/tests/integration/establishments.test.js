@@ -1438,6 +1438,59 @@ describe('Establishments System - Update Operations', () => {
     expect(response.body.data.establishment.name).toBe('Updated Name');
   });
 
+  // The site's cabinet erases an optional field the partner cleared by
+  // sending null (сверка находок тестировщика с сайтом, 18.10, пункт С7).
+  test('null erases phone, email, website and average check; other fields stay', async () => {
+    await request(app)
+      .put(`/api/v1/partner/establishments/${establishmentId}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({
+        phone: '+375291234567',
+        email: 'cafe@example.by',
+        website: 'https://cafe.example.by',
+        price_range: '$$',
+      })
+      .expect(200);
+
+    await request(app)
+      .put(`/api/v1/partner/establishments/${establishmentId}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ phone: null, email: null, website: null, price_range: null })
+      .expect(200);
+
+    const rows = await query(
+      'SELECT phone, email, website, price_range, name FROM establishments WHERE id = $1',
+      [establishmentId],
+    );
+    expect(rows.rows[0]).toEqual({
+      phone: null,
+      email: null,
+      website: null,
+      price_range: null,
+      name: 'Update Target',
+    });
+  });
+
+  test.each(['phone', 'email', 'website', 'price_range'])(
+    'an empty string still does not erase %s (422)',
+    async (field) => {
+      const response = await request(app)
+        .put(`/api/v1/partner/establishments/${establishmentId}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send({ [field]: '' })
+        .expect(422);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    },
+  );
+
+  test('null on create is still refused for the phone (create is unchanged)', async () => {
+    await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ ...testEstablishments[0], name: 'Create With Null Phone', phone: null })
+      .expect(422);
+  });
+
   test('should reject updates by non-owner partner', async () => {
     await request(app)
       .put(`/api/v1/partner/establishments/${establishmentId}`)

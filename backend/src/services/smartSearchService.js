@@ -760,6 +760,66 @@ export function isIntentEmpty(intent) {
 }
 
 /**
+ * Слова, которые сортировка и город разбора объясняют сами: «рядом со мной»,
+ * «лучшие», «недорого», «в Минске», «где поесть». Основы — от 4 букв скелета
+ * и совпадают с началом слова («лучших», «Минске»), короткие — только целиком.
+ */
+const ORDER_AND_PLACE_SKELETONS = Object.freeze([
+  ...PROMPT_CITIES,
+  'рядом', 'поблизости', 'недалеко', 'около', 'возле', 'со', 'с', 'мной', 'меня', 'мне',
+  'near', 'nearby', 'me', 'лучш', 'best', 'top', 'топ', 'недорог', 'дешев', 'подешевле', 'cheap',
+  'всего', 'самые', 'самый', 'в', 'во', 'на', 'по', 'у', 'где', 'куда', 'хочу', 'поесть',
+  'покушать', 'перекусить', 'сходить', 'найти', 'место', 'места', 'заведени', 'городе',
+].map(nameSkeleton).filter(Boolean));
+
+/** Слово фразы объясняется сортировкой или городом (см. выше). */
+const isOrderOrPlaceWord = (word) => ORDER_AND_PLACE_SKELETONS.some(
+  (stem) => word === stem || (stem.length >= 4 && word.startsWith(stem)),
+);
+
+/**
+ * Поиск понял фразу: разбор назвал условие выдачи или сортировку («рядом со
+ * мной», «лучшие» — выдача и есть ответ), либо модель не ответила и выдачу
+ * собрал текстовый поиск по самой фразе (там каждое заведение совпало с ней
+ * текстом). Пустой разбор («Buno», «что-нибудь вкусное») и слова обстановки
+ * («уютное») не поняты: выдача по ним — весь город, а не ответ на фразу
+ * (решение Координатора В3, 17.10.2026).
+ *
+ * Сортировка и город из фразы выдачу не сужают (город обычно тот же, что
+ * выбран на экране), поэтому, когда разбор ничего, кроме них, не назвал, фраза
+ * понята, только если других слов в ней нет: «Buno рядом», «Buno Минск» — не
+ * поняты, как «Buno» (ревью PR #80, M1). Как «Tiden рядом» для названий
+ * (isIntentEmpty).
+ *
+ * Граница: прочтение модели не проверяется на правдоподобие. Если модель
+ * увидела в незнакомом слове тип или блюдо («Buno» → «булочка»), выдача по
+ * этому прочтению считается совпадением — её объясняет строка прочтения.
+ * @param {object|null} intent - Normalized intent; null — запасной путь
+ * @param {string} [query] - Фраза; без неё слова не сверяются
+ * @returns {boolean}
+ */
+export function isPhraseUnderstood(intent, query = '') {
+  if (!intent) return true;
+  const narrows = !isIntentEmpty({ ...intent, location: null });
+  if (narrows) return true;
+  if (!intent.location && intent.sort == null) return false;
+  return textSkeletons(query).every(isOrderOrPlaceWord);
+}
+
+/**
+ * Сколько заведений с начала выдачи — настоящие совпадения с фразой; остальное
+ * — «возможно, вам подойдут» (В3). Совпавшие по названию стоят первыми всегда
+ * (searchWithNameMatches) и совпадениями считаются всегда; выдача под ними —
+ * совпадения, только если фраза понята (isPhraseUnderstood).
+ * @param {{ understood: boolean, total: number, shown: number }} params
+ *   shown — сколько совпавших по названию в выдаче
+ * @returns {number}
+ */
+export function matchedTotalOf({ understood, total, shown }) {
+  return understood ? total : Math.min(shown, total);
+}
+
+/**
  * Что делать с совпадениями по названию (решение Координатора 29.09.2026). /
  * What to do with name matches.
  *
@@ -1029,7 +1089,13 @@ async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page
  *   получить свою классическую выдачу С фильтрами, иначе отключение AI молча
  *   расширяет выдачу вместо того, чтобы её сузить. / Applied on the fallback
  *   branch too — otherwise an AI outage silently drops the screen's filters.
- * @returns {Promise<{ intent: object|null, results: object[], pagination: object, fallback: boolean }>}
+ *
+ * `matched` / `matchedTotal` (В3, 18.10.2026) — добавочные поля: первые
+ * `matchedTotal` заведений общей выдачи (по порядку, через все страницы) —
+ * настоящие совпадения с фразой, остальные — «возможно, вам подойдут».
+ * `matched` — есть ли хоть одно совпадение. Сама выдача от них не меняется:
+ * сборки mobile № 35 и № 36 полей не читают и показывают всё, как прежде.
+ * @returns {Promise<{ intent: object|null, results: object[], pagination: object, fallback: boolean, matched: boolean, matchedTotal: number }>}
  */
 export async function executeSmartSearch(query, context = {}, pagination = {}, explicitFilters = {}) {
   const { limit = 20, page = 1 } = pagination;
@@ -1073,11 +1139,20 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
     nameMatch: nameMatch ? { level: nameMatch.level, mode, shown: searchResult.shown } : null,
   });
 
+  const resultPagination = searchResult.pagination || { total: 0, page, limit, totalPages: 0 };
+  const matchedTotal = matchedTotalOf({
+    understood: isPhraseUnderstood(intent, query),
+    total: resultPagination.total || 0,
+    shown: searchResult.shown || 0,
+  });
+
   return {
     intent: searchResult.nameOnly ? nameOnlyIntent(intent) : (intent || null),
     results: searchResult.establishments || [],
-    pagination: searchResult.pagination || { total: 0, page, limit, totalPages: 0 },
+    pagination: resultPagination,
     fallback: isFallback,
+    matched: matchedTotal > 0,
+    matchedTotal,
   };
 }
 

@@ -36,6 +36,7 @@ import 'package:restaurant_guide_mobile/utils/establishment_share.dart';
 import 'package:restaurant_guide_mobile/utils/gallery_photos.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/russian_plural.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -691,12 +692,12 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           ),
         ),
 
-        // Cuisine
+        // Cuisine — словом, без фигурных скобок (как в списке и на сайте)
         if (_establishment!.cuisine != null)
           Opacity(
             opacity: 0.85,
             child: Text(
-              '{${_establishment!.cuisine!.toLowerCase()}}',
+              _establishment!.cuisine!.toLowerCase(),
               style: const TextStyle(
                 fontSize: 18,
                 color: _backgroundColor,
@@ -889,56 +890,57 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   }
 
   /// Build rating badge (green square) - Figma: 50x50 with 12px radius
+  ///
+  /// Оценка и цена — теми же словами, что в списке ([ratingLabel],
+  /// [priceLabel]). Оценок нет — зелёного квадрата нет: «0.0» у места без
+  /// отзывов читалось как «ноль из пяти». Цена — как её хранит сервер: прежняя
+  /// таблица переводила старые слова («budget», «moderate»), которых сервер не
+  /// шлёт, и на любое настоящее значение отвечала «$$» — у VARKA в списке «$»,
+  /// а здесь «$$» (находки 18.10.2026). Колонка не уже квадрата и без него:
+  /// сердечко под ней и отступ чипов слева ([_rightStackGutter]) не
+  /// сдвигаются; шире — как прежде, если цена при крупном шрифте шире
+  /// квадрата (иначе она переносилась бы на вторую строку).
   Widget _buildRatingBadge() {
-    return Column(
-      children: [
-        // Rating
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: _greenStatus,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          ),
-          child: Center(
-            child: Text(
-              _establishment!.rating?.toStringAsFixed(1) ?? '—',
+    final rating = ratingLabel(_establishment!.rating);
+    final price = priceLabel(_establishment!.priceRange);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 50),
+      child: Column(
+        children: [
+          // Rating
+          if (rating != null) ...[
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: _greenStatus,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              ),
+              child: Center(
+                child: Text(
+                  rating,
+                  style: const TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w400,
+                    color: _backgroundColor,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Price
+          if (price != null)
+            Text(
+              price,
               style: const TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.w400,
+                fontSize: 20,
                 color: _backgroundColor,
               ),
             ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Price
-        Text(
-          _getPriceSymbol(_establishment!.priceRange ?? ''),
-          style: const TextStyle(
-            fontSize: 20,
-            color: _backgroundColor,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
-  }
-
-  /// Get price symbol
-  String _getPriceSymbol(String priceRange) {
-    switch (priceRange.toLowerCase()) {
-      case 'budget':
-      case 'low':
-        return '\$';
-      case 'moderate':
-      case 'medium':
-        return '\$\$';
-      case 'expensive':
-      case 'high':
-        return '\$\$\$';
-      default:
-        return '\$\$';
-    }
   }
 
   /// Get distance text for display

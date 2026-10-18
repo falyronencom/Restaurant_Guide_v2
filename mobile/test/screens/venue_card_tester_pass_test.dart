@@ -480,7 +480,7 @@ void main() {
       check('тип', tester.getRect(find.text('ресторан')),
           textOf('ресторан').style!.color!, 4.5);
 
-      final cuisine = find.text('{народная}');
+      final cuisine = find.text('народная');
       final opacity = tester.widget<Opacity>(
           find.ancestor(of: cuisine, matching: find.byType(Opacity)).first);
       final cuisineRect = tester.getRect(cuisine);
@@ -489,7 +489,7 @@ void main() {
       check(
           'кухня',
           cuisineRect,
-          _over(textOf('{народная}').style!.color!, cuisineBg, opacity.opacity),
+          _over(textOf('народная').style!.color!, cuisineBg, opacity.opacity),
           4.5);
 
       final status = find.byWidgetPredicate((w) =>

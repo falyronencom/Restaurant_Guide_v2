@@ -180,6 +180,7 @@ export default async function CityPage({
           pagination={catalog.pagination}
           understood={catalog.understood}
           sortFromPhrase={catalog.sortFromPhrase}
+          matchedTotal={catalog.matchedTotal}
           basePath={`/${city}`}
           searchParams={sp}
           cuisineOptions={cuisineOptions}

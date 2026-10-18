@@ -5,7 +5,8 @@
 // названия. Когда название в одну строку, тип и кухня оказываются рядом с
 // ценой, и длинные значения справочника упирались в неё: «{Вегетарианская}»
 // при «$$$» — уже при обычном шрифте на 360–364 dp, «{Американская}»,
-// «Кондитерская» — с ×1,1. Чем ниже строка названия, тем выше тип и кухня:
+// «Кондитерская» — с ×1,1 (замеры 29–30.09.2026 — ещё с фигурными скобками у
+// кухни; скобки сняты 18.10.2026, строка кухни стала короче на два знака). Чем ниже строка названия, тем выше тип и кухня:
 // под названием, ужатым до пола кегля, буквы сходились на экранах до 384 dp
 // (ревью 29.09.2026, замер и ревью 30.09.2026). Решение Координатора
 // 30.09.2026: строка, чьи буквы сходятся с буквами цены, обрывается
@@ -123,11 +124,9 @@ void _resetView(WidgetTester tester) {
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 }
 
-/// Строка кухни — по фигурной скобке: оборванная кончается «…}».
-final _cuisine = find.byWidgetPredicate(
-    (w) => w is RichText && w.text.toPlainText().startsWith('{'));
-
-Finder _category(String label) => find.byWidgetPredicate((w) =>
+/// Строка типа или кухни — по полному тексту: многоточие рисует движок,
+/// текст виджета остаётся целым.
+Finder _line(String label) => find.byWidgetPredicate((w) =>
     w is RichText &&
     w.text.toPlainText() == label);
 
@@ -256,13 +255,13 @@ Future<List<String>> _touchingLines(
   return touching;
 }
 
-/// Строка обрезана: тип — многоточием движка, кухня — «…}» внутри скобок.
+/// Строка обрезана: и тип, и кухня — многоточием движка.
 List<String> _cutLines(WidgetTester tester, Establishment e) {
   final cut = <String>[];
-  final category = tester.renderObject<RenderParagraph>(_category(e.category));
+  final category = tester.renderObject<RenderParagraph>(_line(e.category));
   if (category.didExceedMaxLines) cut.add('тип');
   if (e.cuisine != null &&
-      tester.widget<RichText>(_cuisine).text.toPlainText() != '{${e.cuisine}}') {
+      tester.renderObject<RenderParagraph>(_line(e.cuisine!)).didExceedMaxLines) {
     cut.add('кухня');
   }
   return cut;
@@ -311,7 +310,7 @@ void main() {
         final lines = await _touchingLines(tester, e,
             width: width,
             scale: scale,
-            lines: {'тип': _category(e.category), 'кухня': _cuisine});
+            lines: {'тип': _line(e.category), 'кухня': _line(e.cuisine!)});
         for (final line in lines) {
           touching.add('${e.name} ${e.category}/${e.cuisine}/${e.priceRange} '
               '$width dp ×$scale: $line касается цены');
@@ -383,33 +382,40 @@ void main() {
     });
 
     testWidgets(
-        'укороченная строка — многоточие, скобки кухни целы, до цены '
-        '$_cutGap dp', (tester) async {
+        'укороченная строка — многоточие, до цены $_cutGap dp, чтец читает '
+        'целиком', (tester) async {
       _resetView(tester);
       final e = _card(
           category: 'Кондитерская', cuisine: 'Вегетарианская', price: r'$$$');
       final broken = <String>[];
 
-      // Обычный шрифт: касалась только кухня. Обрыв не глубже нужного —
-      // «Вегетариан» остаётся (снято с отрисовки 30.09.2026).
-      await _pump(tester, e, width: 360, scale: 1.0);
-      final cuisineText = tester.widget<RichText>(_cuisine).text.toPlainText();
-      if (!RegExp(r'^\{Вегетариан.*…\}$').hasMatch(cuisineText)) {
-        broken.add('×1,0: кухня «$cuisineText» — ждали «{Вегетариан…}»');
+      // Строка обрезана многоточием и кончается не ближе [_cutGap] к цене.
+      // Сторожит настройку, а не картинку: знак «…» на отрисовке не виден
+      // объекту раскладки — он рисуется поверх обрезанного текста.
+      void expectCut(String where, String label) {
+        final line = tester.renderObject<RenderParagraph>(_line(label));
+        if (!line.didExceedMaxLines) {
+          broken.add('$where: «$label» не укорочена');
+        }
+        if (line.overflow != TextOverflow.ellipsis) {
+          broken.add('$where: «$label» обрезается без многоточия '
+              '(${line.overflow})');
+        }
+        final price = tester.getRect(find.text(r'$$$'));
+        final gap = price.left - tester.getRect(_line(label)).right;
+        if (gap < _cutGap - 0.01) {
+          broken.add('$where: «$label» кончается за '
+              '${gap.toStringAsFixed(2)} dp до цены');
+        }
       }
+
+      // ×1,1: касается только кухня. До 18.10.2026 она касалась уже при
+      // ×1,0 — тогда её обрамляли фигурные скобки, и строка была на два
+      // знака длиннее.
+      await _pump(tester, e, width: 360, scale: 1.1);
+      expectCut('×1,1', 'Вегетарианская');
       if (_cutLines(tester, e).contains('тип')) {
-        broken.add('×1,0: тип укорочен, хотя с ценой не сходился');
-      }
-      var price = tester.getRect(find.text(r'$$$'));
-      var gap = price.left - tester.getRect(_cuisine).right;
-      if (gap < _cutGap - 0.01) {
-        broken.add('×1,0: кухня кончается за ${gap.toStringAsFixed(2)} dp до цены');
-      }
-      // Оборванный текст помещается целиком: шире строки — и «…}» срезало бы.
-      final cuisine = tester.renderObject<RenderParagraph>(_cuisine);
-      if (cuisine.getMaxIntrinsicWidth(double.infinity) >
-          cuisine.constraints.maxWidth) {
-        broken.add('×1,0: «$cuisineText» шире своей строки — конец срезан');
+        broken.add('×1,1: тип укорочен, хотя с ценой не сходился');
       }
       // Экранный чтец читает кухню целиком, как до обрыва. Тексты карточки
       // он читает одним узлом — метки строк в нём через перевод строки.
@@ -418,27 +424,15 @@ void main() {
       final spoken =
           tester.getSemantics(find.byType(EstablishmentCard)).label.split('\n');
       semantics.dispose();
-      if (!spoken.contains('{Вегетарианская}')) {
-        broken.add('×1,0: чтец читает кухню как «${spoken.where((l) => l.startsWith('{')).join()}»');
+      if (!spoken.contains('Вегетарианская')) {
+        broken.add('×1,1: чтец читает кухню как '
+            '«${spoken.where((l) => l.startsWith('Вегет')).join()}»');
       }
 
-      // ×1,2: касался и тип.
+      // ×1,2: касается и тип.
       await _pump(tester, e, width: 360, scale: 1.2);
-      final category =
-          tester.renderObject<RenderParagraph>(_category('Кондитерская'));
-      if (!category.didExceedMaxLines) {
-        broken.add('×1,2: тип не укорочен');
-      }
-      // Сторожит настройку, а не картинку: знак «…» на отрисовке не виден
-      // объекту раскладки — он рисуется поверх обрезанного текста.
-      if (category.overflow != TextOverflow.ellipsis) {
-        broken.add('×1,2: тип обрезается без многоточия (${category.overflow})');
-      }
-      price = tester.getRect(find.text(r'$$$'));
-      gap = price.left - tester.getRect(_category('Кондитерская')).right;
-      if (gap < _cutGap - 0.01) {
-        broken.add('×1,2: тип кончается за ${gap.toStringAsFixed(2)} dp до цены');
-      }
+      expectCut('×1,2', 'Кондитерская');
+      expectCut('×1,2', 'Вегетарианская');
       expect(broken, isEmpty);
     });
 
@@ -460,7 +454,7 @@ void main() {
       final rating = tester.getRect(find
           .ancestor(of: find.text('4,5'), matching: find.byType(Container))
           .first);
-      final category = tester.getRect(_category(e.category));
+      final category = tester.getRect(_line(e.category));
       // Предпосылка: коробка типа по высоте задевает квадрат.
       expect(category.top, lessThan(rating.bottom));
       expect(category.right, lessThanOrEqualTo(rating.left - _cutGap + 0.01),
