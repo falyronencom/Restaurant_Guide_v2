@@ -26,6 +26,10 @@
  */
 import { render, screen } from '@testing-library/react';
 
+// MenuBlock pulls in the menu-retry island (MenuLoadFailed) and its Server
+// Action; the cases here never reach it (menu-load-failed.test.tsx does).
+jest.mock('@/lib/menu/actions', () => ({ reloadMenuAction: jest.fn() }));
+
 import { MenuBlock } from '@/components/establishment/MenuBlock';
 import type { PublicMenuItem, PublicMedia } from '@/lib/api/types';
 

@@ -42,7 +42,11 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('search=Buno&view=map'),
 }));
 // The map island itself is not under test in part 3.
-jest.mock('next/dynamic', () => () => () => <div>карта</div>);
+jest.mock('next/dynamic', () => () =>
+  function MapStub() {
+    return <div>карта</div>;
+  },
+);
 
 describe('phraseMapNote', () => {
   it('nothing matched → «ничего не найдено», the pins are places that may suit', () => {
