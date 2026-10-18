@@ -43,11 +43,13 @@ export function SiteHeader() {
   const isHome = pathname === '/';
   // Routes with a photo banner the header overlays: home, the city page
   // (/{city}) and the catalog (/{city}/{category}). Auth pages (/login,
-  // /register) are also 1-segment but have NO banner — exclude them. The detail
-  // page (3 segments) and reviews (4) keep the solid header.
+  // /register) and «Как удалить учётку» (/udalenie-uchetki) are also 1-segment
+  // but have NO banner — exclude them. The detail page (3 segments) and
+  // reviews (4) keep the solid header.
   const segments = pathname.split('/').filter(Boolean);
   const isCity =
-    segments.length === 1 && !['login', 'register'].includes(segments[0]);
+    segments.length === 1 &&
+    !['login', 'register', 'udalenie-uchetki'].includes(segments[0]);
   const isCatalog = segments.length === 2;
   const hasOverlayHero = isHome || isCity || isCatalog;
   const [scrolled, setScrolled] = useState(false);
