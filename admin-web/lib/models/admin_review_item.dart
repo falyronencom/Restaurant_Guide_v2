@@ -6,6 +6,11 @@ class AdminReviewItem {
   final String id;
   final int rating;
   final String? content;
+
+  /// Кто написал — `users.id`: из карточки отзыва модератор переходит к
+  /// автору на экран «Пользователи». У скрытого отзыва просмотрщику не
+  /// приходит — ссылка увела бы от скрытого отзыва к человеку.
+  final String? authorId;
   final String? authorName;
   final String? authorEmail;
   final String? establishmentName;
@@ -49,6 +54,7 @@ class AdminReviewItem {
     required this.id,
     required this.rating,
     this.content,
+    this.authorId,
     this.authorName,
     this.authorEmail,
     this.establishmentName,
@@ -95,6 +101,7 @@ class AdminReviewItem {
       id: json['id'] as String,
       rating: json['rating'] as int? ?? 0,
       content: json['content'] as String?,
+      authorId: json['author_id'] as String?,
       authorName: json['author_name'] as String?,
       authorEmail: json['author_email'] as String?,
       establishmentName: json['establishment_name'] as String?,
@@ -135,6 +142,7 @@ class AdminReviewItem {
       id: id,
       rating: rating,
       content: content,
+      authorId: authorId,
       authorName: authorName,
       authorEmail: authorEmail,
       establishmentName: establishmentName,

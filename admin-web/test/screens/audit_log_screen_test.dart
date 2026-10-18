@@ -682,6 +682,10 @@ void main() {
 
       await tester.tap(find.text('Тип действия'));
       await tester.pumpAndSettle();
+      // С 18 действиями меню выше окна стенда и открывается прокрученным к
+      // выбранному пункту — «Все» уходит за верхний край и докручивается.
+      await tester.ensureVisible(find.text('Все').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Все').last);
       await tester.pump();
 

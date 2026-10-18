@@ -571,7 +571,8 @@ class _ObjectCell extends StatelessWidget {
     // с заголовком — это идентификатор ОТЗЫВА, и имя заведения над ним
     // подталкивало бы скопировать одно, думая про другое. Заведение при этом
     // не теряется — оно в раскрытой строке.
-    final name = ctx?['reviewer_name'] ?? ctx?['name'];
+    // У действия над человеком (блокировка, сброс имени) — его нынешнее имя.
+    final name = ctx?['reviewer_name'] ?? ctx?['user_name'] ?? ctx?['name'];
     // Обрезается то же значение, что и проверяется: иначе ведущие пробелы из
     // `entity_context` доехали бы до вёрстки и сдвинули колонку.
     final title = name is String && name.trim().isNotEmpty
@@ -749,8 +750,9 @@ class _EntryDetails extends StatelessWidget {
   }
 
   /// Строки контекста. Состав задаёт бэкенд: у отзыва он присылает автора,
-  /// оценку, заведение и начало текста, у заведения — имя и город, у прочих
-  /// типов не присылает ничего.
+  /// оценку, заведение и начало текста, у заведения — имя и город, у
+  /// пользователя — его нынешнее имя (просмотрщику — нет), у прочих типов не
+  /// присылает ничего.
   static List<Widget> _contextRows(AuditLogEntry entry) {
     final ctx = entry.entityContext;
     if (ctx == null) return const <Widget>[];
@@ -798,6 +800,11 @@ class _EntryDetails extends StatelessWidget {
       final place = _joinPlace(ctx['name'], ctx['city']);
       if (place != null) {
         rows.add(_ContextRow(label: 'Заведение', value: Text(place, style: _valueStyle)));
+      }
+    } else if (entry.entityType == 'user') {
+      final name = ctx['user_name'];
+      if (name is String && name.trim().isNotEmpty) {
+        rows.add(_ContextRow(label: 'Пользователь', value: Text(name.trim(), style: _valueStyle)));
       }
     }
 

@@ -52,6 +52,7 @@ AdminReviewItem _review({
   String id = 'r1',
   int rating = 2,
   String? content = 'Драники падалі халоднымі',
+  String? authorId,
   String? authorName = 'Марына К.',
   String? authorEmail = 'marina.k@gmail.com',
   String? establishmentName = 'Кухмістр',
@@ -70,6 +71,7 @@ AdminReviewItem _review({
       id: id,
       rating: rating,
       content: content,
+      authorId: authorId,
       authorName: authorName,
       authorEmail: authorEmail,
       establishmentName: establishmentName,
@@ -431,6 +433,21 @@ void main() {
       expect(find.text('без этого отзыва оценка та же'), findsOneWidget);
       // Механизма жалоб в модели данных нет — строки о них тоже нет.
       expect(find.textContaining('жалоб'), findsNothing);
+    });
+
+    testWidgets('ведёт к автору, когда сервер его назвал (проход 17.10, п. 8)',
+        (tester) async {
+      await open(tester, _review(authorId: 'author-1'));
+      expect(find.byKey(const ValueKey<String>('review-author-link')),
+          findsOneWidget);
+      expect(find.text('Открыть автора'), findsOneWidget);
+    });
+
+    testWidgets('без автора — без ссылки (скрытый отзыв у просмотрщика)',
+        (tester) async {
+      await open(tester, _review());
+      expect(find.byKey(const ValueKey<String>('review-author-link')),
+          findsNothing);
     });
 
     testWidgets('совпавшая оценка называется словами, а не повтором числа',

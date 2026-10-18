@@ -62,6 +62,9 @@ const Map<String, String> kAuditActions = <String, String>{
   'unhide_menu_item': 'Показ позиции меню',
   'dismiss_sanity_flag': 'Снятие флага',
   'upgrade_user_to_partner': 'Повышение до партнёра',
+  'user_block': 'Блокировка пользователя',
+  'user_unblock': 'Разблокировка пользователя',
+  'user_reset_name': 'Сброс имени пользователя',
 };
 
 /// Что действие сделало с доступностью объекта.
@@ -108,6 +111,11 @@ const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>
   'dismiss_sanity_flag': AuditActionTone.neutral,
   // Повышение до партнёра меняет права человека, а не доступность объекта.
   'upgrade_user_to_partner': AuditActionTone.neutral,
+  // Блокировка отнимает доступ и прячет отзывы, разблокировка возвращает.
+  'user_block': AuditActionTone.restricting,
+  'user_unblock': AuditActionTone.allowing,
+  // Сброс имени переписывает данные, доступности не меняет.
+  'user_reset_name': AuditActionTone.neutral,
 };
 
 /// Направление действия. Незнакомое — нейтральное: выдумывать ему цвет

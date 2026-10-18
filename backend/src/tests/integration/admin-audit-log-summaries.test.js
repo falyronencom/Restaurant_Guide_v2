@@ -43,6 +43,10 @@ const WRITTEN_ACTIONS = [
   ['unhide_menu_item', 'menu_item', 'Показана позиция меню'],
   ['dismiss_sanity_flag', 'menu_item', 'Снят флаг с позиции меню'],
   ['upgrade_user_to_partner', 'user', 'Пользователь повышен до партнёра'],
+  // adminUserService — SQL-вставкой в транзакции самого действия
+  ['user_block', 'user', 'Пользователь заблокирован'],
+  ['user_unblock', 'user', 'Пользователь разблокирован'],
+  ['user_reset_name', 'user', 'Имя пользователя сброшено'],
   // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
   ['change_email', 'user', 'Адрес e-mail учётки изменён'],
   // scripts/mark-service-account.js и scripts/create-admin.js, SQL-вставкой

@@ -111,6 +111,7 @@ const List<_NavGroup> _navGroups = <_NavGroup>[
     items: <_NavEntry>[
       _NavEntry('Статистика и аналитика', '/settings/analytics', Icons.insights),
       _NavEntry('Отзывы', '/settings/reviews', Icons.reviews_outlined),
+      _NavEntry('Пользователи', '/settings/users', Icons.people_outline),
       _NavEntry('История платежей', '/settings/payments',
           Icons.receipt_long_outlined,
           soon: true),

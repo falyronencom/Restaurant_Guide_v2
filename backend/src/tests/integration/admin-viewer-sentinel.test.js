@@ -55,6 +55,8 @@ const WITHHELD_KEYS = [
   'partner_name', 'partner_email', 'partner_phone',
   'user_name', 'user_email', 'user_phone', 'owner_name', 'owner_email', 'owner_phone',
   'ip_address', 'user_agent',
+  // A block from the panel: the reviews it hid and an unblock showed again.
+  'hidden_review_ids', 'restored_review_ids',
 ];
 
 const tag = randomUUID().slice(0, 8);
@@ -77,6 +79,8 @@ const P = {
   // field, not a person: it must reach the viewer (opaque moderation_notes).
   contactFieldComment: `уточните контактное лицо ${tag}`,
   deletedText: `сторож-удалённый-текст-${tag}`,
+  blockedName: `Заблокированный Сторожа ${tag}`,
+  blockedText: `сторож-текст-заблокированного-${tag}`,
 };
 
 const ids = {};
@@ -86,6 +90,7 @@ let partnerEmail; // the partner who deleted a card — written into the journal
 let cardPartnerAccountEmail; // the account e-mail of the card's partner — no read route shows it
 let hiddenAuthorEmail;
 let deletedAuthorEmail;
+let blockedEmail;
 
 /** Values a viewer must never receive and an admin receives somewhere. */
 const personalValues = () => ({
@@ -103,6 +108,9 @@ const personalValues = () => ({
   deletedAuthorEmail,
   hiddenText: P.hiddenText,
   deletedText: P.deletedText,
+  blockedName: P.blockedName,
+  blockedEmail,
+  blockedText: P.blockedText,
 });
 
 /**
@@ -142,6 +150,16 @@ const READ_FIXTURES = {
     '/audit-log?per_page=50&include_metadata=true',
     '/audit-log?per_page=50&entity_type=review',
     { url: `/audit-log?user_id=${ids.moderator}`, viewer: 403 },
+  ],
+  '/users': () => [
+    '/users?per_page=50',
+    '/users?status=blocked',
+    { url: `/users?search=${encodeURIComponent(P.hiddenAuthor)}`, viewer: 403 },
+  ],
+  '/users/:id': () => [
+    `/users/${ids.hiddenAuthor}`,
+    `/users/${ids.blocked}`,
+    `/users/${ids.moderator}`,
   ],
   '/quality/health': () => ['/quality/health'],
   '/badges': () => ['/badges'],
@@ -265,6 +283,20 @@ beforeAll(async () => {
      VALUES ($1, $2, 'Капучино', 0.5, $3::jsonb, 0)`,
     [ids.active, media.rows[0].id, JSON.stringify({ reason: 'price_below_threshold' })],
   );
+  // A person blocked, unblocked, blocked again and renamed from the panel. The
+  // journal names them to an admin (entity_context.user_name, old_data.user_name,
+  // the reason — written with the name in it), lists their hidden review, and
+  // gives a viewer none of it; the person's card gives a viewer no reason.
+  const blocked = await author(P.blockedName, 'blocked');
+  ids.blocked = blocked.id;
+  blockedEmail = blocked.email;
+  await createTestReview(blocked.id, ids.active, { rating: 1, content: P.blockedText });
+  const blockReason = { reason: `мат в отзыве, автор ${P.blockedName}` };
+  await act('post', `/users/${blocked.id}/block`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/unblock`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/block`, blockReason).expect(200);
+  await act('post', `/users/${blocked.id}/reset-name`, blockReason).expect(200);
+
   const draft = await createPartnerWithEstablishment('draft');
   partnerEmail = draft.partner.user.email;
   await query('UPDATE users SET name = $1 WHERE id = $2', [P.partnerName, draft.partner.user.id]);
