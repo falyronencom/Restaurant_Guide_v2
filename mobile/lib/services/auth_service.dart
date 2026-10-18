@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -564,7 +565,14 @@ class AuthService {
                         data['user'] as Map<String, dynamic>? ??
                         data;
 
-        return User.fromJson(userData);
+        final user = User.fromJson(userData);
+        // Профиль, подтверждённый сервером, — в хранилище: при старте без
+        // сети вошедший человек остаётся вошедшим с ним (см. [getStoredUser]).
+        // Только если это профиль той сессии, что лежит в хранилище: ответ,
+        // пришедший уже после выхода или после входа другим аккаунтом, не
+        // должен ни остаться на телефоне, ни подмениться следующему.
+        await _storeUser(user, onlyForStoredSession: true);
+        return user;
       } else {
         throw Exception('Failed to get user profile');
       }
@@ -600,7 +608,7 @@ class AuthService {
         final user = User.fromJson(userData);
 
         // Update stored user data
-        await _storage.write(key: 'user_data', value: user.toJson().toString());
+        await _storeUser(user);
 
         return user;
       } else {
@@ -635,7 +643,7 @@ class AuthService {
                         responseData;
 
         final user = User.fromJson(userData);
-        await _storage.write(key: 'user_data', value: user.toJson().toString());
+        await _storeUser(user);
 
         return user;
       } else {
@@ -702,20 +710,82 @@ class AuthService {
   Future<void> _storeAuthData(AuthResponse authResponse) async {
     await _storage.write(key: 'access_token', value: authResponse.accessToken);
     await _storage.write(key: 'refresh_token', value: authResponse.refreshToken);
-    await _storage.write(key: 'user_data', value: authResponse.user.toJson().toString());
+    await _storeUser(authResponse.user);
   }
 
-  /// Get stored user data
+  /// Профиль — в хранилище, в JSON.
+  ///
+  /// До 18.10.2026 сюда писался `Map.toString()` («{id: u-1, …}»): разобрать
+  /// его нельзя, и [getStoredUser] всегда отвечал `null`. Запись — по
+  /// возможности: отказ хранилища не роняет вход и запрос профиля, они уже
+  /// удались; профиля без сети тогда не будет, и только.
+  /// [onlyForStoredSession] — писать, только если профиль принадлежит сессии,
+  /// чьи токены сейчас в хранилище ([_storedSessionUserId]).
+  Future<void> _storeUser(User user, {bool onlyForStoredSession = false}) async {
+    try {
+      if (onlyForStoredSession && await _storedSessionUserId() != user.id) {
+        return;
+      }
+      await _storage.write(key: 'user_data', value: jsonEncode(user.toJson()));
+    } catch (_) {}
+  }
+
+  /// Последний профиль, который подтвердил сервер, — той сессии, что лежит в
+  /// хранилище.
+  ///
+  /// Нужен старту без сети: токены в хранилище, сервер не отвечает — человек
+  /// остаётся вошедшим и видит своё имя, а не «Гость». `null` — профиля нет,
+  /// он записан прежней сборкой (не JSON), битый или чужой: принадлежит не
+  /// тому, чей access-токен в хранилище (поздний ответ прежнего аккаунта,
+  /// недописанная смена аккаунта). Тогда вошедший остаётся вошедшим без
+  /// имени, пока профиль не придёт с сервера.
   Future<User?> getStoredUser() async {
     try {
       final userDataString = await _storage.read(key: 'user_data');
       if (userDataString == null) return null;
-
-      // Parse stored user data
-      // Note: This is a simplified version - in production you might use json.decode
-      // For now, we'll just return null and rely on getCurrentUser API call
-      return null;
+      final decoded = jsonDecode(userDataString);
+      if (decoded is! Map<String, dynamic>) return null;
+      final user = User.fromJson(decoded);
+      if (user.id.isEmpty) return null;
+      return await _storedSessionUserId() == user.id ? user : null;
     } catch (e) {
+      return null;
+    }
+  }
+
+  /// Когда сервер выдал пару токенов, лежащую в хранилище: `iatMs` (или `iat`
+  /// в секундах) из access-токена — сервер выдаёт его вместе с
+  /// refresh-токеном и при каждом обновлении (`backend/src/utils/jwt.js`,
+  /// `services/authService.js`). `null` — токена нет или его не разобрать.
+  Future<DateTime?> storedSessionIssuedAt() async {
+    final claims = await _storedSessionClaims();
+    final ms = claims?['iatMs'];
+    if (ms is num) return DateTime.fromMillisecondsSinceEpoch(ms.toInt());
+    final seconds = claims?['iat'];
+    if (seconds is num) {
+      return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+    }
+    return null;
+  }
+
+  /// Чья сессия в хранилище — `userId` из access-токена.
+  Future<String?> _storedSessionUserId() async =>
+      (await _storedSessionClaims())?['userId']?.toString();
+
+  /// Полезная нагрузка access-токена из хранилища — без проверки подписи:
+  /// подпись проверяет сервер, а здесь вопрос не доверия, а «чья и какой
+  /// давности сессия лежит на телефоне». `null` — токена нет или он не
+  /// разбирается.
+  Future<Map<String, dynamic>?> _storedSessionClaims() async {
+    final token = await _storage.read(key: 'access_token');
+    if (token == null || token.isEmpty) return null;
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
+    try {
+      final payload = jsonDecode(
+          utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      return payload is Map<String, dynamic> ? payload : null;
+    } catch (_) {
       return null;
     }
   }

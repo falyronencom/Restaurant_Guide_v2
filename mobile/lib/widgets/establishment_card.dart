@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 
 /// Reusable card component for displaying establishment information
@@ -320,18 +321,33 @@ class EstablishmentCard extends StatelessWidget {
     );
   }
 
-  /// Build cuisine in brackets (Avenir Next, 13px, grey)
-  /// Одной строкой: упёрлась в цену — многоточие внутри скобок.
+  /// Build cuisine (Avenir Next, 13px, grey)
+  /// Одной строкой, без фигурных скобок: «{Авторская}» на телефоне читалось
+  /// как сбой (находка 18.10.2026), сайт пишет кухню просто словом. Упёрлась
+  /// в цену — многоточие, как у типа (см. [_CardHeader]).
   Widget? _buildCuisine() {
     final cuisine = establishment.cuisine;
     if (cuisine == null) return null;
-    return _BracedText(cuisine, style: _cuisineStyle);
+    return Text(
+      cuisine,
+      style: _cuisineStyle,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   /// Build rating badge (Figma design)
-  Widget? _buildRatingBadge() {
-    final rating = establishment.rating;
-    if (rating == null) return null;
+  ///
+  /// Оценок нет — квадрат пустой и невидимый, но место его остаётся: цена
+  /// стоит там же, где под зелёным квадратом, на одной вертикали с сердечком,
+  /// и раскладка верха у мест с оценкой и без одна (см. [_CardHeader]).
+  /// Число у места без отзывов — «0,0» — читалось как «ноль из пяти».
+  Widget _buildRatingBadge() {
+    final rating = ratingLabel(establishment.rating);
+    if (rating == null) {
+      return const SizedBox(width: _ratingSize, height: _ratingSize);
+    }
     return Container(
       width: _ratingSize,
       height: _ratingSize,
@@ -341,7 +357,7 @@ class EstablishmentCard extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        rating.toStringAsFixed(1).replaceAll('.', ','),
+        rating,
         style: const TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w400,
@@ -353,8 +369,9 @@ class EstablishmentCard extends StatelessWidget {
   }
 
   /// Build price range under the rating badge (Figma design)
+  /// Как её хранит сервер — так же пишет и карточка заведения.
   Widget? _buildPrice() {
-    final priceRange = establishment.priceRange;
+    final priceRange = priceLabel(establishment.priceRange);
     if (priceRange == null) return null;
     return Text(priceRange, style: _priceStyle);
   }
@@ -839,81 +856,6 @@ class _RenderCardHeader extends RenderBox
       return true;
     }());
     return true;
-  }
-}
-
-/// Кухня в фигурных скобках одной строкой. Не помещается — многоточие
-/// внутри скобок: «{Вегетарианс…}», а не «{Вегетарианс…» без закрывающей,
-/// как оборвал бы `Text`.
-///
-/// Места не хватает, когда кухня упирается в цену (см. [_CardHeader]) или
-/// шире всей колонки (356 dp при ×1,2 — прежний `Text` рвал слово по
-/// буквам); помещается — это прежний `Text`. Замер — стилем, каким рисует `Text`
-/// ([_renderedStyle]), с масштабом из `MediaQuery` и по ширине, которую
-/// строке отдали на самом деле (`LayoutBuilder`).
-class _BracedText extends StatelessWidget {
-  const _BracedText(this.value, {required this.style});
-
-  final String value;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final rendered = _renderedStyle(context, style);
-    final textScaler = MediaQuery.textScalerOf(context);
-    final direction = Directionality.of(context);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final full = '{$value}';
-        final text =
-            _fitted(rendered, constraints.maxWidth, textScaler, direction);
-        return Text(
-          text,
-          style: style,
-          maxLines: 1,
-          softWrap: false,
-          // Экранный чтец читает оборванную кухню целиком — как тип, который
-          // обрывает многоточием сам движок.
-          semanticsLabel: text == full ? null : full,
-        );
-      },
-    );
-  }
-
-  /// Полный текст, если помещается; иначе самое длинное начало слова,
-  /// которое помещается вместе с «…}».
-  String _fitted(
-    TextStyle rendered,
-    double maxWidth,
-    TextScaler textScaler,
-    TextDirection direction,
-  ) {
-    final full = '{$value}';
-    if (!maxWidth.isFinite) return full;
-
-    final painter = TextPainter(
-      textDirection: direction,
-      textScaler: textScaler,
-      maxLines: 1,
-    );
-    try {
-      bool fits(String text) {
-        painter.text = TextSpan(text: text, style: rendered);
-        painter.layout();
-        return painter.width <= maxWidth;
-      }
-
-      if (fits(full)) return full;
-      final letters = value.characters.toList();
-      for (var n = letters.length - 1; n > 0; n--) {
-        final cut = '{${letters.take(n).join().trimRight()}…}';
-        if (fits(cut)) return cut;
-      }
-      return '{…}';
-    } finally {
-      painter.dispose();
-    }
   }
 }
 

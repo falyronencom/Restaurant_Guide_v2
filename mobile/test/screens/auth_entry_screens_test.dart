@@ -156,6 +156,19 @@ void main() {
       expect(find.text('Главный экран'), findsOneWidget);
     });
 
+    testWidgets('подзаголовок без опечатки: «…по миру гастрономии»',
+        (tester) async {
+      // Опечатка «гастраномии» на первом экране — находка 18.10.2026 на
+      // телефоне Координатора (сравнение с Resty).
+      await pumpApp(tester, start: '/auth/method-selection');
+
+      expect(
+          find.text('Войдите в аккаунт и начните свое путешествие по миру '
+              'гастрономии'),
+          findsOneWidget);
+      expect(find.textContaining('гастраном'), findsNothing);
+    });
+
     testWidgets('открыта со «Входа»: стрелка возвращает на «Вход»',
         (tester) async {
       await pumpApp(tester, start: '/home');

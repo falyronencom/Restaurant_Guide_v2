@@ -89,6 +89,29 @@ void main() {
     expect(find.byKey(guestStubKey), findsOneWidget);
   });
 
+  testWidgets(
+      'сессия в хранилище, сервер молчит дольше таймаута → /home, а не '
+      'гостевой экран', (tester) async {
+    // Плохая связь: токены прочитаны, а сверка сессии висит — ожидание
+    // соединения (30 с) дольше таймаута заставки. Вошедший — не гость
+    // (находка 18.10.2026: без сети вошедший видел «Регистрацию»). Исход
+    // сверки дойдёт до главного экрана сам. Пара к тесту выше: там не
+    // прочитано даже хранилище, и уход — на гостевой экран.
+    await pumpSplash(tester,
+        held: false, authenticated: true, profileHeld: true);
+    await tester.pump();
+
+    await tester.pump(const Duration(milliseconds: 9999));
+    expect(find.byKey(homeStubKey), findsNothing);
+
+    await tester.pump(oneMs); // 10 000: таймер → outro стартует
+    await tester.pump(outro);
+    await tester.pump(oneMs);
+    await tester.pump(oneMs);
+    expect(find.byKey(homeStubKey), findsOneWidget);
+    expect(find.byKey(guestStubKey), findsNothing);
+  });
+
   testWidgets('готовая живая сессия ведёт на /home', (tester) async {
     await pumpSplash(tester, held: false, authenticated: true);
     await tester.pump();
