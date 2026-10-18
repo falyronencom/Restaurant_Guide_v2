@@ -7,10 +7,13 @@
  * Table: ocr_jobs
  * Status flow: pending → processing → (done | failed)
  * Retry: markFailed returns job to 'pending' if attempts < max_attempts (default 3),
- *        otherwise transitions to 'failed' permanently.
- * Reaper: reapStaleProcessingJobs applies the same rule to 'processing' rows older
- *         than STALE_PROCESSING_INTERVAL — a process that died mid-job never settles
- *         its own row; ocrJobPoller sweeps them.
+ *        otherwise transitions to 'failed' permanently; markFailedPermanently
+ *        fails it at once (a PDF whose parse broke its limits).
+ * Reaper: reapStaleProcessingJobs settles 'processing' rows older than
+ *         STALE_PROCESSING_INTERVAL — a process that ended mid-attempt never
+ *         settles its own row; ocrJobPoller sweeps them. Such a row is failed
+ *         for good, not retried, unless a planned shutdown marked it
+ *         (markInterruptedByShutdown): then the markFailed rule applies.
  */
 
 import pool from '../config/database.js';
@@ -130,8 +133,7 @@ export const markDone = async (jobId, resultSummary) => {
 };
 
 /**
- * SET clause that settles a failed attempt — shared by markFailed and
- * reapStaleProcessingJobs so the retry rule lives in one place: back to
+ * SET clause that settles a failed attempt — markFailed's retry rule: back to
  * 'pending' while attempts remain (started_at cleared for the next pick),
  * 'failed' with completed_at once the last attempt is spent (started_at kept
  * for forensics). attempts was incremented by pickNextPending, so the
@@ -168,6 +170,130 @@ export const markFailed = async (jobId, errorMessage) => {
      WHERE id = $1
      RETURNING *`,
     [jobId, errorMessage],
+  );
+
+  return result.rows[0] || null;
+};
+
+/**
+ * Fail a job for good, whatever attempts remain — the outcome the file itself
+ * decides: its PDF parse broke the time or memory limit
+ * (ocrService.processJob), and the same file breaks it on every attempt.
+ * attempts stays as counted; completed_at is set, started_at kept, as for a
+ * last attempt spent. The partner restarts recognition from the menu screen.
+ *
+ * @param {string} jobId - UUID
+ * @param {string} errorMessage - Human-readable failure reason
+ * @returns {Promise<Object|null>} Updated job row or null if not found
+ */
+export const markFailedPermanently = async (jobId, errorMessage) => {
+  const result = await pool.query(
+    `UPDATE ocr_jobs
+     SET status = 'failed',
+         error_message = $2,
+         completed_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [jobId, errorMessage],
+  );
+
+  return result.rows[0] || null;
+};
+
+/**
+ * error_message a planned shutdown writes on the job in flight
+ * (markInterruptedByShutdown). Only that function writes it, and every
+ * outcome of the attempt — markDone, markFailed, markFailedPermanently, the
+ * reaper — overwrites it, so it never survives into the next attempt.
+ */
+export const SHUTDOWN_INTERRUPT_MARK = 'attempt in flight at a planned shutdown';
+
+/**
+ * Mark the job in flight as caught by a planned shutdown (SIGTERM of a
+ * deploy, SIGINT) — ocrJobPoller.stop() writes it as the stop begins. The
+ * row stays 'processing'. When the attempt still settles in this process,
+ * its outcome overwrites the mark. When the process is killed first (the
+ * shutdown budget ran out), the reaper finds the mark and returns the job
+ * for another attempt, if one is left: a deploy is not the file's fault. A
+ * row a process left without the mark — it ended mid-attempt with no planned
+ * stop — is failed for good instead.
+ *
+ * Touches only the attempt this process runs: a 'processing' row whose
+ * attempts still equal the attempt's number. A job that settled a moment
+ * earlier keeps its outcome; a job that settled, went back to the queue and
+ * was picked again — by the next process, during the deploy overlap — is
+ * another attempt (pickNextPending counted it), and its row is left alone.
+ * attempts serves as the fence because only returnUnstartedJob ever lowers
+ * it, for a job its process picked and never started — a job it holds no
+ * mark or outcome for.
+ *
+ * @param {string} jobId - UUID
+ * @param {number} attempts - The attempt's number: attempts of the row pickNextPending returned
+ * @returns {Promise<Object|null>} The marked row, or null when that attempt had already settled
+ */
+export const markInterruptedByShutdown = async (jobId, attempts) => {
+  const result = await pool.query(
+    `UPDATE ocr_jobs
+     SET error_message = $2
+     WHERE id = $1 AND status = 'processing' AND attempts = $3
+     RETURNING *`,
+    [jobId, SHUTDOWN_INTERRUPT_MARK, attempts],
+  );
+
+  return result.rows[0] || null;
+};
+
+/**
+ * error_message of an attempt whose outcome its own, still running process
+ * could not write (a database error at the job's first read or at its
+ * outcome) — settled later by that process's poller (settleAbandonedAttempt).
+ */
+export const ABANDONED_ATTEMPT_MESSAGE = 'attempt ended without a recorded outcome; settled by its poller';
+
+/**
+ * Settle an attempt whose processJob rejected before writing an outcome,
+ * under markFailed's retry rule: back to 'pending' while attempts remain,
+ * 'failed' on the last one. The process is alive — the attempt did not end
+ * it — so the stale sweep's "failed for good" does not apply. Fenced like
+ * markInterruptedByShutdown: only the same attempt of a row still
+ * 'processing'; a row that did settle meanwhile is left alone.
+ *
+ * @param {string} jobId - UUID
+ * @param {number} attempts - The attempt's number (attempts of the picked row)
+ * @param {string} errorMessage
+ * @returns {Promise<Object|null>} The settled row, or null when that attempt had settled
+ */
+export const settleAbandonedAttempt = async (jobId, attempts, errorMessage) => {
+  const result = await pool.query(
+    `UPDATE ocr_jobs
+     ${SETTLE_FAILED_ATTEMPT_SET}
+     WHERE id = $1 AND status = 'processing' AND attempts = $3
+     RETURNING *`,
+    [jobId, errorMessage, attempts],
+  );
+
+  return result.rows[0] || null;
+};
+
+/**
+ * Return a job picked but never started — the stop was requested while the
+ * pick ran (ocrJobPoller.runTick) — to the queue with its attempt given
+ * back: nothing ran, so nothing is spent. The only place attempts goes down;
+ * fenced to the same attempt of a row still 'processing'.
+ *
+ * @param {string} jobId - UUID
+ * @param {number} attempts - attempts of the picked row
+ * @returns {Promise<Object|null>} The returned row, or null when the row had moved on
+ */
+export const returnUnstartedJob = async (jobId, attempts) => {
+  const result = await pool.query(
+    `UPDATE ocr_jobs
+     SET status = 'pending',
+         attempts = attempts - 1,
+         started_at = NULL
+     WHERE id = $1 AND status = 'processing' AND attempts = $2
+     RETURNING *`,
+    [jobId, attempts],
   );
 
   return result.rows[0] || null;
@@ -244,8 +370,9 @@ export const getMediaIdsWithCompletedJob = async (establishmentId) => {
  * A 'processing' row older than this is a zombie: the process died mid-job
  * (SIGKILL / OOM / redeploy without a graceful stop) and nothing else will
  * ever settle it. A legitimate job is minutes at most: its PDF download,
- * vision and structurer calls each abort after 60 s, and the job as a whole
- * stays within ocrService.JOB_DURATION_BOUND_MS = 180 s.
+ * vision and structurer calls each abort after 60 s, the PDF parse after
+ * 20 s (pdfTextExtractor.PDF_PARSE_TIMEOUT_MS), and the job as a whole stays
+ * within ocrService.JOB_DURATION_BOUND_MS = 180 s plus that parse.
  * Two consumers: countActiveJobsForEstablishment ignores such rows so a
  * zombie cannot mute the batch notification, and reapStaleProcessingJobs
  * (driven by ocrJobPoller's sweep) settles them. PostgreSQL interval literal.
@@ -253,22 +380,50 @@ export const getMediaIdsWithCompletedJob = async (establishmentId) => {
 export const STALE_PROCESSING_INTERVAL = '1 hour';
 
 /**
- * error_message written by the reaper. English like the exception messages
- * markFailed stores; the column is not surfaced to partners or moderators.
+ * error_message the reaper writes on a job it fails. English like the
+ * exception messages markFailed stores; the column is not surfaced to
+ * partners or moderators — they see the job's status.
  */
 export const STALE_REAP_ERROR_MESSAGE = `stale processing reaped after ${STALE_PROCESSING_INTERVAL}`;
+
+/** error_message the reaper writes on a job it returns to the queue. */
+export const STALE_REAP_REQUEUE_MESSAGE =
+  `stale processing requeued after ${STALE_PROCESSING_INTERVAL}: a planned shutdown interrupted the attempt`;
+
+/**
+ * The reaper's test for "give it another attempt": a planned shutdown marked
+ * the row, and an attempt is left. Placeholder contract: $3 =
+ * SHUTDOWN_INTERRUPT_MARK. A NULL error_message compares to NULL — false.
+ */
+const REQUEUE_INTERRUPTED = 'error_message = $3 AND attempts < max_attempts';
 
 /**
  * Settle every zombie: 'processing' rows older than STALE_PROCESSING_INTERVAL.
  *
- * Same rule as markFailed — back to 'pending' while attempts remain (the
- * poller re-picks them; started_at is cleared and set again by
- * pickNextPending), 'failed' with completed_at once the last attempt is
- * spent. Left alone, such a row makes enqueue treat the media as active
- * forever and keeps the establishment out of the admin health signals'
- * "empty menus" anti-join. The age is compared inside the database —
- * started_at / created_at are DB-generated naive timestamps — with the
- * interval bound as a literal, exactly like countActiveJobsForEstablishment.
+ * A zombie is an attempt that ended with no outcome written because its
+ * process ended in the middle of it: killed by the platform, crashed, out of
+ * memory, or a planned stop that could not write its mark. (A process that
+ * lives on but could not write an attempt's outcome settles it itself —
+ * settleAbandonedAttempt, from ocrJobPoller.) Such a job is failed for good,
+ * not returned to the queue — the rule of this change (M1, 17.10.2026): an
+ * attempt that ended its process could end the next one the same way, up to
+ * max_attempts times. Not every such end is the file's doing — since the PDF
+ * parse runs in a process of its own (pdfParseRunner), a file's cost is
+ * bounded there — and the way back is the partner's restart from the menu
+ * screen (within the daily allowance); the moderator sees the failed job
+ * among the quality signals. The exception is a row a planned shutdown
+ * marked (SHUTDOWN_INTERRUPT_MARK — a deploy whose shutdown budget ran out
+ * before the attempt settled): while an attempt is left it goes back to
+ * 'pending' for the next process (started_at cleared, set again by
+ * pickNextPending); on the last attempt it fails like any other. The reaper
+ * never gives an attempt back: max_attempts stays the ceiling.
+ *
+ * Left alone, a zombie makes enqueue treat the media as active forever and
+ * keeps the establishment out of the admin health signals' "empty menus"
+ * anti-join. The age is compared inside the database — started_at /
+ * created_at are DB-generated naive timestamps — with the interval bound as a
+ * literal, exactly like countActiveJobsForEstablishment. Every CASE reads the
+ * row as it was before the UPDATE, so the four columns follow one decision.
  *
  * Called by ocrJobPoller.sweepStaleJobs, which logs each row and closes the
  * batch of a permanently failed one. Rows come back oldest first so the
@@ -280,13 +435,16 @@ export const reapStaleProcessingJobs = async () => {
   const result = await pool.query(
     `WITH reaped AS (
        UPDATE ocr_jobs
-       ${SETTLE_FAILED_ATTEMPT_SET}
+       SET status = CASE WHEN ${REQUEUE_INTERRUPTED} THEN 'pending' ELSE 'failed' END,
+           error_message = CASE WHEN ${REQUEUE_INTERRUPTED} THEN $4 ELSE $2 END,
+           completed_at = CASE WHEN ${REQUEUE_INTERRUPTED} THEN NULL ELSE NOW() END,
+           started_at = CASE WHEN ${REQUEUE_INTERRUPTED} THEN NULL ELSE started_at END
        WHERE status = 'processing'
          AND COALESCE(started_at, created_at) < NOW() - $1::interval
        RETURNING *
      )
      SELECT * FROM reaped ORDER BY created_at ASC`,
-    [STALE_PROCESSING_INTERVAL, STALE_REAP_ERROR_MESSAGE],
+    [STALE_PROCESSING_INTERVAL, STALE_REAP_ERROR_MESSAGE, SHUTDOWN_INTERRUPT_MARK, STALE_REAP_REQUEUE_MESSAGE],
   );
   return result.rows;
 };

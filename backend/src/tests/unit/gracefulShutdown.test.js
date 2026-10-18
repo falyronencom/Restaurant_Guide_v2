@@ -21,6 +21,7 @@ import {
   createGracefulShutdown,
   installShutdownHandlers,
   exitCodeFor,
+  isPlannedShutdown,
   PLANNED_SHUTDOWN_REASONS,
 } from '../../utils/gracefulShutdown.js';
 
@@ -79,6 +80,25 @@ describe('exit code by reason', () => {
     expect(exitCodeFor('UNHANDLED_REJECTION')).toBe(1);
     expect(exitCodeFor('SIGHUP')).toBe(1);
     expect(exitCodeFor(undefined)).toBe(1);
+  });
+});
+
+describe('isPlannedShutdown — what server.js tells the OCR poller (a planned stop marks its job in flight)', () => {
+  test.each([
+    ['SIGTERM', true],
+    ['SIGINT', true],
+    ['UNCAUGHT_EXCEPTION', false],
+    ['UNHANDLED_REJECTION', false],
+    ['SIGHUP', false],
+    [undefined, false],
+  ])('%s → %s', (reason, planned) => {
+    expect(isPlannedShutdown(reason)).toBe(planned);
+  });
+
+  test('the same reasons decide the exit code', () => {
+    for (const reason of [...PLANNED_SHUTDOWN_REASONS, 'UNCAUGHT_EXCEPTION']) {
+      expect(exitCodeFor(reason) === 0).toBe(isPlannedShutdown(reason));
+    }
   });
 });
 
@@ -148,6 +168,18 @@ describe('createGracefulShutdown — a single shutdown', () => {
     await flush();
     expect(deps.closePool).toHaveBeenCalledTimes(1);
     expect(deps.exit).toHaveBeenCalledWith(0);
+  });
+
+  test.each([
+    ['SIGTERM'],
+    ['UNCAUGHT_EXCEPTION'],
+  ])('each loop\'s stop() is given the reason the shutdown started for (%s)', async (reason) => {
+    const { shutdown, deps } = buildShutdown();
+
+    await shutdown(reason);
+
+    expect(deps.backgroundLoops[0].stop).toHaveBeenCalledWith(reason);
+    expect(deps.backgroundLoops[1].stop).toHaveBeenCalledWith(reason);
   });
 
   test('a loop whose stop() fails is logged under its own message and does not hold the exit', async () => {

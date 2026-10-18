@@ -10,16 +10,24 @@
  * Plus the download timeout: the PDF fetch is the one OCR stage with no
  * timeout of its own, so it must carry an AbortSignal that fires after
  * PDF_FETCH_TIMEOUT_MS — a stalled download must not outlive the
- * graceful-shutdown budget (config/shutdown.js). pdf-parse and the logger
- * are mocked; fetch is replaced per test.
+ * graceful-shutdown budget (config/shutdown.js). The parse runner (pdf-parse
+ * in a child process — pdfParseRunner, tested on real processes in
+ * pdfParseRunner.test.js) and the logger are mocked; fetch is replaced per
+ * test. mockPdfParse stands for the runner: it resolves { text, numpages }
+ * as pdf-parse does.
  */
 
 import { jest } from '@jest/globals';
 
 const mockPdfParse = jest.fn();
 
-jest.unstable_mockModule('pdf-parse/lib/pdf-parse.js', () => ({
-  default: mockPdfParse,
+jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => ({
+  parsePdfIsolated: mockPdfParse,
+  // As in the runner: the error of a PDF read cut short by shutdown.
+  abortedError: (message = 'PDF parse cut short by shutdown') => Object.assign(
+    new Error(message),
+    { code: 'PDF_PARSE_ABORTED', reason: 'aborted' },
+  ),
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
@@ -39,7 +47,11 @@ const {
   MIN_DIGIT_COUNT,
   MIN_PRINTABLE_RATIO,
   PDF_FETCH_TIMEOUT_MS,
+  PDF_PARSE_TIMEOUT_MS,
+  PDF_PARSE_MEMORY_LIMIT_MB,
+  resetPlatformLimitsCheck,
 } = await import('../../services/ocr/pdfTextExtractor.js');
+const { default: mockLogger } = await import('../../utils/logger.js');
 
 describe('pdfTextExtractor heuristics', () => {
   describe('computePrintableRatio', () => {
@@ -280,7 +292,7 @@ describe('extractText — the page limit', () => {
 
     const result = await extractText(PDF_URL, { maxPages: 20 });
 
-    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), { max: 20 });
+    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), expect.objectContaining({ maxPages: 20 }));
     expect(result).toMatchObject({ pageCount: 100, pagesParsed: 20, hasTextLayer: true });
   });
 
@@ -297,7 +309,161 @@ describe('extractText — the page limit', () => {
 
     const result = await extractText(PDF_URL);
 
-    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), { max: 0 });
+    expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), expect.objectContaining({ maxPages: 0 }));
     expect(result).toMatchObject({ pageCount: 30, pagesParsed: 30, hasTextLayer: true });
+  });
+});
+
+describe('extractText — the parse runs in its child process, under its limits', () => {
+  const PDF_URL = 'https://res.cloudinary.com/test/image/upload/v1/establishments/x/menu_pdf/menu.pdf';
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+    mockPdfParse.mockResolvedValue({ text: 'Борщ — 15 руб.', numpages: 1 });
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test('the downloaded file goes to the runner with the deadline, the memory limit and the caller\'s signal', async () => {
+    const controller = new AbortController();
+
+    await extractText(PDF_URL, { maxPages: 20, signal: controller.signal });
+
+    expect(mockPdfParse).toHaveBeenCalledTimes(1);
+    const [buffer, options] = mockPdfParse.mock.calls[0];
+    expect(buffer).toBeInstanceOf(Buffer);
+    expect(buffer.length).toBe(8);
+    expect(options).toEqual({
+      maxPages: 20,
+      maxChars: 0,
+      timeoutMs: PDF_PARSE_TIMEOUT_MS,
+      memoryLimitMb: PDF_PARSE_MEMORY_LIMIT_MB,
+      signal: controller.signal,
+    });
+  });
+
+  test('maxChars goes to the child; the full length it reports comes back as textLength', async () => {
+    mockPdfParse.mockResolvedValue({ text: 'Борщ — 15 руб. Салат — 12 руб. Кофе — 4 руб. Чай — 3 руб. ', textLength: 250000, numpages: 1 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20, maxChars: 200000 });
+
+    expect(mockPdfParse.mock.calls[0][1]).toMatchObject({ maxChars: 200000 });
+    expect(result.textLength).toBe(250000);
+    expect(result.text).toBe('Борщ — 15 руб. Салат — 12 руб. Кофе — 4 руб. Чай — 3 руб. ');
+  });
+
+  test('a runner answer without textLength: the text\'s own length', async () => {
+    mockPdfParse.mockResolvedValue({ text: 'abc', numpages: 1 });
+
+    expect((await extractText(PDF_URL)).textLength).toBe(3);
+  });
+
+  test('the shutdown signal aborts a download in progress: PDF_PARSE_ABORTED, and nothing is parsed', async () => {
+    global.fetch = jest.fn((url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('This operation was aborted')));
+    }));
+    const controller = new AbortController();
+
+    const pending = extractText(PDF_URL, { maxPages: 20, signal: controller.signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      code: 'PDF_PARSE_ABORTED',
+      message: 'PDF download cut short by shutdown',
+    });
+    expect(mockPdfParse).not.toHaveBeenCalled();
+  });
+
+  test('a signal already aborted: no download at all', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(extractText(PDF_URL, { signal: controller.signal })).rejects.toMatchObject({
+      code: 'PDF_PARSE_ABORTED',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('a download that fails on its own, with the signal quiet, keeps its own error', async () => {
+    global.fetch = jest.fn(async () => ({ ok: false, status: 503, statusText: 'Service Unavailable' }));
+    const controller = new AbortController();
+
+    const error = await extractText(PDF_URL, { signal: controller.signal }).catch((e) => e);
+
+    expect(error.message).toBe('Failed to fetch PDF: 503 Service Unavailable');
+    expect(error.code).toBeUndefined();
+  });
+
+  describe('a memory safeguard the platform does not allow is said once', () => {
+    const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const asPlatform = (value) => Object.defineProperty(process, 'platform', { ...realPlatform, value });
+
+    beforeEach(() => {
+      resetPlatformLimitsCheck();
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', realPlatform);
+      resetPlatformLimitsCheck();
+    });
+
+    const warnings = () => mockLogger.warn.mock.calls
+      .filter(([message]) => message === 'PDF parse child: a memory safeguard is unavailable on this platform');
+
+    test('on Linux, with the resident memory unread and the OOM score not raised: one warning for the process', async () => {
+      asPlatform('linux');
+      mockPdfParse.mockResolvedValue({ text: 'x', numpages: 1, peakResidentBytes: null, oomScoreAdjusted: false });
+
+      await extractText(PDF_URL);
+      await extractText(PDF_URL);
+
+      expect(warnings()).toEqual([[
+        'PDF parse child: a memory safeguard is unavailable on this platform',
+        { residentMemoryRead: false, oomScoreAdjusted: false },
+      ]]);
+    });
+
+    test('on Linux, with both in place: silence', async () => {
+      asPlatform('linux');
+      mockPdfParse.mockResolvedValue({ text: 'x', numpages: 1, peakResidentBytes: 50 * 1024 * 1024, oomScoreAdjusted: true });
+
+      await extractText(PDF_URL);
+
+      expect(warnings()).toEqual([]);
+    });
+
+    test('elsewhere (no /proc by design): silence', async () => {
+      asPlatform('win32');
+      mockPdfParse.mockResolvedValue({ text: 'x', numpages: 1, peakResidentBytes: null, oomScoreAdjusted: false });
+
+      await extractText(PDF_URL);
+
+      expect(warnings()).toEqual([]);
+    });
+  });
+
+  test('a parse that broke its limit reaches the caller with its code', async () => {
+    const limit = Object.assign(new Error('PDF parse exceeded its time limit (20 s)'), {
+      code: 'PDF_PARSE_LIMIT',
+      reason: 'timeout',
+    });
+    mockPdfParse.mockRejectedValue(limit);
+
+    await expect(extractText(PDF_URL, { maxPages: 20 })).rejects.toBe(limit);
+  });
+
+  test('the limits: 20 s and 384 MB — proposed numbers, measured against ordinary files', () => {
+    expect(PDF_PARSE_TIMEOUT_MS).toBe(20000);
+    expect(PDF_PARSE_MEMORY_LIMIT_MB).toBe(384);
   });
 });

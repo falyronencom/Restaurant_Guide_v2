@@ -13,7 +13,9 @@
  *   2. ocrJobPoller.stop() waits for the OCR job in flight, which is bounded
  *      by the stage timeouts (ocrService.JOB_DURATION_BOUND_MS, about 180 s).
  *      A job that dies with the container is left as a 'processing' zombie
- *      for the stale sweep to settle about an hour later, one attempt burnt.
+ *      for the stale sweep about an hour later: back to the queue when its
+ *      planned stop could mark it (ocrJobPoller.stop), failed for good
+ *      otherwise — with the drain unset, no stop runs and nothing is marked.
  *
  * Resolution order (first match wins), never below MIN_SHUTDOWN_TIMEOUT_MS
  * and never above MAX_SHUTDOWN_TIMEOUT_MS:
@@ -132,7 +134,7 @@ export const resolveShutdownBudget = (env = {}, { jobBoundMs = 0 } = {}) => {
     warnings.push(
       'RAILWAY_DEPLOYMENT_DRAINING_SECONDS is not set on this Railway service: ' +
       'the process is killed right after SIGTERM, graceful shutdown never runs ' +
-      'and an OCR job in flight at redeploy is left to the stale sweep',
+      'and an OCR job in flight at redeploy is failed for good by the stale sweep about an hour later',
     );
   } else {
     // The derived budget keeps the margin by construction; an override or a

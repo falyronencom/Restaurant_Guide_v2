@@ -18,7 +18,9 @@
  *   3. Once the HTTP connections are gone and both loops have stopped, close
  *      the pool and Redis, then exit.
  * A job that outlives the budget dies with the process as a 'processing'
- * row; ocrJobPoller's stale sweep settles it about an hour later.
+ * row; ocrJobPoller's stale sweep settles it about an hour later — back to
+ * the queue when the stop was planned (the poller marks the row), failed
+ * otherwise. Each loop's stop() gets the reason the shutdown started for.
  *
  * Exit code (2026-10-07). The code is the only thing the platform learns
  * about how the process ended. A planned stop — SIGTERM from a deploy,
@@ -42,9 +44,16 @@ export const PLANNED_SHUTDOWN_REASONS = Object.freeze(['SIGTERM', 'SIGINT']);
 export const EXIT_CODE_CLEAN = 0;
 export const EXIT_CODE_FAILURE = 1;
 
+/**
+ * Whether a shutdown started for `reason` was asked for (a deploy, Ctrl+C)
+ * rather than caused by a crash — the exit code, and the OCR poller's mark on
+ * its job in flight (server.js), follow it.
+ */
+export const isPlannedShutdown = (reason) => PLANNED_SHUTDOWN_REASONS.includes(reason);
+
 /** Exit code a shutdown started for `reason` ends with when nothing else fails. */
 export const exitCodeFor = (reason) => (
-  PLANNED_SHUTDOWN_REASONS.includes(reason) ? EXIT_CODE_CLEAN : EXIT_CODE_FAILURE
+  isPlannedShutdown(reason) ? EXIT_CODE_CLEAN : EXIT_CODE_FAILURE
 );
 
 /**
@@ -53,9 +62,10 @@ export const exitCodeFor = (reason) => (
  * @param {Object} deps
  * @param {() => {close: Function}} deps.getServer - The HTTP server, read when
  *   the shutdown starts (server.js assigns it after this module is wired).
- * @param {Array<{stop: () => Promise<void>, failureMessage: string}>} deps.backgroundLoops -
- *   Loops stopped in parallel with server.close(); a rejected stop() is logged
- *   with its failureMessage and does not block the rest.
+ * @param {Array<{stop: (reason: string) => Promise<void>, failureMessage: string}>} deps.backgroundLoops -
+ *   Loops stopped in parallel with server.close(), each given the reason the
+ *   shutdown started for; a rejected stop() is logged with its failureMessage
+ *   and does not block the rest.
  * @param {() => Promise<void>} deps.closePool
  * @param {() => Promise<void>} deps.disconnectRedis
  * @param {number} deps.timeoutMs - Force-exit budget (config/shutdown.js).
@@ -103,7 +113,7 @@ export const createGracefulShutdown = ({
     // Stop the background loops now — each stop() waits for its work in
     // flight. Errors are logged inside stop(); this catch only keeps the
     // await below safe.
-    const loopsStopped = backgroundLoops.map(({ stop, failureMessage }) => stop().catch((error) => {
+    const loopsStopped = backgroundLoops.map(({ stop, failureMessage }) => stop(reason).catch((error) => {
       logger.error(failureMessage, { error: error.message });
     }));
 

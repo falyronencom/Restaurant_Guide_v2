@@ -28,6 +28,7 @@ import * as pdfTextExtractor from './pdfTextExtractor.js';
 import * as visionOcrAdapter from './visionOcrAdapter.js';
 import * as llmStructurer from './llmStructurer.js';
 import * as sanityChecker from './sanityChecker.js';
+import { PDF_PARSE_ABORTED, PDF_PARSE_LIMIT } from './pdfParseRunner.js';
 import { generatePdfPageImageUrl } from '../../config/cloudinary.js';
 
 /**
@@ -61,7 +62,8 @@ const PDF_PAGE_LIMIT = 20;
  * for it (review of PR #56 by the lens, finding 2a). The densest menu page read
  * in 2026 (the digital set, 86 pages) carried 7 354 characters, the next
  * 3 416: ten thousand a page, for PDF_PAGE_LIMIT pages. A longer text layer is
- * cut, and the log says so.
+ * cut, and the log says so. The cut happens in the parse's child process
+ * (pdfTextExtractor maxChars): the API process never receives more.
  */
 const TEXT_LAYER_CHAR_LIMIT = PDF_PAGE_LIMIT * 10000;
 
@@ -82,7 +84,11 @@ const TEXT_LAYER_CHAR_LIMIT = PDF_PAGE_LIMIT * 10000;
  * graceful-shutdown budget against it
  * (config/shutdown.js): ocrJobPoller.stop() waits for the job in flight, and
  * a job that outlives the budget dies with the process as a 'processing'
- * zombie for the stale sweep. Observed on production, July–August 2026
+ * zombie for the stale sweep. The PDF parse is not a summand: it runs in a
+ * child process under its own deadline (pdfTextExtractor.PDF_PARSE_TIMEOUT_MS,
+ * 20 s), and stop() kills it at once (the signal processJob passes down), so
+ * it never adds to what graceful shutdown waits for; the job's own wall clock
+ * is at most that deadline longer. Observed on production, July–August 2026
  * (84 jobs): p50 6.7 s, p99 30 s, max 38 s. Big PDFs, measured 2026-09-29
  * with one call per stage: Zalkind (9 pages → 128 items) vision 27–32 s,
  * structurer 40–41 s; Сорренто (3 pages → 161 items) — the structurer timed
@@ -202,22 +208,33 @@ const readPagesAsImages = async (pageUrls) => {
  * call, which on a very big menu can still time out — it is the last
  * attempt's last resort.
  *
+ * A parse that broke its limits (PDF_PARSE_LIMIT) or was cut by shutdown
+ * (PDF_PARSE_ABORTED) is not a parse failure to read around: it ends the
+ * attempt here, and processJob settles the job by its code.
+ *
  * @param {Object} media - establishment_media row
  * @param {Object} [options]
  * @param {boolean} [options.textLayerBackup=false] - Last attempt: a failed
  *   image read of a PDF falls back to its text layer
+ * @param {AbortSignal} [options.signal] - Cuts the PDF parse short (shutdown)
  * @returns {Promise<{ pageTexts: string[], strategy: string, pagesCount?: number, pagesTotal?: number, visionError?: string }>}
  *   pageTexts — one text per page read as an image (a photo is one page), or
  *   the whole text layer as one text; pagesCount — PDFs only: the pages read
  *   as images, or the pages the text layer covers; pagesTotal — a PDF longer
  *   than PDF_PAGE_LIMIT: its page count
  */
-const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
+const extractPageTexts = async (media, { textLayerBackup = false, signal } = {}) => {
   if (media.file_type === 'pdf') {
     let parseResult = null;
     try {
-      parseResult = await pdfTextExtractor.extractText(media.url, { maxPages: PDF_PAGE_LIMIT });
+      // The child sends back no more text than the last resort below can use.
+      parseResult = await pdfTextExtractor.extractText(media.url, {
+        maxPages: PDF_PAGE_LIMIT,
+        maxChars: TEXT_LAYER_CHAR_LIMIT,
+        signal,
+      });
     } catch (error) {
+      if (error.code === PDF_PARSE_LIMIT || error.code === PDF_PARSE_ABORTED) throw error;
       logger.warn('pdf-parse failed, reading PDF pages as images without the page count', {
         mediaId: media.id,
         error: error.message,
@@ -249,10 +266,11 @@ const extractPageTexts = async (media, { textLayerBackup = false } = {}) => {
         pageCount: parseResult.pageCount,
         error: error.message,
       });
-      if (parseResult.text.length > TEXT_LAYER_CHAR_LIMIT) {
+      const textLength = parseResult.textLength ?? parseResult.text.length;
+      if (textLength > TEXT_LAYER_CHAR_LIMIT) {
         logger.warn('PDF text layer longer than the limit — only its beginning is structured', {
           mediaId: media.id,
-          textLength: parseResult.text.length,
+          textLength,
           charLimit: TEXT_LAYER_CHAR_LIMIT,
         });
       }
@@ -466,12 +484,26 @@ const notifyPartnerIfBatchFinished = async (establishmentId, { failedJobId = nul
  * or directly in tests.
  *
  * On success: marks job 'done' and persists menu_items.
- * On any exception: marks job 'failed' (with retry if attempts < max_attempts).
+ * On any exception: marks job 'failed' (with retry if attempts < max_attempts),
+ * with two exceptions by the error's code:
+ *   - PDF_PARSE_LIMIT — the parse of the file broke its time or memory limit
+ *     (pdfTextExtractor): failed for good at once, no retry — the same file
+ *     breaks it again; the batch is closed as for any permanent failure;
+ *   - PDF_PARSE_ABORTED — graceful shutdown cut the download or the parse
+ *     (the poller's signal): the attempt is settled under the usual retry
+ *     rule (markFailed), and the next process picks the job up. The attempt
+ *     is spent all the same, so a deploy that lands in those seconds of a
+ *     job's last attempt fails it — accepted: the ceiling of attempts does not
+ *     grow, and the partner restarts recognition. A job picked while the stop
+ *     was requested is returned unstarted instead (ocrJobPoller).
  *
  * @param {string} jobId - UUID of a job in 'processing' status
+ * @param {Object} [options]
+ * @param {AbortSignal} [options.signal] - Graceful shutdown (ocrJobPoller.stop):
+ *   cuts the PDF parse short; the network stages run on to their own timeouts
  * @returns {Promise<{ success: boolean, jobId: string, itemCount?: number, error?: string }>}
  */
-export const processJob = async (jobId) => {
+export const processJob = async (jobId, { signal } = {}) => {
   const job = await ocrJobModel.getJobStatus(jobId);
   if (!job) {
     logger.error('processJob called with unknown jobId', { jobId });
@@ -488,6 +520,7 @@ export const processJob = async (jobId) => {
     // an earlier attempt goes back to the queue (markFailed) and is retried.
     const { pageTexts, strategy, pagesCount, pagesTotal, visionError } = await extractPageTexts(media, {
       textLayerBackup: job.attempts >= job.max_attempts,
+      signal,
     });
 
     if (pageTexts.every(isBlank)) {
@@ -544,13 +577,31 @@ export const processJob = async (jobId) => {
 
     return { success: true, jobId, itemCount: flaggedItems.length };
   } catch (error) {
-    logger.error('OCR job failed', {
-      jobId,
-      error: error.message,
-      stack: error.stack,
-    });
-
-    const failedJob = await ocrJobModel.markFailed(jobId, error.message);
+    let failedJob;
+    if (error.code === PDF_PARSE_LIMIT) {
+      logger.error('OCR job failed for good: the PDF parse broke its limit', {
+        jobId,
+        mediaId: job.media_id,
+        reason: error.reason,
+        error: error.message,
+        childStderr: error.stderrHead?.slice(0, 500),
+      });
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+    } else if (error.code === PDF_PARSE_ABORTED) {
+      logger.warn('OCR job interrupted by shutdown during the PDF parse — settled under the retry rule', {
+        jobId,
+        attempts: job.attempts,
+        maxAttempts: job.max_attempts,
+      });
+      failedJob = await ocrJobModel.markFailed(jobId, error.message);
+    } else {
+      logger.error('OCR job failed', {
+        jobId,
+        error: error.message,
+        stack: error.stack,
+      });
+      failedJob = await ocrJobModel.markFailed(jobId, error.message);
+    }
 
     // A permanent failure settles this job too: if it was the last active one,
     // the partner still hears what the rest of the batch produced. Awaited for

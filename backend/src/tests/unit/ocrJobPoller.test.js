@@ -22,6 +22,9 @@ const mockReap = jest.fn();
 const mockPickNextPending = jest.fn();
 const mockNotify = jest.fn();
 const mockProcessJob = jest.fn();
+const mockMarkInterrupted = jest.fn();
+const mockSettleAbandoned = jest.fn();
+const mockReturnUnstarted = jest.fn();
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: mockLogger,
@@ -30,6 +33,10 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({
   reapStaleProcessingJobs: mockReap,
   pickNextPending: mockPickNextPending,
+  markInterruptedByShutdown: mockMarkInterrupted,
+  settleAbandonedAttempt: mockSettleAbandoned,
+  returnUnstartedJob: mockReturnUnstarted,
+  ABANDONED_ATTEMPT_MESSAGE: 'attempt ended without a recorded outcome; settled by its poller',
   STALE_PROCESSING_INTERVAL: '1 hour',
 }));
 
@@ -59,6 +66,9 @@ beforeEach(() => {
   mockNotify.mockResolvedValue(true);
   mockPickNextPending.mockResolvedValue(null);
   mockProcessJob.mockResolvedValue({ success: true });
+  mockMarkInterrupted.mockResolvedValue({ status: 'processing' });
+  mockSettleAbandoned.mockResolvedValue(null);
+  mockReturnUnstarted.mockResolvedValue({ status: 'pending' });
 });
 
 /**
@@ -261,5 +271,260 @@ describe('tick — sweep cadence', () => {
 
     await Poller.stop();
     expect(Poller.status()).toEqual({ running: false, busy: false, sweeping: false });
+  });
+});
+
+describe('stop() and the job in flight — the parse is cut, a planned stop marks the job', () => {
+  /** The job a test holds in flight, released after the test whatever its outcome. */
+  let held = null;
+
+  /** A job held in flight until the test releases it; records the signal it was given. */
+  const holdJob = () => {
+    held = {};
+    const current = held;
+    mockProcessJob.mockImplementation((jobId, options) => {
+      current.jobId = jobId;
+      current.signal = options?.signal;
+      return new Promise((resolve) => {
+        current.finish = resolve;
+      });
+    });
+    return current;
+  };
+
+  // A failed assertion must not leave its job in flight for the next test:
+  // the next start would find the poller busy and pick nothing.
+  afterEach(async () => {
+    held?.finish?.({ success: true });
+    held = null;
+    await Poller.stop();
+  });
+
+  /** start() clears the stop latch a previous test left; its immediate sweep finds nothing. */
+  const startWithJobInFlight = async () => {
+    const held = holdJob();
+    const jobId = uuidv4();
+    mockPickNextPending.mockResolvedValueOnce({ id: jobId, attempts: 2 });
+    Poller.start({ intervalMs: 60000 });
+    await Poller.tick();
+    expect(Poller.status().busy).toBe(true);
+    return { held, jobId };
+  };
+
+  const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test('every job gets a live signal of its own', async () => {
+    const first = await startWithJobInFlight();
+
+    expect(mockProcessJob).toHaveBeenCalledWith(first.jobId, { signal: expect.any(AbortSignal) });
+    expect(first.held.signal.aborted).toBe(false);
+    first.held.finish({ success: true });
+    await nextTurn();
+
+    const second = holdJob();
+    const secondId = uuidv4();
+    mockPickNextPending.mockResolvedValueOnce({ id: secondId, attempts: 1 });
+    await Poller.tick();
+
+    expect(second.jobId).toBe(secondId);
+    expect(second.signal).toBeInstanceOf(AbortSignal);
+    expect(second.signal).not.toBe(first.held.signal);
+    expect(second.signal.aborted).toBe(false);
+  });
+
+  test('a planned stop aborts the job\'s signal, marks the job, and still waits for it to settle', async () => {
+    const { held, jobId } = await startWithJobInFlight();
+
+    let stopped = false;
+    const stopping = Poller.stop({ planned: true }).then(() => {
+      stopped = true;
+    });
+    await nextTurn();
+
+    expect(held.signal.aborted).toBe(true);
+    expect(mockMarkInterrupted).toHaveBeenCalledTimes(1);
+    // The attempt's number fences the mark: a later attempt of the same job is not marked.
+    expect(mockMarkInterrupted).toHaveBeenCalledWith(jobId, 2);
+    expect(stopped).toBe(false);
+
+    held.finish({ success: false });
+    await stopping;
+    expect(stopped).toBe(true);
+    expect(Poller.status()).toEqual({ running: false, busy: false, sweeping: false });
+  });
+
+  test('a crash stop (not planned) aborts the parse but leaves no mark', async () => {
+    const { held } = await startWithJobInFlight();
+
+    const stopping = Poller.stop();
+    await nextTurn();
+
+    expect(held.signal.aborted).toBe(true);
+    expect(mockMarkInterrupted).not.toHaveBeenCalled();
+
+    held.finish({ success: false });
+    await stopping;
+  });
+
+  test('a mark that cannot be written is logged; the stop goes on and waits for the job', async () => {
+    const { held, jobId } = await startWithJobInFlight();
+    mockMarkInterrupted.mockRejectedValue(new Error('connection terminated'));
+
+    let stopped = false;
+    const stopping = Poller.stop({ planned: true }).then(() => {
+      stopped = true;
+    });
+    await nextTurn();
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'OCR poller: could not mark the job in flight at shutdown',
+      { jobId, error: 'connection terminated' },
+    );
+    expect(stopped).toBe(false);
+
+    held.finish({ success: true });
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
+  test('nothing in flight — nothing to mark', async () => {
+    Poller.start({ intervalMs: 60000 });
+
+    await Poller.stop({ planned: true });
+
+    expect(mockMarkInterrupted).not.toHaveBeenCalled();
+  });
+});
+
+describe('an attempt left without an outcome is settled by the live poller, not failed by the sweep', () => {
+  const ESTABLISHMENT = uuidv4();
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** One cycle that picks `job` and whose processJob rejects — its outcome write failed. */
+  const rejectedAttempt = async (job) => {
+    mockPickNextPending.mockResolvedValueOnce(job);
+    mockProcessJob.mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    Poller.start({ intervalMs: 60000 });
+    await Poller.tick();
+    await flush();
+    expect(Poller.status().busy).toBe(false);
+  };
+
+  afterEach(async () => {
+    await Poller.stop();
+  });
+
+  test('the next cycle settles it, fenced to its attempt; a pending outcome leaves the batch open', async () => {
+    const job = { id: uuidv4(), attempts: 2, establishment_id: ESTABLISHMENT };
+    await rejectedAttempt(job);
+    expect(mockSettleAbandoned).not.toHaveBeenCalled();
+
+    mockSettleAbandoned.mockResolvedValueOnce({ ...job, status: 'pending' });
+    await Poller.tick();
+
+    expect(mockSettleAbandoned).toHaveBeenCalledTimes(1);
+    expect(mockSettleAbandoned).toHaveBeenCalledWith(
+      job.id,
+      2,
+      'attempt ended without a recorded outcome; settled by its poller',
+    );
+    expect(mockNotify).not.toHaveBeenCalled();
+
+    // Settled — forgotten: the next cycle does not try again.
+    await Poller.tick();
+    expect(mockSettleAbandoned).toHaveBeenCalledTimes(1);
+  });
+
+  test('a settle that fails is kept for the next cycle', async () => {
+    const job = { id: uuidv4(), attempts: 1, establishment_id: ESTABLISHMENT };
+    await rejectedAttempt(job);
+
+    mockSettleAbandoned.mockRejectedValueOnce(new Error('still down'));
+    await Poller.tick();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'OCR poller: could not settle an attempt without a recorded outcome — next cycle',
+      { jobId: job.id, attempts: 1, error: 'still down' },
+    );
+
+    mockSettleAbandoned.mockResolvedValueOnce(null);
+    await Poller.tick();
+    expect(mockSettleAbandoned).toHaveBeenCalledTimes(2);
+
+    await Poller.tick();
+    expect(mockSettleAbandoned).toHaveBeenCalledTimes(2);
+  });
+
+  test('settled on its last attempt — failed — it closes the batch, as processJob would have', async () => {
+    const job = { id: uuidv4(), attempts: 3, establishment_id: ESTABLISHMENT };
+    await rejectedAttempt(job);
+
+    mockSettleAbandoned.mockResolvedValueOnce({ ...job, status: 'failed' });
+    await Poller.tick();
+
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    expect(mockNotify).toHaveBeenCalledWith(ESTABLISHMENT, { failedJobId: job.id });
+  });
+
+  test('stop() gives it one more try before the pool closes', async () => {
+    const job = { id: uuidv4(), attempts: 1, establishment_id: ESTABLISHMENT };
+    await rejectedAttempt(job);
+
+    await Poller.stop();
+
+    expect(mockSettleAbandoned).toHaveBeenCalledWith(job.id, 1, expect.any(String));
+  });
+});
+
+describe('a stop requested while the pick runs — the job goes back unstarted', () => {
+  afterEach(async () => {
+    await Poller.stop();
+  });
+
+  test('the picked job is returned with its attempt, and processJob never runs', async () => {
+    const job = { id: uuidv4(), attempts: 2 };
+    let finishPick;
+    mockPickNextPending.mockReturnValueOnce(new Promise((resolve) => {
+      finishPick = resolve;
+    }));
+    Poller.start({ intervalMs: 60000 });
+
+    const ticking = Poller.tick();
+    // The cycle is inside the pick when the stop comes.
+    while (mockPickNextPending.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const stopping = Poller.stop({ planned: true });
+    finishPick(job);
+    await Promise.all([ticking, stopping]);
+
+    expect(mockReturnUnstarted).toHaveBeenCalledTimes(1);
+    expect(mockReturnUnstarted).toHaveBeenCalledWith(job.id, 2);
+    expect(mockProcessJob).not.toHaveBeenCalled();
+    expect(mockMarkInterrupted).not.toHaveBeenCalled();
+  });
+
+  test('a return that fails is logged; the stop completes', async () => {
+    const job = { id: uuidv4(), attempts: 1 };
+    let finishPick;
+    mockPickNextPending.mockReturnValueOnce(new Promise((resolve) => {
+      finishPick = resolve;
+    }));
+    mockReturnUnstarted.mockRejectedValueOnce(new Error('connection lost'));
+    Poller.start({ intervalMs: 60000 });
+
+    const ticking = Poller.tick();
+    // The cycle is inside the pick when the stop comes.
+    while (mockPickNextPending.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const stopping = Poller.stop({ planned: true });
+    finishPick(job);
+    await Promise.all([ticking, stopping]);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'OCR poller: could not return an unstarted job at shutdown',
+      { jobId: job.id, error: 'connection lost' },
+    );
+    expect(mockProcessJob).not.toHaveBeenCalled();
   });
 });

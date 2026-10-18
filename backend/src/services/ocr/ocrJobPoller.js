@@ -20,10 +20,14 @@
  * "empty menus" signal. The sweep runs once at start() — the previous process
  * is the usual source of zombies — and then every STALE_SWEEP_INTERVAL_MS from
  * within the poll cycle, whether or not a job is in flight: a long backlog
- * must not starve it. Rows older than ocrJobModel.STALE_PROCESSING_INTERVAL go
- * back to 'pending' (attempts left) or to 'failed' (last attempt spent) under
- * the same retry rule as markFailed, and a permanent failure closes the upload
- * batch exactly as processJob does. The job in flight in this process is never
+ * must not starve it. Rows older than ocrJobModel.STALE_PROCESSING_INTERVAL
+ * are failed for good — an attempt that ended its process is not retried —
+ * unless a planned shutdown marked them (stop() below): those go back to
+ * 'pending' while an attempt is left (ocrJobModel.reapStaleProcessingJobs). A
+ * permanent failure closes the upload batch exactly as processJob does. An
+ * attempt whose outcome this process failed to write (a database error) is
+ * not left to the sweep: the poller settles it itself on the next cycles
+ * (settleUnsettledAttempts). The job in flight in this process is never
  * that old (the PDF download and every vision and structurer call abort
  * after 60 s — ocrService.JOB_DURATION_BOUND_MS is 180 s, far below the
  * interval; see STALE_PROCESSING_INTERVAL in the model), so the sweep and the
@@ -34,7 +38,11 @@
  *   - stop() stops new pickups and waits for the cycle in progress, the
  *     current job and the current sweep (if any) to finish — the job and the
  *     sweep both await the batch notification, so closePool() in server.js
- *     cannot cut it off
+ *     cannot cut it off. It does not wait for a PDF parse: the job's signal
+ *     kills the parse at once, and the job settles under the retry rule. A
+ *     planned stop (a deploy) also marks the job in flight, so that if the
+ *     process is killed before the job settles, the reaper retries it rather
+ *     than failing it
  *
  * The poller must NOT start in NODE_ENV=test — tests invoke ocrService.processJob
  * and sweepStaleJobs directly to avoid timing dependencies.
@@ -56,6 +64,20 @@ const STALE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 let intervalId = null;
 let currentJobPromise = null;
+let currentJobId = null;
+/** The attempt's number (attempts of the picked row) — the fence of the shutdown mark. */
+let currentJobAttempts = null;
+/** Aborted by stop(): cuts the PDF download and parse of the job in flight (processJob's signal). */
+let currentJobAbort = null;
+/**
+ * Attempts whose processJob rejected before writing an outcome — a database
+ * error at the job's first read or at its outcome write — jobId → attempts.
+ * The row is still 'processing', and this process is alive: the next cycles
+ * (and stop()) settle it under the retry rule (settleUnsettledAttempts), so
+ * the stale sweep does not fail it an hour later as if the attempt had ended
+ * the process.
+ */
+const unsettledAttempts = new Map();
 let sweepPromise = null;
 let lastSweepAt = 0;
 let tickPromise = null;
@@ -109,6 +131,45 @@ export const sweepStaleJobs = async () => {
 };
 
 /**
+ * Settle the attempts processJob left without an outcome (unsettledAttempts):
+ * ocrJobModel.settleAbandonedAttempt, fenced to the same attempt. Settled or
+ * found already settled — forgotten; a failure — kept for the next cycle. A
+ * permanent failure closes the upload batch, as processJob's would have.
+ * Errors are logged and never reach the caller.
+ *
+ * @returns {Promise<void>}
+ */
+const settleUnsettledAttempts = async () => {
+  for (const [jobId, attempts] of [...unsettledAttempts]) {
+    let row;
+    try {
+      row = await ocrJobModel.settleAbandonedAttempt(jobId, attempts, ocrJobModel.ABANDONED_ATTEMPT_MESSAGE);
+    } catch (error) {
+      logger.error('OCR poller: could not settle an attempt without a recorded outcome — next cycle', {
+        jobId,
+        attempts,
+        error: error.message,
+      });
+      continue;
+    }
+    unsettledAttempts.delete(jobId);
+    logger.warn('OCR poller: settled an attempt that ended without a recorded outcome', {
+      jobId,
+      attempts,
+      outcome: row ? row.status : 'already settled',
+    });
+    if (row?.status === 'failed') {
+      await ocrService.notifyPartnerIfBatchFinished(row.establishment_id, { failedJobId: jobId })
+        .catch((error) => logger.error('notifyMenuParsed failed after an abandoned attempt was settled', {
+          error: error.message,
+          establishmentId: row.establishment_id,
+          jobId,
+        }));
+    }
+  }
+};
+
+/**
  * Run the sweep when STALE_SWEEP_INTERVAL_MS has passed since the last one.
  * Never overlaps with itself; errors are logged and never reach the caller.
  *
@@ -139,6 +200,7 @@ const runStaleSweepIfDue = () => {
  */
 const runTick = async () => {
   await runStaleSweepIfDue();
+  await settleUnsettledAttempts();
 
   // stop() may have been requested while the sweep ran: graceful shutdown
   // must not start a job that closePool() would then cut off.
@@ -158,15 +220,43 @@ const runTick = async () => {
     return;
   }
 
-  currentJobPromise = ocrService.processJob(job.id)
-    .catch((error) => {
-      logger.error('OCR poller: unexpected error bubbled from processJob', {
+  // The stop came while the pick ran: nothing has started, so the job goes
+  // back to the queue with its attempt given back, for the next process.
+  if (stopRequested) {
+    try {
+      const returned = await ocrJobModel.returnUnstartedJob(job.id, job.attempts);
+      logger.info('OCR poller: stop requested during the pick — job returned unstarted', {
         jobId: job.id,
+        returned: returned !== null,
+      });
+    } catch (error) {
+      logger.error('OCR poller: could not return an unstarted job at shutdown', {
+        jobId: job.id,
+        error: error.message,
+      });
+    }
+    return;
+  }
+
+  currentJobId = job.id;
+  currentJobAttempts = job.attempts;
+  currentJobAbort = new AbortController();
+  currentJobPromise = ocrService.processJob(job.id, { signal: currentJobAbort.signal })
+    .catch((error) => {
+      // processJob writes every outcome itself; a rejection means the write
+      // (or the job's first read) failed, and the row is still 'processing'.
+      unsettledAttempts.set(job.id, job.attempts);
+      logger.error('OCR poller: unexpected error bubbled from processJob — the attempt is settled from here', {
+        jobId: job.id,
+        attempts: job.attempts,
         error: error.message,
       });
     })
     .finally(() => {
       currentJobPromise = null;
+      currentJobId = null;
+      currentJobAttempts = null;
+      currentJobAbort = null;
     });
 };
 
@@ -230,9 +320,25 @@ export const start = ({ intervalMs } = {}) => {
  * job and the in-flight stale sweep (if any) to finish. Called during
  * graceful shutdown.
  *
+ * The job in flight is not waited for in its PDF parse: its signal is
+ * aborted, the parse child is killed, and processJob settles the attempt
+ * under the retry rule — the next process picks it up. Past the parse the job
+ * runs on to its own stage timeouts (ocrService.JOB_DURATION_BOUND_MS).
+ *
+ * `planned` — the stop is a deploy or Ctrl+C (gracefulShutdown's planned
+ * reasons), not a crash: the job in flight is marked
+ * (ocrJobModel.markInterruptedByShutdown) before the wait, so that a process
+ * killed at the end of its shutdown budget leaves a row the reaper returns
+ * to the queue instead of failing it. A crash shutdown leaves no mark.
+ *
+ * Last, the attempts left without an outcome (unsettledAttempts) get one
+ * more try to be settled before the pool closes.
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.planned=false]
  * @returns {Promise<void>}
  */
-export const stop = async () => {
+export const stop = async ({ planned = false } = {}) => {
   stopRequested = true;
 
   if (intervalId !== null) {
@@ -242,7 +348,7 @@ export const stop = async () => {
   }
 
   // A cycle caught mid-sweep starts no job (stopRequested); one caught
-  // mid-pick finishes the pick, and its job is then covered by the wait below.
+  // mid-pick returns the job it picked unstarted (runTick).
   if (tickPromise) {
     try {
       await tickPromise;
@@ -252,7 +358,20 @@ export const stop = async () => {
   }
 
   if (currentJobPromise) {
-    logger.info('OCR poller: waiting for in-flight job to complete');
+    const jobId = currentJobId;
+    const attempts = currentJobAttempts;
+    currentJobAbort?.abort();
+    if (planned) {
+      try {
+        await ocrJobModel.markInterruptedByShutdown(jobId, attempts);
+      } catch (error) {
+        logger.error('OCR poller: could not mark the job in flight at shutdown', {
+          jobId,
+          error: error.message,
+        });
+      }
+    }
+    logger.info('OCR poller: waiting for in-flight job to complete', { jobId, planned });
     try {
       await currentJobPromise;
     } catch (_err) {
@@ -265,6 +384,8 @@ export const stop = async () => {
     // Errors already logged inside runStaleSweepIfDue()
     await sweepPromise;
   }
+
+  await settleUnsettledAttempts();
 };
 
 /**

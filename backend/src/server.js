@@ -16,7 +16,11 @@ import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
-import { createGracefulShutdown, installShutdownHandlers } from './utils/gracefulShutdown.js';
+import {
+  createGracefulShutdown,
+  installShutdownHandlers,
+  isPlannedShutdown,
+} from './utils/gracefulShutdown.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -172,9 +176,11 @@ app.use(errorHandler);
 const gracefulShutdown = createGracefulShutdown({
   getServer: () => server,
   backgroundLoops: [
-    // Waits for the in-flight OCR job and the stale sweep.
+    // Waits for the in-flight OCR job (its PDF parse is killed, not awaited)
+    // and the stale sweep; on a deploy it also marks the job in flight, so a
+    // process killed at the budget's end leaves a job the sweep retries.
     {
-      stop: () => ocrJobPoller.stop(),
+      stop: (reason) => ocrJobPoller.stop({ planned: isPlannedShutdown(reason) }),
       failureMessage: 'OCR poller stop failed during shutdown',
     },
     // Waits only for the prune batch in flight.
