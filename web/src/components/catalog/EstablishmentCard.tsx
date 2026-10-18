@@ -7,6 +7,8 @@ import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { SmartLink } from '@/components/SmartLink';
 import { FavoriteButton } from '@/components/favorites/FavoriteButton';
 
+import { cn } from '@/lib/utils';
+
 import { OpenStatusBadge } from './OpenStatusBadge';
 
 /**
@@ -41,6 +43,9 @@ export function EstablishmentCard({
   const primaryCategory = establishment.categories[0]
     ? normalizeCategory(establishment.categories[0])
     : null;
+  // No reviews → no badge (a 0-review card carries average_rating 0).
+  const rating =
+    establishment.review_count > 0 ? establishment.average_rating : null;
   const primaryCuisine = establishment.cuisines[0]
     ? normalizeCuisine(establishment.cuisines[0])
     : null;
@@ -78,21 +83,28 @@ export function EstablishmentCard({
           {/* Content column — right, beige */}
           <div className='flex min-w-0 flex-1 flex-col bg-figma-bg-warm p-m'>
             <div className='flex items-start justify-between gap-2'>
-              {/* min-w-0 + wrap-anywhere: a word wider than the phone column
-                  (≈125px) wraps inside the two clamped lines instead of being
-                  cut off at the edge (сверка находок тестировщика с сайтом,
-                  18.10). */}
-              <h3 className='line-clamp-2 min-w-0 font-display text-[17px] leading-[23px] font-normal text-foreground wrap-anywhere'>
+              {/* A word longer than the line wraps (wrap-break-word) instead
+                  of being cut off at the card's edge — but only without the
+                  rating badge. Next to the badge the phone column is ≈70–77px,
+                  narrower than an ordinary word such as «Обычное» (≈95px);
+                  breaking there would split ordinary words mid-word, so that
+                  case stays as it was (a design question: font size or badge
+                  placement). Сверка находок тестировщика с сайтом, 18.10. */}
+              <h3
+                className={cn(
+                  'line-clamp-2 font-display text-[17px] leading-[23px] font-normal text-foreground',
+                  rating == null && 'wrap-break-word',
+                )}
+              >
                 {establishment.name}
               </h3>
-              {establishment.average_rating != null &&
-              establishment.review_count > 0 && (
+              {rating != null && (
                 <div
                   className={`flex size-[34px] shrink-0 items-center justify-center rounded-[var(--radius-s)] text-[15px] leading-none font-semibold text-text-on-primary ${ratingColorClass(
-                    establishment.average_rating,
+                    rating,
                   )}`}
                 >
-                  {formatRating(establishment.average_rating)}
+                  {formatRating(rating)}
                 </div>
               )}
             </div>
