@@ -312,6 +312,9 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
     ? 'NULL::text as admin_name, NULL::text as admin_email'
     : 'u.name as admin_name, u.email as admin_email';
   const reviewerName = viewer ? 'NULL::text' : 'reviewer.name';
+  // The person an action on an account was about (block, name reset): named to
+  // an admin, not to a viewer — the projection withholds user_name as well.
+  const targetName = viewer ? 'NULL::text' : 'target.name';
   // The opening of a review text: to a viewer only while the review is
   // visible now — the log keeps entries of hiding and deleting, and the text
   // they point at is exactly what was taken out of public view.
@@ -319,14 +322,27 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
     ? 'CASE WHEN r.is_visible = TRUE AND r.is_deleted = FALSE THEN LEFT(r.text, 120) END'
     : 'LEFT(r.text, 120)';
 
+  // What a block, an unblock or a name reset from the panel carried — the
+  // person's old name, the moderator's reason (free text about a person), the
+  // reviews the block hid and the unblock showed — stays with an admin. A
+  // viewer learns that a person was blocked and when, not which reviews were
+  // theirs: the ids would tie a hidden review to the person again (Phase 3.5
+  // review: regular and lens). Other entries are as they were: their personal
+  // keys go through the viewer projection. Fixed SQL chosen by a boolean.
+  const changeColumns = viewer
+    ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+          THEN NULL ELSE al.old_data END as old_data,
+      CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+          THEN NULL ELSE al.new_data END as new_data`
+    : 'al.old_data, al.new_data';
+
   const query = `
     SELECT
       al.id,
       al.action,
       al.entity_type,
       al.entity_id,
-      al.old_data,
-      al.new_data,
+      ${changeColumns},
       -- AT TIME ZONE 'UTC' обязателен: колонка — timestamp WITHOUT time zone,
       -- и node-pg читает такую метку как местное время своего процесса. В
       -- проде (TZ=UTC) совпадает, у разработчика уезжает на его часовой пояс.
@@ -347,6 +363,9 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
         WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' THEN 'Заведение удалено партнёром'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
+        WHEN al.action = 'user_block' AND al.entity_type = 'user' THEN 'Пользователь заблокирован'
+        WHEN al.action = 'user_unblock' AND al.entity_type = 'user' THEN 'Пользователь разблокирован'
+        WHEN al.action = 'user_reset_name' AND al.entity_type = 'user' THEN 'Имя пользователя сброшено'
         WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётки изменён'
         WHEN al.action = 'mark_service_account' AND al.entity_type = 'user' THEN 'Учётка отмечена служебной'
         WHEN al.action = 'operator_create_admin' AND al.entity_type = 'user' THEN 'Создан администратор'
@@ -381,6 +400,8 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
             'establishment_name', e_review.name,
             'establishment_city', e_review.city
           )
+        WHEN al.entity_type = 'user' THEN
+          json_build_object('user_name', ${targetName})
         ELSE NULL
       END as entity_context
       ${metadataColumns}
@@ -394,6 +415,8 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
       ON al.entity_type = 'review' AND r.user_id = reviewer.id
     LEFT JOIN establishments e_review
       ON al.entity_type = 'review' AND r.establishment_id = e_review.id
+    LEFT JOIN users target
+      ON al.entity_type = 'user' AND al.entity_id = target.id
     ${whereClause}
     ORDER BY al.created_at ${sortOrder}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}

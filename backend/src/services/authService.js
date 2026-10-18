@@ -811,6 +811,28 @@ async function deactivateDevices(client, userId) {
 }
 
 /**
+ * Ends everything that gave the account access, in the caller's transaction:
+ * its sessions (revokeAllSessions), its push devices and its unused
+ * password-reset links — what scripts/lib/operator-password.js endAllSessions
+ * does on the operator's machine, here with the server's clock. Used by the
+ * block from the panel (adminUserService). The caller drops the cached account
+ * status after COMMIT.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @returns {Promise<{tokenCount: number, revokedAt: Date|null, devices: number, resetLinks: number}>}
+ */
+export async function endAllAccess(client, userId) {
+  const sessions = await revokeAllSessions(client, userId);
+  const devices = await deactivateDevices(client, userId);
+  const resetLinks = await client.query(
+    'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+    [userId],
+  );
+  return { ...sessions, devices, resetLinks: resetLinks.rowCount };
+}
+
+/**
  * Invalidates all tokens of a user (security measure)
  *
  * This is used when token reuse is detected, indicating a possible

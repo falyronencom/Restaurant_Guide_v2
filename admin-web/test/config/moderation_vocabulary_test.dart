@@ -54,6 +54,10 @@ void main() {
           'unhide_menu_item',
           'dismiss_sanity_flag',
           'upgrade_user_to_partner',
+          // Блокировка из панели (проход тестировщика 17.10, п. 8).
+          'user_block',
+          'user_unblock',
+          'user_reset_name',
         },
       );
     });

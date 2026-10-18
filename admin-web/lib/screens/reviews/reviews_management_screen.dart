@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
@@ -6,6 +7,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/screens/users/users_screen.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
@@ -827,6 +829,21 @@ class _DetailPanel extends StatelessWidget {
                           review.viewerRedacted))
                     _PartnerResponse(review: review),
                   _Facts(review: review),
+                  // К автору — на экран «Пользователи»: оттуда модератор
+                  // блокирует человека или сбрасывает имя (проход
+                  // тестировщика 17.10, п. 8). У скрытого отзыва просмотрщику
+                  // сервер автора не называет — и ссылки нет.
+                  if (review.authorId != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const ValueKey<String>('review-author-link'),
+                        onPressed: () =>
+                            context.go(userCardLocation(review.authorId!)),
+                        icon: const Icon(Icons.person_outline, size: 18),
+                        label: const Text('Открыть автора'),
+                      ),
+                    ),
                 ],
               ),
             ),

@@ -13,6 +13,7 @@ import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.da
 import 'package:restaurant_guide_admin_web/screens/quality/quality_health_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/audit_log/audit_log_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/reviews/reviews_management_screen.dart';
+import 'package:restaurant_guide_admin_web/screens/users/users_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/notifications/notifications_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/payments/payments_screen.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
@@ -147,6 +148,12 @@ GoRouter createRouter(AuthProvider authProvider) {
             path: '/settings/reviews',
             builder: (context, state) =>
                 const ReviewsManagementScreen(),
+          ),
+          GoRoute(
+            path: kUsersPath,
+            builder: (context, state) => UsersScreen(
+              initialUserId: state.uri.queryParameters['user'],
+            ),
           ),
           GoRoute(
             path: '/settings/payments',
