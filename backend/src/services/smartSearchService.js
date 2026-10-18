@@ -760,6 +760,24 @@ export function isIntentEmpty(intent) {
 }
 
 /**
+ * Слова, которые сортировка и город разбора объясняют сами: «рядом со мной»,
+ * «лучшие», «недорого», «в Минске», «где поесть». Основы — от 4 букв скелета
+ * и совпадают с началом слова («лучших», «Минске»), короткие — только целиком.
+ */
+const ORDER_AND_PLACE_SKELETONS = Object.freeze([
+  ...PROMPT_CITIES,
+  'рядом', 'поблизости', 'недалеко', 'около', 'возле', 'со', 'с', 'мной', 'меня', 'мне',
+  'near', 'nearby', 'me', 'лучш', 'best', 'top', 'топ', 'недорог', 'дешев', 'подешевле', 'cheap',
+  'всего', 'самые', 'самый', 'в', 'во', 'на', 'по', 'у', 'где', 'куда', 'хочу', 'поесть',
+  'покушать', 'перекусить', 'сходить', 'найти', 'место', 'места', 'заведени', 'городе',
+].map(nameSkeleton).filter(Boolean));
+
+/** Слово фразы объясняется сортировкой или городом (см. выше). */
+const isOrderOrPlaceWord = (word) => ORDER_AND_PLACE_SKELETONS.some(
+  (stem) => word === stem || (stem.length >= 4 && word.startsWith(stem)),
+);
+
+/**
  * Поиск понял фразу: разбор назвал условие выдачи или сортировку («рядом со
  * мной», «лучшие» — выдача и есть ответ), либо модель не ответила и выдачу
  * собрал текстовый поиск по самой фразе (там каждое заведение совпало с ней
@@ -767,14 +785,25 @@ export function isIntentEmpty(intent) {
  * («уютное») не поняты: выдача по ним — весь город, а не ответ на фразу
  * (решение Координатора В3, 17.10.2026).
  *
+ * Сортировка и город из фразы выдачу не сужают (город обычно тот же, что
+ * выбран на экране), поэтому, когда разбор ничего, кроме них, не назвал, фраза
+ * понята, только если других слов в ней нет: «Buno рядом», «Buno Минск» — не
+ * поняты, как «Buno» (ревью PR #80, M1). Как «Tiden рядом» для названий
+ * (isIntentEmpty).
+ *
  * Граница: прочтение модели не проверяется на правдоподобие. Если модель
  * увидела в незнакомом слове тип или блюдо («Buno» → «булочка»), выдача по
  * этому прочтению считается совпадением — её объясняет строка прочтения.
  * @param {object|null} intent - Normalized intent; null — запасной путь
+ * @param {string} [query] - Фраза; без неё слова не сверяются
  * @returns {boolean}
  */
-export function isPhraseUnderstood(intent) {
-  return !intent || !isIntentEmpty(intent) || intent.sort != null;
+export function isPhraseUnderstood(intent, query = '') {
+  if (!intent) return true;
+  const narrows = !isIntentEmpty({ ...intent, location: null });
+  if (narrows) return true;
+  if (!intent.location && intent.sort == null) return false;
+  return textSkeletons(query).every(isOrderOrPlaceWord);
 }
 
 /**
@@ -1112,7 +1141,7 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
 
   const resultPagination = searchResult.pagination || { total: 0, page, limit, totalPages: 0 };
   const matchedTotal = matchedTotalOf({
-    understood: isPhraseUnderstood(intent),
+    understood: isPhraseUnderstood(intent, query),
     total: resultPagination.total || 0,
     shown: searchResult.shown || 0,
   });

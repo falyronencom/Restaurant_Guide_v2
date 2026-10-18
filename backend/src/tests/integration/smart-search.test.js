@@ -1468,6 +1468,26 @@ describe('Smart Search - поиск по названию заведения', (
     expect(near.matchedTotal).toBe(MINSK_TOTAL);
   });
 
+  test('«Buno рядом», «Buno Минск» — сортировка и город выдачу не сужают: совпадений нет, как у «Buno»', async () => {
+    for (const [phrase, intent] of [['Buno рядом', p1Intent({ sort: 'distance' })], ['Buno Минск', p1Intent({ location: 'Минск' })]]) {
+      const data = await smart(phrase, intent);
+      expect(data.pagination.total).toBe(MINSK_TOTAL);
+      expect(data.matched).toBe(false);
+      expect(data.matchedTotal).toBe(0);
+    }
+  });
+
+  test('страница 2 не меняет границу: «бар» при пустом разборе — matchedTotal 1 на каждой странице', async () => {
+    await seedIntent('бар', p1Intent());
+    for (const pageNo of [1, 2]) {
+      const data = (await request(app)
+        .post('/api/v1/search/smart')
+        .send({ query: 'бар', city: 'Минск', limit: 3, page: pageNo })).body.data;
+      expect(data.matchedTotal).toBe(1);
+      expect(data.pagination.total).toBe(MINSK_TOTAL);
+    }
+  });
+
   test('модель не ответила: текстовый поиск по фразе — совпадение, а ноль — честный ноль без запасной выдачи', async () => {
     for (const phrase of ['Tiden', 'Buno']) {
       await deleteKey(`smartsearch:${intentCacheHash(phrase)}`);

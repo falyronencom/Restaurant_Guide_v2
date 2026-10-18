@@ -117,7 +117,7 @@ export function ResultsView({
         <div className="mb-m flex items-center justify-between gap-m">
           <div className="min-w-0">
             {split && matchedTotal === 0 ? (
-              <h2 className="font-display text-headline-s text-foreground">
+              <h2 className="break-words font-display text-headline-s text-foreground">
                 По запросу «{phrase}» ничего не найдено
               </h2>
             ) : (

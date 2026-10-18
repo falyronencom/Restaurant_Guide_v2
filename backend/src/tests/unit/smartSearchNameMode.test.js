@@ -189,6 +189,22 @@ describe('isPhraseUnderstood — поиск понял фразу', () => {
     expect(isPhraseUnderstood(intentOf(extra))).toBe(true);
   });
 
+  test('только сортировка или город — понята, лишь если других слов во фразе нет («Buno рядом» — нет; ревью PR #80, M1)', () => {
+    expect(isPhraseUnderstood(intentOf({ sort: 'distance' }), 'рядом со мной')).toBe(true);
+    expect(isPhraseUnderstood(intentOf({ sort: 'distance' }), 'где поесть поблизости')).toBe(true);
+    expect(isPhraseUnderstood(intentOf({ sort: 'rating' }), 'лучшие')).toBe(true);
+    expect(isPhraseUnderstood(intentOf({ location: 'Минск' }), 'в Минске')).toBe(true);
+    expect(isPhraseUnderstood(intentOf({ location: 'Могилёв' }), 'Могилеве')).toBe(true);
+
+    expect(isPhraseUnderstood(intentOf({ sort: 'distance' }), 'Buno рядом')).toBe(false);
+    expect(isPhraseUnderstood(intentOf({ sort: 'rating' }), 'лучшие Buno')).toBe(false);
+    expect(isPhraseUnderstood(intentOf({ location: 'Минск' }), 'Buno Минск')).toBe(false);
+  });
+
+  test('условие, которое сужает выдачу, понято при любых словах рядом', () => {
+    expect(isPhraseUnderstood(intentOf({ category: 'Кафе', sort: 'distance' }), 'Buno кафе рядом')).toBe(true);
+  });
+
   test('модель не ответила — понята: выдачу собирает текстовый поиск по самой фразе', () => {
     expect(isPhraseUnderstood(null)).toBe(true);
   });
