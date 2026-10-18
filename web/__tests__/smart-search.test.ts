@@ -135,7 +135,7 @@ describe('getCatalogResults — which endpoint answers', () => {
     expect(smartSearch).not.toHaveBeenCalled();
     expect(getCatalog).toHaveBeenCalledTimes(1);
     expect(getCatalog).toHaveBeenCalledWith(params);
-    expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null });
+    expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null, matchedTotal: null });
   });
 
   it('a whitespace-only phrase is no phrase: classic', async () => {
@@ -259,7 +259,7 @@ describe('getCatalogResults — fallback', () => {
 
     expect(getCatalog).toHaveBeenCalledTimes(1);
     expect(getCatalog).toHaveBeenCalledWith(params);
-    expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null });
+    expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null, matchedTotal: null });
   });
 
   it('logs the failure status, never the visitor’s words', async () => {
@@ -285,6 +285,53 @@ describe('getCatalogResults — fallback', () => {
     expect(getCatalog).not.toHaveBeenCalled();
     expect(res.establishments.map((e) => e.id)).toEqual(['raw']);
     expect(res.understood).toBeNull();
+  });
+});
+
+// ===========================================================================
+// 3a. Matches vs suggestions (Coordinator В3, 17.10.2026)
+// ===========================================================================
+
+describe('getCatalogResults — matches vs «возможно, подойдут»', () => {
+  it('«Buno»: nothing matched → matchedTotal 0, the city kept as suggestions, no «Ищем»', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      // A parse with words in it still says nothing once nothing matched.
+      intent: { ...INTENT, dish: null, tags: ['уютное'] },
+      establishments: [listing({ id: 'city' })],
+      pagination: { ...PAGE, total: 9 },
+      fallback: false,
+      matched: false,
+      matchedTotal: 0,
+    });
+
+    const res = await getCatalogResults({ city: 'minsk', search: 'Buno' }, META);
+
+    expect(res.matchedTotal).toBe(0);
+    expect(res.establishments.map((e) => e.id)).toEqual(['city']);
+    expect(res.understood).toBeNull();
+  });
+
+  it('a match keeps its count and its «Ищем»', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: INTENT,
+      establishments: [listing({ id: 'smart' })],
+      pagination: { ...PAGE, total: 5 },
+      fallback: false,
+      matched: true,
+      matchedTotal: 5,
+    });
+
+    const res = await getCatalogResults({ city: 'minsk', search: 'бургер недорого' }, META);
+
+    expect(res.matchedTotal).toBe(5);
+    expect(res.understood).toBe('бургер · недорого');
+  });
+
+  it('a backend without the field → null (no split), as before', async () => {
+    const res = await getCatalogResults({ city: 'minsk', search: 'бургер' }, META);
+
+    expect(res.matchedTotal).toBeNull();
+    expect(res.understood).toBe('бургер · недорого');
   });
 });
 

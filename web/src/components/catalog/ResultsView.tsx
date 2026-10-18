@@ -28,6 +28,12 @@ type Props = {
   understood?: string | null;
   /** The order the search phrase asked for («недорого») — the sort select shows it. */
   sortFromPhrase?: string | null;
+  /**
+   * How many results, from the start of the whole set, match the search
+   * phrase; the rest are «Возможно, вам подойдут» (Coordinator В3, 17.10.2026).
+   * null/absent → every result is shown as found, as before.
+   */
+  matchedTotal?: number | null;
   /** FilterShelf / pagination base (e.g. `/minsk` or `/minsk/restaurants`). */
   basePath: string;
   searchParams: Record<string, string | string[] | undefined>;
@@ -62,6 +68,7 @@ export function ResultsView({
   pagination,
   understood,
   sortFromPhrase,
+  matchedTotal,
   basePath,
   searchParams,
   cuisineOptions,
@@ -74,6 +81,22 @@ export function ResultsView({
   // who set none (Coordinator 01.10, А0/А2). Sorting does not narrow.
   const isNarrowed = hasAnyFilter({ ...searchParams, sort_by: undefined });
   const isEmptyPlace = pagination.total === 0 && !isNarrowed;
+
+  // A phrase nothing (or not everything) matched: the matches first, then the
+  // rest under its own heading — never the city passed off as found («Buno»,
+  // сверка находок тестировщика 18.10, пункты 9 и 10). The boundary is an
+  // index into the whole set, so this page takes its share by its offset.
+  const phrase = firstValue(searchParams.search)?.trim();
+  const split =
+    Boolean(phrase) &&
+    matchedTotal != null &&
+    matchedTotal < pagination.total;
+  const offset = (pagination.page - 1) * pagination.limit;
+  const matchedHere = split
+    ? Math.min(Math.max((matchedTotal ?? 0) - offset, 0), establishments.length)
+    : establishments.length;
+  const found = establishments.slice(0, matchedHere);
+  const suggested = establishments.slice(matchedHere);
 
   return (
     <div className="lg:flex lg:items-start lg:gap-l">
@@ -93,14 +116,20 @@ export function ResultsView({
       <div className="lg:min-w-0 lg:flex-1">
         <div className="mb-m flex items-center justify-between gap-m">
           <div className="min-w-0">
-            <p className="text-body-m text-muted-foreground">
-              {pagination.total > 0
-                ? `Найдено ${pagination.total}`
-                : isEmptyPlace
-                  ? 'Заведений пока нет'
-                  : 'Заведений по этим параметрам не найдено'}
-            </p>
-            {understood && (
+            {split && matchedTotal === 0 ? (
+              <h2 className="font-display text-headline-s text-foreground">
+                По запросу «{phrase}» ничего не найдено
+              </h2>
+            ) : (
+              <p className="text-body-m text-muted-foreground">
+                {pagination.total > 0
+                  ? `Найдено ${split ? matchedTotal : pagination.total}`
+                  : isEmptyPlace
+                    ? 'Заведений пока нет'
+                    : 'Заведений по этим параметрам не найдено'}
+              </p>
+            )}
+            {understood && !(split && matchedTotal === 0) && (
               <p className="truncate text-body-s text-muted-foreground">
                 Ищем: {understood}
               </p>
@@ -125,16 +154,41 @@ export function ResultsView({
             <FavoritesProvider
               establishmentIds={establishments.map((e) => e.id)}
             >
-              <div className="grid grid-cols-1 gap-l sm:grid-cols-2">
-                {establishments.map((establishment) => (
-                  <EstablishmentCard
-                    key={establishment.id}
-                    establishment={establishment}
-                    fallbackCitySlug={citySlug}
-                    fallbackCategorySlug={fallbackCategorySlug}
-                  />
-                ))}
-              </div>
+              {found.length > 0 && (
+                <div className="grid grid-cols-1 gap-l sm:grid-cols-2">
+                  {found.map((establishment) => (
+                    <EstablishmentCard
+                      key={establishment.id}
+                      establishment={establishment}
+                      fallbackCitySlug={citySlug}
+                      fallbackCategorySlug={fallbackCategorySlug}
+                    />
+                  ))}
+                </div>
+              )}
+              {suggested.length > 0 && (
+                <section
+                  aria-labelledby="results-suggested"
+                  className={found.length > 0 ? 'mt-xl' : undefined}
+                >
+                  <h2
+                    id="results-suggested"
+                    className="mb-m font-display text-headline-s"
+                  >
+                    Возможно, вам подойдут
+                  </h2>
+                  <div className="grid grid-cols-1 gap-l sm:grid-cols-2">
+                    {suggested.map((establishment) => (
+                      <EstablishmentCard
+                        key={establishment.id}
+                        establishment={establishment}
+                        fallbackCitySlug={citySlug}
+                        fallbackCategorySlug={fallbackCategorySlug}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </FavoritesProvider>
 
             <div className="mt-l">
@@ -182,4 +236,8 @@ export function ResultsView({
       </div>
     </div>
   );
+}
+
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
