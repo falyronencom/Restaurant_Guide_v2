@@ -760,6 +760,37 @@ export function isIntentEmpty(intent) {
 }
 
 /**
+ * Поиск понял фразу: разбор назвал условие выдачи или сортировку («рядом со
+ * мной», «лучшие» — выдача и есть ответ), либо модель не ответила и выдачу
+ * собрал текстовый поиск по самой фразе (там каждое заведение совпало с ней
+ * текстом). Пустой разбор («Buno», «что-нибудь вкусное») и слова обстановки
+ * («уютное») не поняты: выдача по ним — весь город, а не ответ на фразу
+ * (решение Координатора В3, 17.10.2026).
+ *
+ * Граница: прочтение модели не проверяется на правдоподобие. Если модель
+ * увидела в незнакомом слове тип или блюдо («Buno» → «булочка»), выдача по
+ * этому прочтению считается совпадением — её объясняет строка прочтения.
+ * @param {object|null} intent - Normalized intent; null — запасной путь
+ * @returns {boolean}
+ */
+export function isPhraseUnderstood(intent) {
+  return !intent || !isIntentEmpty(intent) || intent.sort != null;
+}
+
+/**
+ * Сколько заведений с начала выдачи — настоящие совпадения с фразой; остальное
+ * — «возможно, вам подойдут» (В3). Совпавшие по названию стоят первыми всегда
+ * (searchWithNameMatches) и совпадениями считаются всегда; выдача под ними —
+ * совпадения, только если фраза понята (isPhraseUnderstood).
+ * @param {{ understood: boolean, total: number, shown: number }} params
+ *   shown — сколько совпавших по названию в выдаче
+ * @returns {number}
+ */
+export function matchedTotalOf({ understood, total, shown }) {
+  return understood ? total : Math.min(shown, total);
+}
+
+/**
  * Что делать с совпадениями по названию (решение Координатора 29.09.2026). /
  * What to do with name matches.
  *
@@ -1029,7 +1060,13 @@ async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page
  *   получить свою классическую выдачу С фильтрами, иначе отключение AI молча
  *   расширяет выдачу вместо того, чтобы её сузить. / Applied on the fallback
  *   branch too — otherwise an AI outage silently drops the screen's filters.
- * @returns {Promise<{ intent: object|null, results: object[], pagination: object, fallback: boolean }>}
+ *
+ * `matched` / `matchedTotal` (В3, 18.10.2026) — добавочные поля: первые
+ * `matchedTotal` заведений общей выдачи (по порядку, через все страницы) —
+ * настоящие совпадения с фразой, остальные — «возможно, вам подойдут».
+ * `matched` — есть ли хоть одно совпадение. Сама выдача от них не меняется:
+ * сборки mobile № 35 и № 36 полей не читают и показывают всё, как прежде.
+ * @returns {Promise<{ intent: object|null, results: object[], pagination: object, fallback: boolean, matched: boolean, matchedTotal: number }>}
  */
 export async function executeSmartSearch(query, context = {}, pagination = {}, explicitFilters = {}) {
   const { limit = 20, page = 1 } = pagination;
@@ -1073,11 +1110,20 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
     nameMatch: nameMatch ? { level: nameMatch.level, mode, shown: searchResult.shown } : null,
   });
 
+  const resultPagination = searchResult.pagination || { total: 0, page, limit, totalPages: 0 };
+  const matchedTotal = matchedTotalOf({
+    understood: isPhraseUnderstood(intent),
+    total: resultPagination.total || 0,
+    shown: searchResult.shown || 0,
+  });
+
   return {
     intent: searchResult.nameOnly ? nameOnlyIntent(intent) : (intent || null),
     results: searchResult.establishments || [],
-    pagination: searchResult.pagination || { total: 0, page, limit, totalPages: 0 },
+    pagination: resultPagination,
     fallback: isFallback,
+    matched: matchedTotal > 0,
+    matchedTotal,
   };
 }
 

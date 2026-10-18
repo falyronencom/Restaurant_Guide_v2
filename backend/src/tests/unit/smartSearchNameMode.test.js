@@ -10,7 +10,9 @@
  * integration/smart-search.test.js, блок «поиск по названию заведения».
  */
 
-import { isGenericPhrase, isIntentEmpty, nameMatchMode } from '../../services/smartSearchService.js';
+import {
+  isGenericPhrase, isIntentEmpty, isPhraseUnderstood, matchedTotalOf, nameMatchMode,
+} from '../../services/smartSearchService.js';
 
 const intentOf = (extra = {}) => ({
   category: null, cuisine: null, dish: null, dish_variants: [], meal_type: null,
@@ -163,5 +165,49 @@ describe('nameMatchMode — нет совпадения', () => {
   test('без совпадения режима нет — обычная выдача', () => {
     expect(nameMatchMode(null, { intent: intentOf(), hasMenuTerm: false })).toBeNull();
     expect(nameMatchMode({ level: 0, generic: false }, { intent: intentOf(), hasMenuTerm: false })).toBeNull();
+  });
+});
+
+// Признак совпадения с фразой (решение Координатора В3, 17.10.2026): непонятая
+// фраза — «ничего не найдено» и ниже «возможно, подойдут». Выдачу держит
+// integration/smart-search.test.js («Buno», «бар» при пустом разборе).
+describe('isPhraseUnderstood — поиск понял фразу', () => {
+  test('пустой разбор («Buno», «что-нибудь вкусное») и слово обстановки — не понята', () => {
+    expect(isPhraseUnderstood(intentOf())).toBe(false);
+    expect(isPhraseUnderstood(intentOf({ tags: ['уютное'] }))).toBe(false);
+    expect(isPhraseUnderstood(intentOf({ cuisine: [], tags: [] }))).toBe(false);
+  });
+
+  test.each([
+    ['тип', { category: 'Кафе' }],
+    ['блюдо', { dish: 'драники' }],
+    ['приём пищи', { meal_type: 'dinner' }],
+    ['город', { location: 'Гродно' }],
+    ['удобство', { tags: ['терраса'] }],
+    ['только сортировка («рядом со мной»)', { sort: 'distance' }],
+  ])('%s — понята', (_, extra) => {
+    expect(isPhraseUnderstood(intentOf(extra))).toBe(true);
+  });
+
+  test('модель не ответила — понята: выдачу собирает текстовый поиск по самой фразе', () => {
+    expect(isPhraseUnderstood(null)).toBe(true);
+  });
+});
+
+describe('matchedTotalOf — сколько первых заведений выдачи совпали с фразой', () => {
+  test('фраза понята — вся выдача', () => {
+    expect(matchedTotalOf({ understood: true, total: 9, shown: 0 })).toBe(9);
+    expect(matchedTotalOf({ understood: true, total: 9, shown: 1 })).toBe(9);
+  });
+
+  test('не понята — только совпавшие по названию, остальное «возможно, подойдут»', () => {
+    expect(matchedTotalOf({ understood: false, total: 9, shown: 0 })).toBe(0);
+    expect(matchedTotalOf({ understood: false, total: 9, shown: 1 })).toBe(1);
+    expect(matchedTotalOf({ understood: false, total: 1, shown: 1 })).toBe(1);
+  });
+
+  test('пустая выдача — ноль', () => {
+    expect(matchedTotalOf({ understood: true, total: 0, shown: 0 })).toBe(0);
+    expect(matchedTotalOf({ understood: false, total: 0, shown: 0 })).toBe(0);
   });
 });
