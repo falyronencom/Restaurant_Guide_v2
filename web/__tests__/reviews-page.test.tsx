@@ -33,6 +33,8 @@ jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
     throw new Error('NEXT_NOT_FOUND');
   }),
+  // ReviewsRetry (the failed-fetch notice) holds a router for «Повторить».
+  useRouter: () => ({ refresh: jest.fn() }),
 }));
 
 // Mock boundary: the typed API client. Bare jest.fn()s, return values set per
@@ -287,5 +289,59 @@ describe('ReviewsPage — review list render', () => {
     expect(
       screen.queryByText('Пока нет отзывов. Будьте первым, кто оставит отзыв!'),
     ).toBeNull();
+  });
+});
+
+// ===========================================================================
+// 5. Сверка находок тестировщика с сайтом, 18.10 (Х5 / Х23, «0,0»)
+// ===========================================================================
+
+describe('ReviewsPage — a failed reviews fetch', () => {
+  it('keeps the title and says «Не удалось загрузить отзывы» with «Повторить» — not «Пока нет отзывов», not the error page', async () => {
+    (getBySlug as jest.Mock).mockResolvedValue({
+      establishment: makeEstablishment('fail-slug'),
+    });
+    (getReviews as jest.Mock).mockRejectedValue(new ApiError(503, 'down'));
+
+    const ui = await ReviewsPage({
+      params: P('fail-slug'),
+      searchParams: SP({}),
+    });
+    render(ui);
+
+    expect(
+      screen.getByRole('heading', { name: 'Отзывы о «Тестовое заведение»' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Не удалось загрузить отзывы.',
+    );
+    expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument();
+    expect(screen.queryByText(/Пока нет отзывов/)).not.toBeInTheDocument();
+    // The count comes from the card itself (review_count 4).
+    expect(screen.getByText(/4 отзыва/)).toBeInTheDocument();
+  });
+});
+
+describe('ReviewsPage — no «0,0» for a card without reviews', () => {
+  it('average_rating 0 with no reviews → no rating badge', async () => {
+    (getBySlug as jest.Mock).mockResolvedValue({
+      establishment: {
+        ...makeEstablishment('zero-slug'),
+        review_count: 0,
+        average_rating: 0,
+      },
+    });
+    (getReviews as jest.Mock).mockResolvedValue({
+      reviews: [],
+      pagination: pagination({ total: 0, totalPages: 0 }),
+    });
+
+    const ui = await ReviewsPage({
+      params: P('zero-slug'),
+      searchParams: SP({}),
+    });
+    render(ui);
+
+    expect(screen.queryByText('0,0')).not.toBeInTheDocument();
   });
 });

@@ -21,7 +21,10 @@
  * exported ATTRIBUTE_ORDER on purpose — an expectation computed from the
  * constant under test proves only that the constant equals itself.
  */
-import { extractActiveAttributes } from '@/lib/establishment-helpers';
+import {
+  ATTRIBUTE_LABELS,
+  extractActiveAttributes,
+} from '@/lib/establishment-helpers';
 
 describe('extractActiveAttributes', () => {
   it('counts only `true` — an explicit `false` is dropped like a missing key', () => {
@@ -53,4 +56,9 @@ describe('extractActiveAttributes', () => {
       extractActiveAttributes({ wifi: true, tesla_charger: true }),
     ).toEqual(['wifi']);
   });
+});
+
+// Сверка находок тестировщика с сайтом, 18.10: the site copied the app's typo.
+it('labels the terrace «Терраса» (not «Терасса»)', () => {
+  expect(ATTRIBUTE_LABELS.terrace).toBe('Терраса');
 });

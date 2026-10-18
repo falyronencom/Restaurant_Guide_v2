@@ -13,6 +13,7 @@ import {
 import { CatalogPagination } from '@/components/catalog/CatalogPagination';
 import { ReviewCard } from '@/components/establishment/ReviewCard';
 import { ReviewSchema } from '@/components/establishment/ReviewSchema';
+import { ReviewsRetry } from '@/components/establishment/ReviewsRetry';
 import { parsePage } from '@/lib/catalog-params';
 import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import {
@@ -37,8 +38,11 @@ import { establishmentAddress } from '@/lib/establishment-path';
  *     in React.cache so generateMetadata + the page body share one roundtrip.
  *   - getReviews(slug, {page, limit}): the paginated review page. An empty list
  *     is a VALID state (graceful empty-state), NOT a 404. A genuine fetch error
- *     is NOT swallowed — it propagates to (public)/error.tsx rather than
- *     masquerading as "no reviews" (reviews ARE this page's content).
+ *     never masquerades as "no reviews" (reviews ARE this page's content): the
+ *     page keeps its title and crumbs and says «Не удалось загрузить отзывы»
+ *     with «Повторить» (ReviewsRetry — the page is force-dynamic, so a refresh
+ *     re-renders it). Before 18.10 the error went to (public)/error.tsx, which
+ *     printed Next's English production message.
  */
 
 // force-dynamic: reads searchParams (?page) → Next 16 cannot statically generate
@@ -166,11 +170,11 @@ export default async function ReviewsPage({
     permanentRedirect(page > 1 ? `${reviewsPath}?page=${page}` : reviewsPath);
   }
 
-  // 4. Paginated reviews + display metadata. getReviews is intentionally NOT
-  //    caught: an empty list is handled below as a valid state, while a real
-  //    fetch error must surface (error boundary), not look like "no reviews".
+  // 4. Paginated reviews + display metadata. A reviews failure is `null`, not
+  //    an empty list: an empty list is a valid state («Пока нет отзывов»),
+  //    while a failed fetch must say so (ReviewsRetry), not look like it.
   const [reviewsResult, meta] = await Promise.all([
-    getReviews(slug, { page, limit: REVIEWS_PER_PAGE }),
+    getReviews(slug, { page, limit: REVIEWS_PER_PAGE }).catch(() => null),
     getMetadata(),
   ]);
 
@@ -182,18 +186,23 @@ export default async function ReviewsPage({
   const detailHref = address.path;
   const averageRating = establishment.average_rating;
   const label = ratingLabel(averageRating);
-  const total = reviewsResult.pagination.total;
+  // On a failed fetch the count comes from the card itself.
+  const total = reviewsResult
+    ? reviewsResult.pagination.total
+    : establishment.review_count;
 
   return (
     <main className='mx-auto flex w-full max-w-3xl flex-1 flex-col gap-l p-l'>
       {/* Review JSON-LD (current page's reviews) — bound to the detail entity
           via @id/url. Not emitted for an empty list. */}
-      <ReviewSchema
-        establishment={establishment}
-        reviews={reviewsResult.reviews}
-        citySlug={citySlug}
-        categorySlug={categorySlug}
-      />
+      {reviewsResult ? (
+        <ReviewSchema
+          establishment={establishment}
+          reviews={reviewsResult.reviews}
+          citySlug={citySlug}
+          categorySlug={categorySlug}
+        />
+      ) : null}
 
       {/* Breadcrumbs — one level deeper than detail: …/{name → detail}/Отзывы */}
       <nav
@@ -230,7 +239,9 @@ export default async function ReviewsPage({
           Отзывы о «{establishment.name}»
         </h1>
         <div className='flex flex-wrap items-center gap-m'>
-          {averageRating != null ? (
+          {/* No reviews → no «0,0»: a 0-review card carries average_rating 0
+              (same gate as the detail page, 86059f9). */}
+          {averageRating != null && total > 0 ? (
             <span className='inline-flex items-center gap-s'>
               <span className='inline-flex size-10 items-center justify-center rounded-[var(--radius-s)] bg-success-status text-headline-m font-medium text-text-on-primary'>
                 {formatRating(averageRating)}
@@ -250,8 +261,11 @@ export default async function ReviewsPage({
         </div>
       </header>
 
-      {/* Review list (full content, clamp=false) or graceful empty-state */}
-      {reviewsResult.reviews.length === 0 ? (
+      {/* Review list (full content, clamp=false), graceful empty-state, or the
+          failed-fetch notice with «Повторить» */}
+      {!reviewsResult ? (
+        <ReviewsRetry />
+      ) : reviewsResult.reviews.length === 0 ? (
         <p className='rounded-[var(--radius-l)] border border-border bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
           Пока нет отзывов. Будьте первым, кто оставит отзыв!
         </p>
@@ -263,12 +277,14 @@ export default async function ReviewsPage({
         </div>
       )}
 
-      <CatalogPagination
-        currentPage={reviewsResult.pagination.page}
-        totalPages={reviewsResult.pagination.totalPages}
-        basePath={reviewsPath}
-        searchParams={{}}
-      />
+      {reviewsResult ? (
+        <CatalogPagination
+          currentPage={reviewsResult.pagination.page}
+          totalPages={reviewsResult.pagination.totalPages}
+          basePath={reviewsPath}
+          searchParams={{}}
+        />
+      ) : null}
     </main>
   );
 }

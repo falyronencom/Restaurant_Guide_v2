@@ -78,7 +78,11 @@ export function EstablishmentCard({
           {/* Content column — right, beige */}
           <div className='flex min-w-0 flex-1 flex-col bg-figma-bg-warm p-m'>
             <div className='flex items-start justify-between gap-2'>
-              <h3 className='line-clamp-2 font-display text-[17px] leading-[23px] font-normal text-foreground'>
+              {/* min-w-0 + wrap-anywhere: a word wider than the phone column
+                  (≈125px) wraps inside the two clamped lines instead of being
+                  cut off at the edge (сверка находок тестировщика с сайтом,
+                  18.10). */}
+              <h3 className='line-clamp-2 min-w-0 font-display text-[17px] leading-[23px] font-normal text-foreground wrap-anywhere'>
                 {establishment.name}
               </h3>
               {establishment.average_rating != null &&

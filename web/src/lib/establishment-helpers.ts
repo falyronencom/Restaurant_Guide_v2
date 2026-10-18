@@ -6,6 +6,13 @@
  */
 
 /**
+ * How many reviews the establishment detail page shows (the carousel); the rest
+ * are on «Все отзывы». Shared by the page and reloadReviewsAction, which
+ * re-fetches the same slice when the page's own fetch failed.
+ */
+export const DETAIL_REVIEWS_LIMIT = 5;
+
+/**
  * Format rating as Russian-locale string with comma decimal separator.
  * Mirrors mobile and Brief 3 EstablishmentCard: `4.8 → '4,8'`.
  * Returns '—' when rating is null/undefined or not a finite number.
@@ -53,13 +60,14 @@ export function ratingLabel(rating: number | null | undefined): string | null {
 
 /**
  * Map attribute boolean key → display label.
- * Mirrors mobile `_buildAttributesSection` labels exactly (note: mobile has
- * 'Терасса' typo; preserved for cross-platform consistency).
+ * Mirrors mobile `_buildAttributesSection` labels — except «Терраса»: the app
+ * still spells it «Терасса» (a typo the site used to copy «for consistency»;
+ * fixed here, сверка находок тестировщика с сайтом 18.10, Х11).
  */
 export const ATTRIBUTE_LABELS: Record<string, string> = {
   delivery: 'Доставка еды',
   wifi: 'Wi-Fi',
-  terrace: 'Терасса',
+  terrace: 'Терраса',
   parking: 'Парковка',
   live_music: 'Живая музыка',
   kids_zone: 'Детская зона',
