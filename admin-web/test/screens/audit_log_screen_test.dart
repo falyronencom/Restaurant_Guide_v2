@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/models/user.dart';
@@ -254,16 +255,38 @@ void main() {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
 
-      tester
+      final audit = tester
           .element(find.byType(AuditLogScreen))
-          .read<AuditLogProvider>()
-          .setActionFilter('review_hide');
+          .read<AuditLogProvider>();
+      audit.setActionFilter('review_hide');
       await settle(tester, fake, entries: <AuditLogEntry>[]);
 
       expect(find.text('Под фильтр ничего не подошло'), findsOneWidget);
       // Строка называет фильтр по-русски, а не кодом.
       expect(find.text('Тип действия: Скрытие отзыва'), findsOneWidget);
       expect(find.text('Сбросить фильтры'), findsOneWidget);
+
+      // «Со снятием по строке»: крестик строки снимает именно её фильтр, и
+      // журнал перечитывается уже без него.
+      expect(fake.lastAction, 'review_hide', reason: 'предпосылка');
+      await tester.tap(find.descendant(
+          of: find.byType(AdminEmptyState), matching: find.byIcon(Icons.close)));
+      await tester.pump();
+      expect(audit.actionFilter, isNull, reason: 'крестик строки не снял фильтр');
+      expect(fake.lastAction, isNull);
+      await settle(tester, fake, entries: <AuditLogEntry>[]);
+
+      // Кнопка режима отбора снимает все фильтры разом.
+      audit.setActionFilter('review_hide');
+      audit.setEntityTypeFilter('review');
+      await settle(tester, fake, entries: <AuditLogEntry>[]);
+      expect(fake.lastEntityType, 'review', reason: 'предпосылка');
+      await tester.tap(find.text('Сбросить фильтры'));
+      await tester.pump();
+      expect(audit.actionFilter, isNull, reason: 'кнопка не сняла фильтры');
+      expect(audit.entityTypeFilter, isNull);
+      expect(fake.lastAction, isNull);
+      expect(fake.lastEntityType, isNull);
     });
   });
 
@@ -580,6 +603,16 @@ void main() {
         tester.getRect(find.byIcon(Icons.expand_more).last).center.dx,
         1440 - 24 - 36 / 2,
       );
+      // Остальные три ширины кадра. Администратор — 200 перед шевроном:
+      // колонка начинается за 236 от правого края тела (подпись — с отступом
+      // ячейки 14).
+      expect(left(find.text('АДМИНИСТРАТОР')) - 14, 1440 - 24 - 36 - 200);
+      // Действие и объект делят остаток в пропорции кадра 467:260.
+      final actionWidth =
+          left(find.text('ОБЪЕКТ')) - left(find.text('ДЕЙСТВИЕ'));
+      final objectWidth =
+          left(find.text('АДМИНИСТРАТОР')) - left(find.text('ОБЪЕКТ'));
+      expect(actionWidth / objectWidth, closeTo(467 / 260, 1e-6));
     });
 
     testWidgets('высоты шапки и строки — 40 и 52', (tester) async {
@@ -656,6 +689,27 @@ void main() {
   });
 
   group('Фильтры', () {
+    testWidgets('«Тип действия» предлагает каждое действие словаря',
+        (tester) async {
+      // Проверка словаря (moderation_vocabulary_test) видит карту, а не
+      // выпадающий список, который из неё строится: потерянный при сборке
+      // пункт она бы не заметила. Здесь открывается сам список.
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+
+      await tester.tap(find.text('Тип действия'));
+      await tester.pumpAndSettle();
+
+      final items = find.byWidgetPredicate((w) => w is PopupMenuItem);
+      expect(items, findsNWidgets(kAuditActions.length + 1),
+          reason: '«Все» и каждое действие словаря');
+      for (final label in kAuditActions.values) {
+        expect(find.descendant(of: items, matching: find.text(label)),
+            findsOneWidget,
+            reason: 'в списке нет «$label»');
+      }
+    });
+
     testWidgets('«Объект» уходит в запрос — эндпоинт принимал его всегда',
         (tester) async {
       final fake = await pumpScreen(tester);

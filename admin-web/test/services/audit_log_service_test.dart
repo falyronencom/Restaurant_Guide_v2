@@ -17,6 +17,12 @@ import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
 class _StubAdapter implements HttpClientAdapter {
   final List<RequestOptions> requests = [];
 
+  /// Ответ сервера; по умолчанию — пустая страница.
+  Map<String, dynamic> body = <String, dynamic>{
+    'data': <dynamic>[],
+    'meta': <String, dynamic>{'total': 0, 'page': 1, 'pages': 1},
+  };
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -25,10 +31,7 @@ class _StubAdapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     return ResponseBody.fromString(
-      jsonEncode(<String, dynamic>{
-        'data': <dynamic>[],
-        'meta': <String, dynamic>{'total': 0, 'page': 1, 'pages': 1},
-      }),
+      jsonEncode(body),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -84,6 +87,52 @@ void main() {
   test('тип объекта уходит как entity_type', () async {
     await service.getAuditLog(entityType: 'review');
     expect(lastQuery()['entity_type'], 'review');
+  });
+
+  test('строка журнала разбирается по ключам сервера', () async {
+    // Экран журнала тестируется на записях, собранных конструктором, — разбор
+    // ответа там не исполняется, и выпавший ключ вернул бы «исполнитель не
+    // указан» и машинный тип объекта молча. Строка — как её отдаёт
+    // auditLogModel.getAuditLog просмотрщику (имени и почты исполнителя нет,
+    // роль есть), конверт — auditLogController.
+    adapter.body = <String, dynamic>{
+      'success': true,
+      'data': <dynamic>[
+        <String, dynamic>{
+          'id': '5d1c2b3a-0000-4000-8000-000000000001',
+          'action': 'suspend',
+          'entity_type': 'establishment',
+          'entity_id': '1a2b3c4d-0000-4000-8000-000000000000',
+          'old_data': <String, dynamic>{'status': 'active'},
+          'new_data': <String, dynamic>{'status': 'suspended'},
+          'created_at': '2026-10-17T12:00:00.000Z',
+          'admin_name': null,
+          'admin_email': null,
+          'actor_role': 'admin',
+          'summary': 'Приостановлено заведение',
+          'entity_context': <String, dynamic>{
+            'name': 'Васильки',
+            'city': 'Минск',
+          },
+        },
+      ],
+      'meta': <String, dynamic>{'total': 1, 'page': 1, 'pages': 1},
+    };
+
+    final page = await service.getAuditLog();
+    final entry = page.entries.single;
+
+    expect(entry.action, 'suspend');
+    expect(entry.summary, 'Приостановлено заведение');
+    expect(entry.entityType, 'establishment');
+    expect(entry.adminName, isNull);
+    expect(entry.actorRole, 'admin');
+    expect(entry.entityContext,
+        <String, dynamic>{'name': 'Васильки', 'city': 'Минск'});
+    expect(entry.oldData, <String, dynamic>{'status': 'active'});
+    expect(entry.newData, <String, dynamic>{'status': 'suspended'});
+    expect(entry.createdAt, DateTime.utc(2026, 10, 17, 12));
+    expect(page.total, 1);
   });
 
   test('пустые фильтры в запрос не попадают', () async {

@@ -72,8 +72,12 @@ void main() {
     test('отсутствующие поля дают null, а не нули', () {
       final review = AdminReviewItem.fromJson(_json(<String, dynamic>{}));
 
+      // Все пять новых полей, а не три: «нули» вместо null панель печатает
+      // как «средний 0,0» и «0 отзывов».
       expect(review.establishmentAverageRating, isNull);
+      expect(review.establishmentReviewCount, isNull);
       expect(review.authorReviewCount, isNull);
+      expect(review.authorAverageRating, isNull);
       expect(review.partnerResponseAt, isNull);
     });
 
