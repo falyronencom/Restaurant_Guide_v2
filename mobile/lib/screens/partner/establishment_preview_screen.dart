@@ -354,12 +354,12 @@ class _EstablishmentPreviewScreenState
             ),
           ),
 
-        // Cuisine
+        // Cuisine — словом, без фигурных скобок, как на карточке гостя
         if (cuisineNames.isNotEmpty)
           Opacity(
             opacity: 0.7,
             child: Text(
-              '{${cuisineNames.toLowerCase()}}',
+              cuisineNames.toLowerCase(),
               style: const TextStyle(
                 fontSize: 18,
                 color: _backgroundColor,

@@ -30,7 +30,8 @@ enum SplashPhase { intro, loop, outro }
 ///   while soft waves leave it every 1.1 s until auth is ready (or the 10 s
 ///   timeout fires).
 /// - Outro: everything fades out (460 ms), then we navigate to `/home`
-///   (authenticated) or `/auth/method-selection` (guest).
+///   (authenticated, or a stored session the server has not answered about
+///   yet) or `/auth/method-selection` (guest).
 ///
 /// Reduce Motion (`MediaQuery.disableAnimations`): no flight, no impact — the
 /// assembled sign and text appear in one 200 ms fade, the intro lasts 1 s, the
@@ -290,8 +291,12 @@ class _SplashScreenState extends State<SplashScreen>
     _timeoutTimer?.cancel();
 
     final authProvider = context.read<AuthProvider>();
-    final route =
-        authProvider.isAuthenticated ? '/home' : '/auth/method-selection';
+    // Сохранённая сессия ещё сверяется с сервером (таймаут при плохой связи)
+    // — это не гость: главный экран, исход сверки дойдёт туда сам.
+    // «Регистрация» — только когда сессии нет или сервер её отверг.
+    final signedIn =
+        authProvider.isAuthenticated || authProvider.isRestoringSession;
+    final route = signedIn ? '/home' : '/auth/method-selection';
 
     Navigator.of(context).pushNamedAndRemoveUntil(
       route,
