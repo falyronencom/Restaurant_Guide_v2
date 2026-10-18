@@ -166,18 +166,29 @@ void main() {
             // собственная ширина абзаца — самое широкое неразрывное слово:
             // пока она не больше колонки, переносы идут только между словами
             // («Открыто · до» | «00:00» на 360 dp при ×1,2 — законно).
-            // Кухня — по скобке: рядом с ценой она может быть оборвана
-            // многоточием внутри скобок.
+            // Кухня — по полному тексту: рядом с ценой её обрывает
+            // многоточием движок, текст виджета остаётся целым (фигурные
+            // скобки сняты 18.10.2026).
             final words = {
-              'кухня': find.byWidgetPredicate((w) =>
-                  w is RichText && w.text.toPlainText().startsWith('{')),
+              'кухня': find.text(card.cuisine!),
               'строка статуса': _status,
             };
             for (final MapEntry(key: line, value: finder) in words.entries) {
               final paragraph = tester.renderObject<RenderParagraph>(finder);
-              if (paragraph.getMinIntrinsicWidth(double.infinity) >
-                  paragraph.constraints.maxWidth) {
+              // Рвать слово по буквам может только перенос. Строка в одну
+              // строку без переноса (кухня, как и тип) не переносится вовсе:
+              // не поместилась — обрывается, и обрыв обязан быть многоточием.
+              final wraps =
+                  paragraph.softWrap && (paragraph.maxLines ?? 2) > 1;
+              if (wraps &&
+                  paragraph.getMinIntrinsicWidth(double.infinity) >
+                      paragraph.constraints.maxWidth) {
                 broken.add('$line: слово шире колонки — рвётся посреди слова');
+              }
+              if (!wraps &&
+                  paragraph.didExceedMaxLines &&
+                  paragraph.overflow != TextOverflow.ellipsis) {
+                broken.add('$line: обрывается без многоточия');
               }
             }
 

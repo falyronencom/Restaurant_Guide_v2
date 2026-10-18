@@ -146,7 +146,9 @@ void main() {
       await _pump(tester, _Calls());
 
       expect(find.text('Гастрономическое пространство'), findsOneWidget);
-      expect(find.text('4.8'), findsOneWidget);
+      // Русская запятая — как в списке и в карточке заведения (до 18.10.2026
+      // здесь стояла точка: «4.8»).
+      expect(find.text('4,8'), findsOneWidget);
       expect(find.text('Ресторан'), findsOneWidget);
       expect(find.text('проспект Независимости, 117А'), findsOneWidget);
       expect(find.byIcon(Icons.close), findsOneWidget);
@@ -163,6 +165,15 @@ void main() {
 
       expect(find.byIcon(Icons.star), findsNothing);
       expect(find.text('Гастрономическое пространство'), findsOneWidget);
+    });
+
+    testWidgets('без отзывов (сервер шлёт среднюю 0) — ни звезды, ни «0,0»',
+        (tester) async {
+      await _pump(tester, _Calls(), establishment: _place(rating: 0));
+
+      expect(find.byIcon(Icons.star), findsNothing);
+      expect(find.text('0.0'), findsNothing);
+      expect(find.text('0,0'), findsNothing);
     });
 
     testWidgets('цвета те же, что были на вкладке «Карта»', (tester) async {
