@@ -212,6 +212,7 @@ export default async function CategoryPage({
           pagination={catalog.pagination}
           understood={catalog.understood}
           sortFromPhrase={catalog.sortFromPhrase}
+          matchedTotal={catalog.matchedTotal}
           basePath={`/${city}/${category}`}
           searchParams={sp}
           cuisineOptions={cuisineOptions}

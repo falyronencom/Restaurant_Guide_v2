@@ -138,6 +138,10 @@ export async function smartSearch(req, res, next) {
         establishments: result.results,
         pagination: result.pagination,
         fallback: result.fallback,
+        // В3 (18.10.2026): первые matchedTotal заведений выдачи — совпадения
+        // с фразой, остальные — «возможно, вам подойдут». Поля добавочные.
+        matched: result.matched,
+        matchedTotal: result.matchedTotal,
       },
     });
   } catch (error) {
