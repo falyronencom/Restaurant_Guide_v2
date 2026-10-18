@@ -45,12 +45,23 @@ describe('authedFetch', () => {
     );
     mockFetch.mockResolvedValue({ ok: 1 });
 
-    await authedFetch('/api/v1/favorites/check-batch', { method: 'POST' });
+    const body = JSON.stringify({ establishment_ids: ['e1'] });
+    await authedFetch('/api/v1/favorites/check-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
 
-    const init = mockFetch.mock.calls[0][1] as {
+    const init = mockFetch.mock.calls[0][1] as RequestInit & {
       headers: Record<string, string>;
     };
     expect(init.headers.Authorization).toBe('Bearer at');
+    // The caller's request reaches the transport whole — method, body and
+    // its own headers next to the Bearer; a dropped init turns every authed
+    // write into a body-less GET.
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(body);
+    expect(init.headers['Content-Type']).toBe('application/json');
   });
 
   it('refreshes once and retries with the fresh token on a backend 401', async () => {
@@ -70,14 +81,21 @@ describe('authedFetch', () => {
       }) // refresh
       .mockResolvedValueOnce({ ok: 1 }); // retry
 
-    const result = await authedFetch('/api/v1/favorites');
+    // A write, so the replay can be seen carrying the same request.
+    const body = JSON.stringify({ establishmentId: 'e1' });
+    const result = await authedFetch('/api/v1/favorites', {
+      method: 'POST',
+      body,
+    });
 
     expect(result).toEqual({ ok: 1 });
     expect(mockFetch).toHaveBeenCalledTimes(3);
-    const retryInit = mockFetch.mock.calls[2][1] as {
+    const retryInit = mockFetch.mock.calls[2][1] as RequestInit & {
       headers: Record<string, string>;
     };
     expect(retryInit.headers.Authorization).toBe('Bearer fresh');
+    expect(retryInit.method).toBe('POST');
+    expect(retryInit.body).toBe(body);
   });
 
   it('does not loop: a second 401 on the retry re-throws after exactly one refresh', async () => {
