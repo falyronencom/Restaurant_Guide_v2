@@ -1177,7 +1177,7 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                         ),
                       if (review.establishmentCuisine != null)
                         Text(
-                          '{${review.establishmentCuisine}}',
+                          review.establishmentCuisine!,
                           style: const TextStyle(
                             fontSize: 13,
                             color: _greyText,

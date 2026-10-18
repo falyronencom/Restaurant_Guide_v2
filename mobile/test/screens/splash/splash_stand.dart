@@ -34,6 +34,11 @@ class FakeAuthService implements AuthService {
   /// Пока не завершён — чтение хранилища не отвечает, провайдер в загрузке.
   Completer<bool>? gate;
 
+  /// Пока не завершён — сервер молчит о профиле: токены прочитаны, а сверка
+  /// сессии висит (плохая связь: ожидание соединения дольше таймаута
+  /// заставки).
+  Completer<User>? profileGate;
+
   @override
   Future<bool> isAuthenticated() {
     final held = gate;
@@ -43,6 +48,8 @@ class FakeAuthService implements AuthService {
 
   @override
   Future<User> getCurrentUser() async {
+    final heldProfile = profileGate;
+    if (heldProfile != null) return heldProfile.future;
     final user = storedUser;
     if (user == null) throw Exception('no session');
     return user;
@@ -100,12 +107,15 @@ void resetSplashStand() {
 ///
 /// [held] — держать чтение хранилища (сессия «ещё грузится»);
 /// [authenticated] — в хранилище живая сессия, профиль отвечает;
+/// [profileHeld] — токены прочитаны, а ответа сервера о профиле нет
+/// (сверка сессии висит);
 /// [reduceMotion] — начальное значение системной настройки «уменьшить
 /// движение» (дальше переключается через [SplashStand.reduceMotion]).
 Future<SplashStand> pumpSplash(
   WidgetTester tester, {
   bool held = true,
   bool authenticated = false,
+  bool profileHeld = false,
   bool reduceMotion = false,
 }) async {
   final service = FakeAuthService(
@@ -113,6 +123,7 @@ Future<SplashStand> pumpSplash(
     storedUser: authenticated ? stubUser : null,
   );
   if (held) service.gate = Completer<bool>();
+  if (profileHeld) service.profileGate = Completer<User>();
   final auth = AuthProvider(authService: service);
   // Дерево к моменту tearDown уже размонтировано (flutter_test делает это
   // в конце тела теста), слушатель заставки снят — провайдер можно гасить.

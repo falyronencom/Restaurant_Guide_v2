@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Preview panel showing top-3 smart search results on the home screen.
 /// Appears below the search bar after AI intent parsing completes.
@@ -297,8 +298,10 @@ class _ResultCard extends StatelessWidget {
       return '${establishment.category} \u00b7 $distStr';
     }
 
-    if (establishment.rating != null) {
-      return '${establishment.category} \u00b7 ${establishment.rating!.toStringAsFixed(1)}\u2605';
+    // Как в списке: без отзывов оценки нет, оценка — через запятую.
+    final rating = ratingLabel(establishment.rating);
+    if (rating != null) {
+      return '${establishment.category} \u00b7 $rating\u2605';
     }
 
     return establishment.category;

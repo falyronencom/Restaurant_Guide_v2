@@ -143,7 +143,7 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
 
               // Description
               Text(
-                'Войдите в аккаунт и начните свое путешествие по миру гастраномии',
+                'Войдите в аккаунт и начните свое путешествие по миру гастрономии',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   fontSize: 16,
                   height: 1.25,
