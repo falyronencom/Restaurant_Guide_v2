@@ -27,7 +27,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-const { pool } = await import('../../config/database.js');
+const { pool, getClient } = await import('../../config/database.js');
 const { generateAccessToken, generateRefreshToken } = await import('../../utils/jwt.js');
 const { authenticateWithOAuth } = await import('../../services/authService.js');
 
@@ -160,6 +160,7 @@ describe('authenticateWithOAuth', () => {
     });
 
     await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
-    expect(linked()).toBe(false);
+    expect(linked()).toBe(false); // not linked (the pool)
+    expect(getClient).not.toHaveBeenCalled(); // not taken over (the takeover runs in a transaction)
   });
 });

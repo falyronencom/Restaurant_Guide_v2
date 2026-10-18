@@ -194,9 +194,10 @@ describe('Контракт провода с mobile — карточка зав�
   });
 
   // Строка медиа детали: EstablishmentMedia.fromJson (mobile/lib/models/
-  // establishment.dart) приводит эти поля без запасного значения — пропажа
-  // любого роняет разбор всей карточки. У карточки фикстуры медиа нет, и тест
-  // выше их не видит: здесь одна строка медиа.
+  // establishment.dart) приводит type, position и created_at без запасного
+  // значения — пропажа любого роняет разбор всей карточки; id и
+  // establishment_id превращаются в строку «null». У карточки фикстуры медиа
+  // нет, и тест выше их не видит: здесь одна строка медиа.
   test('строка медиа детали несёт поля, которые приложение разбирает без запаса', async () => {
     const image = 'https://res.cloudinary.com/test/image/upload/v1/establishments/wire/x.jpg';
     await query(

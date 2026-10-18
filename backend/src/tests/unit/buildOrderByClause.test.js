@@ -287,7 +287,7 @@ describe('buildOrderByClause', () => {
       // «e.»-prefixed. After the replace no ref can start with «e.» any more,
       // so a check on the replaced text passes whatever the clause says: the
       // check runs on the original.
-      test(`${mode} with distance: every column ref is e.-prefixed, so all convert to ne.`, () => {
+      test(`${mode} with distance: every qualified column ref is e.-prefixed, so all convert to ne.`, () => {
         const original = buildOrderByClause(mode, true);
 
         const columnRefs = original.match(/\b[a-z_]+\.[a-z_]+/g) || [];

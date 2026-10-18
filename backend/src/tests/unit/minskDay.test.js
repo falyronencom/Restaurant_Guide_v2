@@ -72,6 +72,7 @@ describe('граница суток не зависит от пояса проц
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
       env: { ...process.env, TZ: tz },
       encoding: 'utf8',
+      timeout: 10000,
     });
     expect(child.stderr).toBe('');
     const { zone, out } = JSON.parse(child.stdout);

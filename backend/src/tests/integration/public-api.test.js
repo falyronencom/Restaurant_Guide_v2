@@ -714,6 +714,9 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug', () =>
 
   test.each(NON_ACTIVE_STATUSES)('404 for non-active establishment slug: %s', async (status) => {
     await insertNonActiveCards('Slug Hidden');
+    // The card is there under this slug — a 404 for a slug never written proves nothing.
+    const { rows } = await query('SELECT status FROM establishments WHERE slug = $1', [`slug-hidden-${status}`]);
+    expect(rows).toEqual([{ status }]);
     await request(app)
       .get(`/api/v1/public/establishments/by-slug/slug-hidden-${status}`)
       .expect(404);

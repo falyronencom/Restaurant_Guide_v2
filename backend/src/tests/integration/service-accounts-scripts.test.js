@@ -328,12 +328,13 @@ describe('Б5: create-review-user.js and create-test-partner.js do not delete', 
   });
 
   // «Only an ordinary user without cards»: each of the three things that make an
-  // account not that — another role, cards, the service flag — on its own
-  // (a partner with a card would be refused by the role alone).
+  // account not that — another role, cards, the service flag — on its own; and
+  // the partner with a card of the original case, whose cards must stay.
   test.each([
-    ['a partner with a card', { role: 'partner' }, 1],
+    ['a partner without cards', { role: 'partner' }, 0],
     ['an ordinary user who owns a card', { role: 'user' }, 1],
     ['an ordinary user with the service flag', { role: 'user', service: true }, 0],
+    ['a partner with a card', { role: 'partner' }, 1],
   ])('create-review-user.js refuses %s and leaves it and its cards in place', async (_label, account, cards) => {
     const id = await user({ email: 'review@example.com', ...account });
     for (let i = 0; i < cards; i += 1) await card(id);

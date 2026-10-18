@@ -214,8 +214,10 @@ describe('pin tool helpers', () => {
       .toBe('postgresql://u:p@h:5/db?application_name=x');
   });
 
-  // Each parameter through which node-pg lets a connection string replace the
-  // ssl option, one by one — the line above shows two of them.
+  // Each parameter through which a connection string replaces the ssl option,
+  // one by one: those pg-connection-string reads (ssl, sslmode, sslcert,
+  // sslkey, sslrootcert, uselibpqcompat) and libpq's sslcrl, dropped as a
+  // precaution. The line above shows two of them.
   test.each(['ssl', 'sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'sslcrl', 'uselibpqcompat'])(
     'withoutTlsParameters drops %s',
     (name) => {

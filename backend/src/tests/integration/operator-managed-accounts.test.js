@@ -168,9 +168,9 @@ describe('Б2: «forgot password» issues nothing for an operator-managed accoun
     expect(await links(id)).toBe(1);
   });
 
-  // Б2 names three holders: the two panel roles and the seed house (flag 037).
-  // Each is its own clause of the guard, so each is its own row here; each
-  // signs in afterwards through its own door with the old password.
+  // Б2 names three holders: the two panel roles (two members of the guard's
+  // role clause) and the seed house (its own clause, flag 037). Each is its own
+  // row here; each signs in afterwards through its own door with the old password.
   test.each([
     ['admin', 'admin', false, (email) => panelLogin(email, PASSWORD)],
     ['viewer', 'viewer', false, (email) => panelLogin(email, PASSWORD)],

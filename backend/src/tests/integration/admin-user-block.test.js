@@ -175,6 +175,12 @@ describe('POST /admin/users/:id/block и /unblock', () => {
       "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
       [target.id, `hash-${randomUUID()}`],
     );
+    const { rows: [seeded] } = await query(
+      `SELECT (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1 AND is_active = TRUE) AS active_devices,
+              (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL) AS live_links`,
+      [target.id],
+    );
+    expect(seeded).toEqual({ active_devices: 1, live_links: 1 }); // there is something to switch off
     establishment = (await createPartnerWithEstablishment('active')).establishment;
     otherEstablishment = (await createPartnerWithEstablishment('active')).establishment;
 
@@ -246,16 +252,14 @@ describe('POST /admin/users/:id/block и /unblock', () => {
     );
     expect(live.rows[0].n).toBe(0);
 
-    // «push выключен» — и ссылка сброса, выданная до блокировки, погашена.
-    // Строки были (первые два числа), действующих не осталось (вторые два).
+    // «push выключен» — и ссылка сброса, выданная до блокировки, погашена:
+    // действующих не осталось (что они были, проверено при подготовке).
     const { rows: [left] } = await query(
-      `SELECT (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1) AS devices,
-              (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1) AS links,
-              (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1 AND is_active = TRUE) AS active_devices,
+      `SELECT (SELECT COUNT(*)::int FROM device_tokens WHERE user_id = $1 AND is_active = TRUE) AS active_devices,
               (SELECT COUNT(*)::int FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL) AS live_links`,
       [target.id],
     );
-    expect(left).toEqual({ devices: 1, links: 1, active_devices: 0, live_links: 0 });
+    expect(left).toEqual({ active_devices: 0, live_links: 0 });
   });
 
   test('повтор блокировки ничего не пишет второй раз', async () => {

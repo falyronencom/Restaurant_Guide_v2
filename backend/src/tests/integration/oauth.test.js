@@ -7,9 +7,11 @@
  * external provider boundary mocked: google-auth-library for Google, and the
  * global fetch to login.yandex.ru for Yandex. Verifies the provider whitelist,
  * provider branching, the new-user / existing-user / account-link paths against
- * the real schema, and the error-code → HTTP-status map (all but 409
- * ACCOUNT_CONFLICT, which needs two sign-ups racing — not staged here; honesty
- * audit 18.10.2026). Additive coverage of a
+ * the real schema, and the error-code → HTTP-status map: 401, 400 and 403
+ * ACCOUNT_DEACTIVATED here; 403 OAUTH_EMAIL_NOT_VERIFIED in
+ * oauth-unverified-takeover.test.js; 409 ACCOUNT_CONFLICT needs two sign-ups
+ * racing and is not staged; 400 INVALID_PROVIDER is answered 422 by the
+ * validator first (honesty audit 18.10.2026). Additive coverage of a
  * path that previously had none (Discovery Q8). The last block covers what an
  * account created here meets at the password login (POST /auth/login and the
  * admin panel's login): it has no password until «forgot password» sets one.

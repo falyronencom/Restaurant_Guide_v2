@@ -209,6 +209,7 @@ describe('jwt utilities', () => {
         const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
           env: { ...process.env, JWT_SECRET: secret },
           encoding: 'utf8',
+          timeout: 10000,
         });
         expect(child.status).toBe(0);
         return (child.stdout.match(/DERIVED=([0-9a-f]+)/) || [])[1];
