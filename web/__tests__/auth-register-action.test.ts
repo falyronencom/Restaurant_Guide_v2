@@ -125,8 +125,13 @@ describe('registerAction — success', () => {
 describe('registerAction — pre-validation (no network call)', () => {
   it.each([
     ['weak password', { ...VALID_FIELDS, password: 'short' }, 'password'],
+    // One rule at a time — 'short' breaks three at once and proves none alone.
+    ['password of 7 characters', { ...VALID_FIELDS, password: 'Abcdef1' }, 'password'],
+    ['password without an uppercase letter', { ...VALID_FIELDS, password: 'abcdefg1' }, 'password'],
+    ['password without a lowercase letter', { ...VALID_FIELDS, password: 'ABCDEFG1' }, 'password'],
     ['password without digits', { ...VALID_FIELDS, password: 'NoDigitsHere' }, 'password'],
     ['malformed email', { ...VALID_FIELDS, email: 'not-an-email' }, 'email'],
+    ['email without a dot in the domain', { ...VALID_FIELDS, email: 'anna@mail' }, 'email'],
     ['too-short name', { ...VALID_FIELDS, name: 'Я' }, 'name'],
     ['name with a comma and a dot', { ...VALID_FIELDS, name: 'Анна, К.' }, 'name'],
     ['name with digits', { ...VALID_FIELDS, name: 'Иван2000' }, 'name'],
@@ -219,6 +224,11 @@ describe('registerAction — backend error mapping', () => {
 
     const result = await registerAction(null, formDataOf(VALID_FIELDS));
 
-    expect(result).toMatchObject({ ok: false, code: 'NETWORK' });
+    // The message, not only the code: the form shows the message.
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'NETWORK',
+      message: 'Сеть недоступна. Попробуйте позже.',
+    });
   });
 });
