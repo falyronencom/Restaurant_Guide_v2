@@ -114,40 +114,44 @@ export function ResultsView({
 
       {/* min-w-0 lets the flex child shrink so the inner grid never overflows */}
       <div className="lg:min-w-0 lg:flex-1">
-        <div className="mb-m flex items-center justify-between gap-m">
-          <div className="min-w-0">
-            {split && matchedTotal === 0 ? (
-              <h2 className="break-words font-display text-headline-s text-foreground">
-                По запросу «{phrase}» ничего не найдено
-              </h2>
-            ) : (
-              <p className="text-body-m text-muted-foreground">
-                {pagination.total > 0
-                  ? `Найдено ${split ? matchedTotal : pagination.total}`
-                  : isEmptyPlace
-                    ? 'Заведений пока нет'
-                    : 'Заведений по этим параметрам не найдено'}
-              </p>
-            )}
-            {understood && !(split && matchedTotal === 0) && (
-              <p className="truncate text-body-s text-muted-foreground">
-                Ищем: {understood}
-              </p>
-            )}
-          </div>
-          {pagination.total > 0 && (
-            <SortSelect
-              basePath={basePath}
-              searchParams={searchParams}
-              impliedSort={sortFromPhrase ?? undefined}
-            />
-          )}
-        </div>
-
         <ResultsSwitcher
           citySlug={citySlug}
           categorySlug={activeCategorySlug}
           searchParams={searchParams}
+          // The toolbar rides inside the switcher: on entering the map it is
+          // lifted with it and stays above the map instead of under the site
+          // header (сверка находок тестировщика с сайтом, 18.10, Ш1).
+          header={
+            <div className="mb-m flex items-center justify-between gap-m">
+              <div className="min-w-0">
+                {split && matchedTotal === 0 ? (
+                  <h2 className="break-words font-display text-headline-s text-foreground">
+                    По запросу «{phrase}» ничего не найдено
+                  </h2>
+                ) : (
+                  <p className="text-body-m text-muted-foreground">
+                    {pagination.total > 0
+                      ? `Найдено ${split ? matchedTotal : pagination.total}`
+                      : isEmptyPlace
+                        ? 'Заведений пока нет'
+                        : 'Заведений по этим параметрам не найдено'}
+                  </p>
+                )}
+                {understood && !(split && matchedTotal === 0) && (
+                  <p className="truncate text-body-s text-muted-foreground">
+                    Ищем: {understood}
+                  </p>
+                )}
+              </div>
+              {pagination.total > 0 && (
+                <SortSelect
+                  basePath={basePath}
+                  searchParams={searchParams}
+                  impliedSort={sortFromPhrase ?? undefined}
+                />
+              )}
+            </div>
+          }
         >
         {hasResults ? (
           <>
