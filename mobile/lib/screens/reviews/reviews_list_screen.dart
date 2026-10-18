@@ -31,14 +31,34 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
   /// новый запрос в сбой.
   bool _loadMoreFailed = false;
   String? _error;
+  /// Последняя загруженная страница сервера. При «сначала старые» страницы
+  /// идут от последней к первой, и номер убывает.
   int _currentPage = 1;
   int _totalPages = 1;
+  /// Номер загрузки с первой страницы: растёт при смене сортировки и
+  /// «Повторить». Ответ, пришедший на прежний номер, опоздал — его не
+  /// показывать, иначе страницы разных порядков смешаются.
+  int _generation = 0;
+
+  static const int _perPage = 10;
 
   // Scroll controller for pagination
   final ScrollController _scrollController = ScrollController();
 
   // Sort options
   String _sortBy = 'newest'; // 'newest', 'oldest', 'highest', 'lowest'
+
+  /// Порядок задаёт сервер: страницы по 10, и переставить уже загруженное
+  /// значило бы показать «лучшие из первых десяти», а не из всех (проход
+  /// тестировщика 17.10, Х31). Сервер знает `newest`, `highest`, `lowest`.
+  /// «Сначала старые» он не знает, поэтому страницы порядка «сначала новые»
+  /// берутся с последней к первой и каждая разворачивается — так это порядок
+  /// всех отзывов, а не загруженных.
+  bool get _oldestFirst => _sortBy == 'oldest';
+  String get _serverSort => _oldestFirst ? 'newest' : _sortBy;
+  bool get _hasMore =>
+      _oldestFirst ? _currentPage > 1 : _currentPage < _totalPages;
+  int get _nextPage => _oldestFirst ? _currentPage - 1 : _currentPage + 1;
 
   // Figma colors
   static const Color _backgroundColor = Color(0xFF000000);
@@ -68,33 +88,70 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
             _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore &&
         !_loadMoreFailed &&
-        _currentPage < _totalPages) {
+        _hasMore) {
       _loadMoreReviews();
     }
   }
 
+  /// Список короче экрана не прокрутить, и подгрузка по прокрутке не
+  /// сработает. При «сначала старые» первой идёт последняя страница сервера,
+  /// в ней бывает один отзыв — после отрисовки проверить и догрузить.
+  void _loadMoreIfShort() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) _onScroll();
+    });
+  }
+
+  Future<PaginatedReviews> _fetchPage(int page) =>
+      _reviewsService.getReviewsForEstablishment(
+        widget.establishment.id,
+        page: page,
+        perPage: _perPage,
+        sort: _serverSort,
+      );
+
+  /// Страница в порядке показа, без отзывов, которые уже в списке: если
+  /// между запросами отзывов стало больше или меньше, страницы по смещению
+  /// сдвигаются, и отзыв с края прежней страницы приходит снова.
+  List<Review> _shown(List<Review> page, {List<Review> after = const []}) {
+    final seen = {for (final review in after) review.id};
+    final ordered = _oldestFirst ? page.reversed : page;
+    return [for (final review in ordered) if (seen.add(review.id)) review];
+  }
+
   /// Load initial reviews
   Future<void> _loadReviews() async {
+    final generation = ++_generation;
     setState(() {
       _isLoading = true;
       _error = null;
+      // Подгрузка прежней сортировки, если шла, уже не в счёт.
+      _isLoadingMore = false;
       _loadMoreFailed = false;
     });
 
     try {
-      final response = await _reviewsService.getReviewsForEstablishment(
-        widget.establishment.id,
-        page: 1,
-        perPage: 10,
-      );
+      var page = 1;
+      var response = await _fetchPage(page);
+      // «Сначала старые»: первая страница сказала, сколько их; самые старые
+      // отзывы — на последней.
+      if (_oldestFirst &&
+          generation == _generation &&
+          response.meta.totalPages > 1) {
+        page = response.meta.totalPages;
+        response = await _fetchPage(page);
+      }
+      if (!mounted || generation != _generation) return;
 
       setState(() {
-        _reviews = response.data;
+        _reviews = _shown(response.data);
         _totalPages = response.meta.totalPages;
-        _currentPage = 1;
+        _currentPage = page;
         _isLoading = false;
       });
+      _loadMoreIfShort();
     } catch (e) {
+      if (!mounted || generation != _generation) return;
       setState(() {
         _error = 'Не удалось загрузить отзывы';
         _isLoading = false;
@@ -104,26 +161,27 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
 
   /// Load more reviews for pagination
   Future<void> _loadMoreReviews() async {
-    if (_isLoadingMore) return;
+    if (_isLoadingMore || !_hasMore) return;
 
+    final generation = _generation;
+    final page = _nextPage;
     setState(() {
       _isLoadingMore = true;
       _loadMoreFailed = false;
     });
 
     try {
-      final response = await _reviewsService.getReviewsForEstablishment(
-        widget.establishment.id,
-        page: _currentPage + 1,
-        perPage: 10,
-      );
+      final response = await _fetchPage(page);
+      if (!mounted || generation != _generation) return;
 
       setState(() {
-        _reviews.addAll(response.data);
-        _currentPage++;
+        _reviews.addAll(_shown(response.data, after: _reviews));
+        _currentPage = page;
         _isLoadingMore = false;
       });
+      _loadMoreIfShort();
     } catch (e) {
+      if (!mounted || generation != _generation) return;
       setState(() {
         _isLoadingMore = false;
         _loadMoreFailed = true;
@@ -573,11 +631,11 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
 
     return ListTile(
       onTap: () {
-        setState(() {
-          _sortBy = value;
-        });
         Navigator.pop(context);
-        _sortReviews();
+        if (_sortBy == value) return;
+        _sortBy = value;
+        if (_scrollController.hasClients) _scrollController.jumpTo(0);
+        _loadReviews();
       },
       leading: Icon(
         isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -590,25 +648,5 @@ class _ReviewsListScreenState extends State<ReviewsListScreen> {
         ),
       ),
     );
-  }
-
-  /// Sort reviews based on selected option
-  void _sortReviews() {
-    setState(() {
-      switch (_sortBy) {
-        case 'newest':
-          _reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          break;
-        case 'oldest':
-          _reviews.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-          break;
-        case 'highest':
-          _reviews.sort((a, b) => b.rating.compareTo(a.rating));
-          break;
-        case 'lowest':
-          _reviews.sort((a, b) => a.rating.compareTo(b.rating));
-          break;
-      }
-    });
   }
 }
