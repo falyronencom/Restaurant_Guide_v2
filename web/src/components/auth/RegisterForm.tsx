@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { registerAction } from '@/lib/auth/actions';
-
-const PASSWORD_HINT = 'Минимум 8 символов, заглавная и строчная буквы, цифра.';
+import { PASSWORD_HINT } from '@/lib/auth/password-hint';
+import { verifyEmailHref } from '@/lib/auth/verify-email-href';
 
 /*
  * Email/password registration form (Slice 2). Same mechanics as LoginForm:
@@ -25,14 +25,16 @@ const PASSWORD_HINT = 'Минимум 8 символов, заглавная и 
  * with returnTo — its effect runs on the later context flip, so its
  * router.replace wins. The hard load remounts AuthProvider, which hydrates the
  * session from the cookies the action already set (header stays correct).
+ * The guarded returnTo travels on to /verify-email, which leads back to it
+ * (after the code, or «Позже») — before 18.10 it was dropped here.
  */
 export function RegisterForm({ returnTo }: { returnTo: string }) {
   const [state, formAction, pending] = useActionState(registerAction, null);
 
   useEffect(() => {
     if (state?.ok) {
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the hard load is the point: see the comment above
-      window.location.assign('/verify-email');
+      // A hard load on purpose — see the comment above.
+      window.location.assign(verifyEmailHref(state.returnTo));
     }
   }, [state]);
 

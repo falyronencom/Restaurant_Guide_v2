@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { AuthRedirect } from '@/components/auth/AuthRedirect';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
+import { messageForAuthError } from '@/lib/auth/oauth-error';
 import { guardReturnTo } from '@/lib/auth/yandex';
 
 /*
@@ -29,6 +30,8 @@ export default async function LoginPage({
   const params = await searchParams;
   const raw = typeof params.returnTo === 'string' ? params.returnTo : undefined;
   const returnTo = guardReturnTo(raw);
+  // A failed Yandex sign-in lands here (auth/yandex/callback) — say why.
+  const authError = messageForAuthError(params.auth_error);
   const registerHref =
     returnTo === '/'
       ? '/register'
@@ -43,7 +46,7 @@ export default async function LoginPage({
       <div className="mt-l rounded-card bg-figma-bg-warm p-l">
         <LoginForm returnTo={returnTo} />
         <div className="mt-l border-t border-figma-divider pt-l">
-          <OAuthButtons returnTo={returnTo} />
+          <OAuthButtons returnTo={returnTo} redirectError={authError} />
         </div>
       </div>
       <p className="mt-l text-body-m text-figma-text-grey">

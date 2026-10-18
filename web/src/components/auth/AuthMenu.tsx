@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronDown } from 'lucide-react';
 import { Menu } from '@base-ui/react/menu';
 
+import { PARTNER_CABINET_HREF, isPartner } from '@/lib/auth/roles';
 import { cn } from '@/lib/utils';
 
 import { useAuth } from './AuthProvider';
@@ -18,7 +19,8 @@ type Props = {
  * Desktop account affordance — client island in the (public) header.
  *
  * Authenticated: a single dropdown (initial badge + name → chevron) opens a menu
- * with the account actions (Избранное / Профиль / Выйти). Collapsing the four
+ * with the account actions ([Мои заведения — partners] / Избранное / Профиль /
+ * Выйти). Collapsing the four
  * former inline items into one control removes the "which of these is even a
  * button?" ambiguity on desktop and keeps the header to a single row.
  *
@@ -77,6 +79,13 @@ export function AuthMenu({ overlay = false }: Props) {
                 {label}
               </div>
               <Menu.Separator className="my-1 h-px bg-border" />
+              {isPartner(user) && (
+                <Menu.Item
+                  render={<Link href={PARTNER_CABINET_HREF} className={itemClass} />}
+                >
+                  Мои заведения
+                </Menu.Item>
+              )}
               <Menu.Item render={<Link href="/favorites" className={itemClass} />}>
                 Избранное
               </Menu.Item>

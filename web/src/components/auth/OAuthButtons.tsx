@@ -13,8 +13,19 @@ import { useAuth } from './AuthProvider';
  * returnTo via the y_state cookie). Google errors surface through the
  * context's loginError, exactly as they did in the header before Slice 2.
  */
-export function OAuthButtons({ returnTo }: { returnTo: string }) {
+export function OAuthButtons({
+  returnTo,
+  redirectError = null,
+}: {
+  returnTo: string;
+  /**
+   * A failure that arrived with the page address — a failed Yandex sign-in
+   * (`?auth_error=`, read by /login). A newer Google error takes its place.
+   */
+  redirectError?: string | null;
+}) {
   const { requestLogin, loginError } = useAuth();
+  const error = loginError ?? redirectError;
 
   return (
     <div className="flex flex-col gap-s">
@@ -23,7 +34,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
         variant="outline"
         size="cta"
         className="w-full"
-        onClick={requestLogin}
+        onClick={() => requestLogin()}
       >
         Войти через Google
       </Button>
@@ -33,9 +44,13 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
           Войти через Яндекс
         </Button>
       </form>
-      {loginError ? (
-        <p aria-live="polite" className="text-caption-l text-destructive">
-          {loginError}
+      {error ? (
+        <p
+          role="alert"
+          aria-live="polite"
+          className="text-caption-l text-destructive"
+        >
+          {error}
         </p>
       ) : null}
     </div>

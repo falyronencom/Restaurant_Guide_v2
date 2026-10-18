@@ -17,8 +17,18 @@ jest.mock('@/components/auth/LoginForm', () => ({
   ),
 }));
 jest.mock('@/components/auth/OAuthButtons', () => ({
-  OAuthButtons: ({ returnTo }: { returnTo: string }) => (
-    <div data-testid="oauth-buttons" data-return-to={returnTo} />
+  OAuthButtons: ({
+    returnTo,
+    redirectError,
+  }: {
+    returnTo: string;
+    redirectError?: string | null;
+  }) => (
+    <div
+      data-testid="oauth-buttons"
+      data-return-to={returnTo}
+      data-error={redirectError ?? ''}
+    />
   ),
 }));
 
@@ -68,4 +78,53 @@ it('defaults returnTo to / when absent', async () => {
 
 it('is noindex (utility page, never a search target)', () => {
   expect(metadata.robots).toEqual({ index: false, follow: false });
+});
+
+// Сверка находок тестировщика с сайтом, 18.10, Х2: a failed Yandex sign-in
+// lands here with ?auth_error= — the page must say why (before, nothing read it).
+describe('auth_error from the Yandex callback', () => {
+  it('a general failure → the Russian Yandex text under the buttons', async () => {
+    render(
+      await LoginPage({
+        searchParams: Promise.resolve({ auth_error: 'yandex', returnTo: '/minsk' }),
+      }),
+    );
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+      'data-error',
+      'Не удалось войти через Яндекс. Попробуйте ещё раз или войдите другим способом.',
+    );
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+      'data-return-to',
+      '/minsk',
+    );
+  });
+
+  it('a closed account keeps its own text', async () => {
+    render(
+      await LoginPage({
+        searchParams: Promise.resolve({ auth_error: 'ACCOUNT_DEACTIVATED' }),
+      }),
+    );
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+      'data-error',
+      'Этот аккаунт деактивирован.',
+    );
+  });
+
+  it('an unknown value prints no raw text — only the general Yandex line', async () => {
+    render(
+      await LoginPage({
+        searchParams: Promise.resolve({ auth_error: '<b>любой текст</b>' }),
+      }),
+    );
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+      'data-error',
+      'Не удалось войти через Яндекс. Попробуйте ещё раз или войдите другим способом.',
+    );
+  });
+
+  it('no auth_error → no error', async () => {
+    render(await LoginPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByTestId('oauth-buttons')).toHaveAttribute('data-error', '');
+  });
 });
