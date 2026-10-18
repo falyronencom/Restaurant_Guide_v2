@@ -233,24 +233,26 @@ export const validateUpdate = [
     .isLength({ min: 1, max: 500 })
     .withMessage('Address must be between 1 and 500 characters'),
 
-  // Phone validation (optional)
+  // Phone, email, website, average check — optional at create and at submit.
+  // On an update `null` erases the stored value (the site's cabinet sends it
+  // for a field the partner cleared — сверка находок тестировщика с сайтом,
+  // 18.10, пункт С7); an empty string is still refused, and an absent field is
+  // left as stored. The columns are nullable; the model writes the null.
   body('phone')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .matches(BELARUS_PHONE_REGEX)
     .withMessage('Phone must be in format +375XXXXXXXXX (Belarus number)'),
 
-  // Email validation (optional)
   body('email')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .isEmail()
     .withMessage('Email must be a valid email address')
     .normalizeEmail(),
 
-  // Website validation (optional)
   body('website')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .isURL()
     .withMessage('Website must be a valid URL'),
@@ -284,9 +286,8 @@ export const validateUpdate = [
       return true;
     }),
 
-  // Price range validation (optional)
   body('price_range')
-    .optional()
+    .optional({ values: 'null' })
     .isIn(VALID_PRICE_RANGES)
     .withMessage('Price range must be one of: $, $$, $$$'),
 
