@@ -309,9 +309,10 @@ describe('ReviewsPage — a failed reviews fetch', () => {
     });
     render(ui);
 
+    // A long word in the name wraps on a phone (as on the detail page).
     expect(
       screen.getByRole('heading', { name: 'Отзывы о «Тестовое заведение»' }),
-    ).toBeInTheDocument();
+    ).toHaveClass('wrap-anywhere');
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Не удалось загрузить отзывы.',
     );

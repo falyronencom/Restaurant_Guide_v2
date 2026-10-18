@@ -235,7 +235,9 @@ export default async function ReviewsPage({
 
       {/* Header: title + rating summary (same helpers as ReviewCarousel) */}
       <header className='flex flex-col gap-s'>
-        <h1 className='text-display-s font-display'>
+        {/* wrap-anywhere: a long word in the name wraps on a phone instead of
+            running past the screen (as the detail page's h1). */}
+        <h1 className='text-display-s font-display wrap-anywhere'>
           Отзывы о «{establishment.name}»
         </h1>
         <div className='flex flex-wrap items-center gap-m'>
