@@ -125,6 +125,24 @@ void main() {
     expect(text, 'Нет связи. Проверьте подключение к интернету.');
   });
 
+  // Шапка обещает фразу транспорта при любом «нет ответа сервера» — и у
+  // таймаута она своя (`ApiClient._enhanceError`).
+  for (final type in const [
+    DioExceptionType.connectionTimeout,
+    DioExceptionType.sendTimeout,
+    DioExceptionType.receiveTimeout,
+  ]) {
+    testWidgets('таймаут (${type.name}): русская фраза транспорта',
+        (tester) async {
+      retry = (options) =>
+          throw DioException(requestOptions: options, type: type);
+
+      final text = await pressRetry(tester);
+
+      expect(text, 'Сервер не отвечает. Проверьте подключение.');
+    });
+  }
+
   testWidgets('нет файлов меню: фраза экрана по коду отказа — фото тоже годятся',
       (tester) async {
     retry = (_) => jsonBody(

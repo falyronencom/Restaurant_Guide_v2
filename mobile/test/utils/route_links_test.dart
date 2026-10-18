@@ -159,6 +159,10 @@ void main() {
           googleRouteLinks(53.9045, 27.5615, RouteMode.driving)),
       ('Маршрут в Яндекс.Картах', RouteMode.walking,
           yandexRouteLinks(53.9045, 27.5615, RouteMode.walking)),
+      // Таблица — все пары «навигатор × способ»: пропущенная пара — та, где
+      // кнопка может открыть не тот маршрут, и никто этого не увидит.
+      ('Маршрут в Google Картах', RouteMode.walking,
+          googleRouteLinks(53.9045, 27.5615, RouteMode.walking)),
     ];
     for (final (label, mode, expected) in choices) {
       testWidgets('«$label» ($mode): шторка закрыта, открыт этот маршрут',

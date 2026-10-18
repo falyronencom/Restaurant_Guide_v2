@@ -201,6 +201,43 @@ void main() {
       expect(provider.isLoading, isFalse);
     });
 
+    test('выбран «Мои отзывы», пока грузится «Все» — поздний ОТКАЗ «Все» тоже '
+        'не ложится под чип', () async {
+      // Ответ прежнего фильтра — и отказ тоже: сбой «Все» под чипом «Мои
+      // отзывы» показал бы ошибку над загруженным списком, а успех её не
+      // снимает — подгрузка следующих страниц встала бы.
+      final allGate = Completer<ResponseBody>();
+      serve((options) {
+        final category = options.queryParameters['category'];
+        if (category == null) return allGate.future;
+        return Future.value(jsonBody(notificationsEnvelope(
+          items: rows(100, 3, type: 'new_review'),
+          total: 3,
+          pages: 1,
+        )));
+      });
+      final provider = signedIn();
+
+      final firstLoad = provider.fetchNotifications(refresh: true);
+      await pumpEventQueue();
+      provider.setCategory('reviews');
+      await pumpEventQueue();
+      expect(provider.notifications.map((n) => n.id),
+          ['n-100', 'n-101', 'n-102'],
+          reason: 'предпосылка: «Мои отзывы» загружены');
+
+      allGate.completeError(const SocketException('обрыв связи'));
+      await firstLoad;
+      await pumpEventQueue();
+
+      expect(provider.currentCategory, 'reviews');
+      expect(provider.errorMessage, isNull,
+          reason: 'сбой «Все» — не сбой «Мои отзывы»');
+      expect(provider.notifications.map((n) => n.id),
+          ['n-100', 'n-101', 'n-102']);
+      expect(provider.isLoading, isFalse);
+    });
+
     test('при смене чипа список прежнего фильтра снимается сразу — пока идёт '
         'загрузка и если она сорвалась', () async {
       final reviewsGate = Completer<ResponseBody>();

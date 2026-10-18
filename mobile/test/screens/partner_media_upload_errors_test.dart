@@ -199,13 +199,33 @@ void main() {
     });
   });
 
-  testWidgets('фото меню, сбой сервера — общая фраза', (tester) async {
-    respond = _serverFailure;
+  group('Фото меню', () {
+    testWidgets('отказ сервера — его фраза целиком, без приставки',
+        (tester) async {
+      // Правило шапки — для каждой загрузки, и у фото меню своя ветка
+      // отказа. Ответ — как у маршрута загрузки сегодня (`tempMediaRoutes.js`,
+      // фото больше 10 МБ).
+      respond = (_) => jsonBody(<String, dynamic>{
+            'success': false,
+            'message': 'Фото больше 10 МБ. Выберите фото поменьше.',
+            'error': <String, dynamic>{'code': 'FILE_TOO_LARGE'},
+          }, status: 422);
 
-    await tapAdd(tester, '+ Добавить фото меню');
+      await tapAdd(tester, '+ Добавить фото меню');
 
-    expect(await snackBarText(tester),
-        'Не удалось загрузить фото меню. Попробуйте ещё раз.');
+      expect(await snackBarText(tester),
+          'Фото больше 10 МБ. Выберите фото поменьше.');
+      expect(wire.requests.single.path, '/api/v1/partner/media/upload');
+    });
+
+    testWidgets('сбой сервера — общая фраза', (tester) async {
+      respond = _serverFailure;
+
+      await tapAdd(tester, '+ Добавить фото меню');
+
+      expect(await snackBarText(tester),
+          'Не удалось загрузить фото меню. Попробуйте ещё раз.');
+    });
   });
 
   group('PDF меню', () {
