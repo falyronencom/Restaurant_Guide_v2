@@ -157,8 +157,9 @@ export const countUsers = async (filters = {}) => {
 
 /**
  * One person with the latest block or unblock from the journal: who did it,
- * when and why. A blocked account without such an entry was switched off by
- * the operator's script (scripts/set-user-active.js), which writes no journal.
+ * when and why. The operator's script (scripts/set-user-active.js) writes the
+ * same entries since 2026-10-18, with no admin (user_id NULL); a blocked
+ * account without any entry was switched off by it before that.
  *
  * @param {string} userId
  * @param {Object} [options]

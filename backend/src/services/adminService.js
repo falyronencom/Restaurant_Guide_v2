@@ -1202,37 +1202,46 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
     );
   }
 
-  // 2. Validate target user exists and is active
-  const userResult = await dbQuery(
-    'SELECT id, role, is_active FROM users WHERE id = $1',
-    [targetUserId],
-  );
-
-  if (userResult.rows.length === 0) {
-    throw new AppError(
-      'Target user not found',
-      404,
-      'USER_NOT_FOUND',
-    );
-  }
-
-  const targetUser = userResult.rows[0];
-
-  if (!targetUser.is_active) {
-    throw new AppError(
-      'Target user account is inactive',
-      400,
-      'USER_INACTIVE',
-    );
-  }
-
-  // 3. TRANSACTION — atomic partner_id change + role upgrade
+  // 2–3. TRANSACTION — the target account checked under a lock, then the
+  // atomic partner_id change + role upgrade
   const previousPartnerId = establishment.partner_id;
   let updated;
 
   const client = await getClient();
   try {
     await client.query('BEGIN');
+
+    // 2. Validate target user exists and is active — inside the transaction,
+    // holding the account row. A block from the panel (adminUserService) takes
+    // the same row FOR UPDATE and refuses a partner with cards. Checked before
+    // the transaction and without the lock, a block and a claim at the same
+    // second both passed: the block saw no card yet, the claim saw an active
+    // account — and a blocked partner got a card, which the panel then cannot
+    // unblock (tester walkthrough 17.10, P8 report, finding 2). Now one waits
+    // for the other: the claim refuses the blocked account, or the block sees
+    // the card.
+    const userResult = await client.query(
+      'SELECT id, role, is_active FROM users WHERE id = $1 FOR UPDATE',
+      [targetUserId],
+    );
+
+    if (userResult.rows.length === 0) {
+      throw new AppError(
+        'Target user not found',
+        404,
+        'USER_NOT_FOUND',
+      );
+    }
+
+    const targetUser = userResult.rows[0];
+
+    if (!targetUser.is_active) {
+      throw new AppError(
+        'Target user account is inactive',
+        400,
+        'USER_INACTIVE',
+      );
+    }
 
     // 3a. Update establishment partner_id
     updated = await EstablishmentModel.claimEstablishment(
@@ -1254,6 +1263,8 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
+    // A refusal of the checks above, not a failure of the transaction.
+    if (err instanceof AppError) throw err;
     logger.error('Claiming transaction failed', {
       error: err.message,
       establishmentId,

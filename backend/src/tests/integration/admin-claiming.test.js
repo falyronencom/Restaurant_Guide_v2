@@ -16,7 +16,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, getClient, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
   createAdminAndGetToken,
@@ -325,5 +325,61 @@ describe('POST /api/v1/admin/users/:id/upgrade-to-partner', () => {
 
     const auditExists = await checkAuditLogExists(targetUser.user.id, 'upgrade_user_to_partner');
     expect(auditExists).toBe(true);
+  });
+});
+
+// ============================================================================
+// Claim and a block of the target at the same second
+// ============================================================================
+
+describe('claim racing a block of the target account', () => {
+  /** Wait until some query of this database waits for a row lock. */
+  const waitForLockWaiter = async () => {
+    for (let attempt = 0; attempt < 250; attempt += 1) {
+      const { rows } = await query(
+        `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      if (rows[0].n > 0) return;
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+    }
+    throw new Error('никто не ждёт блокировки строки');
+  };
+
+  test('a block holding the account row: the claim waits for it and refuses the blocked account', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const targetUser = await createRegularUser();
+
+    // The block from the panel (adminUserService.blockUser): it holds the
+    // account row, finds no card of the person and switches the account off.
+    const block = await getClient();
+    let claim;
+    try {
+      await block.query('BEGIN');
+      await block.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [targetUser.user.id]);
+      await block.query('UPDATE users SET is_active = FALSE WHERE id = $1', [targetUser.user.id]);
+
+      claim = request(app)
+        .post(`/api/v1/admin/establishments/${establishment.id}/claim`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ user_id: targetUser.user.id })
+        .then((response) => response);
+      await waitForLockWaiter();
+      await block.query('COMMIT');
+    } catch (error) {
+      await block.query('ROLLBACK');
+      throw error;
+    } finally {
+      block.release();
+    }
+
+    const response = await claim;
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('USER_INACTIVE');
+
+    const after = await getEstablishmentFromDb(establishment.id);
+    expect(after.partner_id).toBe(establishment.partner_id);
+    const account = await query('SELECT role, is_active FROM users WHERE id = $1', [targetUser.user.id]);
+    expect(account.rows[0]).toEqual({ role: 'user', is_active: false });
   });
 });

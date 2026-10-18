@@ -186,7 +186,7 @@ describe('форма без NUL — как без обёртки', () => {
 
 describe('форма, которую busboy не прочёл целиком — 400 через errorHandler', () => {
   const head = (disposition, contentType) => `--${BOUNDARY}\r\nContent-Disposition: form-data; ${disposition}\r\n`
-    + (contentType ? `Content-Type: ${contentType}\r\n` : '') + '\r\n';
+    + `${contentType ? `Content-Type: ${contentType}\r\n` : ''}\r\n`;
   const formType = `multipart/form-data; boundary=${BOUNDARY}`;
   const whole = `${head('name="title"')}Скидка\r\n${head('name="file"; filename="photo.png"', 'image/png')}not-really-a-png\r\n--${BOUNDARY}--\r\n`;
 

@@ -25,6 +25,22 @@ import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 const RATE_LIMIT_MAX_REVIEWS = 10;
 
 /**
+ * What the author or the partner reads when a review or a response cannot be
+ * found, changed or deleted. Russian: the app shows the server's text as it
+ * is, and an English one never reached the screen — the app put a general
+ * phrase in its place (tester walkthrough 17.10, P10 report, finding 2).
+ * The envelope (status and code) is unchanged.
+ */
+export const REVIEW_REFUSALS = Object.freeze({
+  REVIEW_NOT_FOUND: 'Отзыв не найден — возможно, его уже удалили',
+  NOT_OWN_REVIEW_MODIFICATION: 'Изменить можно только свой отзыв',
+  NOT_OWN_REVIEW_DELETION: 'Удалить можно только свой отзыв',
+  NOT_OWN_ESTABLISHMENT_RESPONSE: 'Отвечать можно только на отзывы о своих заведениях',
+  NOT_OWN_ESTABLISHMENT_RESPONSE_DELETION: 'Удалить ответ можно только у отзыва о своём заведении',
+  RESPONSE_NOT_FOUND: 'У этого отзыва нет ответа — возможно, его уже удалили',
+});
+
+/**
  * Create a new review for an establishment
  * 
  * This is the core business operation that implements the complete review creation
@@ -216,7 +232,7 @@ export const getReviewById = async (reviewId) => {
   // backs ONLY the public GET /reviews/:id — owner/partner mutation flows
   // read the model directly and keep their access to hidden rows.
   if (!review || review.is_deleted || !review.is_visible) {
-    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
   }
 
   return review;
@@ -406,13 +422,13 @@ export const updateReview = async (reviewId, userId, updates) => {
   // Fetch current review to verify existence and authorization
   const currentReview = await ReviewModel.findReviewById(reviewId);
   if (!currentReview) {
-    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
   }
 
   // Verify user is the review author (authorization check)
   if (currentReview.user_id !== userId) {
     throw new AppError(
-      'You can only modify your own reviews',
+      REVIEW_REFUSALS.NOT_OWN_REVIEW_MODIFICATION,
       403,
       'UNAUTHORIZED_REVIEW_MODIFICATION',
     );
@@ -501,13 +517,13 @@ export const deleteReview = async (reviewId, userId) => {
   // Fetch current review to verify existence and authorization
   const currentReview = await ReviewModel.findReviewById(reviewId);
   if (!currentReview) {
-    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
   }
 
   // Verify user is the review author (authorization check)
   if (currentReview.user_id !== userId) {
     throw new AppError(
-      'You can only delete your own reviews',
+      REVIEW_REFUSALS.NOT_OWN_REVIEW_DELETION,
       403,
       'UNAUTHORIZED_REVIEW_DELETION',
     );
@@ -518,7 +534,7 @@ export const deleteReview = async (reviewId, userId) => {
     const deleted = await ReviewModel.softDeleteReview(reviewId);
     
     if (!deleted) {
-      throw new AppError('Review not found or already deleted', 404, 'REVIEW_NOT_FOUND');
+      throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
     }
 
     // Update establishment aggregate statistics synchronously
@@ -621,12 +637,12 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
   const reviewWithEstablishment = await ReviewModel.getReviewWithEstablishment(reviewId);
 
   if (!reviewWithEstablishment || reviewWithEstablishment.is_deleted) {
-    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
   }
 
   if (reviewWithEstablishment.partner_id !== partnerId) {
     throw new AppError(
-      'You can only respond to reviews on your own establishments',
+      REVIEW_REFUSALS.NOT_OWN_ESTABLISHMENT_RESPONSE,
       403,
       'UNAUTHORIZED_PARTNER_RESPONSE',
     );
@@ -663,12 +679,12 @@ export const deletePartnerResponse = async (reviewId, partnerId) => {
   const reviewWithEstablishment = await ReviewModel.getReviewWithEstablishment(reviewId);
 
   if (!reviewWithEstablishment || reviewWithEstablishment.is_deleted) {
-    throw new AppError('Review not found', 404, 'REVIEW_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
   }
 
   if (reviewWithEstablishment.partner_id !== partnerId) {
     throw new AppError(
-      'You can only manage responses for your own establishments',
+      REVIEW_REFUSALS.NOT_OWN_ESTABLISHMENT_RESPONSE_DELETION,
       403,
       'UNAUTHORIZED_PARTNER_RESPONSE',
     );
@@ -679,7 +695,7 @@ export const deletePartnerResponse = async (reviewId, partnerId) => {
   // No response to delete: nothing was written, and there is nothing to say
   // but that — the answer carries no review.
   if (!cleared) {
-    throw new AppError('This review has no partner response', 404, 'RESPONSE_NOT_FOUND');
+    throw new AppError(REVIEW_REFUSALS.RESPONSE_NOT_FOUND, 404, 'RESPONSE_NOT_FOUND');
   }
 
   // Same as addPartnerResponse: recount after the trigger, visible only.

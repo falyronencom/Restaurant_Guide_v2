@@ -29,6 +29,7 @@ import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestUser } from '../utils/auth.js';
 import { invalidateAccountStatus } from '../../services/accountStatus.js';
+import { blockUser, unblockUser } from '../../services/adminUserService.js';
 import { findSeedHouse } from '../../../scripts/lib/seedHouse.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -187,6 +188,96 @@ describe('Б4: set-user-active.js ends everything, and switching on revives noth
     expect(run('set-user-active.js', ['--email=guest@example.com', '--active=true', '--yes']).status).toBe(0);
     invalidateAccountStatus(id);
     expect((await refresh(login.body.data.refreshToken)).status).toBe(401);
+  });
+});
+
+describe('set-user-active.js writes the journal as the panel does (проход тестировщика 17.10, П8, находка 3)', () => {
+  const entries = (id) => query(
+    `SELECT action, user_id, old_data, new_data, user_agent FROM audit_log
+     WHERE entity_type = 'user' AND entity_id = $1 ORDER BY created_at, id`,
+    [id],
+  ).then((result) => result.rows);
+  const reviewOf = async (authorId) => {
+    const partnerId = await user({ email: 'partner@example.com', role: 'partner' });
+    await card(partnerId);
+    const place = await one('SELECT id FROM establishments WHERE partner_id = $1', [partnerId]);
+    return (await one(
+      `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 2, 'Отзыв, который скроет блокировка.', 'Отзыв, который скроет блокировка.', NOW(), NOW())
+       RETURNING id`,
+      [authorId, place.id],
+    )).id;
+  };
+  const visible = async (reviewId) => (await one('SELECT is_visible FROM reviews WHERE id = $1', [reviewId])).is_visible;
+  const active = async (id) => (await one('SELECT is_active FROM users WHERE id = $1', [id])).is_active;
+
+  test('off, then on: user_block, then user_unblock — the operator script as the actor, empty review lists', async () => {
+    const id = await user({ email: 'guest@example.com' });
+    expect(run('set-user-active.js', ['--email=guest@example.com', '--active=false', '--yes']).status).toBe(0);
+    expect(run('set-user-active.js', ['--email=guest@example.com', '--active=true', '--yes']).status).toBe(0);
+
+    const actor = 'operator_script:set-user-active';
+    expect(await entries(id)).toEqual([
+      {
+        action: 'user_block',
+        user_id: null,
+        old_data: { is_active: true },
+        new_data: { is_active: false, reason: 'Учётку выключил оператор скриптом', hidden_review_ids: [], actor },
+        user_agent: actor,
+      },
+      {
+        action: 'user_unblock',
+        user_id: null,
+        old_data: { is_active: false },
+        new_data: {
+          is_active: true,
+          reason: 'Учётку включил оператор скриптом',
+          restore_reviews: false,
+          restored_review_ids: [],
+          actor,
+        },
+        user_agent: actor,
+      },
+    ]);
+  });
+
+  test('nothing to do writes nothing', async () => {
+    const id = await user({ email: 'guest@example.com' });
+    expect(run('set-user-active.js', ['--email=guest@example.com', '--active=true', '--yes']).status).toBe(0);
+    expect(await entries(id)).toEqual([]);
+  });
+
+  test('blocked from the panel, reviews still hidden: the script refuses; --keep-reviews-hidden switches on and leaves them hidden', async () => {
+    const admin = await user({ email: 'admin@example.com', role: 'admin' });
+    const id = await user({ email: 'guest@example.com' });
+    const reviewId = await reviewOf(id);
+    await blockUser(id, 'Оскорбления в отзыве', admin);
+    expect(await visible(reviewId)).toBe(false);
+
+    const refused = run('set-user-active.js', ['--email=guest@example.com', '--active=true', '--yes']);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('blocked from the panel');
+    expect(await active(id)).toBe(false);
+    expect((await entries(id)).map((entry) => entry.action)).toEqual(['user_block']);
+
+    const kept = run('set-user-active.js', ['--email=guest@example.com', '--active=true', '--keep-reviews-hidden', '--yes']);
+    expect(kept.status).toBe(0);
+    expect(await active(id)).toBe(true);
+    expect(await visible(reviewId)).toBe(false);
+    expect((await entries(id)).map((entry) => entry.action)).toEqual(['user_block', 'user_unblock']);
+  });
+
+  test('switched off by the script, unblocked from the panel: the unblock reads the script entry and shows no review it did not hide', async () => {
+    const admin = await user({ email: 'admin@example.com', role: 'admin' });
+    const id = await user({ email: 'guest@example.com' });
+    const reviewId = await reviewOf(id);
+    await blockUser(id, 'Оскорбления в отзыве', admin);
+    await query('UPDATE users SET is_active = TRUE WHERE id = $1', [id]); // switched on some other way, before this rule
+    expect(run('set-user-active.js', ['--email=guest@example.com', '--active=false', '--yes']).status).toBe(0);
+
+    const result = await unblockUser(id, 'Ошибка', admin);
+    expect(result).toMatchObject({ changed: true, restored_reviews: 0 });
+    expect(await visible(reviewId)).toBe(false);
   });
 });
 

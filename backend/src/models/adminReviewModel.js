@@ -95,12 +95,14 @@ const buildReviewWhere = (filters) => {
 export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
   const { whereClause, values, paramIndex } = buildReviewWhere(filters);
 
-  // Sort options
+  // Sort options. r.id is the last key of each: two reviews with the same
+  // created_at (and rating) otherwise come in any order, and on the border of
+  // two pages one may be shown twice and another not at all.
   const sortMap = {
-    newest: 'r.created_at DESC',
-    oldest: 'r.created_at ASC',
-    rating_high: 'r.rating DESC, r.created_at DESC',
-    rating_low: 'r.rating ASC, r.created_at DESC',
+    newest: 'r.created_at DESC, r.id DESC',
+    oldest: 'r.created_at ASC, r.id ASC',
+    rating_high: 'r.rating DESC, r.created_at DESC, r.id DESC',
+    rating_low: 'r.rating ASC, r.created_at DESC, r.id DESC',
   };
   const orderBy = sortMap[filters.sort] || sortMap.newest;
 
@@ -246,10 +248,11 @@ export const getReviewStats = async (filters = {}) => {
  * @param {string} reviewId - UUID of the review
  * @param {boolean} isVisible - The state the moderator asked for
  * @param {boolean} fromVisible - The state the decision was made on
+ * @param {Object} [client=pool] - pg client, when the write is part of a transaction
  * @returns {Promise<Object|null>} Updated review { id, is_visible, establishment_id },
  *   or null when no row matched (not found, deleted, or changed meanwhile)
  */
-export const setReviewVisibility = async (reviewId, isVisible, fromVisible) => {
+export const setReviewVisibility = async (reviewId, isVisible, fromVisible, client = pool) => {
   const query = `
     UPDATE reviews
     SET
@@ -262,7 +265,7 @@ export const setReviewVisibility = async (reviewId, isVisible, fromVisible) => {
   `;
 
   try {
-    const result = await pool.query(query, [reviewId, isVisible, fromVisible]);
+    const result = await client.query(query, [reviewId, isVisible, fromVisible]);
 
     if (result.rows.length === 0) {
       return null;

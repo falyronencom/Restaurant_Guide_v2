@@ -176,8 +176,17 @@ const MENU_ITEM_ID = uuidv4();
 // (e.g. the OCR backfill block in moderateEstablishment is not awaited)
 const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
 
-const buildMockClient = () => ({
-  query: jest.fn().mockResolvedValue({ rows: [] }),
+/**
+ * A transaction client of claimEstablishment: the target account is read in
+ * the transaction under FOR UPDATE (tester walkthrough 17.10, P8 report,
+ * finding 2) — that read answers `users`, every other query nothing.
+ */
+const buildClaimClient = (users) => ({
+  query: jest.fn(async (sql) => (
+    typeof sql === 'string' && sql.includes('FROM users') && sql.includes('FOR UPDATE')
+      ? { rows: users }
+      : { rows: [] }
+  )),
   release: jest.fn(),
 });
 
@@ -829,31 +838,52 @@ describe('claimEstablishment', () => {
     ).rejects.toMatchObject({ code: 'ALREADY_OWNED', statusCode: 400 });
   });
 
-  test('throws USER_NOT_FOUND when target user does not exist', async () => {
+  test('throws USER_NOT_FOUND when target user does not exist; nothing is written', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [] });
+    const client = buildClaimClient([]);
+    DB.getClient.mockResolvedValue(client);
 
     await expect(
       claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
     ).rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
-    expect(DB.getClient).not.toHaveBeenCalled();
+    expect(EstablishmentModel.claimEstablishment).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalledTimes(1);
   });
 
-  test('throws USER_INACTIVE when target user account is deactivated', async () => {
+  test('throws USER_INACTIVE when target user account is deactivated; nothing is written', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [{ ...activeUser, is_active: false }] });
+    const client = buildClaimClient([{ ...activeUser, is_active: false }]);
+    DB.getClient.mockResolvedValue(client);
 
     await expect(
       claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
     ).rejects.toMatchObject({ code: 'USER_INACTIVE', statusCode: 400 });
+    expect(EstablishmentModel.claimEstablishment).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  test('reads the target account inside the transaction, under FOR UPDATE, before the claim', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
+    const client = buildClaimClient([activeUser]);
+    DB.getClient.mockResolvedValue(client);
+
+    await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
+
+    const queries = client.query.mock.calls.map((c) => c[0]);
+    const lockAt = queries.findIndex((q) => q.includes('FROM users') && q.includes('FOR UPDATE'));
+    expect(queries.indexOf('BEGIN')).toBeLessThan(lockAt);
+    expect(lockAt).toBeGreaterThan(-1);
+    expect(DB.query).not.toHaveBeenCalledWith(expect.stringContaining('FROM users'), expect.anything());
   });
 
   test('completes transaction on user→partner upgrade: BEGIN, claim, UPDATE role, COMMIT', async () => {
     const updated = baseEstablishment({ partner_id: TARGET_USER_ID });
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [activeUser] });
     EstablishmentModel.claimEstablishment.mockResolvedValue(updated);
-    const client = buildMockClient();
+    const client = buildClaimClient([activeUser]);
     DB.getClient.mockResolvedValue(client);
 
     const result = await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
@@ -879,9 +909,8 @@ describe('claimEstablishment', () => {
   test('skips role UPDATE for user already in partner role (idempotent)', async () => {
     const partnerUser = { id: TARGET_USER_ID, role: 'partner', is_active: true };
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [partnerUser] });
     EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
-    const client = buildMockClient();
+    const client = buildClaimClient([partnerUser]);
     DB.getClient.mockResolvedValue(client);
 
     await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
@@ -895,9 +924,8 @@ describe('claimEstablishment', () => {
 
   test('rolls back transaction and throws CLAIM_FAILED when claim model errors', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [activeUser] });
     EstablishmentModel.claimEstablishment.mockRejectedValue(new Error('FK violation'));
-    const client = buildMockClient();
+    const client = buildClaimClient([activeUser]);
     DB.getClient.mockResolvedValue(client);
 
     await expect(
@@ -914,9 +942,8 @@ describe('claimEstablishment', () => {
 
   test('always releases client even when transaction fails', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [activeUser] });
     EstablishmentModel.claimEstablishment.mockRejectedValue(new Error('boom'));
-    const client = buildMockClient();
+    const client = buildClaimClient([activeUser]);
     DB.getClient.mockResolvedValue(client);
 
     await expect(
@@ -928,9 +955,8 @@ describe('claimEstablishment', () => {
 
   test('writes audit_log with previous and new partner_id', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [activeUser] });
     EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
-    DB.getClient.mockResolvedValue(buildMockClient());
+    DB.getClient.mockResolvedValue(buildClaimClient([activeUser]));
 
     await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
 
@@ -950,9 +976,8 @@ describe('claimEstablishment', () => {
 
   test('triggers claimed notification for the new partner', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-    DB.query.mockResolvedValue({ rows: [activeUser] });
     EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
-    DB.getClient.mockResolvedValue(buildMockClient());
+    DB.getClient.mockResolvedValue(buildClaimClient([activeUser]));
 
     await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
 
@@ -1021,9 +1046,8 @@ describe('partner notification is written before the action returns', () => {
       arrange: () => {
         const result = baseEstablishment({ partner_id: TARGET_USER_ID });
         EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
-        DB.query.mockResolvedValue({ rows: [activeUser] });
         EstablishmentModel.claimEstablishment.mockResolvedValue(result);
-        DB.getClient.mockResolvedValue(buildMockClient());
+        DB.getClient.mockResolvedValue(buildClaimClient([activeUser]));
         return result;
       },
       act: () => claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
