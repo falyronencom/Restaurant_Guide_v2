@@ -1,5 +1,5 @@
 import type { TempMediaResponse } from '@/lib/api/types';
-import { messageForEstablishmentError } from '@/lib/partner/errors';
+import { refusalMessage } from '@/lib/partner/errors';
 
 /** When a refused upload may be tried again, as the backend names it. */
 type RetryTerm = { retryAfter?: number; resetAt?: string };
@@ -31,17 +31,39 @@ function retryTermOf(
   return term;
 }
 
-/** Russify an upload failure by backend code; a raw 413 is the Railway edge cap. */
+type UploadErrorBody = {
+  message?: string;
+  code?: string;
+  details?: { retry_after?: unknown; reset_at?: unknown; files_limit?: unknown };
+};
+
+/**
+ * Word an upload failure (lib/partner/errors refusalMessage): the daily
+ * allowance and the request limiter with their term, the server's Russian
+ * text as is, else by code; a raw 413 is the Railway edge cap.
+ */
 function uploadFailure(
-  code: string | undefined,
-  status: number,
-  term: RetryTerm = {},
+  res: Response,
+  body: { message?: string; error?: UploadErrorBody } | null,
 ): { ok: false; message: string } & RetryTerm {
+  const error = body?.error;
+  const code = error?.code ?? (res.status === 413 ? 'HTTP_413' : undefined);
+  const term = retryTermOf(res, error?.details);
   return {
     ok: false,
-    message: messageForEstablishmentError(
-      code ?? (status === 413 ? 'HTTP_413' : undefined),
-    ),
+    message: refusalMessage({
+      code,
+      // The backend's text is at the top level (errorHandler.js); the proxy's
+      // own refusals (media-proxy jsonError) put it under `error`.
+      message: error?.message ?? body?.message,
+      retryAfter: term.retryAfter,
+      limit:
+        code === 'RATE_LIMIT_EXCEEDED'
+          ? error?.details?.files_limit !== undefined
+            ? 'daily_uploads'
+            : 'requests'
+          : undefined,
+    }),
     ...term,
   };
 }
@@ -98,17 +120,14 @@ export async function uploadMedia(
     const json = (await res.json().catch(() => null)) as
       | {
           success?: boolean;
+          message?: string;
           data?: TempMediaResponse;
-          error?: {
-            message?: string;
-            code?: string;
-            details?: { retry_after?: unknown; reset_at?: unknown };
-          };
+          error?: UploadErrorBody;
         }
       | null;
 
     if (!res.ok || !json?.success || !json.data) {
-      return uploadFailure(json?.error?.code, res.status, retryTermOf(res, json?.error?.details));
+      return uploadFailure(res, json);
     }
     return { ok: true, media: json.data };
   } catch {
@@ -141,16 +160,13 @@ export async function uploadMediaToEstablishment(
     );
     const json = (await res.json().catch(() => null)) as {
       success?: boolean;
+      message?: string;
       data?: Partial<TempMediaResponse>;
-      error?: {
-        message?: string;
-        code?: string;
-        details?: { retry_after?: unknown; reset_at?: unknown };
-      };
+      error?: UploadErrorBody;
     } | null;
 
     if (!res.ok || !json?.success || !json.data?.url) {
-      return uploadFailure(json?.error?.code, res.status, retryTermOf(res, json?.error?.details));
+      return uploadFailure(res, json);
     }
     // Accessed directly (not via an alias) so json.data.url stays narrowed to string.
     return {

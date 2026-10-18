@@ -91,3 +91,43 @@ describe('serverFetch — the transport does not retry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+/*
+ * The backend's errorHandler puts a refusal's text at the TOP level of the
+ * body ({success:false, message, error:{code}}), not under `error` — so
+ * ApiError.message was always empty and no Russian server text reached the
+ * site (сверка находок тестировщика с сайтом, 18.10, пункт Х17).
+ */
+describe('serverFetch — the refusal text', () => {
+  it('reads the top-level message the backend sends', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          success: false,
+          message: 'У вас уже есть заведение с таким названием.',
+          error: { code: 'DUPLICATE_ESTABLISHMENT' },
+        }),
+    }) as unknown as typeof fetch;
+
+    await expect(serverFetch('/api/v1/partner/establishments')).rejects.toMatchObject({
+      statusCode: 409,
+      errorCode: 'DUPLICATE_ESTABLISHMENT',
+      message: 'У вас уже есть заведение с таким названием.',
+    });
+  });
+
+  it('still prefers error.message when the body carries one', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 500,
+      json: () =>
+        Promise.resolve({
+          success: false,
+          message: 'outer',
+          error: { message: 'inner', statusCode: 500 },
+        }),
+    }) as unknown as typeof fetch;
+
+    await expect(serverFetch('/x')).rejects.toMatchObject({ message: 'inner' });
+  });
+});

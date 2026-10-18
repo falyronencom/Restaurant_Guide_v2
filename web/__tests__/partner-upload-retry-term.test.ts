@@ -12,9 +12,9 @@
  * helper carries them in its failure as retryAfter / resetAt, for the cabinet
  * to show.
  *
- * The message is not the subject here: its wording for a 429 is a separate
- * task, so the 429 cases only require one; the 422 case keeps its literal —
- * what this change must not touch.
+ * The term cases only require a message; its wording — the site's phrase
+ * with the term, the server's Russian text as is — has its own cases below
+ * (сверка находок тестировщика с сайтом, 18.10, пункт С5).
  *
  * Expected values are literals: the backend's envelopes as it sends them.
  */
@@ -152,11 +152,57 @@ describe('uploadMedia (the wizard, /api/partner/media)', () => {
   });
 
   it('any other refusal carries no term — exactly as before', async () => {
-    upstream.mockResolvedValueOnce(refusal(422, { code: 'FILE_TOO_LARGE' }));
+    upstream.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ success: false, message: 'File too large', error: { code: 'FILE_TOO_LARGE' } }),
+        { status: 422, headers: { 'content-type': 'application/json' } },
+      ),
+    );
 
     expect(await uploadMedia(photo(), 'interior')).toStrictEqual({
       ok: false,
       message: 'Файл слишком большой.',
+    });
+  });
+
+  /*
+   * The wording (сверка находок тестировщика с сайтом, 18.10, пункт С5): the
+   * server's Russian text, which errorHandler puts at the TOP level of the
+   * body, is shown as is; the daily allowance gets the site's phrase with its
+   * term; the request limiter — its own.
+   */
+  it('a Russian server text (top-level message) is shown as is', async () => {
+    upstream.mockResolvedValueOnce(
+      refusal(422, { code: 'INVALID_FILE_TYPE' }),
+    );
+
+    expect(await uploadMedia(photo(), 'interior')).toStrictEqual({
+      ok: false,
+      message: 'текст сервера',
+    });
+  });
+
+  it("the daily allowance: the site's phrase with its term", async () => {
+    upstream.mockResolvedValueOnce(allowanceSpent());
+
+    expect(await uploadMedia(photo(), 'interior')).toMatchObject({
+      ok: false,
+      message:
+        'Лимит загрузок на сегодня исчерпан. Загрузить снова можно через 12 ч — после полуночи.',
+    });
+  });
+
+  it('the request limiter: its own phrase with its term', async () => {
+    upstream.mockResolvedValueOnce(
+      refusal(429, {
+        code: 'RATE_LIMIT_EXCEEDED',
+        details: { limit: 100, window: '1 minute', retry_after: 37 },
+      }),
+    );
+
+    expect(await uploadMedia(photo(), 'interior')).toMatchObject({
+      ok: false,
+      message: 'Слишком много запросов подряд. Попробуйте через 37 сек.',
     });
   });
 
