@@ -138,10 +138,13 @@ void main() {
         final file = File('lib/providers/$fileName.dart');
         expect(file.existsSync(), isTrue,
             reason: 'не найден исходник ${file.path}');
+        // Регистрируется именно сброс: другой оповещающий метод (например,
+        // снятие выбора) прошёл бы проверку оповещения ниже, а очередь и метки
+        // запросов пережили бы выход. Комментарии — вон.
         expect(
-          file.readAsStringSync(),
-          contains('AccountScope.register('),
-          reason: '$name обязан регистрировать сброс при смене аккаунта',
+          file.readAsStringSync().replaceAll(RegExp(r'//[^\n]*'), ''),
+          contains('AccountScope.register(resetAccountScope)'),
+          reason: '$name обязан регистрировать свой resetAccountScope',
         );
       }
     });
@@ -242,9 +245,10 @@ void main() {
           1,
           reason: '${entry.key} не зарегистрировал сброс в конструкторе',
         );
-        // «Сброс» — значит, в реестре сброс этого провайдера, а не пустая
-        // запись: она дала бы ту же единицу. Каждый сброс оповещает экран —
-        // по оповещению и видно, что реестр вызвал именно его.
+        // Запись в реестре — метод этого провайдера, а не пустая: пустая дала
+        // бы ту же единицу. Каждый сброс оповещает экран — по оповещению видно,
+        // что вызван метод этого провайдера; что это именно resetAccountScope,
+        // держит текстовая проверка выше.
         var notified = 0;
         provider.addListener(() => notified++);
         AccountScope.resetAll();

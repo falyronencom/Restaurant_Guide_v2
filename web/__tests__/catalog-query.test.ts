@@ -5,11 +5,12 @@
  *
  * Every importer of the endpoints module mocks it whole — the pages, the map
  * route, the smart-search fallback — so how the params become a query string
- * was seen by no test: a list joined with anything but a comma, or a facet
- * sent under another name, would leave every suite green while the backend
- * drops the filter. The expectation comes from the other side:
- * publicController.getPublicEstablishments reads these names and splits list
- * params on commas (parseListParam); empty values are not sent.
+ * was seen by no test: a list joined with anything but a comma arrives as one
+ * value the backend does not know, and a facet sent under another name is not
+ * read at all — every suite green either way. The expectation comes from the
+ * other side: publicController.listPublicEstablishments reads these names and
+ * splits a list param on commas (parseListParam; repeated keys work too);
+ * empty values are not sent.
  */
 jest.mock('@/lib/api/client', () => ({ serverFetch: jest.fn() }));
 

@@ -266,14 +266,26 @@ void main() {
       expect(find.text('Тип действия: Скрытие отзыва'), findsOneWidget);
       expect(find.text('Сбросить фильтры'), findsOneWidget);
 
-      // «Со снятием по строке»: крестик строки снимает именно её фильтр, и
-      // журнал перечитывается уже без него.
+      // «Со снятием по строке»: крестик строки снимает именно её фильтр, а
+      // соседний остаётся — поэтому фильтров два. Журнал перечитывается уже
+      // без снятого.
+      audit.setEntityTypeFilter('review');
+      await settle(tester, fake, entries: <AuditLogEntry>[]);
       expect(fake.lastAction, 'review_hide', reason: 'предпосылка');
-      await tester.tap(find.descendant(
-          of: find.byType(AdminEmptyState), matching: find.byIcon(Icons.close)));
+      expect(fake.lastEntityType, 'review', reason: 'предпосылка');
+      final actionRow = find
+          .ancestor(
+              of: find.text('Тип действия: Скрытие отзыва'),
+              matching: find.byType(Row))
+          .first;
+      await tester.tap(
+          find.descendant(of: actionRow, matching: find.byIcon(Icons.close)));
       await tester.pump();
       expect(audit.actionFilter, isNull, reason: 'крестик строки не снял фильтр');
+      expect(audit.entityTypeFilter, 'review',
+          reason: 'крестик строки снял и чужой фильтр');
       expect(fake.lastAction, isNull);
+      expect(fake.lastEntityType, 'review');
       await settle(tester, fake, entries: <AuditLogEntry>[]);
 
       // Кнопка режима отбора снимает все фильтры разом.

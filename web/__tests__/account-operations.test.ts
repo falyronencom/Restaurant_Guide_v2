@@ -100,11 +100,19 @@ describe('loadFavorites', () => {
     });
   });
 
-  it('maps a code-less ApiError to HTTP_<status> and transport to NETWORK', async () => {
+  // The real transport throws ApiError(0, 'Fetch failed …') (serverFetch,
+  // lib/api/client.ts) — a code-less ApiError like any other, so HTTP_0;
+  // NETWORK is only for a throwable that is not an ApiError at all.
+  it('maps a code-less ApiError to HTTP_<status> (the transport too) and a non-API throwable to NETWORK', async () => {
     mockGetFavorites.mockRejectedValueOnce(new ApiError(503, 'x'));
     await expect(loadFavorites()).resolves.toEqual({
       ok: false,
       code: 'HTTP_503',
+    });
+    mockGetFavorites.mockRejectedValueOnce(new ApiError(0, 'Fetch failed'));
+    await expect(loadFavorites()).resolves.toEqual({
+      ok: false,
+      code: 'HTTP_0',
     });
     mockGetFavorites.mockRejectedValueOnce(new Error('boom'));
     await expect(loadFavorites()).resolves.toEqual({

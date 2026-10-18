@@ -161,14 +161,17 @@ void main() {
         (tester) async {
       // Путь «загрузилось → фото в карточке» не исполнял ни один тест: тест
       // предела фото подменяет загрузку прямым вызовом провайдера. Ответ —
-      // как у маршрута загрузки (`tempMediaRoutes.js`, 201).
-      const url = 'https://res.cloudinary.com/demo/image/upload/temp/u1/new.jpg';
+      // как у маршрута загрузки (`tempMediaRoutes.js`, 201): три адреса
+      // разных размеров (`generateAllResolutions`), и в карточку идёт
+      // исходный, а не превью и не миниатюра.
+      const base = 'https://res.cloudinary.com/demo/image/upload';
+      const url = '$base/c_limit,w_1920/f_auto,q_auto/temp/u1/new';
       respond = (_) => jsonBody(<String, dynamic>{
             'success': true,
             'data': <String, dynamic>{
               'url': url,
-              'thumbnail_url': url,
-              'preview_url': url,
+              'preview_url': '$base/c_limit,w_800/f_auto,q_auto/temp/u1/new',
+              'thumbnail_url': '$base/c_fill,w_200/f_auto,q_auto/temp/u1/new',
               'public_id': 'temp/u1/new',
               'file_type': 'image',
             },
