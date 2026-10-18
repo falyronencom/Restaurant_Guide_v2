@@ -94,7 +94,9 @@ export async function serverFetch<T>(
   if (!body.success) {
     throw new ApiError(
       body.error.statusCode ?? response.status,
-      body.error.message,
+      // The backend puts the refusal's text at the top level (errorHandler.js);
+      // `error.message` is the older documented place — read first, kept.
+      body.error.message ?? body.message ?? '',
       body.error.code,
       body.error.details,
     );

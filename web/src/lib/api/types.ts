@@ -204,11 +204,17 @@ export type ApiErrorResponse = {
    * texts are English, so the web tier maps them to Russian per-field.
    */
   error: {
-    message: string;
+    message?: string;
     statusCode?: number;
     code?: string;
     details?: unknown;
   };
+  /**
+   * The refusal's text as backend errorHandler sends it — at the top level, not
+   * under `error` (errorHandler.js sanitizedResponse; the validate middleware:
+   * 'Validation failed'). Russian for an AppError a person reads.
+   */
+  message?: string;
 };
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
@@ -494,8 +500,15 @@ export type CreateEstablishmentPayload = {
  * NOT processed by PUT (asymmetry Q1 — PDFs post-create go via POST /:id/media).
  */
 export type UpdateEstablishmentPayload = Partial<
-  Omit<CreateEstablishmentPayload, 'menu_pdfs'>
->;
+  Omit<CreateEstablishmentPayload, 'menu_pdfs' | 'phone' | 'email' | 'website' | 'price_range'>
+> & {
+  /** null erases a value the partner cleared (backend validateUpdate takes null
+   *  as «стереть»); an absent field is left as stored. */
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  price_range?: string | null;
+};
 
 // ============================================================================
 // User account — user-ЛК Slice 1 (favorites list + profile)

@@ -5,6 +5,7 @@ import {
   E1_MIN_DESCRIPTION,
   PRICE_RANGES,
 } from '@/lib/partner/constants';
+import { contactErrors } from '@/lib/partner/contacts';
 
 import { Chip, Field, SectionCard } from './primitives';
 import type { SectionProps } from './types';
@@ -16,6 +17,9 @@ import type { SectionProps } from './types';
  */
 export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
   const descLen = form.description.trim().length;
+  // Each contact that does not pass says so under itself; it is left out of
+  // the save, the rest is saved (contacts.ts, С6).
+  const errors = contactErrors(form);
 
   const toggleAttr = (key: string) => {
     patch({
@@ -59,21 +63,36 @@ export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
       </Field>
 
       <div className="grid gap-l sm:grid-cols-2">
-        <Field label="Телефон" htmlFor="f-phone" hint="Формат: +375XXXXXXXXX">
+        <Field
+          label="Телефон"
+          htmlFor="f-phone"
+          hint="Формат: +375XXXXXXXXX"
+          error={errors.phone}
+          errorId="f-phone-error"
+        >
           <Input
             id="f-phone"
             value={form.phone}
+            aria-invalid={errors.phone ? true : undefined}
+            aria-describedby={errors.phone ? 'f-phone-error' : undefined}
             disabled={disabled}
             inputMode="tel"
             onChange={(e) => patch({ phone: e.target.value })}
             placeholder="+375291234567"
           />
         </Field>
-        <Field label="Email" htmlFor="f-email">
+        <Field
+          label="Email"
+          htmlFor="f-email"
+          error={errors.email}
+          errorId="f-email-error"
+        >
           <Input
             id="f-email"
             type="email"
             value={form.email}
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={errors.email ? 'f-email-error' : undefined}
             disabled={disabled}
             onChange={(e) => patch({ email: e.target.value })}
             placeholder="info@example.by"
@@ -81,10 +100,17 @@ export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
         </Field>
       </div>
 
-      <Field label="Сайт или соцсеть" htmlFor="f-website">
+      <Field
+        label="Сайт или соцсеть"
+        htmlFor="f-website"
+        error={errors.website}
+        errorId="f-website-error"
+      >
         <Input
           id="f-website"
           value={form.website}
+          aria-invalid={errors.website ? true : undefined}
+          aria-describedby={errors.website ? 'f-website-error' : undefined}
           disabled={disabled}
           inputMode="url"
           onChange={(e) => patch({ website: e.target.value })}

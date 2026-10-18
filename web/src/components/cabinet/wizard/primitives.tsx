@@ -34,11 +34,16 @@ export function SectionCard({
 export function Field({
   label,
   hint,
+  error,
+  errorId,
   htmlFor,
   children,
 }: {
   label: string;
   hint?: string;
+  /** The field's own refusal — shown in place of the hint. */
+  error?: string;
+  errorId?: string;
   htmlFor?: string;
   children: React.ReactNode;
 }) {
@@ -48,7 +53,13 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && <p className="text-caption-m text-figma-text-grey">{hint}</p>}
+      {error ? (
+        <p id={errorId} className="text-caption-m text-error-dark">
+          {error}
+        </p>
+      ) : (
+        hint && <p className="text-caption-m text-figma-text-grey">{hint}</p>
+      )}
     </div>
   );
 }
