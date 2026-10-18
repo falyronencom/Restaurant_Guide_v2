@@ -44,6 +44,16 @@ const ensureConfigured = () => {
  * @param {number} expiryMinutes
  * @returns {string} HTML
  */
+/**
+ * The line above the code. Neutral on purpose: the same letter goes to people
+ * who registered in the app and on the site, where the code is typed on the
+ * «Подтверждение почты» page — «введя код в приложении» was wrong for the
+ * latter (сверка находок тестировщика с сайтом, 18.10). Both the HTML and the
+ * plain-text body use it.
+ */
+export const CODE_PROMPT =
+  'Чтобы подтвердить email-адрес, введите этот код на экране подтверждения:';
+
 const buildHtmlBody = (code, userName, expiryMinutes) => `
 <!DOCTYPE html>
 <html lang="ru">
@@ -54,7 +64,7 @@ const buildHtmlBody = (code, userName, expiryMinutes) => `
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
     <h1 style="color: #F06B32; font-size: 24px; margin-bottom: 16px; letter-spacing: 2px;">NIRIVIO</h1>
     <p style="font-size: 16px; line-height: 1.5;">Здравствуйте${userName ? `, ${userName}` : ''}!</p>
-    <p style="font-size: 16px; line-height: 1.5;">Подтвердите свой email-адрес, введя код в приложении:</p>
+    <p style="font-size: 16px; line-height: 1.5;">${CODE_PROMPT}</p>
     <div style="background: #F5F5F5; border-radius: 8px; padding: 24px; text-align: center; margin: 24px 0;">
       <span style="font-size: 32px; font-weight: 600; letter-spacing: 8px; color: #1a1a1a; font-family: 'SF Mono', Menlo, monospace;">${code}</span>
     </div>
@@ -69,7 +79,7 @@ const buildHtmlBody = (code, userName, expiryMinutes) => `
  */
 const buildTextBody = (code, userName, expiryMinutes) =>
   `Здравствуйте${userName ? `, ${userName}` : ''}!\n\n` +
-  `Подтвердите свой email-адрес, введя код в приложении:\n\n` +
+  `${CODE_PROMPT}\n\n` +
   `${code}\n\n` +
   `Код действителен ${expiryMinutes} минут. Если вы не запрашивали подтверждение, проигнорируйте это письмо.\n\n` +
   `— Nirivio`;
