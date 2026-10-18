@@ -278,14 +278,15 @@ class PartnerEstablishmentCard extends StatelessWidget {
             color: isPremium ? _backgroundColor : AppTheme.textPrimary,
           ),
         ),
-        // Cuisine
-        Text(
-          establishment.cuisineDisplayName,
-          style: TextStyle(
-            fontSize: 13,
-            color: isPremium ? _darkGreyText : _greyText,
+        // Cuisine — у бара и клуба её может не быть: тогда строки нет
+        if (establishment.cuisineDisplayName.isNotEmpty)
+          Text(
+            establishment.cuisineDisplayName,
+            style: TextStyle(
+              fontSize: 13,
+              color: isPremium ? _darkGreyText : _greyText,
+            ),
           ),
-        ),
       ],
     );
   }

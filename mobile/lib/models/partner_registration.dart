@@ -325,8 +325,11 @@ class PartnerRegistration {
   // Step 1: Categories (max 2)
   final List<String> categories;
 
-  // Step 2: Cuisine types (max 3)
+  // Step 2: Cuisine types (max 3; none needed for a bar or a club)
   final List<String> cuisineTypes;
+
+  /// Нужна ли кухня при выбранных категориях (см. [CategoryOptions.isCuisineRequired]).
+  bool get cuisineRequired => CategoryOptions.isCuisineRequired(categories);
 
   // Step 3: Basic Information
   final String? name;
@@ -623,6 +626,19 @@ class CategoryOptions {
   ];
 
   static const int maxSelection = 2;
+
+  /// Категории, которым кухню можно не выбирать: бар и клуб (решение
+  /// Координатора В5, 17.10.2026). Зеркало `CUISINE_OPTIONAL_CATEGORIES`
+  /// сервера (`backend/src/constants/establishmentVocab.js`).
+  static const Set<String> cuisineOptionalIds = {'bar', 'nightclub'};
+
+  /// Нужна ли карточке хотя бы одна кухня. Не нужна, только если ВСЕ
+  /// выбранные категории — бар или клуб: бар, который ещё и ресторан, живёт по
+  /// правилу ресторана. Ничего не выбрано — нужна (строже). Сервер отказывает
+  /// в том же, что здесь не пропускается.
+  static bool isCuisineRequired(List<String> categoryIds) =>
+      categoryIds.isEmpty ||
+      !categoryIds.every(cuisineOptionalIds.contains);
 }
 
 /// Category item model

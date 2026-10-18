@@ -17,7 +17,9 @@ class EstablishmentAttributes {
   static const List<Map<String, String>> canon = [
     {'key': 'delivery', 'name': 'Доставка еды', 'svg': 'Доставка еды'},
     {'key': 'wifi', 'name': 'Wi-Fi', 'svg': 'Wifi'},
-    {'key': 'terrace', 'name': 'Терасса', 'svg': 'Терасса'},
+    // Подпись — «Терраса»; файл значка исторически назван «Терасса.svg»,
+    // поэтому `svg` остаётся как есть (менять только вместе с файлом).
+    {'key': 'terrace', 'name': 'Терраса', 'svg': 'Терасса'},
     {'key': 'parking', 'name': 'Парковка', 'svg': 'Парковка'},
     {'key': 'live_music', 'name': 'Живая музыка', 'svg': 'Живая музыка'},
     {'key': 'kids_zone', 'name': 'Детская зона', 'svg': 'Детская зона'},

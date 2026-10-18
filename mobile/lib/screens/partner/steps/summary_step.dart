@@ -75,7 +75,7 @@ class SummaryStep extends StatelessWidget {
       ),
       _ChecklistItem(
         title: 'Категория кухни',
-        isCompleted: provider.data.cuisineTypes.isNotEmpty,
+        isCompleted: provider.isCuisineStepDone,
       ),
       _ChecklistItem(
         title: 'О заведении',
@@ -252,7 +252,7 @@ class SummaryStep extends StatelessWidget {
 
   bool _isAllCompleted(PartnerRegistrationProvider provider) {
     return provider.data.categories.isNotEmpty &&
-        provider.data.cuisineTypes.isNotEmpty &&
+        provider.isCuisineStepDone &&
         _isBasicInfoCompleted(provider) &&
         _isMediaCompleted(provider) &&
         _isAddressCompleted(provider) &&
