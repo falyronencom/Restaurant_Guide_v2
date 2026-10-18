@@ -44,7 +44,14 @@ class PartnerRegistrationProvider with ChangeNotifier {
         _data = initialData ?? const PartnerRegistration();
 
   /// Create PartnerRegistration from existing PartnerEstablishment data
+  ///
+  /// PDF-меню карточка отдаёт в том же `menu_photos`, что и фото меню. Правка
+  /// раскладывает их обратно: PDF — в список PDF, где их видно плиткой и
+  /// можно удалить, фото — в сетку фото. Иначе PDF вставал в сетку фото
+  /// битой картинкой, а кнопка «+ Добавить PDF меню» не знала, что два PDF
+  /// у карточки уже есть.
   static PartnerRegistration dataFromEstablishment(PartnerEstablishment est) {
+    final pdfLinks = est.menuPhotos.where(MenuPdf.isPdfLink).toList();
     return PartnerRegistration(
       categories: est.categories
           .map((name) => PartnerRegistration.categoryNameToId(name))
@@ -62,7 +69,15 @@ class PartnerRegistrationProvider with ChangeNotifier {
       attributes: est.attributes,
       primaryPhotoUrl: est.primaryImageUrl,
       interiorPhotos: est.interiorPhotos,
-      menuPhotos: est.menuPhotos,
+      menuPhotos:
+          est.menuPhotos.where((url) => !MenuPdf.isPdfLink(url)).toList(),
+      menuPdfs: [
+        for (var i = 0; i < pdfLinks.length; i++)
+          MenuPdf.fromCardLink(
+            pdfLinks[i],
+            label: i == 0 ? 'PDF-меню' : 'PDF-меню ${i + 1}',
+          ),
+      ],
       city: est.city,
       street: est.street,
       building: est.building,
@@ -245,8 +260,10 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Validate Step 4: Media
   bool _validateMediaStep() {
+    // Меню — фото меню или PDF: экран и просит «предпочтительнее единый файл
+    // PDF». Карточку, у которой меню — один PDF, правка иначе не сохранила бы.
     return _data.interiorPhotos.isNotEmpty &&
-        _data.menuPhotos.isNotEmpty &&
+        (_data.menuPhotos.isNotEmpty || _data.menuPdfs.isNotEmpty) &&
         _data.primaryPhotoUrl != null;
   }
 
@@ -615,7 +632,7 @@ class PartnerRegistrationProvider with ChangeNotifier {
       } else if (data != _sentData) {
         await _establishmentsService.updateEstablishment(
           _createdId!,
-          _dataForCreatedCard(),
+          _dataForPut(),
         );
         _sentData = data;
       }
@@ -675,15 +692,17 @@ class PartnerRegistrationProvider with ChangeNotifier {
     }
   }
 
-  /// Данные мастера для правки уже созданной карточки (PUT).
+  /// Данные мастера для правки карточки (PUT): и только что созданной, и
+  /// открытой на правку из кабинета партнёра.
   ///
   /// На сервере PDF-меню лежит в той же корзине «меню», что и фото меню, а
   /// правка оставляет в корзине ровно те ссылки, что пришли в `menu_photos`:
-  /// без ссылок на PDF она бы их удалила. `menu_pdfs` — поле только
-  /// создания, правка его не читает. Поэтому PDF едут вместе с фото меню —
-  /// так же, как при правке из кабинета, куда сервер отдаёт PDF в
-  /// `menu_photos`.
-  PartnerRegistration _dataForCreatedCard() => _data.copyWith(
+  /// без ссылки на PDF она его удаляет, новую ссылку — прикладывает к
+  /// карточке. `menu_pdfs` — поле только создания, правка его не читает:
+  /// до 18.10.2026 PDF, добавленный при правке из кабинета, уходил этим
+  /// полем, загружался в облако, а к карточке не прикладывался. Поэтому PDF
+  /// едут вместе с фото меню — так же, как при правке с сайта.
+  PartnerRegistration _dataForPut() => _data.copyWith(
         menuPhotos: [
           ..._data.menuPhotos,
           ..._data.menuPdfs.map((pdf) => pdf.url),
@@ -734,7 +753,8 @@ class PartnerRegistrationProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      await _establishmentsService.updateEstablishment(establishmentId!, _data);
+      await _establishmentsService.updateEstablishment(
+          establishmentId!, _dataForPut());
       _isSubmitting = false;
       notifyListeners();
       return true;

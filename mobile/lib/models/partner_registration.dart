@@ -285,6 +285,38 @@ class MenuPdf {
         previewUrl: json['preview_url'] as String,
         fileName: json['file_name'] as String? ?? 'menu.pdf',
       );
+
+  /// Ссылка карточки ведёт на PDF. Карточка партнёра отдаёт меню одним
+  /// списком ссылок (`menu_photos`): фото и PDF лежат на сервере в одной
+  /// корзине «меню». Ссылка облака на PDF кончается на `.pdf`, ссылка на фото
+  /// расширения не несёт — по нему сервер и сам отличает PDF
+  /// (`isPdfLink` в `establishmentService.js`).
+  static bool isPdfLink(String url) =>
+      url.split('?').first.toLowerCase().endsWith('.pdf');
+
+  /// PDF, который уже приложен к карточке: правка знает о нём только ссылку.
+  /// Имени файла сервер в карточке партнёра не отдаёт — плитка подписана
+  /// [label]. Первую страницу рисует облако по ссылке — той же
+  /// трансформацией, что и сервер при загрузке (`generatePdfThumbnailUrl`,
+  /// `generatePdfPreviewUrl`).
+  factory MenuPdf.fromCardLink(String url, {required String label}) => MenuPdf(
+        url: url,
+        thumbnailUrl: _firstPage(url, 'c_fill,h_300,pg_1,w_400'),
+        previewUrl: _firstPage(url, 'c_limit,pg_1,w_1200'),
+        fileName: label,
+      );
+
+  /// Первая страница PDF картинкой JPG. Ссылка не из облака — пустая строка:
+  /// плитка покажет значок PDF, а не будет качать файл целиком.
+  static String _firstPage(String url, String size) {
+    const upload = '/image/upload/';
+    final path = url.split('?').first;
+    final at = path.indexOf(upload);
+    if (at < 0 || !isPdfLink(path)) return '';
+    final head = path.substring(0, at + upload.length);
+    final tail = path.substring(at + upload.length, path.length - '.pdf'.length);
+    return '$head$size/f_jpg,q_auto/$tail.jpg';
+  }
 }
 
 /// Partner Registration data model
