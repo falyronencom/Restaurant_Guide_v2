@@ -338,8 +338,9 @@ const normalizeRestoreFlag = (raw) => {
  * latest block hid — those still hidden, not deleted, and not taken over by a
  * moderator one by one since the block. With restoreReviews false, none.
  *
- * A block in force without a journal entry (switched off by the operator's
- * script) has no list: the account is switched on, no review is shown.
+ * A block in force without a list — switched off by the operator's script,
+ * whose entry carries an empty one (or, before 2026-10-18, no entry at all) —
+ * shows no review: the account is switched on, the reviews stay as they are.
  *
  * Sessions are ended on the way back too, as the operator's script does: an
  * account switched off before that rule may still hold sessions from before.
