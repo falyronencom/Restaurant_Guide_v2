@@ -19,6 +19,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
+import { discardUnrecordedUpload } from './unrecordedUpload.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -44,6 +45,24 @@ const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
 export const MAX_PDFS_PER_ESTABLISHMENT = 2;
 
 /**
+ * The file this request uploaded, after its row was not written: deleted when
+ * nothing was written for certain — the read of the next position failed, or
+ * the database refused the row — and kept when the row may hold it
+ * (services/unrecordedUpload.js). The card's folder is where uploadImage and
+ * uploadPdf filed it. Once the row is written it names the file, and a later
+ * failure (the primary flag) leaves both.
+ *
+ * @param {string} publicId - What the upload returned
+ * @param {string} establishmentId - The card whose folder holds the file
+ * @param {Error|null} writeError - What the row's write threw; null when it was never sent
+ */
+const discardUnrecordedMedia = (publicId, establishmentId, writeError) => discardUnrecordedUpload(
+  publicId,
+  [CloudinaryUtil.ownedFolders.establishment(establishmentId)],
+  writeError,
+);
+
+/**
  * Upload a new media file for an establishment
  * 
  * This is the core operation that orchestrates the complete media upload workflow:
@@ -54,7 +73,11 @@ export const MAX_PDFS_PER_ESTABLISHMENT = 2;
  * 5. Generate three resolution URLs
  * 6. Create database record
  * 7. Handle primary photo logic if needed
- * 
+ *
+ * A database failure between 4 and 6 deletes the uploaded file, unless the
+ * row may have been written (discardUnrecordedMedia); the error goes on as
+ * before.
+ *
  * Business rules enforced:
  * - Partner must own the establishment
  * - Upload count must not exceed tier limits
@@ -154,19 +177,27 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         () => CloudinaryUtil.uploadPdf(file.path, establishmentId),
       );
 
-      const position = await MediaModel.getNextPosition(establishmentId, 'menu');
+      let pdfRecord;
+      let rowSent = false;
+      try {
+        const position = await MediaModel.getNextPosition(establishmentId, 'menu');
 
-      const pdfRecord = await MediaModel.createMedia({
-        establishment_id: establishmentId,
-        type: 'menu',
-        file_type: 'pdf',
-        url: pdfUploadResult.secure_url,
-        thumbnail_url: CloudinaryUtil.generatePdfThumbnailUrl(pdfUploadResult.public_id),
-        preview_url: CloudinaryUtil.generatePdfPreviewUrl(pdfUploadResult.public_id),
-        caption,
-        position,
-        is_primary: false, // PDFs never serve as establishment's primary photo
-      });
+        rowSent = true;
+        pdfRecord = await MediaModel.createMedia({
+          establishment_id: establishmentId,
+          type: 'menu',
+          file_type: 'pdf',
+          url: pdfUploadResult.secure_url,
+          thumbnail_url: CloudinaryUtil.generatePdfThumbnailUrl(pdfUploadResult.public_id),
+          preview_url: CloudinaryUtil.generatePdfPreviewUrl(pdfUploadResult.public_id),
+          caption,
+          position,
+          is_primary: false, // PDFs never serve as establishment's primary photo
+        });
+      } catch (error) {
+        await discardUnrecordedMedia(pdfUploadResult.public_id, establishmentId, rowSent ? error : null);
+        throw error;
+      }
 
       logger.info('PDF menu uploaded successfully', {
         mediaId: pdfRecord.id,
@@ -237,21 +268,29 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Generate URLs for all three resolutions
     const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
 
-    // Get next position for proper ordering
-    const position = await MediaModel.getNextPosition(establishmentId, type);
+    let mediaRecord;
+    let rowSent = false;
+    try {
+      // Get next position for proper ordering
+      const position = await MediaModel.getNextPosition(establishmentId, type);
 
-    // Create media record in database
-    const mediaRecord = await MediaModel.createMedia({
-      establishment_id: establishmentId,
-      type,
-      file_type: 'image',
-      url: urls.url,
-      thumbnail_url: urls.thumbnail_url,
-      preview_url: urls.preview_url,
-      caption,
-      position,
-      is_primary,
-    });
+      // Create media record in database
+      rowSent = true;
+      mediaRecord = await MediaModel.createMedia({
+        establishment_id: establishmentId,
+        type,
+        file_type: 'image',
+        url: urls.url,
+        thumbnail_url: urls.thumbnail_url,
+        preview_url: urls.preview_url,
+        caption,
+        position,
+        is_primary,
+      });
+    } catch (error) {
+      await discardUnrecordedMedia(uploadResult.public_id, establishmentId, rowSent ? error : null);
+      throw error;
+    }
 
     // If this is marked as primary, ensure other photos are not primary
     if (is_primary) {

@@ -15,12 +15,32 @@ import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
+import { discardUnrecordedUpload } from './unrecordedUpload.js';
 import logger from '../utils/logger.js';
+
+/**
+ * The picture this request uploaded, after the promotion's row was not
+ * written: deleted when the database refused, kept when the row may hold it
+ * (services/unrecordedUpload.js) — never the promotion's previous picture.
+ * The card's folder is where uploadImage filed it.
+ *
+ * @param {string} publicId - What the upload returned
+ * @param {string} establishmentId - The card whose folder holds the file
+ * @param {Error|null} writeError - What the write threw; null when no row was written
+ */
+const discardUnrecordedImage = (publicId, establishmentId, writeError) => discardUnrecordedUpload(
+  publicId,
+  [CloudinaryUtil.ownedFolders.establishment(establishmentId)],
+  writeError,
+);
 
 /**
  * Create a promotion for an establishment.
  *
  * Flow: verify ownership → check active count → upload image (optional) → create record.
+ * The fields arrive checked (promotionController.js), so the database refuses
+ * the record only when it fails; the image uploaded for it is then deleted,
+ * unless the row may hold it (discardUnrecordedImage).
  *
  * @param {string} partnerId - UUID of authenticated partner
  * @param {string} establishmentId - UUID of the establishment
@@ -53,6 +73,7 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
 
   // Upload image to Cloudinary if provided
   let imageUrls = {};
+  let uploadedPublicId = null;
   if (file) {
     if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
       throw new AppError(
@@ -75,6 +96,7 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
       { userId: partnerId, bytes: file.size, message: PROMOTION_REFUSALS.dailyUploadLimit },
       () => CloudinaryUtil.uploadImage(file.path, establishmentId, 'promotions'),
     );
+    uploadedPublicId = uploadResult.public_id;
     const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
     imageUrls = {
       image_url: urls.url,
@@ -83,16 +105,22 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
     };
   }
 
-  const promotion = await PromotionModel.createPromotion({
-    establishment_id: establishmentId,
-    title: data.title,
-    description: data.description || null,
-    terms_and_conditions: data.terms_and_conditions || null,
-    valid_from: data.valid_from || null,
-    valid_until: data.valid_until || null,
-    position: data.position || 0,
-    ...imageUrls,
-  });
+  let promotion;
+  try {
+    promotion = await PromotionModel.createPromotion({
+      establishment_id: establishmentId,
+      title: data.title,
+      description: data.description || null,
+      terms_and_conditions: data.terms_and_conditions || null,
+      valid_from: data.valid_from || null,
+      valid_until: data.valid_until || null,
+      position: data.position || 0,
+      ...imageUrls,
+    });
+  } catch (error) {
+    if (uploadedPublicId) await discardUnrecordedImage(uploadedPublicId, establishmentId, error);
+    throw error;
+  }
 
   // Notify users who favorited this establishment (non-blocking)
   NotificationService.notifyPromotionNew(establishmentId, data.title).catch(() => {});
@@ -159,6 +187,7 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
 
   // Upload new image if provided
   let imageUrls = {};
+  let uploadedPublicId = null;
   if (file) {
     if (!CloudinaryUtil.isValidImageType(file.mimetype)) {
       throw new AppError(
@@ -180,6 +209,7 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
       { userId: partnerId, bytes: file.size, message: PROMOTION_REFUSALS.dailyUploadLimit },
       () => CloudinaryUtil.uploadImage(file.path, promotion.establishment_id, 'promotions'),
     );
+    uploadedPublicId = uploadResult.public_id;
     const urls = CloudinaryUtil.generateAllResolutions(uploadResult.public_id);
     imageUrls = {
       image_url: urls.url,
@@ -188,10 +218,27 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
     };
   }
 
-  const updated = await PromotionModel.updatePromotion(promotionId, {
-    ...data,
-    ...imageUrls,
-  });
+  // The new picture is deleted when no row shows it — the database refused, or
+  // the row was gone by the time of the write; the previous picture is still
+  // the promotion's, or went with the row. With the outcome unknown the new
+  // one stays (services/unrecordedUpload.js).
+  let updated;
+  try {
+    updated = await PromotionModel.updatePromotion(promotionId, {
+      ...data,
+      ...imageUrls,
+    });
+  } catch (error) {
+    if (uploadedPublicId) await discardUnrecordedImage(uploadedPublicId, promotion.establishment_id, error);
+    throw error;
+  }
+  if (!updated) {
+    // Deleted between the read and the write — with its card (ON DELETE
+    // CASCADE). Until 18.10.2026 that was 200 with no data, and the new
+    // picture stayed in the cloud with nothing naming it.
+    if (uploadedPublicId) await discardUnrecordedImage(uploadedPublicId, promotion.establishment_id, null);
+    throw new AppError(PROMOTION_REFUSALS.promotionNotFound, 404, 'PROMOTION_NOT_FOUND');
+  }
 
   // The previous image goes LAST — after the new one is uploaded and its link
   // written. A failure at either earlier step leaves the promotion with its

@@ -115,9 +115,9 @@ const notFrom = (group, values, { allowed = [], cyrillic = false } = {}) => {
 describe('Отказы партнёру вне карточки: тексты', () => {
   it('каждый текст — по-русски: есть кириллица, нет латиницы, кроме названий форматов', () => {
     const all = texts();
-    // Сторож перебора: тексты нашлись (8 загрузки + 3 брони + 9 вызовов статуса
-    // + 6 акций + 1 вызов лимита на 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(27);
+    // Сторож перебора: тексты нашлись (9 загрузки + 3 брони + 9 вызовов статуса
+    // + 11 акций + 1 вызов лимита на 18.10.2026; 27 на 13.10.2026).
+    expect(all.length).toBeGreaterThanOrEqual(33);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -230,6 +230,11 @@ describe('Отказы партнёру вне карточки: исходни�
     // Ответы с текстом нашлись (2 отказа на 13.10.2026).
     expect(controller.length).toBeGreaterThanOrEqual(2);
     expect(notFrom('PROMOTION_REFUSALS', controller)).toEqual([]);
+    // Отказы полей акции — AppError из контроллера, до сервиса и облака
+    // (4 на 18.10.2026: название, даты, позиция, описание и условия).
+    const controllerRefusals = appErrorTexts(source('controllers/promotionController.js'));
+    expect(controllerRefusals.length).toBeGreaterThanOrEqual(4);
+    expect(notFrom('PROMOTION_REFUSALS', controllerRefusals)).toEqual([]);
 
     // Фильтр картинки в маршруте: до 16.10.2026 он отказывал английской
     // строкой, которую партнёр не видел вовсе — наружу уходило 500.
