@@ -1017,3 +1017,40 @@ describe('Б3: чей рейтинг заведения попадает в пр
     // изменится». Совпадение здесь означает, что вычитать нечего.
   });
 });
+
+// ============================================================================
+// The entry of a one-by-one hide is written with the hide, or neither is
+// ============================================================================
+
+describe('setVisibility: the journal entry is part of the change', () => {
+  const adminId = async () => (await query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")).rows[0].id;
+
+  test('an entry that cannot be written fails the hide: the review stays visible, the rating untouched', async () => {
+    const review = await createTestReview(null, testEstablishmentId, { rating: 1 });
+    const before = (await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId])).rows[0];
+
+    // ip_address is INET: this value makes the INSERT into audit_log fail.
+    await expect(adminReviewService.setVisibility(review.id, false, await adminId(), { ipAddress: 'not-an-address' }))
+      .rejects.toMatchObject({ statusCode: 500, code: 'VISIBILITY_UPDATE_FAILED' });
+
+    const stored = (await query('SELECT is_visible FROM reviews WHERE id = $1', [review.id])).rows[0];
+    expect(stored.is_visible).toBe(true);
+    expect(await checkAuditLogExists(review.id, 'review_hide')).toBe(false);
+    const after = (await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId])).rows[0];
+    expect(after).toEqual(before);
+  });
+
+  test('a hide that succeeds has its entry, timed by the moment of the write', async () => {
+    const review = await createTestReview(null, testEstablishmentId);
+    const result = await adminReviewService.setVisibility(review.id, false, await adminId(), { ipAddress: '127.0.0.1' });
+    expect(result).toMatchObject({ is_visible: false, changed: true });
+
+    const entry = (await query(
+      `SELECT new_data, ip_address::text AS ip FROM audit_log WHERE entity_id = $1 AND action = 'review_hide'`,
+      [review.id],
+    )).rows;
+    expect(entry).toHaveLength(1);
+    expect(entry[0].new_data).toEqual({ is_visible: false });
+    expect(entry[0].ip).toBe('127.0.0.1/32');
+  });
+});

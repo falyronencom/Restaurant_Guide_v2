@@ -126,12 +126,17 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
     dateTo,
   } = options;
 
-  // Determine sort order based on sortBy parameter
-  let orderClause = 'r.created_at DESC'; // Default: newest first
+  // Determine sort order based on sortBy parameter. r.id is the last key of
+  // each order: pages are cut by OFFSET, and two reviews with the same
+  // created_at (and rating) otherwise come in any order from one query to the
+  // next — on the border of two pages one is shown twice and another not at
+  // all. The app's «сначала старые» reverses the pages of 'newest', so the
+  // reverse is an order too.
+  let orderClause = 'r.created_at DESC, r.id DESC'; // Default: newest first
   if (sortBy === 'highest') {
-    orderClause = 'r.rating DESC, r.created_at DESC';
+    orderClause = 'r.rating DESC, r.created_at DESC, r.id DESC';
   } else if (sortBy === 'lowest') {
-    orderClause = 'r.rating ASC, r.created_at DESC';
+    orderClause = 'r.rating ASC, r.created_at DESC, r.id DESC';
   }
 
   // Build dynamic WHERE conditions and params
@@ -282,7 +287,7 @@ export const findReviewsByUser = async (userId, options = {}) => {
     JOIN establishments e ON r.establishment_id = e.id
     WHERE r.user_id = $1
     ${includeDeleted ? '' : 'AND r.is_deleted = false AND r.is_visible = true'}
-    ORDER BY r.created_at DESC
+    ORDER BY r.created_at DESC, r.id DESC
     LIMIT $2 OFFSET $3
   `;
 

@@ -21,6 +21,21 @@
  * still hold sessions from before, and switching it on must not revive them.
  * Whoever uses the account signs in again.
  *
+ * And the journal, since 2026-10-18 (tester walkthrough 17.10, P8 report,
+ * finding 3): the switch is written as the block from the panel writes it —
+ * user_block / user_unblock, entity the account, in the same transaction,
+ * timed by clock_timestamp() under the row lock — with the operator script as
+ * the actor (user_id NULL) and empty review lists: the script hides and shows
+ * no review. Until then the panel's card of a person switched on by the
+ * script still showed «Заблокирован» as the latest action, and a later
+ * unblock from the panel read an older block's list.
+ *
+ * A person blocked from the panel is switched on from the panel: the unblock
+ * there shows again the reviews the block hid. The script refuses to switch
+ * such an account on while some of those reviews are still hidden — unless
+ * --keep-reviews-hidden says the reviews stay hidden, as the panel's unticked
+ * «Вернуть отзывы» does.
+ *
  * Security model (mirrors set-partner-password.js):
  *   - Target database: with --production, DATABASE_URL from
  *     backend/.env.production (gitignored, user-managed; TLS to the pinned
@@ -33,6 +48,7 @@
  * Usage:
  *   node scripts/set-user-active.js --email=guest@example.com --active=false --production
  *   node scripts/set-user-active.js --email=guest@example.com --active=true --production
+ *   node scripts/set-user-active.js --email=guest@example.com --active=true --keep-reviews-hidden --production
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
@@ -56,11 +72,15 @@ const email = (option('email') || '').trim().toLowerCase();
 const activeArg = option('active');
 const production = hasFlag('production');
 const skipConfirm = hasFlag('yes');
+const keepReviewsHidden = hasFlag('keep-reviews-hidden');
+
+/** Who the journal names as the actor — the form the other operator scripts use. */
+const ACTOR = 'operator_script:set-user-active';
 
 const usage = (problem) => {
   console.error(`❌ ${problem}`);
   console.error('');
-  console.error('   node scripts/set-user-active.js --email=<email> --active=true|false [--production] [--yes]');
+  console.error('   node scripts/set-user-active.js --email=<email> --active=true|false [--keep-reviews-hidden] [--production] [--yes]');
   process.exit(1);
 };
 
@@ -100,6 +120,57 @@ const confirm = () => new Promise((resolveAnswer) => {
   });
 });
 
+/**
+ * Reviews the block in force hid that are still hidden and not deleted: the
+ * latest of the block and unblock entries, if it is a block — the same read
+ * as adminUserService.unblockUser.
+ */
+const reviewsHiddenByBlock = async (client, userId) => {
+  const latest = await client.query(
+    `SELECT action, new_data -> 'hidden_review_ids' AS hidden_review_ids
+     FROM audit_log
+     WHERE entity_type = 'user' AND entity_id = $1 AND action IN ('user_block', 'user_unblock')
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [userId],
+  );
+  const block = latest.rows[0]?.action === 'user_block' ? latest.rows[0] : null;
+  const ids = Array.isArray(block?.hidden_review_ids) ? block.hidden_review_ids : [];
+  if (ids.length === 0) return 0;
+  const hidden = await client.query(
+    `SELECT COUNT(*)::int AS count FROM reviews
+     WHERE id = ANY($2::uuid[]) AND user_id = $1 AND is_visible = FALSE AND is_deleted = FALSE`,
+    [userId, ids],
+  );
+  return hidden.rows[0].count;
+};
+
+/** The journal entry of the switch, in its transaction; fails it when it fails. */
+const journal = (tx, accountId) => tx.query(
+  `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent, created_at)
+   VALUES (NULL, $1, 'user', $2, $3, $4, NULL, $5, clock_timestamp())`,
+  [
+    active ? 'user_unblock' : 'user_block',
+    accountId,
+    JSON.stringify({ is_active: !active }),
+    JSON.stringify(active
+      ? {
+        is_active: true,
+        reason: 'Учётку включил оператор скриптом',
+        restore_reviews: false,
+        restored_review_ids: [],
+        actor: ACTOR,
+      }
+      : {
+        is_active: false,
+        reason: 'Учётку выключил оператор скриптом',
+        hidden_review_ids: [],
+        actor: ACTOR,
+      }),
+    ACTOR,
+  ],
+);
+
 const main = async () => {
   const client = buildClient();
   await client.connect();
@@ -134,7 +205,21 @@ const main = async () => {
       }
     }
 
+    if (active) {
+      const hidden = await reviewsHiddenByBlock(client, account.id);
+      if (hidden > 0 && !keepReviewsHidden) {
+        console.error(`❌ Refusing: the account was blocked from the panel, and ${hidden} of the reviews the block hid are still hidden.`);
+        console.error('   Unblock it in the panel (Пользователи → Разблокировать): that shows them again.');
+        console.error('   To switch it on here and leave them hidden, add --keep-reviews-hidden.');
+        return 1;
+      }
+      if (hidden > 0) {
+        console.log(`   ${hidden} reviews hidden by the panel block stay hidden (--keep-reviews-hidden).`);
+      }
+    }
+
     console.log(`Will set is_active = ${active} for ${account.email}; every session, push device and unused reset link of the account ends.`);
+    console.log('   The switch is written to the journal (user_block / user_unblock), as the panel writes it.');
     if (!active) {
       console.log('   Login and token refresh stop immediately; an access token already issued stops working within 10 seconds.');
     }
@@ -144,14 +229,24 @@ const main = async () => {
       return 1;
     }
 
-    // The switch and the revocation in one transaction (the write helper of
-    // the password scripts: it ends the sessions of the row the write returns).
-    const { account: updated, sessions } = await writePasswordEndingSessions(client, async (tx) => (await tx.query(
-      `UPDATE users SET is_active = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, email, role, is_active`,
-      [active, account.id],
-    )).rows[0]);
+    // The switch, its journal entry and the revocation in one transaction (the
+    // write helper of the password scripts: it ends the sessions of the row
+    // the write returns). The UPDATE takes the row lock the panel's actions
+    // take first; the entry is written under it.
+    const { account: updated, sessions } = await writePasswordEndingSessions(client, async (tx) => {
+      const row = (await tx.query(
+        `UPDATE users SET is_active = $1, updated_at = NOW()
+         WHERE id = $2 AND is_active = $3
+         RETURNING id, email, role, is_active`,
+        [active, account.id, !active],
+      )).rows[0];
+      if (row) await journal(tx, row.id);
+      return row;
+    });
+    if (!updated) {
+      console.log('Nothing written: the account was switched meanwhile. Run the script again to see where it stands.');
+      return 1;
+    }
     console.log(`✅ ${updated.email} (${updated.role}) is now ${updated.is_active ? 'active' : 'inactive'}.`);
     reportEndedSessions(sessions);
     return 0;

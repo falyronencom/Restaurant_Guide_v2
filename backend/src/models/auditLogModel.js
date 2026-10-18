@@ -94,6 +94,52 @@ export const createAuditLog = async (data) => {
 };
 
 /**
+ * Insert an audit log entry inside the caller's transaction — and fail with
+ * it. For an entry another action reads back: the unblock of a person
+ * (adminUserService.unblockUser) leaves hidden a review a moderator hid or
+ * showed one by one after the block, and learns that from this entry. Written
+ * «softly» (createAuditLog), a lost entry let the unblock show again a review
+ * the moderator had hidden (tester walkthrough 17.10, P8 report, finding 4).
+ *
+ * created_at is clock_timestamp() — the moment of the write, after the row
+ * lock the action waited for — not CURRENT_TIMESTAMP, the start of the
+ * transaction; the same rule as the block's own entry.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {Object} data - same fields as createAuditLog
+ * @returns {Promise<{id: string, created_at: Date}>}
+ */
+export const writeAuditLogInTransaction = async (client, data) => {
+  const {
+    user_id,
+    action,
+    entity_type,
+    entity_id,
+    old_data = null,
+    new_data = null,
+    ip_address = null,
+    user_agent = null,
+  } = data;
+
+  const result = await client.query(
+    `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp())
+     RETURNING id, created_at`,
+    [
+      user_id,
+      action,
+      entity_type,
+      entity_id,
+      old_data ? JSON.stringify(old_data) : null,
+      new_data ? JSON.stringify(new_data) : null,
+      ip_address,
+      user_agent,
+    ],
+  );
+  return result.rows[0];
+};
+
+/**
  * Latest audit entry of one action on one entity, with the actor's name.
  *
  * Used for "who suspended this establishment": moderation_notes carries the

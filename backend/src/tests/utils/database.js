@@ -104,13 +104,16 @@ export async function clearMedia() {
 }
 
 /**
- * Get database connection from pool
- * Useful for manual queries in tests
+ * Get a database client from the pool — for a test that needs a transaction
+ * or a held row lock of its own. The caller releases it (client.release()).
+ *
+ * Until 2026-10-18 it returned the result of `SELECT NOW()`, not a client:
+ * a trap for the next test with a transaction (P8 report, finding 5).
  *
  * @returns {Promise<Object>} Database client
  */
 export async function getClient() {
-  return await pool.query('SELECT NOW()');
+  return pool.connect();
 }
 
 /**

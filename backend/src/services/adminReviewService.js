@@ -9,6 +9,7 @@
  * Segment E: Utility Screens
  */
 
+import { getClient } from '../config/database.js';
 import * as AdminReviewModel from '../models/adminReviewModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
@@ -178,7 +179,38 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
       };
     }
 
-    let result = await AdminReviewModel.setReviewVisibility(reviewId, isVisible, review.is_visible);
+    // The change, the rating and the journal entry in one transaction: the
+    // entry is read back by the unblock of the author (adminUserService) —
+    // a review hidden or shown one by one after a block is the moderator's
+    // decision, and the unblock leaves it as it is. Lost, the entry let the
+    // unblock show again the review the moderator hid (tester walkthrough
+    // 17.10, P8 report, finding 4); so a failed entry now fails the change.
+    const action = isVisible ? 'review_show' : 'review_hide';
+    let result;
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      result = await AdminReviewModel.setReviewVisibility(reviewId, isVisible, review.is_visible, client);
+      if (result) {
+        // Recalculate establishment aggregates (hidden reviews excluded from rating)
+        await ReviewModel.updateEstablishmentAggregates(result.establishment_id, client);
+        await AuditLogModel.writeAuditLogInTransaction(client, {
+          user_id: adminUserId,
+          action,
+          entity_type: 'review',
+          entity_id: reviewId,
+          new_data: { is_visible: result.is_visible },
+          ip_address: ipAddress,
+          user_agent: userAgent,
+        });
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     if (!result) {
       // Changed between the read and the write — by another moderator or by a
@@ -210,23 +242,6 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
 
     result = { ...result, changed: true };
 
-    // Recalculate establishment aggregates (hidden reviews excluded from rating)
-    await ReviewModel.updateEstablishmentAggregates(result.establishment_id);
-
-    // Audit log — awaited for determinism and parity with the other admin
-    // handlers: the row must exist by the time the response returns.
-    // createAuditLog swallows its own errors, so awaiting cannot fail the call.
-    const action = result.is_visible ? 'review_show' : 'review_hide';
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action,
-      entity_type: 'review',
-      entity_id: reviewId,
-      new_data: { is_visible: result.is_visible },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
-
     // Notify review author only when hiding (non-blocking)
     if (!result.is_visible) {
       NotificationService.notifyReviewModerated(reviewId, 'hidden')
@@ -235,7 +250,9 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
 
     return result;
   } catch (error) {
-    if (error.code) throw error; // Re-throw AppError
+    // A refusal of the service. A database error has a code too (an entry
+    // that could not be written, for one), and must not leave as it is.
+    if (error instanceof AppError) throw error;
     logger.error('Error in setVisibility service', {
       error: error.message,
       reviewId,
