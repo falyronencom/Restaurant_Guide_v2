@@ -166,12 +166,14 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                           ),
                         ),
                       ),
-                      DefaultCityButton(
-                        onTap: () {
-                          setModalState(() {
-                            tempSelectedCity = BelarusCities.defaultCity;
-                          });
-                        },
+                      Flexible(
+                        child: DefaultCityButton(
+                          onTap: () {
+                            setModalState(() {
+                              tempSelectedCity = BelarusCities.defaultCity;
+                            });
+                          },
+                        ),
                       ),
                     ],
                   ),

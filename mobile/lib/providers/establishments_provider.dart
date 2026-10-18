@@ -72,6 +72,11 @@ class EstablishmentsProvider with ChangeNotifier {
   /// 17.10.2026); null — искали по фильтрам или сервер поля не прислал.
   int? _searchMatchedTotal;
 
+  /// Фраза, на которую пришёл [_searchMatchedTotal]: шапка «По запросу «…»»
+  /// пишет её, а не живую `searchQuery`, которую «Сброс» фильтров обнуляет
+  /// раньше нового поиска (ревью PR #83, M1).
+  String? _searchMatchedPhrase;
+
   /// Номер в общей выдаче, с которого начинается загруженный список: после
   /// возврата на последнюю существующую страницу список начинается не с нуля.
   int _loadedFrom = 0;
@@ -204,6 +209,9 @@ class EstablishmentsProvider with ChangeNotifier {
   /// «Возможно, вам подойдут» (решение Координатора В3, 17.10.2026). null —
   /// делить нечего: искали без фразы или сервер поля не прислал.
   int? get searchMatchedTotal => _searchMatchedTotal;
+
+  /// Фраза последней умной выдачи — для шапки «По запросу «…»».
+  String? get searchMatchedPhrase => _searchMatchedPhrase;
 
   /// С какого места загруженного списка начинается «Возможно, вам подойдут»;
   /// null — вся выдача совпадения (или делить нечего).
@@ -419,6 +427,7 @@ class EstablishmentsProvider with ChangeNotifier {
         _searchIntent = smart.intent;
         _searchFallback = smart.fallback;
         _searchMatchedTotal = smart.matchedTotal;
+        _searchMatchedPhrase = queryText;
         result = PaginatedEstablishments(
           data: smart.results,
           meta: PaginationMeta(
@@ -720,6 +729,9 @@ class EstablishmentsProvider with ChangeNotifier {
   void clearFilters() {
     _selectedCity = null;
     _searchQuery = null;
+    // Фразы больше нет — делить выдачу на совпадения и запасную нечем, даже
+    // если человек ушёл с экрана фильтров без «Применить».
+    _searchMatchedTotal = null;
     _distanceFilter = DistanceOption.all;
     _priceFilters.clear();
     _hoursFilter = null;

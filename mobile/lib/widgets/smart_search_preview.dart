@@ -182,7 +182,11 @@ class SmartSearchPreview extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  'Показать все (${provider.totalResults})',
+                  // Под «ничего не найдено» «все» звучало бы как «все
+                  // найденные» (ревью PR #83, M2).
+                  nothingMatched
+                      ? 'Показать варианты (${provider.totalResults})'
+                      : 'Показать все (${provider.totalResults})',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,

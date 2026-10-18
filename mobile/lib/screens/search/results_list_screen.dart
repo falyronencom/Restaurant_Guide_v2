@@ -242,12 +242,14 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                           ),
                         ),
                       ),
-                      DefaultCityButton(
-                        onTap: () {
-                          setModalState(() {
-                            tempSelectedCity = BelarusCities.defaultCity;
-                          });
-                        },
+                      Flexible(
+                        child: DefaultCityButton(
+                          onTap: () {
+                            setModalState(() {
+                              tempSelectedCity = BelarusCities.defaultCity;
+                            });
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -618,7 +620,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                   child: provider.searchMatchedTotal == 0 &&
                           provider.suggestionsStartIndex != null
                       ? Text(
-                          'По запросу «${provider.searchQuery?.trim() ?? ''}» '
+                          'По запросу «${provider.searchMatchedPhrase ?? ''}» '
                           'ничего не найдено',
                           style: const TextStyle(
                             fontSize: 16,

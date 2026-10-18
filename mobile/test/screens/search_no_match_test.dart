@@ -80,6 +80,13 @@ void main() {
       expect((await searched(1)).suggestionsStartIndex, 1);
     });
 
+    test('«Сброс» фильтров убирает фразу — и деление выдачи с ней (ревью PR #83, M1)',
+        () async {
+      final provider = await searched(0);
+      provider.clearFilters();
+      expect(provider.suggestionsStartIndex, isNull);
+    });
+
     test('совпало всё или поля нет — делить нечего', () async {
       expect((await searched(3)).suggestionsStartIndex, isNull);
       expect((await searched(null)).suggestionsStartIndex, isNull);
@@ -180,6 +187,9 @@ void main() {
       expect(find.text('булочка'), findsNothing);
       expect(tester.getRect(find.text('Возможно, вам подойдут')).top,
           lessThan(tester.getRect(find.text('Бар')).top));
+      // «Показать все» под «ничего не найдено» звучало бы как «все найденные».
+      expect(find.text('Показать варианты (9)'), findsOneWidget);
+      expect(find.textContaining('Показать все'), findsNothing);
     });
 
     testWidgets('совпадения есть — прочтение на месте, заголовка нет',
@@ -187,6 +197,7 @@ void main() {
       await pumpPreview(tester, 9);
 
       expect(find.text('булочка'), findsOneWidget);
+      expect(find.text('Показать все (9)'), findsOneWidget);
       expect(find.text('Возможно, вам подойдут'), findsNothing);
       expect(find.textContaining('ничего не найдено'), findsNothing);
     });
@@ -262,7 +273,9 @@ void main() {
       // Карточка цены («$», 45 пт) в тестовом шрифте выше, чем на телефоне, и
       // переполняет свои 107 × 107. К цветам, которые проверяются здесь, это
       // отношения не имеет — исключение снимается, чтобы не ронять тест.
-      tester.takeException();
+      final error = tester.takeException();
+      expect(error == null || '$error'.contains('overflowed'), isTrue,
+          reason: 'снимается только известное переполнение, не любая ошибка');
     }
 
     Border borderAround(WidgetTester tester, Finder label) {
