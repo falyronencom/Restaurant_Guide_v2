@@ -282,7 +282,7 @@ describe('countDoneJobsSinceEnqueue — batch mates of a failed job', () => {
 });
 
 describe('reapStaleProcessingJobs — stale sweep', () => {
-  test('settles processing rows older than STALE_PROCESSING_INTERVAL with the markFailed retry rule', async () => {
+  test('fails processing rows older than STALE_PROCESSING_INTERVAL; only a planned-shutdown mark with an attempt left goes back to pending', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     await Model.reapStaleProcessingJobs();
 
@@ -292,15 +292,22 @@ describe('reapStaleProcessingJobs — stale sweep', () => {
     expect(sql).toContain("WHERE status = 'processing'");
     // Age compared in SQL — started_at / created_at are DB-generated naive timestamps.
     expect(sql).toContain('COALESCE(started_at, created_at) < NOW() - $1::interval');
-    // Same retry semantics as markFailed.
-    expect(sql).toContain("WHEN attempts >= max_attempts THEN 'failed'");
-    expect(sql).toContain("ELSE 'pending'");
-    expect(sql).toContain('error_message = $2');
-    expect(sql).toContain('completed_at = CASE');
-    expect(sql).toContain('started_at = CASE');
+    // One decision for all four columns: the mark and an attempt left → retry, anything else → failed.
+    const decision = 'CASE WHEN error_message = $3 AND attempts < max_attempts THEN';
+    expect(sql).toContain(`status = ${decision} 'pending' ELSE 'failed' END`);
+    expect(sql).toContain(`error_message = ${decision} $4 ELSE $2 END`);
+    expect(sql).toContain(`completed_at = ${decision} NULL ELSE NOW() END`);
+    expect(sql).toContain(`started_at = ${decision} NULL ELSE started_at END`);
+    // markFailed's retry rule (attempts left → pending) is not the reaper's any more.
+    expect(sql).not.toContain('WHEN attempts >= max_attempts');
     expect(sql).toContain('RETURNING *');
     expect(sql).toContain('ORDER BY created_at ASC');
-    expect(params).toEqual([Model.STALE_PROCESSING_INTERVAL, Model.STALE_REAP_ERROR_MESSAGE]);
+    expect(params).toEqual([
+      Model.STALE_PROCESSING_INTERVAL,
+      Model.STALE_REAP_ERROR_MESSAGE,
+      Model.SHUTDOWN_INTERRUPT_MARK,
+      Model.STALE_REAP_REQUEUE_MESSAGE,
+    ]);
   });
 
   test('error message names the interval', () => {
@@ -317,19 +324,39 @@ describe('reapStaleProcessingJobs — stale sweep', () => {
     expect(await Model.reapStaleProcessingJobs()).toEqual(rows);
   });
 
-  test('markFailed and the reaper share one retry clause', async () => {
-    mockQuery.mockResolvedValue({ rows: [] });
-    await Model.markFailed(JOB_ID, 'x');
-    await Model.reapStaleProcessingJobs();
+  test('the requeue message says why the job went back', () => {
+    expect(Model.STALE_REAP_REQUEUE_MESSAGE)
+      .toBe('stale processing requeued after 1 hour: a planned shutdown interrupted the attempt');
+  });
+});
 
-    // Indentation differs between the two queries — compare the tokens, not the whitespace.
-    const setClauseOf = (sql) => sql
-      .slice(sql.indexOf('SET status = CASE'), sql.indexOf('WHERE'))
-      .replace(/\s+/g, ' ')
-      .trim();
-    const [markFailedSql] = mockQuery.mock.calls[0];
-    const [reaperSql] = mockQuery.mock.calls[1];
-    expect(setClauseOf(markFailedSql).length).toBeGreaterThan(100);
-    expect(setClauseOf(reaperSql)).toBe(setClauseOf(markFailedSql));
+describe('markFailedPermanently — no retry, whatever attempts remain', () => {
+  test('sets failed and completed_at unconditionally; attempts and started_at untouched', async () => {
+    const row = { id: JOB_ID, status: 'failed', attempts: 1 };
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    expect(await Model.markFailedPermanently(JOB_ID, 'PDF parse exceeded its time limit (20 s)')).toEqual(row);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql.replace(/\s+/g, ' ')).toContain(
+      "SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1",
+    );
+    expect(sql).not.toContain('attempts');
+    expect(sql).not.toContain('started_at');
+    expect(params).toEqual([JOB_ID, 'PDF parse exceeded its time limit (20 s)']);
+  });
+});
+
+describe('markInterruptedByShutdown — the planned-shutdown mark', () => {
+  test('writes the mark on the running attempt only: a processing row with the same attempt number', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    expect(await Model.markInterruptedByShutdown(JOB_ID, 2)).toBeNull();
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql.replace(/\s+/g, ' ')).toContain(
+      "SET error_message = $2 WHERE id = $1 AND status = 'processing' AND attempts = $3",
+    );
+    expect(params).toEqual([JOB_ID, Model.SHUTDOWN_INTERRUPT_MARK, 2]);
   });
 });

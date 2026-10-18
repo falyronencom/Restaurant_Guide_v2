@@ -5,6 +5,10 @@
  *
  * Exercises: enqueue → pickNextPending → processJob → menu_items persistence,
  * with pdf-parse and OpenRouter fetch calls mocked at the module boundary.
+ * pdf-parse runs in a child process in production (pdfParseRunner, tested on
+ * real processes in unit/pdfParseRunner.test.js); here the runner is replaced
+ * by an in-process stand-in that calls the mocked pdf-parse and, like the
+ * real runner, refuses at once under an aborted signal.
  *
  * The real DB is used — migration 024 must be applied to restaurant_guide_test
  * for this suite to run.
@@ -17,6 +21,33 @@ jest.unstable_mockModule('pdf-parse/lib/pdf-parse.js', () => ({
   default: jest.fn(),
 }));
 
+// Plain functions, not jest.fn: resetMocks must not wipe them between tests.
+// Like the real runner: refuses at once under an aborted signal, cuts the
+// text to maxChars and reports its full length. __calls records the options.
+jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => {
+  const abortedError = (message = 'PDF parse cut short by shutdown') => Object.assign(
+    new Error(message),
+    { code: 'PDF_PARSE_ABORTED', reason: 'aborted' },
+  );
+  const calls = [];
+  return {
+    PDF_PARSE_LIMIT: 'PDF_PARSE_LIMIT',
+    PDF_PARSE_ABORTED: 'PDF_PARSE_ABORTED',
+    abortedError,
+    __calls: calls,
+    parsePdfIsolated: async (buffer, { maxPages, maxChars = 0, signal }) => {
+      calls.push({ maxPages, maxChars });
+      if (signal?.aborted) {
+        throw abortedError();
+      }
+      const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js');
+      const parsed = await pdfParse(buffer, { max: maxPages });
+      const text = parsed.text || '';
+      return { ...parsed, text: maxChars > 0 ? text.slice(0, maxChars) : text, textLength: text.length };
+    },
+  };
+});
+
 jest.unstable_mockModule('../../config/openrouter.js', () => ({
   getConfig: jest.fn(),
   getOcrConfig: jest.fn(),
@@ -24,6 +55,8 @@ jest.unstable_mockModule('../../config/openrouter.js', () => ({
 }));
 
 const pdfParseModule = await import('pdf-parse/lib/pdf-parse.js');
+const pdfParseRunnerModule = await import('../../services/ocr/pdfParseRunner.js');
+const { default: logger } = await import('../../utils/logger.js');
 const openrouterModule = await import('../../config/openrouter.js');
 
 const { pool } = await import('../../config/database.js');
@@ -416,6 +449,154 @@ describe('OCR pipeline integration', () => {
     expect(afterFail.attempts).toBe(1);
     expect(afterFail.error_message).toMatch(/500/);
     expect(afterFail.completed_at).toBeNull();
+  });
+
+  describe('the PDF parse under its limits', () => {
+    /** The PDF download only — any vision or structurer call fails the test's expectations. */
+    const downloadOnlyFetch = () => jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(64),
+    }));
+
+    const limitError = (reason, message) => Object.assign(new Error(message), {
+      code: 'PDF_PARSE_LIMIT',
+      reason,
+      stderrHead: '',
+    });
+
+    test.each([
+      ['time', 'timeout', 'PDF parse exceeded its time limit (20 s)'],
+      ['memory', 'memory', 'PDF parse exceeded its memory limit (384 MB)'],
+    ])('a parse over its %s limit fails the job for good on its first attempt — no image read, no retry', async (_label, reason, message) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockRejectedValue(limitError(reason, message));
+      global.fetch = downloadOnlyFetch();
+
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const result = await ocrService.processJob(picked.id);
+
+      expect(result).toMatchObject({ success: false, error: message });
+      const after = await ocrJobModel.getJobStatus(picked.id);
+      expect(after.status).toBe('failed');
+      expect(after.attempts).toBe(1);
+      expect(after.error_message).toBe(message);
+      expect(after.completed_at).not.toBeNull();
+      // The download, and nothing after it: the pages are not read around the parse.
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch.mock.calls[0][0]).toContain('/menu_pdf/test.pdf');
+      // Nothing left in the queue to retry it.
+      expect(await ocrJobModel.findActiveJob(mediaId)).toBeNull();
+    });
+
+    test('after a job failed on its limit, the next job in the queue is processed as usual', async () => {
+      const first = await insertTestMedia(establishment.id, 'pdf');
+      const second = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: first.mediaId });
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: second.mediaId });
+
+      pdfParseModule.default.mockRejectedValueOnce(limitError('timeout', 'PDF parse exceeded its time limit (20 s)'));
+      global.fetch = downloadOnlyFetch();
+      const failed = await ocrJobModel.pickNextPending();
+      await ocrService.processJob(failed.id);
+      expect((await ocrJobModel.getJobStatus(failed.id)).status).toBe('failed');
+
+      pdfParseModule.default.mockResolvedValue({ text: 'Борщ 15 руб.', numpages: 1 });
+      global.fetch = buildFetchMock([
+        { item_name: 'Борщ', price_byn: 15, category_raw: 'Супы', confidence: 0.9, position: 0 },
+      ]);
+      const next = await ocrJobModel.pickNextPending();
+      expect(next.media_id).toBe(second.mediaId);
+      const result = await ocrService.processJob(next.id);
+
+      expect(result).toMatchObject({ success: true, itemCount: 1 });
+      expect((await ocrJobModel.getJobStatus(next.id)).status).toBe('done');
+    });
+
+    test('the poller\'s signal, aborted before the job: no download, no parse — the attempt is settled under the retry rule, back to pending', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      global.fetch = downloadOnlyFetch();
+      const controller = new AbortController();
+      controller.abort();
+
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const result = await ocrService.processJob(picked.id, { signal: controller.signal });
+
+      expect(result.success).toBe(false);
+      const after = await ocrJobModel.getJobStatus(picked.id);
+      expect(after.status).toBe('pending');
+      expect(after.attempts).toBe(1);
+      expect(after.started_at).toBeNull();
+      expect(after.error_message).toBe('PDF download cut short by shutdown');
+      expect(pdfParseModule.default).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('the signal aborted during the download: the download stops at once, and the attempt goes back to pending', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      let downloadStarted;
+      const started = new Promise((resolve) => {
+        downloadStarted = resolve;
+      });
+      global.fetch = jest.fn((url, { signal }) => new Promise((resolve, reject) => {
+        downloadStarted();
+        signal.addEventListener('abort', () => reject(new Error('This operation was aborted')));
+      }));
+      const controller = new AbortController();
+
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const running = ocrService.processJob(picked.id, { signal: controller.signal });
+      await started;
+      controller.abort();
+      const result = await running;
+
+      expect(result.success).toBe(false);
+      const after = await ocrJobModel.getJobStatus(picked.id);
+      expect(after.status).toBe('pending');
+      expect(after.error_message).toBe('PDF download cut short by shutdown');
+      expect(pdfParseModule.default).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('the child is asked for no more text than the last resort can use (TEXT_LAYER_CHAR_LIMIT)', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'Борщ 15 руб.', numpages: 1 });
+      global.fetch = buildFetchMock([
+        { item_name: 'Борщ', price_byn: 15, category_raw: 'Супы', confidence: 0.9, position: 0 },
+      ]);
+      const before = pdfParseRunnerModule.__calls.length;
+
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      await ocrService.processJob(picked.id);
+
+      expect(pdfParseRunnerModule.__calls.slice(before)).toEqual([
+        { maxPages: ocrService.PDF_PAGE_LIMIT, maxChars: ocrService.TEXT_LAYER_CHAR_LIMIT },
+      ]);
+    });
+
+    test('an ordinary parse failure still reads the pages as images, as before', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockRejectedValue(new Error('bad XRef entry'));
+      global.fetch = jest.fn(async (url) => {
+        if (url.includes('/chat/completions')) {
+          return { ok: false, status: 500, text: async () => 'upstream failure' };
+        }
+        return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(64) };
+      });
+
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      await ocrService.processJob(picked.id);
+
+      // Download + VISION_FALLBACK_PAGE_LIMIT image reads: the parse failure was read around.
+      const visionCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/chat/completions'));
+      expect(visionCalls.length).toBe(ocrService.VISION_FALLBACK_PAGE_LIMIT);
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('pending');
+    });
   });
 
   test('permanent failure: after max_attempts reached, job becomes failed', async () => {
@@ -1215,12 +1396,19 @@ describe('OCR pipeline integration', () => {
           itemsByText: new Map([[textLayer.slice(0, read), TEXT_LAYER_ITEMS]]),
         });
         global.fetch = fetchMock;
+        const warn = jest.spyOn(logger, 'warn');
 
         const { job } = await runJob(mediaId, { lastAttempt: true });
 
         expect(job.status).toBe('done');
         expect(calls.structurer.map((text) => text.length)).toEqual([read]);
         expect(calls.structurer[0]).toBe(textLayer.slice(0, read));
+        // The child sent at most the limit; the log still names the full length.
+        const cutWarnings = warn.mock.calls
+          .filter(([message]) => message === 'PDF text layer longer than the limit — only its beginning is structured');
+        expect(cutWarnings).toEqual(length > read
+          ? [[expect.any(String), expect.objectContaining({ textLength: length, charLimit: read })]]
+          : []);
       });
     });
 
@@ -1446,9 +1634,11 @@ describe('OCR pipeline integration', () => {
   // A 'processing' row whose process died mid-job is settled by nobody:
   // enqueue keeps returning it ("re-run OCR" is dead for that file) and the
   // admin health signals count it as in flight. ocrJobPoller.sweepStaleJobs
-  // settles rows older than STALE_PROCESSING_INTERVAL under the markFailed
-  // retry rule. The poller itself never starts under NODE_ENV=test — the
-  // sweep is invoked directly, like processJob.
+  // settles rows older than STALE_PROCESSING_INTERVAL: failed for good — an
+  // attempt that ended its process is not retried — unless a planned shutdown
+  // marked the row (ocrJobModel.markInterruptedByShutdown), which goes back to
+  // pending while an attempt is left. The poller itself never starts under
+  // NODE_ENV=test — the sweep is invoked directly, like processJob.
 
   describe('stale processing sweep — ocrJobPoller.sweepStaleJobs', () => {
     /**
@@ -1456,14 +1646,14 @@ describe('OCR pipeline integration', () => {
      * the row left in 'processing'. Age is written by the database, like
      * pickNextPending does, so the comparison never crosses the driver.
      */
-    const insertZombie = async ({ attempts, age, withStartedAt = true }) => {
+    const insertZombie = async ({ attempts, age, withStartedAt = true, marked = false, errorMessage = null }) => {
       const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
       const startedAtSql = withStartedAt ? 'NOW() - $4::interval' : 'NULL';
       const result = await pool.query(
-        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at)
-         VALUES ($1, $2, 'processing', $3, NOW() - $4::interval, ${startedAtSql})
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at, error_message)
+         VALUES ($1, $2, 'processing', $3, NOW() - $4::interval, ${startedAtSql}, $5)
          RETURNING *`,
-        [establishment.id, mediaId, attempts, age],
+        [establishment.id, mediaId, attempts, age, marked ? ocrJobModel.SHUTDOWN_INTERRUPT_MARK : errorMessage],
       );
       return result.rows[0];
     };
@@ -1487,8 +1677,30 @@ describe('OCR pipeline integration', () => {
     /** The sweep is global across the test DB — judge only rows of this establishment. */
     const ownReaped = (rows) => rows.filter((job) => job.establishment_id === establishment.id);
 
-    test('older than STALE_PROCESSING_INTERVAL with attempts left → back to pending; re-run works again', async () => {
-      const zombie = await insertZombie({ attempts: 1, age: '2 hours' });
+    test('older than STALE_PROCESSING_INTERVAL, attempts left, no shutdown mark → failed for good, not retried', async () => {
+      // The previous attempt's error is still on the row: only the mark counts, not any message.
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours', errorMessage: 'page 1 of 2: vision call failed' });
+
+      const reaped = ownReaped(await ocrJobPoller.sweepStaleJobs());
+      expect(reaped.map((job) => job.id)).toEqual([zombie.id]);
+      expect(reaped.map((job) => job.status)).toEqual(['failed']);
+
+      const after = await ocrJobModel.getJobStatus(zombie.id);
+      expect(after.status).toBe('failed');
+      expect(after.attempts).toBe(1);
+      expect(after.error_message).toBe('stale processing reaped after 1 hour');
+      expect(after.completed_at).not.toBeNull();
+      expect(after.started_at).not.toBeNull();
+
+      // Nothing picks it up again; the partner's restart queues the file anew.
+      expect(await ocrJobModel.pickNextPending()).toBeNull();
+      const fresh = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: zombie.media_id });
+      expect(fresh.id).not.toBe(zombie.id);
+      expect(fresh.attempts).toBe(0);
+    });
+
+    test('a row a planned shutdown marked, attempts left → back to pending once; re-run works again', async () => {
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours', marked: true });
 
       const reaped = ownReaped(await ocrJobPoller.sweepStaleJobs());
       expect(reaped.map((job) => job.id)).toEqual([zombie.id]);
@@ -1496,7 +1708,7 @@ describe('OCR pipeline integration', () => {
       const after = await ocrJobModel.getJobStatus(zombie.id);
       expect(after.status).toBe('pending');
       expect(after.attempts).toBe(1);
-      expect(after.error_message).toBe('stale processing reaped after 1 hour');
+      expect(after.error_message).toBe(ocrJobModel.STALE_REAP_REQUEUE_MESSAGE);
       expect(after.started_at).toBeNull();
       expect(after.completed_at).toBeNull();
 
@@ -1508,6 +1720,111 @@ describe('OCR pipeline integration', () => {
       expect(picked.id).toBe(zombie.id);
       expect(picked.attempts).toBe(2);
       expect(picked.started_at).not.toBeNull();
+
+      // The mark is gone: if this attempt ends its process too, the sweep fails it.
+      expect(picked.error_message).toBe(ocrJobModel.STALE_REAP_REQUEUE_MESSAGE);
+      await pool.query("UPDATE ocr_jobs SET started_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [zombie.id]);
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('failed');
+    });
+
+    test('a marked row on its last attempt fails like any other — the ceiling does not grow', async () => {
+      const zombie = await insertZombie({ attempts: 3, age: '2 hours', marked: true });
+
+      await ocrJobPoller.sweepStaleJobs();
+
+      const after = await ocrJobModel.getJobStatus(zombie.id);
+      expect(after.status).toBe('failed');
+      expect(after.attempts).toBe(3);
+      expect(after.error_message).toBe('stale processing reaped after 1 hour');
+    });
+
+    test('markInterruptedByShutdown marks a processing row; an outcome written after it clears the mark', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+
+      const marked = await ocrJobModel.markInterruptedByShutdown(picked.id, picked.attempts);
+      expect(marked).toMatchObject({ id: picked.id, status: 'processing', error_message: ocrJobModel.SHUTDOWN_INTERRUPT_MARK });
+
+      await ocrJobModel.markDone(picked.id, { strategy: 'vision_pdf', items_count: 0 });
+      const done = await ocrJobModel.getJobStatus(picked.id);
+      expect(done.status).toBe('done');
+      expect(done.error_message).toBeNull();
+
+      // A settled row is not marked.
+      expect(await ocrJobModel.markInterruptedByShutdown(picked.id, picked.attempts)).toBeNull();
+      expect((await ocrJobModel.getJobStatus(picked.id)).error_message).toBeNull();
+    });
+
+    test('settleAbandonedAttempt: a live process settles an attempt it could not write — the retry rule, fenced to the attempt', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+
+      // Another attempt's number: not this row's attempt, nothing is written.
+      expect(await ocrJobModel.settleAbandonedAttempt(picked.id, picked.attempts + 1, 'x')).toBeNull();
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('processing');
+
+      const settled = await ocrJobModel.settleAbandonedAttempt(picked.id, picked.attempts, ocrJobModel.ABANDONED_ATTEMPT_MESSAGE);
+      expect(settled).toMatchObject({
+        id: picked.id,
+        status: 'pending',
+        attempts: 1,
+        started_at: null,
+        error_message: ocrJobModel.ABANDONED_ATTEMPT_MESSAGE,
+      });
+
+      // Settled once: a second try finds no 'processing' row.
+      expect(await ocrJobModel.settleAbandonedAttempt(picked.id, picked.attempts, 'x')).toBeNull();
+    });
+
+    test('settleAbandonedAttempt on the last attempt fails the job', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const job = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      await pool.query('UPDATE ocr_jobs SET attempts = 2 WHERE id = $1', [job.id]);
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.attempts).toBe(3);
+
+      const settled = await ocrJobModel.settleAbandonedAttempt(picked.id, 3, ocrJobModel.ABANDONED_ATTEMPT_MESSAGE);
+
+      expect(settled).toMatchObject({ status: 'failed', attempts: 3 });
+      expect(settled.completed_at).not.toBeNull();
+    });
+
+    test('returnUnstartedJob gives the attempt back to a job picked but never started; fenced to that attempt', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.attempts).toBe(1);
+
+      expect(await ocrJobModel.returnUnstartedJob(picked.id, 2)).toBeNull();
+
+      const returned = await ocrJobModel.returnUnstartedJob(picked.id, 1);
+      expect(returned).toMatchObject({ id: picked.id, status: 'pending', attempts: 0, started_at: null });
+
+      const again = await ocrJobModel.pickNextPending();
+      expect(again.id).toBe(picked.id);
+      expect(again.attempts).toBe(1);
+      expect(await ocrJobModel.returnUnstartedJob(picked.id, 0)).toBeNull();
+    });
+
+    test('the mark is fenced by the attempt: once the job was requeued and picked again, the old attempt cannot mark it', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const first = await ocrJobModel.pickNextPending();
+      // The old process's attempt settles under the retry rule (its parse was cut)…
+      await ocrJobModel.markFailed(first.id, 'PDF parse cut short by shutdown');
+      // …and the next process picks the job before the old one writes its mark.
+      const second = await ocrJobModel.pickNextPending();
+      expect(second.id).toBe(first.id);
+      expect(second.attempts).toBe(first.attempts + 1);
+
+      expect(await ocrJobModel.markInterruptedByShutdown(first.id, first.attempts)).toBeNull();
+
+      const row = await ocrJobModel.getJobStatus(first.id);
+      expect(row.status).toBe('processing');
+      expect(row.error_message).toBe('PDF parse cut short by shutdown');
     });
 
     test('older than the interval with no attempts left → failed with completed_at; the media can be queued anew', async () => {
@@ -1545,11 +1862,25 @@ describe('OCR pipeline integration', () => {
     });
 
     test('started_at NULL falls back to created_at for the age', async () => {
-      const zombie = await insertZombie({ attempts: 1, age: '2 hours', withStartedAt: false });
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours', withStartedAt: false, marked: true });
 
       await ocrJobPoller.sweepStaleJobs();
 
       expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('pending');
+    });
+
+    test('an unmarked zombie with attempts left now closes its batch: the partner hears what the batch mates gave', async () => {
+      await insertDoneMate([
+        { item_name: 'Борщ', price_byn: 15, confidence: 0.9, position: 0 },
+      ]);
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours' });
+
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('failed');
+
+      const rows = await partnerNotifications();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message).toContain('1 позиция');
     });
 
     test('permanently failing the last job of a batch reports what its batch mates recognised', async () => {
@@ -1572,7 +1903,7 @@ describe('OCR pipeline integration', () => {
       await insertDoneMate([
         { item_name: 'Борщ', price_byn: 15, confidence: 0.9, position: 0 },
       ]);
-      const zombie = await insertZombie({ attempts: 1, age: '2 hours' });
+      const zombie = await insertZombie({ attempts: 1, age: '2 hours', marked: true });
 
       await ocrJobPoller.sweepStaleJobs();
       expect((await ocrJobModel.getJobStatus(zombie.id)).status).toBe('pending');
