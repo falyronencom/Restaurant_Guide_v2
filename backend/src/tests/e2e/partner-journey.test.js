@@ -28,6 +28,7 @@ import {
   createReview
 } from './helpers.js';
 import { testEstablishments } from '../fixtures/establishments.js';
+import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 
 describe('E2E Journey: Partner Establishment Management', () => {
   let partner;
@@ -143,26 +144,24 @@ describe('E2E Journey: Partner Establishment Management', () => {
       expect(response.body.data.establishments[0].status).toBe('pending');
     });
 
-    test('STEP 6: Admin approves establishment (simulated)', async () => {
-      // Note: In real system, admin would approve
-      // For test, we'll directly update to active status
-      // This simulates admin approval workflow
-
-      // In production, this would be:
-      // POST /api/v1/admin/establishments/:id/approve
-      // For now, we'll use partner update to simulate (in real system, only admin can approve)
+    test('STEP 6: Admin approves establishment', async () => {
+      // The moderator's approval puts the card in the catalogue. Until
+      // 19.10.2026 this step was a partner edit that left the card 'pending',
+      // and STEP 7 reviewed a card no guest could see — the server now takes
+      // new reviews only on cards in the catalogue.
+      const admin = await createAdminAndGetToken();
 
       const response = await request(app)
-        .put(`/api/v1/partner/establishments/${establishment.id}`)
-        .set('Authorization', `Bearer ${partner.accessToken}`)
-        .send({
-          // Small change to trigger minor update (doesn't require re-moderation)
-          website: 'https://zolotaya-korona.by/menu'
-        });
+        .post(`/api/v1/admin/establishments/${establishment.id}/moderate`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ action: 'approve' });
 
       expect(response.status).toBe(200);
-      // Status should still be pending (minor change)
-      // In real system with admin, status would be 'active' after approval
+
+      const card = await request(app)
+        .get(`/api/v1/partner/establishments/${establishment.id}`)
+        .set('Authorization', `Bearer ${partner.accessToken}`);
+      expect(card.body.data.establishment.status).toBe('active');
     });
 
     test('STEP 7: Customer leaves review on establishment', async () => {
