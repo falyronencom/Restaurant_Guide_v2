@@ -63,7 +63,8 @@ const guestLineKey = (item) => {
 /**
  * The section a line stands in, as the guest reads it: letters and digits
  * only — two reads of one board give «—Д•О•П•О•Л•Н•И•Т•Е•Л•Ь•Н•О—» and
- * «-ДОПОЛНИТЕЛЬНО-» (Shelbi, 2026-10-19). '' — no section.
+ * «-ДОПОЛНИТЕЛЬНО-» (Shelbi, 2026-10-19). '' — no section read (or one of
+ * symbols only, «***»): it matches no section.
  *
  * @param {Object} item - menu_items row
  * @returns {string}
@@ -131,26 +132,30 @@ const menuOfFile = (rows) => {
  * line (findCopies).
  *
  * Rules (brief LEAF_BRIEF_MENU_DUPLICATES and the Coordinator's word of
- * 2026-10-19 on its two findings; option «А» of 2026-10-19 ≈ 19:30Z after
- * PR #107 brought back repeats on five cards):
+ * 2026-10-19 on its two findings; option «А» after PR #107 brought back
+ * repeats on five cards):
  *   - inside one file, the same line (guestLineKey) in the same section is one
  *     line — recognition read it twice; in another section it is the menu's own
  *     (a syrup sold with coffee and with tea) and stays;
  *   - across files, the same line in the same section (sectionKey) is one line,
  *     however little else the files share: the oyster card and the main menu
- *     both list the oysters under «УСТРИЧНЫЙ БАР» (SFB). A line without a
- *     section — a photo of a board without headings — is the same line in any
- *     section;
+ *     both list the oysters under «УСТРИЧНЫЙ БАР» (SFB);
  *   - across files that are copies of one menu (menuOfFile) the same line is
  *     one line even under a section spelled otherwise («ПИЦЦА ИЗ ПЕЧИ» /
- *     «Пицца на огне»);
+ *     «Пицца на огне») or not read at all;
  *   - otherwise the files are different menus and the line stays in each:
- *     «дополнительное блюдо» in «ОБЕД из 4 блюд» and in «ЗАВТРАК из 4 блюд»;
+ *     «дополнительное блюдо» in «ОБЕД из 4 блюд» and in «ЗАВТРАК из 4 блюд».
+ *     A line without a section tells nothing about its menu: across different
+ *     menus it joins nothing;
+ *   - every two rows of a line agree — same menu or same section. A line is
+ *     checked against all rows already in the group, not against one of them:
+ *     a board without headings that copies the lunch menu joins the lunch
+ *     «Морс» and does not carry the breakfast «Морс» in with it (Phase 3.5
+ *     review of option «А», 2026-10-19);
  *   - a different price is not a repeat — both are shown. A menu that lists
  *     the syrup twice still gives two lines: the lines of the first file (by
  *     id) are the slots, and the lines of the other files take them — a slot
- *     in the same section first, then, within one menu, the free ones in
- *     order, then new ones;
+ *     in the same section first, then one of the same menu, then new ones;
  *   - lines are ordered by their first row.
  *
  * @param {Object[]} rows - menu_items rows of one establishment, in menu order
@@ -176,6 +181,9 @@ export const groupGuestLines = (rows) => {
     line.rows.push(row);
   });
 
+  const sameSection = (a, b) => a.section !== '' && a.section === b.section;
+  const agree = (a, b) => a.menu === b.menu || sameSection(a, b);
+
   const groups = [];
   for (const fileLines of fileLinesByKey.values()) {
     const linesPerFile = new Map();
@@ -190,41 +198,26 @@ export const groupGuestLines = (rows) => {
       return a < b ? -1 : 1;
     });
 
-    const newSlot = line => ({
-      sections: new Set([line.section]),
-      menus: new Set([line.menu]),
-      files: new Set([line.file]),
-      lines: [line],
-    });
-    const take = (slot, line) => {
-      slot.sections.add(line.section);
-      slot.menus.add(line.menu);
-      slot.files.add(line.file);
-      slot.lines.push(line);
-    };
-    const sameSection = (slot, line) => line.section === ''
-      || slot.sections.has('')
-      || slot.sections.has(line.section);
-
-    const slots = linesPerFile.get(files[0]).map(newSlot);
+    const slots = linesPerFile.get(files[0]).map(line => [line]);
+    const open = (slot, line) => slot.every(other => other.file !== line.file && agree(other, line));
     for (const file of files.slice(1)) {
       const waiting = [];
       for (const line of linesPerFile.get(file)) {
-        const slot = slots.find(s => !s.files.has(file) && sameSection(s, line));
-        if (slot) take(slot, line);
+        const slot = slots.find(s => open(s, line) && s.some(other => sameSection(other, line)));
+        if (slot) slot.push(line);
         else waiting.push(line);
       }
       for (const line of waiting) {
-        const slot = slots.find(s => !s.files.has(file) && s.menus.has(line.menu));
-        if (slot) take(slot, line);
-        else slots.push(newSlot(line));
+        const slot = slots.find(s => open(s, line) && s.some(other => other.menu === line.menu));
+        if (slot) slot.push(line);
+        else slots.push([line]);
       }
     }
 
     for (const slot of slots) {
       groups.push({
-        first: Math.min(...slot.lines.map(line => line.first)),
-        rows: slot.lines.flatMap(line => line.rows),
+        first: Math.min(...slot.map(line => line.first)),
+        rows: slot.flatMap(line => line.rows),
       });
     }
   }

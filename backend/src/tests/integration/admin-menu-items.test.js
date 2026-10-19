@@ -295,19 +295,41 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     expect((await rowOf(boardLatte)).is_hidden_by_admin).toBe(true);
   });
 
-  // Different menus have sections of their own («ЗАВТРАК» / «ОБЕД»): a line
-  // without a section is the same line in any section (a board without headings).
+  test('hiding the oysters on the card hides them in the main menu — the same section', async () => {
+    // SFB, 2026-10-19: the files share too little to be copies, but the
+    // oysters stand under «УСТРИЧНЫЙ БАР» in both — the guest sees one line.
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const mainId = await insertMedia(establishment.id);
+    const cardId = await insertMedia(establishment.id);
+    const mainOysters = await insertItem(establishment.id, mainId, 'Плато устриц', 196, { category: 'УСТРИЧНЫЙ БАР' });
+    for (const [name, price] of [['Тартар', 25], ['Сибас', 38], ['Паста', 22], ['Тирамису', 14]]) {
+      await insertItem(establishment.id, mainId, name, price, { category: 'КУХНЯ' });
+    }
+    const cardOysters = await insertItem(establishment.id, cardId, 'Плато устриц', 196, { category: 'УСТРИЧНЫЙ БАР' });
+    for (const [name, price] of [['Шабли', 30], ['Мюскаде', 26], ['Шампанское', 45], ['Сет устриц', 174]]) {
+      await insertItem(establishment.id, cardId, name, price, { category: 'ВИНО' });
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${cardOysters}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(mainOysters)).is_hidden_by_admin).toBe(true);
+  });
+
   test('a dish of another menu (breakfast vs lunch) stays as it was', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
-    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4, { category: 'ЗАВТРАК' });
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
     for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
-      await insertItem(establishment.id, breakfastId, name, price, { category: 'ЗАВТРАК' });
+      await insertItem(establishment.id, breakfastId, name, price);
     }
-    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4, { category: 'ОБЕД' });
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
     for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6]]) {
-      await insertItem(establishment.id, lunchId, name, price, { category: 'ОБЕД' });
+      await insertItem(establishment.id, lunchId, name, price);
     }
 
     await request(app)
@@ -325,16 +347,16 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
-    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4, { category: 'ЗАВТРАК' });
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
     for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
-      await insertItem(establishment.id, breakfastId, name, price, { category: 'ЗАВТРАК' });
+      await insertItem(establishment.id, breakfastId, name, price);
     }
     for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
-      await insertItem(establishment.id, breakfastId, name, price, { hiddenReason: 'не завтрак', category: 'ЗАВТРАК' });
+      await insertItem(establishment.id, breakfastId, name, price, { hiddenReason: 'не завтрак' });
     }
-    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4, { category: 'ОБЕД' });
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
     for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
-      await insertItem(establishment.id, lunchId, name, price, { category: 'ОБЕД' });
+      await insertItem(establishment.id, lunchId, name, price);
     }
 
     await request(app)
@@ -351,16 +373,16 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
     const boardId = await insertMedia(establishment.id);
-    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4, { category: 'ЗАВТРАК' });
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
     for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
-      await insertItem(establishment.id, breakfastId, name, price, { category: 'ЗАВТРАК' });
+      await insertItem(establishment.id, breakfastId, name, price);
     }
-    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4, { category: 'ОБЕД' });
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
     for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
-      await insertItem(establishment.id, lunchId, name, price, { category: 'ОБЕД' });
+      await insertItem(establishment.id, lunchId, name, price);
     }
-    await insertItem(establishment.id, boardId, 'Морс', 4, { category: 'НАПИТКИ' });
-    await insertItem(establishment.id, boardId, 'Лимонад', 5, { category: 'НАПИТКИ' });
+    await insertItem(establishment.id, boardId, 'Морс', 4);
+    await insertItem(establishment.id, boardId, 'Лимонад', 5);
 
     await request(app)
       .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)

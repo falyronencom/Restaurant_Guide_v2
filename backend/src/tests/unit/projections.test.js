@@ -692,6 +692,48 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
     ]);
   });
 
+  test('a board without headings joins the menu it copies, and only it — in any order of the files', () => {
+    // Phase 3.5 review of option «А»: the board's line used to stand for every
+    // section and chained the breakfast «Морс» into the lunch one.
+    const ids = ['m1', 'm2', 'm3'];
+    const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    for (const order of orders) {
+      const [breakfastId, lunchId, boardId] = order.map(i => ids[i]);
+      const rows = [
+        ...menuOf(breakfastId, ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: 'ЗАВТРАК' }),
+        ...menuOf(lunchId, ['Морс', 'Борщ', 'Котлета', 'Салат', 'Суп'], { category_raw: 'ОБЕД' }),
+        ...menuOf(boardId, ['Морс', 'Борщ'], { category_raw: null }),
+      ];
+      const breakfastMors = rows.find(r => r.media_id === breakfastId && r.item_name === 'Морс');
+      const lunchMors = rows.find(r => r.media_id === lunchId && r.item_name === 'Морс');
+      const boardMors = rows.find(r => r.media_id === boardId && r.item_name === 'Морс');
+
+      const mors = collapseMenuRepeats(rows).filter(r => r.item_name === 'Морс');
+
+      expect(mors.map(r => r.category_raw).sort()).toEqual(['ЗАВТРАК', 'ОБЕД']);
+      expect(findCopies(breakfastMors.id, rows)).toEqual([]);
+      expect(findCopies(lunchMors.id, rows).map(r => r.id)).toEqual([boardMors.id]);
+    }
+  });
+
+  test('two menus without headings keep a shared dish in each', () => {
+    const rows = [
+      ...menuOf('a', ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: null }),
+      ...menuOf('b', ['Морс', 'Борщ', 'Котлета', 'Салат'], { category_raw: null }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(8);
+  });
+
+  test('a section of symbols only is no section', () => {
+    const rows = [
+      ...menuOf('a', ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: '***' }),
+      ...menuOf('b', ['Морс', 'Борщ', 'Котлета', 'Салат'], { category_raw: '— • —' }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(8);
+  });
+
   test('copies pair by section first, then by order', () => {
     // The photo's coffee syrup is hidden (not among the rows): its tea syrup
     // pairs with the PDF's tea syrup, not with the PDF's first syrup.

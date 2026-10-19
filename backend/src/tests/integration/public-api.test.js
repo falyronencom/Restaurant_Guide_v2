@@ -1135,7 +1135,10 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
     expect(items.filter(i => i.item_name === 'МОЛОКО')).toHaveLength(1);
   });
 
-  test('a line without a section is the same line in any section (a board without headings)', async () => {
+  test('a line without a section joins no line of a different menu', async () => {
+    // Prozhar, 2026-10-19: «БИФ» with no section on one file, under «ХОТ-ДОГИ»
+    // on another; the files share one line of four. Nothing says it is the same
+    // section — it stays in each.
     await insertItems(photoId, [
       ['БИФ', null, null, 0], ['ЧИЗ', 12, null, 1], ['ДАБЛ', 15, null, 2], ['ЧИКЕН', 11, null, 3],
     ]);
@@ -1145,8 +1148,8 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
 
     const items = await fetchMenu();
 
-    expect(items).toHaveLength(7);
-    expect(items.filter(i => i.item_name === 'БИФ')).toHaveLength(1);
+    expect(items).toHaveLength(8);
+    expect(items.filter(i => i.item_name === 'БИФ')).toHaveLength(2);
   });
 
   test('the partner cabinet still lists every row of both files', async () => {
