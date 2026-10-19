@@ -1163,7 +1163,9 @@ export const searchUsers = async (query, limit = 10) => {
  *
  * Atomically transfers ownership (partner_id) and upgrades the target user
  * to partner role. Follows the moderateEstablishment pattern (lines 192-296)
- * with the addition of a database transaction wrapping both operations.
+ * with the addition of a database transaction wrapping both operations. The
+ * card's legal record passes in the same transaction: the legal entity stays,
+ * the previous holder's contact person and e-mail leave the card.
  *
  * @param {string} establishmentId - UUID of the establishment to claim
  * @param {string} targetUserId - UUID of the user receiving ownership
@@ -1251,7 +1253,11 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
       client,
     );
 
-    // 3b. Upgrade user to partner role (idempotent)
+    // 3b. The card's legal record goes with it; the previous holder's
+    // contacts leave the card (PartnerDocumentsModel.passToHolder).
+    await PartnerDocumentsModel.passToHolder(client, establishmentId, targetUserId);
+
+    // 3c. Upgrade user to partner role (idempotent)
     // Execute within transaction using same client for atomicity
     if (targetUser.role === 'user') {
       await client.query(

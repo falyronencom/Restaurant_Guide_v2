@@ -105,4 +105,23 @@ void main() {
       expect(_rowDecoration(tester).color, isNull);
     });
   });
+
+  // Тесты выше выставляют вердикт вызовом провайдера в обход кнопок, и что
+  // делает НАЖАТИЕ, они не видят. Нажатием здесь проверена только ✓: ✗ и 💬
+  // открывают окно причины, а оно не освобождает своё поле ввода, и сторож
+  // течей роняет тест. Это дефект продукта, он передан в отчёте аудита, а
+  // проверки ✗ и 💬 придут вместе с его починкой. Гасить сторож ради теста
+  // нельзя — так спряталась бы настоящая течь.
+  testWidgets('✓ одобряет поле, повторное нажатие снимает вердикт',
+      (tester) async {
+    final provider = await _pumpRow(tester);
+
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pump();
+    expect(provider.getFieldState('unp').status, FieldReviewStatus.approved);
+
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pump();
+    expect(provider.getFieldState('unp').status, FieldReviewStatus.neutral);
+  });
 }

@@ -122,4 +122,31 @@ void main() {
               'переключателя возвращал бы решение модератора назад');
     }
   });
+
+  test('502, затем 200: повтор чтения уносит ту же строку запроса', () async {
+    // «Тот же запрос» — и у чтения: фильтры и страница живут в строке
+    // запроса, и повтор без неё вернул бы первую страницу без отбора — молча.
+    final adapter = _StubAdapter((options, attempt) {
+      if (attempt == 1) {
+        return _json({'success': false, 'error': {'code': 'BAD_GATEWAY'}}, 502);
+      }
+      return _json({'success': true, 'data': <dynamic>[]}, 200);
+    });
+    final api = client(adapter);
+
+    final response = await api.get(
+      '/api/v1/admin/reviews',
+      queryParameters: <String, dynamic>{'page': 3, 'status': 'hidden'},
+    );
+
+    expect(response.statusCode, 200);
+    expect(adapter.requests, hasLength(2));
+    for (final request in adapter.requests) {
+      expect(request.method, 'GET');
+      expect(request.uri.path, '/api/v1/admin/reviews');
+      expect(request.uri.queryParameters,
+          <String, String>{'page': '3', 'status': 'hidden'},
+          reason: 'повтор потерял фильтры и страницу');
+    }
+  });
 }

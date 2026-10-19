@@ -11,7 +11,22 @@
  *   - partner_responder_id (leaks partner user UUID)
  *   - user_id (replaced by author.id which is the same value, but the
  *     wrapper shape is the public contract)
+ *
+ * author.id is null once the author's account is switched off — deleted
+ * (accountDeletionService: the author reads «Гость») or blocked. The clients
+ * read it only to tell «is this review mine» (OwnReviewControls on the site,
+ * «Мои отзывы» in the app), which a switched-off account never asks. Kept,
+ * the id would tie every review of a deleted person together for anyone who
+ * saw it next to their name before (Phase 3.5 lens review, 18.10.2026).
  */
+
+/**
+ * The author's id as the public sees it: null for a switched-off account.
+ *
+ * @param {Object} row - review row with user_id and author_is_active
+ * @returns {string|null}
+ */
+export const publicAuthorId = (row) => (row.author_is_active === false ? null : row.user_id);
 
 /**
  * Convert raw review row (from reviewService.getEstablishmentReviews shape)
@@ -38,7 +53,7 @@ export const toPublicReview = (review) => {
     };
   } else {
     author = {
-      id: review.user_id,
+      id: publicAuthorId(review),
       name: review.author_name,
       avatar_url: review.author_avatar,
     };

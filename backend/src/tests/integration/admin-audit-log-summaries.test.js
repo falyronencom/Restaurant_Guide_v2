@@ -31,7 +31,10 @@ const WRITTEN_ACTIONS = [
   ['admin_update_coordinates', 'establishment', 'Координаты обновлены'],
   ['admin_update_slug', 'establishment', 'Адрес страницы изменён'],
   ['claim_establishment', 'establishment', 'Заведение передано партнёру'],
-  ['partner_delete_establishment', 'establishment', 'Заведение удалено партнёром'],
+  // Удаление карточки партнёром — с автором (проверено последним тестом);
+  // без автора её пишет скрипт оператора, удаляя незаконченные карточки
+  // вместе с учёткой (accountDeletionService.anonymiseAccount).
+  ['partner_delete_establishment', 'establishment', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
   ['suspend', 'establishment', 'Приостановлено заведение'],
   ['unsuspend', 'establishment', 'Возобновлено заведение'],
   ['moderate_approve', 'establishment', 'Одобрено заведение'],
@@ -47,6 +50,11 @@ const WRITTEN_ACTIONS = [
   ['user_block', 'user', 'Пользователь заблокирован'],
   ['user_unblock', 'user', 'Пользователь разблокирован'],
   ['user_reset_name', 'user', 'Имя пользователя сброшено'],
+  // accountDeletionService.anonymiseAccount — SQL-вставкой в транзакции
+  // самого удаления. Здесь запись без автора — так её пишет скрипт оператора
+  // (scripts/delete-account.js); запись самого человека — с автором, она
+  // проверена отдельно, последним тестом.
+  ['user_delete_account', 'user', 'Учётка удалена по заявке в поддержку'],
   // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
   ['change_email', 'user', 'Адрес e-mail учётки изменён'],
   // scripts/mark-service-account.js и scripts/create-admin.js, SQL-вставкой
@@ -57,10 +65,12 @@ const WRITTEN_ACTIONS = [
 ];
 
 let adminToken;
+let adminId;
 
 beforeAll(async () => {
   const admin = await createAdminAndGetToken();
   adminToken = admin.accessToken;
+  adminId = admin.user.id;
 
   // Записи вставляются напрямую: цель — проверить перевод, а не воспроизвести
   // пятнадцать сценариев. Обязательных колонок у audit_log две — action и
@@ -95,7 +105,11 @@ const fetchEntries = async () => {
 describe('GET /admin/audit-log — подписи действий', () => {
   it('каждое записываемое действие переведено на русский', async () => {
     const entries = await fetchEntries();
-    const byAction = new Map(entries.map((e) => [e.action, e.summary]));
+    // Записи карты — без объекта (entity_id NULL); запись последнего теста —
+    // с объектом и сюда не попадает.
+    const byAction = new Map(entries
+      .filter((e) => e.entity_id === null)
+      .map((e) => [e.action, e.summary]));
 
     for (const [action, , expected] of WRITTEN_ACTIONS) {
       expect(byAction.get(action)).toBe(expected);
@@ -120,5 +134,34 @@ describe('GET /admin/audit-log — подписи действий', () => {
     const unknown = entries.find((e) => e.action === 'totally_new_action');
 
     expect(unknown.summary).toBe('totally_new_action (establishment)');
+  });
+
+  it('удалил сам человек — запись с автором, своя подпись: учётка и карточка', async () => {
+    // Автор — любая учётка: подпись различает только «автор есть» (человек
+    // из приложения или с сайта, партнёр в кабинете) и «автора нет» (скрипт
+    // оператора).
+    await query(
+      `INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+       VALUES ($1, 'user_delete_account', 'user', $1),
+              ($1, 'partner_delete_establishment', 'establishment', gen_random_uuid())`,
+      [adminId],
+    );
+
+    const entries = await fetchEntries();
+    // Строки карты — без объекта и без автора; строки этого теста — с тем и другим.
+    const signed = (action) => entries
+      .filter((e) => e.action === action)
+      .map((e) => [e.entity_id === null ? 'без автора' : 'с автором', e.summary]);
+
+    expect(signed('user_delete_account')).toEqual(expect.arrayContaining([
+      ['с автором', 'Пользователь удалил учётку'],
+      ['без автора', 'Учётка удалена по заявке в поддержку'],
+    ]));
+    expect(signed('user_delete_account')).toHaveLength(2);
+    expect(signed('partner_delete_establishment')).toEqual(expect.arrayContaining([
+      ['с автором', 'Заведение удалено партнёром'],
+      ['без автора', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
+    ]));
+    expect(signed('partner_delete_establishment')).toHaveLength(2);
   });
 });

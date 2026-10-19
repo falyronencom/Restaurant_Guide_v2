@@ -370,11 +370,15 @@ export const assetHolder = (publicId) => {
  * @param {string} publicId - Cloudinary public_id to delete
  * @param {string[]} folders - The caller's own folders, built with
  *   ownedFolders from the authenticated caller and the object it owns
+ * @param {Object} [options]
+ * @param {boolean} [options.invalidate=false] - also drop the CDN's cached
+ *   copies (Cloudinary `invalidate`): for a picture of a person whose account
+ *   is deleted, which must not keep being served from the edge
  * @returns {Promise<Object>} Deletion result; { result: 'refused' } when the
  *   asset is not inside the given folders
  * @throws {Error} If deletion fails
  */
-export const deleteImage = async (publicId, folders) => {
+export const deleteImage = async (publicId, folders, { invalidate = false } = {}) => {
   const refusal = ownershipRefusal(publicId, folders);
   if (refusal) {
     // No ids and no file names: the public_id may come from client-supplied text.
@@ -387,7 +391,11 @@ export const deleteImage = async (publicId, folders) => {
   }
 
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
+    // The option object only when asked: every other caller's destroy stays
+    // the one-argument call it always was.
+    const result = invalidate
+      ? await cloudinary.uploader.destroy(publicId, { invalidate: true })
+      : await cloudinary.uploader.destroy(publicId);
 
     logger.info('Image deleted from Cloudinary', {
       publicId,

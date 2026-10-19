@@ -2,13 +2,16 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
+import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_menu_item_service.dart';
 import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
+import 'package:restaurant_guide_admin_web/services/admin_user_service.dart';
 import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 
@@ -51,6 +54,32 @@ class _FakeMenuItemService implements AdminMenuItemService {
 }
 
 class _FakeAuditLogService implements AuditLogService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+const _person = AdminUser(
+  id: 'u-1',
+  name: 'Марына К.',
+  email: 'maryna@example.by',
+  phone: '+375291112233',
+  role: 'user',
+);
+
+class _FakeUserService implements AdminUserService {
+  @override
+  Future<AdminUserListResponse> getUsers({
+    int page = 1,
+    int perPage = 20,
+    String? search,
+    String? status,
+  }) async =>
+      const AdminUserListResponse(
+          users: <AdminUser>[_person], total: 1, page: 1, pages: 1);
+
+  @override
+  Future<AdminUser> getUser(String id) async => _person;
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -146,5 +175,22 @@ void main() {
     expect(provider.expandedEntryId, isNull);
     expect(provider.period, AuditLogProvider.defaultPeriod);
     expect(provider.hasActiveFilters, isFalse);
+  });
+
+  test('люди: список и открытая карточка прежнего аккаунта стираются',
+      () async {
+    // Самое чувствительное в панели — почты и телефоны людей. Сторож реестра
+    // видит, что сброс зарегистрирован, но не то, что он их стирает.
+    final provider = AdminUsersProvider(service: _FakeUserService());
+    addTearDown(provider.dispose);
+    await provider.loadUsers();
+    await provider.openUser('u-1');
+    expect(provider.users, isNotEmpty, reason: 'предпосылка');
+    expect(provider.selectedUser, isNotNull, reason: 'предпосылка');
+
+    AccountScope.resetAll();
+
+    expect(provider.users, isEmpty);
+    expect(provider.selectedUser, isNull);
   });
 }

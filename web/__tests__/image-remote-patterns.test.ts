@@ -40,6 +40,13 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
     expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}x/image/upload/v1/evil.avif`)).toBe(false);
   });
 
+  // «Только из нашего хранилища» — и по хосту: проверки выше меняют путь и
+  // схему у хоста Cloudinary, и шаблон с любым хостом их бы не заметил.
+  it('чужой хост — нет, даже с путём нашего облака', () => {
+    expect(allowed(`https://evil.example/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
+    expect(allowed(`https://res.cloudinary.com.evil.example/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
+  });
+
   it('наше облако — только по https', () => {
     expect(allowed(`http://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
   });

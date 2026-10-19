@@ -102,9 +102,13 @@ void main() {
       await provider.searchEstablishments();
 
       final body = bodyOf(adapter.requests.single);
+      // Слова — из словаря сервера, а не из констант приложения: цена —
+      // searchValidation.js ('$', '$$', '$$$'), часы — searchFilterParams.js
+      // (VALID_HOURS_FILTERS; незнакомое значение — 422). Ожидание из
+      // `apiValue` совпало бы с любой опечаткой в самом `apiValue`.
       expect(body['city'], 'Минск');
-      expect(body['priceRange'], [PriceRange.medium.apiValue]);
-      expect(body['hours_filter'], HoursFilter.until22.apiValue);
+      expect(body['priceRange'], [r'$$']);
+      expect(body['hours_filter'], 'until_22');
       expect(body['categories'], ['Ресторан']);
       expect(body['cuisines'], ['Итальянская']);
       expect(body['features'], ['wifi']);
@@ -379,8 +383,8 @@ void main() {
       final body = bodyOf(adapter.requests.single);
       expect(adapter.requests.single.path, '/api/v1/search/smart');
       expect(body['city'], 'Минск');
-      expect(body['priceRange'], [PriceRange.medium.apiValue]);
-      expect(body['hours_filter'], HoursFilter.until22.apiValue);
+      expect(body['priceRange'], [r'$$']);
+      expect(body['hours_filter'], 'until_22');
       expect(body['categories'], ['Кофейня']);
       expect(body['cuisines'], ['Итальянская']);
       expect(body['features'], ['wifi']);
@@ -392,7 +396,11 @@ void main() {
       // другом, снова разведёт счётчик N и состав следующего экрана.
       final adapter = installWireStand((_) => jsonBody(smartSearchEnvelope()));
 
-      final est = withFilters();
+      final est = withFilters()
+        // Расстояние без GPS не уходит вовсе; без него размерность
+        // max_distance сравнивалась бы как null с null.
+        ..setUserLocation(53.9, 27.5)
+        ..setDistanceFilter(DistanceOption.km1);
       await SmartSearchProvider()
           .executeSmartSearch('капучино', filters: est.screenFilters);
 
@@ -400,6 +408,8 @@ void main() {
       await est.searchEstablishments();
 
       expect(adapter.requests, hasLength(2));
+      // Метры: searchFilterParams.js принимает max_distance в метрах.
+      expect(bodyOf(adapter.requests.last)['max_distance'], 1000);
       const dimensions = [
         'city', 'categories', 'cuisines', 'priceRange',
         'hours_filter', 'features', 'sort_by', 'max_distance',
@@ -548,7 +558,7 @@ void main() {
       expect(mapBody, listBody);
       // Фильтры действительно ушли — сравнение пустых тел ничего бы не доказало.
       expect(mapBody['categories'], ['Пиццерия']);
-      expect(mapBody['hours_filter'], HoursFilter.until22.apiValue);
+      expect(mapBody['hours_filter'], 'until_22');
     });
   });
 
@@ -569,6 +579,9 @@ void main() {
         'тип': () => provider.toggleCategoryFilter('Кафе'),
         'кухня': () => provider.toggleCuisineFilter('Японская'),
         'удобства': () => provider.toggleAmenityFilter('wifi'),
+        'расстояние': () => provider
+          ..setUserLocation(53.9, 27.5)
+          ..setDistanceFilter(DistanceOption.km1),
       };
       final seen = <String>{initial};
       for (final entry in changes.entries) {

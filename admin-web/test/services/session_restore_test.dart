@@ -50,6 +50,42 @@ void main() {
     expect(adapter.requests.single.headers['Authorization'], 'Bearer a1');
   });
 
+  test('вход: конверт data разбирается, токены ложатся в хранилище', () async {
+    // Без этого шага сессии, которую переживает перезагрузка, не было бы
+    // вовсе: тесты ниже кладут токены в хранилище руками. Ответ — как его
+    // отдаёт adminController.adminLogin: `{ success, data: { user,
+    // accessToken, refreshToken, tokenType, expiresIn } }`.
+    final storage = installSecureStorageStand(initial: {});
+    final adapter = StubAdapter((_) => jsonBody(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{
+            'user': <String, dynamic>{
+              'id': 'u-admin',
+              'email': 'admin@nirivio.by',
+              'phone': null,
+              'name': 'Всеволод',
+              'role': 'admin',
+              'authMethod': 'email',
+              'lastLoginAt': '2026-10-18T09:00:00.000Z',
+            },
+            'accessToken': 'access-from-login',
+            'refreshToken': 'refresh-from-login-0123456789abcdef',
+            'tokenType': 'Bearer',
+            'expiresIn': 14400,
+          },
+        }));
+    final service = AuthService.withClient(stubClient(adapter));
+
+    final result =
+        await service.login(email: 'admin@nirivio.by', password: 'secret');
+
+    expect(adapter.requests.single.uri.path, '/api/v1/admin/auth/login');
+    expect(result.user.id, 'u-admin');
+    expect(result.user.role, 'admin');
+    expect(storage['access_token'], 'access-from-login');
+    expect(storage['refresh_token'], 'refresh-from-login-0123456789abcdef');
+  });
+
   test('старт с сохранённой сессией администратора: вошёл, хранилище цело',
       () async {
     final storage = installSecureStorageStand(

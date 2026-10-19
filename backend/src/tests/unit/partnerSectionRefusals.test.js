@@ -214,9 +214,11 @@ describe('Отказы партнёру вне карточки: исходни�
       "`Cannot cancel booking with status '${booking.status}'`",
     ];
     expect(notFrom('BOOKING_REFUSALS', found, { allowed: guestCancel, cyrillic: true })).toEqual([]);
-    // Русских строк прямо в коде — не больше гостевых (13 в оформлении брони):
-    // партнёрский отказ, вписанный строкой обратно, их число увеличит.
-    expect(found.filter(cyrillicLiteral).length).toBeLessThanOrEqual(13);
+    // Русских строк прямо в коде — не больше гостевых (14 в оформлении брони:
+    // 13 и «Учётка отключена — забронировать нельзя» — бронь, отправленная во
+    // время удаления учётки, 19.10.2026): партнёрский отказ, вписанный строкой
+    // обратно, их число увеличит.
+    expect(found.filter(cyrillicLiteral).length).toBeLessThanOrEqual(14);
   });
 
   it('акции (promotionService.js, promotionController.js, promotionRoutes.js): каждый отказ — из PROMOTION_REFUSALS', () => {

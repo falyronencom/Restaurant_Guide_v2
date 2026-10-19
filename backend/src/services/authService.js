@@ -1035,18 +1035,25 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
   try {
     await client.query('BEGIN');
 
+    // Taken over only while the record is still on: a deletion committed since
+    // the lookup has anonymised it, and the provider's name and picture
+    // written now would sign the deleted person's reviews again (Phase 3.5,
+    // В1). Nothing of the takeover happens then — the ROLLBACK below.
     const updated = await client.query(
       `UPDATE users
        SET auth_method = $1, oauth_provider_id = $2, last_login_at = $3, updated_at = $3,
            email_verified = true, password_hash = NULL,
            name = COALESCE($4, name), avatar_url = $5,
            phone = NULL, phone_verified = false
-       WHERE id = $6
+       WHERE id = $6 AND is_active = TRUE
        RETURNING id, email, phone, name, role, auth_method, avatar_url,
                  oauth_provider_id, is_active, last_login_at, created_at`,
       [provider, providerId, now, name || null, avatarUrl || null, existingUser.id],
     );
     user = updated.rows[0];
+    if (!user) {
+      throw new Error('ACCOUNT_DEACTIVATED');
+    }
 
     // The successor link is a self-reference; clear it before the rows go.
     await client.query(
@@ -1196,11 +1203,18 @@ export async function authenticateWithOAuth(providerData) {
         throw new Error('ACCOUNT_DEACTIVATED');
       }
 
-      // Existing OAuth user — update last_login_at and return
-      await pool.query(
-        'UPDATE users SET last_login_at = $1 WHERE id = $2',
+      // Existing OAuth user — update last_login_at and return. Only while the
+      // account is still on: the lookup above holds no lock, and a deletion
+      // (accountDeletionService) or a block that commits after it leaves the
+      // record switched off — the login must neither write into it nor open a
+      // session for it (Phase 3.5, В1).
+      const touched = await pool.query(
+        'UPDATE users SET last_login_at = $1 WHERE id = $2 AND is_active = TRUE',
         [new Date(), user.id],
       );
+      if (touched.rowCount === 0) {
+        throw new Error('ACCOUNT_DEACTIVATED');
+      }
 
       logger.info('OAuth login: existing user', { userId: user.id, provider });
 
@@ -1288,17 +1302,24 @@ export async function authenticateWithOAuth(providerData) {
         updateFields.push(avatarUrl);
       }
 
+      // Linked only while the account is still on — the same race as the
+      // existing-user path above: a deletion committed since the lookup has
+      // cleared this record's identifiers, and a link written after it would
+      // put the provider back into a deleted account for good.
       const linkResult = await pool.query(
         `UPDATE users
          SET auth_method = $1, oauth_provider_id = $2,
              last_login_at = $3, email_verified = true${avatarClause}
-         WHERE id = $${updateFields.length + 1}
+         WHERE id = $${updateFields.length + 1} AND is_active = TRUE
          RETURNING id, email, phone, name, role, auth_method, avatar_url,
                    oauth_provider_id, is_active, last_login_at, created_at`,
         [...updateFields, existingUser.id],
       );
 
       const linkedUser = linkResult.rows[0];
+      if (!linkedUser) {
+        throw new Error('ACCOUNT_DEACTIVATED');
+      }
       logger.info('OAuth login: linked existing account', {
         userId: linkedUser.id,
         provider,

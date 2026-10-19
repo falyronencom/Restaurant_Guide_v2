@@ -11,6 +11,7 @@
  */
 
 import * as ReviewModel from '../models/reviewModel.js';
+import { publicAuthorId } from '../projections/reviewProjections.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
@@ -55,6 +56,16 @@ export const REVIEW_REFUSALS = Object.freeze({
 });
 
 /**
+ * What the guest reads when the card is not in the catalogue — on moderation,
+ * suspended, rejected, a draft or archived. A new review is taken only on a
+ * card the catalogue shows (decision of the Coordinator 19.10.2026, test-honesty
+ * audit, question В1); reviews already left stay. Code and status are those of
+ * the booking refusal for the same case (bookingService, ESTABLISHMENT_NOT_ACTIVE).
+ */
+export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
+  'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя';
+
+/**
  * Create a new review for an establishment
  * 
  * This is the core business operation that implements the complete review creation
@@ -62,7 +73,7 @@ export const REVIEW_REFUSALS = Object.freeze({
  * 
  * Business rules enforced:
  * - User must exist and be active
- * - Establishment must exist
+ * - Establishment must exist and be shown in the catalogue (status 'active')
  * - User can only have one active review per establishment (enforced by unique constraint)
  * - User cannot exceed rate limit of 10 reviews per day
  * - Review content must meet length requirements (validated at controller level)
@@ -88,10 +99,18 @@ export const createReview = async (reviewData) => {
     throw new AppError('User account is inactive', 403, 'USER_INACTIVE');
   }
 
-  // Step 2: Verify establishment exists
-  const establishmentExists = await ReviewModel.establishmentExists(establishment_id);
-  if (!establishmentExists) {
+  // Step 2: The establishment exists and the catalogue shows it — status
+  // 'active', the predicate of the public catalogue (publicService,
+  // searchService), not a list of the statuses to refuse. Checked before the
+  // quota slot is reserved, so a refused attempt costs the author nothing. A
+  // card suspended between this read and the insert gets a review left a
+  // moment before its suspension — the same as one left earlier, which stays.
+  const establishmentStatus = await ReviewModel.getEstablishmentStatus(establishment_id);
+  if (establishmentStatus === null) {
     throw new AppError('Establishment not found', 404, 'ESTABLISHMENT_NOT_FOUND');
+  }
+  if (establishmentStatus !== 'active') {
+    throw new AppError(ESTABLISHMENT_NOT_ACTIVE_TEXT, 400, 'ESTABLISHMENT_NOT_ACTIVE');
   }
 
   // Step 3: Reserve a slot of the daily quota (10 reviews per day per user).
@@ -321,7 +340,7 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
     created_at: review.created_at,
     updated_at: review.updated_at,
     author: {
-      id: review.user_id,
+      id: publicAuthorId(review),
       name: review.author_name,
       avatar_url: review.author_avatar,
     },
@@ -356,9 +375,11 @@ export const getUserReviews = async (userId, options = {}) => {
     limit = 10,
   } = options;
 
-  // Verify user exists
+  // Verify user exists. A switched-off account — deleted or blocked — has no
+  // public list: by its id it would gather every review of a deleted person
+  // under one address (reviewProjections.publicAuthorId).
   const user = await ReviewModel.getUserById(userId);
-  if (!user) {
+  if (!user || user.is_active === false) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 

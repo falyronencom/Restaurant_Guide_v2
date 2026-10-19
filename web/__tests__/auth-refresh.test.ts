@@ -62,6 +62,10 @@ describe('refreshSession', () => {
       '/api/v1/auth/refresh',
       expect.objectContaining({
         method: 'POST',
+        // JSON only under application/json (server.js, express.json): a
+        // body-less refresh is a 422, read as transient — the session never
+        // renews.
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ refreshToken: 'rt1' }),
       }),
     );
@@ -108,8 +112,15 @@ describe('refreshSession', () => {
     expect(mockStore.delete).toHaveBeenCalledWith('rg_user');
   });
 
-  it('does NOT clear the session on a transient failure (transport / 5xx)', async () => {
-    mockFetch.mockRejectedValue(new ApiError(0, 'network down')); // not an auth verdict
+  // Transient is every failure that is not an auth verdict (session.ts lists
+  // transport, 5xx and 429): the refresh route answers 429 under its limiter,
+  // and wiping the session there would log people out under load.
+  it.each([
+    ['transport', new ApiError(0, 'network down')],
+    ['5xx', new ApiError(503, 'unavailable')],
+    ['429', new ApiError(429, 'Too many requests', 'RATE_LIMIT_EXCEEDED')],
+  ])('does NOT clear the session on a transient failure (%s)', async (_kind, err) => {
+    mockFetch.mockRejectedValue(err); // not an auth verdict
     const accessToken = await refreshSession();
     expect(accessToken).toBeNull();
     expect(mockStore.delete).not.toHaveBeenCalled(); // session preserved for retry

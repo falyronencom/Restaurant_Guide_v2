@@ -411,14 +411,20 @@ void main() {
       p.togglePriceFilter(PriceRange.budget);
       p.toggleAmenityFilter('wifi');
       p.setHoursFilter(HoursFilter.until22);
+      p.setUserLocation(53.9, 27.5);
+      p.setDistanceFilter(DistanceOption.km1);
 
+      // Значения — словарь сервера: цена — searchValidation.js, часы —
+      // searchFilterParams.js, расстояние — метры (searchFilterParams.js:85).
+      // «1 км» единицей в километрах сузил бы поиск до одного метра.
       final f = p.screenFilters;
       expect(f.city, 'Минск');
       expect(f.categories, ['Бар']);
       expect(f.cuisines, ['Японская']);
-      expect(f.priceRanges, isNotNull);
+      expect(f.priceRanges, [r'$']);
       expect(f.features, ['wifi']);
-      expect(f.hoursFilter, isNotNull);
+      expect(f.hoursFilter, 'until_22');
+      expect(f.maxDistance, 1000);
     });
 
     test('пустой вид фильтра не уходит пустым списком', () async {

@@ -46,9 +46,15 @@ describe('resetPasswordAction — success', () => {
       formDataOf({ token: TOKEN, password: 'NewPass456' }),
     );
 
+    // The backend parses a JSON body only under application/json
+    // (server.js, express.json): without the header the body arrives
+    // empty and the request is refused.
     expect(serverFetchMock).toHaveBeenCalledWith(
       '/api/v1/auth/reset-password',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
     );
     const body = JSON.parse(
       (serverFetchMock.mock.calls[0][1] as { body: string }).body,

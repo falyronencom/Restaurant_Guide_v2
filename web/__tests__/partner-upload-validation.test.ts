@@ -15,7 +15,9 @@ describe('validateMediaFileName — photo bucket', () => {
     },
   );
 
-  it.each(['menu.ai', 'menu.pdf', 'clip.mp4', 'noext'])(
+  // The allowed extension in the MIDDLE of a name is not an allowed file:
+  // `photo.jpg.mp4` is a video. An unanchored check would admit it.
+  it.each(['menu.ai', 'menu.pdf', 'clip.mp4', 'noext', 'photo.jpg.mp4', 'logo.png.ai'])(
     'rejects %s with a Russian message',
     (name) => {
       const msg = validateMediaFileName(name, 'photo');
@@ -31,7 +33,9 @@ describe('validateMediaFileName — pdf bucket', () => {
     expect(validateMediaFileName('MENU.PDF', 'pdf')).toBeNull();
   });
 
-  it.each(['menu.ai', 'menu.jpg', 'menu'])(
+  // `menu.pdf.ai` is exactly the PDF-compatible .ai file the module header
+  // warns about — the last extension decides, not the first.
+  it.each(['menu.ai', 'menu.jpg', 'menu', 'menu.pdf.ai'])(
     'rejects %s with a Russian message',
     (name) => {
       const msg = validateMediaFileName(name, 'pdf');

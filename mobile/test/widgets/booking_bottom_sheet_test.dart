@@ -61,7 +61,27 @@ void main() {
               }, status: termsStatus);
       }
       if (options.method == 'POST' && options.uri.path == '/api/v1/bookings') {
-        bookingBody = Map<String, dynamic>.from(options.data as Map);
+        final body = bookingBody = Map<String, dynamic>.from(options.data as Map);
+        // Как bookingService.createBooking: без любого обязательного поля —
+        // 400, а не 201. Заглушка, принимающая что угодно, приняла бы и
+        // запрос, который сервер отвергнет.
+        const required = <String>[
+          'establishmentId',
+          'date',
+          'time',
+          'guestCount',
+          'contactPhone',
+        ];
+        // Проверка сервера — `!field` в JS: пустая строка и ноль — тоже «нет».
+        // Конверт — как у errorHandler: текст наверху, код в `error`.
+        if (required.any(
+            (key) => body[key] == null || body[key] == '' || body[key] == 0)) {
+          return jsonBody({
+            'success': false,
+            'message': 'Необходимо заполнить все обязательные поля',
+            'error': {'code': 'VALIDATION_ERROR'},
+          }, status: 400);
+        }
         return jsonBody({
           'success': true,
           'data': {'id': 'b-1', 'status': 'pending'},
@@ -157,9 +177,15 @@ void main() {
         '${tomorrow.month.toString().padLeft(2, '0')}-'
         '${tomorrow.day.toString().padLeft(2, '0')}';
     expect(bookingBody, isNotNull, reason: 'запрос на бронь не ушёл');
-    expect(bookingBody!['time'], '23:30');
-    expect(bookingBody!['date'], date);
-    expect(bookingBody!['establishmentId'], id);
+    // Тело целиком, ключи — те, что читает bookingController.createBooking:
+    // число гостей и телефон под другим именем сервер не найдёт.
+    expect(bookingBody, <String, dynamic>{
+      'establishmentId': id,
+      'date': date,
+      'time': '23:30',
+      'guestCount': 2,
+      'contactPhone': '+375291112233',
+    });
     expect(result.value, isTrue);
   });
 
