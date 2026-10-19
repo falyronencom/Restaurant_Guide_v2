@@ -8,7 +8,7 @@
  * Tables: bookings
  */
 
-import pool from '../config/database.js';
+import pool, { getClient } from '../config/database.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -146,10 +146,20 @@ export const checkSlot = async ({ bookingDate, bookingTime, maxDaysAhead, now = 
  * UTC wall clock, which is what NOW() writes into every such column and what
  * the lazy expiry above compares against.
  *
+ * The guest's account is read again in the same transaction, under a share
+ * lock: an account deletion (accountDeletionService) and a block from the
+ * panel hold the row FOR UPDATE. A request that passed every check before
+ * the deletion committed used to wait only on the foreign key and insert its
+ * booking after it — with the phone the deletion had just wiped from the
+ * other bookings, and ahead, so never cancelled (Phase 3.5 review, account
+ * deletion, 18.10.2026). Now it waits for the lock and finds the account
+ * switched off: nothing is written, null is returned.
+ *
  * @param {object} data
  * @param {number} data.confirmationTimeoutHours - booking_settings.confirmation_timeout_hours
  * @param {Date|null} [data.now] - injectable clock for tests; null = NOW()
- * @returns {object} created booking row
+ * @returns {object|null} created booking row; null when the account is
+ *   switched off
  */
 export const create = async (data) => {
   const {
@@ -174,8 +184,18 @@ export const create = async (data) => {
     RETURNING *
   `;
 
+  const client = await getClient();
   try {
-    const result = await pool.query(query, [
+    await client.query('BEGIN');
+    const account = await client.query(
+      'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+      [userId],
+    );
+    if (account.rows[0]?.is_active !== true) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const result = await client.query(query, [
       establishmentId,
       userId,
       bookingDate,
@@ -186,14 +206,18 @@ export const create = async (data) => {
       now ? now.toISOString() : null,
       confirmationTimeoutHours,
     ]);
+    await client.query('COMMIT');
     return result.rows[0];
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     logger.error('Error creating booking', {
       error: error.message,
       establishmentId,
       userId,
     });
     throw error;
+  } finally {
+    client.release();
   }
 };
 

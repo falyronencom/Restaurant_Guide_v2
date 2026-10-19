@@ -28,6 +28,7 @@ import request from 'supertest';
 import { v2 as cloudinarySdk } from 'cloudinary';
 import app from '../../server.js';
 import { generateTokenPair } from '../../services/authService.js';
+import { anonymiseAccount, lockAccount } from '../../services/accountDeletionService.js';
 import { clearAllData, query, getClient } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
@@ -958,5 +959,54 @@ describe('Вход через Яндекс, начатый до удаления
     expect(await userRow(owner.user.id)).toMatchObject({
       name: 'Гость', avatar_url: null, oauth_provider_id: null, is_active: false,
     });
+  });
+});
+
+// ============================================================================
+// Бронь, отправленная во время удаления (Phase 3.5, первый круг, R6)
+// ============================================================================
+
+describe('Бронь, отправленная во время удаления, не ложится после него', () => {
+  test('запрос ждёт удаление и получает отказ; брони с телефоном у удалённой учётки нет', async () => {
+    // Запрос прошёл все проверки до того, как удаление закоммитило, и ждал
+    // только внешний ключ: бронь ложилась после удаления — с телефоном, который
+    // оно только что стёрло у остальных броней, и впереди, то есть не отменённой.
+    const p = await person({ phone: '+375291112277' });
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await query('UPDATE establishments SET booking_enabled = TRUE WHERE id = $1', [establishment.id]);
+    await query(
+      `INSERT INTO booking_settings (establishment_id, is_enabled, min_hours_before, max_days_ahead,
+                                     confirmation_timeout_hours)
+       VALUES ($1, TRUE, 1, 7, 4)`,
+      [establishment.id],
+    );
+    const tomorrow = (await query("SELECT to_char((NOW() AT TIME ZONE 'Europe/Minsk')::date + 1, 'YYYY-MM-DD') AS d")).rows[0].d;
+
+    // Транзакция теста — само удаление: держит строку учётки, пока запрос брони
+    // встаёт за ней, затем обезличивает учётку и коммитит.
+    const holder = await getClient();
+    let response;
+    try {
+      await holder.query('BEGIN');
+      const account = await lockAccount(holder, p.id);
+      const booking = request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${p.accessToken}`)
+        .send({ establishmentId: establishment.id, date: tomorrow, time: '12:00', guestCount: 2, contactPhone: '+375291112277' })
+        .then((r) => r);
+      await waitForLockWaiters(1);
+      await anonymiseAccount(holder, account, { userId: p.id });
+      await holder.query('COMMIT');
+      response = await booking;
+    } catch (error) {
+      await holder.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      holder.release();
+    }
+
+    expect({ status: response.status, code: response.body.error?.code }).toEqual({ status: 403, code: 'USER_INACTIVE' });
+    expect(response.body.message).toBe('Учётка отключена — забронировать нельзя');
+    expect(await count('SELECT COUNT(*)::int AS n FROM bookings WHERE user_id = $1', [p.id])).toBe(0);
   });
 });

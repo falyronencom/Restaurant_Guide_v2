@@ -59,6 +59,7 @@ jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({
 
 jest.unstable_mockModule('../../models/partnerDocumentsModel.js', () => ({
   findByEstablishmentId: jest.fn(),
+  passToHolder: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../models/auditLogModel.js', () => ({
@@ -219,6 +220,7 @@ beforeEach(() => {
   MediaModel.getOcrEligibleMedia.mockResolvedValue([]);
   MediaModel.getEstablishmentMedia.mockResolvedValue([]);
   PartnerDocumentsModel.findByEstablishmentId.mockResolvedValue(null);
+  PartnerDocumentsModel.passToHolder.mockResolvedValue(0);
   OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
   OcrJobModel.enqueue.mockResolvedValue(undefined);
   EstablishmentService.validateCityCoordinates.mockReturnValue({ valid: true });
@@ -879,7 +881,7 @@ describe('claimEstablishment', () => {
     expect(DB.query).not.toHaveBeenCalledWith(expect.stringContaining('FROM users'), expect.anything());
   });
 
-  test('completes transaction on user→partner upgrade: BEGIN, claim, UPDATE role, COMMIT', async () => {
+  test('completes transaction on user→partner upgrade: BEGIN, claim, legal record, UPDATE role, COMMIT', async () => {
     const updated = baseEstablishment({ partner_id: TARGET_USER_ID });
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
     EstablishmentModel.claimEstablishment.mockResolvedValue(updated);
@@ -903,17 +905,21 @@ describe('claimEstablishment', () => {
       expect.stringContaining("UPDATE users SET role = 'partner'"),
       [expect.any(Date), TARGET_USER_ID],
     );
-    // The order the title names — the claim and the role inside one
-    // transaction: a role written after COMMIT would leave a committed
-    // owner without the partner role if that write failed.
+    // The legal record goes with the card on the same client (account
+    // deletion, 19.10.2026): the previous holder's contacts leave it.
+    expect(PartnerDocumentsModel.passToHolder).toHaveBeenCalledWith(client, EST_ID, TARGET_USER_ID);
+    // The order the title names — the claim, the legal record and the role
+    // inside one transaction: a role written after COMMIT would leave a
+    // committed owner without the partner role if that write failed.
     const at = (fn, isCall) => fn.mock.invocationCallOrder[fn.mock.calls.findIndex(isCall)];
     const order = {
       begin: at(client.query, ([sql]) => sql === 'BEGIN'),
       claim: at(EstablishmentModel.claimEstablishment, () => true),
+      legal: at(PartnerDocumentsModel.passToHolder, () => true),
       role: at(client.query, ([sql]) => String(sql).includes("UPDATE users SET role = 'partner'")),
       commit: at(client.query, ([sql]) => sql === 'COMMIT'),
     };
-    expect(Object.keys(order).sort((a, b) => order[a] - order[b])).toEqual(['begin', 'claim', 'role', 'commit']);
+    expect(Object.keys(order).sort((a, b) => order[a] - order[b])).toEqual(['begin', 'claim', 'legal', 'role', 'commit']);
     expect(client.release).toHaveBeenCalled();
   });
 
