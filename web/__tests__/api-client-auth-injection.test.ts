@@ -81,11 +81,14 @@ describe('authedFetch', () => {
       }) // refresh
       .mockResolvedValueOnce({ ok: 1 }); // retry
 
-    // A write, so the replay can be seen carrying the same request.
+    // A write, so the replay can be seen carrying the same request — headers
+    // included: a replay without Content-Type is a body express.json never
+    // parses (422 from the validator).
     const body = JSON.stringify({ establishmentId: 'e1' });
     const result = await authedFetch('/api/v1/favorites', {
       method: 'POST',
       body,
+      headers: { 'Content-Type': 'application/json' },
     });
 
     expect(result).toEqual({ ok: 1 });
@@ -94,6 +97,7 @@ describe('authedFetch', () => {
       headers: Record<string, string>;
     };
     expect(retryInit.headers.Authorization).toBe('Bearer fresh');
+    expect(retryInit.headers['Content-Type']).toBe('application/json');
     expect(retryInit.method).toBe('POST');
     expect(retryInit.body).toBe(body);
   });

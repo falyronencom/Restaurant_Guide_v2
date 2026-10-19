@@ -77,7 +77,14 @@ describe('smartSearch — wire call', () => {
       await jest.advanceTimersByTimeAsync(15_000); // past 10 s, inside the backend's 20 s parse budget
       expect(outcome).toBe('pending');
 
-      await jest.advanceTimersByTimeAsync(10_001); // past 25 s
+      // Both sides of 25 s: the backend may spend its whole 20 s parse budget
+      // (smartSearchService.js, API_TIMEOUT_MS) and still answer. A shorter
+      // client timeout (say 16 s) passes the 15 s check above and the 25 s
+      // check below, and aborts an answer that was on its way.
+      await jest.advanceTimersByTimeAsync(9_999); // 24.999 s
+      expect(outcome).toBe('pending');
+
+      await jest.advanceTimersByTimeAsync(2); // past 25 s
       await call;
       expect(outcome).toMatchObject({ name: 'ApiError', statusCode: 0 });
     } finally {
