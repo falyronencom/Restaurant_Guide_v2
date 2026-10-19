@@ -249,23 +249,20 @@ describe('E2E Journey: Partner Establishment Management', () => {
 
       // ...and the upgrade is there for the next step of the journey: the
       // account reads as a partner, and the partner's list opens with the
-      // token the customer already holds and with the one handed back.
+      // token the customer already holds (the role is read from the database).
+      // Whether a new pair of tokens is handed back is the fix of Д7 and its
+      // own tests (integration/establishments.test.js) — nothing is pinned here.
       const me = await request(app)
         .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${regularUser.accessToken}`);
       expect(me.status).toBe(200);
       expect(me.body.data.user.role).toBe('partner');
-      expect(response.body.data.tokens).toEqual(
-        expect.objectContaining({ accessToken: expect.any(String) }),
-      );
-      for (const token of [regularUser.accessToken, response.body.data.tokens.accessToken]) {
-        const own = await request(app)
-          .get('/api/v1/partner/establishments')
-          .set('Authorization', `Bearer ${token}`);
-        expect(own.status).toBe(200);
-        expect(own.body.data.establishments.map((card) => card.id))
-          .toEqual([response.body.data.establishment.id]);
-      }
+      const own = await request(app)
+        .get('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${regularUser.accessToken}`);
+      expect(own.status).toBe(200);
+      expect(own.body.data.establishments.map((card) => card.id))
+        .toEqual([response.body.data.establishment.id]);
     });
 
     test('Partner cannot submit establishment without required fields', async () => {
