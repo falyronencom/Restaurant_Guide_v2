@@ -317,6 +317,14 @@ void main() {
       // Вкладка «Данные»: строка «Регистрация».
       expect(find.text('Скрыто в режиме просмотра'), findsWidgets);
       expect(find.text('registration.pdf'), findsNothing);
+
+      // «Скрытое» — не только документ. Контактное лицо живёт на вкладке
+      // «О заведении», и без своей пометки показало бы «не указан» —
+      // утверждение, которого сервер не делал.
+      await tester.tap(find.text('О заведении'));
+      await tester.pumpAndSettle();
+      expect(find.text('Номер контактного лица'), findsOneWidget);
+      expect(find.text('Скрыто в режиме просмотра'), findsOneWidget);
     });
 
     testWidgets('администратору ячейки не подменяются', (tester) async {

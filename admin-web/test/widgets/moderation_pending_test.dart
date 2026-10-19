@@ -348,6 +348,9 @@ void main() {
       expect(button(ElevatedButton, 'Одобрить заведение').onPressed, isNotNull,
           reason: 'предпосылка: до отказа по полю одобрение открыто');
 
+      // Заметка «для себя и следующего модератора» по другому полю партнёру
+      // уйти не должна: партнёр получает причины только отклонённых полей.
+      provider.commentField('unp', 'сверить с реестром при звонке');
       provider.rejectField('legal_name', comment: 'не совпадает с УНП');
       await tester.pump();
 

@@ -32,6 +32,9 @@ class _FakeAdminReviewService implements AdminReviewService {
   bool gateNextResponse = false;
   Completer<AdminReviewListResponse>? _gate;
 
+  /// Задержанный ответ оказался отказом.
+  void failGate(Object error) => _gate!.completeError(error);
+
   void releaseGate(List<AdminReviewItem> items, int totalCount) {
     _gate!.complete(AdminReviewListResponse(
       reviews: items,
@@ -234,6 +237,40 @@ void main() {
       expect(provider.selectedReview?.isVisible, isTrue);
       expect(provider.submitError, isNotNull);
     });
+
+    // «Неудача действия» выше — только скрытие; у удаления свой откат.
+    test('неудача удаления тоже откатывает и не перечитывает', () async {
+      await provider.loadReviews();
+      provider.selectReview('r1');
+      fake.failActionWith = Exception('403');
+
+      final ok = await provider.deleteReview('оскорбления');
+
+      expect(ok, isFalse);
+      expect(fake.listCalls, <int>[1]);
+      expect(provider.selectedReview?.isDeleted, isFalse,
+          reason: 'отзыв, который сервер не удалил, не может остаться '
+              'помеченным удалённым');
+      expect(provider.reviews.single.isDeleted, isFalse);
+      expect(provider.submitError, isNotNull);
+    });
+
+    // «Цель явная» выше проверена только для скрытия: клиент, всегда
+    // просящий `false`, прошёл бы его, а «Показать» прятало бы отзыв.
+    test('«Показать» просит видимость, а не скрытие', () async {
+      fake.reviews = <AdminReviewItem>[
+        _review(isVisible: false, establishmentAverageRating: 4.1),
+      ];
+      await provider.loadReviews();
+      provider.selectReview('r1');
+      fake.reviews = <AdminReviewItem>[_review(establishmentAverageRating: 4.0)];
+
+      final ok = await provider.setVisibility(visible: true);
+
+      expect(ok, isTrue);
+      expect(fake.visibilityTargets, <bool>[true]);
+      expect(provider.selectedReview?.isVisible, isTrue);
+    });
   });
 
   group('Сброс фильтров', () {
@@ -281,6 +318,30 @@ void main() {
       // Иначе на экране оказалась бы страница, которую уже никто не просил.
       expect(provider.reviews.single.id, 'fresh');
       expect(provider.totalCount, 7);
+    });
+
+    test('обогнанный ОТКАЗ свою ошибку уже не пишет', () async {
+      // Выше — поздний успех. Поздний отказ опаснее: свежий список на месте,
+      // а поверх него экран сообщает об ошибке запроса, которого никто не ждёт.
+      fake
+        ..reviews = <AdminReviewItem>[_review()]
+        ..total = 1
+        ..gateNextResponse = true;
+
+      final slow = provider.loadReviews(page: 3);
+
+      fake
+        ..gateNextResponse = false
+        ..reviews = <AdminReviewItem>[_review(id: 'fresh')]
+        ..total = 7;
+      await provider.loadReviews();
+
+      fake.failGate(Exception('timeout'));
+      await slow;
+
+      expect(provider.listError, isNull);
+      expect(provider.reviews.single.id, 'fresh');
+      expect(provider.isLoadingList, isFalse);
     });
   });
 

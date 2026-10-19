@@ -51,6 +51,7 @@ void main() {
         id: 'est-1', reason: 'Жалобы посетителей');
 
     final request = adapter.requests.single;
+    expect(request.method, 'POST');
     expect(request.uri.path, '/api/v1/admin/establishments/est-1/suspend');
     expect(request.data, <String, dynamic>{'reason': 'Жалобы посетителей'});
   });
