@@ -65,7 +65,8 @@ it('anonymous tap opens Google One Tap (requestLogin), not the modal', async () 
     screen.getByRole('button', { name: /Оставить отзыв/ }),
   );
 
-  expect(mockRequestLogin).toHaveBeenCalled();
+  // With the /login fallback (сверка находок тестировщика с сайтом, 18.10, Х2).
+  expect(mockRequestLogin).toHaveBeenCalledWith({ fallbackToLoginPage: true });
   expect(screen.queryByTestId('modal-open')).not.toBeInTheDocument();
 });
 

@@ -177,6 +177,8 @@ it('prompts login on an unauthenticated tap instead of mutating', async () => {
 
   await userEvent.click(screen.getByText('e1'));
 
-  expect(mockRequestLogin).toHaveBeenCalled();
+  // With the /login fallback: if Google cannot sign the guest in here, they go
+  // to /login and come back (сверка находок тестировщика с сайтом, 18.10, Х2).
+  expect(mockRequestLogin).toHaveBeenCalledWith({ fallbackToLoginPage: true });
   expect(addFavoriteAction).not.toHaveBeenCalled();
 });

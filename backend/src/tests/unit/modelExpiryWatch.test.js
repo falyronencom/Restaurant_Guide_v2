@@ -330,6 +330,16 @@ describe('decideExit', () => {
     expect(decideExit({ ...alarm, guard: { applicable: true, error: 'HTTP 403' } }))
       .toEqual({ code: EXIT.ALARM, wanted: EXIT.ALARM, deferred: false });
   });
+
+  // Так сторож и работает по понедельникам: в Actions, на коммите, CI которого
+  // давно закончился. «Обязан краснеть» — вот здесь; случаи выше (вне Actions,
+  // ошибка защиты) этого не показывают.
+  test('в Actions, выкатка не ждёт — провал не отложен: тревога 1, слепота 2', () => {
+    const guard = { applicable: true, mayWait: false, blocking: [] };
+    // Литералы, а не EXIT: красный прогон — это ненулевой код выхода.
+    expect(decideExit({ ...alarm, guard })).toEqual({ code: 1, wanted: 1, deferred: false });
+    expect(decideExit({ ...blind, guard })).toEqual({ code: 2, wanted: 2, deferred: false });
+  });
 });
 
 describe('formatReport', () => {

@@ -8,7 +8,6 @@ import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/screens/auth/email_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/login_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/method_selection_screen.dart';
-import 'package:restaurant_guide_mobile/screens/auth/phone_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/edit_profile_screen.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/social_sign_in_buttons.dart';
@@ -45,14 +44,15 @@ class _Auth extends AuthProvider {
     return false;
   }
 
+  int loginCalls = 0;
+
   @override
-  Future<bool> registerWithPhone({
-    required String phone,
+  Future<bool> login({
+    required String emailOrPhone,
     required String password,
-    String? name,
   }) async {
-    registerCalls++;
-    _error = refusal;
+    loginCalls++;
+    _error = 'Неверный email или пароль';
     return false;
   }
 
@@ -106,17 +106,12 @@ void main() {
           '/home': (_) => page('Главный экран', '/auth/login'),
           '/start-email': (_) =>
               page('Начало', '/auth/email-registration'),
-          '/start-phone': (_) =>
-              page('Начало', '/auth/phone-registration'),
           '/start-profile': (_) => page('Профиль', '/profile/edit'),
           '/auth/method-selection': (_) => const MethodSelectionScreen(),
           '/auth/login': (_) => const LoginScreen(),
           '/auth/email-registration': (_) => const EmailRegistrationScreen(),
-          '/auth/phone-registration': (_) => const PhoneRegistrationScreen(),
           '/auth/email-verification': (_) =>
               const Scaffold(body: Text('Ввод кода из письма')),
-          '/auth/phone-verification': (_) =>
-              const Scaffold(body: Text('Ввод кода из СМС')),
           '/profile/edit': (_) => const EditProfileScreen(),
         },
       ),
@@ -193,6 +188,74 @@ void main() {
     });
   });
 
+  // Номер телефона — только после появления СМС (решение Координатора
+  // 19.10.2026, A6). До него «Номер телефона» на «Регистрации» вёл на форму,
+  // которую сервер не принимал (номер уходил с пробелами), а вход по номеру
+  // кончался плашкой «Проверьте введённые данные.»: приложение клало номер в
+  // поле почты.
+  group('Только почта: номера телефона нет', () {
+    testWidgets('«Регистрация»: вариантов два — почта и сервисы, номера нет',
+        (tester) async {
+      await pumpApp(tester, start: '/auth/method-selection');
+
+      expect(find.widgetWithText(OutlinedButton, 'Почта'), findsOneWidget);
+      expect(find.text('Номер телефона'), findsNothing);
+      expect(find.textContaining('телефон'), findsNothing);
+      final ownButtons = find.byWidgetPredicate((w) => w is OutlinedButton);
+      final socialButtons = find.descendant(
+          of: find.byType(SocialSignInButtons),
+          matching: find.byType(OutlinedButton));
+      expect(
+          ownButtons.evaluate().length - socialButtons.evaluate().length, 1,
+          reason: 'кнопка регистрации одна — «Почта»; Google и Яндекс '
+              'в общем блоке сервисов');
+      expect(find.byType(SocialSignInButtons), findsOneWidget);
+    });
+
+    testWidgets('«Вход»: поле подписано «Почта», о телефоне ни слова',
+        (tester) async {
+      await pumpApp(tester, start: '/auth/login');
+
+      expect(find.text('Почта'), findsOneWidget);
+      expect(find.text('Почта/Номер телефона'), findsNothing);
+      expect(find.textContaining('телефон'), findsNothing);
+
+      await tapText(tester, 'Войти');
+
+      expect(find.text('Введите почту'), findsOneWidget,
+          reason: 'пустое поле просит почту, а не «email или номер телефона»');
+      expect(auth.loginCalls, 0);
+    });
+
+    testWidgets('«Вход»: номер вместо почты — подсказка под полем, '
+        'на сервер не уходит', (tester) async {
+      await pumpApp(tester, start: '/auth/login');
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), '+375291234567');
+      await tester.enterText(fields.at(1), 'Secret123');
+      await tapText(tester, 'Войти');
+
+      expect(find.text('Проверьте адрес почты: в нём нужны «@» и домен'),
+          findsOneWidget);
+      expect(auth.loginCalls, 0,
+          reason: 'номер в поле почты сервер отклоняет (422) — '
+              'отправлять его незачем');
+    });
+
+    testWidgets('«Вход»: почта с пробелами по краям уходит на сервер',
+        (tester) async {
+      await pumpApp(tester, start: '/auth/login');
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), ' guest@example.com ');
+      await tester.enterText(fields.at(1), 'Secret123');
+      await tapText(tester, 'Войти');
+
+      expect(auth.loginCalls, 1);
+    });
+  });
+
   testWidgets('Apple нет; кнопки сервисов — общий блок на обоих экранах',
       (tester) async {
     await pumpApp(tester, start: '/auth/method-selection');
@@ -226,19 +289,6 @@ void main() {
       expect(find.text('Ввод кода из письма'), findsNothing,
           reason: 'Х1: при отказе открывался ввод кода от несуществующего письма');
       expect(find.byType(EmailRegistrationScreen), findsOneWidget);
-      expect(find.text(_Auth.refusal), findsOneWidget);
-    });
-
-    testWidgets('по телефону: остаёмся на форме и видим текст сервера',
-        (tester) async {
-      await pumpApp(tester, start: '/start-phone');
-      await tapText(tester, 'Начало');
-
-      await fillAndSubmit(tester, '+375291234567');
-
-      expect(auth.registerCalls, 1, reason: 'предусловие: форма отправлена');
-      expect(find.text('Ввод кода из СМС'), findsNothing);
-      expect(find.byType(PhoneRegistrationScreen), findsOneWidget);
       expect(find.text(_Auth.refusal), findsOneWidget);
     });
   });

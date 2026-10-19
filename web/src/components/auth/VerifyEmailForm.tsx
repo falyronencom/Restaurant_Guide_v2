@@ -11,6 +11,8 @@ import {
   verifyEmailCodeAction,
 } from '@/lib/auth/actions';
 
+import { verifyEmailHref } from '@/lib/auth/verify-email-href';
+
 import { useAuth } from './AuthProvider';
 
 /*
@@ -22,8 +24,13 @@ import { useAuth } from './AuthProvider';
  * success («Почта подтверждена») and the graceful 409 EMAIL_ALREADY_VERIFIED
  * from EITHER action («Почта уже подтверждена») — the latter is an expected
  * outcome, not a destructive error.
+ *
+ * `returnTo` (guarded by the page) is where the visitor came from before
+ * registering: the terminal states lead back there («Продолжить»), and «Позже»
+ * under the form skips the code for now — the profile keeps «Подтвердить»
+ * (сверка находок тестировщика с сайтом, 18.10, п. 11).
  */
-export function VerifyEmailForm() {
+export function VerifyEmailForm({ returnTo = '/' }: { returnTo?: string }) {
   const [verifyState, verifyAction, verifyPending] = useActionState(
     verifyEmailCodeAction,
     null,
@@ -33,6 +40,7 @@ export function VerifyEmailForm() {
     null,
   );
   const { status } = useAuth();
+  const continueLabel = returnTo === '/' ? 'На главную' : 'Продолжить';
 
   // A logged-out visitor on the direct link: invite to login and come back.
   // While the context hydrates ('loading') the form renders optimistically —
@@ -45,7 +53,7 @@ export function VerifyEmailForm() {
         </p>
         <p className="text-body-m">
           <Link
-            href="/login?returnTo=%2Fverify-email"
+            href={`/login?returnTo=${encodeURIComponent(verifyEmailHref(returnTo))}`}
             className="font-medium text-brand transition-colors hover:text-brand-dark"
           >
             Войти
@@ -62,10 +70,10 @@ export function VerifyEmailForm() {
           Почта подтверждена.
         </p>
         <Link
-          href="/"
+          href={returnTo}
           className="font-medium text-brand transition-colors hover:text-brand-dark"
         >
-          На главную
+          {continueLabel}
         </Link>
       </div>
     );
@@ -81,10 +89,10 @@ export function VerifyEmailForm() {
           Почта уже подтверждена.
         </p>
         <Link
-          href="/"
+          href={returnTo}
           className="font-medium text-brand transition-colors hover:text-brand-dark"
         >
-          На главную
+          {continueLabel}
         </Link>
       </div>
     );
@@ -149,6 +157,18 @@ export function VerifyEmailForm() {
           {resendPending ? 'Отправляем…' : 'Отправить код повторно'}
         </button>
       </form>
+
+      <div className="flex flex-col gap-xs border-t border-figma-divider pt-m">
+        <Link
+          href={returnTo}
+          className="self-start font-medium text-brand transition-colors hover:text-brand-dark"
+        >
+          Позже
+        </Link>
+        <p className="text-caption-l text-figma-text-grey">
+          Подтвердить почту можно потом в профиле.
+        </p>
+      </div>
     </div>
   );
 }

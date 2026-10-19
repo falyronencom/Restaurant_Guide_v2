@@ -81,7 +81,12 @@ const mockSettings = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  AnalyticsModel.verifyOwnership.mockResolvedValue(true);
+  // The ownership question answered by its arguments: this card is this
+  // partner's and nobody else's. A mock that answers «yes» to anything would
+  // pass a service that asks about the wrong pair — and locks the owner out.
+  AnalyticsModel.verifyOwnership.mockImplementation(
+    async (establishmentId, partnerId) => establishmentId === EST_ID && partnerId === PARTNER_ID,
+  );
   mockClientQuery.mockResolvedValue({ rows: [] });
   // Re-set getClient mock after clearAllMocks
   getClient.mockImplementation(async () => mockClient);
@@ -107,10 +112,11 @@ describe('getSettings', () => {
   });
 
   it('rejects if not owner', async () => {
-    AnalyticsModel.verifyOwnership.mockResolvedValue(false);
+    BookingSettingsModel.getByEstablishmentId.mockResolvedValue(mockSettings);
 
-    await expect(getSettings(EST_ID, PARTNER_ID))
+    await expect(getSettings(EST_ID, uuidv4()))
       .rejects.toThrow('not owned by you');
+    expect(BookingSettingsModel.getByEstablishmentId).not.toHaveBeenCalled();
   });
 });
 
@@ -188,7 +194,8 @@ describe('deactivate', () => {
 
     const result = await deactivate(EST_ID, PARTNER_ID);
 
-    expect(result.is_enabled).toBe(false);
+    expect(result.is_enabled).toBe(false); // the mock's own answer — the call below is the check
+    expect(BookingSettingsModel.updateEnabled).toHaveBeenCalledWith(EST_ID, false, mockClient);
     expect(mockClientQuery).toHaveBeenCalledWith('BEGIN');
     expect(mockClientQuery).toHaveBeenCalledWith(
       expect.stringContaining('booking_enabled = FALSE'),
@@ -212,14 +219,19 @@ describe('deactivate', () => {
 
 describe('updateSettings', () => {
   it('updates existing settings', async () => {
-    BookingSettingsModel.getByEstablishmentId.mockResolvedValue(mockSettings);
-    BookingSettingsModel.createOrUpdate.mockResolvedValue({ ...mockSettings, max_guests_per_booking: 5 });
+    // Booking switched off: new terms are saved, and booking stays off — an
+    // «enabled» fixture could not tell keeping the state from switching it on.
+    const existing = { ...mockSettings, is_enabled: false };
+    BookingSettingsModel.getByEstablishmentId.mockResolvedValue(existing);
+    BookingSettingsModel.createOrUpdate.mockResolvedValue({ ...existing, max_guests_per_booking: 5 });
 
     const result = await updateSettings(EST_ID, PARTNER_ID, { maxGuestsPerBooking: 5 });
 
     expect(result.max_guests_per_booking).toBe(5);
     expect(BookingSettingsModel.createOrUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
+        establishmentId: EST_ID,
+        isEnabled: false,
         maxGuestsPerBooking: 5,
         // Other fields preserved from existing
         confirmationTimeoutHours: 4,

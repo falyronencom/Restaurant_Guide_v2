@@ -25,6 +25,7 @@ jest.mock('@/lib/api/client', () => ({ serverFetch: jest.fn() }));
 
 import { redirect } from 'next/navigation';
 import { serverFetch } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/types';
 import { GET } from '@/app/auth/yandex/callback/route';
 
 const redirectMock = redirect as unknown as jest.Mock;
@@ -145,22 +146,36 @@ describe('Yandex callback — happy path', () => {
 });
 
 describe('Yandex callback — rejects WITHOUT any outbound call (anti-abuse)', () => {
-  it('(1) Yandex error param → auth_error, no exchange, no backend', async () => {
+  it('(1) Yandex «Отмена» (access_denied) → /login says it was cancelled, no exchange, no backend', async () => {
     withYState({ n: 'state-s', r: '/minsk' });
 
     await GET(callbackRequest({ error: 'access_denied', state: 'state-s' }));
 
     expect(exchangeFetch).not.toHaveBeenCalled();
     expect(backendFetch).not.toHaveBeenCalled();
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex_cancelled&returnTo=%2Fminsk',
+    );
   });
 
-  it('appends auth_error with & when the stored returnTo already has a query string', async () => {
+  it('another Yandex error param → the general code', async () => {
+    withYState({ n: 'state-s', r: '/minsk' });
+
+    await GET(callbackRequest({ error: 'server_error', state: 'state-s' }));
+
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex&returnTo=%2Fminsk',
+    );
+  });
+
+  it('keeps a returnTo with a query string intact as the way back', async () => {
     withYState({ n: 'state-s', r: '/minsk?from=card' });
 
     await GET(callbackRequest({ error: 'access_denied', state: 'state-s' }));
 
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?from=card&auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex_cancelled&returnTo=%2Fminsk%3Ffrom%3Dcard',
+    );
   });
 
   it('(2a) missing state cookie → auth_error on default /, no outbound', async () => {
@@ -170,7 +185,7 @@ describe('Yandex callback — rejects WITHOUT any outbound call (anti-abuse)', (
 
     expect(exchangeFetch).not.toHaveBeenCalled();
     expect(backendFetch).not.toHaveBeenCalled();
-    expect(redirectMock).toHaveBeenCalledWith('/?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith('/login?auth_error=yandex');
   });
 
   it('(2b) state mismatch → auth_error, no outbound, cookie still consumed', async () => {
@@ -181,7 +196,9 @@ describe('Yandex callback — rejects WITHOUT any outbound call (anti-abuse)', (
     expect(exchangeFetch).not.toHaveBeenCalled();
     expect(backendFetch).not.toHaveBeenCalled();
     expect(mockStore.delete).toHaveBeenCalledWith('y_state');
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex&returnTo=%2Fminsk',
+    );
   });
 
   it('missing code with valid state → auth_error, no outbound', async () => {
@@ -191,7 +208,9 @@ describe('Yandex callback — rejects WITHOUT any outbound call (anti-abuse)', (
 
     expect(exchangeFetch).not.toHaveBeenCalled();
     expect(backendFetch).not.toHaveBeenCalled();
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex&returnTo=%2Fminsk',
+    );
   });
 });
 
@@ -204,7 +223,9 @@ describe('Yandex callback — downstream failures collapse to auth_error', () =>
 
     expect(backendFetch).not.toHaveBeenCalled();
     expect(mockStore.set).not.toHaveBeenCalledWith('rg_at', expect.anything(), expect.anything());
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex&returnTo=%2Fminsk',
+    );
   });
 
   it('backend 4xx → auth_error, no session cookie issued', async () => {
@@ -215,6 +236,22 @@ describe('Yandex callback — downstream failures collapse to auth_error', () =>
     await GET(callbackRequest({ code: 'auth-code', state: 'state-s' }));
 
     expect(mockStore.set).not.toHaveBeenCalledWith('rg_at', expect.anything(), expect.anything());
-    expect(redirectMock).toHaveBeenCalledWith('/minsk?auth_error=1');
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=yandex&returnTo=%2Fminsk',
+    );
+  });
+
+  it('a closed account (backend 403 ACCOUNT_DEACTIVATED) keeps its own code for /login', async () => {
+    withYState({ n: 'state-s', r: '/minsk' });
+    exchangeFetch.mockResolvedValue(okExchange());
+    backendFetch.mockRejectedValue(
+      new ApiError(403, 'Account is deactivated', 'ACCOUNT_DEACTIVATED'),
+    );
+
+    await GET(callbackRequest({ code: 'auth-code', state: 'state-s' }));
+
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/login?auth_error=ACCOUNT_DEACTIVATED&returnTo=%2Fminsk',
+    );
   });
 });

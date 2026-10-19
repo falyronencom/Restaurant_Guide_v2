@@ -20,7 +20,7 @@ enum AuthenticationStatus {
   /// User is authenticated
   authenticated,
 
-  /// User is in verification process (SMS/email)
+  /// User is in verification process (email)
   verifying,
 }
 
@@ -58,10 +58,8 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   int _accountGeneration = 0;
 
   // Registration state
-  String? _verificationToken;
   String? _pendingEmail;
-  String? _pendingPhone;
-  String? _authMethod; // 'email' or 'phone'
+  String? _authMethod; // 'email'
 
   StreamSubscription<void>? _sessionExpiredSubscription;
 
@@ -106,14 +104,8 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Current authenticated user
   User? get currentUser => _currentUser;
 
-  /// Verification token from registration
-  String? get verificationToken => _verificationToken;
-
   /// Pending email awaiting verification
   String? get pendingEmail => _pendingEmail;
-
-  /// Pending phone awaiting verification
-  String? get pendingPhone => _pendingPhone;
 
   /// Authentication method being used
   String? get authMethod => _authMethod;
@@ -375,101 +367,6 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Register new user with phone
-  Future<bool> registerWithPhone({
-    required String phone,
-    required String password,
-    String? name,
-  }) async {
-    _setLoading(true);
-    _clearError();
-    _status = AuthenticationStatus.authenticating;
-    notifyListeners();
-
-    try {
-      final response = await _authService.register(
-        phone: phone,
-        password: password,
-        authMethod: 'phone',
-        name: name,
-      );
-
-      // Check if backend returned direct auth tokens (no verification needed)
-      if (response.hasDirectAuth && response.user != null) {
-        _bindAccount(User.fromJson(response.user!));
-        _status = AuthenticationStatus.authenticated;
-        _setLoading(false);
-        return true;
-      }
-
-      // Otherwise, store verification token and details
-      _verificationToken = response.verificationToken;
-      _pendingPhone = phone;
-      _authMethod = 'phone';
-      _status = AuthenticationStatus.verifying;
-      _setLoading(false);
-
-      return true;
-    } catch (e) {
-      _setError(_extractErrorMessage(e));
-      _status = AuthenticationStatus.unauthenticated;
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  /// Verify SMS code
-  Future<bool> verifyCode({required String code}) async {
-    if (_verificationToken == null) {
-      _setError('No verification token available');
-      return false;
-    }
-
-    _setLoading(true);
-    _clearError();
-
-    try {
-      final authResponse = await _authService.verifyCode(
-        code: code,
-        verificationToken: _verificationToken!,
-      );
-
-      _bindAccount(authResponse.user);
-      _status = AuthenticationStatus.authenticated;
-      _clearVerificationState();
-      _setLoading(false);
-
-      return true;
-    } catch (e) {
-      _setError(_extractErrorMessage(e));
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  /// Verify email with token
-  Future<bool> verifyEmail({required String emailToken}) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      final authResponse = await _authService.verifyEmail(
-        emailToken: emailToken,
-      );
-
-      _bindAccount(authResponse.user);
-      _status = AuthenticationStatus.authenticated;
-      _clearVerificationState();
-      _setLoading(false);
-
-      return true;
-    } catch (e) {
-      _setError(_extractErrorMessage(e));
-      _setLoading(false);
-      return false;
-    }
-  }
-
   /// Check verification status (for email verification polling)
   Future<bool> checkVerificationStatus() async {
     if (!isAuthenticated) {
@@ -529,42 +426,12 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Resend verification code
-  Future<bool> resendVerification() async {
-    if (_authMethod == null) {
-      _setError('No authentication method set');
-      return false;
-    }
-
-    _setLoading(true);
-    _clearError();
-
-    try {
-      final response = await _authService.resendVerification(
-        email: _pendingEmail,
-        phone: _pendingPhone,
-        authMethod: _authMethod!,
-      );
-
-      // Update verification token if phone method
-      if (_authMethod == 'phone') {
-        _verificationToken = response.verificationToken;
-      }
-
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _setError(_extractErrorMessage(e));
-      _setLoading(false);
-      return false;
-    }
-  }
-
   // ============================================================================
   // Login Flow
   // ============================================================================
 
-  /// Login with email or phone and password
+  /// Login with email and password. Входа по номеру телефона нет: сервер
+  /// ищет вход по почте (решение Координатора 19.10.2026 — до появления СМС).
   Future<bool> login({
     required String emailOrPhone,
     required String password,
@@ -803,31 +670,6 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Change password
-  Future<bool> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    if (!isAuthenticated) return false;
-
-    _setLoading(true);
-    _clearError();
-
-    try {
-      await _authService.changePassword(
-        currentPassword: currentPassword,
-        newPassword: newPassword,
-      );
-
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _setError(_extractErrorMessage(e));
-      _setLoading(false);
-      return false;
-    }
-  }
-
   /// Request password reset
   Future<bool> requestPasswordReset({required String email}) async {
     _setLoading(true);
@@ -884,9 +726,7 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Clear verification state
   void _clearVerificationState() {
-    _verificationToken = null;
     _pendingEmail = null;
-    _pendingPhone = null;
     _authMethod = null;
   }
 

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { resetPasswordAction } from '@/lib/auth/actions';
+import { PASSWORD_HINT } from '@/lib/auth/password-hint';
 
 /*
  * Reset-password form (mirrors LoginForm's useActionState wiring). The token
@@ -14,7 +15,9 @@ import { resetPasswordAction } from '@/lib/auth/actions';
  * the same page-prop→hidden-input pattern LoginForm uses for returnTo. The
  * new password is NEVER echoed back on errors (React 19 clears it; the user
  * retypes). On success the backend revoked every session, so the island
- * offers the login link instead of auto-signing-in.
+ * offers the login link instead of auto-signing-in. The password rule is
+ * visible from the start (grey, as on registration) and turns into the red
+ * per-field text when the rule fails.
  */
 export function ResetPasswordForm({ token }: { token: string }) {
   const [state, formAction, pending] = useActionState(resetPasswordAction, null);
@@ -52,15 +55,18 @@ export function ResetPasswordForm({ token }: { token: string }) {
           autoComplete="new-password"
           required
           aria-invalid={fieldErrors?.password ? true : undefined}
-          aria-describedby={
-            fieldErrors?.password ? 'reset-password-error' : undefined
-          }
+          aria-describedby="reset-password-hint"
         />
-        {fieldErrors?.password ? (
-          <p id="reset-password-error" className="text-caption-l text-destructive">
-            {fieldErrors.password}
-          </p>
-        ) : null}
+        <p
+          id="reset-password-hint"
+          className={
+            fieldErrors?.password
+              ? 'text-caption-l text-destructive'
+              : 'text-caption-l text-figma-text-dark'
+          }
+        >
+          {fieldErrors?.password ?? PASSWORD_HINT}
+        </p>
       </div>
 
       <p aria-live="polite" className="min-h-4 text-caption-l text-destructive">

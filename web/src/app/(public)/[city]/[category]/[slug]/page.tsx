@@ -15,6 +15,7 @@ import {
   validateCitySlug,
 } from '@/lib/api/endpoints/metadata';
 import {
+  DETAIL_REVIEWS_LIMIT,
   formatRating,
   pluralizeReviews,
   ratingColorClass,
@@ -37,6 +38,7 @@ import { MenuBlock } from '@/components/establishment/MenuBlock';
 import { PromotionBanner } from '@/components/establishment/PromotionBanner';
 import { RestaurantSchema } from '@/components/establishment/RestaurantSchema';
 import { ReviewCarousel } from '@/components/establishment/ReviewCarousel';
+import { ReviewsLoadFailed } from '@/components/establishment/ReviewsLoadFailed';
 
 /*
  * /[city]/[category]/[slug] — Establishment detail composite (Brief 4).
@@ -195,25 +197,16 @@ export default async function EstablishmentPage({
     permanentRedirect(address.path);
   }
 
-  // 4. Parallel fetches: menu + reviews + metadata. Menu/reviews tolerate
-  //    soft failures — the page is still useful without them. A menu failure
-  //    is NOT turned into an empty list: that read as «Меню пока не
-  //    загружено.» and this ISR page kept it for up to an hour. `null` renders
-  //    MenuLoadFailed instead — it loads the menu from the visitor's browser
-  //    and, on success, drops the cached page (reloadMenuAction; Ш8).
+  // 4. Parallel fetches: menu + reviews + metadata. The page is still useful
+  //    without menu/reviews, so their failures do not fail the page — and
+  //    neither is turned into an empty list: that read as «Меню пока не
+  //    загружено.» / «Пока нет отзывов» and this ISR page kept it for up to an
+  //    hour. `null` renders MenuLoadFailed / ReviewsLoadFailed instead — each
+  //    loads its part from the visitor's browser and, on success, drops the
+  //    cached page (reloadMenuAction, Ш8; reloadReviewsAction, Х5 / Х23).
   const [menuItemsResult, reviewsResult, meta] = await Promise.all([
     getMenuItems(slug).catch(() => null),
-    getReviews(slug, { limit: 5 }).catch(() => ({
-      reviews: [],
-      pagination: {
-        page: 1,
-        limit: 5,
-        total: 0,
-        totalPages: 0,
-        hasNext: false,
-        hasPrevious: false,
-      },
-    })),
+    getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT }).catch(() => null),
     getMetadata(),
   ]);
 
@@ -247,7 +240,7 @@ export default async function EstablishmentPage({
       id: 'reviews',
       label: 'Отзывы',
       suffix:
-        reviewsResult.pagination.total > 0
+        reviewsResult && reviewsResult.pagination.total > 0
           ? ` (${reviewsResult.pagination.total})`
           : undefined,
     },
@@ -301,14 +294,17 @@ export default async function EstablishmentPage({
           visible; ContactSidebar is hidden on mobile). */}
       <FavoritesProvider establishmentIds={[establishment.id]}>
         <header className='flex flex-wrap items-end justify-between gap-m'>
-          <div className='flex flex-col gap-1.5'>
+          {/* min-w-0 + wrap-anywhere: a long word in the name («…Рождественской»)
+              wraps inside the column instead of running past a phone screen,
+              where html/body overflow-x: clip would cut it off. */}
+          <div className='flex min-w-0 max-w-full flex-col gap-1.5'>
             <p className='text-body-m text-muted-foreground'>
               {displayCategory.toLowerCase()}
               {primaryCuisine ? ` · ${primaryCuisine.toLowerCase()} кухня` : ''}
               {' · '}
               {cityName}
             </p>
-            <h1 className='font-display text-[38px] leading-[1.05] font-bold tracking-[-0.5px]'>
+            <h1 className='font-display text-[38px] leading-[1.05] font-bold tracking-[-0.5px] wrap-anywhere'>
               {establishment.name}
             </h1>
             <div className='mt-1 flex flex-wrap items-center gap-3 text-body-m text-muted-foreground'>
@@ -351,7 +347,7 @@ export default async function EstablishmentPage({
       {/* Two-column grid: main content + sticky sidebar (desktop) */}
       <div className='grid grid-cols-1 gap-l lg:grid-cols-[1fr_320px] lg:items-start'>
         <div className='flex flex-col gap-xl'>
-          <section id='overview' className='flex flex-col gap-l scroll-mt-16'>
+          <section id='overview' className='flex flex-col gap-l scroll-mt-32'>
             <InfoCard establishment={establishment} />
             {establishment.promotions.length > 0 ? (
               <PromotionBanner promotions={establishment.promotions} />
@@ -361,7 +357,7 @@ export default async function EstablishmentPage({
             ) : null}
           </section>
 
-          <section id='menu' className='scroll-mt-16'>
+          <section id='menu' className='scroll-mt-32'>
             <MenuBlock
               menuItems={menuItemsResult?.menu_items ?? null}
               menuPhotos={menuPhotos}
@@ -372,11 +368,11 @@ export default async function EstablishmentPage({
             />
           </section>
 
-          <section id='amenities' className='scroll-mt-16'>
+          <section id='amenities' className='scroll-mt-32'>
             <Attributes attributes={establishment.attributes} />
           </section>
 
-          <section id='location' className='scroll-mt-16'>
+          <section id='location' className='scroll-mt-32'>
             <LocationSection
               latitude={establishment.latitude}
               longitude={establishment.longitude}
@@ -385,20 +381,33 @@ export default async function EstablishmentPage({
             />
           </section>
 
-          <section id='reviews' className='scroll-mt-16'>
-            <ReviewCarousel
-              reviews={reviewsResult.reviews}
-              totalCount={reviewsResult.pagination.total}
-              averageRating={establishment.average_rating}
-              reviewsHref={`${address.path}/reviews`}
-              establishmentId={establishment.id}
-              establishmentName={establishment.name}
-              detailPath={address.path}
-            />
+          <section id='reviews' className='scroll-mt-32'>
+            {reviewsResult ? (
+              <ReviewCarousel
+                reviews={reviewsResult.reviews}
+                totalCount={reviewsResult.pagination.total}
+                averageRating={establishment.average_rating}
+                reviewsHref={`${address.path}/reviews`}
+                establishmentId={establishment.id}
+                establishmentName={establishment.name}
+                detailPath={address.path}
+              />
+            ) : (
+              <ReviewsLoadFailed
+                slug={establishment.slug}
+                averageRating={establishment.average_rating}
+                reviewsHref={`${address.path}/reviews`}
+                establishmentId={establishment.id}
+                establishmentName={establishment.name}
+                detailPath={address.path}
+              />
+            )}
           </section>
         </div>
 
-        <aside className='hidden lg:sticky lg:top-l lg:block lg:self-start'>
+        {/* top-24 (96px): clears the sticky site header (72px + 1px border,
+            SiteHeader) — at top-l the card's first ~49px slid under it. */}
+        <aside className='hidden lg:sticky lg:top-24 lg:block lg:self-start'>
           <ContactSidebar establishment={establishment} />
         </aside>
       </div>

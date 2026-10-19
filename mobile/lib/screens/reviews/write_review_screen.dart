@@ -156,12 +156,13 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     }
 
     if (statusCode == 429) {
-      // Rate limit / daily quota
-      final errorCode = getErrorCode();
-      if (errorCode == 'DAILY_QUOTA_EXCEEDED') {
-        return 'Достигнут дневной лимит отзывов. Попробуйте завтра';
-      }
-      return 'Слишком много запросов. Попробуйте позже';
+      // Отказ лимита сервер объясняет сам: суточный лимит отзывов — «…можно
+      // написать завтра», частый повтор запросов — своим сроком. Код у обоих
+      // один (RATE_LIMIT_EXCEEDED), различает их только текст. До 19.10.2026
+      // экран ждал код DAILY_QUOTA_EXCEEDED, которого сервер не шлёт, и на
+      // 11-м отзыве за день писал «попробуйте позже» (аудит честности, Д3).
+      return russianServerText(responseData) ??
+          'Слишком много запросов. Попробуйте позже';
     }
 
     if (statusCode == 401) {

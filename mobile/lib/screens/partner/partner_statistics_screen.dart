@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Partner Statistics Screen - detailed analytics for establishment
 /// Figma design: Statistics frame
@@ -340,8 +341,11 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             Expanded(
               child: _buildMetricItem(
                 title: 'Средняя\nоценка',
-                value: establishment.stats.averageRating?.toStringAsFixed(1).replaceAll('.', ',') ?? '-',
-                showStar: true,
+                // Оценок нет — «—», как у других пустых данных: сервер шлёт
+                // среднюю 0, и «0,0★» читалось как «ноль из пяти» (Н4,
+                // 19.10.2026). Звезда — только при оценке.
+                value: ratingLabel(establishment.stats.averageRating) ?? '—',
+                showStar: ratingLabel(establishment.stats.averageRating) != null,
               ),
             ),
             Expanded(
@@ -667,7 +671,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   decoration: BoxDecoration(color: _greenColor, borderRadius: BorderRadius.circular(14)),
                   child: Center(
                     child: Text(
-                      establishment.stats.averageRating?.toStringAsFixed(1).replaceAll('.', ',') ?? '-',
+                      ratingLabel(establishment.stats.averageRating) ?? '—',
                       style: const TextStyle(fontSize: 28, color: _backgroundColor),
                     ),
                   ),

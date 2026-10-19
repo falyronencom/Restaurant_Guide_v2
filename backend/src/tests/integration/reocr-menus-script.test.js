@@ -167,6 +167,10 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
 
     await seedItem(await file('не менялась'), 'Суп');
     await seedItem(await file('сдвиг 0,5 с после вставки'), 'Суп', { updatedAfter: 0.5 });
+    // …а через 1,5 с — уже правка: «не менялась» — секунда после вставки, не
+    // больше. Без этой пары окно можно расширить до часа, и правку партнёра
+    // через минуту после загрузки распознавание перепишет.
+    await seedItem(await file('сдвиг 1,5 с после вставки, без журнала'), 'Суп', { updatedAfter: 1.5 });
 
     // Панель: журнал отдельным запросом — позже updated_at на миллисекунды.
     id = await seedItem(await file('снят флаг панелью'), 'Суп', { updatedAfter: 3600 });
@@ -209,6 +213,7 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     expect(verdicts(await plan(), files)).toEqual([
       ['не менялась', 'в работу', 1, 0, 0, 0, 0],
       ['сдвиг 0,5 с после вставки', 'в работу', 1, 0, 0, 0, 0],
+      ['сдвиг 1,5 с после вставки, без журнала', TOUCHED, 1, 0, 0, 1, 0],
       ['снят флаг панелью', 'в работу', 1, 0, 0, 0, 1],
       ['снят флаг скриптом', 'в работу', 1, 0, 0, 0, 1],
       ['снятие за 0,9 с до updated_at', 'в работу', 1, 0, 0, 0, 1],
@@ -268,6 +273,10 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     const files = {
       'формат .ai': await seedFile(cafe, { url: 'http://test/menu.ai' }),
       'задача в работе': await seedFile(cafe),
+      // «В очереди» — и ждущая (pending: её и ставит сам скрипт), и в работе;
+      // упавшая (failed) в очереди уже не стоит.
+      'задача ждёт очереди': await seedFile(cafe),
+      'задача упала': await seedFile(cafe),
       'задача выполнена': await seedFile(cafe),
       'без позиций': await seedFile(cafe),
       'позиция скрыта': await seedFile(cafe),
@@ -277,7 +286,12 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     for (const [label, file] of Object.entries(files)) {
       if (label !== 'без позиций') await seedItem(file, 'Суп', { hidden: label === 'позиция скрыта' });
     }
-    for (const [label, status] of [['задача в работе', 'processing'], ['задача выполнена', 'done']]) {
+    for (const [label, status] of [
+      ['задача в работе', 'processing'],
+      ['задача ждёт очереди', 'pending'],
+      ['задача упала', 'failed'],
+      ['задача выполнена', 'done'],
+    ]) {
       await query(
         'INSERT INTO ocr_jobs (establishment_id, media_id, status) VALUES ($1, $2, $3)',
         [cafe.id, files[label].mediaId, status],
@@ -288,6 +302,8 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     expect(verdicts(await plan({ statuses }), files)).toEqual([
       ['формат .ai', 'формат не читается', 1, 0, 0, 0, 0],
       ['задача в работе', 'задача уже в очереди', 1, 0, 0, 0, 0],
+      ['задача ждёт очереди', 'задача уже в очереди', 1, 0, 0, 0, 0],
+      ['задача упала', 'в работу', 1, 0, 0, 0, 0],
       ['задача выполнена', 'в работу', 1, 0, 0, 0, 0],
       ['без позиций', 'в работу', 0, 0, 0, 0, 0],
       ['позиция скрыта', TOUCHED, 1, 1, 0, 0, 0],

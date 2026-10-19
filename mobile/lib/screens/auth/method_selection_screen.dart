@@ -6,7 +6,7 @@ import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/social_sign_in_buttons.dart';
 
 /// Method Selection Screen
-/// User chooses registration method: Email, Phone, or OAuth
+/// User chooses registration method: Email or OAuth (Google, Яндекс)
 class MethodSelectionScreen extends StatefulWidget {
   const MethodSelectionScreen({super.key});
 
@@ -179,34 +179,10 @@ class _MethodSelectionScreenState extends State<MethodSelectionScreen> {
                 ),
               ),
 
-              const SizedBox(height: 18),
-
-              // Phone button
-              OutlinedButton(
-                onPressed: isOAuthLoading
-                    ? null
-                    : () {
-                        Navigator.pushNamed(context, '/auth/phone-registration');
-                      },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(
-                    color: AppTheme.primaryOrangeDark,
-                    width: 1,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                  ),
-                ),
-                child: Text(
-                  'Номер телефона',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.primaryOrangeDark,
-                  ),
-                ),
-              ),
+              // Регистрации по номеру телефона нет, пока сервер не шлёт СМС:
+              // без кода и без восстановления пароля номер был тупиком, а
+              // из приложения регистрация по номеру и не проходила (решение
+              // Координатора 19.10.2026, вопрос A6).
 
               const SizedBox(height: 48),
 

@@ -31,7 +31,7 @@ afterAll(() => {
   if (existsSync(snapshotFile)) rmSync(snapshotFile);
 });
 
-test('ассеты из папки карточки уничтожаются по точному public_id, чужой — нет', async () => {
+test('у каждой карточки партии — ассеты из её папки по точному public_id; чужой и соседский — нет', async () => {
   await clearAllData();
   const destroy = jest.spyOn(cloudinarySdk.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
 
@@ -53,12 +53,26 @@ test('ассеты из папки карточки уничтожаются п�
      VALUES ('ownership-card-01', $1, 'ownership-batch', 'hash', 'activated', $2)`,
     [card.id, JSON.stringify(mediaState)],
   );
+  // Вторая карточка той же партии: «папка своей карточки» — у каждой строки
+  // реестра своя, а не одна на партию. С одной карточкой этого не различить.
+  // Её вторая запись лежит в папке первой карточки — соседский ассет.
+  const second = await createTestEstablishment(house.id);
+  await query(
+    `INSERT INTO seed_import_registry (stable_id, establishment_id, batch_id, content_hash, phase, media_state)
+     VALUES ('ownership-card-02', $1, 'ownership-batch', 'hash', 'activated', $2)`,
+    [second.id, JSON.stringify({
+      'interior/01.jpg': { public_id: `establishments/${second.id}/interior/seed0003` },
+      'interior/02.jpg': { public_id: `establishments/${card.id}/interior/listed-by-second0004` },
+    })],
+  );
 
   const result = await run({ rollbackBatchId: 'ownership-batch', snapshotFile, log: () => {} });
 
   expect(destroy).not.toHaveBeenCalledWith(`establishments/temp/${stranger.id}/interior/victim0005`);
-  expect(destroy).toHaveBeenCalledTimes(2);
+  expect(destroy).not.toHaveBeenCalledWith(`establishments/${card.id}/interior/listed-by-second0004`);
+  expect(destroy).toHaveBeenCalledTimes(3);
   expect(destroy).toHaveBeenCalledWith(`establishments/${card.id}/interior/seed0001`);
   expect(destroy).toHaveBeenCalledWith(`establishments/${card.id}/menu_pdf/seed0002`);
-  expect(result).toEqual({ deleted: 1, skipped_claimed: 0, assets_destroyed: 2 });
+  expect(destroy).toHaveBeenCalledWith(`establishments/${second.id}/interior/seed0003`);
+  expect(result).toEqual({ deleted: 2, skipped_claimed: 0, assets_destroyed: 3 });
 });
