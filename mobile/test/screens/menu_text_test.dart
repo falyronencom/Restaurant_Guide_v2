@@ -304,6 +304,18 @@ void main() {
 
     testWidgets('«Оригинал» приводит к PDF; тап по чипу — раздел к верху',
         (tester) async {
+      // Десерты длиннее экрана: после «Оригинал» их заголовок уходит вверх,
+      // и подсвечен должен быть их чип, а не «Супы» с начала.
+      _menuAnswer = (_) => jsonBody(menuItemsEnvelope([
+            ..._items,
+            for (var i = 0; i < 15; i++)
+              menuItemRow(
+                  id: 'd$i',
+                  name: 'Торт $i',
+                  price: 9,
+                  category: 'Десерты',
+                  position: 10 + i),
+          ]));
       _stand();
       await _pumpCard(tester);
       await _openMenuScreen(tester);
@@ -328,6 +340,14 @@ void main() {
       final pdf = tester.getRect(find.text('Открыть PDF'));
       expect(pdf.top, greaterThanOrEqualTo(listTop));
       expect(pdf.bottom, lessThanOrEqualTo(700));
+      final selected = find.descendant(
+          of: screen,
+          matching: find.byWidgetPredicate(
+              (w) => w is Semantics && w.properties.selected == true));
+      expect(selected, findsOneWidget);
+      expect(find.descendant(of: selected, matching: find.text('Десерты')),
+          findsOneWidget,
+          reason: 'после «Оригинал» подсвечен не тот раздел, где оказались');
 
       position.jumpTo(0);
       await tester.pumpAndSettle();

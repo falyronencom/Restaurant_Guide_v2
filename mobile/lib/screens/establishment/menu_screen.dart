@@ -115,6 +115,8 @@ class _MenuScreenState extends State<MenuScreen> {
     } finally {
       _jumping = false;
     }
+    // Переход не по чипу («Оригинал») — подсветка по тому, где оказались.
+    if (chip == null && mounted) _syncActiveChip();
   }
 
   @override
