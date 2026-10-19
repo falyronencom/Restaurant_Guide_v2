@@ -16,8 +16,9 @@
  * service call), `validate` in middleware/errorHandler.js (a request rejected
  * by express-validator has already been written to disk by multer and never
  * reaches a controller), createUpload in middleware/upload.js (a form refused
- * for a NUL in a text field, after multer wrote the file), tempMediaRoutes and
- * authController.uploadAvatar (their own unlink calls, predating this helper).
+ * for a NUL in a text field, after multer wrote the file), tempMediaRoutes (this
+ * helper on its refusals from 19.10.2026, its own unlink after a transfer) and
+ * authController.uploadAvatar (its own unlink, predating this helper).
  */
 
 import fs from 'fs';

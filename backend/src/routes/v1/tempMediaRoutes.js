@@ -18,36 +18,21 @@
 
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
 import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { AppError, validate } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, createUpload, tempUploadStorage } from '../../middleware/upload.js';
 import { body } from 'express-validator';
 import * as CloudinaryUtil from '../../config/cloudinary.js';
 import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 import { DailyUploadLimitError, sendWithinDailyAllowance } from '../../services/uploadAllowance.js';
 import logger from '../../utils/logger.js';
+// A refused file is removed without waiting (the answer goes out at once);
+// discardTempUpload never rejects and logs a removal that failed — the bare
+// unlink before 19.10.2026 dropped that failure.
+import { discardTempUpload } from '../../utils/tempUpload.js';
 
 const router = express.Router();
-
-/**
- * Configure multer for temporary file uploads
- *
- * Destination is the module-relative TEMP_UPLOAD_DIR (backend/tmp/uploads);
- * middleware/upload.js creates it at import time, so it exists before the
- * first write regardless of the process cwd.
- */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, TEMP_UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
 
 /**
  * File filter to accept image types and PDF
@@ -67,9 +52,11 @@ const fileFilter = (req, file, cb) => {
  * Create multer upload instance
  *
  * 60MB ceiling covers PDF menu uploads; images capped to 10MB in request handler.
+ * Storage: tempUploadStorage of middleware/upload.js — TEMP_UPLOAD_DIR, a
+ * UUID name with the extension of the file's type, never the client's.
  */
 const upload = createUpload({
-  storage,
+  storage: tempUploadStorage,
   fileFilter,
   limits: {
     ...MULTIPART_LIMITS,
@@ -151,7 +138,7 @@ router.post(
       if (isPdfUpload) {
         // PDF path — only allowed with type='menu'
         if (type !== 'menu') {
-          fs.unlink(req.file.path, () => {});
+          discardTempUpload(req.file);
           return res.status(422).json({
             success: false,
             message: UPLOAD_REFUSALS.pdfOnlyInMenu,
@@ -162,7 +149,7 @@ router.post(
         // Mimetype is client-supplied: a PDF-compatible .ai arrives as
         // application/pdf, so the extension is the discriminating check.
         if (!CloudinaryUtil.hasValidPdfExtension(req.file.originalname)) {
-          fs.unlink(req.file.path, () => {});
+          discardTempUpload(req.file);
           return res.status(422).json({
             success: false,
             message: UPLOAD_REFUSALS.invalidFileType,
@@ -171,10 +158,21 @@ router.post(
         }
 
         if (!CloudinaryUtil.isValidPdfSize(req.file.size)) {
-          fs.unlink(req.file.path, () => {});
+          discardTempUpload(req.file);
           return res.status(422).json({
             success: false,
             message: UPLOAD_REFUSALS.pdfTooLarge,
+            error: { code: 'FILE_TOO_LARGE' },
+          });
+        }
+
+        // The cloud would refuse it after the transfer (config/cloudinary.js
+        // CLOUD_MAX_FILE_MB): refused here, with the reason and a way out.
+        if (!CloudinaryUtil.fitsCloudFileLimit(req.file.size)) {
+          discardTempUpload(req.file);
+          return res.status(422).json({
+            success: false,
+            message: UPLOAD_REFUSALS.pdfOverCloudLimit(CloudinaryUtil.CLOUD_MAX_FILE_MB),
             error: { code: 'FILE_TOO_LARGE' },
           });
         }
@@ -221,7 +219,7 @@ router.post(
         !CloudinaryUtil.isValidImageType(req.file.mimetype) ||
         !CloudinaryUtil.hasValidImageExtension(req.file.originalname)
       ) {
-        fs.unlink(req.file.path, () => {});
+        discardTempUpload(req.file);
         return res.status(422).json({
           success: false,
           message: UPLOAD_REFUSALS.invalidFileType,
@@ -232,7 +230,7 @@ router.post(
       }
 
       if (!CloudinaryUtil.isValidImageSize(req.file.size)) {
-        fs.unlink(req.file.path, () => {});
+        discardTempUpload(req.file);
         return res.status(422).json({
           success: false,
           message: UPLOAD_REFUSALS.photoTooLarge,
@@ -275,7 +273,7 @@ router.post(
     } catch (error) {
       // Clean up file if it exists
       if (req.file && req.file.path) {
-        fs.unlink(req.file.path, () => {});
+        discardTempUpload(req.file);
       }
 
       // The day's allowance is spent: the client's refusal (429), sent by

@@ -16,6 +16,8 @@
  * Оборванная связь — не отказ: сервер мог записать строку и потерять только
  * ответ, и файл остаётся, а журнал называет его (ревью Phase 3.5 18.10.2026).
  *
+ * С 19.10.2026 то же правило — у аватара (находка Н3, тот же PR сессии Б).
+ *
  * Облако — настоящий config/cloudinary.js; подменены только сетевые вызовы
  * SDK: uploader.upload отвечает public_id в папке, которую назвал сервис,
  * uploader.destroy записывается. Так проверяется и папка, которую сервис
@@ -293,20 +295,18 @@ describe('картинка акции', () => {
   });
 
   // id карточки прописными база принимает, а папку с прописными deleteImage
-  // своей не признаёт — файл остаётся; журнал должен его назвать.
-  test('id карточки прописными: удаление отказано — файл назван в журнале', async () => {
+  // своей не признаёт: до 19.10.2026 картинка оставалась в облаке. Теперь
+  // акция берёт только канонический id — отказ до облака (находка Н6, сессия
+  // Б); отказанное удаление в журнале держит тест медиа карточки ниже.
+  test('id карточки прописными: отказ до облака — в облако ничего не ушло', async () => {
     const { token, card } = await newPartner();
-    const upperId = card.id.toUpperCase();
-    refuseStatement(/INSERT INTO promotions/);
-    const warn = jest.spyOn(logger, 'warn');
 
-    const res = await createWithImage(token, upperId);
+    const res = await createWithImage(token, card.id.toUpperCase());
 
-    expect(res.status).toBe(500);
-    expect(uploaded).toEqual([`establishments/${upperId}/promotions/fresh0001`]);
-    expect(destroy).not.toHaveBeenCalled();
-    expect(warnedAbout(warn, `establishments/${upperId}/promotions/fresh0001`))
-      .toEqual(['Uploaded file the database did not record is left in the cloud']);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Не выбрано заведение.');
+    expect(uploaded).toEqual([]);
+    expect(await promotionsOf(card.id)).toEqual([]);
   });
 
   test('без отказа базы: при создании ничего не удаляется', async () => {
@@ -352,6 +352,24 @@ describe('медиа карточки', () => {
   };
 
   const NEXT_POSITION = /COALESCE\(MAX\(position\), -1\) \+ 1/;
+
+  // Маршрут медиа карточки принимает id прописными (isUUID), и файл ложится в
+  // папку с прописными, которую deleteImage своей не признаёт: удаление
+  // отказано — файл остаётся, журнал должен его назвать.
+  test('id карточки прописными: удаление отказано — файл назван в журнале', async () => {
+    const { token, card } = await newPartner();
+    const upperId = card.id.toUpperCase();
+    refuseStatement(/INSERT INTO establishment_media/);
+    const warn = jest.spyOn(logger, 'warn');
+
+    const res = await uploadMedia(token, upperId);
+
+    expect(res.status).toBe(500);
+    expect(uploaded).toEqual([`establishments/${upperId}/interior/fresh0001`]);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(warnedAbout(warn, `establishments/${upperId}/interior/fresh0001`))
+      .toEqual(['Uploaded file the database did not record is left in the cloud']);
+  });
 
   test('фото: база отказала на записи строки — файл удалён, ответ прежний', async () => {
     const { token, card } = await newPartner();
@@ -432,5 +450,92 @@ describe('медиа карточки', () => {
     const media = await mediaOf(card.id);
     expect(media).toHaveLength(1);
     expect(media[0].url).toContain(`establishments/${card.id}/interior/fresh0001`);
+  });
+});
+
+// Аватар (находка Н3 ревью PR #86; слово Координатора 19.10.2026 — тем же
+// правилом): новый файл уходит в облако раньше записи avatar_url. До правки
+// при сбое записи он оставался в avatars/<id> без ссылки.
+describe('аватар', () => {
+  const AVATAR_UPDATE = /UPDATE users\s+SET[\s\S]*avatar_url/;
+
+  const newUser = async () => {
+    seq += 1;
+    return createUserAndGetTokens({
+      email: `cloud-rollback-avatar-${Date.now()}-${seq}@test.com`,
+      password: 'User123!@#',
+      name: 'Гость',
+      role: 'user',
+    });
+  };
+
+  const uploadAvatar = (token) => request(app)
+    .post('/api/v1/auth/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('avatar', Buffer.from('fake-jpeg'), JPEG);
+
+  const avatarOf = async (userId) => (
+    await query('SELECT avatar_url FROM users WHERE id = $1', [userId])).rows[0].avatar_url;
+
+  test('база отказала после загрузки — файл удалён, ответ прежний (500)', async () => {
+    const { user, accessToken } = await newUser();
+    refuseStatement(AVATAR_UPDATE);
+
+    const res = await uploadAvatar(accessToken);
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe(SERVER_FAILURE);
+    expect(uploaded).toEqual([`avatars/${user.id}/fresh0001`]);
+    expect(destroy.mock.calls).toEqual([[`avatars/${user.id}/fresh0001`]]);
+    expect(await avatarOf(user.id)).toBeNull();
+  });
+
+  // Прежний аватар удаляется только после успешной записи (ревью по линзе,
+  // круг 2): откат нового его не трогает, учётка остаётся с ним.
+  test('база отказала — прежний аватар цел и остаётся у учётки, удалён только новый', async () => {
+    const { user, accessToken } = await newUser();
+    const oldUrl = deliveryUrl(`avatars/${user.id}/old0007`);
+    await query('UPDATE users SET avatar_url = $1 WHERE id = $2', [oldUrl, user.id]);
+    refuseStatement(AVATAR_UPDATE);
+
+    const res = await uploadAvatar(accessToken);
+
+    expect(res.status).toBe(500);
+    expect(destroy.mock.calls).toEqual([[`avatars/${user.id}/fresh0001`]]);
+    expect(await avatarOf(user.id)).toBe(oldUrl);
+  });
+
+  test('запись не нашла учётку (её отключили в это время) — файл удалён', async () => {
+    const { user, accessToken } = await newUser();
+    statementSpy(AVATAR_UPDATE, async () => ({ rows: [], rowCount: 0 }));
+
+    const res = await uploadAvatar(accessToken);
+
+    expect(res.status).toBe(500);
+    expect(destroy.mock.calls).toEqual([[`avatars/${user.id}/fresh0001`]]);
+  });
+
+  test('связь оборвалась после записи — файл цел, учётка на него ссылается, журнал его называет', async () => {
+    const { user, accessToken } = await newUser();
+    loseConnectionOn(AVATAR_UPDATE, { committed: true });
+    const warn = jest.spyOn(logger, 'warn');
+
+    const res = await uploadAvatar(accessToken);
+
+    expect(res.status).toBe(500);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(await avatarOf(user.id)).toContain(`avatars/${user.id}/fresh0001`);
+    expect(warnedAbout(warn, `avatars/${user.id}/fresh0001`))
+      .toEqual(['Uploaded file kept: the database may have recorded it']);
+  });
+
+  test('запись прошла — ничего не удаляется', async () => {
+    const { user, accessToken } = await newUser();
+
+    const res = await uploadAvatar(accessToken);
+
+    expect(res.status).toBe(200);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(await avatarOf(user.id)).toContain(`avatars/${user.id}/fresh0001`);
   });
 });

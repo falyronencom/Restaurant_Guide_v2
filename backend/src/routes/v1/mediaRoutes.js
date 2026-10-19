@@ -21,13 +21,12 @@
 
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import * as MediaController from '../../controllers/mediaController.js';
 import * as MediaValidation from '../../validators/mediaValidation.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, createUpload, tempUploadStorage } from '../../middleware/upload.js';
+import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 
 const router = express.Router({ mergeParams: true });
 
@@ -38,10 +37,9 @@ const router = express.Router({ mergeParams: true });
  * directory before they're processed and uploaded to Cloudinary.
  * 
  * Configuration:
- * - Storage: Disk storage in TEMP_UPLOAD_DIR (backend/tmp/uploads, module-relative —
- *   owned by middleware/upload.js; never a cwd-relative string: cwd is backend/
- *   locally and /app on Railway)
- * - Filename: UUID-based to prevent conflicts
+ * - Storage: tempUploadStorage of middleware/upload.js — TEMP_UPLOAD_DIR
+ *   (backend/tmp/uploads, module-relative), a UUID name with the extension of
+ *   the file's type, never the client's
  * - File filter: Only allow image types (jpeg, jpg, png, webp, heic)
  * - Size limit: 10MB maximum per file
  * 
@@ -49,20 +47,6 @@ const router = express.Router({ mergeParams: true });
  * upload completes. A cron job or periodic cleanup process should remove old
  * files from TEMP_UPLOAD_DIR to prevent disk space issues.
  */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // middleware/upload.js creates TEMP_UPLOAD_DIR at import time, so it exists
-    // before the first write regardless of the process cwd
-    cb(null, TEMP_UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    // Generate unique filename using UUID to prevent conflicts
-    // Keep original file extension for proper MIME type detection
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-
 /**
  * File filter to accept only image types
  * 
@@ -98,7 +82,7 @@ const fileFilter = (req, file, cb) => {
  * cheap and centralizing the check in the service keeps the pipeline uniform.
  */
 const upload = createUpload({
-  storage,
+  storage: tempUploadStorage,
   fileFilter,
   limits: {
     ...MULTIPART_LIMITS,
@@ -249,8 +233,13 @@ router.delete(
  * Error handler for multer upload errors
  * 
  * This middleware catches errors from multer (file size exceeded, invalid type, etc.)
- * and formats them as consistent API error responses.
- * 
+ * and formats them as consistent API error responses. The partner reads the
+ * texts of the wizard's upload (UPLOAD_REFUSALS — the same file rules, from
+ * 19.10.2026; English before); the codes stay — the site translates by them
+ * (web/src/lib/partner/errors.ts). multer's other refusals (Too many fields
+ * and the like) keep its own text, as on the wizard's upload: a request no
+ * client sends (multipart-limits.test.js holds those).
+ *
  * This should be registered AFTER the routes that use multer uploads.
  */
 router.use((error, req, res, next) => {
@@ -259,7 +248,7 @@ router.use((error, req, res, next) => {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
         success: false,
-        message: 'File size exceeds 60MB limit',
+        message: UPLOAD_REFUSALS.fileTooLarge,
         error: {
           code: 'FILE_TOO_LARGE',
         },
@@ -269,7 +258,7 @@ router.use((error, req, res, next) => {
     if (error.code === 'LIMIT_UNEXPECTED_FILE') {
       return res.status(400).json({
         success: false,
-        message: 'Unexpected field in file upload',
+        message: UPLOAD_REFUSALS.unexpectedField,
         error: {
           code: 'INVALID_UPLOAD_FIELD',
         },
@@ -287,10 +276,10 @@ router.use((error, req, res, next) => {
   }
 
   if (error.message && error.message.includes('Invalid file type')) {
-    // Handle file filter errors
+    // Handle file filter errors: the filter's own text is English and internal
     return res.status(422).json({
       success: false,
-      message: error.message,
+      message: UPLOAD_REFUSALS.invalidFileType,
       error: {
         code: 'INVALID_FILE_TYPE',
       },

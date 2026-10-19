@@ -16,30 +16,15 @@
 
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import * as PromotionController from '../../controllers/promotionController.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { AppError } from '../../middleware/errorHandler.js';
-import { MULTIPART_LIMITS, TEMP_UPLOAD_DIR, createUpload } from '../../middleware/upload.js';
+import { MULTIPART_LIMITS, createUpload, tempUploadStorage } from '../../middleware/upload.js';
 import { PROMOTION_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 
 const router = express.Router();
 
-// Multer config — same pattern as mediaRoutes.js; the temp dir is the
-// module-relative TEMP_UPLOAD_DIR (created at import by middleware/upload.js)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, TEMP_UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-
-// The refusal is an AppError: this router has no multer error handler of its
-// own (media and temp media do), so errorHandler sends it — 422
+// The refusal is an AppError, sent by errorHandler — 422
 // INVALID_FILE_TYPE, the code and text of the service's own type check.
 // Before 16.10.2026 it was a plain Error, which errorHandler answered with 500.
 const fileFilter = (req, file, cb) => {
@@ -51,8 +36,10 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+// Storage: tempUploadStorage of middleware/upload.js — TEMP_UPLOAD_DIR, a UUID
+// name with the extension of the file's type, never the client's.
 const upload = createUpload({
-  storage,
+  storage: tempUploadStorage,
   fileFilter,
   limits: {
     ...MULTIPART_LIMITS,
@@ -89,5 +76,16 @@ router.delete(
   '/:id',
   PromotionController.deletePromotion,
 );
+
+// A picture above multer's limit (10 МБ) is refused before the service, so
+// the service's own size refusal never answered it: the partner read multer's
+// «File too large» (413, LIMIT_FILE_SIZE). The approved text now, with the
+// same status and code; every other error goes on to errorHandler unchanged.
+router.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+    return next(new AppError(PROMOTION_REFUSALS.imageTooLarge, 413, 'LIMIT_FILE_SIZE'));
+  }
+  return next(error);
+});
 
 export default router;

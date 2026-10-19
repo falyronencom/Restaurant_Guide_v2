@@ -1,6 +1,7 @@
 /**
  * A file sent to the cloud before the database wrote the row that names it —
- * a promotion's picture, a card's photo or PDF menu. Until 18.10.2026 a
+ * a promotion's picture, a card's photo or PDF menu, and from 19.10.2026 an
+ * avatar (controllers/authController.js uploadAvatar). Until 18.10.2026 a
  * failure of that write left the file in the paid cloud with no row naming
  * it (brief «500 вместо отказа», p. 9). The Coordinator's word of 17.10.2026:
  * when the database refuses, the file just uploaded is deleted.
@@ -38,7 +39,8 @@ export const databaseRefused = (error) => error instanceof DatabaseError && erro
  * database's error as before.
  *
  * @param {string} publicId - What the upload returned
- * @param {string[]} folders - The card's folders (CloudinaryUtil.ownedFolders)
+ * @param {string[]} folders - The owner's folders (CloudinaryUtil.ownedFolders:
+ *   the card's, or the account's avatars)
  * @param {Error|null} writeError - What the row's write threw; null when no
  *   row was written for certain (a read failed before the write, an UPDATE
  *   matched no row)

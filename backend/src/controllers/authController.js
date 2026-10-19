@@ -26,6 +26,7 @@ import {
 } from '../config/cloudinary.js';
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
+import { discardUnrecordedUpload } from '../services/unrecordedUpload.js';
 import logger from '../utils/logger.js';
 import { NAME_REFUSALS } from '../utils/userName.js';
 
@@ -586,6 +587,11 @@ export async function updateProfile(req, res, next) {
  * - 401 Unauthorized: Not authenticated
  * - 429 RATE_LIMIT_EXCEEDED: the account's daily upload allowance is spent
  *   (services/uploadAllowance.js; the app shows its own text for the avatar)
+ *
+ * When the write of avatar_url fails after the upload, the new file is
+ * deleted unless the row may hold it (services/unrecordedUpload.js — the rule
+ * of the promotion's picture and the card's media, from 19.10.2026); the
+ * error goes on as before.
  */
 export async function uploadAvatar(req, res, next) {
   const tempFilePath = req.file?.path;
@@ -615,8 +621,18 @@ export async function uploadAvatar(req, res, next) {
     );
     const avatarUrl = uploadResult.secure_url;
 
-    // Update avatar_url in database with absolute Cloudinary URL
-    const user = await authService.updateUserProfile(userId, { avatarUrl });
+    // Update avatar_url in database with absolute Cloudinary URL. The service
+    // throws USER_NOT_FOUND when the UPDATE matched no row (the account was
+    // deactivated meanwhile) and AVATAR_URL_TOO_LONG before the query: no row
+    // holds the file then for certain; any other error is the query's own.
+    let user;
+    try {
+      user = await authService.updateUserProfile(userId, { avatarUrl });
+    } catch (error) {
+      const notWritten = error.message === 'USER_NOT_FOUND' || error.message === 'AVATAR_URL_TOO_LONG';
+      await discardUnrecordedUpload(uploadResult.public_id, [ownedFolders.avatars(userId)], notWritten ? null : error);
+      throw error;
+    }
 
     // Delete the old avatar from Cloudinary. The stored link is not trusted to
     // name our asset (PUT /auth/profile used to store any URL): only an asset

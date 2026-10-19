@@ -19,6 +19,7 @@
 import * as MediaService from '../services/mediaService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -51,7 +52,7 @@ export const uploadMedia = asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
-      message: 'No file uploaded',
+      message: UPLOAD_REFUSALS.fileRequired,
       error: {
         code: 'FILE_REQUIRED',
       },

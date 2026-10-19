@@ -17,6 +17,21 @@
  */
 
 import { body, param, query } from 'express-validator';
+import { longerThan } from '../utils/textLength.js';
+
+/**
+ * The longest caption establishment_media.caption holds — varchar(255),
+ * counted as the database counts it (utils/textLength.js). isLength skips
+ * the variation selectors U+FE0E/U+FE0F: 255 × «❤️» passed it as 255 and
+ * reached the database as 510 characters — 22001, a 500 (review of PR #86,
+ * finding 2). A caption is text: after trim() it is a string, or an array
+ * when the field came twice in a form (or as an array in JSON) — which pg
+ * stored as the literal {"a","b"}, a 500 when longer than the column. An
+ * array is refused as well (review round 2 of 19.10.2026). The refusal and
+ * its text are the same as before.
+ */
+const CAPTION_MAX_CHARS = 255;
+const captionFits = (value) => typeof value === 'string' && !longerThan(value, CAPTION_MAX_CHARS);
 
 /**
  * Valid media type values
@@ -58,7 +73,7 @@ export const validateUpload = [
   body('caption')
     .optional()
     .trim()
-    .isLength({ max: 255 })
+    .custom(captionFits)
     .withMessage('Caption must not exceed 255 characters'),
 
   // is_primary validation (optional, defaults to false)
@@ -131,7 +146,7 @@ export const validateUpdate = [
   body('caption')
     .optional()
     .trim()
-    .isLength({ max: 255 })
+    .custom(captionFits)
     .withMessage('Caption must not exceed 255 characters'),
 
   // Position validation (optional)

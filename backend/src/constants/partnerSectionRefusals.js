@@ -102,13 +102,21 @@ export const PROMOTION_REFUSALS = Object.freeze({
  * (routes/v1/tempMediaRoutes.js). The app shows the text after its own prefix
  * «Ошибка при загрузке фото:» until its next build. `dailyLimit` also answers
  * the card's media (services/mediaService.js) and the avatar
- * (controllers/authController.js) — one allowance for every uploader.
+ * (controllers/authController.js) — one allowance for every uploader. The
+ * card's media (routes/v1/mediaRoutes.js, services/mediaService.js) refuses a
+ * file by the same rules, so with the same texts (from 19.10.2026; English
+ * before — the site translated by code, the app does not call that address).
  */
 export const UPLOAD_REFUSALS = Object.freeze({
   fileRequired: 'Файл не выбран.',
   pdfOnlyInMenu: 'PDF можно добавить только в меню.',
   invalidFileType: 'Этот формат не подходит: фото — JPG, PNG, WebP или HEIC, меню — ещё и PDF.',
   pdfTooLarge: 'Файл меню больше 60 МБ. Выберите файл поменьше.',
+  // A menu PDF above the cloud's file limit on the account's plan
+  // (config/cloudinary.js CLOUD_MAX_FILE_MB, 10 on Free), refused before the
+  // cloud — the wizard's upload and the card's media. Wording approved by the
+  // Coordinator on 17.10.2026 for 10 МБ; the number follows the setting.
+  pdfOverCloudLimit: (mb) => `Файл PDF больше ${mb} МБ — уменьшите его или загрузите меню фотографиями`,
   photoTooLarge: 'Фото больше 10 МБ. Выберите фото поменьше.',
   // multer's own ceiling for any file — 60 МБ (the old text said 10MB).
   fileTooLarge: 'Файл больше 60 МБ. Выберите файл поменьше.',
