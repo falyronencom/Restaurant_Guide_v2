@@ -56,3 +56,22 @@ it('collapses an open-redirect returnTo to /', async () => {
 it('is noindex (utility page, never a search target)', () => {
   expect(metadata.robots).toEqual({ index: false, follow: false });
 });
+
+// The way back after registering (п. 11) goes through the same guard as /login
+// and /register (#95): a value that leaves the site — the classes
+// auth-return-guard-ways-back.test.tsx replays — reaches the island as «/»,
+// so «Позже» / «Продолжить» never lead off the site.
+it.each([
+  '//evil.example',
+  '/\\evil.example',
+  '/\t/evil.example',
+  '/\n/evil.example',
+  '/\r/evil.example',
+])('an off-site returnTo %p reaches the island as /', async (returnTo) => {
+  render(await VerifyEmailPage({ searchParams: Promise.resolve({ returnTo }) }));
+
+  expect(screen.getByTestId('verify-email-form')).toHaveAttribute(
+    'data-return-to',
+    '/',
+  );
+});

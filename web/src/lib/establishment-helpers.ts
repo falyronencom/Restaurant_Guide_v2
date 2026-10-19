@@ -60,9 +60,8 @@ export function ratingLabel(rating: number | null | undefined): string | null {
 
 /**
  * Map attribute boolean key → display label.
- * Mirrors mobile `_buildAttributesSection` labels — except «Терраса»: the app
- * still spells it «Терасса» (a typo the site used to copy «for consistency»;
- * fixed here, сверка находок тестировщика с сайтом 18.10, Х11).
+ * Mirrors mobile `_buildAttributesSection` labels («Терраса» — the typo
+ * «Терасса» is fixed on both, the site here and the app in #90; Х11).
  */
 export const ATTRIBUTE_LABELS: Record<string, string> = {
   delivery: 'Доставка еды',
