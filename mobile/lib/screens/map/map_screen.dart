@@ -88,6 +88,11 @@ class _MapScreenState extends State<MapScreen> {
   /// Сколько из найденного стало пинами (заведения с координатами).
   int _phraseShown = 0;
 
+  /// Сколько первых заведений выдачи фразы совпали с ней (`matchedTotal`);
+  /// null — сервер поля не прислал. Плашка говорит, что остальные метки —
+  /// лишь «могут подойти» (Ш1).
+  int? _phraseMatched;
+
   /// Фраза, снятая с карты крестиком: пока в строке поиска она же, карта
   /// показывает все заведения.
   String? _dismissedPhrase;
@@ -130,6 +135,7 @@ class _MapScreenState extends State<MapScreen> {
                   phrase: _mapPhrase!,
                   shown: _phraseShown,
                   total: _phraseTotal,
+                  matchedTotal: _phraseMatched,
                   onClear: _clearMapPhrase,
                 ),
               ),
@@ -643,6 +649,7 @@ class _MapScreenState extends State<MapScreen> {
       // Счёт прежней фразы под новой не показываем — до ответа только фраза.
       _phraseTotal = 0;
       _phraseShown = 0;
+      _phraseMatched = null;
     });
 
     try {
@@ -652,6 +659,7 @@ class _MapScreenState extends State<MapScreen> {
       );
       if (!mounted || generation != _fetchGeneration) return;
       _phraseTotal = result.total;
+      _phraseMatched = result.matchedTotal;
       _phraseShown = result.results
           .where((e) => e.latitude != null && e.longitude != null)
           .length;

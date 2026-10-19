@@ -171,7 +171,7 @@ class FilterConstants {
   static const Map<String, String> amenities = {
     'delivery': 'Доставка еды',
     'wifi': 'Wi-Fi',
-    'terrace': 'Терасса',
+    'terrace': 'Терраса',
     'parking': 'Парковка',
     'live_music': 'Живая музыка',
     'kids_zone': 'Детская зона',

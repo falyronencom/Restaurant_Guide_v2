@@ -60,6 +60,16 @@ export type SmartSearchResponse = {
   pagination: PaginationMeta;
   /** true = the backend fell back to the classic text search (no parse) */
   fallback: boolean;
+  /**
+   * How many of the whole result set, from its start and across pages, match
+   * the phrase; the rest is «возможно, вам подойдут» (Coordinator В3,
+   * 17.10.2026: a phrase nothing matched — «Buno» — gets the city as
+   * suggestions, not as matches). Added 18.10.2026; a backend from before
+   * that omits it.
+   */
+  matchedTotal?: number;
+  /** matchedTotal > 0 */
+  matched?: boolean;
 };
 
 /*

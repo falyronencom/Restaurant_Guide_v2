@@ -142,6 +142,9 @@ Map<String, dynamic> smartSearchEnvelope({
   int totalPages = 3,
   bool hasNext = true,
   bool hasPrevious = false,
+  /// Добавочное поле сервера с 18.10.2026 (В3); null — поля нет, как у
+  /// сервера до него.
+  int? matchedTotal,
 }) =>
     <String, dynamic>{
       'success': true,
@@ -157,6 +160,8 @@ Map<String, dynamic> smartSearchEnvelope({
           'hasPrevious': hasPrevious,
         },
         'fallback': fallback,
+        if (matchedTotal != null) 'matched': matchedTotal > 0,
+        if (matchedTotal != null) 'matchedTotal': matchedTotal,
       },
     };
 

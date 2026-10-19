@@ -136,6 +136,12 @@ const wizardUpload = (account) => request(app)
   .field('type', 'interior')
   .attach('file', PNG_BYTES, { filename: 'photo.jpg', contentType: 'image/jpeg' });
 
+const wizardMenuPdf = (account) => request(app)
+  .post('/api/v1/partner/media/upload')
+  .set('Authorization', `Bearer ${account.token}`)
+  .field('type', 'menu')
+  .attach('file', PDF_BYTES, { filename: 'menu.pdf', contentType: 'application/pdf' });
+
 const createPromotion = (account, { withImage = true } = {}) => {
   const req = request(app)
     .post('/api/v1/partner/promotions')
@@ -316,6 +322,36 @@ describe('один счётчик на все загрузчики', () => {
     expect((await counters(partner)).files).toBe(100);
 
     expectDailyLimitRefusal(await wizardUpload(partner));
+  });
+
+  // Предел — «100 файлов и 300 МБ»: каждая дверь тратит обе меры, файл и
+  // байты своего файла. Порознь по каждой двери — общая сумма не отличила бы
+  // дверь, которая байтов не тратит. Фото (16 байт) и PDF (15) разной длины.
+  test('каждый загрузчик тратит и файл, и байты своего файла: мастер и карточка (фото и PDF), акция (создание и замена картинки), аватар', async () => {
+    const partner = await newPartnerWithCard();
+    const created = await createPromotion(partner, { withImage: false });
+    expect(created.status).toBe(201);
+    const promotionId = created.body.data.id;
+
+    const doors = [
+      ['мастер: фото', () => wizardUpload(partner), 201, PNG_BYTES.length],
+      ['мастер: PDF меню', () => wizardMenuPdf(partner), 201, PDF_BYTES.length],
+      ['карточка: фото', () => cardMedia(partner), 201, PNG_BYTES.length],
+      ['карточка: PDF меню', () => cardMenuPdf(partner), 201, PDF_BYTES.length],
+      ['акция: картинка при создании', () => createPromotion(partner), 201, PNG_BYTES.length],
+      ['акция: новая картинка', () => updatePromotionImage(partner, promotionId), 200, PNG_BYTES.length],
+      ['аватар', () => avatar(partner), 200, PNG_BYTES.length],
+    ];
+    const spent = {};
+    const expected = {};
+    for (const [door, send, status, size] of doors) {
+      const before = await counters(partner);
+      const res = await send();
+      const after = await counters(partner);
+      spent[door] = { status: res.status, files: after.files - before.files, bytes: after.bytes - before.bytes };
+      expected[door] = { status, files: 1, bytes: size };
+    }
+    expect(spent).toEqual(expected);
   });
 });
 

@@ -18,7 +18,7 @@ import { EstablishmentWizard } from './EstablishmentWizard';
  * render, so the establishment is loaded client-side via a buffered Route Handler
  * fetch (as the dashboard does) and the wizard is seeded in edit mode.
  * Self-suspended (no
- * suspend_reason) → read-only.
+ * suspend_reason) → read-only until the partner resumes it from the wizard.
  */
 export function EditWizardLoader({ id }: { id: string }) {
   const [state, setState] = useState<
@@ -86,6 +86,12 @@ export function EditWizardLoader({ id }: { id: string }) {
       initial={state.initial}
       status={state.status}
       readOnly={state.readOnly}
+      // Resumed (suspended → active): the card is live again and editable (С3).
+      onResumed={() =>
+        setState((prev) =>
+          prev.phase === 'ready' ? { ...prev, status: 'active', readOnly: false } : prev,
+        )
+      }
     />
   );
 }

@@ -1061,14 +1061,24 @@ describe('Media System - Upload Operations', () => {
       expect(response.body.data.is_primary).toBe(true);
     });
 
-    test('should reject update to other partner\'s media', async () => {
+    test('should reject update to other partner\'s media — through their card and through one\'s own', async () => {
+      // Two doors to another partner's photo: name their card (the card
+      // ownership check refuses), or name one's own card with their media id
+      // (only the media-belongs-to-this-card check refuses).
       const otherPartner = await createPartnerAndGetToken();
+      const ownCard = await createTestEstablishment(otherPartner.partner.id);
 
-      await request(app)
-        .put(`/api/v1/partner/establishments/${establishment.id}/media/${media.id}`)
-        .set('Authorization', `Bearer ${otherPartner.token}`)
-        .send({ caption: 'Hacked' })
-        .expect(404);
+      const statuses = {};
+      for (const [door, cardId] of [['their card', establishment.id], ['own card', ownCard.id]]) {
+        statuses[door] = (await request(app)
+          .put(`/api/v1/partner/establishments/${cardId}/media/${media.id}`)
+          .set('Authorization', `Bearer ${otherPartner.token}`)
+          .send({ caption: 'Hacked' })).status;
+      }
+      expect(statuses).toEqual({ 'their card': 404, 'own card': 404 });
+
+      const result = await pool.query('SELECT caption FROM establishment_media WHERE id = $1', [media.id]);
+      expect(result.rows[0].caption).toBe('Original caption');
     });
   });
 
@@ -1115,6 +1125,9 @@ describe('Media System - Upload Operations', () => {
     });
 
     test('should delete from database even if Cloudinary fails', async () => {
+      // The failure must be on the path: without an owned asset the service
+      // never calls deleteImage, and the rejection below would never fire.
+      cloudinary.isOwnedAsset.mockReturnValue(true);
       cloudinary.deleteImage.mockRejectedValueOnce(new Error('Cloudinary error'));
 
       await request(app)
@@ -1122,6 +1135,7 @@ describe('Media System - Upload Operations', () => {
         .set('Authorization', `Bearer ${partnerToken}`)
         .expect(200);
 
+      expect(cloudinary.deleteImage).toHaveBeenCalledTimes(1);
       const result = await pool.query(
         'SELECT * FROM establishment_media WHERE id = $1',
         [media.id]
@@ -1129,13 +1143,19 @@ describe('Media System - Upload Operations', () => {
       expect(result.rows).toHaveLength(0);
     });
 
-    test('should reject deletion of other partner\'s media', async () => {
+    test('should reject deletion of other partner\'s media — through their card and through one\'s own', async () => {
+      // Same two doors as for the update: the second is held only by the
+      // media-belongs-to-this-card check (the row is deleted by id alone).
       const otherPartner = await createPartnerAndGetToken();
+      const ownCard = await createTestEstablishment(otherPartner.partner.id);
 
-      await request(app)
-        .delete(`/api/v1/partner/establishments/${establishment.id}/media/${media.id}`)
-        .set('Authorization', `Bearer ${otherPartner.token}`)
-        .expect(404);
+      const statuses = {};
+      for (const [door, cardId] of [['their card', establishment.id], ['own card', ownCard.id]]) {
+        statuses[door] = (await request(app)
+          .delete(`/api/v1/partner/establishments/${cardId}/media/${media.id}`)
+          .set('Authorization', `Bearer ${otherPartner.token}`)).status;
+      }
+      expect(statuses).toEqual({ 'their card': 404, 'own card': 404 });
 
       const result = await pool.query(
         'SELECT * FROM establishment_media WHERE id = $1',

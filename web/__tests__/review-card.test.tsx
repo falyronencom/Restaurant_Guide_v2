@@ -36,8 +36,11 @@ describe('ReviewCard — sync Server Component', () => {
     // Author name.
     expect(screen.getByText('Алексей')).toBeInTheDocument();
 
-    // Rating: StarRating exposes the score via an aria-label.
-    expect(screen.getByLabelText('Оценка: 4 из 5')).toBeInTheDocument();
+    // Rating: StarRating exposes the score via an aria-label — and shows it as
+    // filled stars, which is what a sighted reader actually sees: four of five.
+    const stars = screen.getByLabelText('Оценка: 4 из 5');
+    expect(stars.querySelectorAll('svg')).toHaveLength(5);
+    expect(stars.querySelectorAll('svg.fill-brand')).toHaveLength(4);
 
     // Content body.
     expect(

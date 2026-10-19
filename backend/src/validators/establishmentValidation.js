@@ -17,7 +17,7 @@
  */
 
 import { body, param, query } from 'express-validator';
-import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { BELARUS_PHONE_REGEX } from '../constants/belarusPhone.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 
@@ -61,7 +61,7 @@ const VALID_STATUSES = ['draft', 'pending', 'active', 'suspended'];
  * - latitude: Valid decimal between 51.0-56.0
  * - longitude: Valid decimal between 23.0-33.0
  * - categories: Array of 1-2 valid categories
- * - cuisines: Array of 1-3 valid cuisines
+ * - cuisines: Array of 1-3 valid cuisines (0-3, or absent, for a cuisine-optional category)
  * - working_hours: Valid JSON object
  * 
  * Optional fields:
@@ -153,11 +153,21 @@ export const validateCreate = [
       return true;
     }),
 
-  // Cuisines validation
+  // Cuisines validation: 1-3, or 0-3 for a cuisine-optional category (decision
+  // В5, 17.10.2026; widened 19.10.2026, Ш17 — isCuisineRequired). Such a card
+  // may leave the field out.
   body('cuisines')
-    .isArray({ min: 1, max: 3 })
-    .withMessage('Cuisines must be an array with 1-3 items')
+    .custom((cuisines, { req }) => {
+      if (cuisines === undefined && !isCuisineRequired(req.body.categories)) return true;
+      const minimum = isCuisineRequired(req.body.categories) ? 1 : 0;
+      if (!Array.isArray(cuisines) || cuisines.length < minimum || cuisines.length > 3) {
+        throw new Error('Cuisines must be an array with 1-3 items');
+      }
+      return true;
+    })
+    .bail()
     .custom((cuisines) => {
+      if (cuisines === undefined) return true;
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
         throw new Error(ESTABLISHMENT_REFUSALS.unknownCuisine);
@@ -233,24 +243,26 @@ export const validateUpdate = [
     .isLength({ min: 1, max: 500 })
     .withMessage('Address must be between 1 and 500 characters'),
 
-  // Phone validation (optional)
+  // Phone, email, website, average check — optional at create and at submit.
+  // On an update `null` erases the stored value (the site's cabinet sends it
+  // for a field the partner cleared — сверка находок тестировщика с сайтом,
+  // 18.10, пункт С7); an empty string is still refused, and an absent field is
+  // left as stored. The columns are nullable; the model writes the null.
   body('phone')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .matches(BELARUS_PHONE_REGEX)
     .withMessage('Phone must be in format +375XXXXXXXXX (Belarus number)'),
 
-  // Email validation (optional)
   body('email')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .isEmail()
     .withMessage('Email must be a valid email address')
     .normalizeEmail(),
 
-  // Website validation (optional)
   body('website')
-    .optional()
+    .optional({ values: 'null' })
     .trim()
     .isURL()
     .withMessage('Website must be a valid URL'),
@@ -272,10 +284,21 @@ export const validateUpdate = [
     }),
 
   // Cuisines validation (optional for updates)
+  // An empty list is let through here unless the same request names categories
+  // that need a cuisine: without categories in the body the stored ones decide,
+  // and only the service sees them (updateEstablishment).
   body('cuisines')
     .optional()
-    .isArray({ min: 1, max: 3 })
-    .withMessage('Cuisines must be an array with 1-3 items')
+    .custom((cuisines, { req }) => {
+      const minimum = Array.isArray(req.body.categories) && isCuisineRequired(req.body.categories)
+        ? 1
+        : 0;
+      if (!Array.isArray(cuisines) || cuisines.length < minimum || cuisines.length > 3) {
+        throw new Error('Cuisines must be an array with 1-3 items');
+      }
+      return true;
+    })
+    .bail()
     .custom((cuisines) => {
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
@@ -284,9 +307,8 @@ export const validateUpdate = [
       return true;
     }),
 
-  // Price range validation (optional)
   body('price_range')
-    .optional()
+    .optional({ values: 'null' })
     .isIn(VALID_PRICE_RANGES)
     .withMessage('Price range must be one of: $, $$, $$$'),
 

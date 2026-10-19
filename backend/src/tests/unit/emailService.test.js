@@ -98,6 +98,21 @@ describe('emailService.sendVerificationCodeEmail', () => {
     expect(sentMsg.text).toContain('20 минут');
   });
 
+  // Сверка находок тестировщика с сайтом, 18.10: the code letter goes to app
+  // AND site registrations, so it must not send a site visitor «в приложение».
+  test('the code letter does not say «в приложении» — one neutral line for app and site', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    mockSend.mockResolvedValue({ data: { id: 'msg_abc' }, error: null });
+
+    await emailService.sendVerificationCodeEmail('user@test.com', '333444', 'Иван');
+
+    const sentMsg = mockSend.mock.calls[0][0];
+    for (const body of [sentMsg.html, sentMsg.text]) {
+      expect(body).not.toMatch(/приложени/i);
+      expect(body).toContain(emailService.CODE_PROMPT);
+    }
+  });
+
   test('uses default nirivio.by from-address and 15-minute expiry when env vars unset', async () => {
     process.env.RESEND_API_KEY = 're_test_key';
     mockSend.mockResolvedValue({ data: { id: 'msg_abc' }, error: null });

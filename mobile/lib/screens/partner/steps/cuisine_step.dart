@@ -45,6 +45,24 @@ class CuisineStep extends StatelessWidget {
                 ),
               ),
 
+              // Бару, клубу, кальянной, боулингу, караоке и бильярду кухню
+              // можно не выбирать (решение Координатора В5, 17.10.2026; Ш17,
+              // 19.10.2026) — иначе партнёр клуба брал первую попавшуюся.
+              // Подсказка видна только им, поэтому без перечня.
+              if (provider.isCuisineOptional) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Для этого заведения кухню выбирать необязательно — '
+                  'можно сразу нажать «Продолжить».',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                    color: AppTheme.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 16),
 
               // Selection counter

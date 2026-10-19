@@ -9,7 +9,10 @@
  * - Token refresh with strict rotation
  * - Logout/session invalidation
  * - Auth middleware responses
- * - Custom rate limiting on login endpoint
+ *
+ * Not here: the login rate limiter (authRoutes.js, 10 per minute). Redis is
+ * not connected in this file, so the limiter lets everything through; no
+ * test drives /auth/login past its limit (honesty audit 18.10.2026).
  */
 
 import request from 'supertest';
@@ -84,6 +87,27 @@ describe('POST /api/v1/auth/register', () => {
     expect(user.phone).toBe(testUsers.phoneOnlyUser.phone);
   });
 
+  // The body as the mobile app sends it (mobile/lib/services/auth_service.dart,
+  // register): one contact and `auth_method` in snake case, which the server
+  // does not read — the method is then detected from the contact given.
+  test.each([
+    ['e-mail', { email: 'mobile-shape@example.com', name: 'Мобильный', password: 'Mobile123!@#', auth_method: 'email' },
+      { email: 'mobile-shape@example.com', phone: null, auth_method: 'email' }],
+    ['phone', { phone: '+375291112299', name: 'Мобильный', password: 'Mobile123!@#', auth_method: 'phone' },
+      { email: null, phone: '+375291112299', auth_method: 'phone' }],
+  ])('registers from the mobile app body (%s only, snake-case auth_method)', async (_label, body, stored) => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send(body)
+      .expect(201);
+
+    const { rows: [user] } = await query(
+      'SELECT email, phone, auth_method FROM users WHERE id = $1',
+      [response.body.data.user.id],
+    );
+    expect(user).toEqual(stored);
+  });
+
   test('rejects duplicate email with conflict error', async () => {
     await request(app).post('/api/v1/auth/register').send(testUsers.regularUser).expect(201);
     const response = await request(app)
@@ -139,6 +163,7 @@ describe('POST /api/v1/auth/register', () => {
       .post('/api/v1/auth/register')
       .send({
         ...edgeCaseUsers.mixedCaseEmail,
+        email: `  ${edgeCaseUsers.mixedCaseEmail.email}  `,
         name: '  Trim Me  ',
         phone: '  +375291234567  ',
       })
@@ -283,6 +308,12 @@ describe('POST /api/v1/auth/refresh', () => {
 
   test('detects refresh token reuse and invalidates user tokens', async () => {
     const { refreshToken, user } = await createUserAndGetTokens(testUsers.regularUser);
+    // A second session of the account, still live: the one the alarm must end.
+    // Without it every row below is burned before the request is sent.
+    await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })
+      .expect(200);
     await query('UPDATE refresh_tokens SET used_at = NOW() WHERE token = $1', [
       storedRefreshToken(refreshToken),
     ]);
@@ -295,6 +326,7 @@ describe('POST /api/v1/auth/refresh', () => {
     expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
 
     const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE user_id = $1', [user.id]);
+    expect(rows).toHaveLength(2);
     rows.forEach((row) => expect(row.used_at).not.toBeNull());
   });
 });

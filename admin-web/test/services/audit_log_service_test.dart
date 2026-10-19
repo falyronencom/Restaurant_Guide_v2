@@ -17,6 +17,12 @@ import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
 class _StubAdapter implements HttpClientAdapter {
   final List<RequestOptions> requests = [];
 
+  /// Ответ сервера; по умолчанию — пустая страница.
+  Map<String, dynamic> body = <String, dynamic>{
+    'data': <dynamic>[],
+    'meta': <String, dynamic>{'total': 0, 'page': 1, 'pages': 1},
+  };
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -25,10 +31,7 @@ class _StubAdapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     return ResponseBody.fromString(
-      jsonEncode(<String, dynamic>{
-        'data': <dynamic>[],
-        'meta': <String, dynamic>{'total': 0, 'page': 1, 'pages': 1},
-      }),
+      jsonEncode(body),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -84,6 +87,76 @@ void main() {
   test('тип объекта уходит как entity_type', () async {
     await service.getAuditLog(entityType: 'review');
     expect(lastQuery()['entity_type'], 'review');
+  });
+
+  test('строка журнала разбирается по ключам сервера', () async {
+    // Экран журнала тестируется на записях, собранных конструктором, — разбор
+    // ответа там не исполняется, и выпавший ключ вернул бы «исполнитель не
+    // указан» и машинный тип объекта молча. Строки — как их отдаёт
+    // auditLogModel.getAuditLogEntries (администратору — с именем и почтой
+    // исполнителя; просмотрщику — без них, с ролью), конверт —
+    // auditLogController. Данные приостановки — как их пишет adminService.
+    Map<String, dynamic> row({
+      required String id,
+      String? adminName,
+      String? adminEmail,
+    }) =>
+        <String, dynamic>{
+          'id': id,
+          'action': 'suspend',
+          'entity_type': 'establishment',
+          'entity_id': '1a2b3c4d-0000-4000-8000-000000000000',
+          'old_data': <String, dynamic>{'status': 'active'},
+          'new_data': <String, dynamic>{
+            'status': 'suspended',
+            'reason': 'Жалобы посетителей',
+          },
+          'created_at': '2026-10-17T12:00:00.000Z',
+          'admin_name': adminName,
+          'admin_email': adminEmail,
+          'actor_role': 'admin',
+          'summary': 'Приостановлено заведение',
+          'entity_context': <String, dynamic>{
+            'name': 'Васильки',
+            'city': 'Минск',
+          },
+        };
+    adapter.body = <String, dynamic>{
+      'success': true,
+      'data': <dynamic>[
+        row(
+          id: '5d1c2b3a-0000-4000-8000-000000000001',
+          adminName: 'Всеволод',
+          adminEmail: 'vsevolod@nirivio.by',
+        ),
+        row(id: '5d1c2b3a-0000-4000-8000-000000000002'),
+      ],
+      'meta': <String, dynamic>{'total': 2, 'page': 1, 'pages': 1},
+    };
+
+    final page = await service.getAuditLog();
+    final [admin, viewer] = page.entries;
+
+    expect(admin.action, 'suspend');
+    expect(admin.summary, 'Приостановлено заведение');
+    expect(admin.entityType, 'establishment');
+    expect(admin.entityId, '1a2b3c4d-0000-4000-8000-000000000000');
+    expect(admin.adminName, 'Всеволод');
+    expect(admin.adminEmail, 'vsevolod@nirivio.by');
+    expect(admin.actorRole, 'admin');
+    expect(admin.entityContext,
+        <String, dynamic>{'name': 'Васильки', 'city': 'Минск'});
+    expect(admin.oldData, <String, dynamic>{'status': 'active'});
+    expect(admin.newData, <String, dynamic>{
+      'status': 'suspended',
+      'reason': 'Жалобы посетителей',
+    });
+    expect(admin.createdAt, DateTime.utc(2026, 10, 17, 12));
+    // Просмотрщику — роль вместо имени.
+    expect(viewer.adminName, isNull);
+    expect(viewer.adminEmail, isNull);
+    expect(viewer.actorRole, 'admin');
+    expect(page.total, 2);
   });
 
   test('пустые фильтры в запрос не попадают', () async {

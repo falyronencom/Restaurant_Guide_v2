@@ -144,6 +144,10 @@ describe('Путь A: PUT /auth/profile принимает в avatar_url тол�
     ['фото чужой карточки', (other) => deliveryUrl(`establishments/temp/${other.id}/interior/victim0001`)],
     ['аватар другого пользователя', (other) => uploadedUrl(`avatars/${other.id}/face0001`, 'jpg')],
     ['сторонний сайт', () => 'https://images.example.org/face.png'],
+    // Путь нашего облака и своя папка — но на чужом хосте: держит только
+    // проверка хоста (у строки выше чужой и путь).
+    ['своя папка на чужом хосте', (_other, self) =>
+      `https://images.example.org/test/image/upload/v1759600000/avatars/${self.id}/face0002.jpg`],
     ['своя папка, но другое облако', (_other, self) =>
       `https://res.cloudinary.com/othercloud/image/upload/v1/avatars/${self.id}/face0002.jpg`],
     ['шаг назад из своей папки', (other, self) =>

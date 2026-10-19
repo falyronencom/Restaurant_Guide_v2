@@ -477,6 +477,22 @@ describe('FilterShelf — toggle → URL round-trip', () => {
     expect(mockPush.mock.calls[0][0]).toBe('/minsk/restorany');
   });
 
+  it('omits the cuisine param too when every cuisine becomes selected', async () => {
+    // The short-circuit is per OR group, and the cuisine group's options come
+    // from metadata, not a fixed list — the price case above cannot see it.
+    render(
+      <FilterShelf
+        {...baseProps}
+        searchParams={{ cuisine: 'italian' }}
+        selected={{ cuisines: ['italian'], priceRange: [], features: [], hours: undefined }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Азиатская' }));
+
+    expect(mockPush.mock.calls[0][0]).toBe('/minsk/restorany');
+  });
+
   it('single-selects an hours bucket, then clears it on re-click', async () => {
     const { rerender } = render(
       <FilterShelf
@@ -500,6 +516,12 @@ describe('FilterShelf — toggle → URL round-trip', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'До 22:00' }));
     expect(mockPush.mock.calls[0][0]).toBe('/minsk/restorany');
+
+    // «Single-select»: another bucket replaces the chosen one, it does not
+    // merely clear it.
+    mockPush.mockClear();
+    await userEvent.click(screen.getByRole('button', { name: 'До утра' }));
+    expect(pushedQuery().get('hours')).toBe('until_morning');
   });
 
   it('renders a tile per cuisine option supplied from metadata', () => {

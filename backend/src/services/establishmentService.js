@@ -26,7 +26,7 @@ import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MAX_PDFS_PER_ESTABLISHMENT, MEDIA_LIMITS } from './mediaService.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
-import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import {
   extractPublicIdFromUrl,
@@ -296,7 +296,8 @@ const coordinateChanged = (incoming, stored) =>
  * - Partner must have 'partner' role (verified by middleware before this)
  * - All required fields must be present and valid
  * - Categories array must have 1-2 items, all valid
- * - Cuisines array must have 1-3 items, all valid
+ * - Cuisines array must have 1-3 items, all valid (0-3 for a cuisine-optional
+ *   category: a bar, a club, a hookah lounge, bowling, karaoke, billiards)
  * - Coordinates must be within Belarus geographic bounds
  * - Establishment name must be unique for this partner
  * - Initial status is 'draft' to allow incremental building
@@ -318,7 +319,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     email,
     website,
     categories,
-    cuisines,
+    cuisines: cuisinesInput,
     price_range,
     working_hours,
     special_hours,
@@ -349,8 +350,13 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       throw new AppError(ESTABLISHMENT_REFUSALS.unknownCategory, 422, 'INVALID_CATEGORY_VALUE');
     }
 
-    // Validate cuisines array
-    if (!Array.isArray(cuisines) || cuisines.length < 1 || cuisines.length > 3) {
+    // Validate cuisines array: 1-3, or 0-3 for a cuisine-optional category
+    // (decision В5, 17.10.2026; widened 19.10.2026, Ш17 — isCuisineRequired).
+    // Such a card that sends no list stores an empty one —
+    // the column is NOT NULL.
+    const cuisineRequired = isCuisineRequired(categories);
+    const cuisines = cuisinesInput === undefined && !cuisineRequired ? [] : cuisinesInput;
+    if (!Array.isArray(cuisines) || cuisines.length < (cuisineRequired ? 1 : 0) || cuisines.length > 3) {
       throw new AppError(ESTABLISHMENT_REFUSALS.cuisinesCount, 422, 'INVALID_CUISINES_LENGTH');
     }
 
@@ -874,13 +880,32 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     }
 
     if (updates.cuisines !== undefined) {
-      if (!Array.isArray(updates.cuisines) || updates.cuisines.length < 1 || updates.cuisines.length > 3) {
+      if (!Array.isArray(updates.cuisines) || updates.cuisines.length > 3) {
         throw new AppError(ESTABLISHMENT_REFUSALS.cuisinesCount, 422, 'INVALID_CUISINES_LENGTH');
       }
 
       const invalidCuisines = updates.cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
         throw new AppError(ESTABLISHMENT_REFUSALS.unknownCuisine, 422, 'INVALID_CUISINE_VALUE');
+      }
+    }
+
+    // A card may be left without a cuisine only while every category is
+    // cuisine-optional
+    // (decision В5, 17.10.2026). Checked on the card as it will be after this
+    // edit: an empty list with stored categories that need a cuisine, or new
+    // categories that need one while the stored list is empty. An edit of an
+    // approved card goes live without moderation, so the submit check alone
+    // would not hold this.
+    if (updates.categories !== undefined || updates.cuisines !== undefined) {
+      const nextCategories = updates.categories !== undefined
+        ? updates.categories
+        : currentEstablishment.categories;
+      const nextCuisines = updates.cuisines !== undefined
+        ? updates.cuisines
+        : (currentEstablishment.cuisines || []);
+      if (nextCuisines.length === 0 && isCuisineRequired(nextCategories)) {
+        throw new AppError(ESTABLISHMENT_REFUSALS.cuisinesCount, 422, 'INVALID_CUISINES_LENGTH');
       }
     }
 
@@ -1274,7 +1299,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
  * Pre-submission validation ensures establishment is ready for review:
  * - Must be in 'draft', 'rejected', or 'suspended' status
  * - Required content fields complete: name, city, address, coordinates,
- *   categories, cuisines, working_hours
+ *   categories, cuisines (not for a cuisine-optional category), working_hours
  *
  * Note: media completeness (photo minimums, primary photo) is NOT enforced
  * server-side — it is a procedural gate applied by clients (E1 checklist)
@@ -1313,7 +1338,10 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
     if (!establishment.address) missingFields.push('address');
     if (!establishment.latitude || !establishment.longitude) missingFields.push('coordinates');
     if (!establishment.categories || establishment.categories.length === 0) missingFields.push('categories');
-    if (!establishment.cuisines || establishment.cuisines.length === 0) missingFields.push('cuisines');
+    // A cuisine-optional card may go to moderation without a cuisine (decision
+    // В5, 17.10.2026; widened 19.10.2026, Ш17).
+    if ((!establishment.cuisines || establishment.cuisines.length === 0)
+      && isCuisineRequired(establishment.categories)) missingFields.push('cuisines');
     if (!establishment.working_hours) missingFields.push('working_hours');
 
     if (missingFields.length > 0) {

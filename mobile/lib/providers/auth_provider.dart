@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:restaurant_guide_mobile/models/user.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
+import 'package:restaurant_guide_mobile/services/api_client.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
@@ -39,6 +40,22 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   String? _lastAccountId;
   bool _isLoading = false;
   String? _errorMessage;
+
+  /// Токены в хранилище прочитаны, ответа сервера о сессии ещё нет.
+  bool _restoringSession = false;
+
+  /// Вошёл по сохранённой сессии, а сервер её ещё не подтвердил: старт без
+  /// связи. Возврат приложения на экран — повод сверить ещё раз.
+  bool _sessionUnconfirmed = false;
+
+  /// Идёт такая сверка — второй возврат на экран её не дублирует.
+  bool _confirmingSession = false;
+
+  /// Поколение аккаунта: растёт при каждом входе, выходе и конце сессии.
+  /// Сверка сессии, начатая в одном поколении, ответ, пришедший в другом,
+  /// отбрасывает: профиль прежнего аккаунта не должен показаться у того, кто
+  /// успел войти, пока сервер молчал (ревью 18.10.2026, линза).
+  int _accountGeneration = 0;
 
   // Registration state
   String? _verificationToken;
@@ -76,6 +93,13 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Whether operation is in progress
   bool get isLoading => _isLoading;
 
+  /// Сохранённая сессия есть и сверяется с сервером — ответа ещё нет.
+  ///
+  /// Это не гость: заставка, чей таймаут (10 с) короче ожидания соединения
+  /// (30 с) при плохой связи, ведёт такого человека на главный экран, а не
+  /// на «Регистрацию». Исход сверки дойдёт туда сам.
+  bool get isRestoringSession => _restoringSession;
+
   /// Current error message
   String? get errorMessage => _errorMessage;
 
@@ -107,51 +131,140 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
       final hasToken = await _authService.isAuthenticated();
 
       if (hasToken) {
-        // Try to get current user to validate token
-        try {
-          final user = await _authService.getCurrentUser();
-          _bindAccount(user);
-          _status = AuthenticationStatus.authenticated;
-        } catch (e) {
-          final errorStr = e.toString();
-          // Транспорт стирает токены, когда обновить сессию нечем
-          // (просроченный refresh-токен, отключённый аккаунт). Пустое
-          // хранилище после отказа надёжнее разбора текста: у
-          // пересобранного DioException в toString() нет кода статуса.
-          final tokensGone = !await _authService.isAuthenticated();
-          // Only clear auth data if token is actually invalid (401)
-          // Don't clear on rate limit (429) or network errors
-          if (tokensGone ||
-              errorStr.contains('401') ||
-              errorStr.contains('Unauthorized')) {
-            _status = AuthenticationStatus.unauthenticated;
-            _currentUser = null;
-            await _authService.clearAuthData();
-          } else if (errorStr.contains('429')) {
-            // Rate limited - keep token, assume authenticated
-            // User can refresh later
-            _status = AuthenticationStatus.authenticated;
-          } else {
-            // Network or other error - keep token but mark as unauthenticated
-            // Don't clear data, allow retry
-            _status = AuthenticationStatus.unauthenticated;
-          }
-        }
+        _restoringSession = true;
+        await _verifyStoredSession();
       }
     } catch (e) {
       _setError('Failed to initialize authentication');
       _status = AuthenticationStatus.unauthenticated;
     } finally {
+      _restoringSession = false;
       _setLoading(false);
     }
   }
 
+  /// Сверяет сохранённую сессию с сервером: токены в хранилище есть.
+  ///
+  /// Исходов три, и путать «нет сети» с «сеанс отозван» нельзя:
+  /// - сервер подтвердил — вошёл;
+  /// - сервер отверг — не вошёл, остаток сессии стёрт. Отказ узнаётся по
+  ///   пустому хранилищу: на 401 транспорт пробует обновить токен и, если
+  ///   сервер отверг и обновление (просроченный refresh-токен, отозванная
+  ///   сессия, отключённый аккаунт), сам стирает токены;
+  /// - сервер не ответил (см. [_serverUnreachable]) — сессия жива: вошёл, с
+  ///   последним профилем, который сервер подтверждал. Сверка — при возврате
+  ///   приложения на экран. До 18.10.2026 старт без связи делал вошедшего
+  ///   гостем: заставка уводила на «Регистрацию» (находка на телефоне
+  ///   Координатора, авиарежим).
+  /// Прочие отказы — как раньше: не вошёл, токены целы, возврат на экран
+  /// проверит снова.
+  ///
+  /// Ответ, пришедший после входа, выхода или конца сессии (поколение
+  /// аккаунта сменилось, пока сервер молчал), ни к чему не применяется.
+  Future<void> _verifyStoredSession() async {
+    final generation = _accountGeneration;
+    try {
+      final user = await _authService.getCurrentUser();
+      if (generation != _accountGeneration) return;
+      _bindAccount(user);
+      _status = AuthenticationStatus.authenticated;
+    } catch (e) {
+      if (generation != _accountGeneration) return;
+      final errorStr = e.toString();
+      // Пустое хранилище после отказа надёжнее разбора текста: у
+      // пересобранного DioException в toString() нет кода статуса.
+      final tokensGone = !await _authService.isAuthenticated();
+      if (generation != _accountGeneration) return;
+      if (tokensGone ||
+          errorStr.contains('401') ||
+          errorStr.contains('Unauthorized')) {
+        _status = AuthenticationStatus.unauthenticated;
+        _currentUser = null;
+        _sessionUnconfirmed = false;
+        await _authService.clearAuthData();
+      } else if (_serverUnreachable(e) || errorStr.contains('429')) {
+        await _restoreUnconfirmed(generation);
+      } else {
+        // Keep token but mark as unauthenticated; resume retries.
+        _status = AuthenticationStatus.unauthenticated;
+        _sessionUnconfirmed = false;
+      }
+    }
+  }
+
+  /// Вошёл без ответа сервера: сессия в хранилище жива, профиль — последний,
+  /// что подтверждал сервер для этой сессии. Профиля может не быть (записан
+  /// прежней сборкой, принадлежит другому аккаунту) — тогда вошёл без него,
+  /// как при ответе 429: экраны это переносят («Пользователь» в профиле,
+  /// пустой ключ аккаунта в `MainNavigationScreen`), а профиль придёт со
+  /// сверкой.
+  ///
+  /// Сессию старше срока refresh-токена сервер уже не продлит — её без связи
+  /// не восстанавливаем, а ведём себя как до 18.10.2026: не вошёл, токены
+  /// целы, слово за сервером, когда появится связь. Токены не стираются: при
+  /// неверных часах телефона это стоило бы человеку входа.
+  Future<void> _restoreUnconfirmed(int generation) async {
+    final outlived = await _storedSessionOutlived();
+    if (generation != _accountGeneration) return;
+    if (outlived) {
+      _status = AuthenticationStatus.unauthenticated;
+      _sessionUnconfirmed = false;
+      return;
+    }
+    User? stored;
+    try {
+      stored = await _authService.getStoredUser();
+    } catch (_) {
+      // Хранилище не отдало профиль — вошёл без него.
+    }
+    if (generation != _accountGeneration) return;
+    if (stored != null) _bindAccount(stored);
+    _status = AuthenticationStatus.authenticated;
+    _sessionUnconfirmed = true;
+  }
+
+  /// Срок refresh-токена: 30 дней от выдачи пары
+  /// (`backend/src/services/authService.js`, `expiresAt + 30`).
+  static const Duration _refreshTokenLifetime = Duration(days: 30);
+
+  /// Пара токенов в хранилище старше [_refreshTokenLifetime] — сервер такую
+  /// сессию уже не продлит. Не узнать (токен не разбирается, хранилище
+  /// отказало) — не старше.
+  Future<bool> _storedSessionOutlived() async {
+    try {
+      final issuedAt = await _authService.storedSessionIssuedAt();
+      return issuedAt != null &&
+          DateTime.now().difference(issuedAt) > _refreshTokenLifetime;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Сервер не ответил о сессии ничего — она жива.
+  ///
+  /// Ответа нет — сервер о сессии ничего не сказал: нет связи (авиарежим даёт
+  /// `connectionError` — адрес сервера не находится), таймауты, сбой TLS (сеть
+  /// с окном входа, неверное время на телефоне) или обрыв уже после
+  /// соединения — dio отдаёт два последних как `unknown`. Единственный отказ
+  /// без ответа, который говорит о сессии, — «Сеанс истёк» транспорта
+  /// ([ApiClient.sessionExpiredMessage]): обновлять нечем. Его раньше ловит
+  /// пустое хранилище, но и здесь он не «не ответил». Обновление, не дошедшее
+  /// до сервера ([ApiClient.refreshUnavailableMessage]), — «не ответил».
+  /// 429 лимитера и 5xx окна деплоя — ответ есть, но о сессии он ничего не
+  /// говорит; прочие ответы (4xx) — ответ по существу. Статус — у самого
+  /// исключения: в `toString()` его нет.
+  static bool _serverUnreachable(Object error) {
+    if (error is! DioException) return false;
+    final status = error.response?.statusCode;
+    if (status != null) return status == 429 || status >= 500;
+    return error.error != ApiClient.sessionExpiredMessage;
+  }
+
   /// Возврат приложения на экран — повод проверить сессию ещё раз.
   ///
-  /// При отказе сети `_initialize` оставляет токены, но переводит провайдера в
-  /// «не вошёл» и больше не пробует. Старт без связи — в метро, в самолёте, в
-  /// окно деплоя бэкенда — делал вошедшего пользователя гостем до перезапуска
-  /// приложения. Возврат на экран — момент, когда связь обычно уже есть.
+  /// Два случая. Вошёл без ответа сервера (старт без связи) — сверка той же
+  /// сессии: связь к возврату обычно уже есть. Не вошёл, а токены целы
+  /// (прочий отказ при старте) — проверка заново, как при запуске.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
@@ -159,9 +272,10 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> _recheckSessionOnResume() async {
-    // «Вошёл» не трогаем: перепроверять нечего, а запрос профиля на каждом
-    // возврате из фона — трафик на ровном месте.
-    if (isAuthenticated || _isLoading) return;
+    // «Вошёл», и сервер это подтвердил, — перепроверять нечего, а запрос
+    // профиля на каждом возврате из фона — трафик на ровном месте.
+    if (_isLoading || _confirmingSession) return;
+    if (isAuthenticated && !_sessionUnconfirmed) return;
     try {
       // Токенов нет — пользователь и правда гость, а не жертва отказа сети:
       // проверять нечем.
@@ -171,14 +285,47 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
       // проверены до `await`. Без повторной проверки отказ сети сбросил бы
       // только что вошедшего обратно в гостя, а два возврата подряд дали бы
       // два запроса профиля: `_initialize` держит [_isLoading] поднятым всё
-      // время работы, и второй заход упирается именно в него.
-      if (isAuthenticated || _isLoading) return;
+      // время работы, сверка — [_confirmingSession].
+      if (_isLoading || _confirmingSession) return;
+      if (isAuthenticated) {
+        if (_sessionUnconfirmed) await _confirmStoredSession();
+        return;
+      }
       await _initialize();
     } catch (_) {
       // Обработчик жизненного цикла зовёт эту проверку без `await`: любое
       // исключение отсюда (чтение защищённого хранилища тоже умеет падать)
       // стало бы необработанной асинхронной ошибкой на каждом возврате
       // приложения на экран.
+    }
+  }
+
+  /// Сверка сессии, с которой человек вошёл без ответа сервера.
+  ///
+  /// Подтвердил — свежий профиль, сверка больше не нужна. Отверг — выход уже
+  /// сделан: обновить токен нечем, транспорт стёр хранилище и подал сигнал
+  /// ([_onSessionExpired]), а «вошёл» по сигналу превращается в «не вошёл».
+  /// Не ответил или ответил иначе — человек остаётся вошедшим до следующего
+  /// возврата на экран: выводить из аккаунта посреди работы можно только по
+  /// слову сервера.
+  Future<void> _confirmStoredSession() async {
+    _confirmingSession = true;
+    final generation = _accountGeneration;
+    try {
+      final user = await _authService.getCurrentUser();
+      // Пока шёл запрос, человек мог выйти или войти заново — тогда этот
+      // ответ уже ни о чём.
+      if (generation != _accountGeneration ||
+          !isAuthenticated ||
+          !_sessionUnconfirmed) {
+        return;
+      }
+      _bindAccount(user);
+      notifyListeners();
+    } catch (_) {
+      // Отказ разобран выше: выход — по сигналу транспорта, иначе ждём.
+    } finally {
+      _confirmingSession = false;
     }
   }
 
@@ -522,6 +669,9 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Logout current user
   Future<void> logout() async {
+    // Сразу, до запроса к серверу: сверка сессии, ответ которой придёт во
+    // время выхода, уже ничего не привяжет.
+    _accountGeneration++;
     _setLoading(true);
 
     try {
@@ -532,6 +682,7 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
     _currentUser = null;
     _status = AuthenticationStatus.unauthenticated;
+    _sessionUnconfirmed = false;
     _clearError();
     _clearVerificationState();
 
@@ -560,8 +711,10 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   /// менять нечего. Только «вошёл» превращается в «не вошёл».
   Future<void> _onSessionExpired() async {
     if (_status != AuthenticationStatus.authenticated) return;
+    _accountGeneration++;
     _currentUser = null;
     _status = AuthenticationStatus.unauthenticated;
+    _sessionUnconfirmed = false;
     _clearVerificationState();
     AccountScope.resetAll();
     _lastAccountId = null;
@@ -698,12 +851,18 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Bind the authenticated [user] as the active account. When the account
   /// differs from the previous one in this app run, account-scoped provider
   /// state is reset first — covers logins without an explicit logout between.
+  ///
+  /// Профиль от сервера — сессия подтверждена; профиль из хранилища при
+  /// старте без связи помечает её неподтверждённой уже после этого вызова
+  /// ([_restoreUnconfirmed]).
   void _bindAccount(User user) {
     if (_lastAccountId != null && _lastAccountId != user.id) {
       AccountScope.resetAll();
     }
+    _accountGeneration++;
     _lastAccountId = user.id;
     _currentUser = user;
+    _sessionUnconfirmed = false;
   }
 
   /// Set loading state

@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
+import 'package:restaurant_guide_mobile/widgets/default_city_button.dart';
 import 'package:restaurant_guide_mobile/widgets/filter_icon_button.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_bar.dart';
 import 'package:restaurant_guide_mobile/widgets/smart_search_suggestions.dart';
@@ -146,41 +147,35 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
                           color: AppTheme.textPrimary,
                         ),
                       ),
-                      // Reset button (right)
-                      Positioned(
-                        right: 16,
-                        child: GestureDetector(
-                          onTap: () {
-                            setModalState(() {
-                              tempSelectedCity = 'Минск';
-                            });
-                          },
-                          child: const Text(
-                            'Сброс',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
 
                 // Section title
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Ваш город',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textPrimary,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 12, 16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Ваш город',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
                       ),
-                    ),
+                      Flexible(
+                        child: DefaultCityButton(
+                          onTap: () {
+                            setModalState(() {
+                              tempSelectedCity = BelarusCities.defaultCity;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -322,18 +317,48 @@ class _SearchHomeScreenState extends State<SearchHomeScreen> {
   }
 
   /// Navigate to filter screen
-  void _openFilters() {
+  ///
+  /// Превью под строкой посчитано с фразой и фильтрами на момент поиска.
+  /// После экрана фильтров оно не должно оставаться прежним (сверка находок
+  /// тестировщика с сайтом, 19.10, Ш23):
+  ///  - «Сброс» снимает и фразу (`clearFilters`) — поле и превью очищаются,
+  ///    как поле экрана результатов (Ш6);
+  ///  - фильтры сменились без «Сброса» — превью той же фразы считается
+  ///    заново, иначе «Показать все (N)» обещает N по старым фильтрам.
+  Future<void> _openFilters() async {
+    final provider = context.read<EstablishmentsProvider>();
+    final resetsBefore = provider.filtersResetCount;
+    final filtersBefore = provider.screenFilters.fingerprint;
     // Use rootNavigator to navigate outside tab navigator
-    Navigator.of(context, rootNavigator: true).pushNamed('/filter');
+    await Navigator.of(context, rootNavigator: true).pushNamed('/filter');
+    if (!mounted) return;
+
+    final smartProvider = context.read<SmartSearchProvider>();
+    if (provider.filtersResetCount != resetsBefore) {
+      _searchController.clear();
+      smartProvider.clear();
+      return;
+    }
+    final phrase = smartProvider.lastQuery;
+    if (phrase.isNotEmpty &&
+        smartProvider.state != SmartSearchState.idle &&
+        provider.screenFilters.fingerprint != filtersBefore) {
+      smartProvider.executeSmartSearch(
+        phrase,
+        latitude: provider.userLatitude,
+        longitude: provider.userLongitude,
+        filters: provider.screenFilters,
+      );
+    }
   }
 
   /// Execute search and navigate to results (existing flow — chevron without text)
   void _executeSearch() {
     // Только переносим фразу и переходим — запрос делает сам экран результатов
-    // в initState. Свой вызов здесь означал бы два запроса на один переход;
-    // сейчас второй молча глотает защита `if (_isLoading) return`, но она
-    // держится на том, что сеть медленнее кадра. То же правило, что уже
-    // действует в `_onShowAll`. / Carry the phrase and navigate; the results
+    // в initState. Свой вызов здесь означал бы два запроса на один переход:
+    // поиск теперь не глотает новый запрос во время загрузки прежнего (Ш20),
+    // и на провод ушли бы оба. То же правило, что уже действует в
+    // `_onShowAll`. / Carry the phrase and navigate; the results
     // screen issues the request itself, so one tap means one request.
     context.read<EstablishmentsProvider>().setSearchQuery(_searchController.text);
 

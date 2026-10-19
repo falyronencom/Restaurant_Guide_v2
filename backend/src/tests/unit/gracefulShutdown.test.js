@@ -83,7 +83,10 @@ describe('exit code by reason', () => {
   });
 });
 
-describe('isPlannedShutdown — what server.js tells the OCR poller (a planned stop marks its job in flight)', () => {
+// The verdict only. The line of server.js that hands it to the OCR poller
+// (stop: (reason) => ocrJobPoller.stop({ planned: isPlannedShutdown(reason) }))
+// is not run by any test: server.js does not start under NODE_ENV=test.
+describe('isPlannedShutdown — the verdict server.js passes to the OCR poller (a planned stop marks its job in flight)', () => {
   test.each([
     ['SIGTERM', true],
     ['SIGINT', true],

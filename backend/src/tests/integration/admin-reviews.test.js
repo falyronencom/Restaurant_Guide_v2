@@ -165,6 +165,9 @@ describe('GET /api/v1/admin/reviews (#14)', () => {
   test('should filter by status=hidden (not-deleted, not-visible)', async () => {
     await createTestReview(null, testEstablishmentId, { is_visible: true, is_deleted: false });
     await createTestReview(null, testEstablishmentId, { is_visible: false, is_deleted: false });
+    // Not visible AND deleted — the half of «not-deleted» the two rows above
+    // cannot tell apart: it belongs under «deleted», not under «hidden».
+    await createTestReview(null, testEstablishmentId, { is_visible: false, is_deleted: true });
 
     const response = await request(app)
       .get('/api/v1/admin/reviews?status=hidden')
@@ -1040,7 +1043,10 @@ describe('setVisibility: the journal entry is part of the change', () => {
     expect(after).toEqual(before);
   });
 
-  test('a hide that succeeds has its entry, timed by the moment of the write', async () => {
+  // The entry, its data and its address. Its time (clock_timestamp(), the
+  // moment of the write, not of the transaction start) is not read here: the
+  // two differ only under a lock wait, which this test does not stage.
+  test('a hide that succeeds has its entry, with what was changed and from where', async () => {
     const review = await createTestReview(null, testEstablishmentId);
     const result = await adminReviewService.setVisibility(review.id, false, await adminId(), { ipAddress: '127.0.0.1' });
     expect(result).toMatchObject({ is_visible: false, changed: true });

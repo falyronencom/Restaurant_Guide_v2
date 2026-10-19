@@ -5,6 +5,7 @@
  *   clientCompleteness: the base_score mirror driving the completeness bar.
  */
 import { clientCompleteness } from '@/lib/partner/completeness';
+import { CUISINE_OPTIONAL_CATEGORIES, isCuisineRequired } from '@/lib/partner/constants';
 import { emptyForm, type WizardFormState } from '@/lib/partner/form';
 import { evaluateE1, meetsValidatorMinimum } from '@/lib/partner/validation';
 
@@ -168,5 +169,72 @@ describe('clientCompleteness mirrors the base_score weights', () => {
     expect(clientCompleteness({ ...emptyForm(), attributes: ['wifi'] })).toBe(20);
     expect(clientCompleteness({ ...emptyForm(), email: 'info@example.by' })).toBe(10);
     expect(clientCompleteness({ ...emptyForm(), website: 'example.by' })).toBe(5);
+  });
+});
+
+// Решение Координатора В5 (17.10.2026): кухня необязательна для бара и клуба;
+// сверка находок тестировщика с сайтом, 18.10, пункт 34. Пока кухня у бара была
+// обязательна, серверный черновик бара без кухни не создавался вовсе, а
+// «Отправить на модерацию» не включалась.
+describe('кухня у бара и клуба — по желанию', () => {
+  const minimum = (categories: string[], cuisines: string[]) =>
+    withMondayOpen({
+      ...emptyForm(),
+      name: 'Заведение',
+      city: 'Минск',
+      street: 'ул. 1',
+      categories,
+      cuisines,
+    });
+
+  const ready = (categories: string[], cuisines: string[]) => ({
+    ...minimum(categories, cuisines),
+    interiorPhotos: [photo(1), photo(2), photo(3), photo(4), photo(5)],
+    menuPhotos: [photo(6)],
+  });
+
+  it.each([
+    [['Бар']],
+    [['Клуб']],
+    [['Бар', 'Клуб']],
+    // Ш17 (19.10.2026)
+    [['Кальянная']],
+    [['Боулинг']],
+    [['Караоке']],
+    [['Бильярд']],
+  ])(
+    '%j без кухни: черновик создаётся, классификация засчитана, отправка открыта',
+    (categories) => {
+      expect(meetsValidatorMinimum(minimum(categories, []))).toBe(true);
+      const e1 = evaluateE1(ready(categories, []));
+      expect(e1.classification).toBe(true);
+      expect(e1.passed).toBe(true);
+    },
+  );
+
+  it.each([
+    [['Ресторан']],
+    [['Бар', 'Ресторан']],
+    [['Клуб', 'Кафе']],
+    [['Паб']],
+    [['Боулинг', 'Паб']],
+  ])(
+    '%j без кухни: черновика нет, классификация не засчитана — кухня обязательна',
+    (categories) => {
+      expect(meetsValidatorMinimum(minimum(categories, []))).toBe(false);
+      const e1 = evaluateE1(ready(categories, []));
+      expect(e1.classification).toBe(false);
+      expect(e1.passed).toBe(false);
+    },
+  );
+
+  it('без категории кухня обязательна (строже)', () => {
+    expect(isCuisineRequired([])).toBe(true);
+  });
+
+  it('совпадает с сервером: бар, клуб, кальянная, боулинг, караоке, бильярд', () => {
+    expect([...CUISINE_OPTIONAL_CATEGORIES].sort()).toEqual(
+      ['Бар', 'Бильярд', 'Боулинг', 'Караоке', 'Кальянная', 'Клуб'].sort(),
+    );
   });
 });

@@ -7,7 +7,11 @@
  * external provider boundary mocked: google-auth-library for Google, and the
  * global fetch to login.yandex.ru for Yandex. Verifies the provider whitelist,
  * provider branching, the new-user / existing-user / account-link paths against
- * the real schema, and the error-code → HTTP-status map. Additive coverage of a
+ * the real schema, and the error-code → HTTP-status map: 401, 400 and 403
+ * ACCOUNT_DEACTIVATED here; 403 OAUTH_EMAIL_NOT_VERIFIED in
+ * oauth-unverified-takeover.test.js; 409 ACCOUNT_CONFLICT needs two sign-ups
+ * racing and is not staged; 400 INVALID_PROVIDER is answered 422 by the
+ * validator first (honesty audit 18.10.2026). Additive coverage of a
  * path that previously had none (Discovery Q8). The last block covers what an
  * account created here meets at the password login (POST /auth/login and the
  * admin panel's login): it has no password until «forgot password» sets one.
@@ -226,6 +230,17 @@ describe('POST /api/v1/auth/oauth — Google', () => {
 
     const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(401);
     expect(res.body.error.code).toBe('INVALID_TOKEN');
+  });
+
+  // A member of the error-code map the apps key on (mobile auth_provider,
+  // web lib/auth/errors.ts): a switched-off account gets 403 ACCOUNT_DEACTIVATED.
+  test('maps a switched-off account to 403 ACCOUNT_DEACTIVATED', async () => {
+    mockVerifyIdToken.mockResolvedValue({ getPayload: () => oauthProviderResponses.google });
+    await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+    await query("UPDATE users SET is_active = FALSE WHERE email = 'google-user@gmail.com'");
+
+    const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(403);
+    expect(res.body.error.code).toBe('ACCOUNT_DEACTIVATED');
   });
 });
 

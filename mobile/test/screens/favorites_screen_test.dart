@@ -269,8 +269,10 @@ void main() {
         of: _sortChip,
         matching: find.byType(Container),
       ));
-      expect(plate.height, FavoritesCoverChip.visibleHeight);
-      expect(tap.height, FavoritesCoverChip.minTapHeight);
+      // Числа из макета литералами: константа экрана согласилась бы сама с
+      // собой при любом значении.
+      expect(plate.height, 34);
+      expect(tap.height, 44);
     });
 
     testWidgets('при скролле обложка сжимается до компактной и чип уходит',
@@ -313,12 +315,12 @@ void main() {
 
         final full = tester.getRect(find.byType(FavoritesCover));
         expect(full.top, 0);
-        expect(full.height, statusBar + FavoritesCover.expandedBodyHeight);
+        expect(full.height, statusBar + 163);
 
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
         await tester.pumpAndSettle();
         expect(tester.getRect(find.byType(FavoritesCover)).height,
-            statusBar + FavoritesCover.collapsedBodyHeight);
+            statusBar + 93);
       });
 
       testWidgets('пустой экран вошедшего не прокручивается сам по себе',
@@ -481,7 +483,7 @@ void main() {
 
         final cover = tester.getRect(find.byType(FavoritesCover));
         expect(cover.top, 0);
-        expect(cover.height, statusBar + FavoritesCover.collapsedBodyHeight);
+        expect(cover.height, statusBar + 93);
         expect(_toggle, findsOneWidget);
         expect(find.byType(FavoritesMap), findsOneWidget);
         expect(find.byType(EstablishmentCard), findsNothing);
@@ -504,7 +506,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.getRect(find.byType(FavoritesCover)).height,
-            statusBar + FavoritesCover.expandedBodyHeight);
+            statusBar + 163);
         expect(find.byType(EstablishmentCard), findsWidgets);
         expect(find.byType(FavoritesMap), findsNothing);
         expect(_toggle, findsNothing);
@@ -537,6 +539,18 @@ void main() {
             .color;
         expect(colorOf('На карте'), const Color(0xFF3E3E3E));
         expect(colorOf('Списком'), Colors.white.withValues(alpha: 0.85));
+
+        // «Активный — белый»: плашка сегмента, а не только подпись.
+        Decoration? plateOf(String label) => tester
+            .widget<Container>(find
+                .ancestor(of: find.text(label), matching: find.byType(Container))
+                .first)
+            .decoration;
+        expect((plateOf('На карте') as BoxDecoration?)?.color,
+            const Color(0xFFFFFFFF),
+            reason: 'активный сегмент — на белой плашке');
+        expect(plateOf('Списком'), isNull,
+            reason: 'у неактивного плашки нет');
       });
 
       testWidgets(

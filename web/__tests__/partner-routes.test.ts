@@ -25,6 +25,7 @@ jest.mock('@/lib/partner/operations', () => ({
   loadEstablishmentForEdit: jest.fn(),
   retryOcrAction: jest.fn(),
   deleteEstablishmentAction: jest.fn(),
+  resumeEstablishmentAction: jest.fn(),
 }));
 jest.mock('@/lib/partner/media-proxy', () => ({
   proxyMediaUpload: jest.fn(),
@@ -35,6 +36,7 @@ import { POST as deletePost } from '@/app/api/partner/establishments/[id]/delete
 import { POST as listPost } from '@/app/api/partner/establishments/list/route';
 import { POST as loadPost } from '@/app/api/partner/establishments/[id]/load/route';
 import { POST as mediaAttachPost } from '@/app/api/partner/establishments/[id]/media/route';
+import { POST as resumePost } from '@/app/api/partner/establishments/[id]/resume/route';
 import { POST as retryPost } from '@/app/api/partner/establishments/[id]/retry-ocr/route';
 import { POST as submitPost } from '@/app/api/partner/establishments/[id]/submit/route';
 import { POST as updatePost } from '@/app/api/partner/establishments/[id]/update/route';
@@ -45,6 +47,7 @@ import {
   deleteEstablishmentAction,
   loadEstablishmentForEdit,
   loadEstablishments,
+  resumeEstablishmentAction,
   retryOcrAction,
   submitEstablishmentAction,
   updateEstablishmentAction,
@@ -71,7 +74,7 @@ beforeEach(() => jest.clearAllMocks());
  * Guard coverage is exhaustive by construction (2026-09-08, honesty-audit
  * finding 4 closed): every partner Route Handler that exists has a cross-origin
  * case below — list, update, delete, create, submit, load, retry-ocr,
- * media-temp and media-attach, nine of nine. Each case is proved able to fail:
+ * resume, media-temp and media-attach, ten of ten. Each case is proved able to fail:
  * replacing `assertSameOrigin(request)` with `null` in one route file turns
  * exactly that route's case red and leaves the rest green. A tenth handler
  * added without its own case here breaks that property silently — the describe
@@ -123,6 +126,12 @@ describe('same-origin guard on the partner handlers', () => {
     expect(retryOcrAction).not.toHaveBeenCalled();
   });
 
+  it('blocks a cross-origin resume POST (status write — guard must hold)', async () => {
+    const res = await resumePost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(resumeEstablishmentAction).not.toHaveBeenCalled();
+  });
+
   it('blocks a cross-origin temp media upload with 403 (OSB-P4 parity)', async () => {
     const res = await mediaTempPost(makeRequest(CROSS));
     expect(res.status).toBe(403);
@@ -166,6 +175,13 @@ describe('happy path — handlers forward to operations and return the envelope'
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, establishments: [] });
     expect(loadEstablishments).toHaveBeenCalledTimes(1);
+  });
+
+  it('resume forwards the [id] param and returns the envelope', async () => {
+    (resumeEstablishmentAction as jest.Mock).mockResolvedValue({ ok: true, status: 'active' });
+    const res = await resumePost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, status: 'active' });
+    expect(resumeEstablishmentAction).toHaveBeenCalledWith('e9');
   });
 
   it('create parses the JSON body and forwards it', async () => {

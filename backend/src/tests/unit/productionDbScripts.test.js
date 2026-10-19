@@ -116,11 +116,19 @@ describe('pin-production-db-cert.js', () => {
     expect((await run('pin-production-db-cert.js', ['--check'])).code).toBe(0);
   });
 
-  test('anything but "yes" writes nothing', async () => {
+  // «Anything»: not only the one refusal a person types, but also a bare
+  // Enter, a short «y» and a «yes» with something after it.
+  test.each([
+    ['no', 'no\n'],
+    ['an empty answer', '\n'],
+    ['"y"', 'y\n'],
+    ['"да"', 'да\n'],
+    ['"yes!"', 'yes!\n'],
+  ])('anything but "yes" writes nothing: %s', async (_label, input) => {
     server = await startFakePostgres(production);
     writeEnv(server.port);
 
-    const { out } = await run('pin-production-db-cert.js', [], 'no\n');
+    const { out } = await run('pin-production-db-cert.js', [], input);
 
     expect(out).toMatch(/ничего не изменено/);
     expect(pinnedFingerprint()).toBeNull();

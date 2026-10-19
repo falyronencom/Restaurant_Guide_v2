@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/smart_search_provider.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Preview panel showing top-3 smart search results on the home screen.
 /// Appears below the search bar after AI intent parsing completes.
@@ -94,15 +95,40 @@ class SmartSearchPreview extends StatelessWidget {
   }
 
   Widget _buildResults(BuildContext context, SmartSearchProvider provider) {
+    // Совпадения отдельно от запасной выдачи (решение Координатора В3,
+    // 17.10.2026): «Buno», которого нет, — «ничего не найдено», а город ниже —
+    // «Возможно, вам подойдут», а не три карточки под видом совпадений.
+    final matchedShown = provider.matchedShown;
+    final nothingMatched = provider.matchedTotal == 0;
+    final matched = provider.smartResults.take(matchedShown);
+    final suggested = provider.smartResults.skip(matchedShown);
+
     return Container(
       decoration: _panelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Intent header
+          if (nothingMatched)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                'По запросу «${provider.lastQuery}» ничего не найдено',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+          // Intent header — прочтение фразы; без совпадений оно ничего не
+          // объясняет и выдавало бы запасную выдачу за ответ.
           if (provider.parsedIntent != null &&
-              !provider.isFallback)
+              !provider.isFallback &&
+              !nothingMatched)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
@@ -117,8 +143,26 @@ class SmartSearchPreview extends StatelessWidget {
               ),
             ),
 
-          // Result cards
-          ...provider.smartResults.map(
+          // Result cards: совпадения, затем «Возможно, вам подойдут»
+          ...matched.map(
+            (e) => _ResultCard(
+              establishment: e,
+              onTap: () => onEstablishmentTap(e.id),
+            ),
+          ),
+          if (suggested.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 2),
+              child: Text(
+                'Возможно, вам подойдут',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.gray700,
+                ),
+              ),
+            ),
+          ...suggested.map(
             (e) => _ResultCard(
               establishment: e,
               onTap: () => onEstablishmentTap(e.id),
@@ -139,7 +183,11 @@ class SmartSearchPreview extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  'Показать все (${provider.totalResults})',
+                  // Под «ничего не найдено» «все» звучало бы как «все
+                  // найденные» (ревью PR #83, M2).
+                  nothingMatched
+                      ? 'Показать варианты (${provider.totalResults})'
+                      : 'Показать все (${provider.totalResults})',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,
@@ -250,8 +298,10 @@ class _ResultCard extends StatelessWidget {
       return '${establishment.category} \u00b7 $distStr';
     }
 
-    if (establishment.rating != null) {
-      return '${establishment.category} \u00b7 ${establishment.rating!.toStringAsFixed(1)}\u2605';
+    // Как в списке: без отзывов оценки нет, оценка — через запятую.
+    final rating = ratingLabel(establishment.rating);
+    if (rating != null) {
+      return '${establishment.category} \u00b7 $rating\u2605';
     }
 
     return establishment.category;

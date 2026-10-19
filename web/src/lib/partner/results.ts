@@ -4,6 +4,7 @@ import type {
   PartnerEstablishmentListing,
   SessionUser,
 } from '@/lib/api/types';
+import type { Refusal } from '@/lib/partner/errors';
 
 /*
  * Partner cabinet operation result envelopes (CAT-C-3.14).
@@ -19,9 +20,17 @@ import type {
  * → buffered POST Route Handlers, CAT-C-3.14) is invisible to them.
  */
 
+/**
+ * A refused operation: the code, plus — added 18.10.2026 (сверка находок
+ * тестировщика с сайтом, С5, С6, Х17) — the server's Russian text and the
+ * fields a field check named, for refusalMessage. Callers that read only
+ * `code` are unaffected.
+ */
+export type Failure = { ok: false; code: string } & Omit<Refusal, 'code'>;
+
 export type LoadEstablishmentsResult =
   | { ok: true; establishments: PartnerEstablishmentListing[] }
-  | { ok: false; code: string };
+  | Failure;
 
 export type CreateResult =
   | {
@@ -32,12 +41,12 @@ export type CreateResult =
       /** Re-stamped display user after the first create (role → partner), else unchanged. */
       user: SessionUser | null;
     }
-  | { ok: false; code: string };
+  | Failure;
 
 export type WriteResult =
   | { ok: true; status?: EstablishmentStatus; base_score?: number | null }
-  | { ok: false; code: string };
+  | Failure;
 
 export type LoadDetailResult =
   | { ok: true; establishment: PartnerEstablishmentDetail }
-  | { ok: false; code: string };
+  | Failure;

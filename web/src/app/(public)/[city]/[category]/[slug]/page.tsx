@@ -198,13 +198,14 @@ export default async function EstablishmentPage({
   }
 
   // 4. Parallel fetches: menu + reviews + metadata. The page is still useful
-  //    without menu/reviews, so their failures do not fail the page. A reviews
-  //    failure is NOT turned into an empty list: that read as «Пока нет
-  //    отзывов» and this ISR page kept it for up to an hour. `null` renders
-  //    ReviewsLoadFailed instead — it loads the reviews from the visitor's
-  //    browser and, on success, drops the cached page (reloadReviewsAction).
+  //    without menu/reviews, so their failures do not fail the page — and
+  //    neither is turned into an empty list: that read as «Меню пока не
+  //    загружено.» / «Пока нет отзывов» and this ISR page kept it for up to an
+  //    hour. `null` renders MenuLoadFailed / ReviewsLoadFailed instead — each
+  //    loads its part from the visitor's browser and, on success, drops the
+  //    cached page (reloadMenuAction, Ш8; reloadReviewsAction, Х5 / Х23).
   const [menuItemsResult, reviewsResult, meta] = await Promise.all([
-    getMenuItems(slug).catch(() => ({ menu_items: [] })),
+    getMenuItems(slug).catch(() => null),
     getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT }).catch(() => null),
     getMetadata(),
   ]);
@@ -358,10 +359,12 @@ export default async function EstablishmentPage({
 
           <section id='menu' className='scroll-mt-32'>
             <MenuBlock
-              menuItems={menuItemsResult.menu_items}
+              menuItems={menuItemsResult?.menu_items ?? null}
               menuPhotos={menuPhotos}
               pdfFallbacks={pdfMenus}
               establishmentName={establishment.name}
+              slug={establishment.slug}
+              detailPath={address.path}
             />
           </section>
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -42,6 +43,14 @@ class _FakeAdminReviewService implements AdminReviewService {
   }) {
     listCalls++;
     return response.future;
+  }
+
+  /// Удаления, дошедшие до сервиса: id и причина.
+  final List<(String, String?)> deleted = <(String, String?)>[];
+
+  @override
+  Future<void> deleteReview(String id, {String? reason}) async {
+    deleted.add((id, reason));
   }
 
   @override
@@ -283,6 +292,28 @@ void main() {
           .read<AdminReviewsProvider>();
       expect(provider.searchQuery, isEmpty);
     });
+
+    testWidgets('крестик в поле — тоже и фильтр, и текст', (tester) async {
+      // Сбросить поиск можно тремя путями — крестик в поле, строка пустого
+      // состояния, «Сбросить фильтры», — и каждый обязан очистить обе
+      // половины. Тест выше проходит только кнопку; крестик идёт другим
+      // методом экрана.
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, reviews: <AdminReviewItem>[_review()]);
+      await tester.enterText(find.byType(TextField), 'холодный');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await settle(tester, fake, reviews: <AdminReviewItem>[]);
+
+      await tester.tap(find.byTooltip('Сбросить поиск'));
+      await settle(tester, fake, reviews: <AdminReviewItem>[_review()]);
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller?.text, isEmpty);
+      final provider = tester
+          .element(find.byType(ReviewsManagementScreen))
+          .read<AdminReviewsProvider>();
+      expect(provider.searchQuery, isEmpty);
+    });
   });
 
   group('Карточка списка', () {
@@ -382,7 +413,7 @@ void main() {
   });
 
   group('Панель разбора', () {
-    Future<void> open(
+    Future<_FakeAdminReviewService> open(
       WidgetTester tester,
       AdminReviewItem review, {
       bool viewer = false,
@@ -391,6 +422,7 @@ void main() {
       await settle(tester, fake, reviews: <AdminReviewItem>[review]);
       await tester.tap(find.text('Марына К.').first);
       await tester.pump();
+      return fake;
     }
 
     testWidgets('озаглавлена заведением, а не «Деталями отзыва»',
@@ -441,6 +473,56 @@ void main() {
       expect(find.byKey(const ValueKey<String>('review-author-link')),
           findsOneWidget);
       expect(find.text('Открыть автора'), findsOneWidget);
+    });
+
+    testWidgets('ссылка «Открыть автора» ведёт на карточку автора, а не отзыва',
+        (tester) async {
+      // Нажатие, а не наличие кнопки: ссылка с id отзыва вместо id автора
+      // открыла бы пустую или чужую карточку. Адрес — литерал экрана людей.
+      final fake = _FakeAdminReviewService();
+      tester.view.physicalSize = const Size(1440, 820);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      String? opened;
+      final router = GoRouter(routes: <RouteBase>[
+        GoRoute(
+          path: '/',
+          builder: (context, state) =>
+              const Scaffold(body: ReviewsManagementScreen()),
+        ),
+        GoRoute(
+          path: '/settings/users',
+          builder: (context, state) {
+            opened = state.uri.toString();
+            return const SizedBox.shrink();
+          },
+        ),
+      ]);
+      addTearDown(router.dispose);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AdminReviewsProvider>(
+            create: (_) => AdminReviewsProvider(service: fake),
+          ),
+          ChangeNotifierProvider<AuthProvider>(
+            create: (_) => StubAuthProvider.admin(),
+          ),
+        ],
+        child: MaterialApp.router(
+          theme: AppTheme.lightTheme,
+          routerConfig: router,
+        ),
+      ));
+      await tester.pump();
+      await settle(tester, fake,
+          reviews: <AdminReviewItem>[_review(authorId: 'author-1')]);
+      await tester.tap(find.text('Марына К.').first);
+      await tester.pump();
+
+      await tester.tap(find.text('Открыть автора'));
+      await tester.pumpAndSettle();
+
+      expect(opened, '/settings/users?user=author-1');
     });
 
     testWidgets('без автора — без ссылки (скрытый отзыв у просмотрщика)',
@@ -496,6 +578,20 @@ void main() {
 
       expect(find.text('Скрыть отзыв'), findsOneWidget);
       expect(find.text('Удалить'), findsOneWidget);
+      // Каждая кнопка — своим стилем канона, а не наличием подписи.
+      ButtonStyleButton button(String label) => tester.widget<ButtonStyleButton>(
+          find.ancestor(
+              of: find.text(label),
+              matching: find.byWidgetPredicate((w) => w is ButtonStyleButton)));
+      final delete = button('Удалить');
+      expect(delete.style!.backgroundColor!.resolve(<WidgetState>{}),
+          const Color(0xFFF44336),
+          reason: 'удаление — заливкой ошибки, тяжелее скрытия');
+      final hide = button('Скрыть отзыв');
+      expect(hide, isA<OutlinedButton>());
+      expect(hide.style!.side!.resolve(<WidgetState>{})!.color,
+          const Color(0xFFF06B32),
+          reason: 'скрытие — контуром бренда');
       // Янтарный #F57F17 был внеканонным — его на экране больше нет.
       final painted = tester
           .widgetList<Container>(find.byType(Container))
@@ -564,18 +660,18 @@ void main() {
     });
 
     testWidgets('причина доезжает до провайдера', (tester) async {
-      await open(tester, _review());
+      final fake = await open(tester, _review());
 
       await tester.tap(find.text('Удалить'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, '  оскорбления  ');
       await tester.tap(find.text('Удалить').last);
-      await tester.pumpAndSettle();
+      await tester.pump();
 
-      final provider = tester
-          .element(find.byType(ReviewsManagementScreen))
-          .read<AdminReviewsProvider>();
-      expect(provider.isSubmitting || provider.submitError != null, isTrue);
+      // Причина — та, что ввёл модератор, без пробелов по краям, и именно
+      // этого отзыва. Прежняя проверка («идёт отправка или есть ошибка»)
+      // зеленела на любом удалении — и без причины тоже.
+      expect(fake.deleted, <(String, String?)>[('r1', 'оскорбления')]);
     });
 
     testWidgets('скрытый предлагает показать, а не скрыть', (tester) async {

@@ -197,8 +197,9 @@ class PartnerRegistrationProvider with ChangeNotifier {
   }
 
   /// Validate Step 2: Cuisine types
+  /// Бару и клубу кухню можно не выбирать (решение Координатора В5).
   bool _validateCuisineStep() {
-    return _data.cuisineTypes.isNotEmpty &&
+    return (_data.cuisineTypes.isNotEmpty || !_data.cuisineRequired) &&
         _data.cuisineTypes.length <= CuisineOptions.maxSelection;
   }
 
@@ -379,6 +380,13 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Get count of selected cuisine types
   int get selectedCuisineCount => _data.cuisineTypes.length;
+
+  /// Шаг кухни можно пройти без выбора: все категории — из набора
+  /// [CategoryOptions.cuisineOptionalIds].
+  bool get isCuisineOptional => !_data.cuisineRequired;
+
+  /// Шаг кухни выполнен: кухня выбрана или не нужна.
+  bool get isCuisineStepDone => _validateCuisineStep();
 
   // ============================================================================
   // Data Updates - Step 3: Basic Information

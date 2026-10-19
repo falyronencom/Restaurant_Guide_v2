@@ -30,7 +30,10 @@ void main() {
       'имя': validateName,
       'код': validateVerificationCode,
     };
-    const badInputs = <String?>[
+    // У каждой проверки — каждая ветка отказа: имя длиннее 50 знаков ведёт в
+    // свою, и без него её текст не проверял никто.
+    final badInputs = <String?>[
+      'А' * 51,
       null,
       '',
       ' ',
@@ -83,6 +86,12 @@ void main() {
         'Jean Luc',
         'Ли',
         'Zoë',
+        // «Любого алфавита» — не только кириллица и латиница.
+        'Νίκος',
+        'Գոհար',
+        'ნინო',
+        'علي',
+        '李明',
       ];
       for (final name in accepted) {
         expect(validateName(name), isNull, reason: name);
@@ -142,6 +151,14 @@ void main() {
         () {
       expect(validatePassword('Пароль123'), isNotNull);
       expect(validatePassword('Parol123'), isNull);
+      // По одной стороне за раз: в «Пароль123» нет ни латинской заглавной, ни
+      // строчной, и он не скажет, какая из двух проверок засчитала кириллицу.
+      expect(validatePassword('Пarol123'),
+          'Пароль не подходит: нужно — заглавная латинская буква (A–Z)',
+          reason: 'кириллическая «П» — не заглавная латинская');
+      expect(validatePassword('PAROLь12'),
+          'Пароль не подходит: нужно — строчная латинская буква (a–z)',
+          reason: 'кириллическая «ь» — не строчная латинская');
     });
   });
 }

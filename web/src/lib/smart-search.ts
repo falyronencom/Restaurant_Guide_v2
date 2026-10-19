@@ -49,6 +49,12 @@ export type CatalogResults = CatalogResponse & {
    * Only orders the site offers: «рядом» has no location to sort by here.
    */
   sortFromPhrase: 'rating' | 'price_asc' | null;
+  /**
+   * How many results, from the start of the whole set, match the phrase; the
+   * rest are suggestions («Возможно, вам подойдут», Coordinator В3). null —
+   * no split: no phrase, the classic path, or a backend without the field.
+   */
+  matchedTotal: number | null;
 };
 
 /** The smart endpoint's own page-size ceiling (smartSearchController clamps limit to 100). */
@@ -66,20 +72,25 @@ export async function getCatalogResults(
   if (body) {
     try {
       const smart = await smartSearch(body);
+      const matchedTotal =
+        typeof smart.matchedTotal === 'number' ? smart.matchedTotal : null;
       return {
         establishments: smart.establishments,
         pagination: smart.pagination,
         // A backend fallback (fallback:true — the phrase was searched as raw
-        // text) arrives with intent null, so there is nothing to show.
-        understood: describeIntent(smart.intent),
+        // text) arrives with intent null, so there is nothing to show. Nor
+        // when nothing matched: «Ищем: …» would dress the suggestions up as
+        // an answer to the phrase.
+        understood: matchedTotal === 0 ? null : describeIntent(smart.intent),
         sortFromPhrase: sortFromPhrase(smart.intent),
+        matchedTotal,
       };
     } catch (err) {
       logFallback('list', err);
     }
   }
   const catalog = await getCatalog(params);
-  return { ...catalog, understood: null, sortFromPhrase: null };
+  return { ...catalog, understood: null, sortFromPhrase: null, matchedTotal: null };
 }
 
 function sortFromPhrase(
@@ -88,6 +99,17 @@ function sortFromPhrase(
   const sort = intent?.sort;
   return sort === 'rating' || sort === 'price_asc' ? sort : null;
 }
+
+/**
+ * The phrase map's data: the markers, in the result set's order, and how many
+ * of them, from the start, match the phrase (`matchedTotal`, as for the list;
+ * null — a backend without the field). The rest are suggestions, and the map
+ * says so (сверка находок тестировщика с сайтом, 18.10, Ш1).
+ */
+export type PhraseMapMarkers = {
+  markers: PublicEstablishmentMapMarker[];
+  matchedTotal: number | null;
+};
 
 /**
  * Markers for the results map when a phrase is active, or null when the map
@@ -103,7 +125,7 @@ function sortFromPhrase(
 export async function getPhraseMapMarkers(
   params: CatalogParams,
   meta: PublicMetadata,
-): Promise<PublicEstablishmentMapMarker[] | null> {
+): Promise<PhraseMapMarkers | null> {
   const body = toSmartSearchBody(
     { ...params, page: 1, limit: SMART_SEARCH_MAX_LIMIT },
     meta,
@@ -111,7 +133,11 @@ export async function getPhraseMapMarkers(
   if (!body) return null;
   try {
     const smart = await smartSearch(body);
-    return smart.establishments.map(toMapMarker);
+    return {
+      markers: smart.establishments.map(toMapMarker),
+      matchedTotal:
+        typeof smart.matchedTotal === 'number' ? smart.matchedTotal : null,
+    };
   } catch (err) {
     logFallback('map', err);
     return null;

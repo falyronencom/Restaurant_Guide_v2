@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Карточка-превью заведения над картой: миниатюра, название, рейтинг,
 /// категория, адрес, «✕» и кнопка «Подробнее». Одна на все карты приложения
@@ -81,6 +82,8 @@ class _EstablishmentMapPreviewState extends State<EstablishmentMapPreview> {
   @override
   Widget build(BuildContext context) {
     final establishment = widget.establishment;
+    // Как в списке: без отзывов звезды нет, оценка — через запятую.
+    final rating = ratingLabel(establishment.rating);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragUpdate: _onDragUpdate,
@@ -172,14 +175,14 @@ class _EstablishmentMapPreviewState extends State<EstablishmentMapPreview> {
                         const SizedBox(height: 4),
 
                         // Rating
-                        if (establishment.rating != null)
+                        if (rating != null)
                           Row(
                             children: [
                               const Icon(Icons.star,
                                   color: AppTheme.ratingStar, size: 18),
                               const SizedBox(width: 4),
                               Text(
-                                establishment.rating!.toStringAsFixed(1),
+                                rating,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,

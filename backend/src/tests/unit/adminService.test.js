@@ -903,6 +903,17 @@ describe('claimEstablishment', () => {
       expect.stringContaining("UPDATE users SET role = 'partner'"),
       [expect.any(Date), TARGET_USER_ID],
     );
+    // The order the title names — the claim and the role inside one
+    // transaction: a role written after COMMIT would leave a committed
+    // owner without the partner role if that write failed.
+    const at = (fn, isCall) => fn.mock.invocationCallOrder[fn.mock.calls.findIndex(isCall)];
+    const order = {
+      begin: at(client.query, ([sql]) => sql === 'BEGIN'),
+      claim: at(EstablishmentModel.claimEstablishment, () => true),
+      role: at(client.query, ([sql]) => String(sql).includes("UPDATE users SET role = 'partner'")),
+      commit: at(client.query, ([sql]) => sql === 'COMMIT'),
+    };
+    expect(Object.keys(order).sort((a, b) => order[a] - order[b])).toEqual(['begin', 'claim', 'role', 'commit']);
     expect(client.release).toHaveBeenCalled();
   });
 

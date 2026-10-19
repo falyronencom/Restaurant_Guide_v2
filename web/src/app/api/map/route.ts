@@ -2,12 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { getMap, type MapParams } from '@/lib/api/endpoints/establishments';
 import { getMetadata } from '@/lib/api/endpoints/metadata';
-import {
-  ApiError,
-  type PublicEstablishmentMapMarker,
-  type PublicMetadata,
-} from '@/lib/api/types';
-import { getPhraseMapMarkers } from '@/lib/smart-search';
+import { ApiError, type PublicMetadata } from '@/lib/api/types';
+import { getPhraseMapMarkers, type PhraseMapMarkers } from '@/lib/smart-search';
 
 /*
  * Map markers proxy — browser fetch → Next route handler → server API client →
@@ -23,6 +19,9 @@ import { getPhraseMapMarkers } from '@/lib/smart-search';
  * backend has no amenity facet) and does not re-query on camera moves then.
  * If the phrase cannot take the smart path, the classic map answers — without
  * the viewport box, so the pins still do not depend on where the camera is.
+ * The phrase answer also carries `matchedTotal` (the list's field): the first
+ * that many markers match the phrase, the rest are suggestions — the island
+ * says so over the map instead of passing them off as found.
  *
  * Mirror of api/establishments/route.ts. Always dynamic: every viewport is a
  * distinct bounds query, so response caching has no hit value. The map is a
@@ -40,7 +39,7 @@ export const dynamic = 'force-dynamic';
 async function phraseMarkers(
   params: MapParams,
   features: string[] | undefined,
-): Promise<PublicEstablishmentMapMarker[] | null> {
+): Promise<PhraseMapMarkers | null> {
   let meta: PublicMetadata;
   try {
     meta = await getMetadata();
@@ -91,11 +90,16 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   try {
     if (params.search?.trim()) {
-      const markers = await phraseMarkers(
+      const phrase = await phraseMarkers(
         params,
         sp.get('features')?.split(',').filter(Boolean),
       );
-      if (markers) return NextResponse.json({ establishments: markers });
+      if (phrase) {
+        return NextResponse.json({
+          establishments: phrase.markers,
+          matchedTotal: phrase.matchedTotal,
+        });
+      }
       const data = await getMap({
         ...params,
         neLat: undefined,

@@ -67,8 +67,34 @@ class EstablishmentsProvider with ChangeNotifier {
   /// null — искали по фильтрам, строка была пуста.
   SmartSearchIntent? _searchIntent;
   bool _searchFallback = false;
+
+  /// Сколько первых заведений общей умной выдачи совпали с фразой (В3,
+  /// 17.10.2026); null — искали по фильтрам или сервер поля не прислал.
+  int? _searchMatchedTotal;
+
+  /// Фраза, на которую пришёл [_searchMatchedTotal]: шапка «По запросу «…»»
+  /// пишет её, а не живую `searchQuery`, которую «Сброс» фильтров обнуляет
+  /// раньше нового поиска (ревью PR #83, M1).
+  String? _searchMatchedPhrase;
+
+  /// Номер в общей выдаче, с которого начинается загруженный список: после
+  /// возврата на последнюю существующую страницу список начинается не с нуля.
+  int _loadedFrom = 0;
   bool _isLoading = false;
   bool _isLoadingMore = false;
+
+  /// Номер поиска: растёт с каждым новым поиском (не подгрузкой). Ответ,
+  /// чей номер устарел, отбрасывается — подгрузка страницы 2 по фразе А,
+  /// пришедшая после поиска Б, не дописывает карточки А и не подменяет
+  /// деление выдачи Б (сверка находок тестировщика с сайтом, 18.10, Ш7).
+  /// Тем же номером побеждает последний поиск: новый, отправленный во время
+  /// загрузки прежнего, уходит, а ответ прежнего отбрасывается (Ш20).
+  int _searchSeq = 0;
+
+  /// Сколько раз нажимали «Сброс» ([clearFilters]). Экран, который держит
+  /// фразу в своём поле (главная), по нему узнаёт, что фразу сняли, — по
+  /// самим фильтрам этого не видно, если они и так были по умолчанию (Ш23).
+  int _filtersResetCount = 0;
   String? _error;
 
   // User location (null = no GPS, triggers searchWithoutLocation)
@@ -172,6 +198,7 @@ class EstablishmentsProvider with ChangeNotifier {
     _searchQuery = null;
     _searchIntent = null;
     _searchFallback = false;
+    _searchMatchedTotal = null;
     notifyListeners();
   }
 
@@ -190,6 +217,22 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Последняя выдача собрана в обход AI (он был недоступен)
   bool get searchFallback => _searchFallback;
+
+  /// Сколько первых заведений общей выдачи совпали с фразой; остальное —
+  /// «Возможно, вам подойдут» (решение Координатора В3, 17.10.2026). null —
+  /// делить нечего: искали без фразы или сервер поля не прислал.
+  int? get searchMatchedTotal => _searchMatchedTotal;
+
+  /// Фраза последней умной выдачи — для шапки «По запросу «…»».
+  String? get searchMatchedPhrase => _searchMatchedPhrase;
+
+  /// С какого места загруженного списка начинается «Возможно, вам подойдут»;
+  /// null — вся выдача совпадения (или делить нечего).
+  int? get suggestionsStartIndex {
+    final matched = _searchMatchedTotal;
+    if (matched == null || matched >= totalResults) return null;
+    return (matched - _loadedFrom).clamp(0, _establishments.length);
+  }
 
   /// Whether establishments are being loaded (initial load)
   bool get isLoading => _isLoading;
@@ -221,6 +264,9 @@ class EstablishmentsProvider with ChangeNotifier {
 
   String? get selectedCity => _selectedCity;
   String? get searchQuery => _searchQuery;
+
+  /// См. [_filtersResetCount].
+  int get filtersResetCount => _filtersResetCount;
 
   // Advanced filter getters
   DistanceOption get distanceFilter => _distanceFilter;
@@ -365,10 +411,20 @@ class EstablishmentsProvider with ChangeNotifier {
       if (_isLoadingMore) return;
       _isLoadingMore = true;
     } else {
-      if (_isLoading) return;
+      // Прежде: `if (_isLoading) return` — поиск, отправленный во время
+      // загрузки прежнего (новая фраза, сортировка, город, фильтры), молча
+      // пропадал: в поле «Б», в списке выдача «А» (сверка находок
+      // тестировщика с сайтом, 19.10, Ш20). Теперь побеждает последний:
+      // запрос уходит, ответ прежнего отбрасывается по номеру ниже.
       _isLoading = true;
       _establishments = [];
+      _searchSeq++;
+      // Подгрузка прежнего поиска, если она ещё в пути, этому поиску уже не
+      // принадлежит: её ответ отбросится по номеру, а флаг не должен запирать
+      // подгрузку нового.
+      _isLoadingMore = false;
     }
+    final seq = _searchSeq;
 
     _error = null;
     notifyListeners();
@@ -394,8 +450,11 @@ class EstablishmentsProvider with ChangeNotifier {
           page: page,
           limit: _pageSize,
         );
+        if (seq != _searchSeq) return;
         _searchIntent = smart.intent;
         _searchFallback = smart.fallback;
+        _searchMatchedTotal = smart.matchedTotal;
+        _searchMatchedPhrase = queryText;
         result = PaginatedEstablishments(
           data: smart.results,
           meta: PaginationMeta(
@@ -408,6 +467,7 @@ class EstablishmentsProvider with ChangeNotifier {
       } else {
         _searchIntent = null;
         _searchFallback = false;
+        _searchMatchedTotal = null;
         result = await _service.searchEstablishments(
           page: page,
           perPage: _pageSize,
@@ -425,6 +485,7 @@ class EstablishmentsProvider with ChangeNotifier {
           hoursFilter: f.hoursFilter,
           features: f.features,
         );
+        if (seq != _searchSeq) return;
       }
 
       if (append) {
@@ -432,6 +493,7 @@ class EstablishmentsProvider with ChangeNotifier {
         _isLoadingMore = false;
       } else {
         _establishments = result.data;
+        _loadedFrom = (result.meta.page - 1) * result.meta.perPage;
         _isLoading = false;
       }
 
@@ -465,6 +527,8 @@ class EstablishmentsProvider with ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
+      // Сбой устаревшего поиска — не ошибка нового.
+      if (seq != _searchSeq) return;
       _error = _extractErrorMessage(e, smartPath: queryText.isNotEmpty);
       if (append) {
         _isLoadingMore = false;
@@ -693,8 +757,12 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Clear all filters (reset to defaults)
   void clearFilters() {
+    _filtersResetCount++;
     _selectedCity = null;
     _searchQuery = null;
+    // Фразы больше нет — делить выдачу на совпадения и запасную нечем, даже
+    // если человек ушёл с экрана фильтров без «Применить».
+    _searchMatchedTotal = null;
     _distanceFilter = DistanceOption.all;
     _priceFilters.clear();
     _hoursFilter = null;

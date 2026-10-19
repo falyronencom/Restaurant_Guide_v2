@@ -24,6 +24,8 @@ import {
   isValidCategory,
   isValidCuisine,
   isCanonAttributeKey,
+  isCuisineRequired,
+  CUISINE_OPTIONAL_CATEGORIES,
 } from '../../constants/establishmentVocab.js';
 import { CATEGORY_SLUG_MAP, CUISINE_SLUG_MAP } from '../../constants/urlSlugs.js';
 
@@ -137,6 +139,17 @@ describe('establishmentVocab — DB CHECK parity (migration ↔ JS canon)', () =
     expect([...fromSql].sort()).toEqual([...VALID_CUISINES].sort());
   });
 
+  // Решение В5 и Ш17: какие категории могут быть без кухни — в базе тот же
+  // набор, что на сервере. Набор стоит внутри CHECK кухонь, поэтому ищем его
+  // после начала этого ограничения (первое `categories <@` — CHECK категорий).
+  test('030 cuisines CHECK: categories allowed without a cuisine match CUISINE_OPTIONAL_CATEGORIES', () => {
+    const start = migration030.indexOf('ADD CONSTRAINT establishments_cuisines_canon_check');
+    expect(start).toBeGreaterThan(-1);
+    const fromSql = extractCanonFromCheck(migration030.slice(start), 'categories');
+    expect(fromSql).not.toBeNull();
+    expect([...fromSql].sort()).toEqual([...CUISINE_OPTIONAL_CATEGORIES].sort());
+  });
+
   test('production_schema.sql canon CHECK (if folded in) matches JS canon — regen-drift guard', () => {
     // Absent today (030 not yet applied to prod / not yet regenerated in). Once a
     // future regen folds it in, this asserts the regenerated artifact did not
@@ -153,5 +166,48 @@ describe('establishmentVocab — DB CHECK parity (migration ↔ JS canon)', () =
       expect([...cats].sort()).toEqual([...VALID_CATEGORIES].sort());
       expect([...cuis].sort()).toEqual([...VALID_CUISINES].sort());
     }
+  });
+});
+
+// Решение Координатора В5 (17.10.2026): кухня необязательна для бара и клуба;
+// Ш17 (19.10.2026): ещё для кальянной, боулинга, караоке и бильярда; паб — с кухней.
+describe('isCuisineRequired', () => {
+  test.each([
+    [['Бар']],
+    [['Клуб']],
+    [['Бар', 'Клуб']],
+    [['Кальянная']],
+    [['Боулинг']],
+    [['Караоке']],
+    [['Бильярд']],
+    [['Боулинг', 'Бильярд']],
+    [['Кальянная', 'Бар']],
+  ])('%j — кухню можно не выбирать', (categories) => {
+    expect(isCuisineRequired(categories)).toBe(false);
+  });
+
+  test.each([
+    [['Ресторан']],
+    [['Бар', 'Ресторан']],
+    [['Клуб', 'Кафе']],
+    [['Паб']],
+    [['Боулинг', 'Паб']],
+    [['Караоке', 'Ресторан']],
+    [['Кальянная', 'Кафе']],
+    [[]],
+    [undefined],
+    [null],
+    ['Бар'],
+  ])('%j — кухня обязательна', (categories) => {
+    expect(isCuisineRequired(categories)).toBe(true);
+  });
+
+  test('набор — канонические категории: бар, клуб, кальянная, боулинг, караоке, бильярд', () => {
+    for (const category of CUISINE_OPTIONAL_CATEGORIES) {
+      expect(VALID_CATEGORIES).toContain(category);
+    }
+    expect([...CUISINE_OPTIONAL_CATEGORIES].sort()).toEqual(
+      ['Бар', 'Бильярд', 'Боулинг', 'Караоке', 'Кальянная', 'Клуб'].sort(),
+    );
   });
 });

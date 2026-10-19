@@ -292,6 +292,29 @@ void main() {
       ));
     }
 
+    // Шапка файла — о каждом экране отзывов, и у владельца сбой первой
+    // страницы не проверял никто.
+    testWidgets(
+        'сбой первой страницы: ошибка и «Повторить», а не «нет отзывов за '
+        'период»', (tester) async {
+      var offline = true;
+      installWireStand(
+          (options) => offline ? _offline(options) : jsonBody(_page(1)));
+
+      await pumpPartner(tester);
+      await _pumpUntil(tester, find.text(_failed));
+
+      expect(find.text(_failed), findsOneWidget);
+      expect(find.text('Нет отзывов за выбранный период'), findsNothing);
+
+      offline = false;
+      await tester.tap(find.text('Повторить'));
+      await _pumpUntil(tester, find.text('Отзыв 1'));
+
+      expect(find.text('Отзыв 1'), findsOneWidget);
+      expect(find.text(_failed), findsNothing);
+    });
+
     testWidgets('сбой подгрузки: листание стоит до «Повторить»',
         (tester) async {
       var page2Offline = true;

@@ -7,6 +7,7 @@
 // `travelmode=walking` (документация Google Maps URLs).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/route_links.dart';
@@ -81,6 +82,33 @@ void main() {
     test('приложения нет — браузер, отдельным приложением', () async {
       expect(await run(appInstalled: false),
           [(links.web, LaunchMode.externalApplication)]);
+    });
+
+    test('без подмены запуска: режим доходит до системы', () async {
+      // Тесты выше подменяют сам запуск и видят только режим, переданный
+      // ему, — дойдёт ли он до системы, решает настоящая функция запуска.
+      // Под `flutter test` url_launcher говорит с системой через этот канал:
+      // `useSafariVC`/`useWebView` — «открыть внутри приложения». Браузер для
+      // маршрута — отдельным приложением, то есть оба `false`.
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      await launchRouteLinks(links, canLaunch: (_) async => false);
+
+      expect(calls.map((c) => c.method), ['launch']);
+      final args = calls.single.arguments as Map;
+      expect(args['url'], links.web.toString());
+      expect(args['useSafariVC'], isFalse,
+          reason: 'маршрут открылся бы внутри приложения, а не в браузере');
+      expect(args['useWebView'], isFalse);
     });
   });
 
@@ -159,6 +187,10 @@ void main() {
           googleRouteLinks(53.9045, 27.5615, RouteMode.driving)),
       ('Маршрут в Яндекс.Картах', RouteMode.walking,
           yandexRouteLinks(53.9045, 27.5615, RouteMode.walking)),
+      // Таблица — все пары «навигатор × способ»: пропущенная пара — та, где
+      // кнопка может открыть не тот маршрут, и никто этого не увидит.
+      ('Маршрут в Google Картах', RouteMode.walking,
+          googleRouteLinks(53.9045, 27.5615, RouteMode.walking)),
     ];
     for (final (label, mode, expected) in choices) {
       testWidgets('«$label» ($mode): шторка закрыта, открыт этот маршрут',

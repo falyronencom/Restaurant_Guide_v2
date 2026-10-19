@@ -18,6 +18,13 @@ class SmartSearchResult {
   final int totalPages;
   final bool hasNext;
 
+  /// Сколько первых заведений общей выдачи (по порядку, через все страницы)
+  /// совпали с фразой; остальные — «Возможно, вам подойдут» (решение
+  /// Координатора В3, 17.10.2026: «Buno», которого нет, — не повод выдавать
+  /// весь город за совпадения). null — сервер до 18.10.2026 поля не шлёт:
+  /// тогда вся выдача — совпадения, как прежде.
+  final int? matchedTotal;
+
   SmartSearchResult({
     this.intent,
     required this.results,
@@ -27,6 +34,7 @@ class SmartSearchResult {
     this.limit = 20,
     this.totalPages = 1,
     this.hasNext = false,
+    this.matchedTotal,
   });
 
   factory SmartSearchResult.fromJson(Map<String, dynamic> json) {
@@ -51,6 +59,7 @@ class SmartSearchResult {
       totalPages: pagination['totalPages'] as int? ??
           (limit > 0 ? (total + limit - 1) ~/ limit : 1),
       hasNext: pagination['hasNext'] as bool? ?? (page * limit < total),
+      matchedTotal: (data['matchedTotal'] as num?)?.toInt(),
     );
   }
 }

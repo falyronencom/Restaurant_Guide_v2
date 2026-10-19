@@ -280,6 +280,8 @@ describe('Smart Search - Response Format', () => {
     expect(data).toHaveProperty('establishments');
     expect(data).toHaveProperty('pagination');
     expect(data).toHaveProperty('fallback');
+    expect(typeof data.matched).toBe('boolean');
+    expect(Number.isInteger(data.matchedTotal)).toBe(true);
     expect(data.pagination).toHaveProperty('total');
     expect(data.pagination).toHaveProperty('page');
     expect(data.pagination).toHaveProperty('limit');
@@ -1421,6 +1423,123 @@ describe('Smart Search - поиск по названию заведения', (
     expect(data.pagination.total).toBe(MINSK_TOTAL + 1);
     expect(names).toHaveLength(MINSK_TOTAL + 1);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  // Признак совпадения (решение Координатора В3, 17.10.2026): непонятая фраза
+  // — «ничего не найдено» и ниже «возможно, подойдут». Выдача та же, что
+  // прежде; новые поля говорят, сколько её первых заведений — совпадения.
+  // Сверка находок тестировщика, 17–18.10, пункты 9 и 10.
+
+  test('«Buno» — названия такого нет, разбор пуст: совпадений нет, весь город — запасная выдача', async () => {
+    const data = await smart('Buno', p1Intent());
+
+    expect(data.matched).toBe(false);
+    expect(data.matchedTotal).toBe(0);
+    // Сама выдача прежняя: сборки № 35 и № 36 полей не читают.
+    expect(data.pagination.total).toBe(MINSK_TOTAL);
+  });
+
+  test('расплывчатая фраза и слово обстановки — тоже не совпадение: «что-нибудь вкусное», «уютное место»', async () => {
+    for (const [phrase, intent] of [['что-нибудь вкусное', p1Intent()], ['уютное место', p1Intent({ tags: ['уютное'] })]]) {
+      const data = await smart(phrase, intent);
+      expect(data.matched).toBe(false);
+      expect(data.matchedTotal).toBe(0);
+      expect(data.pagination.total).toBe(MINSK_TOTAL);
+    }
+  });
+
+  test('название и опечатка в нём — совпадение: «Tiden», «tidem»', async () => {
+    for (const phrase of ['Tiden', 'tidem']) {
+      const data = await smart(phrase, p1Intent());
+      expect(namesOf(data)).toEqual(['TIDEN']);
+      expect(data.matched).toBe(true);
+      expect(data.matchedTotal).toBe(1);
+    }
+  });
+
+  test('понятое условие — совпадение всей выдачи: «кафе» (тип), «рядом со мной» (только сортировка)', async () => {
+    const cafe = await smart('кафе', p1Intent({ category: 'Кафе' }));
+    expect(cafe.matched).toBe(true);
+    expect(cafe.matchedTotal).toBe(cafe.pagination.total);
+
+    const near = await smart('рядом со мной', p1Intent({ sort: 'distance' }));
+    expect(near.pagination.total).toBe(MINSK_TOTAL);
+    expect(near.matched).toBe(true);
+    expect(near.matchedTotal).toBe(MINSK_TOTAL);
+  });
+
+  test('«Buno рядом», «Buno Минск» — сортировка и город выдачу не сужают: совпадений нет, как у «Buno»', async () => {
+    for (const [phrase, intent] of [['Buno рядом', p1Intent({ sort: 'distance' })], ['Buno Минск', p1Intent({ location: 'Минск' })]]) {
+      const data = await smart(phrase, intent);
+      expect(data.pagination.total).toBe(MINSK_TOTAL);
+      expect(data.matched).toBe(false);
+      expect(data.matchedTotal).toBe(0);
+    }
+  });
+
+  test('страница 2 не меняет границу: «бар» при пустом разборе — matchedTotal 1 на каждой странице', async () => {
+    await seedIntent('бар', p1Intent());
+    for (const pageNo of [1, 2]) {
+      const data = (await request(app)
+        .post('/api/v1/search/smart')
+        .send({ query: 'бар', city: 'Минск', limit: 3, page: pageNo })).body.data;
+      expect(data.matchedTotal).toBe(1);
+      expect(data.pagination.total).toBe(MINSK_TOTAL);
+    }
+  });
+
+  test('модель не ответила: текстовый поиск по фразе — совпадение, а ноль — честный ноль без запасной выдачи', async () => {
+    for (const phrase of ['Tiden', 'Buno']) {
+      await deleteKey(`smartsearch:${intentCacheHash(phrase)}`);
+    }
+
+    const found = await smart('Tiden', null);
+    expect(found.fallback).toBe(true);
+    expect(found.matched).toBe(true);
+    expect(found.matchedTotal).toBe(1);
+
+    const none = await smart('Buno', null);
+    expect(none.fallback).toBe(true);
+    expect(none.pagination.total).toBe(0);
+    expect(none.matched).toBe(false);
+    expect(none.matchedTotal).toBe(0);
+  });
+
+  test('обе части в одном ответе: «бар» при пустом разборе — заведение «Бар» совпало, остальной город — «возможно, подойдут»', async () => {
+    // Название — общее слово, поэтому совпавшее идёт первым, а не вместо всех
+    // (режим 'first'); разбор пуст, и выдача под ним — весь город.
+    const data = await smart('бар', p1Intent());
+
+    expect(namesOf(data)[0]).toBe('Бар');
+    expect(data.pagination.total).toBe(MINSK_TOTAL);
+    expect(data.matched).toBe(true);
+    expect(data.matchedTotal).toBe(1);
+  });
+
+  // Фильтры экрана отсекли совпавшее по названию (сверка находок тестировщика
+  // с сайтом, 18.10, Ш3). Прежде выдача по прочтению, которое режим «только
+  // совпавшие» считает шумом, засчитывалась совпадением.
+
+  test('«urban dzen cafe» с фильтром «Кафе»: кофейня отсечена — «ничего не найдено», кафе «Ромашка» — запасная выдача', async () => {
+    const data = await smart('urban dzen cafe', p1Intent({ category: 'Кафе' }), { categories: ['Кафе'] });
+
+    expect(namesOf(data)).toEqual(['Ромашка']);
+    expect(data.matched).toBe(false);
+    expect(data.matchedTotal).toBe(0);
+  });
+
+  test('без фильтра то же название — совпадение, как прежде', async () => {
+    const data = await smart('urban dzen cafe', p1Intent({ category: 'Кафе' }));
+
+    expect(namesOf(data)).toEqual(['urban dzen cafe']);
+    expect(data.matchedTotal).toBe(1);
+  });
+
+  test('граница: «underdog пицца» с фильтром «$$$» — underdog отсечён, но пицца — часть фразы: «Итальяно» остаётся совпадением', async () => {
+    const data = await smart('underdog пицца', p1Intent({ dish: 'пицца', dish_variants: ['pizza'] }), { priceRange: ['$$$'] });
+
+    expect(namesOf(data)).toEqual(['Итальяно']);
+    expect(data.matchedTotal).toBe(1);
   });
 });
 

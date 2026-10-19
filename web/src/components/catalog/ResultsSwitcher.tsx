@@ -23,21 +23,27 @@ const MapView = dynamic(() => import('@/components/map/MapView'), {
   ssr: false,
 });
 
-// Offset (px) the results section (toggle + map) is lifted to under the sticky
-// header on entering map view — small enough that the Найдено/Sort toolbar above
-// the toggle tucks fully behind the header (no clipped text), with a little
-// breathing room beneath the header.
-const MAP_VIEW_TOP_OFFSET = 80;
+// Offset (px) the results section (toolbar + toggle + map) is lifted to on
+// entering map view: just under the sticky site header (72px + 1px border,
+// SiteHeader) with a little breathing room. The section starts at the
+// Найдено/Sort toolbar (`header`), so the toolbar stays on screen above the
+// map — «По запросу «…» ничего не найдено» included. It used to start at the
+// toggle and tuck the toolbar behind the site header (сверка находок
+// тестировщика с сайтом, 18.10, Ш1).
+const MAP_VIEW_TOP_OFFSET = 88;
 
 export function ResultsSwitcher({
   citySlug,
   categorySlug,
   searchParams,
+  header,
   children,
 }: {
   citySlug: string;
   categorySlug?: string;
   searchParams: SearchParams;
+  /** The results toolbar (Найдено/Sort) — part of the lifted section. */
+  header?: ReactNode;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -46,8 +52,8 @@ export function ResultsSwitcher({
   const view = sp.get('view') === 'map' ? 'map' : 'list';
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Immersive map: when the map opens, lift the results section (the
-  // Списком/На карте toggle + the map) under the header so the whole map — and
+  // Immersive map: when the map opens, lift the results section (the toolbar,
+  // the Списком/На карте toggle + the map) under the header so the whole map — and
   // its bottom preview card — sits on screen without the user scrolling below
   // the fold (the catalog hero pushes it down), while the toggle stays reachable
   // for the trip back to the list. Mirrors Booking/Yandex's full-height map
@@ -102,6 +108,7 @@ export function ResultsSwitcher({
 
   return (
     <div ref={rootRef}>
+      {header}
       <div className="mb-m flex justify-end">
         <div className="inline-flex rounded-full border border-figma-border-light p-1 text-caption-l">
           <button
@@ -130,7 +137,7 @@ export function ResultsSwitcher({
           citySlug={citySlug}
           categorySlug={categorySlug}
           searchParams={searchParams}
-          className="lg:h-[calc(100dvh-10rem)]"
+          className="lg:h-[calc(100dvh-14rem)]"
         />
       )}
     </div>

@@ -18,8 +18,18 @@
  *     optional; this keeps the three targets aligned.
  */
 
-import { DAY_KEYS, E1_MIN_DESCRIPTION, E1_MIN_PHOTOS } from '@/lib/partner/constants';
+import {
+  DAY_KEYS,
+  E1_MIN_DESCRIPTION,
+  E1_MIN_PHOTOS,
+  isCuisineRequired,
+} from '@/lib/partner/constants';
 import type { WizardFormState } from '@/lib/partner/form';
+
+/** ≥1 cuisine, or none needed — a cuisine-optional category (decision В5, Ш17). */
+function hasCuisineIfRequired(form: WizardFormState): boolean {
+  return form.cuisines.length >= 1 || !isCuisineRequired(form.categories);
+}
 
 function hasObservedHours(form: WizardFormState): boolean {
   return DAY_KEYS.some((d) => {
@@ -34,7 +44,7 @@ export function meetsValidatorMinimum(form: WizardFormState): boolean {
   const hasAddress =
     form.street.trim().length > 0 || form.building.trim().length > 0;
   const hasCategory = form.categories.length >= 1;
-  const hasCuisine = form.cuisines.length >= 1;
+  const hasCuisine = hasCuisineIfRequired(form);
   return (
     hasName &&
     hasCity &&
@@ -49,7 +59,7 @@ export type E1Checklist = {
   photos: boolean; // ≥ E1_MIN_PHOTOS establishment (interior) photos
   menu: boolean; // ≥1 menu photo OR PDF
   hours: boolean; // ≥1 open day with times
-  classification: boolean; // ≥1 category AND ≥1 cuisine
+  classification: boolean; // ≥1 category AND ≥1 cuisine (none needed for a cuisine-optional category)
   /** ≥ E1_MIN_DESCRIPTION chars — PROGRESS ONLY, never gates Submit (see header). */
   description: boolean;
   passed: boolean; // every gating item above (description excluded)
@@ -60,7 +70,7 @@ export function evaluateE1(form: WizardFormState): E1Checklist {
   const menu = form.menuPhotos.length >= 1 || form.menuPdfs.length >= 1;
   const hours = hasObservedHours(form);
   const classification =
-    form.categories.length >= 1 && form.cuisines.length >= 1;
+    form.categories.length >= 1 && hasCuisineIfRequired(form);
   const description = form.description.trim().length >= E1_MIN_DESCRIPTION;
   return {
     photos,

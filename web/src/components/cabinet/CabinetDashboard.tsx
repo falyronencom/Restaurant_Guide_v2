@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 
+import { useAuth } from '@/components/auth/AuthProvider';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -17,6 +18,7 @@ import type {
   PartnerEstablishmentListing,
 } from '@/lib/api/types';
 import { loadEstablishments } from '@/lib/partner/client';
+import { forgetWizardDraft } from '@/lib/partner/draft-storage';
 import { STATUS_LABELS, STATUS_ORDER } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +28,11 @@ import { EstablishmentVignette } from './EstablishmentVignette';
  * Cabinet dashboard (Phase C Slice 1, Segment B). Client island: hydrates the
  * authed list via the loadEstablishments Route Handler fetch on mount (httpOnly tokens
  * → ask the server, mirroring AuthProvider), then groups by status into tabs.
+ *
+ * A signed-in person who is not a partner yet (no card created) gets 403 on
+ * the list — the server lists cards for the partner role only — and sees the
+ * empty cabinet with «Создать заведение», not a load error (сверка находок
+ * тестировщика с сайтом, 18.10, пункт С4).
  */
 
 type LoadState =
@@ -43,7 +50,12 @@ export function CabinetDashboard() {
       .then((res) => {
         if (cancelled) return;
         if (!res.ok) {
-          setState({ phase: 'error', code: res.code });
+          // The role gate's refusal (details.your_role) — not a partner yet.
+          setState(
+            res.code === 'FORBIDDEN' && res.role !== undefined && res.role !== 'partner'
+              ? { phase: 'ready', items: [] }
+              : { phase: 'error', code: res.code },
+          );
           return;
         }
         setState({ phase: 'ready', items: res.establishments });
@@ -61,13 +73,35 @@ export function CabinetDashboard() {
     };
   }, []);
 
-  // Drop a deleted card from the list in place (B4) — no refetch needed.
-  const handleDeleted = useCallback((id: string) => {
+  const { user } = useAuth();
+
+  // Drop a deleted card from the list in place (B4) — no refetch needed — and
+  // the «Создать заведение» form kept for it, so it does not come back (С1).
+  const handleDeleted = useCallback(
+    (id: string) => {
+      forgetWizardDraft(user?.id, id);
+      setState((prev) =>
+        prev.phase === 'ready'
+          ? { ...prev, items: prev.items.filter((item) => item.id !== id) }
+          : prev,
+      );
+    },
+    [user?.id],
+  );
+
+  // A resumed card is live again (С3): move it to «Опубликовано» in place.
+  const handleResumed = useCallback((id: string) => {
     setState((prev) =>
       prev.phase === 'ready'
-        ? { ...prev, items: prev.items.filter((item) => item.id !== id) }
+        ? {
+            ...prev,
+            items: prev.items.map((item) =>
+              item.id === id ? { ...item, status: 'active' } : item,
+            ),
+          }
         : prev,
     );
+    setTab('active');
   }, []);
 
   return (
@@ -126,6 +160,7 @@ export function CabinetDashboard() {
                           key={e.id}
                           establishment={e}
                           onDeleted={handleDeleted}
+                          onResumed={handleResumed}
                         />
                       ))}
                     </div>

@@ -27,7 +27,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-const { pool } = await import('../../config/database.js');
+const { pool, getClient } = await import('../../config/database.js');
 const { generateAccessToken, generateRefreshToken } = await import('../../utils/jwt.js');
 const { authenticateWithOAuth } = await import('../../services/authService.js');
 
@@ -142,5 +142,25 @@ describe('authenticateWithOAuth', () => {
     mockPoolFor({ oauthRows: [userRow({ is_active: false })] });
 
     await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
+  });
+
+  // The gate has a second door: an account found by its e-mail, not by the
+  // provider id. Switched off, it is neither linked (a confirmed address) nor
+  // taken over (an unconfirmed one) — whichever the provider would do next.
+  test.each([
+    ['its address confirmed — would be linked', true],
+    ['its address unconfirmed — would be taken over', false],
+  ])('rejects a deactivated account found by e-mail: %s', async (_label, emailVerified) => {
+    mockPoolFor({
+      oauthRows: [],
+      emailRows: [userRow({
+        auth_method: 'email', oauth_provider_id: null, email_verified: emailVerified, is_active: false,
+      })],
+      returnedUser: userRow({ auth_method: 'yandex' }),
+    });
+
+    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
+    expect(linked()).toBe(false); // not linked (the pool)
+    expect(getClient).not.toHaveBeenCalled(); // not taken over (the takeover runs in a transaction)
   });
 });

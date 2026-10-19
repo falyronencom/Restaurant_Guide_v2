@@ -139,6 +139,21 @@ describe('GET /api/map — with a phrase', () => {
     expect(body.establishments[0]).not.toHaveProperty('phone');
   });
 
+  it('carries matchedTotal, so the map can tell matches from suggestions (Ш1)', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: null,
+      establishments: [LISTING],
+      pagination: { page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      fallback: false,
+      matched: false,
+      matchedTotal: 0,
+    });
+
+    const res = await GET(req(`${BOX}&search=Buno&city=minsk`));
+
+    expect(((await res.json()) as { matchedTotal?: number }).matchedTotal).toBe(0);
+  });
+
   it('metadata failure (needed only for the phrase path) → the classic phrase map, not an error', async () => {
     (getMetadata as jest.Mock).mockRejectedValue(new ApiError(0, 'Fetch failed'));
 

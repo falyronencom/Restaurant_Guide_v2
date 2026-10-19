@@ -327,13 +327,22 @@ describe('Б5: create-review-user.js and create-test-partner.js do not delete', 
     expect((await one('SELECT COUNT(*)::int AS n FROM users')).n).toBe(0);
   });
 
-  test('create-review-user.js refuses an account with cards and leaves it and its cards in place', async () => {
-    const id = await user({ email: 'review@example.com', role: 'partner' });
-    await card(id);
+  // «Only an ordinary user without cards»: each of the three things that make an
+  // account not that — another role, cards, the service flag — on its own; and
+  // the partner with a card of the original case, whose cards must stay.
+  test.each([
+    ['a partner without cards', { role: 'partner' }, 0],
+    ['an ordinary user who owns a card', { role: 'user' }, 1],
+    ['an ordinary user with the service flag', { role: 'user', service: true }, 0],
+    ['a partner with a card', { role: 'partner' }, 1],
+  ])('create-review-user.js refuses %s and leaves it and its cards in place', async (_label, account, cards) => {
+    const id = await user({ email: 'review@example.com', ...account });
+    for (let i = 0; i < cards; i += 1) await card(id);
+    const before = await one('SELECT id, role, password_hash FROM users WHERE id = $1', [id]);
     const result = run('create-review-user.js', [], { REVIEW_EMAIL: 'review@example.com', REVIEW_PASSWORD: NEW_PASSWORD });
     expect(result.status).toBe(1);
-    expect(await one('SELECT id, role FROM users WHERE id = $1', [id])).toEqual({ id, role: 'partner' });
-    expect((await one('SELECT COUNT(*)::int AS n FROM establishments WHERE partner_id = $1', [id])).n).toBe(1);
+    expect(await one('SELECT id, role, password_hash FROM users WHERE id = $1', [id])).toEqual(before);
+    expect((await one('SELECT COUNT(*)::int AS n FROM establishments WHERE partner_id = $1', [id])).n).toBe(cards);
   });
 
   test('create-review-user.js updates an ordinary user in place — same id — and does not print the password', async () => {

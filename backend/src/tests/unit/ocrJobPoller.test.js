@@ -260,7 +260,13 @@ describe('tick — sweep cadence', () => {
   });
 
   test('start() sweeps immediately; stop() clears the interval', async () => {
+    // «Clears the interval» — the timer itself, not only the status flag: every
+    // interval start() set is handed to clearInterval by stop().
+    const setIntervalSpy = jest.spyOn(global, 'setInterval');
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
     Poller.start({ intervalMs: 60000 });
+    const intervals = setIntervalSpy.mock.results.map((result) => result.value);
+    expect(intervals.length).toBeGreaterThan(0);
 
     expect(Poller.status().running).toBe(true);
     expect(mockReap).toHaveBeenCalledTimes(1);
@@ -271,6 +277,9 @@ describe('tick — sweep cadence', () => {
 
     await Poller.stop();
     expect(Poller.status()).toEqual({ running: false, busy: false, sweeping: false });
+    for (const interval of intervals) {
+      expect(clearIntervalSpy).toHaveBeenCalledWith(interval);
+    }
   });
 });
 

@@ -148,20 +148,26 @@ void main() {
     expect(find.textContaining('от вас'), findsNothing);
   });
 
-  testWidgets(
-      'разрешение дано: позиция без вопроса, «2.0 км от вас»; сортировка '
-      '«по рейтингу» остаётся', (tester) async {
-    final platform = installGeolocator(
-        _FakeGeolocator(permission: LocationPermission.whileInUse));
+  // «Дано» — оба ответа системы: «при использовании» и «всегда» (iPhone, у
+  // кого разрешено фоновое определение).
+  for (final granted in const [
+    LocationPermission.whileInUse,
+    LocationPermission.always,
+  ]) {
+    testWidgets(
+        'разрешение дано (${granted.name}): позиция без вопроса, «2.0 км от '
+        'вас»; сортировка «по рейтингу» остаётся', (tester) async {
+      final platform = installGeolocator(_FakeGeolocator(permission: granted));
 
-    final establishments = await openCard(tester);
+      final establishments = await openCard(tester);
 
-    expect(platform.calls, isNot(contains('request')));
-    expect(establishments.hasRealLocation, isTrue);
-    expect(find.text('2.0 км от вас'), findsOneWidget);
-    expect(establishments.currentSort, SortOption.rating,
-        reason: 'открыть карточку — не выбрать сортировку «по расстоянию»');
-  });
+      expect(platform.calls, isNot(contains('request')));
+      expect(establishments.hasRealLocation, isTrue);
+      expect(find.text('2.0 км от вас'), findsOneWidget);
+      expect(establishments.currentSort, SortOption.rating,
+          reason: 'открыть карточку — не выбрать сортировку «по расстоянию»');
+    });
+  }
 
   testWidgets(
       'геолокация выключена: позицию не спрашивают, расстояния нет',

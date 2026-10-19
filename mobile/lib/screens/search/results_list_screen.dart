@@ -7,6 +7,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/widgets/default_city_button.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/filter_icon_button.dart';
 import 'package:restaurant_guide_mobile/widgets/results_search_bar.dart';
@@ -167,8 +168,20 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   }
 
   /// Navigate to filter screen
-  void _openFilters() {
-    Navigator.of(context).pushNamed('/filter');
+  ///
+  /// «Сброс» там снимает и фразу поиска (`clearFilters`). Поле этого экрана
+  /// держало бы её дальше: в строке «Buno», а выдача и следующий поиск — уже
+  /// без неё. Поле сверяется с фразой провайдера, когда экран фильтров
+  /// закрыт (сверка находок тестировщика с сайтом, 18.10, Ш6). Только тогда:
+  /// провайдер получает фразу из поля лишь при поиске, и сверка на каждом его
+  /// уведомлении стирала бы недонабранный текст.
+  Future<void> _openFilters() async {
+    await Navigator.of(context).pushNamed('/filter');
+    if (!mounted) return;
+    final phrase = context.read<EstablishmentsProvider>().searchQuery ?? '';
+    if (_searchController.text != phrase) {
+      _searchController.text = phrase;
+    }
   }
 
   /// Show city selection bottom sheet (Figma design)
@@ -224,38 +237,33 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                           color: AppTheme.textPrimary,
                         ),
                       ),
-                      Positioned(
-                        right: 16,
-                        child: GestureDetector(
-                          onTap: () {
-                            setModalState(() {
-                              tempSelectedCity = 'Минск';
-                            });
-                          },
-                          child: const Text(
-                            'Сброс',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Ваш город',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textPrimary,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 12, 16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Ваш город',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
                       ),
-                    ),
+                      Flexible(
+                        child: DefaultCityButton(
+                          onTap: () {
+                            setModalState(() {
+                              tempSelectedCity = BelarusCities.defaultCity;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -615,17 +623,30 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                 ),
               ),
 
-              // Results count
+              // Results count. Совпадения отдельно от запасной выдачи
+              // (решение Координатора В3, 17.10.2026): по «Buno», которого
+              // нет, — «ничего не найдено», а не «Результаты: 46».
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Результаты: ${provider.totalResults}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
+                  child: provider.searchMatchedTotal == 0 &&
+                          provider.suggestionsStartIndex != null
+                      ? Text(
+                          'По запросу «${provider.searchMatchedPhrase ?? ''}» '
+                          'ничего не найдено',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                        )
+                      : Text(
+                          'Результаты: ${provider.suggestionsStartIndex != null ? provider.searchMatchedTotal : provider.totalResults}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
                 ),
               ),
 
@@ -660,7 +681,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                       );
                     }
 
-                    return EstablishmentCard(
+                    final card = EstablishmentCard(
                       establishment: establishment,
                       isFavorite: isFavorite,
                       onTap: () => _navigateToDetail(establishment.id, distanceKm: distanceKm),
@@ -672,6 +693,24 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
                               establishment.longitude != null
                           ? () => _openOnMap(establishment)
                           : null,
+                    );
+                    if (index != provider.suggestionsStartIndex) return card;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: Text(
+                            'Возможно, вам подойдут',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        card,
+                      ],
                     );
                   },
                   childCount: provider.establishments.length +

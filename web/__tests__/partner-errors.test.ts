@@ -35,6 +35,14 @@ const CABINET_CODES = [
   'ESTABLISHMENT_NOT_DELETABLE',
   'INVALID_STATUS_FOR_SUBMISSION',
   'INCOMPLETE_ESTABLISHMENT',
+  // Added 18.10.2026 (сверка находок тестировщика с сайтом, С5): the upload
+  // to a card answers the PDF limit and a wrong media type in English, and a
+  // moderator's suspension refuses «Возобновить».
+  'PDF_LIMIT_EXCEEDED',
+  'INVALID_MEDIA_TYPE',
+  'ADMIN_SUSPENDED',
+  'SLUG_COLLISION',
+  'RATE_LIMIT_EXCEEDED',
   // Not establishmentService's: thrown by the web layer itself (authedFetch,
   // the media proxy) — they reach the same cabinet UI.
   'NO_SESSION',

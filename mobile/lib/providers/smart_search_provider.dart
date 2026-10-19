@@ -35,6 +35,7 @@ class SmartSearchProvider extends ChangeNotifier {
     _totalResults = 0;
     _parsedIntent = null;
     _isFallback = false;
+    _matchedTotal = null;
     _errorMessage = null;
     _lastQuery = '';
     notifyListeners();
@@ -45,6 +46,7 @@ class SmartSearchProvider extends ChangeNotifier {
   int _totalResults = 0;
   SmartSearchIntent? _parsedIntent;
   bool _isFallback = false;
+  int? _matchedTotal;
   String? _errorMessage;
   String _lastQuery = '';
 
@@ -54,6 +56,18 @@ class SmartSearchProvider extends ChangeNotifier {
   int get totalResults => _totalResults;
   SmartSearchIntent? get parsedIntent => _parsedIntent;
   bool get isFallback => _isFallback;
+
+  /// Сколько первых заведений выдачи совпали с фразой (В3); null — сервер
+  /// поля не прислал, вся выдача — совпадения.
+  int? get matchedTotal => _matchedTotal;
+
+  /// Сколько из показанных в превью — совпадения; остальные идут под
+  /// «Возможно, вам подойдут».
+  int get matchedShown {
+    final matched = _matchedTotal;
+    if (matched == null) return _smartResults.length;
+    return matched.clamp(0, _smartResults.length);
+  }
   String? get errorMessage => _errorMessage;
   String get lastQuery => _lastQuery;
   bool get hasResults => _state == SmartSearchState.results && _smartResults.isNotEmpty;
@@ -103,6 +117,7 @@ class SmartSearchProvider extends ChangeNotifier {
       _totalResults = result.total;
       _parsedIntent = result.intent;
       _isFallback = result.fallback;
+      _matchedTotal = result.matchedTotal;
       _state = SmartSearchState.results;
     } catch (e) {
       if (generation != _generation) return;
@@ -111,6 +126,7 @@ class SmartSearchProvider extends ChangeNotifier {
       _smartResults = [];
       _totalResults = 0;
       _parsedIntent = null;
+      _matchedTotal = null;
     }
 
     notifyListeners();
@@ -123,6 +139,7 @@ class SmartSearchProvider extends ChangeNotifier {
     _totalResults = 0;
     _parsedIntent = null;
     _isFallback = false;
+    _matchedTotal = null;
     _errorMessage = null;
     _lastQuery = '';
     notifyListeners();

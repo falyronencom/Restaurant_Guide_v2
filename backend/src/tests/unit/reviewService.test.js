@@ -513,7 +513,10 @@ describe('reviewService', () => {
       });
     });
 
-    test('should enforce maximum limit', async () => {
+    // The body pins pass-through, not a cap: the cap of 50 lives before the
+    // service (validators/reviewValidation.js, reviewController.js) — the old
+    // name «should enforce maximum limit» promised what this layer does not do.
+    test('passes the limit through to the model as given — the cap lives before the service', async () => {
       ReviewModel.findReviewsByEstablishment.mockResolvedValue([]);
       ReviewModel.countReviewsByEstablishment.mockResolvedValue(0);
 

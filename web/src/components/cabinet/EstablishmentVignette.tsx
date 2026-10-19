@@ -12,12 +12,15 @@ import { STATUS_LABELS, isAdminSuspended } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
 import { DeleteEstablishmentButton } from './DeleteEstablishmentButton';
+import { ResumeEstablishmentButton } from './ResumeEstablishmentButton';
 
 /*
  * Cabinet establishment vignette (Phase C Slice 1, Segment B). Renders inside the
  * client dashboard. Surfaces the primary photo, status, engagement metrics,
  * completeness (base_score), rejection notes (rejected) / suspension reason
- * (admin-suspended), and the edit entry.
+ * (admin-suspended), and the edit entry. A card the partner paused carries
+ * «Возобновить» (С3); a moderator's suspension does not — the partner fixes it
+ * and sends it to moderation again.
  */
 
 const STATUS_BADGE: Record<EstablishmentStatus, string> = {
@@ -36,9 +39,11 @@ const EDIT_LABEL: Partial<Record<EstablishmentStatus, string>> = {
 export function EstablishmentVignette({
   establishment: e,
   onDeleted,
+  onResumed,
 }: {
   establishment: PartnerEstablishmentListing;
   onDeleted: (id: string) => void;
+  onResumed?: (id: string) => void;
 }) {
   const photo = e.primary_photo?.thumbnail_url ?? e.primary_photo?.url ?? null;
   const notes = e.moderation_notes;
@@ -51,6 +56,7 @@ export function EstablishmentVignette({
   // from the cabinet is intentionally not a one-click action.
   const canDelete =
     (e.status === 'draft' || e.status === 'rejected') && !e.published_at;
+  const selfPaused = e.status === 'suspended' && !isAdminSuspended(notes);
 
   return (
     <article className="flex flex-col overflow-hidden rounded-[var(--radius-l)] border border-border bg-background">
@@ -127,7 +133,16 @@ export function EstablishmentVignette({
             </p>
           )}
 
-        <div className="mt-auto flex items-center gap-2 pt-s">
+        {selfPaused && (
+          <p className="text-caption-m text-figma-text-dark">
+            Показ приостановлен вами — гости карточку не видят.
+          </p>
+        )}
+
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-s">
+          {selfPaused && onResumed && (
+            <ResumeEstablishmentButton establishmentId={e.id} onResumed={onResumed} />
+          )}
           <Link
             href={`/cabinet/${e.id}/edit`}
             className={cn(

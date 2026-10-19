@@ -237,7 +237,8 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                   Text(establishment.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
                   const SizedBox(height: 4),
                   Text(establishment.categoryDisplayName, style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary)),
-                  Text(establishment.cuisineDisplayName, style: const TextStyle(fontSize: 13, color: AppTheme.strokeGrey)),
+                  if (establishment.cuisineDisplayName.isNotEmpty)
+                    Text(establishment.cuisineDisplayName, style: const TextStyle(fontSize: 13, color: AppTheme.strokeGrey)),
                   const SizedBox(height: 8),
                   Text(establishment.shortAddress, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary)),
                 ],
