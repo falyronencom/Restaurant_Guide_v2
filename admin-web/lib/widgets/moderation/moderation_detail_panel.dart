@@ -1493,58 +1493,90 @@ class _MapPreview extends StatelessWidget {
     openInNewTab(url);
   }
 
-  void _showCoordinateDialog(BuildContext context) {
-    final latController = TextEditingController(text: latitude.toStringAsFixed(6));
-    final lonController = TextEditingController(text: longitude.toStringAsFixed(6));
-
-    showDialog(
+  Future<void> _showCoordinateDialog(BuildContext context) async {
+    final result = await showDialog<(double, double)>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Исправить координаты'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: latController,
-              decoration: const InputDecoration(
-                labelText: 'Широта (latitude)',
-                hintText: '53.900000',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      builder: (_) => _CoordinateDialog(
+        latitude: latitude,
+        longitude: longitude,
+      ),
+    );
+    if (result != null) onUpdateCoordinates?.call(result.$1, result.$2);
+  }
+}
+
+/// Окно правки координат — отдельным виджетом, потому что владеет двумя
+/// полями ввода; почему освобождать их по завершении `showDialog` нельзя —
+/// в шапке `_SuspendReasonDialog`. Числа возвращаются через `pop`.
+class _CoordinateDialog extends StatefulWidget {
+  final double latitude;
+  final double longitude;
+
+  const _CoordinateDialog({required this.latitude, required this.longitude});
+
+  @override
+  State<_CoordinateDialog> createState() => _CoordinateDialogState();
+}
+
+class _CoordinateDialogState extends State<_CoordinateDialog> {
+  late final TextEditingController _latController =
+      TextEditingController(text: widget.latitude.toStringAsFixed(6));
+  late final TextEditingController _lonController =
+      TextEditingController(text: widget.longitude.toStringAsFixed(6));
+
+  @override
+  void dispose() {
+    _latController.dispose();
+    _lonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Исправить координаты'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _latController,
+            decoration: const InputDecoration(
+              labelText: 'Широта (latitude)',
+              hintText: '53.900000',
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: lonController,
-              decoration: const InputDecoration(
-                labelText: 'Долгота (longitude)',
-                hintText: '27.550000',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final lat = double.tryParse(latController.text);
-              final lon = double.tryParse(lonController.text);
-              if (lat != null && lon != null) {
-                Navigator.pop(ctx);
-                onUpdateCoordinates?.call(lat, lon);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDB4F13),
-              foregroundColor: Colors.white,
+          const SizedBox(height: 12),
+          TextField(
+            controller: _lonController,
+            decoration: const InputDecoration(
+              labelText: 'Долгота (longitude)',
+              hintText: '27.550000',
             ),
-            child: const Text('Сохранить'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final lat = double.tryParse(_latController.text);
+            final lon = double.tryParse(_lonController.text);
+            if (lat != null && lon != null) {
+              Navigator.pop(context, (lat, lon));
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFDB4F13),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Сохранить'),
+        ),
+      ],
     );
   }
 }
@@ -2111,7 +2143,8 @@ class _ConfirmTarget extends StatelessWidget {
 /// Две причины, обе проверены на близнеце этого диалога в отзывах.
 ///
 /// **Контроллер.** Прежде он создавался в вызывающем методе и не освобождался
-/// вовсе — последний такой случай в проекте. Пользователю это не видно
+/// вовсе (так же жили окна причины у поля и правки координат — исправлены
+/// 19.10.2026: `_FieldNoteDialog`, `_CoordinateDialog`). Пользователю это не видно
 /// (слушатель у поля один, и он умирает вместе с диалогом), но правило
 /// «создал — освободи» держится только целиком. Освобождать через
 /// `showDialog(...).whenComplete(dispose)` при этом НЕЛЬЗЯ: future завершается
