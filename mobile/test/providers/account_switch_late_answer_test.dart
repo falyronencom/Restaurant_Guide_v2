@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/models/notification_model.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
+import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
@@ -224,6 +226,97 @@ void main() {
       expect(provider.confirmedBookings, isEmpty);
       expect(provider.historyBookings, isEmpty);
       expect(provider.userBookings, isEmpty);
+    });
+  });
+
+  // У этих двух провайдеров приём поколения стоит, но не проверялся ничем.
+  // Каждой паре — образец «без смены записывается»: иначе «не записалось»
+  // нельзя отличить от «не разобралось».
+  group('BookingSettingsProvider', () {
+    const path = '/api/v1/partner/booking-settings/est-1';
+    final settings = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'id': 'bs-1',
+        'establishment_id': 'est-1',
+        'is_enabled': true,
+        'max_guests_per_booking': 12,
+        'confirmation_timeout_hours': 6,
+        'max_days_ahead': 14,
+        'min_hours_before': 3,
+        'created_at': '2026-04-01T09:00:00.000Z',
+        'updated_at': '2026-04-01T09:00:00.000Z',
+      },
+    };
+
+    test('настройки брони прежнего партнёра, пришедшие после смены, не '
+        'записываются', () async {
+      final provider = BookingSettingsProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadSettings('est-1');
+      await pumpEventQueue();
+      expect(adapter.paths, [path]);
+      AccountScope.resetAll();
+      adapter.release(path, settings);
+      await inFlight;
+
+      expect(provider.settings, isNull);
+    });
+
+    test('без смены аккаунта настройки записываются — образец разбирается',
+        () async {
+      final provider = BookingSettingsProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadSettings('est-1');
+      await pumpEventQueue();
+      adapter.release(path, settings);
+      await inFlight;
+
+      expect(provider.settings?.maxGuestsPerBooking, 12);
+    });
+  });
+
+  group('PartnerDashboardProvider', () {
+    const path = '/api/v1/partner/establishments';
+    final establishments = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'establishments': [
+          <String, dynamic>{'id': 'est-prev', 'name': 'Кухмістр', 'status': 'active'},
+        ],
+      },
+    };
+
+    test('заведения прежнего партнёра, пришедшие после смены, не записываются',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadEstablishments();
+      await pumpEventQueue();
+      expect(adapter.paths, [path]);
+      AccountScope.resetAll();
+      adapter.release(path, establishments);
+      await inFlight;
+
+      expect(provider.establishments, isEmpty);
+      expect(provider.isInitialized, isFalse,
+          reason: 'кабинет нового партнёра обязан загрузиться заново');
+    });
+
+    test('без смены аккаунта заведения записываются — образец разбирается',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadEstablishments();
+      await pumpEventQueue();
+      adapter.release(path, establishments);
+      await inFlight;
+
+      expect(provider.establishments.map((e) => e.id), ['est-prev']);
     });
   });
 

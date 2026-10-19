@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_platform_interface/test.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show BottomNavigationBar, TextButton;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
@@ -265,8 +266,8 @@ void main() {
 
   // Тесты выше регистрируют Android, а там имя платформы во Flutter и слово
   // сервера совпадают — «android». У iPhone не совпадают: Flutter зовёт его
-  // «iOS», а deviceTokenService принимает только 'ios' и 'android' и на
-  // остальное отвечает 400.
+  // «iOS», а deviceTokenService принимает только 'ios' и 'android' и
+  // остальное отвергает.
   testWidgets('iPhone: адрес уходит с платформой ios', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -282,15 +283,24 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('выход отвязывает адрес: DELETE уносит его под ключом fcm_token',
-      (tester) async {
+  testWidgets('выход из «Профиля» отвязывает адрес: DELETE уносит его под '
+      'ключом fcm_token', (tester) async {
     final home = await pumpPushHome(tester, storedUser: userA);
     expect(home.deviceTokenPuts(), hasLength(1), reason: 'предпосылка');
 
-    // Так выходит «Профиль»: сначала отвязать адрес, потом выйти.
-    final unbinding = PushNotificationService().deregisterToken();
+    // Настоящий путь выхода — кнопкой «Профиля», а не вызовом сервиса из
+    // теста: отвязку из обработчика кнопки иначе не видит никто.
+    await tester.tap(find.descendant(
+      of: find.byType(BottomNavigationBar),
+      matching: find.text('Профиль'),
+    ));
     await settlePush(tester);
-    await unbinding;
+    await tester.ensureVisible(find.text('Выйти из профиля'));
+    await tester.pump();
+    await tester.tap(find.text('Выйти из профиля'));
+    await settlePush(tester);
+    await tester.tap(find.widgetWithText(TextButton, 'Выйти'));
+    await settlePush(tester);
 
     final deletes =
         home.adapter.requests.where((r) => r.method == 'DELETE').toList();

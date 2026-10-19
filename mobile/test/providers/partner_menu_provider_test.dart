@@ -97,17 +97,22 @@ void main() {
       await provider.loadForEstablishment('est-1');
       provider.stopPolling();
 
+      // Партнёр ввёл 6,499; `price_byn` — DECIMAL(10,2) (миграция 024), и
+      // сервер сохраняет 6,50. «Подтверждение» — это ответ сервера, а не своя
+      // догадка: при совпадающих значениях это не различить.
       final future =
-          provider.updateItem('1', itemName: 'Эспрессо', priceByn: 6.5);
+          provider.updateItem('1', itemName: 'Эспрессо', priceByn: 6.499);
 
       // Optimistic: change visible immediately (before await completes)
       expect(provider.items.first.itemName, 'Эспрессо');
-      expect(provider.items.first.priceByn, 6.5);
+      expect(provider.items.first.priceByn, 6.499);
 
       final ok = await future;
       expect(ok, true);
       expect(fake.updateCalls, 1);
       expect(provider.items.first.itemName, 'Эспрессо');
+      expect(provider.items.first.priceByn, 6.5,
+          reason: 'после ответа — то, что сохранил сервер');
     });
 
     test('optimistic update rolls back on backend failure', () async {

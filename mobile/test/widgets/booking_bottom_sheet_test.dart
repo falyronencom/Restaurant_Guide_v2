@@ -72,13 +72,14 @@ void main() {
           'guestCount',
           'contactPhone',
         ];
-        if (required.any((key) => body[key] == null || body[key] == '')) {
+        // Проверка сервера — `!field` в JS: пустая строка и ноль — тоже «нет».
+        // Конверт — как у errorHandler: текст наверху, код в `error`.
+        if (required.any(
+            (key) => body[key] == null || body[key] == '' || body[key] == 0)) {
           return jsonBody({
             'success': false,
-            'error': {
-              'code': 'VALIDATION_ERROR',
-              'message': 'Необходимо заполнить все обязательные поля',
-            },
+            'message': 'Необходимо заполнить все обязательные поля',
+            'error': {'code': 'VALIDATION_ERROR'},
           }, status: 400);
         }
         return jsonBody({

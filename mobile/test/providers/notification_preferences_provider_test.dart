@@ -136,11 +136,13 @@ void main() {
       addTearDown(provider.dispose);
 
       await provider.fetchPreferences();
+      // Значения разные: при одинаковых нельзя отличить, какой переключатель
+      // ушёл под каким ключом.
       await provider.updatePreferences(
         booking: false,
-        reviews: false,
+        reviews: true,
         promotions: false,
-        menu: false,
+        menu: true,
       );
 
       expect(wire.requests.map((r) => '${r.method} ${r.uri.path}'), <String>[
@@ -149,9 +151,9 @@ void main() {
       ]);
       expect(wire.requests.last.data, <String, dynamic>{
         'booking_push_enabled': false,
-        'reviews_push_enabled': false,
+        'reviews_push_enabled': true,
         'promotions_push_enabled': false,
-        'menu_push_enabled': false,
+        'menu_push_enabled': true,
       });
     });
   });
