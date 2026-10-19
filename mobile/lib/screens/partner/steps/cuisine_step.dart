@@ -45,6 +45,22 @@ class CuisineStep extends StatelessWidget {
                 ),
               ),
 
+              // Бару и клубу кухню можно не выбирать (решение Координатора
+              // В5, 17.10.2026) — иначе партнёр клуба брал первую попавшуюся.
+              if (provider.isCuisineOptional) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Бару и клубу кухню выбирать необязательно — '
+                  'можно сразу нажать «Продолжить».',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                    color: AppTheme.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 16),
 
               // Selection counter

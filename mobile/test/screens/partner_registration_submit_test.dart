@@ -272,7 +272,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.chevron_left));
     await tester.pumpAndSettle();
-    expect(find.text('Выйти из регистрации?'), findsOneWidget);
+    expect(find.text('Выйти из добавления заведения?'), findsOneWidget);
   }
 
   testWidgets(

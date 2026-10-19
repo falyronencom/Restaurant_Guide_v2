@@ -41,7 +41,6 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
   static const Color _primaryOrange = AppTheme.primaryOrangeDark;
-  static const Color _greyStroke = AppTheme.strokeGrey;
 
   @override
   void initState() {
@@ -66,45 +65,57 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       ),
       child: Consumer<PartnerRegistrationProvider>(
         builder: (context, provider, child) {
-          return Scaffold(
-            backgroundColor: _backgroundColor,
-            body: SafeArea(
-              child: Column(
-                children: [
-                  // Header with back button and title
-                  _buildHeader(context, provider),
+          // Системная «Назад» Android и свайп iOS ведут себя как шеврон в
+          // шапке: на шагах 2–7 — шаг назад, на первом с выбранным — вопрос
+          // «Выйти из добавления заведения?». Без этого мастер закрывался сразу,
+          // без вопроса (находка тестировщика Х10, 17.10.2026). Пока выход
+          // требует вопроса, свайп iOS не срабатывает — выход через шеврон.
+          return PopScope(
+            canPop: _canLeaveWithoutQuestion(provider),
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              _handleBackPress(context, provider);
+            },
+            child: Scaffold(
+              backgroundColor: _backgroundColor,
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    // Header with back button and title
+                    _buildHeader(context, provider),
 
-                  // Step content
-                  Expanded(
-                    child: PageView(
-                      controller: _pageController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      onPageChanged: (index) {
-                        // Sync provider if page changes externally
-                      },
-                      children: [
-                        // Step 1: Category
-                        const CategoryStep(),
-                        // Step 2: Cuisine
-                        const CuisineStep(),
-                        // Step 3: Basic Info
-                        const BasicInfoStep(),
-                        // Step 4: Media
-                        const MediaStep(),
-                        // Step 5: Address
-                        const AddressStep(),
-                        // Step 6: Legal Info
-                        const LegalInfoStep(),
-                        // Step 7: Summary
-                        SummaryStep(onSubmit: () => _handleSubmit(provider)),
-                      ],
+                    // Step content
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        onPageChanged: (index) {
+                          // Sync provider if page changes externally
+                        },
+                        children: [
+                          // Step 1: Category
+                          const CategoryStep(),
+                          // Step 2: Cuisine
+                          const CuisineStep(),
+                          // Step 3: Basic Info
+                          const BasicInfoStep(),
+                          // Step 4: Media
+                          const MediaStep(),
+                          // Step 5: Address
+                          const AddressStep(),
+                          // Step 6: Legal Info
+                          const LegalInfoStep(),
+                          // Step 7: Summary
+                          SummaryStep(onSubmit: () => _handleSubmit(provider)),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  // Bottom navigation (hidden on summary step)
-                  if (!provider.isLastStep)
-                    _buildBottomNavigation(context, provider),
-                ],
+                    // Bottom navigation (hidden on summary step)
+                    if (!provider.isLastStep)
+                      _buildBottomNavigation(context, provider),
+                  ],
+                ),
               ),
             ),
           );
@@ -114,7 +125,10 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   }
 
   /// Build header with back button and title
-  Widget _buildHeader(BuildContext context, PartnerRegistrationProvider provider) {
+  Widget _buildHeader(
+    BuildContext context,
+    PartnerRegistrationProvider provider,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Row(
@@ -144,16 +158,29 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
     );
   }
 
+  /// Выход из мастера сразу, без шага назад и без вопроса: правка карточки
+  /// или первый шаг, на котором ещё ничего не выбрано.
+  bool _canLeaveWithoutQuestion(PartnerRegistrationProvider provider) {
+    if (provider.editMode) return true;
+    return provider.isFirstStep && !_hasEnteredData(provider);
+  }
+
+  bool _hasEnteredData(PartnerRegistrationProvider provider) =>
+      provider.data.categories.isNotEmpty ||
+      provider.data.cuisineTypes.isNotEmpty;
+
   /// Handle back button press
-  void _handleBackPress(BuildContext context, PartnerRegistrationProvider provider) {
+  void _handleBackPress(
+    BuildContext context,
+    PartnerRegistrationProvider provider,
+  ) {
     if (provider.editMode) {
       Navigator.of(context).pop();
       return;
     }
     if (provider.isFirstStep) {
       // Show confirmation dialog if there's data
-      if (provider.data.categories.isNotEmpty ||
-          provider.data.cuisineTypes.isNotEmpty) {
+      if (_hasEnteredData(provider)) {
         _showExitConfirmation(context, draftSaved: provider.hasCardOnServer);
       } else {
         Navigator.of(context).pop();
@@ -173,18 +200,18 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         ),
+        // Мастер добавляет заведение, а не регистрирует человека (находка
+        // тестировщика, п. 35, 17.10.2026).
         title: const Text(
-          'Выйти из регистрации?',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
+          'Выйти из добавления заведения?',
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
         content: Text(
           // Карточка уже на сервере черновиком — выход её не теряет
           // (решение Координатора 13.10.2026).
           draftSaved
               ? 'Заведение сохранено как черновик — отправить его на '
-                  'модерацию можно из профиля.'
+                    'модерацию можно из профиля.'
               : 'Введённые данные будут потеряны.',
           style: const TextStyle(),
         ),
@@ -193,9 +220,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'Отмена',
-              style: TextStyle(
-                color: Colors.black54,
-              ),
+              style: TextStyle(color: Colors.black54),
             ),
           ),
           TextButton(
@@ -204,10 +229,7 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
               Navigator.of(context).pop();
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text(
-              'Выйти',
-              style: TextStyle(),
-            ),
+            child: const Text('Выйти', style: TextStyle()),
           ),
         ],
       ),
@@ -248,6 +270,11 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
   }
 
   /// Build back button
+  ///
+  /// Рамка, значок и подпись — цветом текста: прежний серый `strokeGrey` тема
+  /// отдаёт выключенным кнопкам, и рабочая «Назад» читалась как неактивная
+  /// (находка тестировщика, п. 33, 17.10.2026). Шеврон в шапке остаётся: он
+  /// же — выход с первого шага.
   Widget _buildBackButton(PartnerRegistrationProvider provider) {
     return GestureDetector(
       onTap: () {
@@ -262,24 +289,20 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         height: 42,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          border: Border.all(color: _greyStroke),
+          border: Border.all(color: AppTheme.textPrimary),
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.chevron_left,
-              size: 25,
-              color: _greyStroke,
-            ),
+            Icon(Icons.chevron_left, size: 25, color: AppTheme.textPrimary),
             SizedBox(width: 4),
             Text(
               'Назад',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: _greyStroke,
+                color: AppTheme.textPrimary,
               ),
             ),
           ],
@@ -321,7 +344,9 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
         height: 42,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: canProceed ? AppTheme.textPrimary : Colors.black.withValues(alpha: 0.3),
+          color: canProceed
+              ? AppTheme.textPrimary
+              : Colors.black.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: Row(
@@ -361,7 +386,9 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       final dashboardProvider = context.read<PartnerDashboardProvider>();
       await dashboardProvider.loadEstablishments();
       if (provider.establishmentId != null) {
-        await dashboardProvider.loadEstablishmentDetails(provider.establishmentId!);
+        await dashboardProvider.loadEstablishmentDetails(
+          provider.establishmentId!,
+        );
       }
 
       scaffoldMessenger.showSnackBar(
@@ -459,5 +486,4 @@ class _PartnerRegistrationScreenState extends State<PartnerRegistrationScreen> {
       curve: Curves.easeInOut,
     );
   }
-
 }
