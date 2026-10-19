@@ -188,11 +188,13 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
     const estId = await createEstablishmentFor(partner.user.id);
     const breakfastId = await seedPhotoMedia(estId, 'menu');
     const lunchId = await seedPdfMedia(estId);
+    const breakfast = { categoryRaw: 'ЗАВТРАК' };
+    const lunch = { categoryRaw: 'ОБЕД' };
     const [breakfastMors] = await seedMenu(estId, breakfastId, [
-      ['Морс', 4], ['Каша', 5], ['Омлет', 7], ['Сырники', 8],
+      ['Морс', 4, breakfast], ['Каша', 5, breakfast], ['Омлет', 7, breakfast], ['Сырники', 8, breakfast],
     ]);
     const [lunchMors] = await seedMenu(estId, lunchId, [
-      ['Морс', 4], ['Борщ', 9], ['Котлета', 12], ['Салат', 6],
+      ['Морс', 4, lunch], ['Борщ', 9, lunch], ['Котлета', 12, lunch], ['Салат', 6, lunch],
     ]);
 
     await request(app)

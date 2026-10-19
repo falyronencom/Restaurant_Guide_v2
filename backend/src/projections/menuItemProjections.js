@@ -61,6 +61,16 @@ const guestLineKey = (item) => {
 };
 
 /**
+ * The section a line stands in, as the guest reads it: letters and digits
+ * only — two reads of one board give «—Д•О•П•О•Л•Н•И•Т•Е•Л•Ь•Н•О—» and
+ * «-ДОПОЛНИТЕЛЬНО-» (Shelbi, 2026-10-19). '' — no section.
+ *
+ * @param {Object} item - menu_items row
+ * @returns {string}
+ */
+const sectionKey = (item) => readAsGuest(item.category_raw).replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
  * Which files are copies of one menu. A file is a copy of a menu when it
  * shares at least half the lines of the smaller of it and the menu's biggest
  * file (VARKA: the photo of the board and the PDF); a breakfast menu and a
@@ -121,17 +131,26 @@ const menuOfFile = (rows) => {
  * line (findCopies).
  *
  * Rules (brief LEAF_BRIEF_MENU_DUPLICATES and the Coordinator's word of
- * 2026-10-19 on its two findings):
+ * 2026-10-19 on its two findings; option «А» of 2026-10-19 ≈ 19:30Z after
+ * PR #107 brought back repeats on five cards):
  *   - inside one file, the same line (guestLineKey) in the same section is one
  *     line — recognition read it twice; in another section it is the menu's own
  *     (a syrup sold with coffee and with tea) and stays;
+ *   - across files, the same line in the same section (sectionKey) is one line,
+ *     however little else the files share: the oyster card and the main menu
+ *     both list the oysters under «УСТРИЧНЫЙ БАР» (SFB). A line without a
+ *     section — a photo of a board without headings — is the same line in any
+ *     section;
  *   - across files that are copies of one menu (menuOfFile) the same line is
- *     one line; a different price is not a repeat — both are shown. A menu
- *     that lists the syrup twice still gives two lines: the lines of the first
- *     file (by id) are the slots, and the lines of the other files take them — first a slot in the same section, then the free ones in
- *     order (two reads may spell a section differently), then new ones;
- *   - files that are different menus are not collapsed: a dish both list
- *     stays in each menu's section;
+ *     one line even under a section spelled otherwise («ПИЦЦА ИЗ ПЕЧИ» /
+ *     «Пицца на огне»);
+ *   - otherwise the files are different menus and the line stays in each:
+ *     «дополнительное блюдо» in «ОБЕД из 4 блюд» and in «ЗАВТРАК из 4 блюд»;
+ *   - a different price is not a repeat — both are shown. A menu that lists
+ *     the syrup twice still gives two lines: the lines of the first file (by
+ *     id) are the slots, and the lines of the other files take them — a slot
+ *     in the same section first, then, within one menu, the free ones in
+ *     order, then new ones;
  *   - lines are ordered by their first row.
  *
  * @param {Object[]} rows - menu_items rows of one establishment, in menu order
@@ -142,24 +161,23 @@ export const groupGuestLines = (rows) => {
 
   // One file, one line, one section: one file line.
   const fileLineById = new Map();
-  const fileLinesByMenuKey = new Map();
+  const fileLinesByKey = new Map();
   rows.forEach((row, index) => {
     const key = guestLineKey(row);
-    const section = readAsGuest(row.category_raw);
+    const section = sectionKey(row);
     const id = JSON.stringify([row.media_id ?? null, key, section]);
     let line = fileLineById.get(id);
     if (!line) {
-      line = { file: String(row.media_id ?? null), section, first: index, rows: [] };
+      line = { file: String(row.media_id ?? null), menu: menuOf(row.media_id), section, first: index, rows: [] };
       fileLineById.set(id, line);
-      const menuKey = JSON.stringify([menuOf(row.media_id), key]);
-      if (!fileLinesByMenuKey.has(menuKey)) fileLinesByMenuKey.set(menuKey, []);
-      fileLinesByMenuKey.get(menuKey).push(line);
+      if (!fileLinesByKey.has(key)) fileLinesByKey.set(key, []);
+      fileLinesByKey.get(key).push(line);
     }
     line.rows.push(row);
   });
 
   const groups = [];
-  for (const fileLines of fileLinesByMenuKey.values()) {
+  for (const fileLines of fileLinesByKey.values()) {
     const linesPerFile = new Map();
     for (const line of fileLines) {
       if (!linesPerFile.has(line.file)) linesPerFile.set(line.file, []);
@@ -172,27 +190,34 @@ export const groupGuestLines = (rows) => {
       return a < b ? -1 : 1;
     });
 
-    const slots = linesPerFile.get(files[0]).map(line => ({
+    const newSlot = line => ({
       sections: new Set([line.section]),
+      menus: new Set([line.menu]),
       files: new Set([line.file]),
       lines: [line],
-    }));
+    });
     const take = (slot, line) => {
       slot.sections.add(line.section);
+      slot.menus.add(line.menu);
       slot.files.add(line.file);
       slot.lines.push(line);
     };
+    const sameSection = (slot, line) => line.section === ''
+      || slot.sections.has('')
+      || slot.sections.has(line.section);
+
+    const slots = linesPerFile.get(files[0]).map(newSlot);
     for (const file of files.slice(1)) {
       const waiting = [];
       for (const line of linesPerFile.get(file)) {
-        const slot = slots.find(s => !s.files.has(file) && s.sections.has(line.section));
+        const slot = slots.find(s => !s.files.has(file) && sameSection(s, line));
         if (slot) take(slot, line);
         else waiting.push(line);
       }
       for (const line of waiting) {
-        const slot = slots.find(s => !s.files.has(file));
+        const slot = slots.find(s => !s.files.has(file) && s.menus.has(line.menu));
         if (slot) take(slot, line);
-        else slots.push({ sections: new Set([line.section]), files: new Set([file]), lines: [line] });
+        else slots.push(newSlot(line));
       }
     }
 

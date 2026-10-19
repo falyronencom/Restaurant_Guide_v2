@@ -624,7 +624,8 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
   test('files sharing half the lines of the smaller one are copies of one menu', () => {
     const rows = [
       ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф']),
-      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай']),
+      // Another spelling of the section: only the copy rule joins them.
+      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай'], { category_raw: 'НАПИТКИ' }),
     ];
 
     expect(collapseMenuRepeats(rows)).toHaveLength(6);
@@ -641,7 +642,7 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
 
   test('the smaller file decides: a short board fully inside the big menu is a copy', () => {
     const rows = [
-      ...menuOf('board', ['Эспрессо', 'Американо']),
+      ...menuOf('board', ['Эспрессо', 'Американо'], { category_raw: 'НА ДОСКЕ' }),
       ...menuOf('pdf', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
     ];
 
@@ -668,7 +669,7 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
     const rows = [
       ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
       ...menuOf('b', ['Эспрессо', 'Американо', 'Сок', 'Морс']),
-      ...menuOf('c', ['Сок', 'Морс', 'Лимонад', 'Квас']),
+      ...menuOf('c', ['Сок', 'Морс', 'Лимонад', 'Квас'], { category_raw: 'НАПИТКИ' }),
     ];
 
     expect(collapseMenuRepeats(rows)).toHaveLength(12);

@@ -1093,6 +1093,62 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
     expect(lines(items)).toEqual(['Фин де Бретань №3 — 4', 'Мидии — 10']);
   });
 
+  test('the same line in the same section of two different menus is one line (SFB oysters)', async () => {
+    // The oyster card shares three lines of eight with the main menu — not a
+    // copy of it — but the oysters stand under «УСТРИЧНЫЙ БАР» in both.
+    const oysters = [
+      ['Фин де Бретань №3', 12, 'УСТРИЧНЫЙ БАР'],
+      ['Спесиаль Лима №3', 14, 'УСТРИЧНЫЙ БАР'],
+      ['Плато устриц', 196, 'УСТРИЧНЫЙ БАР'],
+    ];
+    await insertItems(pdfId, [
+      ...oysters,
+      ['Тартар', 25, 'ЗАКУСКИ'], ['Сибас', 38, 'ГОРЯЧЕЕ'], ['Паста', 22, 'ГОРЯЧЕЕ'],
+      ['Тирамису', 14, 'ДЕСЕРТЫ'], ['Чизкейк', 13, 'ДЕСЕРТЫ'], ['Лимонад', 8, 'НАПИТКИ'], ['Морс', 6, 'НАПИТКИ'],
+    ].map(([name, price, section], i) => [name, price, section, i]));
+    await insertItems(photoId, [
+      ...oysters,
+      ['Устрицы Жиллардо №3', 27, 'УСТРИЧНЫЙ БАР'], ['Сет устриц', 174, 'УСТРИЧНЫЙ БАР'],
+      ['Шабли', 30, 'ВИНО'], ['Мюскаде', 26, 'ВИНО'], ['Шампанское', 45, 'ВИНО'],
+    ].map(([name, price, section], i) => [name, price, section, i]));
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(15);
+    expect(items.filter(i => i.item_name === 'Плато устриц')).toHaveLength(1);
+  });
+
+  test('a section spelled with dots and dashes is the same section (Shelbi «Дополнительно»)', async () => {
+    const extras = [['МОЛОКО', 0.6], ['СЛИВКИ', 1.3], ['ЛИМОН', 0.5]];
+    await insertItems(photoId, [
+      ...extras.map(([name, price]) => [name, price, '—Д•О•П•О•Л•Н•И•Т•Е•Л•Ь•Н•О—']),
+      ['Эспрессо', 4, 'КОФЕ'], ['Капучино', 6, 'КОФЕ'], ['Латте', 7, 'КОФЕ'], ['Раф', 8, 'КОФЕ'], ['Какао', 6, 'КОФЕ'],
+    ].map(([name, price, section], i) => [name, price, section, i]));
+    await insertItems(pdfId, [
+      ...extras.map(([name, price]) => [name, price, '-ДОПОЛНИТЕЛЬНО-']),
+      ['Чай чёрный', 4, 'ЧАЙ'], ['Чай зелёный', 4, 'ЧАЙ'], ['Матча', 9, 'ЧАЙ'], ['Сок', 5, 'НАПИТКИ'], ['Вода', 3, 'НАПИТКИ'],
+    ].map(([name, price, section], i) => [name, price, section, i]));
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(13);
+    expect(items.filter(i => i.item_name === 'МОЛОКО')).toHaveLength(1);
+  });
+
+  test('a line without a section is the same line in any section (a board without headings)', async () => {
+    await insertItems(photoId, [
+      ['БИФ', null, null, 0], ['ЧИЗ', 12, null, 1], ['ДАБЛ', 15, null, 2], ['ЧИКЕН', 11, null, 3],
+    ]);
+    await insertItems(pdfId, [
+      ['ДОГ', 8, 'ХОТ-ДОГИ', 0], ['БИФ', null, 'ХОТ-ДОГИ', 1], ['ЧИЛИ', 9, 'ХОТ-ДОГИ', 2], ['КОЛА', 4, 'НАПИТКИ', 3],
+    ]);
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(7);
+    expect(items.filter(i => i.item_name === 'БИФ')).toHaveLength(1);
+  });
+
   test('the partner cabinet still lists every row of both files', async () => {
     const menu = [['эспрессо S', 3.5, 'КОФЕ', 0], ['американо S', 4, 'КОФЕ', 1]];
     await insertItems(photoId, menu);
