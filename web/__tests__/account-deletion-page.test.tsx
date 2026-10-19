@@ -31,17 +31,19 @@ it('without signing in — support confirms with the holder first, within 15 day
   expect(within(letter).getByText(/Удалим учётку в течение 15 дней\./)).toBeInTheDocument();
 });
 
-it('a phone account — the app first; a call to the number alone does not prove the account', () => {
+it('a phone account — by letter: no sign-in by phone anywhere, support checks what the holder knows', () => {
   render(<AccountDeletionPage />);
 
-  // No phone is verified when an account is made: answering a call proves
-  // the number, not the account (Phase 3.5 review, 18.10.2026).
+  // The app signs in by e-mail only since 19.10.2026 (PR #99), as the site
+  // does: a phone account has no way in, the letter is its way. No phone is
+  // verified when an account is made: answering a call proves the number,
+  // not the account (Phase 3.5 review, 18.10.2026).
   const letter = screen.getByRole('heading', { name: 'Без входа' }).parentElement!;
-  expect(within(letter).getByText(/проще всего войти в\s+приложение по номеру и паролю и удалить её там/))
-    .toBeInTheDocument();
-  expect(within(letter).getByText(
-    /укажите в письме номер, имя в профиле и примерно когда\s+вы завели учётку: мы сверим их с учёткой/,
-  )).toBeInTheDocument();
+  expect(letter).toHaveTextContent('Войти по номеру сейчас нельзя ни в приложении, ни на сайте');
+  expect(letter).toHaveTextContent(
+    'укажите номер, имя в профиле и примерно когда вы завели учётку. Мы сверим их с учёткой',
+  );
+  expect(letter).not.toHaveTextContent(/по номеру и паролю/);
   expect(letter).not.toHaveTextContent(/чтобы убедиться, что учётка ваша/);
 });
 

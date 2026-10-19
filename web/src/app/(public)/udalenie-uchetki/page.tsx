@@ -22,10 +22,11 @@ import {
  * establishment sees a guest's phone in a booking), so support confirms with
  * the holder first. A reply to the account's address proves the address. A
  * phone proves only the number: no phone is verified when an account is made
- * (Phase 3.5 review, 18.10.2026), so a phone account is sent to the app
- * first — it signs in by phone and password — and support asks what the
- * holder knows (the name on the account, roughly when it was made) before it
- * calls the number. 15 days — the term law 99-З gives for an answer.
+ * (Phase 3.5 review, 18.10.2026), so support asks what the holder knows (the
+ * name on the account, roughly when it was made) before it calls the number.
+ * A phone account cannot sign in anywhere now — the app, like the site, signs
+ * in by e-mail only until SMS comes (Coordinator, 19.10.2026, PR #99): the
+ * letter is its way. 15 days — the term law 99-З gives for an answer.
  */
 
 export const metadata: Metadata = {
@@ -83,11 +84,10 @@ export default function AccountDeletionPage() {
           попросим подтвердить удаление. Удалим учётку в течение 15 дней.
         </p>
         <p className="text-body-m text-foreground">
-          Если учётка заведена на номер телефона, проще всего войти в
-          приложение по номеру и паролю и удалить её там. Если войти не
-          получается, укажите в письме номер, имя в профиле и примерно когда
-          вы завели учётку: мы сверим их с учёткой и свяжемся с вами по этому
-          номеру.
+          Учётка заведена на номер телефона? Войти по номеру сейчас нельзя ни
+          в приложении, ни на сайте — напишите нам с любой почты: укажите
+          номер, имя в профиле и примерно когда вы завели учётку. Мы сверим их
+          с учёткой и свяжемся с вами по этому номеру.
         </p>
         <p className="text-body-m text-foreground">
           Если у вас есть карточки заведений, их сначала нужно передать другому
