@@ -17,7 +17,7 @@ import {
   toPublicEstablishmentMapMarker,
 } from '../../projections/establishmentProjections.js';
 import { toPublicReview, toPublicUserReview } from '../../projections/reviewProjections.js';
-import { toPublicMenuItem } from '../../projections/menuItemProjections.js';
+import { collapseRepeatsAcrossFiles, toPublicMenuItem } from '../../projections/menuItemProjections.js';
 
 const SENSITIVE_FIELDS = [
   'partner_id',
@@ -502,5 +502,115 @@ describe('toPublicMenuItem — menu item projection', () => {
     const { sanity_flag, ...withoutFlag } = rawItem; // eslint-disable-line no-unused-vars
     const result = toPublicMenuItem(withoutFlag);
     expect(result.quality_tier).toBe('clean');
+  });
+});
+
+describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', () => {
+  // Rows as MenuItemModel.getByEstablishmentId returns them: price_byn is the
+  // NUMERIC column, which node-pg reads as a string.
+  let seq = 0;
+  const row = (mediaId, itemName, priceByn, extra = {}) => ({
+    id: `mi-${++seq}`,
+    media_id: mediaId,
+    item_name: itemName,
+    price_byn: priceByn,
+    category_raw: 'КОФЕ',
+    sanity_flag: null,
+    position: 0,
+    ...extra,
+  });
+
+  test('dash and quote variants of one name are one line', () => {
+    const rows = [
+      row('photo', 'Фильтр–кофе', '4.00'),
+      row('photo', '«Цезарь»', '15.00'),
+      row('pdf', 'фильтр-кофе', '4.00'),
+      row('pdf', '"Цезарь"', '15.00'),
+    ];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('typographic apostrophes and spaced quotes are noise too', () => {
+    const rows = [
+      row('photo', 'Domino’s пицца', '20.00'),
+      row('photo', 'Салат « Цезарь »', '15.00'),
+      row('pdf', "Domino's пицца", '20.00'),
+      row('pdf', 'Салат "Цезарь"', '15.00'),
+    ];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('a dish twice in one file and once in another gives two lines', () => {
+    const rows = [
+      row('photo', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+      row('photo', 'Сироп', '1.50', { category_raw: 'ЧАЙ' }),
+      row('pdf', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+    ];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('copies come from the file with the most lines, whatever the order of the rows', () => {
+    // 'a-photo' would win the tie by id; the PDF wins by having more lines.
+    const photo = [row('a-photo', 'Эспрессо', '3.50'), row('a-photo', 'Американо', '4.00')];
+    const pdf = [
+      row('b-pdf', 'Эспрессо', '3.50', { category_raw: 'Кофе' }),
+      row('b-pdf', 'Американо', '4.00', { category_raw: 'Кофе' }),
+      row('b-pdf', 'Флэт уайт', '6.50', { category_raw: 'Кофе' }),
+    ];
+    const expected = pdf.map(r => r.id);
+
+    expect(collapseRepeatsAcrossFiles([...photo, ...pdf]).map(r => r.id).sort()).toEqual([...expected].sort());
+    expect(collapseRepeatsAcrossFiles([...pdf, ...photo]).map(r => r.id).sort()).toEqual([...expected].sort());
+  });
+
+  test('files of equal length: the copy is the same whatever the order of the rows', () => {
+    const a = row('media-a', 'Какао S', '5.00');
+    const b = row('media-b', 'какао s', '5.00');
+
+    expect(collapseRepeatsAcrossFiles([a, b]).map(r => r.id)).toEqual([a.id]);
+    expect(collapseRepeatsAcrossFiles([b, a]).map(r => r.id)).toEqual([a.id]);
+  });
+
+  test('the price is compared to the kopeck, not as text', () => {
+    const rows = [row('photo', 'Латте', '7.50'), row('pdf', 'Латте', 7.5)];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(1);
+  });
+
+  test('no price and a price of zero are different lines', () => {
+    const rows = [row('photo', 'Вода', null), row('pdf', 'Вода', '0.00')];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('three files of one menu give one line', () => {
+    const rows = [row('a', 'Какао S', '5.00'), row('b', 'Какао S', '5.00'), row('c', 'какао s', '5.00')];
+
+    expect(collapseRepeatsAcrossFiles(rows).map(r => r.id)).toEqual([rows[0].id]);
+  });
+
+  test('a clean copy takes the place of the first copy, in question, without moving it', () => {
+    // 'a-photo' wins the tie between files; the clean copy must win over it.
+    const caution = row('a-photo', 'Раф', '8.00', { sanity_flag: { reason: 'low_confidence' } });
+    const other = row('a-photo', 'Латте', '7.00');
+    const clean = row('b-pdf', 'Раф', '8.00');
+    const cautionLatte = row('b-pdf', 'Латте', '7.00', { sanity_flag: { reason: 'low_confidence' } });
+
+    const result = collapseRepeatsAcrossFiles([caution, other, clean, cautionLatte]);
+
+    expect(result.map(r => r.id)).toEqual([clean.id, other.id]);
+  });
+
+  test('leaves the rows it was given untouched', () => {
+    const rows = [row('photo', 'Эспрессо S', '3.50'), row('pdf', 'Эспрессо S', '3.50')];
+    const before = JSON.stringify(rows);
+
+    collapseRepeatsAcrossFiles(rows);
+
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(rows).toHaveLength(2);
   });
 });
