@@ -16,7 +16,7 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
-import { createUserAndGetTokens } from '../utils/auth.js';
+import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import {
   testEstablishments,
@@ -96,6 +96,7 @@ describe('Establishments System - Create Establishment', () => {
       expect(establishment.categories).toEqual(establishmentData.categories);
       expect(establishment.cuisines).toEqual(establishmentData.cuisines);
       expect(establishment.price_range).toBe(establishmentData.price_range);
+      expect(establishment.working_hours).toEqual(establishmentData.working_hours);
     });
 
     test('should create establishment with minimal required fields', async () => {
@@ -131,6 +132,66 @@ describe('Establishments System - Create Establishment', () => {
         .expect(201);
 
       expect(response.body.data.establishment).toBeDefined();
+    });
+
+    // The first card in the app makes a user a partner, and the partner stays
+    // signed in. The session is a real one — opened by /auth/login, as the app
+    // opens it — and the test then holds what the app holds after the answer:
+    // mobile establishments_service.dart replaces its pair with data.tokens
+    // when data.tokens.accessToken is present, and keeps its own otherwise.
+    // Until 2026-10-19 the server sent a refresh token it never stored, the
+    // app took it, and /auth/refresh answered 401 once the access token
+    // expired (honesty audit Д7).
+    test('first card upgrades a user to partner, and the session the app holds still refreshes', async () => {
+      await createTestUser({
+        email: 'first-card@test.com',
+        password: 'FirstCard123!@#',
+        name: 'Первая Карточка',
+        role: 'user',
+      });
+      const login = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'first-card@test.com', password: 'FirstCard123!@#' })
+        .expect(200);
+      const session = {
+        accessToken: login.body.data.accessToken,
+        refreshToken: login.body.data.refreshToken,
+      };
+
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ ...testEstablishments[0], name: 'Первая карточка' })
+        .expect(201);
+
+      const { rows: [account] } = await query(
+        'SELECT role FROM users WHERE id = $1',
+        [login.body.data.user.id],
+      );
+      expect(account.role).toBe('partner');
+
+      const handedOut = created.body.data.tokens;
+      const held = handedOut && handedOut.accessToken ? handedOut : session;
+
+      const own = await request(app)
+        .get('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${held.accessToken}`)
+        .expect(200);
+      expect(own.body.data.establishments.map((e) => e.name)).toEqual(['Первая карточка']);
+
+      const refreshed = await request(app)
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: held.refreshToken })
+        .expect(200);
+      expect(refreshed.body.data.user.role).toBe('partner');
+
+      await request(app)
+        .get('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${refreshed.body.data.accessToken}`)
+        .expect(200);
+
+      // The chosen contract: no pair in the answer, the app keeps its own.
+      expect(created.body.data.tokens).toBeUndefined();
     });
   });
 
@@ -1187,7 +1248,7 @@ describe('Establishments System - Create Establishment', () => {
       );
     });
 
-    test('should reject missing description', async () => {
+    test('accepts a card without description (the field is optional)', async () => {
       const data = { ...testEstablishments[0] };
       delete data.description;
 
@@ -1198,6 +1259,7 @@ describe('Establishments System - Create Establishment', () => {
         .expect(201);
 
       expect(response.body.success).toBe(true);
+      expect(response.body.data.establishment.description).toBeNull();
     });
 
     test('should reject missing city', async () => {
