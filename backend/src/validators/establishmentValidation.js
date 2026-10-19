@@ -17,7 +17,7 @@
  */
 
 import { body, param, query } from 'express-validator';
-import { VALID_CATEGORIES, VALID_CUISINES } from '../constants/establishmentVocab.js';
+import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { BELARUS_PHONE_REGEX } from '../constants/belarusPhone.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 
@@ -61,7 +61,7 @@ const VALID_STATUSES = ['draft', 'pending', 'active', 'suspended'];
  * - latitude: Valid decimal between 51.0-56.0
  * - longitude: Valid decimal between 23.0-33.0
  * - categories: Array of 1-2 valid categories
- * - cuisines: Array of 1-3 valid cuisines
+ * - cuisines: Array of 1-3 valid cuisines (0-3, or absent, for a bar or a club)
  * - working_hours: Valid JSON object
  * 
  * Optional fields:
@@ -153,11 +153,20 @@ export const validateCreate = [
       return true;
     }),
 
-  // Cuisines validation
+  // Cuisines validation: 1-3, or 0-3 for a bar or a club (decision В5,
+  // 17.10.2026 — isCuisineRequired). A bar or a club may leave the field out.
   body('cuisines')
-    .isArray({ min: 1, max: 3 })
-    .withMessage('Cuisines must be an array with 1-3 items')
+    .custom((cuisines, { req }) => {
+      if (cuisines === undefined && !isCuisineRequired(req.body.categories)) return true;
+      const minimum = isCuisineRequired(req.body.categories) ? 1 : 0;
+      if (!Array.isArray(cuisines) || cuisines.length < minimum || cuisines.length > 3) {
+        throw new Error('Cuisines must be an array with 1-3 items');
+      }
+      return true;
+    })
+    .bail()
     .custom((cuisines) => {
+      if (cuisines === undefined) return true;
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
         throw new Error(ESTABLISHMENT_REFUSALS.unknownCuisine);
@@ -274,10 +283,21 @@ export const validateUpdate = [
     }),
 
   // Cuisines validation (optional for updates)
+  // An empty list is let through here unless the same request names categories
+  // that need a cuisine: without categories in the body the stored ones decide,
+  // and only the service sees them (updateEstablishment).
   body('cuisines')
     .optional()
-    .isArray({ min: 1, max: 3 })
-    .withMessage('Cuisines must be an array with 1-3 items')
+    .custom((cuisines, { req }) => {
+      const minimum = Array.isArray(req.body.categories) && isCuisineRequired(req.body.categories)
+        ? 1
+        : 0;
+      if (!Array.isArray(cuisines) || cuisines.length < minimum || cuisines.length > 3) {
+        throw new Error('Cuisines must be an array with 1-3 items');
+      }
+      return true;
+    })
+    .bail()
     .custom((cuisines) => {
       const invalidCuisines = cuisines.filter(cuisine => !VALID_CUISINES.includes(cuisine));
       if (invalidCuisines.length > 0) {
