@@ -87,7 +87,14 @@ class EstablishmentsProvider with ChangeNotifier {
   /// чей номер устарел, отбрасывается — подгрузка страницы 2 по фразе А,
   /// пришедшая после поиска Б, не дописывает карточки А и не подменяет
   /// деление выдачи Б (сверка находок тестировщика с сайтом, 18.10, Ш7).
+  /// Тем же номером побеждает последний поиск: новый, отправленный во время
+  /// загрузки прежнего, уходит, а ответ прежнего отбрасывается (Ш20).
   int _searchSeq = 0;
+
+  /// Сколько раз нажимали «Сброс» ([clearFilters]). Экран, который держит
+  /// фразу в своём поле (главная), по нему узнаёт, что фразу сняли, — по
+  /// самим фильтрам этого не видно, если они и так были по умолчанию (Ш23).
+  int _filtersResetCount = 0;
   String? _error;
 
   // User location (null = no GPS, triggers searchWithoutLocation)
@@ -258,6 +265,9 @@ class EstablishmentsProvider with ChangeNotifier {
   String? get selectedCity => _selectedCity;
   String? get searchQuery => _searchQuery;
 
+  /// См. [_filtersResetCount].
+  int get filtersResetCount => _filtersResetCount;
+
   // Advanced filter getters
   DistanceOption get distanceFilter => _distanceFilter;
   Set<PriceRange> get priceFilters => Set.unmodifiable(_priceFilters);
@@ -401,7 +411,11 @@ class EstablishmentsProvider with ChangeNotifier {
       if (_isLoadingMore) return;
       _isLoadingMore = true;
     } else {
-      if (_isLoading) return;
+      // Прежде: `if (_isLoading) return` — поиск, отправленный во время
+      // загрузки прежнего (новая фраза, сортировка, город, фильтры), молча
+      // пропадал: в поле «Б», в списке выдача «А» (сверка находок
+      // тестировщика с сайтом, 19.10, Ш20). Теперь побеждает последний:
+      // запрос уходит, ответ прежнего отбрасывается по номеру ниже.
       _isLoading = true;
       _establishments = [];
       _searchSeq++;
@@ -743,6 +757,7 @@ class EstablishmentsProvider with ChangeNotifier {
 
   /// Clear all filters (reset to defaults)
   void clearFilters() {
+    _filtersResetCount++;
     _selectedCity = null;
     _searchQuery = null;
     // Фразы больше нет — делить выдачу на совпадения и запасную нечем, даже
