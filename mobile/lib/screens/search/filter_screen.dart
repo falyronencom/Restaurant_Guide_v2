@@ -405,8 +405,17 @@ class _DistanceOptionTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected ? AppTheme.textPrimary : FilterScreen._backgroundColor,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
+                // Рамка невыбранной — как у «Времени работы» и карточек
+                // (пункт 36): прежняя strokeGrey (1,34 : 1) делала обычную
+                // галочку похожей на выключенную. Выключенная (нет
+                // геолокации) остаётся бледной (сверка находок тестировщика
+                // с сайтом, 18.10, Ш5).
                 border: Border.all(
-                  color: isSelected ? AppTheme.textPrimary : FilterScreen._greyStroke,
+                  color: isSelected
+                      ? AppTheme.textPrimary
+                      : isDisabled
+                          ? FilterScreen._greyStroke
+                          : FilterScreen._unselectedStroke,
                 ),
               ),
               child: isSelected
@@ -748,8 +757,11 @@ class _AmenityTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected ? AppTheme.textPrimary : FilterScreen._backgroundColor,
                 borderRadius: BorderRadius.circular(AppTheme.radiusXSmall),
+                // Та же галочка, что у «Расстояния» (Ш5) — та же рамка.
                 border: Border.all(
-                  color: isSelected ? AppTheme.textPrimary : FilterScreen._greyStroke,
+                  color: isSelected
+                      ? AppTheme.textPrimary
+                      : FilterScreen._unselectedStroke,
                 ),
               ),
               child: isSelected

@@ -168,8 +168,20 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
   }
 
   /// Navigate to filter screen
-  void _openFilters() {
-    Navigator.of(context).pushNamed('/filter');
+  ///
+  /// «Сброс» там снимает и фразу поиска (`clearFilters`). Поле этого экрана
+  /// держало бы её дальше: в строке «Buno», а выдача и следующий поиск — уже
+  /// без неё. Поле сверяется с фразой провайдера, когда экран фильтров
+  /// закрыт (сверка находок тестировщика с сайтом, 18.10, Ш6). Только тогда:
+  /// провайдер получает фразу из поля лишь при поиске, и сверка на каждом его
+  /// уведомлении стирала бы недонабранный текст.
+  Future<void> _openFilters() async {
+    await Navigator.of(context).pushNamed('/filter');
+    if (!mounted) return;
+    final phrase = context.read<EstablishmentsProvider>().searchQuery ?? '';
+    if (_searchController.text != phrase) {
+      _searchController.text = phrase;
+    }
   }
 
   /// Show city selection bottom sheet (Figma design)

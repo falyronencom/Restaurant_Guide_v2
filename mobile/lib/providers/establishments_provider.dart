@@ -82,6 +82,12 @@ class EstablishmentsProvider with ChangeNotifier {
   int _loadedFrom = 0;
   bool _isLoading = false;
   bool _isLoadingMore = false;
+
+  /// Номер поиска: растёт с каждым новым поиском (не подгрузкой). Ответ,
+  /// чей номер устарел, отбрасывается — подгрузка страницы 2 по фразе А,
+  /// пришедшая после поиска Б, не дописывает карточки А и не подменяет
+  /// деление выдачи Б (сверка находок тестировщика с сайтом, 18.10, Ш7).
+  int _searchSeq = 0;
   String? _error;
 
   // User location (null = no GPS, triggers searchWithoutLocation)
@@ -398,7 +404,13 @@ class EstablishmentsProvider with ChangeNotifier {
       if (_isLoading) return;
       _isLoading = true;
       _establishments = [];
+      _searchSeq++;
+      // Подгрузка прежнего поиска, если она ещё в пути, этому поиску уже не
+      // принадлежит: её ответ отбросится по номеру, а флаг не должен запирать
+      // подгрузку нового.
+      _isLoadingMore = false;
     }
+    final seq = _searchSeq;
 
     _error = null;
     notifyListeners();
@@ -424,6 +436,7 @@ class EstablishmentsProvider with ChangeNotifier {
           page: page,
           limit: _pageSize,
         );
+        if (seq != _searchSeq) return;
         _searchIntent = smart.intent;
         _searchFallback = smart.fallback;
         _searchMatchedTotal = smart.matchedTotal;
@@ -458,6 +471,7 @@ class EstablishmentsProvider with ChangeNotifier {
           hoursFilter: f.hoursFilter,
           features: f.features,
         );
+        if (seq != _searchSeq) return;
       }
 
       if (append) {
@@ -499,6 +513,8 @@ class EstablishmentsProvider with ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
+      // Сбой устаревшего поиска — не ошибка нового.
+      if (seq != _searchSeq) return;
       _error = _extractErrorMessage(e, smartPath: queryText.isNotEmpty);
       if (append) {
         _isLoadingMore = false;

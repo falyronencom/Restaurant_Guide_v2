@@ -72,6 +72,12 @@ class MapFetchGate {
 
 /// Плашка над картой: «Поиск: «underdog»» и крестик, снимающий поиск с карты.
 /// Если найдено больше, чем поместилось на карту, — «· 100 из 132».
+///
+/// Совпало не всё ([matchedTotal] меньше [total]) — плашка говорит это, как
+/// список: «По запросу «Buno» ничего не найдено» или «· найдено: 1», и второй
+/// строкой — что остальные метки лишь могут подойти. Без этого карта
+/// выдавала запасную выдачу за найденное (сверка находок тестировщика с
+/// сайтом, 18.10, Ш1).
 class MapSearchPlaque extends StatelessWidget {
   const MapSearchPlaque({
     super.key,
@@ -79,6 +85,7 @@ class MapSearchPlaque extends StatelessWidget {
     required this.shown,
     required this.total,
     required this.onClear,
+    this.matchedTotal,
   });
 
   final String phrase;
@@ -91,10 +98,30 @@ class MapSearchPlaque extends StatelessWidget {
 
   final VoidCallback onClear;
 
+  /// Сколько первых заведений выдачи совпали с фразой (поле сервера
+  /// `matchedTotal`); null — сервер поля не прислал, делить нечего.
+  final int? matchedTotal;
+
+  bool get _nothingMatched => matchedTotal == 0 && total > 0;
+
+  bool get _someMatched {
+    final matched = matchedTotal;
+    return matched != null && matched > 0 && matched < total;
+  }
+
   /// Текст плашки без крестика
   String get label {
+    if (_nothingMatched) return 'По запросу «$phrase» ничего не найдено';
     final base = 'Поиск: «$phrase»';
+    if (_someMatched) return '$base · найдено: $matchedTotal';
     return total > shown ? '$base · $shown из $total' : base;
+  }
+
+  /// Вторая строка: остальные метки — не совпадения. null — всё совпало.
+  String? get hint {
+    if (_nothingMatched) return 'На карте — места, которые могут подойти';
+    if (_someMatched) return 'Остальные на карте — места, которые могут подойти';
+    return null;
   }
 
   @override
@@ -118,12 +145,42 @@ class MapSearchPlaque extends StatelessWidget {
           const Icon(Icons.search, size: 18, color: AppTheme.primaryOrange),
           const SizedBox(width: 8),
           Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, color: Colors.black87),
-            ),
+            child: hint == null
+                ? Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // До четырёх строк: «ничего не найдено» в конце не
+                        // должно уходить под многоточие на узкой плашке.
+                        Text(
+                          label,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hint!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
           IconButton(
             tooltip: 'Показать все заведения',
