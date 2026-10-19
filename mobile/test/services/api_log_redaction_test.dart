@@ -168,9 +168,26 @@ void main() {
           isNot(contains(oldAccess)));
     });
 
-    test('code — секрет только в запросе', () {
+    test('code — секрет только в запросе; и smsCode, и otp', () {
       expect(redactForLog({'code': '1'}, request: true), {'code': redactedMark});
+      expect(redactForLog({'smsCode': '2', 'otp': '3'}, request: true),
+          {'smsCode': redactedMark, 'otp': redactedMark});
       expect(redactForLog({'code': 'X'}), {'code': 'X'});
+    });
+
+    test('токен внутри строки — по виду: Bearer, JWT, token= в ссылке', () {
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjF9.c2lnbmF0dXJl';
+      final out = redactForLog({
+        'note': 'Bearer $oldAccess',
+        'items': ['ключ $jwt'],
+        'link': 'https://nirivio.by/reset?token=$oldRefresh&lang=ru',
+        'title': 'Васильки',
+      }).toString();
+      for (final secret in [oldAccess, jwt, oldRefresh]) {
+        expect(out, isNot(contains(secret)), reason: secret);
+      }
+      expect(out, contains('lang=ru'));
+      expect(out, contains('Васильки'));
     });
 
     test('секрет в строке запроса адреса', () {

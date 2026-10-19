@@ -16,7 +16,9 @@ import '../support/wire_stand.dart';
 /// Заголовки «Описание» и «Отзывы» — 30 пт в строке рядом со стрелкой и
 /// счётчиком отзывов. При шрифте ×2 на 390 dp строка не помещалась —
 /// переполнение на 23–85 dp (найдено тестом PR #84, было и на `main`), край
-/// заголовка срезался. Теперь заголовок переносится, строка не переполняется.
+/// заголовка срезался. Теперь кегль заголовка подбирается по ширине, как у
+/// названия (`AdaptiveTitle`, одна строка): строка не переполняется, слово
+/// целое.
 const _id = '66666666-6666-4666-8666-666666666666';
 
 class _NoLocation extends EstablishmentsProvider {
@@ -98,13 +100,20 @@ void main() {
         for (final title in ['Описание', 'Отзывы']) {
           final rect = tester.getRect(find.text(title));
           expect(rect.right, lessThanOrEqualTo(width), reason: title);
-          // До ×2 слово целиком — кегль уменьшается, а не обрывается.
-          if (scale <= 2.0) {
-            final paragraph =
-                tester.renderObject<RenderParagraph>(find.text(title));
-            expect(paragraph.didExceedMaxLines, isFalse,
-                reason: '$title оборван многоточием');
-          }
+          // Слово целиком — кегль уменьшается, а не обрывается многоточием.
+          final paragraph =
+              tester.renderObject<RenderParagraph>(find.text(title));
+          expect(paragraph.didExceedMaxLines, isFalse,
+              reason: '$title оборван многоточием');
+        }
+        // При обычном шрифте — как в макете: счётчик справа, в строке
+        // заголовка, а не под ним.
+        if (scale == 1.0) {
+          final header = tester.getRect(find.text('Отзывы'));
+          final counter = tester.getRect(find.text('24 отзыва'));
+          expect(counter.center.dy, inInclusiveRange(header.top, header.bottom));
+          expect(counter.left, greaterThan(header.right));
+          expect(counter.right, greaterThan(width - 16 - 30));
         }
       });
     }

@@ -201,10 +201,6 @@ class ApiClient {
   Interceptor _createErrorInterceptor() {
     return InterceptorsWrapper(
       onError: (error, handler) async {
-        if (Environment.enableApiLogging) {
-          debugPrint('[API Error] ${error.requestOptions.path}: ${error.message}');
-        }
-
         // Handle 401 Unauthorized - try to refresh token.
         //
         // Кроме двух случаев. Первый — запросы за учётными данными. 401 на

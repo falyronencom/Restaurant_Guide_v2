@@ -1577,12 +1577,19 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           // Header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                // Кегль — по ширине, как у названия (Н9, 19.10.2026): при
-                // крупном шрифте «Отзывы» и счётчик не помещались в строку.
-                const Expanded(
-                  child: AdaptiveTitle(
+            // Не помещаются в строку — счётчик уходит под заголовок, а кегль
+            // заголовка подбирается по ширине, как у названия: при крупном
+            // шрифте «Отзывы» и счётчик не помещались рядом (Н9, 19.10.2026).
+            // Во всю ширину: иначе Wrap сжимается по содержимому, и счётчик
+            // встаёт вплотную к заголовку, а не у правого края.
+            child: SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: [
+                  const AdaptiveTitle(
                     text: 'Отзывы',
                     minFontSize: _sectionTitleMinFontSize,
                     maxLines: 1,
@@ -1593,42 +1600,42 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                       color: _backgroundColor,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Reviews count with arrow
-                GestureDetector(
-                  onTap: () {
-                    // Navigate to all reviews screen
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => ReviewsListScreen(
-                          establishment: _establishment!,
+                  // Reviews count with arrow
+                  GestureDetector(
+                    onTap: () {
+                      // Navigate to all reviews screen
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => ReviewsListScreen(
+                            establishment: _establishment!,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                  child: Row(
-                    children: [
-                      Text(
-                        // Число неизвестно, пока отзывы не загрузились.
-                        _reviewsFailed
-                            ? 'Все отзывы'
-                            : reviewsCountLabel(_totalReviews),
-                        style: const TextStyle(
-                          fontSize: 14,
+                      );
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          // Число неизвестно, пока отзывы не загрузились.
+                          _reviewsFailed
+                              ? 'Все отзывы'
+                              : reviewsCountLabel(_totalReviews),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: _backgroundColor,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.chevron_right,
                           color: _backgroundColor,
+                          size: 20,
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: _backgroundColor,
-                        size: 20,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),

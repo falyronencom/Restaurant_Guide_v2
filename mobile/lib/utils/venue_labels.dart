@@ -43,7 +43,11 @@ String? priceLabel(String? priceRange) {
 String distanceLabel(double km) => distanceLabelMeters(km * 1000);
 
 /// То же правило, что [distanceLabel], для расстояния в метрах.
+///
+/// Не число («NaN», «Infinity» разбираются из строки сервера) — «—»: округление
+/// такого значения бросает исключение и роняло бы экран.
 String distanceLabelMeters(double meters) {
+  if (!meters.isFinite) return '—';
   final tens = (meters / 10).round() * 10;
   if (tens < 1000) return '${math.max(tens, 10)} м';
   return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} км';

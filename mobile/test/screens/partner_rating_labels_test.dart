@@ -39,6 +39,8 @@ void main() {
     testWidgets(r'цену не выбрали — ни «$$», ни квадрата «—»', (tester) async {
       await pumpPreview(tester);
 
+      // Предпосылка: превью построено.
+      expect(find.text('Васильки'), findsWidgets);
       expect(find.text(r'$$'), findsNothing);
       expect(find.text('—'), findsNothing);
     });

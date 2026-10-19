@@ -467,8 +467,10 @@ void main() {
         }
       }
 
-      // Название — крупное (не меньше 24 dp): 3 : 1.
-      final title = find.byType(AdaptiveTitle);
+      // Название — крупное (не меньше 24 dp): 3 : 1. `AdaptiveTitle`ом
+      // набраны и заголовки разделов ниже (Н9) — берём тот, что не они.
+      final title = find.byWidgetPredicate((w) =>
+          w is AdaptiveTitle && !const {'Описание', 'Отзывы'}.contains(w.text));
       final titleStyle = tester.widget<Text>(find
           .descendant(of: title, matching: find.byType(Text))
           .first).style!;

@@ -35,6 +35,11 @@ void main() {
         expect(distanceLabel(km), expected);
       });
     }
+
+    test('не число — «—», а не исключение, роняющее экран', () {
+      expect(distanceLabel(double.nan), '—');
+      expect(distanceLabel(double.infinity), '—');
+    });
   });
 
   group('список', () {

@@ -6,9 +6,8 @@ import 'package:dio/dio.dart';
 //
 // Прежде журнал вёл стандартный `LogInterceptor` dio: он печатал все
 // заголовки — с `Authorization: Bearer …`, который ставит перехватчик
-// клиента, — и тела запросов и ответов как есть: refresh-токен в теле
-// `/auth/refresh`, пару токенов в ответе входа, пароль во входе, код из
-// письма. Журнал телефона читает любой, кто подключил его к компьютеру, а
+// клиента, — и тела запросов и ответов как есть: refresh-токен в запросе
+// обновления, пару токенов в ответе входа, пароль во входе, код из письма. Журнал телефона читает любой, кто подключил его к компьютеру, а
 // отладочная сборка стоит на телефоне Координатора (Н7, 19.10.2026).
 //
 // Здесь журнал тот же по смыслу — метод, адрес, заголовки, тела, ошибка, —
@@ -29,11 +28,25 @@ bool _isSecretKey(String key, {required bool request}) {
   if (k.contains('token') || k.contains('password') || k.contains('secret')) {
     return true;
   }
-  // Код из письма уходит в теле запроса полем `code`. В ответах сервера
-  // `code` — код отказа («TOKEN_REUSE_DETECTED»), он нужен для разбора и
-  // секретом не является.
-  return request && k == 'code';
+  // Код из письма уходит в теле запроса полем `code` (и любое `…code`, `otp`
+  // на будущее). В ответах сервера `code` — код отказа
+  // («TOKEN_REUSE_DETECTED»), он нужен для разбора и секретом не является.
+  return request && (k.endsWith('code') || k == 'otp');
 }
+
+/// Токен внутри строки, а не под секретным ключом: «Bearer …», JWT
+/// («eyJ…»), `token=` / `code=` в ссылке.
+final RegExp _secretInText = RegExp(
+  r'Bearer\s+\S+'
+  r'|eyJ[\w-]+\.[\w-]+\.[\w-]*'
+  r'|((?:[\w-]*token|code)=)[^&\s"]+',
+  caseSensitive: false,
+);
+
+String _redactText(String text) => text.replaceAllMapped(
+      _secretInText,
+      (m) => m.group(1) != null ? '${m.group(1)}$redactedMark' : redactedMark,
+    );
 
 /// Копия [value] для журнала: значения секретных ключей заменены на
 /// [redactedMark] на любой глубине (карты и списки).
@@ -41,8 +54,8 @@ bool _isSecretKey(String key, {required bool request}) {
 /// [request] — тело или заголовки запроса: там секретно ещё и поле `code`.
 /// Тело-строка, похожая на JSON, разбирается и чистится так же; другое
 /// тело-строка печатается только длиной — в нём может оказаться что угодно.
-/// Строки внутри карт и списков печатаются как есть: секрет там узнаётся по
-/// ключу.
+/// Строки внутри карт и списков печатаются, но токен в них узнаётся и по виду
+/// — «Bearer …», JWT, `token=` в ссылке ([_secretInText]).
 Object? redactForLog(Object? value, {bool request = false}) {
   if (value is String) {
     final trimmed = value.trimLeft();
@@ -80,6 +93,7 @@ Object? _redact(Object? value, {required bool request}) {
       'файлы': [for (final f in value.files) '${f.key}: ${f.value.filename}'],
     };
   }
+  if (value is String) return _redactText(value);
   return value;
 }
 
