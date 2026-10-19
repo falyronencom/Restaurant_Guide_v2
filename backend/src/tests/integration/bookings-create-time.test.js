@@ -149,6 +149,8 @@ describe('POST /bookings — по живым часам', () => {
     for (const slot of [
       { date: minskDatePlusDays(1), time: '9:00' },
       { date: minskDatePlusDays(1), time: '24:00' },
+      // ЧЧ:ММ — это и минуты: '12:60' в SQL ::time — отказ базы, то есть 500.
+      { date: minskDatePlusDays(1), time: '12:60' },
       { date: '2026-02-30', time: '12:00' },
       { date: 'завтра', time: '12:00' },
     ]) {

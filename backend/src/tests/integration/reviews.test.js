@@ -237,18 +237,21 @@ describe('Reviews System - Create Review', () => {
     expect(response.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
   });
 
+  // Belarusian has letters Russian does not (і, ў) and the apostrophe inside
+  // words (з'явімся): a Russian sentence alone cannot show they survive.
   test('should handle Russian/Belarusian text in content', async () => {
+    const content = `${longContent} Усё было вельмі смачна: дранікі і мачанка — лепшыя ў горадзе. З'явімся зноў!`;
     const response = await request(app)
       .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${userToken}`)
       .send({
         establishmentId,
         rating: 5,
-        content: longContent // Contains Cyrillic equivalent length
+        content
       })
       .expect(201);
 
-    expect(response.body.data.review.content).toBe(longContent);
+    expect(response.body.data.review.content).toBe(content);
   });
 });
 

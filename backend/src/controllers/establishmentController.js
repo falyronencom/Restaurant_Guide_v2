@@ -13,7 +13,6 @@
 import * as EstablishmentService from '../services/establishmentService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 
 /**
  * Create a new establishment
@@ -37,7 +36,6 @@ export const createEstablishment = asyncHandler(async (req, res) => {
   // Get authenticated partner ID from JWT token (set by authenticate middleware)
   // Never trust partner_id from request body - always use authenticated context
   const partnerId = req.user.userId;
-  const originalRole = req.user.role;
 
   // Call service layer to create establishment with business logic
   const establishment = await EstablishmentService.createEstablishment(
@@ -54,38 +52,28 @@ export const createEstablishment = asyncHandler(async (req, res) => {
     endpoint: 'POST /api/v1/partner/establishments',
   });
 
-  // Build response
-  const response = {
+  // No new tokens, also when the first card has just made a user a partner
+  // (EstablishmentService → upgradeUserToPartner). The session the client
+  // already holds carries on: authenticate takes the role from the database
+  // on every request (middleware/auth.js, since 2026-10-07), so the old
+  // access token opens partner routes from the next request — in this
+  // process at once, in another within the account-status cache window
+  // (services/accountStatus.js); a new token would not change that either.
+  //
+  // Until 2026-10-19 this answer carried data.tokens for an upgraded user —
+  // a new access token and a refresh token that was never stored, so
+  // /auth/refresh refused it. The app put that pair in place of its own
+  // (mobile establishments_service.dart, since 2026-01-21) and signed the new
+  // partner out once the access token expired, ≈ 4 h later (honesty audit
+  // Д7). The app takes the pair only when it is present, so installed builds
+  // keep their working session once the field is gone.
+  res.status(201).json({
     success: true,
     data: {
       establishment,
     },
     message: 'Establishment created successfully in draft status',
-  };
-
-  // If user was upgraded from 'user' to 'partner', generate new tokens
-  // This allows the client to immediately use partner-only endpoints
-  if (originalRole === 'user') {
-    const tokenPayload = {
-      userId: partnerId,
-      email: req.user.email,
-      role: 'partner', // New role after upgrade
-    };
-
-    response.data.tokens = {
-      accessToken: generateAccessToken(tokenPayload),
-      refreshToken: generateRefreshToken(tokenPayload),
-    };
-
-    logger.info('Generated new tokens for upgraded user', {
-      partnerId,
-      previousRole: originalRole,
-      newRole: 'partner',
-    });
-  }
-
-  // Return 201 Created with the full establishment object (and new tokens if upgraded)
-  res.status(201).json(response);
+  });
 });
 
 /**

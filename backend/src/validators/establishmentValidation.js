@@ -61,7 +61,7 @@ const VALID_STATUSES = ['draft', 'pending', 'active', 'suspended'];
  * - latitude: Valid decimal between 51.0-56.0
  * - longitude: Valid decimal between 23.0-33.0
  * - categories: Array of 1-2 valid categories
- * - cuisines: Array of 1-3 valid cuisines (0-3, or absent, for a bar or a club)
+ * - cuisines: Array of 1-3 valid cuisines (0-3, or absent, for a cuisine-optional category)
  * - working_hours: Valid JSON object
  * 
  * Optional fields:
@@ -153,8 +153,9 @@ export const validateCreate = [
       return true;
     }),
 
-  // Cuisines validation: 1-3, or 0-3 for a bar or a club (decision В5,
-  // 17.10.2026 — isCuisineRequired). A bar or a club may leave the field out.
+  // Cuisines validation: 1-3, or 0-3 for a cuisine-optional category (decision
+  // В5, 17.10.2026; widened 19.10.2026, Ш17 — isCuisineRequired). Such a card
+  // may leave the field out.
   body('cuisines')
     .custom((cuisines, { req }) => {
       if (cuisines === undefined && !isCuisineRequired(req.body.categories)) return true;

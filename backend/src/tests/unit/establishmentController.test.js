@@ -38,9 +38,12 @@ describe('establishmentController', () => {
   });
 
   test('createEstablishment uses authenticated partner and returns 201', async () => {
+    // The body names another owner: «uses the authenticated partner» is shown
+    // only when the two differ. Dropping the body's partner_id is the service's
+    // part (establishmentService.test.js), so the data is not pinned whole here.
     const req = createMockRequest({
-      body: { name: 'Test', city: 'Минск' },
-      user: { userId: 'partner-1' },
+      body: { name: 'Test', city: 'Минск', partner_id: 'someone-else' },
+      user: { userId: 'partner-1', role: 'partner' },
     });
     const res = createMockResponse();
     const next = jest.fn();
@@ -48,7 +51,10 @@ describe('establishmentController', () => {
 
     await EstablishmentController.createEstablishment(req, res, next);
 
-    expect(EstablishmentService.createEstablishment).toHaveBeenCalledWith('partner-1', req.body);
+    expect(EstablishmentService.createEstablishment).toHaveBeenCalledWith(
+      'partner-1',
+      expect.objectContaining({ name: 'Test', city: 'Минск' }),
+    );
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({
       success: true,

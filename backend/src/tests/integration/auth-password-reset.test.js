@@ -21,16 +21,37 @@
  * DB-side NOW() ± interval so comparisons against CURRENT_TIMESTAMP are
  * timezone-proof (local dev: Node UTC+3 vs container UTC).
  *
+ * The mailer is the one boundary replaced (Resend is not configured in
+ * tests): it records what would be mailed, so one test follows the mailed
+ * link itself — issue → mail → consume.
+ *
  * Rate limiting: public endpoints key by IP, which is constant under
  * supertest and the hour-window keys survive across runs — beforeEach clears
  * the relevant ratelimit:* keys so tests stay deterministic within the hour.
+ * Registration (20 a minute per IP) is among them: the file registers a dozen
+ * accounts, and a suite run right before it shares the same minute.
  */
 
-import request from 'supertest';
+import { jest } from '@jest/globals';
 import { createHash, randomBytes } from 'crypto';
-import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
-import redisClient, { connectRedis } from '../../config/redis.js';
+
+/** What the service handed to the mailer, in order. */
+const mailed = [];
+// Plain functions, not jest.fn: resetMocks would wipe them before every test.
+jest.unstable_mockModule('../../services/emailService.js', () => ({
+  CODE_PROMPT: '',
+  sendVerificationCodeEmail: async () => ({ sent: false, reason: 'RESEND_NOT_CONFIGURED' }),
+  sendPasswordResetEmail: async (toEmail, rawToken) => {
+    mailed.push({ toEmail, rawToken });
+    return { sent: false, reason: 'RESEND_NOT_CONFIGURED' };
+  },
+  _resetForTests: () => {},
+}));
+
+const request = (await import('supertest')).default;
+const { default: app } = await import('../../server.js');
+const { clearAllData, query } = await import('../utils/database.js');
+const { default: redisClient, connectRedis } = await import('../../config/redis.js');
 
 const GENERIC_FORGOT_MESSAGE = 'If this email is registered, a password reset link has been sent';
 
@@ -85,7 +106,7 @@ const getTokenRowsForUser = async (userId) => {
 /** Public endpoints key rate limits by IP — constant in tests, so clear
  *  between tests (and runs within the same hour window). */
 const clearRateLimitKeys = async () => {
-  const prefixes = ['forgot-password', 'reset-password', 'login'];
+  const prefixes = ['forgot-password', 'reset-password', 'login', 'register'];
   for (const prefix of prefixes) {
     const keys = await redisClient.keys(`ratelimit:${prefix}:*`);
     if (keys.length > 0) {
@@ -107,6 +128,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearAllData();
   await clearRateLimitKeys();
+  mailed.length = 0;
 });
 
 afterAll(async () => {
@@ -159,6 +181,36 @@ describe('POST /api/v1/auth/forgot-password', () => {
     expect(ttlMs).toBeLessThan(35 * 60 * 1000);
   });
 
+  // The header's «raw token never persisted» and the link that works, held
+  // together: a raw token is 64 hex too, so the stored shape alone cannot tell
+  // a hash from the token itself. The mailed token is the user's only copy.
+  test('the mailed token is what opens the reset; the database holds only its hash', async () => {
+    const { user } = await registerUser();
+
+    await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: user.email })
+      .expect(200);
+
+    // The service hands the mail over before it answers (fire-and-forget is
+    // the delivery, not the call); a queued mailer would need a wait here.
+    expect(mailed).toHaveLength(1);
+    const { toEmail, rawToken } = mailed[0];
+    expect(toEmail).toBe(user.email);
+    const [row] = await getTokenRowsForUser(user.id);
+    expect(row.token_hash).toBe(sha256Hex(rawToken));
+    expect(row.token_hash).not.toBe(rawToken);
+
+    await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: rawToken, password: 'MailedLink123' })
+      .expect(200);
+    await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password: 'MailedLink123' })
+      .expect(200);
+  });
+
   test('re-request invalidates the previous active token', async () => {
     const { user } = await registerUser();
 
@@ -175,6 +227,24 @@ describe('POST /api/v1/auth/forgot-password', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].used_at).not.toBeNull(); // first burned
     expect(rows[1].used_at).toBeNull(); // only latest link works
+  });
+
+  // «The previous token» — the requester's own: another account's live link
+  // survives a re-request, and another account's requests do not count
+  // toward this one's hourly throttle.
+  test("re-request and the throttle are per account: another account's link survives, its requests do not count here", async () => {
+    const { user: other } = await registerUser({ email: 'other-reset@test.com' });
+    const { user } = await registerUser();
+    await request(app).post('/api/v1/auth/forgot-password').send({ email: other.email }).expect(200);
+
+    for (let i = 0; i < 5; i += 1) {
+      await request(app).post('/api/v1/auth/forgot-password').send({ email: user.email }).expect(200);
+    }
+
+    const otherRows = await getTokenRowsForUser(other.id);
+    expect(otherRows).toHaveLength(1);
+    expect(otherRows[0].used_at).toBeNull(); // not burned by the other account's re-requests
+    expect(await getTokenRowsForUser(user.id)).toHaveLength(5); // the other's request was not counted here
   });
 
   test('per-user throttle: 6th request within an hour issues no token but still answers 200', async () => {
@@ -320,13 +390,21 @@ describe('POST /api/v1/auth/reset-password', () => {
     expect(response.body.error.code).toBe('INVALID_OR_EXPIRED_TOKEN');
   });
 
-  test('enforces register-grade password complexity with 422', async () => {
+  // Register-grade: each of the register rules on its own — a password that
+  // breaks all of them at once ('weak') would be refused with any one left.
+  test.each([
+    ['weak', 'every rule at once'],
+    ['Short1a', 'shorter than 8'],
+    ['nouppercase1', 'no uppercase letter'],
+    ['NOLOWERCASE1', 'no lowercase letter'],
+    ['NoDigitsHere', 'no digit'],
+  ])('enforces register-grade password complexity with 422: %s (%s)', async (password) => {
     const { user } = await registerUser();
     const rawToken = await seedResetToken(user.id);
 
     const response = await request(app)
       .post('/api/v1/auth/reset-password')
-      .send({ token: rawToken, password: 'weak' })
+      .send({ token: rawToken, password })
       .expect(422);
 
     expect(response.body.error.code).toBe('VALIDATION_ERROR');

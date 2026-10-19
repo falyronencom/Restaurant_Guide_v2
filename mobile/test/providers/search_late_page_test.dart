@@ -14,7 +14,8 @@ import '../support/wire_fixtures.dart';
 import '../support/wire_stand.dart';
 
 /// Поздний ответ подгрузки старого поиска не дописывается в новый (сверка
-/// находок тестировщика с сайтом, 18.10, Ш7).
+/// находок тестировщика с сайтом, 18.10, Ш7). И побеждает последний поиск:
+/// новый, отправленный во время загрузки прежнего, не пропадает (19.10, Ш20).
 ///
 /// Было: новый поиск проверял только `_isLoading`, а у ответа не было
 /// признака, к какому поиску он относится. Подгрузка страницы 2 по фразе А,
@@ -26,6 +27,7 @@ import '../support/wire_stand.dart';
 class _GatedAdapter implements HttpClientAdapter {
   final List<Completer<ResponseBody>> gates = [];
   final List<String> queries = [];
+  final List<Map<String, dynamic>> bodies = [];
 
   /// Отпустить ответ на запрос с номером [index] (по порядку отправки).
   void release(int index, Map<String, dynamic> body) =>
@@ -52,6 +54,7 @@ class _GatedAdapter implements HttpClientAdapter {
         : jsonDecode(utf8.decode(
             await requestStream.expand((chunk) => chunk).toList()));
     queries.add('${body is Map ? body['query'] : ''}:${body is Map ? body['page'] : ''}');
+    bodies.add(body is Map ? Map<String, dynamic>.from(body) : <String, dynamic>{});
     final gate = Completer<ResponseBody>();
     gates.add(gate);
     return gate.future;
@@ -207,5 +210,90 @@ void main() {
     await Future.wait([staleMore, freshMore]);
 
     expect(provider.establishments.map((e) => e.name), ['Кафе', 'Кафе 2']);
+  });
+
+  group('Ш20: новый поиск во время загрузки прежнего — побеждает последний', () {
+    /// Поиск «А» в пути (запрос № 0), затем поиск «Б» (запрос № 1).
+    Future<(EstablishmentsProvider, Future<void>, Future<void>)> twoSearches() async {
+      final provider = EstablishmentsProvider();
+      addTearDown(provider.dispose);
+
+      provider.setSearchQuery('А');
+      final first = provider.searchEstablishments();
+      await requests(1);
+
+      provider.setSearchQuery('Б');
+      final second = provider.searchEstablishments();
+      // Прежде второй поиск молча возвращался: на провод уходил один запрос.
+      await requests(2);
+      expect(adapter.queries, ['А:1', 'Б:1']);
+      return (provider, first, second);
+    }
+
+    test('ответ «А» пришёл ПОСЛЕ «Б» — в списке «Б», деление «Б»', () async {
+      final (provider, first, second) = await twoSearches();
+
+      adapter.release(1, page(b1, 'Кофейня Б', pageNo: 1, total: 1, matched: 0));
+      await second;
+      adapter.release(0, page(a1, 'Бар А', pageNo: 1, total: 45, matched: 45));
+      await first;
+
+      expect(provider.establishments.map((e) => e.id), [b1]);
+      expect(provider.searchMatchedTotal, 0);
+      expect(provider.paginationMeta?.total, 1);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('ответ «А» пришёл ДО «Б» — не показан, загрузка идёт до ответа «Б»',
+        () async {
+      final (provider, first, second) = await twoSearches();
+
+      adapter.release(0, page(a1, 'Бар А', pageNo: 1, total: 45, matched: 45));
+      await first;
+      expect(provider.establishments, isEmpty);
+      expect(provider.isLoading, isTrue,
+          reason: 'поиск «Б» ещё в пути — экран показывает загрузку');
+
+      adapter.release(1, page(b1, 'Кофейня Б', pageNo: 1, total: 1, matched: 0));
+      await second;
+      expect(provider.establishments.map((e) => e.id), [b1]);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('сбой прежнего поиска — не ошибка нового', () async {
+      final (provider, first, second) = await twoSearches();
+
+      adapter.fail(0);
+      await first;
+      expect(provider.error, isNull);
+
+      adapter.release(1, page(b1, 'Кофейня Б', pageNo: 1, total: 1, matched: 0));
+      await second;
+      expect(provider.error, isNull);
+      expect(provider.establishments.map((e) => e.id), [b1]);
+    });
+
+    test('сортировка, выбранная во время загрузки, не теряется', () async {
+      final provider = EstablishmentsProvider();
+      addTearDown(provider.dispose);
+
+      provider.setSearchQuery('кафе');
+      final first = provider.searchEstablishments();
+      await requests(1);
+      expect(adapter.bodies[0]['sort_by'], isNull);
+
+      provider.setSort(SortOption.priceAsc);
+      await requests(2);
+      expect(adapter.bodies[1]['sort_by'], isNotNull,
+          reason: 'запрос с выбранной сортировкой ушёл');
+
+      adapter.release(1, page(b1, 'Дешёвое', pageNo: 1, total: 1, matched: 1));
+      adapter.release(0, page(a1, 'Без сортировки', pageNo: 1, total: 1, matched: 1));
+      await first;
+      for (var i = 0; i < 20; i++) {
+        await flush();
+      }
+      expect(provider.establishments.map((e) => e.name), ['Дешёвое']);
+    });
   });
 }

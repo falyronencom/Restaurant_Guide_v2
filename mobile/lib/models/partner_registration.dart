@@ -314,7 +314,8 @@ class MenuPdf {
     final at = path.indexOf(upload);
     if (at < 0 || !isPdfLink(path)) return '';
     final head = path.substring(0, at + upload.length);
-    final tail = path.substring(at + upload.length, path.length - '.pdf'.length);
+    final tail =
+        path.substring(at + upload.length, path.length - '.pdf'.length);
     return '$head$size/f_jpg,q_auto/$tail.jpg';
   }
 }
@@ -325,7 +326,7 @@ class PartnerRegistration {
   // Step 1: Categories (max 2)
   final List<String> categories;
 
-  // Step 2: Cuisine types (max 3; none needed for a bar or a club)
+  // Step 2: Cuisine types (max 3; none needed for a cuisine-optional category)
   final List<String> cuisineTypes;
 
   /// Нужна ли кухня при выбранных категориях (см. [CategoryOptions.isCuisineRequired]).
@@ -628,17 +629,24 @@ class CategoryOptions {
   static const int maxSelection = 2;
 
   /// Категории, которым кухню можно не выбирать: бар и клуб (решение
-  /// Координатора В5, 17.10.2026). Зеркало `CUISINE_OPTIONAL_CATEGORIES`
+  /// Координатора В5, 17.10.2026), с 19.10.2026 (Ш17) ещё кальянная, боулинг,
+  /// караоке и бильярд; паб — с кухней. Зеркало `CUISINE_OPTIONAL_CATEGORIES`
   /// сервера (`backend/src/constants/establishmentVocab.js`).
-  static const Set<String> cuisineOptionalIds = {'bar', 'nightclub'};
+  static const Set<String> cuisineOptionalIds = {
+    'bar',
+    'nightclub',
+    'hookah',
+    'bowling',
+    'karaoke',
+    'billiards',
+  };
 
   /// Нужна ли карточке хотя бы одна кухня. Не нужна, только если ВСЕ
-  /// выбранные категории — бар или клуб: бар, который ещё и ресторан, живёт по
+  /// выбранные категории — из этого набора: бар, который ещё и ресторан, живёт по
   /// правилу ресторана. Ничего не выбрано — нужна (строже). Сервер отказывает
   /// в том же, что здесь не пропускается.
   static bool isCuisineRequired(List<String> categoryIds) =>
-      categoryIds.isEmpty ||
-      !categoryIds.every(cuisineOptionalIds.contains);
+      categoryIds.isEmpty || !categoryIds.every(cuisineOptionalIds.contains);
 }
 
 /// Category item model
@@ -719,7 +727,7 @@ class CityOptions {
   static const List<String> cities = [
     'Минск',
     'Гомель',
-    'Могилев',  // Backend uses 'Могилев' without ё
+    'Могилев', // Backend uses 'Могилев' without ё
     'Витебск',
     'Гродно',
     'Брест',
@@ -735,13 +743,14 @@ class CityOptions {
     'Гомель': (52.4200, 31.0000),
     'Витебск': (55.1900, 30.2000),
     'Могилев': (53.9100, 30.3500),
-    'Могилёв': (53.9100, 30.3500),  // ё variant — city picker uses 'Могилёв'
+    'Могилёв': (53.9100, 30.3500), // ё variant — city picker uses 'Могилёв'
     'Бобруйск': (53.1500, 29.2500),
   };
 
   /// Get center coordinates for a city
   /// Returns (latitude, longitude) tuple
   static (double, double) coordinatesFor(String city) {
-    return _cityCoordinates[city] ?? (53.9250, 27.5750); // Минск as ultimate fallback
+    return _cityCoordinates[city] ??
+        (53.9250, 27.5750); // Минск as ultimate fallback
   }
 }

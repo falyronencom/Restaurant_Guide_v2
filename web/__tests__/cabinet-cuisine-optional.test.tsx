@@ -39,19 +39,21 @@ function renderSidebar(cuisineOptional: boolean) {
 }
 
 describe('подпись раздела «Классификация»', () => {
-  it('говорит, что бару и клубу кухню можно не выбирать', () => {
+  it('говорит, каким заведениям кухню можно не выбирать', () => {
     renderSection([]);
     expect(
-      screen.getByText(/Бару и клубу кухню можно не выбирать/),
+      screen.getByText(
+        /Бару, клубу, кальянной, боулингу, караоке и бильярду кухню можно не выбирать/,
+      ),
     ).toBeInTheDocument();
   });
 
-  it.each([[['Бар']], [['Клуб']]])('%j: поле кухонь — «по желанию»', (categories) => {
+  it.each([[['Бар']], [['Клуб']], [['Боулинг']]])('%j: поле кухонь — «по желанию»', (categories) => {
     renderSection(categories);
     expect(screen.getByText('Кухни — до 3, по желанию')).toBeInTheDocument();
   });
 
-  it.each([[['Ресторан']], [['Бар', 'Ресторан']], [[]]])(
+  it.each([[['Ресторан']], [['Бар', 'Ресторан']], [['Паб']], [[]]])(
     '%j: поле кухонь без «по желанию»',
     (categories) => {
       renderSection(categories);
