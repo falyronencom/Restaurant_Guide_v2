@@ -151,11 +151,15 @@ const menuOfFile = (rows) => {
  *     checked against all rows already in the group, not against one of them:
  *     a board without headings that copies the lunch menu joins the lunch
  *     «Морс» and does not carry the breakfast «Морс» in with it (Phase 3.5
- *     review of option «А», 2026-10-19);
+ *     review of option «А», 2026-10-19). The price of it: where two menus
+ *     share a section and one of them has a board without headings, the
+ *     board's line may stay a line of its own — a repeat, never a dish lost
+ *     or two menus merged;
  *   - a different price is not a repeat — both are shown. A menu that lists
  *     the syrup twice still gives two lines: the lines of the first file (by
  *     id) are the slots, and the lines of the other files take them — a slot
- *     in the same section first, then one of the same menu, then new ones;
+ *     in the same section first, then any other that agrees (one of the same
+ *     menu), then new ones;
  *   - lines are ordered by their first row.
  *
  * @param {Object[]} rows - menu_items rows of one establishment, in menu order
@@ -207,8 +211,10 @@ export const groupGuestLines = (rows) => {
         if (slot) slot.push(line);
         else waiting.push(line);
       }
+      // A slot open to a line that shares no section with it is one of its
+      // own menu: every row of it agrees with the line.
       for (const line of waiting) {
-        const slot = slots.find(s => open(s, line) && s.some(other => other.menu === line.menu));
+        const slot = slots.find(s => open(s, line));
         if (slot) slot.push(line);
         else slots.push([line]);
       }
