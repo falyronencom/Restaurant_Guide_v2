@@ -440,8 +440,8 @@ void main() {
 
     /// Верх прямоугольника — самое слабое затемнение в его пределах: чем выше,
     /// тем фото чище.
-    double alphaOver(Rect scrim, Rect element) =>
-        HeroScrim.alphaAt(scrim.bottom - element.top);
+    double alphaOver(Rect scrim, Rect element, double lift) =>
+        HeroScrim.alphaAt(scrim.bottom - element.top, lift: lift);
 
     Future<void> checkContrast(WidgetTester tester, Map<String, dynamic> row,
         {required String statusPrefix}) async {
@@ -449,14 +449,15 @@ void main() {
       await _pumpDetail(tester);
 
       final scrim = tester.getRect(find.byType(HeroScrim));
+      final lift = tester.widget<HeroScrim>(find.byType(HeroScrim)).lift;
       // Полоса на экране той высоты, по которой считается контраст: иначе
       // смена высоты в экране оставила бы расчёт на старой шкале.
-      expect(scrim.height, HeroScrim.height);
+      expect(scrim.height, HeroScrim.heightFor(lift));
       final failures = <String>[];
 
       void check(String what, Rect rect, Color text, double need,
           {bool chip = false}) {
-        final a = alphaOver(scrim, rect);
+        final a = alphaOver(scrim, rect, lift);
         var bg = _over(Colors.black, white, a);
         if (chip) bg = _over(Colors.white, bg, 0.2);
         final ratio = _contrast(text, bg);
@@ -485,7 +486,7 @@ void main() {
           find.ancestor(of: cuisine, matching: find.byType(Opacity)).first);
       final cuisineRect = tester.getRect(cuisine);
       final cuisineBg = _over(
-          Colors.black, white, alphaOver(scrim, cuisineRect));
+          Colors.black, white, alphaOver(scrim, cuisineRect, lift));
       check(
           'кухня',
           cuisineRect,
@@ -533,43 +534,66 @@ void main() {
       );
     });
 
-    testWidgets('затемнение рисуется по тем же точкам (пиксели)',
+    // Кнопка «Меню» (бриф В3, 18.10.2026) поднимает над собой название,
+    // тип, кухню и статус на свою высоту — туда, где затемнение слабее.
+    testWidgets('с кнопкой «Меню»: длинное название, адрес, телефон, сайт',
         (tester) async {
-      tester.view.devicePixelRatio = 1.0;
-      tester.view.physicalSize = const Size(100, 700);
-      addTearDown(tester.view.reset);
-      final key = GlobalKey();
-      await tester.pumpWidget(Directionality(
-        textDirection: TextDirection.ltr,
-        child: RepaintBoundary(
-          key: key,
-          child: ColoredBox(
-            color: Colors.white,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: SizedBox(
-                  height: HeroScrim.height, child: const HeroScrim()),
+      await checkContrast(
+        tester,
+        _row(
+          name: 'Ресторан Большой Белорусский Дом',
+          media: [mediaRow(type: 'menu')],
+        )..['address'] = 'проспект Независимости, 100, корпус 5, офис 12',
+        statusPrefix: 'Открыто',
+      );
+      expect(find.byKey(EstablishmentDetailScreen.menuButtonKey),
+          findsOneWidget);
+    });
+
+    // Без подъёма и с подъёмом под кнопку «Меню» (48 + 8 dp).
+    for (final lift in [0.0, 56.0]) {
+      testWidgets('затемнение рисуется по тем же точкам (пиксели), '
+          'подъём $lift', (tester) async {
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(100, 700);
+        addTearDown(tester.view.reset);
+        final key = GlobalKey();
+        await tester.pumpWidget(Directionality(
+          textDirection: TextDirection.ltr,
+          child: RepaintBoundary(
+            key: key,
+            child: ColoredBox(
+              color: Colors.white,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                    height: HeroScrim.heightFor(lift),
+                    child: HeroScrim(lift: lift)),
+              ),
             ),
           ),
-        ),
-      ));
-      late ByteData bytes;
-      await tester.runAsync(() async {
-        final image = await (key.currentContext!.findRenderObject()!
-                as RenderRepaintBoundary)
-            .toImage(pixelRatio: 1);
-        bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
-        image.dispose();
+        ));
+        late ByteData bytes;
+        await tester.runAsync(() async {
+          final image = await (key.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary)
+              .toImage(pixelRatio: 1);
+          bytes =
+              (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+          image.dispose();
+        });
+        // Холст 100 × 700; полоса прижата к низу, её верх — на
+        // y = 700 − (620 + подъём).
+        for (final distance in [5.0, 120.0, 250.0, 300.0, 450.0, 560.0]) {
+          final y = (700 - distance).round() - 1;
+          final i = (y * 100 + 50) * 4;
+          final painted = bytes.getUint8(i); // красный канал серого
+          final expected =
+              255 * (1 - HeroScrim.alphaAt(distance, lift: lift));
+          expect(painted.toDouble(), closeTo(expected, 4.0),
+              reason: 'на $distance dp от низа');
+        }
       });
-      // Холст 100 × 700; полоса прижата к низу, её верх — на y = 700 − 620.
-      for (final distance in [5.0, 120.0, 250.0, 300.0, 450.0, 560.0]) {
-        final y = (700 - distance).round() - 1;
-        final i = (y * 100 + 50) * 4;
-        final painted = bytes.getUint8(i); // красный канал серого
-        final expected = 255 * (1 - HeroScrim.alphaAt(distance));
-        expect(painted.toDouble(), closeTo(expected, 4.0),
-            reason: 'на $distance dp от низа');
-      }
-    });
+    }
   });
 }
