@@ -114,6 +114,36 @@ void main() {
           reason: 'ключ дня берётся по дате: вторник открыт');
     });
 
+    test('ключ дня берётся по дате — все семь дней, выходные не перепутаны',
+        () {
+      // 12–18.10.2026 — с понедельника по воскресенье, слова дней — те, что
+      // в расписании на сервере (bookingService, DAY_KEYS). Тест выше
+      // смотрит только понедельник и вторник: перепутанные суббота и
+      // воскресенье показали бы гостю часы чужого дня, а бронь на них
+      // сервер отклонил бы по своему расписанию.
+      const keys = <String>[
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      for (var closed = 0; closed < keys.length; closed++) {
+        final hours = everyDay('10:00-22:00')
+          ..[keys[closed]] = {'is_open': false};
+        for (var day = 0; day < keys.length; day++) {
+          expect(
+            bookingSlotsFor(hours, DateTime(2026, 10, 12 + day)).isClosed,
+            day == closed,
+            reason: 'закрыт только ${keys[closed]}; '
+                '${12 + day}.10.2026 — ${keys[day]}',
+          );
+        }
+      }
+    });
+
     test('дня нет в расписании — закрыт (сервер ответит CLOSED_DAY)', () {
       final hours = everyDay('10:00-22:00')..remove('monday');
 

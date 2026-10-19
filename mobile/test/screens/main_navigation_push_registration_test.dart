@@ -262,4 +262,45 @@ void main() {
     await unmountPushHome(tester);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  // Тесты выше регистрируют Android, а там имя платформы во Flutter и слово
+  // сервера совпадают — «android». У iPhone не совпадают: Flutter зовёт его
+  // «iOS», а deviceTokenService принимает только 'ios' и 'android' и на
+  // остальное отвечает 400.
+  testWidgets('iPhone: адрес уходит с платформой ios', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    final home = await pumpPushHome(tester, storedUser: userA);
+
+    expect(home.deviceTokenPuts().single.data, <String, dynamic>{
+      'fcm_token': 'fcm-token-1',
+      'platform': 'ios',
+    });
+
+    await unmountPushHome(tester);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('выход отвязывает адрес: DELETE уносит его под ключом fcm_token',
+      (tester) async {
+    final home = await pumpPushHome(tester, storedUser: userA);
+    expect(home.deviceTokenPuts(), hasLength(1), reason: 'предпосылка');
+
+    // Так выходит «Профиль»: сначала отвязать адрес, потом выйти.
+    final unbinding = PushNotificationService().deregisterToken();
+    await settlePush(tester);
+    await unbinding;
+
+    final deletes =
+        home.adapter.requests.where((r) => r.method == 'DELETE').toList();
+    expect(deletes.map((r) => r.uri.path),
+        <String>['/api/v1/notifications/device-token']);
+    expect(deletes.single.data, <String, dynamic>{'fcm_token': 'fcm-token-1'},
+        reason: 'deviceTokenController.removeToken читает fcm_token: под '
+            'другим ключом адрес остался бы привязан, и push прежнего '
+            'аккаунта приходили бы на телефон после выхода');
+
+    await unmountPushHome(tester);
+  });
 }

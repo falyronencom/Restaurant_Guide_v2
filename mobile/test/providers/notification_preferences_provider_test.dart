@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/providers/notification_preferences_provi
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 
 import '../support/fake_api_client.dart';
+import '../support/wire_stand.dart';
 
 Map<String, dynamic> _allOn({bool menu = true}) => <String, dynamic>{
       'booking_push_enabled': true,
@@ -111,6 +112,47 @@ void main() {
       expect(provider.menuPushEnabled, isTrue);
       await provider.ensureLoaded();
       expect(fake.getCalls, 2);
+    });
+  });
+
+  // FakeApiClient выше не смотрит на путь, и ключ проверяется только у
+  // «Меню»: переименуй путь записи или ключ «Акций» — и все тесты выше
+  // останутся зелёными, а переключатель молча перестанет сохраняться.
+  // Здесь настоящий ApiClient поверх подставного транспорта; путь и ключи —
+  // из notificationRoutes и notificationPreferencesController бэкенда.
+  group('на проводе', () {
+    late StubAdapter wire;
+
+    setUp(() {
+      wire = installWireStand(
+        (_) => jsonBody(<String, dynamic>{'success': true, 'data': _allOn()}),
+        accessToken: 'access-1',
+      );
+    });
+
+    test('чтение и запись идут в /notifications/preferences под ключами '
+        'сервера', () async {
+      final provider = NotificationPreferencesProvider();
+      addTearDown(provider.dispose);
+
+      await provider.fetchPreferences();
+      await provider.updatePreferences(
+        booking: false,
+        reviews: false,
+        promotions: false,
+        menu: false,
+      );
+
+      expect(wire.requests.map((r) => '${r.method} ${r.uri.path}'), <String>[
+        'GET /api/v1/notifications/preferences',
+        'PUT /api/v1/notifications/preferences',
+      ]);
+      expect(wire.requests.last.data, <String, dynamic>{
+        'booking_push_enabled': false,
+        'reviews_push_enabled': false,
+        'promotions_push_enabled': false,
+        'menu_push_enabled': false,
+      });
     });
   });
 }
