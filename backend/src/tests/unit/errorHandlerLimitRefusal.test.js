@@ -7,8 +7,9 @@
  * (пределы, когда обновятся) и заголовок Retry-After доходят до клиента только
  * через errorHandler. До правки он отдавал подробности лишь у 400 и 422.
  *
- * Прочие ответы правка не трогает: 429 квоты отзывов (без подробностей и
- * срока), подробности у других статусов, ошибки не-AppError.
+ * Прочие ответы правка не трогает: 429 без подробностей и срока, подробности
+ * у других статусов, ошибки не-AppError. (Квота отзывов с 19.10.2026 несёт
+ * подробности и срок, как предел загрузок: reviewService.js.)
  */
 
 import { jest } from '@jest/globals';
@@ -55,9 +56,9 @@ describe('429 предела: подробности и Retry-After', () => {
     expect(headers).toEqual({ 'Retry-After': '43200' });
   });
 
-  test('429 без подробностей и срока (квота отзывов) — как прежде: ни подробностей, ни заголовка', () => {
+  test('429 без подробностей и срока — как прежде: ни подробностей, ни заголовка', () => {
     const { status, body, headers } = respond(
-      new AppError('Review rate limit exceeded. You can create up to 10 reviews per day.', 429, 'RATE_LIMIT_EXCEEDED'),
+      new AppError('Too many attempts', 429, 'RATE_LIMIT_EXCEEDED'),
     );
 
     expect(status).toBe(429);

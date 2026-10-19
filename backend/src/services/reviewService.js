@@ -25,6 +25,20 @@ import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 const RATE_LIMIT_MAX_REVIEWS = 10;
 
 /**
+ * What the author reads on the eleventh review of a Minsk day. Russian, and
+ * it names the term: the app shows the server's Russian text as it is (the
+ * site still words this code itself — web/src/lib/reviews/actions.ts), and
+ * before 19.10.2026 the English sentence never reached the screen —
+ * the app said «Слишком много запросов. Попробуйте позже», though «later»
+ * means after Minsk midnight (test-honesty audit, D3). The envelope — 429
+ * RATE_LIMIT_EXCEEDED — is unchanged; `details` and Retry-After say when the
+ * quota renews, as the daily upload allowance does (uploadAllowance.js).
+ */
+export const DAILY_REVIEW_LIMIT_TEXT =
+  `Лимит отзывов на сегодня исчерпан: не больше ${RATE_LIMIT_MAX_REVIEWS} в день. `
+  + 'Новый отзыв можно написать завтра.';
+
+/**
  * What the author or the partner reads when a review or a response cannot be
  * found, changed or deleted. Russian: the app shows the server's text as it
  * is, and an English one never reached the screen — the app put a general
@@ -87,7 +101,9 @@ export const createReview = async (reviewData) => {
   // attempt that does not end in a review is given back (decrement). Without
   // Redis the counter answers 1 and the quota is skipped — decision 23.09 #22.
   const rateLimitKey = `reviews:ratelimit:${user_id}`;
-  const reserved = await incrementWithExpiry(rateLimitKey, secondsUntilMinskMidnight());
+  const now = new Date();
+  const secondsLeft = secondsUntilMinskMidnight(now);
+  const reserved = await incrementWithExpiry(rateLimitKey, secondsLeft);
 
   if (reserved > RATE_LIMIT_MAX_REVIEWS) {
     await decrement(rateLimitKey);
@@ -96,10 +112,14 @@ export const createReview = async (reviewData) => {
       currentCount: reserved - 1,
       limit: RATE_LIMIT_MAX_REVIEWS,
     });
-    throw new AppError(
-      'Review rate limit exceeded. You can create up to 10 reviews per day.',
-      429,
-      'RATE_LIMIT_EXCEEDED',
+    throw Object.assign(
+      new AppError(DAILY_REVIEW_LIMIT_TEXT, 429, 'RATE_LIMIT_EXCEEDED', {
+        reviews_limit: RATE_LIMIT_MAX_REVIEWS,
+        retry_after: secondsLeft,
+        // Minsk midnight: whole seconds from the current second
+        reset_at: new Date((Math.floor(now.getTime() / 1000) + secondsLeft) * 1000).toISOString(),
+      }),
+      { retryAfter: secondsLeft },
     );
   }
 

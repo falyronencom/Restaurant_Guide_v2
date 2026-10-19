@@ -773,8 +773,18 @@ describe('Reviews System - Daily Quota', () => {
     const response = await submitReview(userToken, overflowEstablishmentId, 'over-quota').expect(429);
 
     expect(response.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
-    const message = response.body.message || response.body.error?.message || '';
-    expect(message.toLowerCase()).toContain('limit');
+    // The app shows the server's sentence as it is: Russian,
+    // with the term — the quota renews at Minsk midnight, not «later».
+    expect(response.body.message).toBe(
+      'Лимит отзывов на сегодня исчерпан: не больше 10 в день. Новый отзыв можно написать завтра.',
+    );
+    const { details } = response.body.error;
+    expect(details.reviews_limit).toBe(10);
+    expect(Number.isInteger(details.retry_after)).toBe(true);
+    expect(details.retry_after).toBeGreaterThan(0);
+    expect(details.retry_after).toBeLessThanOrEqual(86400);
+    expect(response.headers['retry-after']).toBe(String(details.retry_after));
+    expect(Date.parse(details.reset_at)).not.toBeNaN();
   });
 
   test('should reset quota at midnight', async () => {
