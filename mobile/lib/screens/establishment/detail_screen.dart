@@ -979,13 +979,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     return null; // Hide if no location available
   }
 
-  /// Format distance for display
-  String _formatDistance(double km) {
-    if (km < 1) {
-      return '${(km * 1000).round()} м от вас';
-    }
-    return '${km.toStringAsFixed(1)} км от вас';
-  }
+  /// «200 м от вас», «2,0 км от вас» — общее правило ([distanceLabel]).
+  String _formatDistance(double km) => '${distanceLabel(km)} от вас';
 
   /// Gallery photos: every image except menu, cover first (see galleryPhotos).
   List<EstablishmentMedia> _getSortedPhotos() => galleryPhotos(

@@ -291,10 +291,7 @@ class _ResultCard extends StatelessWidget {
   String _subtitle() {
     // With distance → show distance, without → show rating
     if (establishment.distance != null && establishment.distance! > 0) {
-      final km = establishment.distance!;
-      final distStr = km < 1
-          ? '${(km * 1000).round()} м'
-          : '${km.toStringAsFixed(1)} км';
+      final distStr = distanceLabel(establishment.distance!);
       return '${establishment.category} \u00b7 $distStr';
     }
 

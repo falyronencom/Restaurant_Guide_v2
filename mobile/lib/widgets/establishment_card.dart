@@ -423,7 +423,7 @@ class EstablishmentCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
-        '${distanceKm!.toStringAsFixed(1).replaceAll('.', ',')} км от вас',
+        '${distanceLabel(distanceKm!)} от вас',
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w400,
