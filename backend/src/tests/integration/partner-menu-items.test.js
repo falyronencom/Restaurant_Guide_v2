@@ -179,7 +179,8 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
     expect(Number(copy.price_byn)).toBe(7.5);
     expect(copy.sanity_flag).toBeNull();
     expect(Number((await rowOf(pdfCappuccino.id)).price_byn)).toBe(6);
-    expect((await guestMenu(estId)).sort()).toEqual(['Капучино — 6', 'Латте — 7.5']);
+    // Which spelling is shown is the tie between the two files (their ids).
+    expect((await guestMenu(estId)).map(l => l.toLowerCase()).sort()).toEqual(['капучино — 6', 'латте — 7.5']);
   });
 
   test('a dish of another menu (breakfast vs lunch) is not touched', async () => {

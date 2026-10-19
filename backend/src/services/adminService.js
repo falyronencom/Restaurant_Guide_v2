@@ -1391,32 +1391,51 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
  * copy would leave the dish on the card from the PDF. Each copy gets its own
  * audit entry, marked with the row the moderator acted on.
  *
+ * The copies are found among the rows as the guest saw them before the action
+ * — `before`: the visible rows for «Скрыть»; for «Вернуть» also the rows hidden
+ * with the same reason — so the line is the one the guest had (the guest's
+ * grouping sees no hidden rows). The row acted on is always among them.
+ *
+ * A re-read of a copy's file (replaceForMedia) may delete the copy while it
+ * is being changed — the new rows of that file then come back without the
+ * decision. Such a copy is looked for once more among fresh rows, where the
+ * re-read's row of the same line stands in for it.
+ *
  * @param {Object} existing - The row the moderator acted on, before the action
- * @param {(copy: Object) => boolean} applies - Which copies the action reaches
+ * @param {Object} rule - { before, applies }: rows of the guest's view before
+ *                        the action; which copies the action reaches
  * @param {Object} change - { updates, action, oldData, newData }
  * @param {Object} params - { adminUserId, ipAddress, userAgent }
  * @returns {Promise<string[]>} Ids of the copies changed
  */
-const applyToMenuItemCopies = async (existing, applies, change, params) => {
-  const rows = await MenuItemModel.getByEstablishmentId(existing.establishment_id, {
-    includeHidden: true,
-  });
+const applyToMenuItemCopies = async (existing, rule, change, params) => {
   const changed = [];
-  for (const copy of findCopies(existing.id, rows).filter(applies)) {
-    const updated = await MenuItemModel.updateById(copy.id, change.updates);
-    // A re-read may have replaced the copy's file meanwhile — nothing to change.
-    if (!updated) continue;
-    await AuditLogModel.createAuditLog({
-      user_id: params.adminUserId,
-      action: change.action,
-      entity_type: 'menu_item',
-      entity_id: copy.id,
-      old_data: change.oldData,
-      new_data: { ...change.newData, copy_of: existing.id },
-      ip_address: params.ipAddress,
-      user_agent: params.userAgent,
-    });
-    changed.push(copy.id);
+  for (let pass = 0; pass < 2; pass += 1) {
+    const rows = (await MenuItemModel.getByEstablishmentId(existing.establishment_id, {
+      includeHidden: true,
+    })).filter(row => row.id === existing.id || rule.before(row));
+    const copies = findCopies(existing.id, rows).filter(rule.applies);
+
+    let vanished = 0;
+    for (const copy of copies) {
+      const updated = await MenuItemModel.updateById(copy.id, change.updates);
+      if (!updated) {
+        vanished += 1;
+        continue;
+      }
+      await AuditLogModel.createAuditLog({
+        user_id: params.adminUserId,
+        action: change.action,
+        entity_type: 'menu_item',
+        entity_id: copy.id,
+        old_data: change.oldData,
+        new_data: { ...change.newData, copy_of: existing.id },
+        ip_address: params.ipAddress,
+        user_agent: params.userAgent,
+      });
+      changed.push(copy.id);
+    }
+    if (vanished === 0) break;
   }
   return changed;
 };
@@ -1481,7 +1500,10 @@ export const hideMenuItem = async (menuItemId, params) => {
 
   const copies = await applyToMenuItemCopies(
     existing,
-    copy => copy.is_hidden_by_admin !== true,
+    {
+      before: row => row.is_hidden_by_admin !== true,
+      applies: copy => copy.is_hidden_by_admin !== true,
+    },
     {
       updates: { is_hidden_by_admin: true, hidden_reason: reason },
       action: 'hide_menu_item',
@@ -1575,7 +1597,10 @@ export const unhideMenuItem = async (menuItemId, params) => {
   // for another reason was a decision of its own and stays hidden.
   const copies = await applyToMenuItemCopies(
     existing,
-    copy => copy.is_hidden_by_admin === true && copy.hidden_reason === existing.hidden_reason,
+    {
+      before: row => row.is_hidden_by_admin !== true || row.hidden_reason === existing.hidden_reason,
+      applies: copy => copy.is_hidden_by_admin === true && copy.hidden_reason === existing.hidden_reason,
+    },
     {
       updates: { is_hidden_by_admin: false, hidden_reason: null },
       action: 'unhide_menu_item',

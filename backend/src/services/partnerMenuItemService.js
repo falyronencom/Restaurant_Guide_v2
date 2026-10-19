@@ -113,14 +113,14 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   // The guest sees one line for a dish the menu's files share
   // (collapseMenuRepeats); an edit of one copy reaches the others, or the guest
   // would see the old price next to the new one. The copies are found before
-  // the edit — by the values the line has now. A copy the moderator hid is the
-  // moderator's and stays as it is.
-  const establishmentRows = await MenuItemModel.getByEstablishmentId(
+  // the edit — by the values the line has now — among the rows the guest sees:
+  // a copy the moderator hid is the moderator's and stays as it is, and the
+  // guest's grouping knows no hidden rows.
+  const visibleRows = await MenuItemModel.getByEstablishmentId(
     existing.establishment_id,
-    { includeHidden: true },
+    { includeHidden: false },
   );
-  const copies = findCopies(menuItemId, establishmentRows)
-    .filter(copy => copy.is_hidden_by_admin !== true);
+  const copies = findCopies(menuItemId, visibleRows);
 
   const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
   for (const copy of copies) {

@@ -648,15 +648,44 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
     expect(collapseMenuRepeats(rows)).toHaveLength(6);
   });
 
-  test('a copy of a copy is the same menu', () => {
-    // a~b share 2 of 4, b~c share 2 of 4, a and c share 1 of 4.
+  test('a small board sharing a dish with two menus joins one of them, not both', () => {
+    // Phase 3.5 review, 2026-10-19: with copies of copies the board chained the
+    // breakfast and the lunch menu into one, and «Морс» left the breakfast.
     const rows = [
-      ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф']),
-      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай']),
-      ...menuOf('c', ['Эспрессо', 'Какао', 'Морс', 'Сок']),
+      ...menuOf('breakfast', ['Омлет', 'Сырники', 'Морс', 'Каша'], { category_raw: 'ЗАВТРАК' }),
+      ...menuOf('lunch', ['Борщ', 'Котлета', 'Морс', 'Суп', 'Плов'], { category_raw: 'ОБЕД' }),
+      ...menuOf('promo', ['Морс', 'Лимонад'], { category_raw: 'НАПИТКИ' }),
     ];
 
-    expect(collapseMenuRepeats(rows).map(r => r.item_name).filter(n => n === 'Эспрессо')).toHaveLength(1);
+    const mors = collapseMenuRepeats(rows).filter(r => r.item_name === 'Морс');
+
+    expect(mors.map(r => r.category_raw).sort()).toEqual(['ЗАВТРАК', 'ОБЕД']);
+  });
+
+  test('copies pair by section first, then by order', () => {
+    // The photo's coffee syrup is hidden (not among the rows): its tea syrup
+    // pairs with the PDF's tea syrup, not with the PDF's first syrup.
+    const photoTea = row('photo', 'Сироп', '1.50', { category_raw: 'ЧАЙ' });
+    const photoLatte = row('photo', 'Латте', '7.00');
+    const pdfCoffee = row('pdf', 'Сироп', '1.50', { category_raw: 'КОФЕ' });
+    const pdfTea = row('pdf', 'Сироп', '1.50', { category_raw: 'Чай' });
+    const pdfLatte = row('pdf', 'Латте', '7.00');
+    const rows = [photoTea, photoLatte, pdfCoffee, pdfTea, pdfLatte];
+
+    expect(findCopies(pdfTea.id, rows).map(r => r.id)).toEqual([photoTea.id]);
+    expect(findCopies(pdfCoffee.id, rows)).toEqual([]);
+  });
+
+  test('sections spelled differently by two reads still pair, in order', () => {
+    const rows = [
+      row('photo', 'Маргарита', '18.00', { category_raw: 'ПИЦЦА ИЗ ПЕЧИ' }),
+      row('photo', 'Маргарита', '18.00', { category_raw: 'ЛАНЧ' }),
+      row('pdf', 'Маргарита', '18.00', { category_raw: 'Пицца на огне' }),
+      row('pdf', 'Маргарита', '18.00', { category_raw: 'Ланч' }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(2);
+    expect(findCopies(rows[0].id, rows).map(r => r.id)).toEqual([rows[2].id]);
   });
 
   test('a line read twice in one section of one file is one line, shown clean', () => {

@@ -61,10 +61,16 @@ const guestLineKey = (item) => {
 };
 
 /**
- * Which files are copies of one menu. Two files are copies when they share at
- * least half the lines of the smaller one (VARKA: the photo of the board and
- * the PDF); a breakfast menu and a lunch menu sharing «Морс» are two menus.
- * Copies of copies are one menu.
+ * Which files are copies of one menu. A file is a copy of a menu when it
+ * shares at least half the lines of the smaller of it and the menu's biggest
+ * file (VARKA: the photo of the board and the PDF); a breakfast menu and a
+ * lunch menu sharing «Морс» are two menus.
+ *
+ * Files are taken biggest first (ties by id); each joins the first menu whose
+ * biggest file it copies, or starts its own. A file is never matched against
+ * another copy, only against the menu's biggest file: a small board sharing
+ * «Морс» with both the breakfast and the lunch menu would otherwise chain them
+ * into one (Phase 3.5 review, 2026-10-19).
  *
  * @param {Object[]} rows - menu_items rows of one establishment
  * @returns {(mediaId: string) => string} The menu a file belongs to
@@ -76,25 +82,32 @@ const menuOfFile = (rows) => {
     linesPerFile.get(row.media_id).add(guestLineKey(row));
   }
 
-  const files = [...linesPerFile.keys()];
-  const parent = new Map(files.map(file => [file, file]));
-  const find = (file) => {
-    let root = file;
-    while (parent.get(root) !== root) root = parent.get(root);
-    return root;
-  };
+  const files = [...linesPerFile.keys()].sort((a, b) => {
+    const bySize = linesPerFile.get(b).size - linesPerFile.get(a).size;
+    if (bySize !== 0) return bySize;
+    if (String(a) === String(b)) return 0;
+    return String(a) < String(b) ? -1 : 1;
+  });
 
-  for (let i = 0; i < files.length; i += 1) {
-    for (let j = i + 1; j < files.length; j += 1) {
-      const a = linesPerFile.get(files[i]);
-      const b = linesPerFile.get(files[j]);
+  const biggestFiles = [];
+  const menuOf = new Map();
+  for (const file of files) {
+    const lines = linesPerFile.get(file);
+    const menu = biggestFiles.find((biggest) => {
+      const menuLines = linesPerFile.get(biggest);
       let shared = 0;
-      for (const key of a) if (b.has(key)) shared += 1;
-      if (shared * 2 >= Math.min(a.size, b.size)) parent.set(find(files[j]), find(files[i]));
+      for (const key of lines) if (menuLines.has(key)) shared += 1;
+      return shared * 2 >= Math.min(lines.size, menuLines.size);
+    });
+    if (menu === undefined) {
+      biggestFiles.push(file);
+      menuOf.set(file, file);
+    } else {
+      menuOf.set(file, menu);
     }
   }
 
-  return (mediaId) => JSON.stringify(find(mediaId) ?? null);
+  return (mediaId) => JSON.stringify(menuOf.get(mediaId) ?? null);
 };
 
 /**
@@ -113,9 +126,11 @@ const menuOfFile = (rows) => {
  *     line — recognition read it twice; in another section it is the menu's own
  *     (a syrup sold with coffee and with tea) and stays;
  *   - across files that are copies of one menu (menuOfFile) the same line is
- *     one line; a different price is not a repeat — both are shown; the n-th
- *     line of a file pairs with the n-th of another, so two files of a menu
- *     that lists the syrup twice still give two lines;
+ *     one line; a different price is not a repeat — both are shown. A menu
+ *     that lists the syrup twice still gives two lines: the lines of the file
+ *     with the most of them are the slots, and the lines of the other files
+ *     take them — first a slot in the same section, then the free ones in
+ *     order (two reads may spell a section differently), then new ones;
  *   - files that are different menus are not collapsed: a dish both list
  *     stays in each menu's section;
  *   - lines are ordered by their first row.
@@ -125,39 +140,74 @@ const menuOfFile = (rows) => {
  */
 export const groupGuestLines = (rows) => {
   const menuOf = menuOfFile(rows);
-  const groups = [];
-  const groupOfFileLine = new Map();
-  const linesByMenuKey = new Map();
 
-  for (const row of rows) {
+  // One file, one line, one section: one file line.
+  const fileLineById = new Map();
+  const fileLinesByMenuKey = new Map();
+  rows.forEach((row, index) => {
     const key = guestLineKey(row);
-    const fileLine = JSON.stringify([row.media_id ?? null, key, readAsGuest(row.category_raw)]);
-    const known = groupOfFileLine.get(fileLine);
-    if (known !== undefined) {
-      groups[known].push(row);
-      continue;
+    const section = readAsGuest(row.category_raw);
+    const id = JSON.stringify([row.media_id ?? null, key, section]);
+    let line = fileLineById.get(id);
+    if (!line) {
+      line = { file: String(row.media_id ?? null), section, first: index, rows: [] };
+      fileLineById.set(id, line);
+      const menuKey = JSON.stringify([menuOf(row.media_id), key]);
+      if (!fileLinesByMenuKey.has(menuKey)) fileLinesByMenuKey.set(menuKey, []);
+      fileLinesByMenuKey.get(menuKey).push(line);
+    }
+    line.rows.push(row);
+  });
+
+  const groups = [];
+  for (const fileLines of fileLinesByMenuKey.values()) {
+    const linesPerFile = new Map();
+    for (const line of fileLines) {
+      if (!linesPerFile.has(line.file)) linesPerFile.set(line.file, []);
+      linesPerFile.get(line.file).push(line);
+    }
+    // The file with the most lines first, ties by its id — not by row order,
+    // which is not fixed between rows of equal position and name.
+    const files = [...linesPerFile.keys()].sort((a, b) => {
+      const byLines = linesPerFile.get(b).length - linesPerFile.get(a).length;
+      if (byLines !== 0) return byLines;
+      if (a === b) return 0;
+      return a < b ? -1 : 1;
+    });
+
+    const slots = linesPerFile.get(files[0]).map(line => ({
+      sections: new Set([line.section]),
+      files: new Set([line.file]),
+      lines: [line],
+    }));
+    const take = (slot, line) => {
+      slot.sections.add(line.section);
+      slot.files.add(line.file);
+      slot.lines.push(line);
+    };
+    for (const file of files.slice(1)) {
+      const waiting = [];
+      for (const line of linesPerFile.get(file)) {
+        const slot = slots.find(s => !s.files.has(file) && s.sections.has(line.section));
+        if (slot) take(slot, line);
+        else waiting.push(line);
+      }
+      for (const line of waiting) {
+        const slot = slots.find(s => !s.files.has(file));
+        if (slot) take(slot, line);
+        else slots.push({ sections: new Set([line.section]), files: new Set([file]), lines: [line] });
+      }
     }
 
-    const menuKey = JSON.stringify([menuOf(row.media_id), key]);
-    let entry = linesByMenuKey.get(menuKey);
-    if (!entry) {
-      entry = { slots: [], seenPerFile: new Map() };
-      linesByMenuKey.set(menuKey, entry);
+    for (const slot of slots) {
+      groups.push({
+        first: Math.min(...slot.lines.map(line => line.first)),
+        rows: slot.lines.flatMap(line => line.rows),
+      });
     }
-    const lineInFile = entry.seenPerFile.get(row.media_id) ?? 0;
-    entry.seenPerFile.set(row.media_id, lineInFile + 1);
-
-    let group = entry.slots[lineInFile];
-    if (group === undefined) {
-      group = groups.length;
-      groups.push([]);
-      entry.slots.push(group);
-    }
-    groups[group].push(row);
-    groupOfFileLine.set(fileLine, group);
   }
 
-  return groups;
+  return groups.sort((a, b) => a.first - b.first).map(group => group.rows);
 };
 
 /**
