@@ -122,15 +122,43 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   return payload.access_token;
 }
 
+// Stand-in origin for resolving a returnTo. Any http(s) origin gives the same
+// verdict: a value is safe when resolving it does not change the origin.
+const RETURN_TO_BASE = 'https://return-to.invalid';
+
+// Control characters, whitespace and the backslash never occur in a path the
+// site builds itself; a value carrying any of them is refused, not repaired.
+const RETURN_TO_FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\s\\]/;
+
 /**
- * Open-redirect guard (D4). Accept only a same-origin RELATIVE path: a leading
- * slash followed by neither `/` nor `\`. Rejects protocol-relative `//evil.com`,
- * the backslash variant `/\evil.com` (browsers normalize `\`→`/`, resolving it
- * off-origin), and absolute URLs. Anything else collapses to '/'.
+ * Open-redirect guard (D4). The verdict is about where the value LEADS, not
+ * what it starts with: the value is resolved against the site the way the
+ * browser and the Next router resolve it, and is accepted only when it stays
+ * on our origin. The result is the normalised path (pathname + search + hash),
+ * never the raw input, so every consumer — the server redirect after Yandex,
+ * AuthRedirect's router.replace — receives exactly what was checked.
+ * Anything else collapses to '/'. Idempotent: the Yandex callback re-guards
+ * the value stored at the start of the flow.
  */
 export function guardReturnTo(returnTo: string | null | undefined): string {
-  if (typeof returnTo === 'string' && /^\/(?![/\\])/.test(returnTo)) {
-    return returnTo;
+  if (
+    typeof returnTo !== 'string' ||
+    !returnTo.startsWith('/') ||
+    RETURN_TO_FORBIDDEN.test(returnTo)
+  ) {
+    return '/';
   }
-  return '/';
+
+  let url: URL;
+  try {
+    url = new URL(returnTo, RETURN_TO_BASE);
+  } catch {
+    return '/';
+  }
+  if (url.origin !== RETURN_TO_BASE) return '/';
+
+  // Normalisation can itself produce a leading `//` (dot segments collapse),
+  // which would leave the site once handed on as a relative address.
+  const path = url.pathname + url.search + url.hash;
+  return path.startsWith('//') ? '/' : path;
 }
