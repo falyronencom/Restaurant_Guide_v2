@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_mobile/config/environment.dart';
+import 'package:restaurant_guide_mobile/services/api_log.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
 import 'package:restaurant_guide_mobile/utils/server_refusal_text.dart';
 
@@ -59,25 +60,31 @@ class ApiClient {
   /// приватным конструктором нет точки входа, чтобы собрать его поверх
   /// подставного транспорта со своим, а не общим на процесс, замком
   /// обновления токена.
-  ApiClient.withDio(Dio dio)
+  ///
+  /// [apiLogging] — журнал запросов; по умолчанию `Environment.enableApiLogging`
+  /// (`API_LOG` или `ENV=development`). Тестам журнала — явно `true`.
+  ApiClient.withDio(Dio dio, {bool? apiLogging})
       : _dio = dio,
         _storage = const FlutterSecureStorage() {
+    final logging = apiLogging ?? Environment.enableApiLogging;
+    void logLine(String line) => debugPrint('[API] $line');
+
+    // Журнал ошибок — первым: перехватчик ошибок клиента отклоняет их через
+    // `reject`, и стоящий после него журнал их не видел бы. Токены, пароли и
+    // код из письма в журнале замаскированы (Н7, 19.10.2026; `api_log.dart`).
+    if (logging) {
+      _dio.interceptors
+          .add(ApiLogInterceptor(logPrint: logLine, requests: false));
+    }
+
     // Add interceptors
     _dio.interceptors.add(_createRequestInterceptor());
     _dio.interceptors.add(_createResponseInterceptor());
     _dio.interceptors.add(_createErrorInterceptor());
 
-    // Add logging in development
-    if (Environment.enableApiLogging) {
-      _dio.interceptors.add(LogInterceptor(
-        request: true,
-        requestHeader: true,
-        requestBody: true,
-        responseHeader: false,
-        responseBody: true,
-        error: true,
-        logPrint: (obj) => debugPrint('[API] $obj'),
-      ));
+    // Журнал запросов и ответов — последним, после `Authorization`.
+    if (logging) {
+      _dio.interceptors.add(ApiLogInterceptor(logPrint: logLine, errors: false));
     }
   }
 
@@ -112,11 +119,6 @@ class ApiClient {
         final accessToken = await _storage.read(key: 'access_token');
         if (accessToken != null && accessToken.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $accessToken';
-        }
-
-        // Log request in development (without token)
-        if (Environment.enableApiLogging) {
-          debugPrint('[API Request] ${options.method} ${options.path}');
         }
 
         handler.next(options);
@@ -199,10 +201,6 @@ class ApiClient {
   Interceptor _createErrorInterceptor() {
     return InterceptorsWrapper(
       onError: (error, handler) async {
-        if (Environment.enableApiLogging) {
-          debugPrint('[API Error] ${error.requestOptions.path}: ${error.message}');
-        }
-
         // Handle 401 Unauthorized - try to refresh token.
         //
         // Кроме двух случаев. Первый — запросы за учётными данными. 401 на
@@ -487,7 +485,10 @@ class ApiClient {
       return _RefreshResult.rejected;
     } on DioException catch (e) {
       if (Environment.enableApiLogging) {
-        debugPrint('[API] Token refresh failed: $e');
+        // Без `$e`: исключение dio несёт запрос и ответ — в журнал только
+        // вид отказа и код.
+        debugPrint('[API] Token refresh failed: ${e.type.name} '
+            '${e.response?.statusCode ?? ''}');
       }
       // 4xx, кроме 429, — сервер отверг сам токен: просрочен (401), повторно
       // использован (403 TOKEN_REUSE_DETECTED), аккаунт отключён. 429 — это

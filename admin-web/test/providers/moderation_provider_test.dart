@@ -184,5 +184,26 @@ void main() {
       expect(provider.selectedDetail?.id, 'est-2');
       expect(provider.isLoadingDetail, isFalse);
     });
+
+    test('запоздавший ОТКАЗ по прежней карточке не ложится на открытую',
+        () async {
+      // Выше — поздний успех. Отказ идёт той же проверкой, но его не видел
+      // никто: ошибка est-1 встала бы над загруженной est-2, и панель
+      // показала бы сообщение вместо карточки.
+      fake.gatedId = 'est-1';
+      fake.gate = Completer<void>();
+      final slowOpen = provider.selectEstablishment('est-1');
+
+      await provider.selectEstablishment('est-2');
+      expect(provider.selectedDetail?.id, 'est-2');
+
+      fake.failDetailWith = Exception('timeout');
+      fake.gate!.complete();
+      await slowOpen;
+
+      expect(provider.selectedDetail?.id, 'est-2');
+      expect(provider.detailError, isNull);
+      expect(provider.isLoadingDetail, isFalse);
+    });
   });
 }

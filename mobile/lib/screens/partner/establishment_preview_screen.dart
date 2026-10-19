@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Preview screen for partner to see how their establishment card will look
 /// Based on EstablishmentDetailScreen but with preview mode:
@@ -151,7 +152,7 @@ class _EstablishmentPreviewScreenState
             child: _buildInfoOverlay(),
           ),
 
-          // Rating badge (placeholder)
+          // Цена — как у гостя (оценок у нового места нет)
           Positioned(
             top: 500,
             right: 24,
@@ -566,39 +567,26 @@ class _EstablishmentPreviewScreenState
     );
   }
 
-  /// Build rating badge (placeholder for preview)
+  /// Цена под фото — как в карточке гостя ([priceLabel]): не выбрана —
+  /// ничего. Квадрата оценки нет: у нового места оценок нет, а гость без
+  /// оценок квадрата не видит (прежде превью рисовало «—» и «$$» по
+  /// умолчанию — обещало то, чего у гостя не будет; Н2, 19.10.2026).
   Widget _buildRatingBadge() {
-    return Column(
-      children: [
-        // Rating placeholder
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: _greenStatus,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          ),
-          child: const Center(
-            child: Text(
-              '—',
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.w400,
-                color: _backgroundColor,
-              ),
+    final price = priceLabel(data.priceRange);
+    if (price == null) return const SizedBox.shrink();
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 50),
+      child: Column(
+        children: [
+          Text(
+            price,
+            style: const TextStyle(
+              fontSize: 20,
+              color: _backgroundColor,
             ),
           ),
-        ),
-        const SizedBox(height: 4),
-        // Price
-        Text(
-          data.priceRange ?? '\$\$',
-          style: const TextStyle(
-            fontSize: 20,
-            color: _backgroundColor,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

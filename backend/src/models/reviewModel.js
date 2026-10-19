@@ -792,8 +792,33 @@ export const executeInTransaction = async (callback) => {
 };
 
 /**
+ * The establishment's status, or null when there is no such establishment.
+ * Review creation reads it to accept a review only on a card the guest sees
+ * in the catalogue (status 'active'); the reads of reviews keep
+ * establishmentExists below.
+ *
+ * @param {string} establishmentId - UUID of the establishment
+ * @returns {Promise<string|null>} Status ('draft', 'pending', 'active', …) or null
+ */
+export const getEstablishmentStatus = async (establishmentId) => {
+  try {
+    const result = await pool.query(
+      'SELECT status FROM establishments WHERE id = $1',
+      [establishmentId],
+    );
+    return result.rows[0]?.status ?? null;
+  } catch (error) {
+    logger.error('Error reading establishment status', {
+      error: error.message,
+      establishmentId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Verify that an establishment exists in the database
- * This is used for validation before creating or updating reviews
+ * This is used for validation before reading reviews and aggregates
  * 
  * @param {string} establishmentId - UUID of the establishment to verify
  * @returns {Promise<boolean>} True if establishment exists, false otherwise

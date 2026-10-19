@@ -22,6 +22,7 @@ void main() {
   late int allTimeViews;
   late Map<String, dynamic> overviewViews;
   late List<Map<String, dynamic>> viewsTrend;
+  late StubAdapter wire;
 
   /// Ряд по дням, заканчивая вчерашним 10.10: [counts] по порядку.
   List<Map<String, dynamic>> daily(List<int> counts) {
@@ -46,7 +47,7 @@ void main() {
       'change_percent': -100
     };
     viewsTrend = daily(List.filled(7, 0));
-    installWireStand((options) {
+    wire = installWireStand((options) {
       final path = options.uri.path;
       if (path == '/api/v1/partner/establishments/$id') {
         return jsonBody({
@@ -218,6 +219,38 @@ void main() {
       expect(find.text('10'), findsOneWidget);
       expect(find.text('25'), findsNothing);
       expect(find.text('за период · всего 25'), findsOneWidget);
+    });
+  });
+
+  // Стенд отвечает на любой период одинаково и `period` не читает, поэтому
+  // ни один тест выше не видит, что ушло на сервер при смене периода: экран,
+  // всегда просящий неделю, показывал бы недельные цифры под «1 месяц».
+  // Коды — partnerAnalyticsController (`?period=7d|30d|90d`).
+  group('выбор периода', () {
+    testWidgets('«1 месяц» и «3 месяца» уходят в запросы своими кодами',
+        (tester) async {
+      List<String?> periods(String path) => wire.requests
+          .where((r) => r.uri.path == path)
+          .map((r) => r.uri.queryParameters['period'])
+          .toList();
+
+      await pumpStats(tester);
+      expect(periods('/api/v1/partner/analytics/overview').last, '7d',
+          reason: 'предпосылка: по умолчанию — неделя');
+
+      var current = '1 неделя';
+      for (final choice in const {'1 месяц': '30d', '3 месяца': '90d'}.entries) {
+        await tester.tap(find.text(current).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(choice.key).last);
+        await tester.pumpAndSettle();
+        current = choice.key;
+
+        expect(periods('/api/v1/partner/analytics/overview').last, choice.value,
+            reason: '«${choice.key}» — обзор');
+        expect(periods('/api/v1/partner/analytics/trends').last, choice.value,
+            reason: '«${choice.key}» — график');
+      }
     });
   });
 }

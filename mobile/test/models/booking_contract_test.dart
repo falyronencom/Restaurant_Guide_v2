@@ -46,6 +46,24 @@ void main() {
       expect(b.expiresAt, DateTime.utc(2026, 4, 6, 18));
     });
 
+    test('отклонённая бронь гостя: причина и контакты заведения доходят',
+        () {
+      // Строка списка гостя — `bookingModel.getByUserId`: `b.*` таблицы
+      // bookings (колонка decline_reason, миграция 021) и адрес с телефоном
+      // заведения. Без причины гость видит «Отклонено» и не знает почему.
+      final b = Booking.fromJson(bookingRow(status: 'declined')
+        ..addAll(<String, dynamic>{
+          'decline_reason': 'Зал закрыт на спецобслуживание',
+          'establishment_address': 'ул. Ленина, 5',
+          'establishment_phone': '+375172000000',
+        }));
+
+      expect(b.isDeclined, isTrue);
+      expect(b.declineReason, 'Зал закрыт на спецобслуживание');
+      expect(b.establishmentAddress, 'ул. Ленина, 5');
+      expect(b.establishmentPhone, '+375172000000');
+    });
+
     test('camelCase-ключи читаются наравне со snake_case', () {
       final b = Booking.fromJson(<String, dynamic>{
         'id': 'x',
@@ -82,17 +100,29 @@ void main() {
 
   group('Состояния брони', () {
     test('каждый статус бэкенда даёт свой предикат', () {
-      expect(Booking.fromJson(bookingRow(status: 'pending')).isPending, isTrue);
-      expect(Booking.fromJson(bookingRow(status: 'confirmed')).isConfirmed,
-          isTrue);
-      expect(
-          Booking.fromJson(bookingRow(status: 'declined')).isDeclined, isTrue);
-      expect(Booking.fromJson(bookingRow(status: 'cancelled')).isCancelled,
-          isTrue);
-      expect(Booking.fromJson(bookingRow(status: 'expired')).isExpired, isTrue);
-      expect(Booking.fromJson(bookingRow(status: 'no_show')).isNoShow, isTrue);
-      expect(Booking.fromJson(bookingRow(status: 'completed')).isCompleted,
-          isTrue);
+      // Статусы — из CHECK таблицы bookings (миграция 021). «Свой» — это
+      // ровно один: предикат, отвечающий «да» и на чужой статус, показал бы
+      // отклонённую бронь истёкшей.
+      final predicates = <String, bool Function(Booking)>{
+        'pending': (b) => b.isPending,
+        'confirmed': (b) => b.isConfirmed,
+        'declined': (b) => b.isDeclined,
+        'cancelled': (b) => b.isCancelled,
+        'expired': (b) => b.isExpired,
+        'no_show': (b) => b.isNoShow,
+        'completed': (b) => b.isCompleted,
+      };
+      for (final status in predicates.keys) {
+        final b = Booking.fromJson(bookingRow(status: status));
+        expect(
+          [
+            for (final p in predicates.entries)
+              if (p.value(b)) p.key,
+          ],
+          [status],
+          reason: 'у «$status» отвечает «да» ровно свой предикат',
+        );
+      }
     });
 
     test('активна только ожидающая или подтверждённая', () {

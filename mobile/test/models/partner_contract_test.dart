@@ -93,8 +93,12 @@ void main() {
   });
 
   group('Позиция меню', () {
+    // Строка — как её отдаёт menuItemModel: `price_byn` NUMERIC и
+    // `confidence` DECIMAL(3,2) node-pg без парсера типов присылает
+    // СТРОКАМИ. Числа в заготовке прятали бы ровно тот разбор, который
+    // ломается.
     Map<String, dynamic> menuItemRow({
-      dynamic price = 24.5,
+      dynamic price = '24.50',
       dynamic sanityFlag,
     }) =>
         <String, dynamic>{
@@ -104,7 +108,7 @@ void main() {
           'item_name': 'Драники со сметаной',
           'price_byn': price,
           'category_raw': 'Горячие блюда',
-          'confidence': 0.94,
+          'confidence': '0.94',
           'sanity_flag': sanityFlag,
           'position': 3,
         };

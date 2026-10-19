@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/models/notification_model.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
+import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
+import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
@@ -73,14 +75,18 @@ class _GatedNotificationService implements NotificationService {
   @override
   Future<bool> markAsRead(String notificationId) async => true;
 
+  /// Ворота «прочитать все». `null` — ответ сразу и успешный.
+  Completer<bool>? markAllGate;
+
   @override
-  Future<bool> markAllAsRead() async => true;
+  Future<bool> markAllAsRead() => markAllGate?.future ?? Future.value(true);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Map<String, dynamic> _bookingJson(String id) => <String, dynamic>{
+Map<String, dynamic> _bookingJson(String id, {String status = 'confirmed'}) =>
+    <String, dynamic>{
       'id': id,
       'establishment_id': 'est-1',
       'user_id': 'previous-user',
@@ -88,7 +94,7 @@ Map<String, dynamic> _bookingJson(String id) => <String, dynamic>{
       'booking_time': '19:00',
       'guest_count': 2,
       'contact_phone': '+375291234567',
-      'status': 'confirmed',
+      'status': status,
       'expires_at': '2026-10-10T19:00:00.000Z',
       'created_at': '2026-10-01T10:00:00.000Z',
     };
@@ -174,6 +180,144 @@ void main() {
       expect(provider.userBookings.map((b) => b.id), ['b-1']);
       expect(provider.isLoading, isFalse);
     });
+
+    test('брони, уже загруженные до выхода, сброс стирает — все четыре списка',
+        () async {
+      // Тесты выше начинают с пустых списков, поэтому не видят, чистит ли
+      // сброс то, что УЖЕ лежит в памяти, — гостей и телефоны прежнего
+      // аккаунта. Ради этого сброс и заведён.
+      final provider = BookingProvider();
+      addTearDown(provider.dispose);
+
+      final partner = provider.loadPartnerBookings('est-1');
+      await pumpEventQueue();
+      adapter.release('/api/v1/partner/bookings/est-1', <String, dynamic>{
+        'success': true,
+        'data': {
+          'items': [
+            _bookingJson('b-new', status: 'pending'),
+            _bookingJson('b-confirmed'),
+            _bookingJson('b-done', status: 'completed'),
+          ],
+        },
+      });
+      await partner;
+      final mine = provider.loadUserBookings();
+      await pumpEventQueue();
+      adapter.release('/api/v1/bookings/my', <String, dynamic>{
+        'success': true,
+        'data': [_bookingJson('b-mine')],
+      });
+      await mine;
+      expect(
+        <int>[
+          provider.pendingBookings.length,
+          provider.confirmedBookings.length,
+          provider.historyBookings.length,
+          provider.userBookings.length,
+        ],
+        <int>[1, 1, 1, 1],
+        reason: 'предпосылка: все четыре списка заполнены',
+      );
+
+      AccountScope.resetAll();
+
+      expect(provider.pendingBookings, isEmpty);
+      expect(provider.confirmedBookings, isEmpty);
+      expect(provider.historyBookings, isEmpty);
+      expect(provider.userBookings, isEmpty);
+    });
+  });
+
+  // У этих двух провайдеров приём поколения стоит, но не проверялся ничем.
+  // Каждой паре — образец «без смены записывается»: иначе «не записалось»
+  // нельзя отличить от «не разобралось».
+  group('BookingSettingsProvider', () {
+    const path = '/api/v1/partner/booking-settings/est-1';
+    final settings = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'id': 'bs-1',
+        'establishment_id': 'est-1',
+        'is_enabled': true,
+        'max_guests_per_booking': 12,
+        'confirmation_timeout_hours': 6,
+        'max_days_ahead': 14,
+        'min_hours_before': 3,
+        'created_at': '2026-04-01T09:00:00.000Z',
+        'updated_at': '2026-04-01T09:00:00.000Z',
+      },
+    };
+
+    test('настройки брони прежнего партнёра, пришедшие после смены, не '
+        'записываются', () async {
+      final provider = BookingSettingsProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadSettings('est-1');
+      await pumpEventQueue();
+      expect(adapter.paths, [path]);
+      AccountScope.resetAll();
+      adapter.release(path, settings);
+      await inFlight;
+
+      expect(provider.settings, isNull);
+    });
+
+    test('без смены аккаунта настройки записываются — образец разбирается',
+        () async {
+      final provider = BookingSettingsProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadSettings('est-1');
+      await pumpEventQueue();
+      adapter.release(path, settings);
+      await inFlight;
+
+      expect(provider.settings?.maxGuestsPerBooking, 12);
+    });
+  });
+
+  group('PartnerDashboardProvider', () {
+    const path = '/api/v1/partner/establishments';
+    final establishments = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'establishments': [
+          <String, dynamic>{'id': 'est-prev', 'name': 'Кухмістр', 'status': 'active'},
+        ],
+      },
+    };
+
+    test('заведения прежнего партнёра, пришедшие после смены, не записываются',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadEstablishments();
+      await pumpEventQueue();
+      expect(adapter.paths, [path]);
+      AccountScope.resetAll();
+      adapter.release(path, establishments);
+      await inFlight;
+
+      expect(provider.establishments, isEmpty);
+      expect(provider.isInitialized, isFalse,
+          reason: 'кабинет нового партнёра обязан загрузиться заново');
+    });
+
+    test('без смены аккаунта заведения записываются — образец разбирается',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadEstablishments();
+      await pumpEventQueue();
+      adapter.release(path, establishments);
+      await inFlight;
+
+      expect(provider.establishments.map((e) => e.id), ['est-prev']);
+    });
   });
 
   group('NotificationProvider', () {
@@ -223,6 +367,37 @@ void main() {
       expect(provider.notifications.map((n) => n.id), ['n-1']);
       expect(provider.unreadCount, 7);
       expect(provider.isLoading, isFalse);
+    });
+
+    test('«прочитать все» прежнего аккаунта, отказавшее после выхода, не '
+        'возвращает его уведомления', () async {
+      // Тесты выше видят только поздние УСПЕХИ. Поздний отказ опаснее:
+      // откат кладёт на место сохранённый список — список прежнего аккаунта.
+      final service = _GatedNotificationService()
+        ..markAllGate = Completer<bool>();
+      final provider = NotificationProvider(service: service);
+      addTearDown(provider.dispose);
+
+      provider.startPolling();
+      final list = provider.fetchNotifications(refresh: true);
+      service.countGate.complete(7);
+      service.listGate.complete(<String, dynamic>{
+        'items': <NotificationModel>[_notification('n-1')],
+        'pagination': <String, dynamic>{'totalPages': 1},
+      });
+      await list;
+      await pumpEventQueue();
+      expect(provider.notifications.map((n) => n.id), ['n-1'],
+          reason: 'предпосылка: список прежнего аккаунта на экране');
+      expect(provider.unreadCount, 7, reason: 'предпосылка');
+
+      final marking = provider.markAllAsRead();
+      AccountScope.resetAll(); // выход, пока сервер отвечает
+      service.markAllGate!.completeError(Exception('нет сети'));
+      await marking;
+
+      expect(provider.notifications, isEmpty);
+      expect(provider.unreadCount, 0);
     });
   });
 

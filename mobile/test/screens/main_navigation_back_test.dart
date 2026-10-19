@@ -130,19 +130,29 @@ void main() {
 
   testWidgets('на другой вкладке «Назад» возвращает на «Поиск» и из '
       'приложения не выходит', (tester) async {
+    // «На другой» — на любой из четырёх, а не только на «Профиле»: условие
+    // выхода, расширенное на одну вкладку, на «Профиле» не видно.
     await pumpHome(tester);
-    await tester.tap(_tab('Профиль'));
-    await tester.pump();
-    expect(_navBar(tester).currentIndex, 4, reason: 'предпосылка');
+    const tabs = <String, int>{
+      'Новости': 1,
+      'Карта': 2,
+      'Избранное': 3,
+      'Профиль': 4,
+    };
+    for (final tab in tabs.entries) {
+      await tester.tap(_tab(tab.key));
+      await tester.pump();
+      expect(_navBar(tester).currentIndex, tab.value,
+          reason: 'предпосылка: открыта вкладка «${tab.key}»');
 
-    await pressSystemBack(tester);
+      await pressSystemBack(tester);
 
-    expect(systemNavigatorPops(), 0,
-        reason: 'с вкладки, отличной от «Поиска», «Назад» не выходит из '
-            'приложения');
-    expect(_navBar(tester).currentIndex, 0,
-        reason: '«Назад» с корня вкладки ведёт на «Поиск»');
-    expect(find.byType(MainNavigationScreen), findsOneWidget);
+      expect(systemNavigatorPops(), 0,
+          reason: 'с вкладки «${tab.key}» «Назад» не выходит из приложения');
+      expect(_navBar(tester).currentIndex, 0,
+          reason: '«Назад» с корня вкладки «${tab.key}» ведёт на «Поиск»');
+      expect(find.byType(MainNavigationScreen), findsOneWidget);
+    }
   });
 }
 

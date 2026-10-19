@@ -138,6 +138,24 @@ void main() {
       expect(find.text('1 из 1'), findsOneWidget);
     });
 
+    testWidgets('на экране — полноразмерный снимок и растр PDF, а не миниатюра',
+        (tester) async {
+      // `viewableUrl` выше проверен на модели; что просмотрщик грузит
+      // именно его, не видел ни один тест.
+      List<String> shown() => tester
+          .widgetList<Image>(find.byType(Image))
+          .map((i) => i.image)
+          .whereType<NetworkImage>()
+          .map((p) => p.url)
+          .toList();
+
+      await pumpViewer(tester, [_image('a')]);
+      expect(shown(), contains('https://example.test/a-full'));
+
+      await pumpViewer(tester, [_pdf('menu')]);
+      expect(shown(), contains('https://example.test/menu-page1'));
+    });
+
     testWidgets('открывается сразу на выбранном снимке', (tester) async {
       await pumpViewer(
         tester,

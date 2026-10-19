@@ -98,8 +98,8 @@ void main() {
       await pumpBlock(tester);
       expect(find.textContaining('км от вас'), findsNothing);
 
-      await pumpBlock(tester, distanceText: '5.1 км от вас');
-      expect(find.text('5.1 км от вас'), findsOneWidget);
+      await pumpBlock(tester, distanceText: '5,1 км от вас');
+      expect(find.text('5,1 км от вас'), findsOneWidget);
     });
   });
 }

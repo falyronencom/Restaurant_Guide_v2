@@ -9,6 +9,9 @@
  * duplicate check and daily quota are create-only).
  */
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
+jest.mock('@/lib/api/endpoints/establishments', () => ({
+  getReviews: jest.fn(),
+}));
 jest.mock('@/lib/api/endpoints/reviews', () => ({
   createReview: jest.fn(),
   updateReview: jest.fn(),
@@ -17,6 +20,7 @@ jest.mock('@/lib/api/endpoints/reviews', () => ({
 
 import { revalidatePath } from 'next/cache';
 
+import { getReviews } from '@/lib/api/endpoints/establishments';
 import {
   createReview,
   deleteReview,
@@ -26,6 +30,7 @@ import { ApiError } from '@/lib/api/types';
 import {
   createReviewAction,
   deleteReviewAction,
+  reloadReviewsAction,
   updateReviewAction,
 } from '@/lib/reviews/actions';
 
@@ -286,6 +291,56 @@ describe('deleteReviewAction — error mapping (never revalidates)', () => {
     const result = await deleteReviewAction(DELETE_INPUT);
 
     expect(result).toMatchObject({ ok: false, code: 'NETWORK' });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+});
+
+// Сверка находок тестировщика с сайтом, 18.10 (Х5 / Х23): ReviewsLoadFailed
+// re-fetches the detail page's slice after the page's own fetch failed, and a
+// success drops the cached failed page.
+describe('reloadReviewsAction', () => {
+  const getReviewsMock = getReviews as jest.Mock;
+  const PAGE = {
+    reviews: [{ id: 'r1' }],
+    pagination: { page: 1, limit: 5, total: 12, totalPages: 3, hasNext: true, hasPrevious: false },
+  };
+
+  it('returns the first five and busts the literal detail path', async () => {
+    getReviewsMock.mockResolvedValue(PAGE);
+
+    const result = await reloadReviewsAction({
+      slug: 'some-slug',
+      detailPath: '/minsk/restorany/some-slug',
+    });
+
+    expect(getReviewsMock).toHaveBeenCalledWith('some-slug', { limit: 5 });
+    expect(result).toEqual({ ok: true, reviews: PAGE.reviews, total: 12 });
+    expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
+  });
+
+  it('a failure → {ok:false}, nothing revalidated', async () => {
+    getReviewsMock.mockRejectedValue(new ApiError(503, 'down'));
+
+    const result = await reloadReviewsAction({
+      slug: 'some-slug',
+      detailPath: '/minsk/restorany/some-slug',
+    });
+
+    expect(result).toEqual({ ok: false });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['another card', '/minsk/restorany/other-slug'],
+    ['a non-detail route', '/profile'],
+    ['a deeper path', '/minsk/restorany/some-slug/reviews'],
+    ['a path with traversal', '/minsk/../some-slug'],
+  ])('never revalidates %s', async (_label, detailPath) => {
+    getReviewsMock.mockResolvedValue(PAGE);
+
+    const result = await reloadReviewsAction({ slug: 'some-slug', detailPath });
+
+    expect(result.ok).toBe(true);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

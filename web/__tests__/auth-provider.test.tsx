@@ -93,4 +93,7 @@ it('logout calls logoutAction and flips to anonymous', async () => {
   await waitFor(() =>
     expect(screen.getByTestId('user')).toHaveTextContent('none'),
   );
+  // «Flips to anonymous» is the status, not only the user: with the status
+  // left authenticated the guards keep treating the visitor as signed in.
+  expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
 });

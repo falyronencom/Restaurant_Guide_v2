@@ -37,6 +37,15 @@ import {
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 
 type GoogleCredentialResponse = { credential: string };
+/**
+ * The prompt's moment notification. Under FedCM Google drops part of it, so
+ * every method is optional and read defensively.
+ */
+type PromptMomentNotification = {
+  isNotDisplayed?: () => boolean;
+  isSkippedMoment?: () => boolean;
+  getSkippedReason?: () => string;
+};
 type GoogleIdApi = {
   initialize(config: {
     client_id: string;
@@ -44,7 +53,7 @@ type GoogleIdApi = {
     nonce?: string;
     cancel_on_tap_outside?: boolean;
   }): void;
-  prompt(): void;
+  prompt(listener?: (notification: PromptMomentNotification) => void): void;
   cancel(): void;
 };
 
@@ -60,8 +69,17 @@ type AuthContextValue = {
   status: AuthStatus;
   user: SessionUser | null;
   isAuthenticated: boolean;
-  /** Trigger the Google sign-in flow (One Tap account chooser). */
-  requestLogin: () => void;
+  /**
+   * Trigger the Google sign-in flow (One Tap account chooser).
+   *
+   * `fallbackToLoginPage` — for a guest's tap OUTSIDE /login (the heart, «Оставить
+   * отзыв»): if Google cannot sign them in here (not configured, not loaded,
+   * the prompt did not show), they go to /login with a way back to this page,
+   * and the reason is shown there under the sign-in buttons (loginError lives
+   * in this provider, which survives the client navigation). Without it the
+   * tap looked dead (сверка находок тестировщика с сайтом, 18.10, Х2).
+   */
+  requestLogin: (options?: { fallbackToLoginPage?: boolean }) => void;
   logout: () => Promise<void>;
   /** Last login error message, if any. */
   loginError: string | null;
@@ -105,6 +123,27 @@ async function waitForGoogleId(timeoutMs = 4000): Promise<GoogleIdApi | null> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return window.google?.accounts?.id ?? null;
+}
+
+const PROMPT_NOT_SHOWN =
+  'Окно входа Google не открылось. Войдите по почте или через Яндекс.';
+
+/**
+ * The prompt did not show, or Google skipped it on its own (no Google session
+ * in this browser, an earlier dismissal cooldown, a blocker). A visitor who
+ * closed it themselves (user_cancel / tap_outside) is not sent anywhere.
+ */
+function promptDidNotShow(notification: PromptMomentNotification): boolean {
+  if (notification.isNotDisplayed?.()) return true;
+  if (!notification.isSkippedMoment?.()) return false;
+  const reason = notification.getSkippedReason?.();
+  return reason !== 'user_cancel' && reason !== 'tap_outside';
+}
+
+/** /login with a way back to the page the guest is on (home needs none). */
+function loginPageHref(): string {
+  const here = `${window.location.pathname}${window.location.search}`;
+  return here === '/' ? '/login' : `/login?returnTo=${encodeURIComponent(here)}`;
 }
 
 export function AuthProvider({
@@ -151,40 +190,49 @@ export function AuthProvider({
     [router],
   );
 
-  const requestLogin = useCallback(() => {
-    if (!googleClientId) {
-      console.error(
-        '[auth] GOOGLE_CLIENT_ID is not set on the web app — Google sign-in is unavailable. ' +
-          'Set GOOGLE_CLIENT_ID in web/.env.local (dev) or in the deploy platform (prod).',
-      );
-      setLoginError('Вход через Google временно недоступен.');
-      return;
-    }
-    setLoginError(null);
-    void (async () => {
-      try {
-        const gis = await waitForGoogleId();
-        if (!gis) {
-          setLoginError('Не удалось загрузить Google. Проверьте подключение.');
-          return;
-        }
-        const { nonce } = await prepareLogin();
-        gis.initialize({
-          client_id: googleClientId,
-          callback: (response) => {
-            void handleCredential(response);
-          },
-          nonce,
-          cancel_on_tap_outside: true,
-        });
-        gis.prompt();
-      } catch {
-        // prepareLogin() / GIS init can reject (network, mid-load) — surface it
-        // instead of leaving an unhandled rejection + a silent dead button.
-        setLoginError('Не удалось начать вход. Попробуйте ещё раз.');
+  const requestLogin = useCallback(
+    (options?: { fallbackToLoginPage?: boolean }) => {
+      const fail = (message: string) => {
+        setLoginError(message);
+        if (options?.fallbackToLoginPage) router.push(loginPageHref());
+      };
+      if (!googleClientId) {
+        console.error(
+          '[auth] GOOGLE_CLIENT_ID is not set on the web app — Google sign-in is unavailable. ' +
+            'Set GOOGLE_CLIENT_ID in web/.env.local (dev) or in the deploy platform (prod).',
+        );
+        fail('Вход через Google временно недоступен.');
+        return;
       }
-    })();
-  }, [googleClientId, handleCredential]);
+      setLoginError(null);
+      void (async () => {
+        try {
+          const gis = await waitForGoogleId();
+          if (!gis) {
+            fail('Не удалось загрузить Google. Проверьте подключение.');
+            return;
+          }
+          const { nonce } = await prepareLogin();
+          gis.initialize({
+            client_id: googleClientId,
+            callback: (response) => {
+              void handleCredential(response);
+            },
+            nonce,
+            cancel_on_tap_outside: true,
+          });
+          gis.prompt((notification) => {
+            if (promptDidNotShow(notification)) fail(PROMPT_NOT_SHOWN);
+          });
+        } catch {
+          // prepareLogin() / GIS init can reject (network, mid-load) — surface
+          // it instead of leaving an unhandled rejection + a silent dead button.
+          fail('Не удалось начать вход. Попробуйте ещё раз.');
+        }
+      })();
+    },
+    [googleClientId, handleCredential, router],
+  );
 
   const logout = useCallback(async () => {
     await logoutAction();

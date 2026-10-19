@@ -14,6 +14,8 @@
 ///   `backend/src/models/notificationModel.js`             — строка ленты
 ///   `backend/src/controllers/notificationController.js`   — конверт ленты
 ///   `backend/src/services/notificationService.js`         — блок ленты
+///   `backend/src/projections/menuItemProjections.js`      — позиция меню
+///   `backend/src/services/publicService.js`               — конверт меню
 library;
 
 /// Строка списка заведений — полный набор ключей публичной проекции.
@@ -187,6 +189,35 @@ Map<String, dynamic> smartIntent({
       'sort': sort,
       'tags': tags,
       'error': null,
+    };
+
+/// Позиция распознанного меню — `toPublicMenuItem`: ровно семь ключей.
+/// `price_byn` — число (`parseFloat`) или `null`; `quality_tier` — `clean`
+/// или `needs_caution`; `confidence`, `sanity_flag`, `media_id`,
+/// `is_hidden_by_admin` в публичный ответ не попадают.
+Map<String, dynamic> menuItemRow({
+  required String id,
+  required String name,
+  double? price,
+  String? category,
+  int position = 0,
+  String tier = 'clean',
+}) =>
+    <String, dynamic>{
+      'id': id,
+      'establishment_id': '11111111-1111-4111-8111-111111111111',
+      'item_name': name,
+      'price_byn': price,
+      'category_raw': category,
+      'position': position,
+      'quality_tier': tier,
+    };
+
+/// Конверт меню: `{ success, data: { menu_items } }` (`getPublicMenuItems`).
+Map<String, dynamic> menuItemsEnvelope(List<Map<String, dynamic>> items) =>
+    <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{'menu_items': items},
     };
 
 /// Строка отзыва во вложенной форме `author` — так отдаёт публичный список.

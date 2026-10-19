@@ -160,11 +160,26 @@ void main() {
 
     test('строка разбирается со всеми полями проекции', () async {
       adapter.payload = <String, dynamic>{
-        'data': <dynamic>[_row()],
-        'meta': <String, dynamic>{'total': 1, 'page': 1, 'pages': 1},
+        'data': <dynamic>[_row(), _row(id: 'item-2', hidden: true)],
+        'meta': <String, dynamic>{'total': 2, 'page': 1, 'pages': 1},
       };
 
-      final item = (await service.getFlaggedItems()).items.single;
+      final [item, hiddenItem] = (await service.getFlaggedItems()).items;
+
+      // «Все поля» — и ключи, и флаг скрытия: скрытая модератором позиция
+      // обязана прийти скрытой, иначе панель предложит скрыть её снова.
+      expect(item.id, 'item-1');
+      expect(item.establishmentId, 'est-1');
+      expect(item.mediaId, 'media-1');
+      expect(item.categoryRaw, 'Гарачыя стравы');
+      expect(item.sanityFlag?['details'],
+          <String, dynamic>{'price': 1450, 'threshold': 1000});
+      expect(item.establishmentName, 'Кухмістр');
+      expect(item.establishmentCity, 'Минск');
+      expect(item.isHiddenByAdmin, isFalse);
+      expect(item.hiddenReason, isNull);
+      expect(hiddenItem.isHiddenByAdmin, isTrue);
+      expect(hiddenItem.hiddenReason, 'цена проверена');
 
       // NUMERIC приходит строкой — без разбора цена и уверенность стали бы null,
       // и факт-грид написал бы «не распозналась» у распознанного блюда.

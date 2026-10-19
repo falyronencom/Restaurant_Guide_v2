@@ -160,3 +160,47 @@ describe('VerifyEmailForm — resend flow', () => {
     expect(screen.queryByLabelText('Код из письма')).not.toBeInTheDocument();
   });
 });
+
+// Сверка находок тестировщика с сайтом, 18.10, п. 11: the visitor returns to
+// where they registered from — after the code, or by «Позже».
+describe('VerifyEmailForm — the way back (returnTo)', () => {
+  const BACK = '/minsk/restaurants/kafe-1';
+
+  it('«Позже» leads back without the code, and says it can be done in the profile', () => {
+    render(<VerifyEmailForm returnTo={BACK} />);
+
+    expect(screen.getByRole('link', { name: 'Позже' })).toHaveAttribute('href', BACK);
+    expect(
+      screen.getByText('Подтвердить почту можно потом в профиле.'),
+    ).toBeInTheDocument();
+  });
+
+  it('without a returnTo «Позже» leads home', () => {
+    render(<VerifyEmailForm />);
+    expect(screen.getByRole('link', { name: 'Позже' })).toHaveAttribute('href', '/');
+  });
+
+  it('after the code: «Продолжить» back to returnTo instead of «На главную»', async () => {
+    mockVerifyAction.mockResolvedValue({ ok: true });
+    const user = userEvent.setup();
+    render(<VerifyEmailForm returnTo={BACK} />);
+
+    await user.type(screen.getByLabelText('Код из письма'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
+
+    expect(
+      await screen.findByRole('link', { name: 'Продолжить' }),
+    ).toHaveAttribute('href', BACK);
+    expect(screen.queryByRole('link', { name: 'На главную' })).toBeNull();
+  });
+
+  it('an anonymous visitor signs in and comes back to this page WITH its returnTo', () => {
+    mockStatus = 'anonymous';
+    render(<VerifyEmailForm returnTo={BACK} />);
+
+    expect(screen.getByRole('link', { name: 'Войти' })).toHaveAttribute(
+      'href',
+      `/login?returnTo=${encodeURIComponent(`/verify-email?returnTo=${encodeURIComponent(BACK)}`)}`,
+    );
+  });
+});

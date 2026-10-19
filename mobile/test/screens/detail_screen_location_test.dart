@@ -155,7 +155,7 @@ void main() {
     LocationPermission.always,
   ]) {
     testWidgets(
-        'разрешение дано (${granted.name}): позиция без вопроса, «2.0 км от '
+        'разрешение дано (${granted.name}): позиция без вопроса, «2,0 км от '
         'вас»; сортировка «по рейтингу» остаётся', (tester) async {
       final platform = installGeolocator(_FakeGeolocator(permission: granted));
 
@@ -163,7 +163,7 @@ void main() {
 
       expect(platform.calls, isNot(contains('request')));
       expect(establishments.hasRealLocation, isTrue);
-      expect(find.text('2.0 км от вас'), findsOneWidget);
+      expect(find.text('2,0 км от вас'), findsOneWidget);
       expect(establishments.currentSort, SortOption.rating,
           reason: 'открыть карточку — не выбрать сортировку «по расстоянию»');
     });

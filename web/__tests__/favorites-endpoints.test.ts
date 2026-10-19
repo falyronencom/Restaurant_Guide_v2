@@ -30,6 +30,9 @@ describe('favorites endpoint encoders — casing/shape contract', () => {
       '/api/v1/favorites/check-batch',
       expect.objectContaining({
         method: 'POST',
+        // JSON only under application/json (server.js, express.json) —
+        // without it the ids never reach the backend: the silent 422.
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ establishment_ids: ['e1', 'e2'] }),
       }),
     );
@@ -46,6 +49,7 @@ describe('favorites endpoint encoders — casing/shape contract', () => {
       '/api/v1/favorites',
       expect.objectContaining({
         method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ establishmentId: 'e1' }),
       }),
     );
