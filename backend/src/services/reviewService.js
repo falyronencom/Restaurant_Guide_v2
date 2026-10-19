@@ -27,8 +27,9 @@ const RATE_LIMIT_MAX_REVIEWS = 10;
 
 /**
  * What the author reads on the eleventh review of a Minsk day. Russian, and
- * it names the term: the app shows the server's Russian text as it is (the
- * site still words this code itself — web/src/lib/reviews/actions.ts), and
+ * it names the term: the app and the site show the server's Russian text as
+ * it is (the site tells this quota from the request-rate limiter by
+ * `details.reviews_limit` — web/src/lib/reviews/actions.ts, #105), and
  * before 19.10.2026 the English sentence never reached the screen —
  * the app said «Слишком много запросов. Попробуйте позже», though «later»
  * means after Minsk midnight (test-honesty audit, D3). The envelope — 429
