@@ -392,7 +392,14 @@ export const getUserReviews = async (userId, options = {}) => {
       id: review.establishment_id,
       name: review.establishment_name,
       city: review.establishment_city,
-      category: review.establishment_category,
+      // The model hands the place's categories as an array
+      // (establishment_categories); the app shows one line of type — a
+      // string, the first category. Read under another name, the field never
+      // came at all and «Мои отзывы» showed no type (test-honesty audit, D8).
+      category: Array.isArray(review.establishment_categories)
+        && review.establishment_categories.length > 0
+        ? review.establishment_categories[0]
+        : null,
     },
   }));
 

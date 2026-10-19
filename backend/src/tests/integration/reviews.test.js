@@ -1284,6 +1284,32 @@ describe('Reviews System - Public Projection on Legacy Listing Endpoints', () =>
       expect(r.establishment).toHaveProperty('name');
     });
 
+    test('«Мои отзывы»: тип заведения — первая категория карточки, строкой', async () => {
+      // D8: the model reads `categories` of the place, the service used to
+      // look for another field — the answer never had a type. Through the
+      // real model; the app shows `establishment.category` only as a string
+      // (mobile/lib/models/review.dart, UserReview.fromJson).
+      await query(
+        'UPDATE establishments SET categories = ARRAY[\'Кофейня\', \'Бар\'] WHERE id = $1',
+        [establishmentId],
+      );
+      try {
+        const response = await request(app)
+          .get(`/api/v1/users/${userId}/reviews`)
+          .expect(200);
+
+        expect(response.body.data.reviews.length).toBeGreaterThan(0);
+        for (const r of response.body.data.reviews) {
+          expect(r.establishment.category).toBe('Кофейня');
+        }
+      } finally {
+        await query(
+          'UPDATE establishments SET categories = ARRAY[\'Ресторан\'] WHERE id = $1',
+          [establishmentId],
+        );
+      }
+    });
+
     test('preserves public fields (rating, content, partner_response text)', async () => {
       const response = await request(app)
         .get(`/api/v1/users/${userId}/reviews`)

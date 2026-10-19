@@ -625,7 +625,11 @@ describe('reviewService', () => {
         updated_at: new Date(),
         establishment_name: 'Test Restaurant',
         establishment_city: 'Минск',
-        establishment_category: 'Ресторан',
+        // The row as reviewModel.findReviewsByUser returns it: `categories`
+        // of the place as an array (D8 — the fixture used to speak the
+        // service's own `establishment_category`, so it stayed green while
+        // the live answer never had a type).
+        establishment_categories: ['Ресторан', 'Бар'],
       },
     ];
 
