@@ -125,9 +125,18 @@ describe('GET /api/v1/establishments/:id/booking-settings — условия д�
       .toEqual({ status: 404, code: 'BOOKING_NOT_ENABLED' });
   });
 
-  test.each(['draft', 'pending', 'suspended'])(
+  // Все статусы, кроме действующего (establishments_status_check), и вторая
+  // половина названия: такую бронь сервер не примет — POST гостя получает
+  // отказ, и строки брони не появляется.
+  test.each([
+    ['draft', 400, 'ESTABLISHMENT_NOT_ACTIVE'],
+    ['pending', 400, 'ESTABLISHMENT_NOT_ACTIVE'],
+    ['suspended', 400, 'ESTABLISHMENT_NOT_ACTIVE'],
+    ['rejected', 400, 'ESTABLISHMENT_NOT_ACTIVE'],
+    ['archived', 404, 'NOT_FOUND'],
+  ])(
     'карточка в статусе %s при включённой брони — 404 (сервер такую бронь и не примет)',
-    async (status) => {
+    async (status, refusedStatus, refusedCode) => {
       const hidden = await createTestEstablishment(owner.user.id);
       await enableBooking(hidden.id);
       await query('UPDATE establishments SET status = $2 WHERE id = $1', [hidden.id, status]);
@@ -136,6 +145,18 @@ describe('GET /api/v1/establishments/:id/booking-settings — условия д�
 
       expect({ status: res.status, code: res.body.error?.code })
         .toEqual({ status: 404, code: 'BOOKING_NOT_ENABLED' });
+
+      const booker = await createUserAndGetTokens({
+        email: `hidden-${status}-${Date.now()}@test.com`, phone: phone(), password: 'Guest123!@#', name: 'Гость', role: 'user',
+      });
+      const booking = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${booker.accessToken}`)
+        .send({ establishmentId: hidden.id, date: minskDatePlusDays(2), time: '19:00', guestCount: 2, contactPhone: '+375291112233' });
+      expect({ status: booking.status, code: booking.body.error?.code })
+        .toEqual({ status: refusedStatus, code: refusedCode });
+      const { rows } = await query('SELECT COUNT(*)::int AS n FROM bookings WHERE establishment_id = $1', [hidden.id]);
+      expect(rows[0].n).toBe(0);
     },
   );
 

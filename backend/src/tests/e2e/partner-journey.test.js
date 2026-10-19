@@ -8,9 +8,9 @@
  * 2. Partner creates new establishment in draft status
  * 3. Partner adds all required details and media
  * 4. Partner submits establishment for moderation
- * 5. Admin reviews and approves (simulated)
- * 6. Partner updates active establishment
- * 7. Partner sees review from customer
+ * 5. Admin approves (the moderation route, POST /admin/establishments/:id/moderate)
+ * 6. Customer leaves a review
+ * 7. Partner sees the card with the review
  *
  * This journey represents the typical partner workflow and verifies that:
  * - Partner can manage their establishments
@@ -144,24 +144,24 @@ describe('E2E Journey: Partner Establishment Management', () => {
       expect(response.body.data.establishments[0].status).toBe('pending');
     });
 
+    // Until 18.10.2026 this step only sent a partner's edit (the card stayed
+    // pending) under the name «Admin approves» — the journey's draft → pending
+    // → active never reached active. Now the moderator approves, as in the panel.
     test('STEP 6: Admin approves establishment', async () => {
-      // The moderator's approval puts the card in the catalogue. Until
-      // 19.10.2026 this step was a partner edit that left the card 'pending',
-      // and STEP 7 reviewed a card no guest could see — the server now takes
-      // new reviews only on cards in the catalogue.
       const admin = await createAdminAndGetToken();
 
       const response = await request(app)
         .post(`/api/v1/admin/establishments/${establishment.id}/moderate`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ action: 'approve' });
-
       expect(response.status).toBe(200);
 
-      const card = await request(app)
+      // The partner sees the card approved.
+      const own = await request(app)
         .get(`/api/v1/partner/establishments/${establishment.id}`)
         .set('Authorization', `Bearer ${partner.accessToken}`);
-      expect(card.body.data.establishment.status).toBe('active');
+      expect(own.status).toBe(200);
+      expect(own.body.data.establishment.status).toBe('active');
     });
 
     test('STEP 7: Customer leaves review on establishment', async () => {
@@ -246,6 +246,23 @@ describe('E2E Journey: Partner Establishment Management', () => {
       // User is auto-upgraded to partner and establishment is created
       expect(response.status).toBe(201);
       expect(response.body.data.establishment).toBeDefined();
+
+      // ...and the upgrade is there for the next step of the journey: the
+      // account reads as a partner, and the partner's list opens with the
+      // token the customer already holds (the role is read from the database).
+      // Whether a new pair of tokens is handed back is the fix of Д7 and its
+      // own tests (integration/establishments.test.js) — nothing is pinned here.
+      const me = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${regularUser.accessToken}`);
+      expect(me.status).toBe(200);
+      expect(me.body.data.user.role).toBe('partner');
+      const own = await request(app)
+        .get('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${regularUser.accessToken}`);
+      expect(own.status).toBe(200);
+      expect(own.body.data.establishments.map((card) => card.id))
+        .toEqual([response.body.data.establishment.id]);
     });
 
     test('Partner cannot submit establishment without required fields', async () => {
@@ -300,10 +317,7 @@ describe('E2E Journey: Partner Establishment Management', () => {
       expect(submitResponse.status).toBe(200);
       expect(submitResponse.body.data.establishment.status).toBe('pending');
 
-      // Note: In real system with admin:
-      // Admin approves → active
-      // Admin rejects → rejected
-      // Major changes → back to pending
+      // Approval itself — STEP 6 above (the moderation route).
     });
   });
 });

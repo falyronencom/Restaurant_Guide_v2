@@ -94,7 +94,9 @@ describe('Favorites System - Add to Favorites', () => {
     expect(response.body.data.favorite.user_id).toBe(userId);
   });
 
-  test('should return establishment details in response', async () => {
+  // The answer to «add» carries the favorite record and a message — no card
+  // details (favoriteService.addFavorite); the list (GET) is where they are.
+  test('should return the new favorite record and a message', async () => {
     const response = await request(app)
       .post('/api/v1/favorites')
       .set('Authorization', `Bearer ${userToken}`)
@@ -104,7 +106,7 @@ describe('Favorites System - Add to Favorites', () => {
     const favorite = response.body.data.favorite;
     expect(favorite.id).toBeDefined();
     expect(favorite.establishment_id).toBe(establishment1Id);
-    expect(response.body.data.message).toBeDefined();
+    expect(response.body.data.message).toBe('Establishment added to favorites');
   });
 
   test('should be idempotent (adding same favorite twice succeeds)', async () => {
@@ -327,6 +329,39 @@ describe('Favorites System - User Isolation', () => {
 
     expect(user2Response.body.data.favorites).toHaveLength(1);
     expect(user2Response.body.data.favorites[0].establishment_id).toBe(establishment3Id);
+  });
+
+  // «Can't see others' favorites» holds on every read, not only the list: the
+  // check and the batch check go through favoriteModel.isFavorite, the stats
+  // and the list total through countUserFavorites — two WHERE user_id, four reads.
+  test('check, batch check, stats and the list total see only own favorites', async () => {
+    const add = (token, establishmentId) => request(app)
+      .post('/api/v1/favorites')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ establishmentId })
+      .expect(201);
+    await add(userToken, establishment1Id);
+    await add(user2Token, establishment2Id);
+    await add(user2Token, establishment3Id);
+    const asUser1 = (method, url) => request(app)[method](url).set('Authorization', `Bearer ${userToken}`);
+
+    const check = await asUser1('get', `/api/v1/favorites/check/${establishment2Id}`).expect(200);
+    expect(check.body.data.is_favorite).toBe(false);
+
+    const batch = await asUser1('post', '/api/v1/favorites/check-batch')
+      .send({ establishment_ids: [establishment1Id, establishment2Id, establishment3Id] })
+      .expect(200);
+    expect(batch.body.data.favorites).toEqual({
+      [establishment1Id]: true,
+      [establishment2Id]: false,
+      [establishment3Id]: false,
+    });
+
+    const stats = await asUser1('get', '/api/v1/favorites/stats').expect(200);
+    expect(stats.body.data.total_favorites).toBe(1);
+
+    const list = await asUser1('get', '/api/v1/favorites').expect(200);
+    expect(list.body.data.pagination.total).toBe(1);
   });
 
   test('should not allow removing other user favorites', async () => {

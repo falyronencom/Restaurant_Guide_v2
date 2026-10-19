@@ -10,7 +10,7 @@ import 'package:restaurant_guide_mobile/widgets/forms/social_sign_in_buttons.dar
 import 'package:restaurant_guide_mobile/widgets/forms/submit_button.dart';
 
 /// Login Screen
-/// User enters email/phone and password to sign in
+/// User enters email and password to sign in
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -20,7 +20,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailPhoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
@@ -29,7 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _emailPhoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -55,23 +55,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Validate email or phone number
-  String? _validateEmailOrPhone(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Введите email или номер телефона';
-    }
-
-    final trimmed = value.trim();
-
-    // Check if it's a phone number (starts with +375 or contains only digits)
-    if (trimmed.startsWith('+') || RegExp(r'^\d+$').hasMatch(trimmed)) {
-      // Validate as phone
-      return validateBelarusPhone(value);
-    } else {
-      // Validate as email
-      return validateEmail(value);
-    }
-  }
+  /// Вход — только по почте (и через Google / Яндекс). Номер телефона поле
+  /// не принимает: сервер ищет вход по почте, номер в этом поле он отклонял,
+  /// и человек видел «Проверьте введённые данные.» (решение Координатора
+  /// 19.10.2026: вход и регистрация по номеру — после появления СМС).
+  String? _validateEmail(String? value) => validateEmail(value?.trim());
 
   /// Handle form submission
   Future<void> _handleSubmit() async {
@@ -93,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final authProvider = context.read<AuthProvider>();
 
       final success = await authProvider.login(
-        emailOrPhone: _emailPhoneController.text.trim(),
+        emailOrPhone: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
@@ -102,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (!success && mounted) {
         setState(() {
           _errorMessage = authProvider.errorMessage ??
-              'Неверный email/телефон или пароль.';
+              'Неверная почта или пароль.';
         });
       }
     } catch (e) {
@@ -248,13 +236,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                // Email/Phone field
+                // Email field
                 CustomTextField(
-                  controller: _emailPhoneController,
-                  label: 'Почта/Номер телефона',
+                  controller: _emailController,
+                  label: 'Почта',
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
-                  validator: _validateEmailOrPhone,
+                  validator: _validateEmail,
                   enabled: !isAnyLoading,
                 ),
 

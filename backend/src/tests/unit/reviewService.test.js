@@ -204,6 +204,25 @@ describe('reviewService', () => {
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
     });
 
+    test('the daily limit refusal is Russian and names when the quota renews', async () => {
+      incrementWithExpiry.mockResolvedValue(11);
+
+      const refusal = await createReview(validReviewData).catch((e) => e);
+
+      expect(refusal.message).toBe(
+        'Лимит отзывов на сегодня исчерпан: не больше 10 в день. Новый отзыв можно написать завтра.',
+      );
+      // The term is the counter's own: the seconds it was given to live,
+      // until Minsk midnight — the header and the body say the same.
+      const ttl = incrementWithExpiry.mock.calls[0][1];
+      expect(refusal.retryAfter).toBe(ttl);
+      expect(refusal.details).toEqual({
+        reviews_limit: 10,
+        retry_after: ttl,
+        reset_at: expect.any(String),
+      });
+    });
+
     test('should allow review when under rate limit', async () => {
       incrementWithExpiry.mockResolvedValue(10); // The tenth reservation — the last allowed
 
@@ -620,7 +639,11 @@ describe('reviewService', () => {
         updated_at: new Date(),
         establishment_name: 'Test Restaurant',
         establishment_city: 'Минск',
-        establishment_category: 'Ресторан',
+        // The row as reviewModel.findReviewsByUser returns it: `categories`
+        // of the place as an array (D8 — the fixture used to speak the
+        // service's own `establishment_category`, so it stayed green while
+        // the live answer never had a type).
+        establishment_categories: ['Ресторан', 'Бар'],
       },
     ];
 
