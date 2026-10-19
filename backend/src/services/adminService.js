@@ -1594,12 +1594,13 @@ export const unhideMenuItem = async (menuItemId, params) => {
   });
 
   // Back come the copies hidden with this row — the same reason; a copy hidden
-  // for another reason was a decision of its own and stays hidden.
+  // for another reason was a decision of its own and stays hidden: it is not
+  // among the rows the copies are looked for in.
   const copies = await applyToMenuItemCopies(
     existing,
     {
       before: row => row.is_hidden_by_admin !== true || row.hidden_reason === existing.hidden_reason,
-      applies: copy => copy.is_hidden_by_admin === true && copy.hidden_reason === existing.hidden_reason,
+      applies: copy => copy.is_hidden_by_admin === true,
     },
     {
       updates: { is_hidden_by_admin: false, hidden_reason: null },

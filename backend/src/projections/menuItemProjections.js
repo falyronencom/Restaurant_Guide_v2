@@ -127,9 +127,8 @@ const menuOfFile = (rows) => {
  *     (a syrup sold with coffee and with tea) and stays;
  *   - across files that are copies of one menu (menuOfFile) the same line is
  *     one line; a different price is not a repeat — both are shown. A menu
- *     that lists the syrup twice still gives two lines: the lines of the file
- *     with the most of them are the slots, and the lines of the other files
- *     take them — first a slot in the same section, then the free ones in
+ *     that lists the syrup twice still gives two lines: the lines of the first
+ *     file (by id) are the slots, and the lines of the other files take them — first a slot in the same section, then the free ones in
  *     order (two reads may spell a section differently), then new ones;
  *   - files that are different menus are not collapsed: a dish both list
  *     stays in each menu's section;
@@ -166,11 +165,9 @@ export const groupGuestLines = (rows) => {
       if (!linesPerFile.has(line.file)) linesPerFile.set(line.file, []);
       linesPerFile.get(line.file).push(line);
     }
-    // The file with the most lines first, ties by its id — not by row order,
-    // which is not fixed between rows of equal position and name.
+    // Files by id — not by row order, which is not fixed between rows of
+    // equal position and name.
     const files = [...linesPerFile.keys()].sort((a, b) => {
-      const byLines = linesPerFile.get(b).length - linesPerFile.get(a).length;
-      if (byLines !== 0) return byLines;
       if (a === b) return 0;
       return a < b ? -1 : 1;
     });

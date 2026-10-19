@@ -317,6 +317,33 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
   });
 
+  test('copies are the guest\'s: hidden rows do not make two menus copies of one', async () => {
+    // Without the hidden rows the files share one line of four — the guest sees
+    // two menus and «Морс» in both; hiding one leaves the other.
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const breakfastId = await insertMedia(establishment.id);
+    const lunchId = await insertMedia(establishment.id);
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
+    for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
+      await insertItem(establishment.id, breakfastId, name, price);
+    }
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
+      await insertItem(establishment.id, breakfastId, name, price, { hiddenReason: 'не завтрак' });
+    }
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
+      await insertItem(establishment.id, lunchId, name, price);
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+  });
+
   test('a small board sharing the dish with both menus does not join them', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);

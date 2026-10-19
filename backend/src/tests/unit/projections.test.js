@@ -662,6 +662,35 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
     expect(mors.map(r => r.category_raw).sort()).toEqual(['ЗАВТРАК', 'ОБЕД']);
   });
 
+  test('a file is matched against the menu\'s biggest file, not against its copies', () => {
+    // b copies a (2 of 4 shared); c shares 2 of 4 with b, nothing with a — c is
+    // a menu of its own, and «Сок» and «Морс» stay in both.
+    const rows = [
+      ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
+      ...menuOf('b', ['Эспрессо', 'Американо', 'Сок', 'Морс']),
+      ...menuOf('c', ['Сок', 'Морс', 'Лимонад', 'Квас']),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(12);
+  });
+
+  test('lines keep the order of the menu', () => {
+    const rows = [
+      row('photo', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+      row('photo', 'Латте', '7.00', { category_raw: 'КОФЕ' }),
+      row('photo', 'Сироп', '1.50', { category_raw: 'ЧАЙ' }),
+      row('pdf', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+      row('pdf', 'Латте', '7.00', { category_raw: 'КОФЕ' }),
+      row('pdf', 'Сироп', '1.50', { category_raw: 'ЧАЙ' }),
+    ];
+
+    expect(collapseMenuRepeats(rows).map(r => `${r.item_name} / ${r.category_raw}`)).toEqual([
+      'Сироп / КОФЕ',
+      'Латте / КОФЕ',
+      'Сироп / ЧАЙ',
+    ]);
+  });
+
   test('copies pair by section first, then by order', () => {
     // The photo's coffee syrup is hidden (not among the rows): its tea syrup
     // pairs with the PDF's tea syrup, not with the PDF's first syrup.
