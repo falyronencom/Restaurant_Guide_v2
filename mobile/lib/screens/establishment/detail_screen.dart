@@ -10,6 +10,7 @@ import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/providers/establishment_menu_provider.dart';
 import 'package:restaurant_guide_mobile/services/establishments_service.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
 import 'package:restaurant_guide_mobile/services/location_service.dart';
@@ -21,6 +22,7 @@ import 'package:restaurant_guide_mobile/config/establishment_attributes.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/write_review_screen.dart';
 import 'package:restaurant_guide_mobile/screens/reviews/reviews_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/map/map_screen.dart';
+import 'package:restaurant_guide_mobile/screens/establishment/menu_screen.dart';
 import 'package:restaurant_guide_mobile/screens/establishment/pdf_viewer_screen.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
@@ -31,11 +33,13 @@ import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
 import 'package:restaurant_guide_mobile/widgets/hero_scrim.dart';
+import 'package:restaurant_guide_mobile/widgets/menu/menu_text.dart';
 import 'package:restaurant_guide_mobile/widgets/status_bar_scrim.dart';
 import 'package:restaurant_guide_mobile/utils/establishment_share.dart';
 import 'package:restaurant_guide_mobile/utils/gallery_photos.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/russian_plural.dart';
+import 'package:restaurant_guide_mobile/models/public_menu_item.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Establishment detail screen displaying full information
@@ -51,6 +55,9 @@ class EstablishmentDetailScreen extends StatefulWidget {
     required this.establishmentId,
     this.distanceKm,
   });
+
+  /// Кнопка «Меню» на первом экране — по ней её находят тесты.
+  static const Key menuButtonKey = ValueKey('detail-menu-button');
 
   @override
   State<EstablishmentDetailScreen> createState() =>
@@ -81,6 +88,26 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   // Description collapsed by default
   bool _isDescriptionExpanded = false;
+
+  /// Распознанное меню текстом (бриф В3, 18.10.2026). Заводится, когда
+  /// пришла карточка, — по её адресу (`slug`); грузится лениво (SDL
+  /// CAT-D-1.6): когда раздел «Меню» показался на экране или нажата кнопка
+  /// «Меню». Делится с экраном меню.
+  EstablishmentMenuProvider? _menu;
+
+  /// Раздел «Меню» — по нему видно, дошёл ли гость до меню.
+  final GlobalKey _menuSectionKey = GlobalKey();
+
+  /// На столько кнопка «Меню» с отступом поднимает текст героя — и на
+  /// столько же поднимается затемнение под ним ([HeroScrim.lift]).
+  static const double _menuButtonLift =
+      _MenuHeroButton.minHeight + _menuButtonGap;
+  static const double _menuButtonGap = 8;
+
+  double get _heroLift => _hasMenuMedia ? _menuButtonLift : 0;
+
+  /// Столько позиций меню карточка показывает до «Всё меню».
+  static const int menuPreviewCount = 5;
 
   // Figma colors
   static const Color _backgroundColor = AppTheme.backgroundWarm;
@@ -118,6 +145,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   @override
   void dispose() {
     _galleryController.dispose();
+    _menu?.dispose();
     super.dispose();
   }
 
@@ -139,14 +167,65 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
       setState(() {
         _establishment = establishment;
+        _bindMenu(establishment);
         _isLoading = false;
       });
+      _maybeLoadMenuAfterFrame();
     } catch (e) {
       setState(() {
         _error = 'Не удалось загрузить данные';
         _isLoading = false;
       });
     }
+  }
+
+  /// Меню заводится раз на заведение: повторная загрузка карточки (после
+  /// своего отзыва) уже загруженное меню не сбрасывает.
+  void _bindMenu(Establishment establishment) {
+    if (_menu != null && _menu!.slug == establishment.slug) return;
+    _menu?.dispose();
+    _menu = EstablishmentMenuProvider(slug: establishment.slug);
+  }
+
+  /// Есть ли у заведения меню — фото или PDF. Распознанное меню строится
+  /// только из них (`menu_items.media_id` NOT NULL, каскадом при удалении
+  /// файла), так что без них и текста нет: кнопку «Меню» не показываем.
+  bool get _hasMenuMedia =>
+      (_establishment?.media ?? const <EstablishmentMedia>[])
+          .any((m) => m.type == 'menu');
+
+  void _maybeLoadMenuAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMenu());
+  }
+
+  /// Раздел «Меню» показался на экране (хотя бы краем) — пора грузить.
+  void _maybeLoadMenu() {
+    final menu = _menu;
+    if (!mounted || menu == null || menu.status != MenuLoadStatus.idle) return;
+    if (!_hasMenuMedia) return;
+    final box = _menuSectionKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    if (top < MediaQuery.sizeOf(context).height) menu.loadIfIdle();
+  }
+
+  /// Кнопка «Меню» и «Всё меню»: экран меню. Меню грузится сразу, не
+  /// дожидаясь прокрутки; после сбоя — повторяется.
+  void _openMenu() {
+    final menu = _menu;
+    if (menu == null) return;
+    menu.ensureLoaded();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangeNotifierProvider<EstablishmentMenuProvider>.value(
+          value: menu,
+          child: MenuScreen(
+            establishmentName: _establishment!.name,
+            originalsBuilder: (_) => _buildMenuOriginals(),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Превью отзывов (5 штук). Сбой не выдаётся за «Пока нет отзывов»: блок
@@ -258,54 +337,60 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       body: StatusBarScrim(
         controller: PrimaryScrollController.of(context),
         color: _backgroundColor,
-        child: SingleChildScrollView(
-          primary: true,
-          // ClampingScrollPhysics: на iOS убирает bounce-overscroll, который
-          // открывал пустой фон Scaffold над/под контентом (на Android так по умолч.).
-          physics: const ClampingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Hero section with photo and overlay info
-              _buildHeroSection(),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (_) {
+            _maybeLoadMenu();
+            return false;
+          },
+          child: SingleChildScrollView(
+            primary: true,
+            // ClampingScrollPhysics: на iOS убирает bounce-overscroll, который
+            // открывал пустой фон Scaffold над/под контентом (на Android так по умолч.).
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Hero section with photo and overlay info
+                _buildHeroSection(),
 
-              // Promotion trigger banner (shown when promotions exist)
-              if (_establishment?.promotions != null &&
-                  _establishment!.promotions!.isNotEmpty)
-                _buildPromotionBanner(),
+                // Promotion trigger banner (shown when promotions exist)
+                if (_establishment?.promotions != null &&
+                    _establishment!.promotions!.isNotEmpty)
+                  _buildPromotionBanner(),
 
-              // Description section (shown when present)
-              _buildDescriptionSection(),
+                // Description section (shown when present)
+                _buildDescriptionSection(),
 
-              // Menu section
-              _buildMenuSection(),
+                // Menu section
+                _buildMenuSection(),
 
-              // Divider
-              _buildDivider(),
+                // Divider
+                _buildDivider(),
 
-              // Attributes section
-              _buildAttributesSection(),
+                // Attributes section
+                _buildAttributesSection(),
 
-              // Divider
-              _buildDivider(),
+                // Divider
+                _buildDivider(),
 
-              // Map section
-              _buildMapSection(),
+                // Map section
+                _buildMapSection(),
 
-              // Booking CTA (only when booking enabled)
-              if (_establishment?.bookingEnabled == true) _buildBookingCTA(),
+                // Booking CTA (only when booking enabled)
+                if (_establishment?.bookingEnabled == true) _buildBookingCTA(),
 
-              // Reviews section (dark background)
-              _buildReviewsSection(),
+                // Reviews section (dark background)
+                _buildReviewsSection(),
 
-              // Bottom padding — чёрный, чтобы низ тёмной секции «Отзывы» доходил
-              // до края экрана (иначе под кнопкой виден бежевый фон Scaffold).
-              Container(
-                width: double.infinity,
-                height: 34,
-                color: AppTheme.textPrimary,
-              ),
-            ],
+                // Bottom padding — чёрный, чтобы низ тёмной секции «Отзывы» доходил
+                // до края экрана (иначе под кнопкой виден бежевый фон Scaffold).
+                Container(
+                  width: double.infinity,
+                  height: 34,
+                  color: AppTheme.textPrimary,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -393,8 +478,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            height: HeroScrim.height,
-            child: const HeroScrim(),
+            height: HeroScrim.heightFor(_heroLift),
+            child: HeroScrim(lift: _heroLift),
           ),
 
           // Page indicator dots (only if multiple photos in media array)
@@ -712,6 +797,21 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         const SizedBox(height: 12),
 
+        // «Меню» — первым действием первого экрана (бриф В3, 18.10.2026: у
+        // Resty крупная кнопка «Меню» на первом экране, у нас меню было
+        // ниже описания). Тот же отступ справа, что у чипов: под правую
+        // колонку не заезжает.
+        if (_hasMenuMedia) ...[
+          Padding(
+            padding: const EdgeInsets.only(right: _rightStackGutter),
+            child: _MenuHeroButton(
+              key: EstablishmentDetailScreen.menuButtonKey,
+              onTap: _openMenu,
+            ),
+          ),
+          const SizedBox(height: _menuButtonGap),
+        ],
+
         // Адрес, телефон и сайт — одним языком чипов. Подчёркнутый текст
         // кнопкой не читался: тестировщики тапали мимо, хотя тап там был.
         //
@@ -989,15 +1089,13 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       );
 
   /// Build menu section
+  ///
+  /// Под часами работы — меню текстом (первые позиции и «Всё меню»), под
+  /// ним оригинал: PDF и фото меню. Распознанного меню нет — как было до
+  /// него: только PDF и фото (SDL CAT-C-2.6 / CAT-C-2.7).
   Widget _buildMenuSection() {
-    final media = _establishment!.media ?? [];
-    final menuPdfs =
-        media.where((m) => m.type == 'menu' && m.isPdf).toList()
-          ..sort((a, b) => a.position.compareTo(b.position));
-    final menuImages =
-        media.where((m) => m.type == 'menu' && !m.isPdf).toList();
-
     return Padding(
+      key: _menuSectionKey,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1019,30 +1117,125 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           const SizedBox(height: 30),
 
-          // PDF menu block (separate from photo carousel — UX decision
-          // from session 2026-04-17: PDFs are first-class menu documents,
-          // photos are supplementary)
-          if (menuPdfs.isNotEmpty) ...[
-            ...menuPdfs.map(
-              (pdf) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _PdfMenuCard(
-                  pdf: pdf,
-                  onTap: () => _openPdf(pdf),
-                ),
-              ),
-            ),
-            if (menuImages.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              const _MenuSubsectionLabel(label: 'Фото меню'),
-              const SizedBox(height: 16),
-            ],
-          ],
-
-          // Menu photo carousel (photos only — PDFs handled above)
-          if (menuImages.isNotEmpty) _buildMenuCarousel(),
+          if (_hasMenuMedia && _menu != null)
+            ListenableBuilder(
+              listenable: _menu!,
+              builder: (context, _) => _buildMenuText(_menu!),
+            )
+          else
+            _buildMenuOriginals(),
         ],
       ),
+    );
+  }
+
+  /// Меню текстом в карточке и оригинал под ним.
+  Widget _buildMenuText(EstablishmentMenuProvider menu) {
+    final originals = _buildMenuOriginals();
+    switch (menu.status) {
+      // Раздел ещё не на экране — меню не запрошено; крутить «Загружаем»
+      // нечему. Покажется раздел — сразу пойдёт запрос.
+      case MenuLoadStatus.idle:
+        return originals;
+      case MenuLoadStatus.loading:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const MenuLoadingBox(),
+            const SizedBox(height: 16),
+            originals,
+          ],
+        );
+      case MenuLoadStatus.failed:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            MenuLoadFailedBox(onRetry: menu.ensureLoaded),
+            const SizedBox(height: 16),
+            originals,
+          ],
+        );
+      case MenuLoadStatus.loaded:
+        if (!menu.hasItems) return originals;
+        final preview = menuPreviewSections(menu.sections, menuPreviewCount);
+        final total = menu.items.length;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: MenuAutoExtractedNote(),
+            ),
+            for (final section in preview) ...[
+              const SizedBox(height: 16),
+              MenuSectionView(section: section),
+            ],
+            if (total > menuPreviewCount) ...[
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: _openMenu,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primaryOrange,
+                  side: const BorderSide(color: _primaryOrange),
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                  ),
+                ),
+                child: Text(
+                  'Всё меню · $total ${pluralRu(total, 'позиция', 'позиции', 'позиций')}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            const _MenuSubsectionLabel(label: 'Оригинал меню'),
+            const SizedBox(height: 16),
+            originals,
+          ],
+        );
+    }
+  }
+
+  /// Оригинал меню: PDF карточками, затем фото каруселью. Тот же блок —
+  /// на экране меню под текстом.
+  Widget _buildMenuOriginals() {
+    final media = _establishment!.media ?? [];
+    final menuPdfs =
+        media.where((m) => m.type == 'menu' && m.isPdf).toList()
+          ..sort((a, b) => a.position.compareTo(b.position));
+    final menuImages =
+        media.where((m) => m.type == 'menu' && !m.isPdf).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // PDF menu block (separate from photo carousel — UX decision
+        // from session 2026-04-17: PDFs are first-class menu documents,
+        // photos are supplementary)
+        if (menuPdfs.isNotEmpty) ...[
+          ...menuPdfs.map(
+            (pdf) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _PdfMenuCard(
+                pdf: pdf,
+                onTap: () => _openPdf(pdf),
+              ),
+            ),
+          ),
+          if (menuImages.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const _MenuSubsectionLabel(label: 'Фото меню'),
+            const SizedBox(height: 16),
+          ],
+        ],
+
+        // Menu photo carousel (photos only — PDFs handled above)
+        if (menuImages.isNotEmpty) _buildMenuCarousel(),
+      ],
     );
   }
 
@@ -2567,6 +2760,64 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Кнопка «Меню» на фото-герое карточки: заливка бренда — главное действие
+/// первого экрана, заметнее стеклянных чипов адреса и телефона. Текст
+/// крупный и жирный (19, w700): белый на оранжевом — около 3 : 1, норма
+/// WCAG для крупного текста.
+class _MenuHeroButton extends StatelessWidget {
+  const _MenuHeroButton({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const String label = 'Меню';
+
+  static const double minHeight = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          constraints:
+              const BoxConstraints(minHeight: minHeight, minWidth: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryOrange,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.restaurant_menu,
+                  size: 22, color: AppTheme.textOnPrimary),
+              SizedBox(width: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textOnPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
