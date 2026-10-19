@@ -407,6 +407,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
+        WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' AND al.user_id IS NULL THEN 'Заведение удалено вместе с учёткой по заявке в поддержку'
         WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' THEN 'Заведение удалено партнёром'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
         WHEN al.action = 'user_block' AND al.entity_type = 'user' THEN 'Пользователь заблокирован'

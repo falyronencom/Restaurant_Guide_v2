@@ -427,13 +427,36 @@ describe('DELETE /auth/account — что остаётся без имени', (
 
     const { body } = await request(app).get(`/api/v1/establishments/${establishment.id}/reviews`).expect(200);
     const kept = body.data.reviews.find((review) => review.content === 'Холодный суп и долгое ожидание');
-    expect(kept).toMatchObject({ rating: 2, author: { name: 'Гость', avatar_url: null } });
+    expect(kept).toMatchObject({ rating: 2, author: { id: null, name: 'Гость', avatar_url: null } });
     expect(body.data.reviews).toHaveLength(2);
     const after = (await query(
       'SELECT average_rating, review_count FROM establishments WHERE id = $1', [establishment.id],
     )).rows[0];
     expect(after).toEqual(before);
     expect((await deletionEntries(p.id))[0].new_data.reviews_kept).toBe(1);
+  });
+
+  test('по отзыву удалённого человека не найти его другие: id автора нет ни в списке, ни в отзыве, его список — 404', async () => {
+    // Кто видел отзыв с именем до удаления, знает и id автора: с ним
+    // GET /users/:id/reviews собрал бы все отзывы человека и после
+    // удаления (Phase 3.5, линза, 18.10). Автор другого отзыва — на месте.
+    const p = await person();
+    const other = await person();
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const own = await createTestReview(p.id, establishment.id, { rating: 3, content: 'Шумно, но вкусно' });
+    await createTestReview(other.id, establishment.id, { rating: 5, content: 'Отличное место' });
+    await request(app).get(`/api/v1/users/${p.id}/reviews`).expect(200);
+
+    await deleteAccount(p.accessToken).expect(200);
+
+    const list = await request(app).get(`/api/v1/establishments/${establishment.id}/reviews`).expect(200);
+    const authors = Object.fromEntries(list.body.data.reviews.map((review) => [review.content, review.author.id]));
+    expect(authors).toEqual({ 'Шумно, но вкусно': null, 'Отличное место': other.id });
+    const single = await request(app).get(`/api/v1/reviews/${own.id}`).expect(200);
+    expect(single.body.data.review.author).toEqual({ id: null, name: 'Гость', avatar_url: null });
+    const byAuthor = await request(app).get(`/api/v1/users/${p.id}/reviews`).expect(404);
+    expect(byAuthor.body.error.code).toBe('USER_NOT_FOUND');
+    await request(app).get(`/api/v1/users/${other.id}/reviews`).expect(200);
   });
 
   test('брони: у заведения дата, время и гости — без имени, телефона и комментария; предстоящие отменены и заведению сказано', async () => {
@@ -525,6 +548,12 @@ describe('DELETE /auth/account — владельца карточек и учё
     const { partner, establishment } = await createPartnerWithEstablishment('rejected');
     await query('UPDATE establishments SET published_at = NOW() WHERE id = $1', [establishment.id]);
 
+    // Вопрос экрана говорит это до того, как набрано слово.
+    const check = await deletionCheck(partner.accessToken).expect(200);
+    expect(check.body.data).toEqual({
+      allowed: false,
+      refusal: { code: 'ACCOUNT_OWNS_ESTABLISHMENTS', message: OWNS_CARDS_TEXT },
+    });
     const response = await deleteAccount(partner.accessToken).expect(409);
 
     expect(response.body.error.code).toBe('ACCOUNT_OWNS_ESTABLISHMENTS');
@@ -542,12 +571,22 @@ describe('DELETE /auth/account — владельца карточек и учё
       'SELECT COUNT(*)::int AS n FROM establishments WHERE id = ANY($1::uuid[])', [[draft.id, rejected.id]],
     )).toBe(0);
     const journal = await query(
-      `SELECT entity_id, user_id, old_data FROM audit_log
+      `SELECT entity_id, user_id, old_data, new_data FROM audit_log
        WHERE action = 'partner_delete_establishment' ORDER BY old_data->>'status'`,
     );
     expect(journal.rows).toEqual([
-      { entity_id: draft.id, user_id: partner.user.id, old_data: { name: 'Test Establishment', city: 'Минск', status: 'draft' } },
-      { entity_id: rejected.id, user_id: partner.user.id, old_data: { name: 'Карточка', city: 'Минск', status: 'rejected' } },
+      {
+        entity_id: draft.id,
+        user_id: partner.user.id,
+        old_data: { name: 'Test Establishment', city: 'Минск', status: 'draft' },
+        new_data: null,
+      },
+      {
+        entity_id: rejected.id,
+        user_id: partner.user.id,
+        old_data: { name: 'Карточка', city: 'Минск', status: 'rejected' },
+        new_data: null,
+      },
     ]);
     expect((await deletionEntries(partner.user.id))[0].new_data.drafts_deleted).toBe(2);
   });
@@ -653,7 +692,7 @@ describe('Панель: удалённую учётку не блокируют,
 
     expect(response.body.error.code).toBe('ACCOUNT_DELETED');
     expect(response.body.message).toBe(
-      'Человек удалил свою учётку. Удалённую учётку не блокируют, не включают и не переименовывают',
+      'Учётка удалена. Удалённую учётку не блокируют, не включают и не переименовывают',
     );
     expect(await userRow(p.id)).toMatchObject({ name: 'Гость', is_active: false, email: null });
   });
@@ -716,6 +755,42 @@ describe('DELETE /auth/account — юр. данные карточки, кото
     expect(docs.rows).toEqual([
       { company_name: 'ООО «Вкус»', tax_id: '191234567', contact_person: null, contact_email: null },
     ]);
+  });
+
+  test('передача, затем новый владелец вписал свои контакты, затем прежний удалил учётку — контакты нового на месте', async () => {
+    // Обычный путь решения 3: сначала передать карточки, потом удалить
+    // учётку (Phase 3.5, линза, 18.10).
+    const admin = await createAdminAndGetToken();
+    const { partner: previous, establishment } = await createPartnerWithEstablishment('active');
+    await query(
+      `INSERT INTO partner_documents (partner_id, establishment_id, document_type, document_url,
+                                      company_name, tax_id, contact_person, contact_email)
+       VALUES ($1, $2, 'registration_certificate', '', 'ООО «Вкус»', '191234567', 'Test Partner', $3)`,
+      [previous.user.id, establishment.id, previous.user.email],
+    );
+    const { partner: next } = await createPartnerWithEstablishment('active');
+    await request(app)
+      .post(`/api/v1/admin/establishments/${establishment.id}/claim`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .send({ user_id: next.user.id })
+      .expect(200);
+    await request(app)
+      .put(`/api/v1/partner/establishments/${establishment.id}`)
+      .set('Authorization', `Bearer ${next.accessToken}`)
+      .send({ contact_person: 'Пётр Новиков', contact_email: 'petr@test.com' })
+      .expect(200);
+
+    await deleteAccount(previous.accessToken).expect(200);
+
+    const docs = await query(
+      'SELECT partner_id, company_name, tax_id, contact_person, contact_email FROM partner_documents WHERE establishment_id = $1',
+      [establishment.id],
+    );
+    expect(docs.rows).toEqual([{
+      partner_id: next.user.id, company_name: 'ООО «Вкус»', tax_id: '191234567',
+      contact_person: 'Пётр Новиков', contact_email: 'petr@test.com',
+    }]);
+    expect((await userRow(previous.user.id)).name).toBe('Гость');
   });
 });
 

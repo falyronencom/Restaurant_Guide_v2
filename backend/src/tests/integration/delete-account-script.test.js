@@ -25,6 +25,7 @@
 
 import { spawn, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
+import { jest } from '@jest/globals';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import request from 'supertest';
@@ -42,6 +43,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(HERE, '../../../scripts/delete-account.js');
 const AUTH = '/api/v1/auth';
 const ACTOR = 'operator_script:delete-account';
+
+// Every test starts the script as a process (a server import, a database
+// connection); a race also waits for its lock. 10 s was close.
+jest.setTimeout(30000);
 
 /** Скрипт до конца, с ответом на вопрос «yes» в input, если он задан. */
 const run = (args, { input } = {}) => spawnSync(process.execPath, [SCRIPT, ...args], {
@@ -268,10 +273,13 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     expect(result.stdout).toContain(`✅ Account ${partner.user.id} deleted: `);
     expect(result.stdout).toContain('1 unfinished card(s) deleted');
     const journal = await query(
-      `SELECT entity_id, user_id, old_data FROM audit_log WHERE action = 'partner_delete_establishment'`,
+      `SELECT entity_id, user_id, old_data, new_data FROM audit_log WHERE action = 'partner_delete_establishment'`,
     );
     expect(journal.rows).toEqual([{
-      entity_id: draft.id, user_id: null, old_data: { name: 'Test Establishment', city: 'Минск', status: 'draft' },
+      entity_id: draft.id,
+      user_id: null,
+      old_data: { name: 'Test Establishment', city: 'Минск', status: 'draft' },
+      new_data: { actor: ACTOR },
     }]);
   });
 
@@ -290,6 +298,27 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     expect((await userRow(p.id)).avatar_url).toBeNull();
   });
 
+  test('ссылка фото ведёт в чужую папку облака — скрипт велит ничего не удалять', async () => {
+    // До 02.10 профиль принимал любую ссылку (authController): в строке может
+    // лежать фото чужой карточки. Сервер такое удалить отказался бы
+    // (outside_owned_folders) — оператор тоже не должен.
+    const p = await person();
+    const card = randomUUID();
+    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [
+      p.id, `https://res.cloudinary.com/test/image/upload/v1/establishments/${card}/interior/photo.jpg`,
+    ]);
+
+    const result = run([`--email=${p.email}`, '--yes']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `   The picture link pointed outside the account's folder avatars/${p.id}/ — another file on the cloud, `
+      + 'not the account\'s: delete nothing.',
+    );
+    expect(result.stdout).not.toContain('delete establishments/');
+    expect((await userRow(p.id)).avatar_url).toBeNull();
+  });
+
   test('фото не с нашего облака (Google) — подсказка смотреть папку аватара', async () => {
     const p = await person();
     await query(`UPDATE users SET avatar_url = 'https://lh3.googleusercontent.com/a/face' WHERE id = $1`, [p.id]);
@@ -301,6 +330,55 @@ describe('scripts/delete-account.js — удаление по заявке', () 
       '   The picture is not on the cloud this machine is set up for (a Google or Yandex picture — or CLOUDINARY_* '
       + `not set here): look into avatars/${p.id}/ in the Cloudinary console.`,
     );
+  });
+
+  test('почта на yandex.by: учётка записана входом как yandex.ru — найдена и удалена', async () => {
+    // Регистрация и вход сводят домены Яндекса к yandex.ru (normalizeEmail);
+    // человек пишет в поддержку с того адреса, который помнит (Phase 3.5, линза).
+    const local = `ivan-${randomUUID()}`;
+    const created = await createUserAndGetTokens({
+      email: `${local}@yandex.ru`, phone: null, password: 'Person123!@#', name: 'Иван', role: 'user', authMethod: 'email',
+    });
+
+    const result = run([`--email=${local.toUpperCase()}@Yandex.BY`, '--yes']);
+
+    expect(result.status).toBe(0);
+    expect(await userRow(created.user.id)).toMatchObject({ email: null, name: 'Гость', is_active: false });
+  });
+
+  test('учётка, записанная до того, как вход стал приводить адреса к одному виду, — найдена по адресу как есть', async () => {
+    const p = await person();
+    const local = `ivan-${randomUUID()}`;
+    await query('UPDATE users SET email = $2 WHERE id = $1', [p.id, `${local}@yandex.by`]);
+
+    const result = run([`--email=${local}@yandex.by`, '--yes']);
+
+    expect(result.status).toBe(0);
+    expect((await userRow(p.id)).email).toBeNull();
+  });
+
+  test('почта в строке записана с заглавными — найдена без учёта регистра', async () => {
+    const p = await person();
+    const stored = p.email.replace(/^request-/, 'Request-').replace('@test.com', '@Test.com');
+    await query('UPDATE users SET email = $2 WHERE id = $1', [p.id, stored]);
+
+    const result = run([`--email=${p.email}`, '--yes']);
+
+    expect(result.status).toBe(0);
+    expect((await userRow(p.id)).email).toBeNull();
+  });
+
+  test('строка учётки говорит, подтверждены ли почта и телефон', async () => {
+    // Телефон не подтверждается никогда: звонок на номер подтверждает
+    // номер, а не учётку, — оператор должен это видеть (Phase 3.5).
+    const p = await person({ phone: '+375291112244' });
+    await query('UPDATE users SET email_verified = TRUE WHERE id = $1', [p.id]);
+
+    const result = run([`--email=${p.email}`, '--yes']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(new RegExp(`Account ${p.id}: role user, sign-in email, active, registered \\d{4}-\\d{2}-\\d{2}; `
+      + 'e-mail verified: yes, phone verified: no'));
   });
 
   test('без --yes: «no» — ничего не записано; «yes» — удалена', async () => {
@@ -366,10 +444,42 @@ describe('scripts/delete-account.js — отказы', () => {
     const again = run([`--email=${p.email}`, '--yes']);
 
     expect(again.status).toBe(1);
+    // The target comes before the search: the operator sees where it looked.
+    expect(again.stdout).toMatch(/^Target: local \S+/m);
     expect(again.stderr).toContain(
-      '❌ No account with this e-mail. A deleted account keeps neither: if its holder deleted it, there is nothing to do.',
+      '❌ No account with this e-mail (in its sign-in form or as written, letter case aside) in the target above. '
+      + 'Check the address, the target, or try the other of --email / --phone. A deleted account keeps neither: '
+      + 'if its holder deleted it, there is nothing to do.',
     );
     expect(await deletionEntries(p.id)).toHaveLength(1);
+  });
+
+  test('две учётки на один адрес в разном регистре — отказ, ничего не записано', async () => {
+    // Уникальность email в базе различает регистр.
+    const first = await person();
+    const second = await person();
+    await query('UPDATE users SET email = $2 WHERE id = $1', [second.id, first.email.toUpperCase()]);
+
+    const result = run([`--email=${first.email}`, '--yes']);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      '❌ 2 accounts answer to this e-mail (in different case or form) — nothing written; settle which one in the database first.',
+    );
+    expect((await userRow(first.id)).email).toBe(first.email);
+    expect((await userRow(second.id)).email).toBe(first.email.toUpperCase());
+  });
+
+  test('отклонённая карточка, которая была в каталоге, держит учётку — отказ до вопроса «yes»', async () => {
+    const { partner, establishment } = await createPartnerWithEstablishment('rejected');
+    await query('UPDATE establishments SET published_at = NOW() WHERE id = $1', [establishment.id]);
+
+    const result = run([`--email=${partner.user.email}`], { input: 'yes\n' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('❌ Refusing: the account holds establishment cards.');
+    expect(result.stdout).not.toContain('Type "yes" to continue');
+    expect(await userRow(partner.user.id)).toMatchObject({ email: partner.user.email, is_active: true });
   });
 
   test.each([
@@ -378,11 +488,30 @@ describe('scripts/delete-account.js — отказы', () => {
       'exactly one of --email=<email> or --phone=<phone> is required'],
     ['почта без @', ['--email=nobody', '--yes'], '--email=<email> is not an e-mail address'],
     ['телефон не номер', ['--phone=375-29', '--yes'], '--phone=<phone> is not a phone number: +375XXXXXXXXX'],
+    ['почта, которую вход не примет', ['--email=nobody@nowhere', '--yes'],
+      '--email=<email> is not an address the sign-in would accept'],
   ])('%s — подсказка, база не тронута', async (_case, args, problem) => {
     const result = run(args);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(`❌ ${problem}`);
+  });
+
+  test('флаг с опечаткой — отказ, а не поиск в другой базе; значение не печатается', async () => {
+    // --prodution без отказа искал бы в локальной базе и ответил бы «нет
+    // такой учётки» про учётку, которая есть на проде (Phase 3.5, линза).
+    const p = await person();
+
+    const typo = run([`--email=${p.email}`, '--prodution', '--yes']);
+    const misnamed = run(['--emial=hidden-address@test.com', '--yes']);
+
+    expect(typo.status).toBe(1);
+    expect(typo.stderr).toContain('❌ unknown argument: --prodution');
+    expect(typo.stdout).not.toContain('Target:');
+    expect(misnamed.status).toBe(1);
+    expect(misnamed.stderr).toContain('❌ unknown argument: --emial');
+    expect(misnamed.stderr).not.toContain('hidden-address');
+    expect((await userRow(p.id)).email).toBe(p.email);
   });
 });
 

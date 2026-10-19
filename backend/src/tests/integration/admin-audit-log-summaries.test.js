@@ -31,7 +31,10 @@ const WRITTEN_ACTIONS = [
   ['admin_update_coordinates', 'establishment', 'Координаты обновлены'],
   ['admin_update_slug', 'establishment', 'Адрес страницы изменён'],
   ['claim_establishment', 'establishment', 'Заведение передано партнёру'],
-  ['partner_delete_establishment', 'establishment', 'Заведение удалено партнёром'],
+  // Удаление карточки партнёром — с автором (проверено последним тестом);
+  // без автора её пишет скрипт оператора, удаляя незаконченные карточки
+  // вместе с учёткой (accountDeletionService.anonymiseAccount).
+  ['partner_delete_establishment', 'establishment', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
   ['suspend', 'establishment', 'Приостановлено заведение'],
   ['unsuspend', 'establishment', 'Возобновлено заведение'],
   ['moderate_approve', 'establishment', 'Одобрено заведение'],
@@ -133,24 +136,32 @@ describe('GET /admin/audit-log — подписи действий', () => {
     expect(unknown.summary).toBe('totally_new_action (establishment)');
   });
 
-  it('учётку удалил сам человек — запись с автором, своя подпись', async () => {
+  it('удалил сам человек — запись с автором, своя подпись: учётка и карточка', async () => {
     // Автор — любая учётка: подпись различает только «автор есть» (человек
-    // из приложения или с сайта) и «автора нет» (скрипт оператора).
+    // из приложения или с сайта, партнёр в кабинете) и «автора нет» (скрипт
+    // оператора).
     await query(
       `INSERT INTO audit_log (user_id, action, entity_type, entity_id)
-       VALUES ($1, 'user_delete_account', 'user', $1)`,
+       VALUES ($1, 'user_delete_account', 'user', $1),
+              ($1, 'partner_delete_establishment', 'establishment', gen_random_uuid())`,
       [adminId],
     );
 
     const entries = await fetchEntries();
-    const deletions = entries
-      .filter((e) => e.action === 'user_delete_account')
-      .map((e) => [e.entity_id, e.summary]);
+    // Строки карты — без объекта и без автора; строки этого теста — с тем и другим.
+    const signed = (action) => entries
+      .filter((e) => e.action === action)
+      .map((e) => [e.entity_id === null ? 'без автора' : 'с автором', e.summary]);
 
-    expect(deletions).toHaveLength(2);
-    expect(deletions).toEqual(expect.arrayContaining([
-      [adminId, 'Пользователь удалил учётку'],
-      [null, 'Учётка удалена по заявке в поддержку'],
+    expect(signed('user_delete_account')).toEqual(expect.arrayContaining([
+      ['с автором', 'Пользователь удалил учётку'],
+      ['без автора', 'Учётка удалена по заявке в поддержку'],
     ]));
+    expect(signed('user_delete_account')).toHaveLength(2);
+    expect(signed('partner_delete_establishment')).toEqual(expect.arrayContaining([
+      ['с автором', 'Заведение удалено партнёром'],
+      ['без автора', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
+    ]));
+    expect(signed('partner_delete_establishment')).toHaveLength(2);
   });
 });

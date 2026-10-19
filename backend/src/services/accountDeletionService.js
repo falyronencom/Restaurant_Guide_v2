@@ -231,7 +231,6 @@ export const getDeletionCheck = async (userId) => {
  */
 const notifyCancelledBookings = (cancelled) => {
   for (const booking of cancelled) {
-    if (!booking.partner_id) continue;
     NotificationService.notifyBookingCancelled(
       booking.partner_id,
       {
@@ -266,8 +265,9 @@ export const lockAccount = async (client, userId) =>
  *
  * Two callers: deleteAccount below (the person, from the app or the site) and
  * the operator's script scripts/delete-account.js (a request to support from a
- * person without the app). Who deleted goes to the journal: the person's id,
- * or no id and the script's name.
+ * person without the app). Who deleted goes to the journal — into the
+ * account's entry and into the entry of every unfinished card it took: the
+ * person's id, or no id and the script's name (new_data.actor).
  *
  * @param {Object} client - pg client inside a transaction
  * @param {Object} account - the locked row (lockAccount)
@@ -293,14 +293,15 @@ export const anonymiseAccount = async (client, account, { userId: actorId = null
          AND NOT ${usedByOthersSql('e')}
        RETURNING e.id, e.name, e.city, e.status
      ), logged AS (
-       INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data)
+       INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data)
        SELECT $3::uuid, 'partner_delete_establishment', 'establishment', d.id,
-              jsonb_build_object('name', d.name, 'city', d.city, 'status', d.status)
+              jsonb_build_object('name', d.name, 'city', d.city, 'status', d.status),
+              CASE WHEN $4::text IS NULL THEN NULL ELSE jsonb_build_object('actor', $4::text) END
          FROM deleted d
        RETURNING entity_id
      )
      SELECT COUNT(*)::int AS n FROM logged`,
-    [userId, UNFINISHED_CARD_STATUSES, actorId],
+    [userId, UNFINISHED_CARD_STATUSES, actorId, label],
   );
 
   // What is left is a card that is, was or is about to be in the catalogue —
@@ -373,8 +374,11 @@ export const anonymiseAccount = async (client, account, { userId: actorId = null
   // After the refresh tokens are gone, not before (markSessionsRevoked).
   const revokedAt = await markSessionsRevoked(client, userId);
 
-  // A card that passed to another holder keeps its legal record; the
-  // contact person and address in it were this person's.
+  // A card an earlier claim passed to another holder keeps its legal record
+  // under this person's id: the contact person and address in it are theirs.
+  // A claim now takes the record to the new holder and clears the previous
+  // holder's contacts (adminService.claimEstablishment), so what a new holder
+  // writes is never under this id.
   await client.query(
     `UPDATE partner_documents SET contact_person = NULL, contact_email = NULL
      WHERE partner_id = $1 AND (contact_person IS NOT NULL OR contact_email IS NOT NULL)`,

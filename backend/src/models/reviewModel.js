@@ -87,7 +87,8 @@ export const findReviewById = async (reviewId, _includeDeleted = false) => {
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar
+      u.avatar_url as author_avatar,
+      u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
     WHERE r.id = $1
@@ -178,7 +179,8 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar
+      u.avatar_url as author_avatar,
+      u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
     WHERE ${conditions.join(' AND ')}
