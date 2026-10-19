@@ -28,9 +28,21 @@ it('without signing in — support confirms with the holder first, within 15 day
 
   const letter = screen.getByRole('heading', { name: 'Без входа' }).parentElement!;
   expect(within(letter).getByText(/мы ответим на этот адрес и\s+попросим подтвердить удаление/)).toBeInTheDocument();
-  expect(within(letter).getByText(/мы свяжемся с вами по этому номеру,\s+чтобы убедиться, что учётка ваша/))
-    .toBeInTheDocument();
   expect(within(letter).getByText(/Удалим учётку в течение 15 дней\./)).toBeInTheDocument();
+});
+
+it('a phone account — the app first; a call to the number alone does not prove the account', () => {
+  render(<AccountDeletionPage />);
+
+  // No phone is verified when an account is made: answering a call proves
+  // the number, not the account (Phase 3.5 review, 18.10.2026).
+  const letter = screen.getByRole('heading', { name: 'Без входа' }).parentElement!;
+  expect(within(letter).getByText(/проще всего войти в\s+приложение по номеру и паролю и удалить её там/))
+    .toBeInTheDocument();
+  expect(within(letter).getByText(
+    /укажите в письме номер, имя в профиле и примерно когда\s+вы завели учётку: мы сверим их с учёткой/,
+  )).toBeInTheDocument();
+  expect(letter).not.toHaveTextContent(/чтобы убедиться, что учётка ваша/);
 });
 
 it('says what is deleted and what stays without the name', () => {
