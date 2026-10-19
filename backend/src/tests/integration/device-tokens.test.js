@@ -161,3 +161,53 @@ describe('PUT /api/v1/notifications/device-token — one active account per devi
     }
   });
 });
+
+// A malformed request is the client's mistake, and the answer says so: 400
+// with a code of its own. Until 2026-10-19 the service set `error.status`,
+// which the error handler does not read (it reads `statusCode`), so each of
+// these went out as 500 INTERNAL_ERROR — a false server failure in the log.
+// The app sends valid values; these guard any other client.
+describe('/api/v1/notifications/device-token — malformed requests are refused as 400', () => {
+  const put = (body) => request(app)
+    .put('/api/v1/notifications/device-token')
+    .set('Authorization', `Bearer ${first.accessToken}`)
+    .send(body);
+
+  test.each([
+    ['no token at all', { platform: 'android' }],
+    ['an empty token', { fcm_token: '', platform: 'android' }],
+    ['a token of spaces', { fcm_token: '   ', platform: 'ios' }],
+    ['a token that is not a string', { fcm_token: 12345, platform: 'android' }],
+  ])('registration with %s: 400 FCM_TOKEN_REQUIRED, nothing stored', async (_label, body) => {
+    const res = await put(body).expect(400);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('FCM_TOKEN_REQUIRED');
+    expect((await query('SELECT COUNT(*)::int AS n FROM device_tokens')).rows[0].n).toBe(0);
+  });
+
+  test.each([
+    ['a platform the app does not have', 'web'],
+    ['no platform', undefined],
+  ])('registration with %s: 400 INVALID_PLATFORM, nothing stored', async (_label, platform) => {
+    const res = await put({ fcm_token: DEVICE, platform }).expect(400);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('INVALID_PLATFORM');
+    expect((await query('SELECT COUNT(*)::int AS n FROM device_tokens')).rows[0].n).toBe(0);
+  });
+
+  test('sign-out without a token: 400 FCM_TOKEN_REQUIRED, the device stays on', async () => {
+    await registerAs(first, DEVICE);
+
+    const res = await request(app)
+      .delete('/api/v1/notifications/device-token')
+      .set('Authorization', `Bearer ${first.accessToken}`)
+      .send({})
+      .expect(400);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('FCM_TOKEN_REQUIRED');
+    expect(await activeTokensOf(first)).toEqual([DEVICE]);
+  });
+});
