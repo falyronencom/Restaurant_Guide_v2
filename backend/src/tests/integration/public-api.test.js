@@ -890,6 +890,174 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug/menu-it
   });
 });
 
+// -- One menu uploaded as several files (photo of the board + PDF) -----------
+// The guest sees every dish once (brief LEAF_BRIEF_MENU_DUPLICATES, 2026-10-19:
+// VARKA (Новая Боровая) showed 127 items, 56 of them repeats — «эспрессо S»
+// twice, «какао S» twice). Same name and same price from different files is one
+// line; a different price is not a repeat. The partner's cabinet keeps the rows
+// file by file — they are edited per file.
+
+describe('Public API — menu-items: one menu uploaded as several files', () => {
+  const slug = 'two-files-slug';
+  let estId;
+  let photoId;
+  let pdfId;
+
+  const insertItems = async (mediaId, rows) => {
+    for (const [name, price, category, position, flags = {}] of rows) {
+      await query(`
+        INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, confidence, sanity_flag, is_hidden_by_admin, position)
+        VALUES ($1, $2, $3, $4, $5, 0.9, $6::jsonb, $7, $8)
+      `, [
+        estId, mediaId, name, price, category,
+        flags.caution ? '{"reason":"low_confidence"}' : null,
+        flags.hidden === true,
+        position,
+      ]);
+    }
+  };
+
+  const fetchMenu = async () => {
+    const response = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${slug}/menu-items`)
+      .expect(200);
+    return response.body.data.menu_items;
+  };
+
+  const lines = (items) => items.map(i => `${i.item_name} — ${i.price_byn}`);
+
+  beforeEach(async () => {
+    const estResult = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Two Files', $2, 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Кофейня'], ARRAY['Европейская'], '$$', 'active', $3::jsonb, NOW(), NOW())
+      RETURNING id
+    `, [partnerId, slug, defaultWorkingHours]);
+    estId = estResult.rows[0].id;
+
+    const insertMedia = async (fileType, position) => {
+      const r = await query(`
+        INSERT INTO establishment_media (establishment_id, type, file_type, url, thumbnail_url, preview_url, position, is_primary)
+        VALUES ($1, 'menu', $2, 'https://cdn.test/m', 'https://cdn.test/t', 'https://cdn.test/p', $3, false)
+        RETURNING id
+      `, [estId, fileType, position]);
+      return r.rows[0].id;
+    };
+    photoId = await insertMedia('image', 0);
+    pdfId = await insertMedia('pdf', 1);
+  });
+
+  test('the same dishes read from two files are shown once, in menu order', async () => {
+    const menu = [
+      ['эспрессо S', 3.5, 'КОФЕ', 0],
+      ['американо S', 4, 'КОФЕ', 1],
+      ['какао S', 5, 'НЕ КОФЕ', 2],
+    ];
+    await insertItems(photoId, menu);
+    await insertItems(pdfId, menu);
+
+    const items = await fetchMenu();
+
+    expect(lines(items)).toEqual(['эспрессо S — 3.5', 'американо S — 4', 'какао S — 5']);
+  });
+
+  test('a different price under the same name is not a repeat — both are shown', async () => {
+    await insertItems(photoId, [['Капучино', 6, 'КОФЕ', 0]]);
+    await insertItems(pdfId, [['Капучино', 7.5, 'КОФЕ', 0]]);
+
+    const items = await fetchMenu();
+
+    expect(lines(items).sort()).toEqual(['Капучино — 6', 'Капучино — 7.5']);
+  });
+
+  test('case, spaces and ё/е left by recognition do not make a second dish', async () => {
+    await insertItems(photoId, [
+      ['Сырники со смётаной', 9, 'Завтраки', 0],
+      ['Чай  чёрный', null, 'Чай', 1],
+    ]);
+    await insertItems(pdfId, [
+      [' СЫРНИКИ СО СМЕТАНОЙ ', 9.00, 'ЗАВТРАКИ', 2],
+      ['чай черный', null, 'ЧАЙ', 3],
+    ]);
+
+    const items = await fetchMenu();
+
+    expect(lines(items)).toEqual(['Сырники со смётаной — 9', 'Чай  чёрный — null']);
+  });
+
+  test('if one copy is clean and the other is in question, the guest sees it as clean', async () => {
+    // The photo's copy comes first (lower position) and is the one in question.
+    await insertItems(photoId, [['Латте', 7, 'КОФЕ', 0, { caution: true }]]);
+    await insertItems(pdfId, [['Латте', 7, 'КОФЕ', 1]]);
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(1);
+    expect(items[0].item_name).toBe('Латте');
+    expect(items[0].quality_tier).toBe('clean');
+  });
+
+  test('both copies in question — one line, still marked in question', async () => {
+    await insertItems(photoId, [['Раф', 8, 'КОФЕ', 0, { caution: true }]]);
+    await insertItems(pdfId, [['Раф', 8, 'КОФЕ', 0, { caution: true }]]);
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(1);
+    expect(items[0].quality_tier).toBe('needs_caution');
+  });
+
+  test('a dish the menu itself lists twice in one file stays twice', async () => {
+    // One file: the syrup is sold with coffee and with tea. Read from two files,
+    // it is still two lines — not four, not one.
+    const menu = [
+      ['Сироп', 1.5, 'КОФЕ', 0],
+      ['Сироп', 1.5, 'ЧАЙ', 1],
+    ];
+    await insertItems(photoId, menu);
+    await insertItems(pdfId, menu);
+
+    const items = await fetchMenu();
+
+    expect(items.map(i => `${i.item_name} / ${i.category_raw}`)).toEqual([
+      'Сироп / КОФЕ',
+      'Сироп / ЧАЙ',
+    ]);
+  });
+
+  test('a copy hidden by the moderator stays hidden; the dish is shown once', async () => {
+    await insertItems(photoId, [['Мохито', 12, 'Коктейли', 0, { hidden: true }]]);
+    await insertItems(pdfId, [['Мохито', 12, 'Коктейли', 0]]);
+    await insertItems(pdfId, [['Подозрительное', 999, 'Коктейли', 1, { hidden: true }]]);
+
+    const items = await fetchMenu();
+
+    expect(lines(items)).toEqual(['Мохито — 12']);
+  });
+
+  test('the partner cabinet still lists every row of both files', async () => {
+    const menu = [['эспрессо S', 3.5, 'КОФЕ', 0], ['американо S', 4, 'КОФЕ', 1]];
+    await insertItems(photoId, menu);
+    await insertItems(pdfId, menu);
+    const partner = await createUserAndGetTokens({
+      email: 'two-files-partner@test.com',
+      phone: null,
+      password: 'Partner123!@#',
+      name: 'Two Files Partner',
+      role: 'partner',
+      authMethod: 'email',
+    });
+    await query('UPDATE establishments SET partner_id = $1 WHERE id = $2', [partner.user.id, estId]);
+
+    const response = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(4);
+    expect(new Set(response.body.data.map(i => i.media_id))).toEqual(new Set([photoId, pdfId]));
+  });
+});
+
 // ============================================================================
 // /public/establishments/by-slug/:slug/reviews
 // ============================================================================
