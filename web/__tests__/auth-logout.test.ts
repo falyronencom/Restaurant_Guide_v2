@@ -49,6 +49,9 @@ describe('logoutAction', () => {
       headers: Record<string, string>;
     };
     expect(init.headers.Authorization).toBe('Bearer at');
+    // JSON only under application/json (server.js, express.json): without
+    // it the refresh token in the body is not read and nothing is revoked.
+    expect(init.headers['Content-Type']).toBe('application/json');
     expect(mockStore.delete).toHaveBeenCalledWith('rg_at');
     expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
     expect(mockStore.delete).toHaveBeenCalledWith('rg_user');

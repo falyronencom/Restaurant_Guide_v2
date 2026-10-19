@@ -326,6 +326,33 @@ void main() {
       expect(service.clearCalls, 0,
           reason: 'молчание сети не доказывает, что токен мёртв');
     });
+
+    testWidgets('сессия истекла на защищённом экране — уводит на вход',
+        (tester) async {
+      // Тесты выше уводят на вход только с кадра инициализации. Сессия,
+      // погасшая ПОСЛЕ входа, идёт другой веткой гейта — её не проверял
+      // никто, и защищённый экран остался бы на месте у вышедшего.
+      final service = _HoldingAuthService();
+      final auth = AuthProvider(authService: service);
+      final router = createRouter(auth);
+      addTearDown(router.dispose);
+      addTearDown(auth.dispose);
+
+      await tester.pumpWidget(_app(auth, router));
+      await tester.pump();
+      router.go('/quality/health');
+      await tester.pump();
+      service.hasStoredSession.complete(true);
+      service.currentUser.complete(_admin);
+      await tester.pumpAndSettle();
+      expect(_location(router), '/quality/health', reason: 'предпосылка');
+
+      SessionEvents.reportExpired();
+      await tester.pumpAndSettle();
+
+      expect(_location(router), '/login');
+      expect(find.byType(LoginScreen), findsOneWidget);
+    });
   });
 
   group('адрес перехода разбирается как чужой ввод', () {

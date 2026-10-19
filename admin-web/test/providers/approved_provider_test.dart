@@ -39,6 +39,27 @@ class _FakeServer implements ModerationService {
   }
 
   @override
+  Future<ActiveListResponse> getActiveEstablishments({
+    int page = 1,
+    int perPage = 20,
+    String? sort,
+    String? city,
+    String? search,
+  }) async {
+    calls.add('active');
+    final items = statuses.entries
+        .where((e) => e.value == 'active')
+        .map((e) => ActiveEstablishmentItem(id: e.key, name: 'Кафе ${e.key}'))
+        .toList();
+    return ActiveListResponse(
+      establishments: items,
+      total: items.length,
+      page: page,
+      pages: 1,
+    );
+  }
+
+  @override
   Future<EstablishmentDetail> getEstablishmentDetails(String id) async =>
       EstablishmentDetail(
         id: id,
@@ -81,5 +102,29 @@ void main() {
     expect(found.id, 'a');
     expect(found.status, 'suspended');
     expect(provider.selectedId, isNull);
+  });
+
+  // Вторую половину шапки — «в обычном списке приостановленная уходит» — не
+  // проверял ни один тест.
+  test('список одобренных: после «Приостановить» карточка уходит из него',
+      () async {
+    final server = _FakeServer()
+      ..statuses['a'] = 'active'
+      ..statuses['b'] = 'active';
+    final provider = ApprovedProvider(service: server);
+    addTearDown(provider.dispose);
+
+    await provider.loadActiveEstablishments();
+    await provider.selectEstablishment('a');
+
+    final ok = await provider.suspendEstablishment('Подозрение на чужие фото');
+    await pumpEventQueue();
+
+    expect(ok, isTrue);
+    expect(provider.isSearchMode, isFalse);
+    expect(provider.establishments.map((e) => e.id), <String>['b']);
+    expect(provider.totalCount, 1);
+    expect(server.calls, <String>['active', 'suspend:a'],
+        reason: 'убрана на месте: список не перечитывается');
   });
 }

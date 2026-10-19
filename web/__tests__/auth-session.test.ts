@@ -74,6 +74,8 @@ describe('establishGoogleSession', () => {
       '/api/v1/auth/oauth',
       expect.objectContaining({
         method: 'POST',
+        // JSON only under application/json (server.js, express.json).
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ provider: 'google', token: idToken }),
       }),
     );

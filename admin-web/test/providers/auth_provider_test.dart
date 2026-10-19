@@ -108,6 +108,21 @@ void main() {
       expect(resetsAtNotify, 1);
     });
 
+    test('выход панели зовёт выход сервиса — сеанс гаснет и на сервере',
+        () async {
+      // Что сервис шлёт на сервер, проверяет auth_logout_wire_test; здесь —
+      // звено выше: без вызова сервиса токены остались бы в хранилище, и
+      // перезагрузка вернула бы «вышедший» сеанс, живой и на сервере.
+      final auth = await provider();
+      service.nextLoginUser = _admin;
+      await auth.login(email: 'admin@nirivio.by', password: 'x');
+      expect(service.logoutCalls, 0, reason: 'предпосылка');
+
+      await auth.logout();
+
+      expect(service.logoutCalls, 1);
+    });
+
     test('вход под другим аккаунтом без выхода сбрасывает реестр', () async {
       final auth = await provider();
       service.nextLoginUser = _admin;

@@ -68,6 +68,22 @@ describe('assertSameOrigin', () => {
     ).toBe(403);
   });
 
+  it('rejects a prefix-shaped attacker origin — a subdomain of a foreign host, another port', () => {
+    // The suffix cases above say nothing about the other end: a prefix match
+    // (`originHost.startsWith(expectedHost)`) would admit both of these, and
+    // every fixture above would still pass.
+    expect(
+      assertSameOrigin(
+        reqWith({ origin: 'https://nirivio.by.evil.example', host: 'nirivio.by' }),
+      )?.status,
+    ).toBe(403);
+    expect(
+      assertSameOrigin(
+        reqWith({ origin: 'https://nirivio.by:8443', host: 'nirivio.by' }),
+      )?.status,
+    ).toBe(403);
+  });
+
   it('rejects a request with no Origin header', () => {
     expect(assertSameOrigin(reqWith({ host: 'nirivio.by' }))?.status).toBe(403);
   });
