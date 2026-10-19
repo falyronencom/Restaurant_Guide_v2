@@ -17,7 +17,11 @@ import {
   toPublicEstablishmentMapMarker,
 } from '../../projections/establishmentProjections.js';
 import { toPublicReview, toPublicUserReview } from '../../projections/reviewProjections.js';
-import { collapseRepeatsAcrossFiles, toPublicMenuItem } from '../../projections/menuItemProjections.js';
+import {
+  collapseMenuRepeats,
+  findCopies,
+  toPublicMenuItem,
+} from '../../projections/menuItemProjections.js';
 
 const SENSITIVE_FIELDS = [
   'partner_id',
@@ -505,7 +509,7 @@ describe('toPublicMenuItem — menu item projection', () => {
   });
 });
 
-describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', () => {
+describe('collapseMenuRepeats — one menu uploaded as several files', () => {
   // Rows as MenuItemModel.getByEstablishmentId returns them: price_byn is the
   // NUMERIC column, which node-pg reads as a string.
   let seq = 0;
@@ -528,7 +532,7 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
       row('pdf', '"Цезарь"', '15.00'),
     ];
 
-    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+    expect(collapseMenuRepeats(rows)).toHaveLength(2);
   });
 
   test('typographic apostrophes and spaced quotes are noise too', () => {
@@ -539,7 +543,7 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
       row('pdf', 'Салат "Цезарь"', '15.00'),
     ];
 
-    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+    expect(collapseMenuRepeats(rows)).toHaveLength(2);
   });
 
   test('a dish twice in one file and once in another gives two lines', () => {
@@ -549,7 +553,7 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
       row('pdf', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
     ];
 
-    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+    expect(collapseMenuRepeats(rows)).toHaveLength(2);
   });
 
   test('copies come from the file with the most lines, whatever the order of the rows', () => {
@@ -562,34 +566,34 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
     ];
     const expected = pdf.map(r => r.id);
 
-    expect(collapseRepeatsAcrossFiles([...photo, ...pdf]).map(r => r.id).sort()).toEqual([...expected].sort());
-    expect(collapseRepeatsAcrossFiles([...pdf, ...photo]).map(r => r.id).sort()).toEqual([...expected].sort());
+    expect(collapseMenuRepeats([...photo, ...pdf]).map(r => r.id).sort()).toEqual([...expected].sort());
+    expect(collapseMenuRepeats([...pdf, ...photo]).map(r => r.id).sort()).toEqual([...expected].sort());
   });
 
   test('files of equal length: the copy is the same whatever the order of the rows', () => {
     const a = row('media-a', 'Какао S', '5.00');
     const b = row('media-b', 'какао s', '5.00');
 
-    expect(collapseRepeatsAcrossFiles([a, b]).map(r => r.id)).toEqual([a.id]);
-    expect(collapseRepeatsAcrossFiles([b, a]).map(r => r.id)).toEqual([a.id]);
+    expect(collapseMenuRepeats([a, b]).map(r => r.id)).toEqual([a.id]);
+    expect(collapseMenuRepeats([b, a]).map(r => r.id)).toEqual([a.id]);
   });
 
   test('the price is compared to the kopeck, not as text', () => {
     const rows = [row('photo', 'Латте', '7.50'), row('pdf', 'Латте', 7.5)];
 
-    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(1);
+    expect(collapseMenuRepeats(rows)).toHaveLength(1);
   });
 
   test('no price and a price of zero are different lines', () => {
     const rows = [row('photo', 'Вода', null), row('pdf', 'Вода', '0.00')];
 
-    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+    expect(collapseMenuRepeats(rows)).toHaveLength(2);
   });
 
   test('three files of one menu give one line', () => {
     const rows = [row('a', 'Какао S', '5.00'), row('b', 'Какао S', '5.00'), row('c', 'какао s', '5.00')];
 
-    expect(collapseRepeatsAcrossFiles(rows).map(r => r.id)).toEqual([rows[0].id]);
+    expect(collapseMenuRepeats(rows).map(r => r.id)).toEqual([rows[0].id]);
   });
 
   test('a clean copy takes the place of the first copy, in question, without moving it', () => {
@@ -599,7 +603,7 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
     const clean = row('b-pdf', 'Раф', '8.00');
     const cautionLatte = row('b-pdf', 'Латте', '7.00', { sanity_flag: { reason: 'low_confidence' } });
 
-    const result = collapseRepeatsAcrossFiles([caution, other, clean, cautionLatte]);
+    const result = collapseMenuRepeats([caution, other, clean, cautionLatte]);
 
     expect(result.map(r => r.id)).toEqual([clean.id, other.id]);
   });
@@ -608,9 +612,75 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
     const rows = [row('photo', 'Эспрессо S', '3.50'), row('pdf', 'Эспрессо S', '3.50')];
     const before = JSON.stringify(rows);
 
-    collapseRepeatsAcrossFiles(rows);
+    collapseMenuRepeats(rows);
 
     expect(JSON.stringify(rows)).toBe(before);
     expect(rows).toHaveLength(2);
+  });
+
+  // -- which files are copies of one menu (the Coordinator's word, 2026-10-19) --
+  const menuOf = (mediaId, names, extra = {}) => names.map(n => row(mediaId, n, '5.00', extra));
+
+  test('files sharing half the lines of the smaller one are copies of one menu', () => {
+    const rows = [
+      ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф']),
+      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай']),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(6);
+  });
+
+  test('files sharing less than half are two menus — a shared dish stays in both', () => {
+    const rows = [
+      ...menuOf('a', ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: 'ЗАВТРАК' }),
+      ...menuOf('b', ['Морс', 'Борщ', 'Котлета', 'Салат'], { category_raw: 'ОБЕД' }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(8);
+  });
+
+  test('the smaller file decides: a short board fully inside the big menu is a copy', () => {
+    const rows = [
+      ...menuOf('board', ['Эспрессо', 'Американо']),
+      ...menuOf('pdf', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(6);
+  });
+
+  test('a copy of a copy is the same menu', () => {
+    // a~b share 2 of 4, b~c share 2 of 4, a and c share 1 of 4.
+    const rows = [
+      ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф']),
+      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай']),
+      ...menuOf('c', ['Эспрессо', 'Какао', 'Морс', 'Сок']),
+    ];
+
+    expect(collapseMenuRepeats(rows).map(r => r.item_name).filter(n => n === 'Эспрессо')).toHaveLength(1);
+  });
+
+  test('a line read twice in one section of one file is one line, shown clean', () => {
+    const caution = row('pdf', 'Устрицы №3', '4.00', {
+      category_raw: 'УСТРИЧНЫЙ БАР',
+      sanity_flag: { reason: 'low_confidence' },
+    });
+    const mussels = row('pdf', 'Мидии', '10.00', { category_raw: 'УСТРИЧНЫЙ БАР' });
+    const clean = row('pdf', 'устрицы №3', '4.00', { category_raw: 'Устричный бар' });
+
+    expect(collapseMenuRepeats([caution, mussels, clean]).map(r => r.id)).toEqual([clean.id, mussels.id]);
+  });
+
+  test('findCopies: the copy in the other file and the repeat in the same section', () => {
+    const photo = row('photo', 'Латте', '7.00');
+    const photoRepeat = row('photo', 'латте', '7.00');
+    const photoTea = row('photo', 'Латте', '7.00', { category_raw: 'ЧАЙ' });
+    const pdf = row('pdf', 'ЛАТТЕ', '7.00');
+    const pdfTea = row('pdf', 'Латте', '7.00', { category_raw: 'ЧАЙ' });
+    const other = row('pdf', 'Латте', '8.00');
+
+    const copies = findCopies(photo.id, [photo, photoRepeat, photoTea, pdf, pdfTea, other]);
+
+    expect(copies.map(r => r.id).sort()).toEqual([photoRepeat.id, pdf.id].sort());
+    expect(findCopies('no-such-row', [photo, pdf])).toEqual([]);
   });
 });

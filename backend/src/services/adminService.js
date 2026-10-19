@@ -29,6 +29,7 @@ import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
+import { findCopies } from '../projections/menuItemProjections.js';
 
 /**
  * Get paginated list of pending establishments for the moderation queue
@@ -1385,6 +1386,42 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 // ============================================================================
 
 /**
+ * «Скрыть» and «Вернуть» on one row reach its copies. The guest sees one line
+ * for a dish the menu's files share (collapseMenuRepeats): hiding the photo's
+ * copy would leave the dish on the card from the PDF. Each copy gets its own
+ * audit entry, marked with the row the moderator acted on.
+ *
+ * @param {Object} existing - The row the moderator acted on, before the action
+ * @param {(copy: Object) => boolean} applies - Which copies the action reaches
+ * @param {Object} change - { updates, action, oldData, newData }
+ * @param {Object} params - { adminUserId, ipAddress, userAgent }
+ * @returns {Promise<string[]>} Ids of the copies changed
+ */
+const applyToMenuItemCopies = async (existing, applies, change, params) => {
+  const rows = await MenuItemModel.getByEstablishmentId(existing.establishment_id, {
+    includeHidden: true,
+  });
+  const changed = [];
+  for (const copy of findCopies(existing.id, rows).filter(applies)) {
+    const updated = await MenuItemModel.updateById(copy.id, change.updates);
+    // A re-read may have replaced the copy's file meanwhile — nothing to change.
+    if (!updated) continue;
+    await AuditLogModel.createAuditLog({
+      user_id: params.adminUserId,
+      action: change.action,
+      entity_type: 'menu_item',
+      entity_id: copy.id,
+      old_data: change.oldData,
+      new_data: { ...change.newData, copy_of: existing.id },
+      ip_address: params.ipAddress,
+      user_agent: params.userAgent,
+    });
+    changed.push(copy.id);
+  }
+  return changed;
+};
+
+/**
  * Hide a parsed menu item from user-facing search.
  * Parallel to suspendEstablishment: validate reason, guard state, update,
  * write audit log (awaited; it swallows its own errors). Phase 1: no partner
@@ -1442,6 +1479,18 @@ export const hideMenuItem = async (menuItemId, params) => {
     user_agent: userAgent,
   });
 
+  const copies = await applyToMenuItemCopies(
+    existing,
+    copy => copy.is_hidden_by_admin !== true,
+    {
+      updates: { is_hidden_by_admin: true, hidden_reason: reason },
+      action: 'hide_menu_item',
+      oldData: { is_hidden_by_admin: false },
+      newData: { is_hidden_by_admin: true, reason },
+    },
+    params,
+  );
+
   // Phase 1 decision (Segment C): no partner notification on hide.
   // Partners do not see hidden items in their cabinet, so a push pointing to
   // an invisible item would be a cognitive dead-end. The notifyMenuItemHidden
@@ -1463,6 +1512,7 @@ export const hideMenuItem = async (menuItemId, params) => {
     menuItemId,
     adminUserId,
     reason,
+    copies,
   });
 
   return updated;
@@ -1521,6 +1571,20 @@ export const unhideMenuItem = async (menuItemId, params) => {
     user_agent: userAgent,
   });
 
+  // Back come the copies hidden with this row — the same reason; a copy hidden
+  // for another reason was a decision of its own and stays hidden.
+  const copies = await applyToMenuItemCopies(
+    existing,
+    copy => copy.is_hidden_by_admin === true && copy.hidden_reason === existing.hidden_reason,
+    {
+      updates: { is_hidden_by_admin: false, hidden_reason: null },
+      action: 'unhide_menu_item',
+      oldData: { is_hidden_by_admin: true },
+      newData: { is_hidden_by_admin: false },
+    },
+    params,
+  );
+
   // Размер очереди изменился — счётчики рейла обязаны это увидеть
   // сразу, иначе бейдж до полминуты показывал бы число, которое
   // модератор только что сам и поменял.
@@ -1535,6 +1599,7 @@ export const unhideMenuItem = async (menuItemId, params) => {
   logger.info('Menu item unhidden by admin', {
     menuItemId,
     adminUserId,
+    copies,
   });
 
   return updated;

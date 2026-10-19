@@ -32,60 +32,154 @@
 import { normalizeMenuItemName } from '../utils/menuItemName.js';
 
 /**
- * What the guest takes for "the same line" of a menu: the name as
- * normalizeMenuItemName reads it, plus the noise two recognitions of one menu
- * leave between them — ё/е, the kind of dash, quotes — and the price to the
- * kopeck (no price is a price of its own).
+ * Text as two recognitions of one menu may differ in it: the name as
+ * normalizeMenuItemName reads it (case, spaces), plus ё/е, the kind of dash and
+ * quotes. Quotes go before the spaces are collapsed: «Салат « Цезарь »» and
+ * «Салат "Цезарь"» must meet on one spacing.
+ *
+ * @param {string|null|undefined} text
+ * @returns {string}
+ */
+const readAsGuest = (text) => normalizeMenuItemName(
+  (text ?? '')
+    .replace(/["«»„“”'‘’‚‛]/g, '')
+    .replace(/[‐-―−]/g, '-'),
+).replace(/ё/g, 'е');
+
+/**
+ * What the guest takes for "the same line" of a menu: the same name
+ * (readAsGuest) and the price to the kopeck (no price is a price of its own).
  *
  * @param {Object} item - menu_items row
  * @returns {string}
  */
 const guestLineKey = (item) => {
-  // Quotes go before the spaces are collapsed: «Салат « Цезарь »» and
-  // «Салат "Цезарь"» must meet on one spacing.
-  const name = normalizeMenuItemName(
-    (item.item_name ?? '')
-      .replace(/["«»„“”'‘’‚‛]/g, '')
-      .replace(/[‐-―−]/g, '-'),
-  ).replace(/ё/g, 'е');
   const price = item.price_byn !== null && item.price_byn !== undefined
     ? parseFloat(item.price_byn).toFixed(2)
     : '';
-  return JSON.stringify([name, price]);
+  return JSON.stringify([readAsGuest(item.item_name), price]);
 };
 
 /**
- * Show one menu once, however many files it was uploaded as.
+ * Which files are copies of one menu. Two files are copies when they share at
+ * least half the lines of the smaller one (VARKA: the photo of the board and
+ * the PDF); a breakfast menu and a lunch menu sharing «Морс» are two menus.
+ * Copies of copies are one menu.
+ *
+ * @param {Object[]} rows - menu_items rows of one establishment
+ * @returns {(mediaId: string) => string} The menu a file belongs to
+ */
+const menuOfFile = (rows) => {
+  const linesPerFile = new Map();
+  for (const row of rows) {
+    if (!linesPerFile.has(row.media_id)) linesPerFile.set(row.media_id, new Set());
+    linesPerFile.get(row.media_id).add(guestLineKey(row));
+  }
+
+  const files = [...linesPerFile.keys()];
+  const parent = new Map(files.map(file => [file, file]));
+  const find = (file) => {
+    let root = file;
+    while (parent.get(root) !== root) root = parent.get(root);
+    return root;
+  };
+
+  for (let i = 0; i < files.length; i += 1) {
+    for (let j = i + 1; j < files.length; j += 1) {
+      const a = linesPerFile.get(files[i]);
+      const b = linesPerFile.get(files[j]);
+      let shared = 0;
+      for (const key of a) if (b.has(key)) shared += 1;
+      if (shared * 2 >= Math.min(a.size, b.size)) parent.set(find(files[j]), find(files[i]));
+    }
+  }
+
+  return (mediaId) => JSON.stringify(find(mediaId) ?? null);
+};
+
+/**
+ * The lines the guest sees, each with every row it stands for.
  *
  * A partner may upload the same menu twice — a photo of the board and the PDF —
  * and each file is recognised on its own, so every dish arrives once per file
  * (VARKA (Новая Боровая), 2026-10-19: 127 rows, 56 of them repeats). The rows
- * stay in the database file by file — the partner's cabinet and the moderator's
- * panel edit them per file; only the guest's view collapses them.
+ * stay in the database file by file; the guest's view collapses them, and a
+ * partner's edit or a moderator's «Скрыть» on one row reaches the others of its
+ * line (findCopies).
  *
- * Rules (brief LEAF_BRIEF_MENU_DUPLICATES, 2026-10-19):
- *   - the same name and the same price (guestLineKey) from different files is
- *     one line; a different price is not a repeat — both are shown;
- *   - a line the menu itself repeats inside one file (a syrup sold with coffee
- *     and with tea) stays repeated: the n-th copy in one file pairs with the
- *     n-th copy in another, so two files of that menu still give two lines;
- *   - where one copy is clean and another is in question, the guest sees the
- *     clean one (CAT-C-2.7: in question is shown with a mark, clean without);
- *   - otherwise the copy comes from one file for the whole menu — the file with
- *     the most lines, ties by its id. The site groups lines by the section name
- *     as read (category_raw); two reads may spell a section differently
- *     («КОФЕ» / «Кофе»), and copies picked file by file would split it in two.
+ * Rules (brief LEAF_BRIEF_MENU_DUPLICATES and the Coordinator's word of
+ * 2026-10-19 on its two findings):
+ *   - inside one file, the same line (guestLineKey) in the same section is one
+ *     line — recognition read it twice; in another section it is the menu's own
+ *     (a syrup sold with coffee and with tea) and stays;
+ *   - across files that are copies of one menu (menuOfFile) the same line is
+ *     one line; a different price is not a repeat — both are shown; the n-th
+ *     line of a file pairs with the n-th of another, so two files of a menu
+ *     that lists the syrup twice still give two lines;
+ *   - files that are different menus are not collapsed: a dish both list
+ *     stays in each menu's section;
+ *   - lines are ordered by their first row.
+ *
+ * @param {Object[]} rows - menu_items rows of one establishment, in menu order
+ * @returns {Object[][]} One array of rows per guest line
+ */
+export const groupGuestLines = (rows) => {
+  const menuOf = menuOfFile(rows);
+  const groups = [];
+  const groupOfFileLine = new Map();
+  const linesByMenuKey = new Map();
+
+  for (const row of rows) {
+    const key = guestLineKey(row);
+    const fileLine = JSON.stringify([row.media_id ?? null, key, readAsGuest(row.category_raw)]);
+    const known = groupOfFileLine.get(fileLine);
+    if (known !== undefined) {
+      groups[known].push(row);
+      continue;
+    }
+
+    const menuKey = JSON.stringify([menuOf(row.media_id), key]);
+    let entry = linesByMenuKey.get(menuKey);
+    if (!entry) {
+      entry = { slots: [], seenPerFile: new Map() };
+      linesByMenuKey.set(menuKey, entry);
+    }
+    const lineInFile = entry.seenPerFile.get(row.media_id) ?? 0;
+    entry.seenPerFile.set(row.media_id, lineInFile + 1);
+
+    let group = entry.slots[lineInFile];
+    if (group === undefined) {
+      group = groups.length;
+      groups.push([]);
+      entry.slots.push(group);
+    }
+    groups[group].push(row);
+    groupOfFileLine.set(fileLine, group);
+  }
+
+  return groups;
+};
+
+/**
+ * Show one menu once, however many files it was uploaded as (groupGuestLines).
+ *
+ * Which row of a line the guest sees:
+ *   - a clean one before one in question (CAT-C-2.7: in question is shown
+ *     with a mark, clean without);
+ *   - otherwise one from the same file for the whole menu — the file with the
+ *     most lines, ties by its id. The site groups lines by the section name as
+ *     read (category_raw); two reads may spell a section differently
+ *     («КОФЕ» / «Кофе»), and rows picked file by file would split it in two.
  *     Rows of equal position and name from two files arrive in no fixed order,
- *     so «the first copy» would not be a stable choice either;
- *   - the line keeps the place of its first copy in the list.
+ *     so «the first row» would not be a stable choice either.
  *
- * Hidden rows must already be filtered out: a copy the moderator hid is not a
- * candidate, and the dish shows once from the file where it is not hidden.
+ * Hidden rows must already be filtered out: a row the moderator hid is not a
+ * candidate.
  *
  * @param {Object[]} rows - menu_items rows of one establishment, in menu order
  * @returns {Object[]} The rows the guest sees
  */
-export const collapseRepeatsAcrossFiles = (rows) => {
+export const collapseMenuRepeats = (rows) => {
   const linesPerFile = new Map();
   for (const row of rows) {
     linesPerFile.set(row.media_id, (linesPerFile.get(row.media_id) ?? 0) + 1);
@@ -102,30 +196,22 @@ export const collapseRepeatsAcrossFiles = (rows) => {
     return fileComesFirst(candidate, shown);
   };
 
-  const lines = [];
-  const linesByKey = new Map();
+  return groupGuestLines(rows).map(group => group.reduce(
+    (shown, row) => (isPreferred(row, shown) ? row : shown),
+  ));
+};
 
-  for (const row of rows) {
-    const key = guestLineKey(row);
-    let entry = linesByKey.get(key);
-    if (!entry) {
-      entry = { slots: [], seenPerFile: new Map() };
-      linesByKey.set(key, entry);
-    }
-
-    const copyInFile = entry.seenPerFile.get(row.media_id) ?? 0;
-    entry.seenPerFile.set(row.media_id, copyInFile + 1);
-
-    const slot = entry.slots[copyInFile];
-    if (slot === undefined) {
-      entry.slots.push(lines.length);
-      lines.push(row);
-    } else if (isPreferred(row, lines[slot])) {
-      lines[slot] = row;
-    }
-  }
-
-  return lines;
+/**
+ * The other rows of the guest line a row belongs to — its copies in the other
+ * files of the same menu and its repeats in the same section of its file.
+ *
+ * @param {string} rowId - menu_items.id
+ * @param {Object[]} rows - menu_items rows of the row's establishment
+ * @returns {Object[]} The copies, without the row itself
+ */
+export const findCopies = (rowId, rows) => {
+  const group = groupGuestLines(rows).find(lines => lines.some(row => row.id === rowId));
+  return group ? group.filter(row => row.id !== rowId) : [];
 };
 
 /**
