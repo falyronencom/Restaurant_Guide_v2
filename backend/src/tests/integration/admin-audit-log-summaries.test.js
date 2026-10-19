@@ -47,6 +47,11 @@ const WRITTEN_ACTIONS = [
   ['user_block', 'user', 'Пользователь заблокирован'],
   ['user_unblock', 'user', 'Пользователь разблокирован'],
   ['user_reset_name', 'user', 'Имя пользователя сброшено'],
+  // accountDeletionService.anonymiseAccount — SQL-вставкой в транзакции
+  // самого удаления. Здесь запись без автора — так её пишет скрипт оператора
+  // (scripts/delete-account.js); запись самого человека — с автором, она
+  // проверена отдельно, последним тестом.
+  ['user_delete_account', 'user', 'Учётка удалена по заявке в поддержку'],
   // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
   ['change_email', 'user', 'Адрес e-mail учётки изменён'],
   // scripts/mark-service-account.js и scripts/create-admin.js, SQL-вставкой
@@ -57,10 +62,12 @@ const WRITTEN_ACTIONS = [
 ];
 
 let adminToken;
+let adminId;
 
 beforeAll(async () => {
   const admin = await createAdminAndGetToken();
   adminToken = admin.accessToken;
+  adminId = admin.user.id;
 
   // Записи вставляются напрямую: цель — проверить перевод, а не воспроизвести
   // пятнадцать сценариев. Обязательных колонок у audit_log две — action и
@@ -95,7 +102,11 @@ const fetchEntries = async () => {
 describe('GET /admin/audit-log — подписи действий', () => {
   it('каждое записываемое действие переведено на русский', async () => {
     const entries = await fetchEntries();
-    const byAction = new Map(entries.map((e) => [e.action, e.summary]));
+    // Записи карты — без объекта (entity_id NULL); запись последнего теста —
+    // с объектом и сюда не попадает.
+    const byAction = new Map(entries
+      .filter((e) => e.entity_id === null)
+      .map((e) => [e.action, e.summary]));
 
     for (const [action, , expected] of WRITTEN_ACTIONS) {
       expect(byAction.get(action)).toBe(expected);
@@ -120,5 +131,26 @@ describe('GET /admin/audit-log — подписи действий', () => {
     const unknown = entries.find((e) => e.action === 'totally_new_action');
 
     expect(unknown.summary).toBe('totally_new_action (establishment)');
+  });
+
+  it('учётку удалил сам человек — запись с автором, своя подпись', async () => {
+    // Автор — любая учётка: подпись различает только «автор есть» (человек
+    // из приложения или с сайта) и «автора нет» (скрипт оператора).
+    await query(
+      `INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+       VALUES ($1, 'user_delete_account', 'user', $1)`,
+      [adminId],
+    );
+
+    const entries = await fetchEntries();
+    const deletions = entries
+      .filter((e) => e.action === 'user_delete_account')
+      .map((e) => [e.entity_id, e.summary]);
+
+    expect(deletions).toHaveLength(2);
+    expect(deletions).toEqual(expect.arrayContaining([
+      [adminId, 'Пользователь удалил учётку'],
+      [null, 'Учётка удалена по заявке в поддержку'],
+    ]));
   });
 });

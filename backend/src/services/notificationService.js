@@ -575,6 +575,24 @@ export const notifyBookingExpired = async (userId, partnerId, bookingData, estab
 };
 
 /**
+ * The notice of a booking the guest cancelled: its type, title and text. Also
+ * written by scripts/delete-account.js, which cancels a deleted account's
+ * bookings outside the server and sends no push.
+ *
+ * @param {object} bookingData - { establishment_name, booking_date, booking_time }
+ * @returns {{type: string, title: string, message: string}}
+ */
+export const bookingCancelledNotice = (bookingData) => {
+  const name = bookingData.establishment_name || 'Заведение';
+  const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
+  return {
+    type: 'booking_cancelled',
+    title: TITLES.booking_cancelled,
+    message: `Бронь на «${name}» (${date} ${time}) отменена гостем`,
+  };
+};
+
+/**
  * Notify partner that user cancelled a booking.
  *
  * @param {string} partnerId
@@ -583,9 +601,7 @@ export const notifyBookingExpired = async (userId, partnerId, bookingData, estab
  */
 export const notifyBookingCancelled = async (partnerId, bookingData, establishmentId) => {
   try {
-    const name = bookingData.establishment_name || 'Заведение';
-    const { date, time } = formatBookingDateTime(bookingData.booking_date, bookingData.booking_time);
-    const message = `Бронь на «${name}» (${date} ${time}) отменена гостем`;
+    const { message } = bookingCancelledNotice(bookingData);
     await NotificationModel.create({
       userId: partnerId,
       type: 'booking_cancelled',

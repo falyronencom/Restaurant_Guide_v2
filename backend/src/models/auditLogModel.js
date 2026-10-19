@@ -412,6 +412,8 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'user_block' AND al.entity_type = 'user' THEN 'Пользователь заблокирован'
         WHEN al.action = 'user_unblock' AND al.entity_type = 'user' THEN 'Пользователь разблокирован'
         WHEN al.action = 'user_reset_name' AND al.entity_type = 'user' THEN 'Имя пользователя сброшено'
+        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' AND al.user_id IS NULL THEN 'Учётка удалена по заявке в поддержку'
+        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' THEN 'Пользователь удалил учётку'
         WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётки изменён'
         WHEN al.action = 'mark_service_account' AND al.entity_type = 'user' THEN 'Учётка отмечена служебной'
         WHEN al.action = 'operator_create_admin' AND al.entity_type = 'user' THEN 'Создан администратор'

@@ -31,7 +31,10 @@
  * registration»), so counting drafts would let anyone make themselves
  * unblockable (Phase 3.5 lens review). The moderator who wants to block the
  * author of a junk card on moderation rejects the card first. Oneself — never.
- * Panel and service accounts cannot be unblocked or renamed here either.
+ * Panel and service accounts cannot be unblocked or renamed here either. Nor
+ * can an account its holder deleted (accountDeletionService): the shell left
+ * of it is switched off and named «Гость» by the deletion, and switching it on
+ * or renaming it would undo what the person asked for.
  *
  * The journal time of an action is the moment it holds the account row
  * (clock_timestamp() under the lock), not the start of its transaction: a
@@ -54,6 +57,7 @@ import * as AdminUserModel from '../models/adminUserModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { endAllAccess } from './authService.js';
 import { invalidateAccountStatus } from './accountStatus.js';
+import { wasAccountDeleted } from './accountDeletionService.js';
 import { PROVIDER_NAME_FALLBACK } from '../utils/userName.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 import logger from '../utils/logger.js';
@@ -76,6 +80,7 @@ export const USER_ACTION_REFUSALS = Object.freeze({
   SERVICE_ACCOUNT: 'Это служебная учётка платформы — ей принадлежат карточки каталога. Её не блокируют и не переименовывают',
   PARTNER_WITH_ESTABLISHMENTS: 'У этого партнёра есть карточки заведений в каталоге или на модерации. Его блокировка решает и их судьбу — это отдельное решение, этой кнопкой его не заблокировать',
   RESTORE_FLAG_INVALID: 'Не понятно, возвращать ли отзывы: ожидается «да» или «нет»',
+  ACCOUNT_DELETED: 'Человек удалил свою учётку. Удалённую учётку не блокируют, не включают и не переименовывают',
 });
 
 const refuse = (code, status) => new AppError(USER_ACTION_REFUSALS[code], status, code);
@@ -181,6 +186,9 @@ const lockTarget = async (client, userId, actorId, { refusePartnerWithEstablishm
   );
   const target = result.rows[0];
   if (!target) throw refuse('USER_NOT_FOUND', 404);
+  // Read under the row lock the deletion takes first: a deletion that held it
+  // has committed its journal entry by now.
+  if (await wasAccountDeleted(client, userId)) throw refuse('ACCOUNT_DELETED', 409);
   if (target.id === actorId) throw refuse('SELF_ACTION', 409);
   if (isPanelRole(target.role)) throw refuse('PANEL_ACCOUNT', 409);
   if (isOperatorManaged(target)) throw refuse('SERVICE_ACCOUNT', 409);
