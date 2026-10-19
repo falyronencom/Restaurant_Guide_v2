@@ -69,6 +69,8 @@ export async function createReviewAction(input: {
       content: input.content,
     });
   } catch (err) {
+    const daily = dailyLimitRefusal(err);
+    if (daily) return daily;
     return mapReviewError(err, messageForCreateCode);
   }
 
@@ -168,6 +170,40 @@ function isDetailPathOf(path: string, slug: string): boolean {
     parts[3] === slug &&
     parts.slice(1).every((part) => PATH_SEGMENT.test(part))
   );
+}
+
+/**
+ * The daily review quota (10 per Minsk day). The server answers it with the
+ * same code as the request-rate limiter — 429 RATE_LIMIT_EXCEEDED — but, since
+ * #99, with its own Russian sentence that names the term («…можно написать
+ * завтра») and `details` carrying `reviews_limit` / `retry_after` / `reset_at`
+ * (plus a Retry-After header). `reviews_limit` is what tells the quota from the
+ * rate limiter (whose details are `limit` / `window` / `retry_after`).
+ *
+ * The site shows the server's sentence as is, like the app does: before
+ * 19.10.2026 the eleventh review of the day read «Слишком часто, попробуйте
+ * позже», though «later» means after Minsk midnight. If the sentence is not
+ * Russian (an older server), the site's own text with the same term is used.
+ * The rate limiter keeps the site's «Слишком часто…».
+ */
+const DAILY_LIMIT_FALLBACK_RU =
+  'Лимит отзывов на сегодня исчерпан. Новый отзыв можно написать завтра.';
+
+function dailyLimitRefusal(err: unknown): ReviewActionResult | null {
+  if (
+    !(err instanceof ApiError) ||
+    err.statusCode !== 429 ||
+    typeof err.details !== 'object' ||
+    err.details === null ||
+    !('reviews_limit' in err.details)
+  ) {
+    return null;
+  }
+  return {
+    ok: false,
+    code: err.errorCode ?? 'HTTP_429',
+    message: personText(err.message) ?? DAILY_LIMIT_FALLBACK_RU,
+  };
 }
 
 function mapReviewError(
