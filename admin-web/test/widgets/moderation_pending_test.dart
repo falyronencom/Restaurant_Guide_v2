@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/category_icons.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_list_panel.dart';
 
 // Экран «Ожидают просмотра», кадр 05 редизайна.
@@ -36,6 +39,45 @@ class _StubModerationProvider extends ModerationProvider {
 
   @override
   String? get listError => null;
+}
+
+/// Сервис, записывающий решения. `noSuchMethod` роняет любой вызов, которого
+/// проверяемый путь делать не должен.
+class _RecordingModerationService implements ModerationService {
+  final List<String> decisions = <String>[];
+
+  @override
+  Future<EstablishmentDetail> getEstablishmentDetails(String id) async =>
+      EstablishmentDetail(
+        id: id,
+        partnerId: 'p-1',
+        name: 'Кухмістр',
+        status: 'pending',
+        city: 'Минск',
+        categories: const <String>['Ресторан'],
+        cuisines: const <String>['Народная'],
+        unp: '191482073',
+        legalName: 'ООО «Кухмістр Плюс»',
+      );
+
+  @override
+  Future<void> moderateEstablishment({
+    required String id,
+    required String action,
+    Map<String, String> moderationNotes = const {},
+  }) async {
+    decisions.add('$id $action $moderationNotes');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        'фейк не обслуживает ${invocation.memberName}',
+      );
+}
+
+class _StubBadges extends BadgesProvider {
+  @override
+  Future<void> load() async {}
 }
 
 EstablishmentListItem _item({
@@ -242,7 +284,10 @@ void main() {
       expect(provider.checkedFraction, closeTo(3 / 14, 1e-9));
     });
 
-    test('отклонённое поле закрывает одобрение, но не отказ', () {
+    // Что отказ при этом остаётся доступен — свойство кнопки, а не
+    // провайдера; его держит группа «Нижняя панель решений» ниже.
+    test('отклонённое поле закрывает одобрение; снятый вердикт открывает его',
+        () {
       final provider = ModerationProvider()..approveField('unp');
       addTearDown(provider.dispose);
       expect(provider.canApprove, isTrue);
@@ -266,6 +311,59 @@ void main() {
       // работу, которой не было.
       expect(provider.checkedFieldCount, 0);
       expect(provider.remainingFieldCount, 14);
+    });
+  });
+
+  group('Нижняя панель решений', () {
+    testWidgets(
+        'отклонённое поле: «Одобрить» закрыта, «Отклонить заявку» открыта '
+        'и уносит причину на сервер', (tester) async {
+      tester.view.physicalSize = const Size(1440, 820);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final service = _RecordingModerationService();
+      final provider = ModerationProvider(service: service);
+      addTearDown(provider.dispose);
+      await provider.selectEstablishment('est-1');
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ModerationProvider>.value(value: provider),
+            ChangeNotifierProvider<BadgesProvider>(
+                create: (_) => _StubBadges()),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const Scaffold(body: ModerationDetailPanel()),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      ButtonStyleButton button(Type type, String label) =>
+          tester.widget<ButtonStyleButton>(find.widgetWithText(type, label));
+
+      expect(button(ElevatedButton, 'Одобрить заведение').onPressed, isNotNull,
+          reason: 'предпосылка: до отказа по полю одобрение открыто');
+
+      provider.rejectField('legal_name', comment: 'не совпадает с УНП');
+      await tester.pump();
+
+      expect(button(ElevatedButton, 'Одобрить заведение').onPressed, isNull);
+      expect(button(OutlinedButton, 'Отклонить заявку').onPressed, isNotNull,
+          reason: 'отказ по полю и есть повод отклонить заявку');
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Отклонить заявку'));
+      await tester.pumpAndSettle();
+      expect(find.text('Отклонить заведение?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Отклонить'));
+      await tester.pumpAndSettle();
+
+      expect(service.decisions, <String>[
+        'est-1 reject {legal_name: не совпадает с УНП}',
+      ]);
     });
   });
 
