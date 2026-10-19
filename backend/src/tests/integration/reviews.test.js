@@ -776,8 +776,18 @@ describe('Reviews System - Daily Quota', () => {
     const response = await submitReview(userToken, overflowEstablishmentId, 'over-quota').expect(429);
 
     expect(response.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
-    const message = response.body.message || response.body.error?.message || '';
-    expect(message.toLowerCase()).toContain('limit');
+    // The app shows the server's sentence as it is: Russian,
+    // with the term — the quota renews at Minsk midnight, not «later».
+    expect(response.body.message).toBe(
+      'Лимит отзывов на сегодня исчерпан: не больше 10 в день. Новый отзыв можно написать завтра.',
+    );
+    const { details } = response.body.error;
+    expect(details.reviews_limit).toBe(10);
+    expect(Number.isInteger(details.retry_after)).toBe(true);
+    expect(details.retry_after).toBeGreaterThan(0);
+    expect(details.retry_after).toBeLessThanOrEqual(86400);
+    expect(response.headers['retry-after']).toBe(String(details.retry_after));
+    expect(Date.parse(details.reset_at)).not.toBeNaN();
   });
 
   test('should reset quota at midnight', async () => {
@@ -1275,6 +1285,32 @@ describe('Reviews System - Public Projection on Legacy Listing Endpoints', () =>
       expect(r).toHaveProperty('establishment');
       expect(r.establishment).toHaveProperty('id');
       expect(r.establishment).toHaveProperty('name');
+    });
+
+    test('«Мои отзывы»: тип заведения — первая категория карточки, строкой', async () => {
+      // D8: the model reads `categories` of the place, the service used to
+      // look for another field — the answer never had a type. Through the
+      // real model; the app shows `establishment.category` only as a string
+      // (mobile/lib/models/review.dart, UserReview.fromJson).
+      await query(
+        'UPDATE establishments SET categories = ARRAY[\'Кофейня\', \'Бар\'] WHERE id = $1',
+        [establishmentId],
+      );
+      try {
+        const response = await request(app)
+          .get(`/api/v1/users/${userId}/reviews`)
+          .expect(200);
+
+        expect(response.body.data.reviews.length).toBeGreaterThan(0);
+        for (const r of response.body.data.reviews) {
+          expect(r.establishment.category).toBe('Кофейня');
+        }
+      } finally {
+        await query(
+          'UPDATE establishments SET categories = ARRAY[\'Ресторан\'] WHERE id = $1',
+          [establishmentId],
+        );
+      }
     });
 
     test('preserves public fields (rating, content, partner_response text)', async () => {
