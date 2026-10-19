@@ -1,9 +1,10 @@
 /**
  * Delete an account at its holder's request to support (brief В1, 18.10.2026)
  * — for a person who cannot press «Удалить учётку» themself: without the app,
- * with a phone account (the site signs in by e-mail only), or with an account
- * the panel switched off (the app answers «Учётка отключена. Напишите в
- * поддержку»). The site's page «Как удалить учётку» sends them to support.
+ * with a phone account (the app and the site sign in by e-mail only — PR #99,
+ * until SMS comes), or with an account the panel switched off (the app answers
+ * «Учётка отключена. Напишите в поддержку»). The site's page «Как удалить
+ * учётку» sends them to support.
  *
  * The deletion is the app's own — accountDeletionService.anonymiseAccount —
  * in this script's transaction, on this script's connection; what goes and
