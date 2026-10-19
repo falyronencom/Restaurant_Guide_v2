@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/utils/geo.dart';
 import 'package:restaurant_guide_mobile/utils/russian_plural.dart';
@@ -47,12 +49,8 @@ int walkMinutesRounded(double meters) =>
 String walkMinutesLabel(double meters) => '≈ ${walkMinutesRounded(meters)} мин';
 
 /// «550 м» до километра (с точностью до десяти метров), дальше «1,2 км» —
-/// как «км от вас» в списке «Избранного».
-String walkDistanceLabel(double meters) {
-  final tens = (meters / 10).round() * 10;
-  if (tens < 1000) return '${math.max(tens, 10)} м';
-  return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} км';
-}
+/// общее правило расстояния ([distanceLabelMeters]).
+String walkDistanceLabel(double meters) => distanceLabelMeters(meters);
 
 /// «15 минут» — подпись чипа и строки выбора.
 String walkMinutesChoiceLabel(int minutes) =>
