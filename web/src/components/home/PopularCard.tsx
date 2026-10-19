@@ -67,8 +67,12 @@ export function PopularCard({
               </div>
             )}
 
-            {establishment.average_rating != null && (
-              <span className="absolute top-2 right-2 flex h-[31px] min-w-[31px] items-center justify-center rounded-[var(--radius-s)] bg-success-status px-1.5 text-[16px] leading-none text-text-on-primary">
+            {/* No reviews → no badge: a 0-review card carries average_rating 0,
+                which would read as a «0,0» score. Same gate as the catalog card,
+                the detail title and the sidebar (86059f9). */}
+            {establishment.average_rating != null &&
+              establishment.review_count > 0 && (
+              <span data-testid="popular-rating" className="absolute top-2 right-2 flex h-[31px] min-w-[31px] items-center justify-center rounded-[var(--radius-s)] bg-success-status px-1.5 text-[16px] leading-none text-text-on-primary">
                 {formatRating(establishment.average_rating)}
               </span>
             )}
@@ -82,7 +86,10 @@ export function PopularCard({
 
           {/* Content — below the photo */}
           <div className="flex flex-1 flex-col gap-1 p-m">
-            <h3 className="line-clamp-1 font-display text-[18px] leading-[25px] font-normal text-foreground">
+            {/* wrap-anywhere: a word longer than the card breaks onto the
+                (clamped) second line, so the visible line ends in «…» instead
+                of a word cut off mid-letter. */}
+            <h3 className="line-clamp-1 font-display text-[18px] leading-[25px] font-normal text-foreground wrap-anywhere">
               {establishment.name}
             </h3>
 
@@ -109,7 +116,10 @@ export function PopularCard({
               )}
             </div>
 
-            <p className="mt-1 line-clamp-1 text-body-m text-foreground underline underline-offset-2">
+            {/* Plain text, not underlined: the whole card is one link to the
+                venue, so an underline would promise a separate (map) link that
+                cannot exist — no link inside a link. */}
+            <p className="mt-1 line-clamp-1 text-body-m text-foreground">
               {establishment.address}
             </p>
           </div>

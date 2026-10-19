@@ -58,7 +58,7 @@ export function WriteReviewCta({
         size='cta'
         onClick={() => {
           if (!isAuthenticated) {
-            requestLogin();
+            requestLogin({ fallbackToLoginPage: true });
             return;
           }
           setOpen(true);

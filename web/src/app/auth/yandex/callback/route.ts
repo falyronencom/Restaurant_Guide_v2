@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
 import { type OAuthLoginData } from '@/lib/api/types';
+import { loginWithAuthError, yandexErrorCode } from '@/lib/auth/oauth-error';
 import { consumeYState, persistOAuthSession } from '@/lib/auth/session';
 import { exchangeCodeForToken, guardReturnTo } from '@/lib/auth/yandex';
 
@@ -21,7 +22,10 @@ import { exchangeCodeForToken, guardReturnTo } from '@/lib/auth/yandex';
  *       exact contract — {provider:'yandex', token})
  *   (5) persist the backend session (web is the cookie issuer)
  *   (6) success → redirect to returnTo
- * Any failure in (3)–(5) collapses to the same auth_error redirect.
+ * Every failure lands on /login?auth_error=<code>&returnTo=… — /login shows
+ * why in Russian (lib/auth/oauth-error.ts) and keeps the way back. Until
+ * 18.10 it went to `${returnTo}?auth_error=1`, which no page read: a failed
+ * Yandex sign-in was silent.
  *
  * Cookie + redirect = pattern P2 (D2): persistOAuthSession writes via
  * (await cookies()).set, then redirect() throws NEXT_REDIRECT and Next emits
@@ -30,13 +34,8 @@ import { exchangeCodeForToken, guardReturnTo } from '@/lib/auth/yandex';
  * and redirect() is called exactly once at the end.
  */
 
-/**
- * Append the auth_error flag with the correct separator so a returnTo that
- * already carries a query string stays a valid URL. returnTo is query-free in
- * the normal flow (AuthMenu sources it from usePathname), so this is defensive.
- */
-function authErrorUrl(returnTo: string): string {
-  return `${returnTo}${returnTo.includes('?') ? '&' : '?'}auth_error=1`;
+function authErrorUrl(returnTo: string, code = yandexErrorCode({ error: null })): string {
+  return loginWithAuthError(returnTo, code);
 }
 
 export async function GET(request: Request) {
@@ -57,8 +56,14 @@ export async function GET(request: Request) {
     const code = sp.get('code');
 
     if (error) {
-      // (1) Yandex denied / errored — no outbound.
-      destination = authErrorUrl(returnTo);
+      // (1) Yandex denied / errored — no outbound. access_denied is the
+      //     visitor pressing «Отмена» on Yandex's own page.
+      destination = authErrorUrl(
+        returnTo,
+        error === 'access_denied'
+          ? yandexErrorCode({ cancelled: true })
+          : yandexErrorCode({ error }),
+      );
     } else if (!yState || !state || state !== yState.n) {
       // (2) State absent or mismatched — reject without any outbound call.
       destination = authErrorUrl(returnTo);
@@ -79,10 +84,11 @@ export async function GET(request: Request) {
       // (6) Success.
       destination = returnTo;
     }
-  } catch {
+  } catch (err) {
     // Any failure in (3)–(5): transport, timeout, backend 4xx, etc. The
-    // access_token is never logged or persisted (R3).
-    destination = authErrorUrl(returnTo);
+    // access_token is never logged or persisted (R3). A known backend refusal
+    // (closed account, rate limit) keeps its own Russian text on /login.
+    destination = authErrorUrl(returnTo, yandexErrorCode({ error: err }));
   }
 
   redirect(destination);
