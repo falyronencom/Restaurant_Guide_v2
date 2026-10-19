@@ -107,11 +107,10 @@ void main() {
   });
 
   // Тесты выше выставляют вердикт вызовом провайдера в обход кнопок, и что
-  // делает НАЖАТИЕ, они не видят. Нажатием здесь проверена только ✓: ✗ и 💬
-  // открывают окно причины, а оно не освобождает своё поле ввода, и сторож
-  // течей роняет тест. Это дефект продукта, он передан в отчёте аудита, а
-  // проверки ✗ и 💬 придут вместе с его починкой. Гасить сторож ради теста
-  // нельзя — так спряталась бы настоящая течь.
+  // делает НАЖАТИЕ, они не видят — это видят тесты ниже. ✗ и 💬 открывают
+  // окно с полем ввода; прежде окно не освобождало своё поле, сторож течей
+  // ронял любой тест, нажимавший эти кнопки, и их не нажимал никто: мутация
+  // «✗ зовёт commentField вместо rejectField» проходила весь набор зелёной.
   testWidgets('✓ одобряет поле, повторное нажатие снимает вердикт',
       (tester) async {
     final provider = await _pumpRow(tester);
@@ -123,5 +122,71 @@ void main() {
     await tester.tap(find.byIcon(Icons.check));
     await tester.pump();
     expect(provider.getFieldState('unp').status, FieldReviewStatus.neutral);
+  });
+
+  testWidgets('✗ с причиной отклоняет поле — вердиктом, а не заметкой',
+      (tester) async {
+    final provider = await _pumpRow(tester);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'УНП не совпадает с реестром');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Отклонить'));
+    await tester.pumpAndSettle();
+
+    final state = provider.getFieldState('unp');
+    expect(state.status, FieldReviewStatus.rejected);
+    expect(state.comment, 'УНП не совпадает с реестром');
+    // Отклонённое поле закрывает одобрение заявки: причина уйдёт партнёру.
+    expect(provider.canApprove, isFalse);
+    expect(find.text('Отклонить: УНП'), findsNothing);
+  });
+
+  testWidgets('💬 «Сохранить» оставляет заметку без вердикта', (tester) async {
+    final provider = await _pumpRow(tester);
+
+    await tester.tap(find.byIcon(Icons.chat_bubble_outline));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(TextField), 'Уточнить у партнёра при звонке');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Сохранить'));
+    await tester.pumpAndSettle();
+
+    final state = provider.getFieldState('unp');
+    expect(state.status, FieldReviewStatus.neutral);
+    expect(state.comment, 'Уточнить у партнёра при звонке');
+    expect(find.text('Комментарий: УНП'), findsNothing);
+  });
+
+  testWidgets('«Отмена» в окне причины ничего не меняет', (tester) async {
+    final provider = await _pumpRow(tester);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    // Тронуть поле обязательно: нетронутое после закрытия не перестраивается,
+    // и освобождение на попе маршрута не проявилось бы.
+    await tester.enterText(find.byType(TextField), 'передумал');
+    await tester.tap(find.widgetWithText(TextButton, 'Отмена'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final state = provider.getFieldState('unp');
+    expect(state.status, FieldReviewStatus.neutral);
+    expect(state.comment, isNull);
+  });
+
+  testWidgets('окно причины открывается с прежней заметкой поля',
+      (tester) async {
+    final provider = await _pumpRow(tester);
+    provider.commentField('unp', 'Уточнить у партнёра при звонке');
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'Уточнить у партнёра при звонке',
+    );
   });
 }

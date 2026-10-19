@@ -197,7 +197,7 @@ class _VerdictGroup extends StatelessWidget {
     );
   }
 
-  void _ask(
+  Future<void> _ask(
     BuildContext context,
     ModerationProvider provider, {
     required String title,
@@ -205,41 +205,83 @@ class _VerdictGroup extends StatelessWidget {
     required String confirm,
     required bool danger,
     required ValueChanged<String> onSave,
-  }) {
-    final controller = TextEditingController(
-      text: provider.getFieldState(fieldName).comment ?? '',
-    );
-
-    showDialog<void>(
+  }) async {
+    final text = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 420,
-          child: TextField(
-            controller: controller,
-            maxLines: 4,
-            autofocus: true,
-            decoration: InputDecoration(hintText: hint),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              onSave(controller.text);
-              Navigator.pop(ctx);
-            },
-            style: AppTheme.canonCtaL(
-              backgroundColor: danger ? AppTheme.errorRed : null,
-            ),
-            child: Text(confirm),
-          ),
-        ],
+      builder: (_) => _FieldNoteDialog(
+        title: title,
+        hint: hint,
+        confirm: confirm,
+        danger: danger,
+        initialText: provider.getFieldState(fieldName).comment ?? '',
       ),
+    );
+    if (text != null) onSave(text);
+  }
+}
+
+/// Окно причины у кнопок ✗ и 💬 — отдельным виджетом, потому что оно владеет
+/// полем ввода (образец — `_SuspendReasonDialog` в панели модерации).
+///
+/// Контроллер освобождается в `State.dispose`, то есть после размонтирования
+/// окна. Освобождать его по завершении `showDialog` нельзя: future
+/// завершается на попе маршрута, а окно ещё уезжает анимацией и перестраивает
+/// тронутое поле. Текст возвращается через `pop`, вердикт ставит вызывающий.
+class _FieldNoteDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  final String confirm;
+  final bool danger;
+  final String initialText;
+
+  const _FieldNoteDialog({
+    required this.title,
+    required this.hint,
+    required this.confirm,
+    required this.danger,
+    required this.initialText,
+  });
+
+  @override
+  State<_FieldNoteDialog> createState() => _FieldNoteDialogState();
+}
+
+class _FieldNoteDialogState extends State<_FieldNoteDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 420,
+        child: TextField(
+          controller: _controller,
+          maxLines: 4,
+          autofocus: true,
+          decoration: InputDecoration(hintText: widget.hint),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          style: AppTheme.canonCtaL(
+            backgroundColor: widget.danger ? AppTheme.errorRed : null,
+          ),
+          child: Text(widget.confirm),
+        ),
+      ],
     );
   }
 }
