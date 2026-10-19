@@ -41,10 +41,13 @@ import { normalizeMenuItemName } from '../utils/menuItemName.js';
  * @returns {string}
  */
 const guestLineKey = (item) => {
-  const name = normalizeMenuItemName(item.item_name ?? '')
-    .replace(/ё/g, 'е')
-    .replace(/[‐-―−]/g, '-')
-    .replace(/["«»„“”']/g, '');
+  // Quotes go before the spaces are collapsed: «Салат « Цезарь »» and
+  // «Салат "Цезарь"» must meet on one spacing.
+  const name = normalizeMenuItemName(
+    (item.item_name ?? '')
+      .replace(/["«»„“”'‘’‚‛]/g, '')
+      .replace(/[‐-―−]/g, '-'),
+  ).replace(/ё/g, 'е');
   const price = item.price_byn !== null && item.price_byn !== undefined
     ? parseFloat(item.price_byn).toFixed(2)
     : '';
@@ -68,8 +71,13 @@ const guestLineKey = (item) => {
  *     n-th copy in another, so two files of that menu still give two lines;
  *   - where one copy is clean and another is in question, the guest sees the
  *     clean one (CAT-C-2.7: in question is shown with a mark, clean without);
- *   - the line keeps the place of its first copy, so the menu reads in the
- *     order it came in.
+ *   - otherwise the copy comes from one file for the whole menu — the file with
+ *     the most lines, ties by its id. The site groups lines by the section name
+ *     as read (category_raw); two reads may spell a section differently
+ *     («КОФЕ» / «Кофе»), and copies picked file by file would split it in two.
+ *     Rows of equal position and name from two files arrive in no fixed order,
+ *     so «the first copy» would not be a stable choice either;
+ *   - the line keeps the place of its first copy in the list.
  *
  * Hidden rows must already be filtered out: a copy the moderator hid is not a
  * candidate, and the dish shows once from the file where it is not hidden.
@@ -78,6 +86,22 @@ const guestLineKey = (item) => {
  * @returns {Object[]} The rows the guest sees
  */
 export const collapseRepeatsAcrossFiles = (rows) => {
+  const linesPerFile = new Map();
+  for (const row of rows) {
+    linesPerFile.set(row.media_id, (linesPerFile.get(row.media_id) ?? 0) + 1);
+  }
+  const fileComesFirst = (a, b) => {
+    const byLines = linesPerFile.get(a.media_id) - linesPerFile.get(b.media_id);
+    if (byLines !== 0) return byLines > 0;
+    return String(a.media_id) < String(b.media_id);
+  };
+  const isPreferred = (candidate, shown) => {
+    const candidateClean = candidate.sanity_flag == null;
+    const shownClean = shown.sanity_flag == null;
+    if (candidateClean !== shownClean) return candidateClean;
+    return fileComesFirst(candidate, shown);
+  };
+
   const lines = [];
   const linesByKey = new Map();
 
@@ -96,7 +120,7 @@ export const collapseRepeatsAcrossFiles = (rows) => {
     if (slot === undefined) {
       entry.slots.push(lines.length);
       lines.push(row);
-    } else if (lines[slot].sanity_flag != null && row.sanity_flag == null) {
+    } else if (isPreferred(row, lines[slot])) {
       lines[slot] = row;
     }
   }

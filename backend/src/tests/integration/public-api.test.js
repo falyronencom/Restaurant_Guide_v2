@@ -981,7 +981,32 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
 
     const items = await fetchMenu();
 
-    expect(lines(items)).toEqual(['Сырники со смётаной — 9', 'Чай  чёрный — null']);
+    // Both files hold two lines, so which spelling is shown is the tie between
+    // files (their ids) — the count and the prices are what the guest checks.
+    expect(items.map(i => i.price_byn)).toEqual([9, null]);
+  });
+
+  test('a section the two reads spell differently stays one section', async () => {
+    // The PDF read one dish more, so the whole menu is shown from the PDF: the
+    // site groups by the section name as read, and mixing «КОФЕ» from the photo
+    // with «Кофе» from the PDF would show two half-sections.
+    await insertItems(photoId, [
+      ['Эспрессо', 3.5, 'КОФЕ', 0],
+      ['Американо', 4, 'КОФЕ', 1],
+    ]);
+    await insertItems(pdfId, [
+      ['Эспрессо', 3.5, 'Кофе', 0],
+      ['Американо', 4, 'Кофе', 1],
+      ['Флэт уайт', 6.5, 'Кофе', 2],
+    ]);
+
+    const items = await fetchMenu();
+
+    expect(items.map(i => `${i.item_name} / ${i.category_raw}`)).toEqual([
+      'Эспрессо / Кофе',
+      'Американо / Кофе',
+      'Флэт уайт / Кофе',
+    ]);
   });
 
   test('if one copy is clean and the other is in question, the guest sees it as clean', async () => {

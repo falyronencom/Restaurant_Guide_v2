@@ -519,7 +519,6 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
     position: 0,
     ...extra,
   });
-  const names = (rows) => rows.map(r => r.item_name);
 
   test('dash and quote variants of one name are one line', () => {
     const rows = [
@@ -529,7 +528,50 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
       row('pdf', '"Цезарь"', '15.00'),
     ];
 
-    expect(names(collapseRepeatsAcrossFiles(rows))).toEqual(['Фильтр–кофе', '«Цезарь»']);
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('typographic apostrophes and spaced quotes are noise too', () => {
+    const rows = [
+      row('photo', 'Domino’s пицца', '20.00'),
+      row('photo', 'Салат « Цезарь »', '15.00'),
+      row('pdf', "Domino's пицца", '20.00'),
+      row('pdf', 'Салат "Цезарь"', '15.00'),
+    ];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('a dish twice in one file and once in another gives two lines', () => {
+    const rows = [
+      row('photo', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+      row('photo', 'Сироп', '1.50', { category_raw: 'ЧАЙ' }),
+      row('pdf', 'Сироп', '1.50', { category_raw: 'КОФЕ' }),
+    ];
+
+    expect(collapseRepeatsAcrossFiles(rows)).toHaveLength(2);
+  });
+
+  test('copies come from the file with the most lines, whatever the order of the rows', () => {
+    // 'a-photo' would win the tie by id; the PDF wins by having more lines.
+    const photo = [row('a-photo', 'Эспрессо', '3.50'), row('a-photo', 'Американо', '4.00')];
+    const pdf = [
+      row('b-pdf', 'Эспрессо', '3.50', { category_raw: 'Кофе' }),
+      row('b-pdf', 'Американо', '4.00', { category_raw: 'Кофе' }),
+      row('b-pdf', 'Флэт уайт', '6.50', { category_raw: 'Кофе' }),
+    ];
+    const expected = pdf.map(r => r.id);
+
+    expect(collapseRepeatsAcrossFiles([...photo, ...pdf]).map(r => r.id).sort()).toEqual([...expected].sort());
+    expect(collapseRepeatsAcrossFiles([...pdf, ...photo]).map(r => r.id).sort()).toEqual([...expected].sort());
+  });
+
+  test('files of equal length: the copy is the same whatever the order of the rows', () => {
+    const a = row('media-a', 'Какао S', '5.00');
+    const b = row('media-b', 'какао s', '5.00');
+
+    expect(collapseRepeatsAcrossFiles([a, b]).map(r => r.id)).toEqual([a.id]);
+    expect(collapseRepeatsAcrossFiles([b, a]).map(r => r.id)).toEqual([a.id]);
   });
 
   test('the price is compared to the kopeck, not as text', () => {
@@ -551,10 +593,11 @@ describe('collapseRepeatsAcrossFiles — one menu uploaded as several files', ()
   });
 
   test('a clean copy takes the place of the first copy, in question, without moving it', () => {
-    const caution = row('photo', 'Раф', '8.00', { sanity_flag: { reason: 'low_confidence' } });
-    const other = row('photo', 'Латте', '7.00');
-    const clean = row('pdf', 'Раф', '8.00');
-    const cautionLatte = row('pdf', 'Латте', '7.00', { sanity_flag: { reason: 'low_confidence' } });
+    // 'a-photo' wins the tie between files; the clean copy must win over it.
+    const caution = row('a-photo', 'Раф', '8.00', { sanity_flag: { reason: 'low_confidence' } });
+    const other = row('a-photo', 'Латте', '7.00');
+    const clean = row('b-pdf', 'Раф', '8.00');
+    const cautionLatte = row('b-pdf', 'Латте', '7.00', { sanity_flag: { reason: 'low_confidence' } });
 
     const result = collapseRepeatsAcrossFiles([caution, other, clean, cautionLatte]);
 
