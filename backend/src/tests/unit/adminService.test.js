@@ -45,6 +45,7 @@ jest.unstable_mockModule('../../models/mediaModel.js', () => ({
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   findById: jest.fn(),
   updateById: jest.fn(),
+  getByEstablishmentId: jest.fn(),
   getFlaggedItems: jest.fn(),
   // Не функция, но экспорт: `getFlaggedMenuItems` сверяет по нему режим видимости.
   // Мок без него молча отдал бы undefined, и валидация упала бы на `.includes`
@@ -224,6 +225,8 @@ beforeEach(() => {
   OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
   OcrJobModel.enqueue.mockResolvedValue(undefined);
   EstablishmentService.validateCityCoordinates.mockReturnValue({ valid: true });
+  // Rows of the establishment for «Скрыть»/«Вернуть» on copies — none by default.
+  MenuItemModel.getByEstablishmentId.mockResolvedValue([]);
 });
 
 // ============================================================================
@@ -1411,6 +1414,60 @@ describe('hideMenuItem', () => {
     // Phase 1 decision: no partner notification on hide
     expect(NotificationService.notifyEstablishmentStatusChange).not.toHaveBeenCalled();
     expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+  });
+});
+
+describe('hideMenuItem — copies in the other files of one menu', () => {
+  const baseParams = {
+    reason: 'нет в продаже',
+    adminUserId: ADMIN_ID,
+    ipAddress: '127.0.0.1',
+    userAgent: 'TestAgent/1.0',
+  };
+  const PHOTO = uuidv4();
+  const PDF = uuidv4();
+  const copyRow = (id, mediaId, overrides = {}) => baseMenuItem({ id, media_id: mediaId, ...overrides });
+
+  test('a copy a re-read replaced meanwhile is hidden in its new row', async () => {
+    const primary = copyRow(MENU_ITEM_ID, PHOTO);
+    const oldCopy = copyRow(uuidv4(), PDF);
+    const newCopy = copyRow(uuidv4(), PDF);
+    MenuItemModel.findById.mockResolvedValue(primary);
+    // First look: the PDF's old row. It is gone when updated (null), and the
+    // second look finds the re-read's row of the same line.
+    MenuItemModel.getByEstablishmentId
+      .mockResolvedValueOnce([{ ...primary, is_hidden_by_admin: true }, oldCopy])
+      .mockResolvedValueOnce([{ ...primary, is_hidden_by_admin: true }, newCopy]);
+    MenuItemModel.updateById.mockImplementation(async (id, updates) => (
+      id === oldCopy.id ? null : { id, ...updates }
+    ));
+
+    await hideMenuItem(MENU_ITEM_ID, baseParams);
+
+    expect(MenuItemModel.updateById).toHaveBeenCalledWith(newCopy.id, {
+      is_hidden_by_admin: true,
+      hidden_reason: baseParams.reason,
+    });
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      entity_id: newCopy.id,
+      new_data: { is_hidden_by_admin: true, reason: baseParams.reason, copy_of: MENU_ITEM_ID },
+    }));
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ entity_id: oldCopy.id }),
+    );
+  });
+
+  test('no copy vanished — the rows are read once', async () => {
+    const primary = copyRow(MENU_ITEM_ID, PHOTO);
+    const copy = copyRow(uuidv4(), PDF);
+    MenuItemModel.findById.mockResolvedValue(primary);
+    MenuItemModel.getByEstablishmentId.mockResolvedValue([{ ...primary, is_hidden_by_admin: true }, copy]);
+    MenuItemModel.updateById.mockImplementation(async (id, updates) => ({ id, ...updates }));
+
+    await hideMenuItem(MENU_ITEM_ID, baseParams);
+
+    expect(MenuItemModel.getByEstablishmentId).toHaveBeenCalledTimes(1);
+    expect(MenuItemModel.updateById).toHaveBeenCalledWith(copy.id, expect.anything());
   });
 });
 

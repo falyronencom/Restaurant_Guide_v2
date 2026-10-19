@@ -30,7 +30,7 @@ import {
   toPublicEstablishmentMapMarker,
 } from '../projections/establishmentProjections.js';
 import { toPublicReview } from '../projections/reviewProjections.js';
-import { collapseRepeatsAcrossFiles, toPublicMenuItem } from '../projections/menuItemProjections.js';
+import { collapseMenuRepeats, toPublicMenuItem } from '../projections/menuItemProjections.js';
 import {
   CITY_SLUG_MAP,
   CATEGORY_SLUG_MAP,
@@ -253,7 +253,7 @@ const assembleEstablishmentDetail = async (row) => {
  *   - Calls MenuItemModel.getByEstablishmentId with includeHidden=false
  *     (admin-hidden items never reach public response)
  *   - Collapses a menu uploaded as several files (photo + PDF) so the guest
- *     sees each dish once (collapseRepeatsAcrossFiles); the rows themselves
+ *     sees each dish once (collapseMenuRepeats); the rows themselves
  *     stay per file for the partner's cabinet and the moderator's panel
  *   - Returns empty array if establishment has no parsed menu yet
  *
@@ -273,7 +273,7 @@ export const getPublicMenuItems = async (slug) => {
   });
 
   return {
-    menu_items: collapseRepeatsAcrossFiles(items).map(toPublicMenuItem),
+    menu_items: collapseMenuRepeats(items).map(toPublicMenuItem),
   };
 };
 

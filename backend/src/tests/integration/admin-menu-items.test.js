@@ -223,6 +223,153 @@ describe('POST /api/v1/admin/menu-items/:id/unhide', () => {
   });
 });
 
+describe('hide / unhide — one menu uploaded as several files', () => {
+  // The guest sees one line for a dish both files hold (public menu-items):
+  // hiding one copy would leave the dish on the card from the other file.
+  // «Скрыть» and «Вернуть» reach the copies (word of the Coordinator 2026-10-19).
+  const insertMedia = async (estId) => (await query(
+    `INSERT INTO establishment_media
+       (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+     VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png')
+     RETURNING id`,
+    [estId],
+  )).rows[0].id;
+  const insertItem = async (estId, mediaId, itemName, priceByn, { hiddenReason = null } = {}) => (await query(
+    `INSERT INTO menu_items
+       (establishment_id, media_id, item_name, price_byn, is_hidden_by_admin, hidden_reason, position)
+     VALUES ($1, $2, $3, $4, $5, $6, 0)
+     RETURNING id`,
+    [estId, mediaId, itemName, priceByn, hiddenReason !== null, hiddenReason],
+  )).rows[0].id;
+  const rowOf = async (id) => (await query('SELECT * FROM menu_items WHERE id = $1', [id])).rows[0];
+
+  test('hiding one copy hides its copies; the guest no longer sees the dish', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const photoLatte = await insertItem(establishment.id, photoId, 'Латте', 7);
+    await insertItem(establishment.id, photoId, 'Капучино', 6);
+    const pdfLatte = await insertItem(establishment.id, pdfId, 'ЛАТТЕ', 7);
+    const pdfCappuccino = await insertItem(establishment.id, pdfId, 'Капучино', 6);
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${photoLatte}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    const copy = await rowOf(pdfLatte);
+    expect(copy.is_hidden_by_admin).toBe(true);
+    expect(copy.hidden_reason).toBe('нет в продаже');
+    expect((await rowOf(pdfCappuccino)).is_hidden_by_admin).toBe(false);
+
+    const audit = await query(
+      `SELECT entity_id FROM audit_log WHERE action = 'hide_menu_item' AND entity_id = ANY($1::uuid[])`,
+      [[photoLatte, pdfLatte]],
+    );
+    expect(audit.rows.map(r => r.entity_id).sort()).toEqual([photoLatte, pdfLatte].sort());
+
+    const { slug } = (await query('SELECT slug FROM establishments WHERE id = $1', [establishment.id])).rows[0];
+    const guest = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${slug}/menu-items`)
+      .expect(200);
+    expect(guest.body.data.menu_items.map(i => i.item_name)).toEqual(['Капучино']);
+  });
+
+  test('unhiding brings back the copies hidden with it, not a copy hidden for another reason', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const boardId = await insertMedia(establishment.id);
+    const photoLatte = await insertItem(establishment.id, photoId, 'Латте', 7, { hiddenReason: 'нет в продаже' });
+    const pdfLatte = await insertItem(establishment.id, pdfId, 'Латте', 7, { hiddenReason: 'нет в продаже' });
+    const boardLatte = await insertItem(establishment.id, boardId, 'Латте', 7, { hiddenReason: 'другая причина' });
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${photoLatte}/unhide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect((await rowOf(pdfLatte)).is_hidden_by_admin).toBe(false);
+    expect((await rowOf(pdfLatte)).hidden_reason).toBeNull();
+    expect((await rowOf(boardLatte)).is_hidden_by_admin).toBe(true);
+  });
+
+  test('a dish of another menu (breakfast vs lunch) stays as it was', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const breakfastId = await insertMedia(establishment.id);
+    const lunchId = await insertMedia(establishment.id);
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
+    for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
+      await insertItem(establishment.id, breakfastId, name, price);
+    }
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6]]) {
+      await insertItem(establishment.id, lunchId, name, price);
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+  });
+
+  test('copies are the guest\'s: hidden rows do not make two menus copies of one', async () => {
+    // Without the hidden rows the files share one line of four — the guest sees
+    // two menus and «Морс» in both; hiding one leaves the other.
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const breakfastId = await insertMedia(establishment.id);
+    const lunchId = await insertMedia(establishment.id);
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
+    for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
+      await insertItem(establishment.id, breakfastId, name, price);
+    }
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
+      await insertItem(establishment.id, breakfastId, name, price, { hiddenReason: 'не завтрак' });
+    }
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
+      await insertItem(establishment.id, lunchId, name, price);
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+  });
+
+  test('a small board sharing the dish with both menus does not join them', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const breakfastId = await insertMedia(establishment.id);
+    const lunchId = await insertMedia(establishment.id);
+    const boardId = await insertMedia(establishment.id);
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 4);
+    for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
+      await insertItem(establishment.id, breakfastId, name, price);
+    }
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
+      await insertItem(establishment.id, lunchId, name, price);
+    }
+    await insertItem(establishment.id, boardId, 'Морс', 4);
+    await insertItem(establishment.id, boardId, 'Лимонад', 5);
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+  });
+});
+
 describe('POST /api/v1/admin/menu-items/:id/dismiss-flag', () => {
   test('clears sanity_flag without changing hide state', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');

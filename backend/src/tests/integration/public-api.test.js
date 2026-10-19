@@ -1059,6 +1059,40 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
     expect(lines(items)).toEqual(['Мохито — 12']);
   });
 
+  test('two different menus (breakfast and lunch) that share a dish keep it in both sections', async () => {
+    // The files share one line of four — they are two menus, not two copies of one.
+    await insertItems(photoId, [
+      ['Каша овсяная', 5, 'ЗАВТРАК', 0],
+      ['Омлет', 7, 'ЗАВТРАК', 1],
+      ['Сырники', 8, 'ЗАВТРАК', 2],
+      ['Дополнительное блюдо', 3, 'ЗАВТРАК', 3],
+    ]);
+    await insertItems(pdfId, [
+      ['Борщ', 9, 'ОБЕД', 0],
+      ['Котлета', 12, 'ОБЕД', 1],
+      ['Салат', 6, 'ОБЕД', 2],
+      ['Дополнительное блюдо', 3, 'ОБЕД', 3],
+    ]);
+
+    const items = await fetchMenu();
+
+    expect(items).toHaveLength(8);
+    expect(items.filter(i => i.item_name === 'Дополнительное блюдо').map(i => i.category_raw).sort())
+      .toEqual(['ЗАВТРАК', 'ОБЕД']);
+  });
+
+  test('a line read twice in one file, in the same section, is shown once', async () => {
+    await insertItems(pdfId, [
+      ['Фин де Бретань №3', 4, 'УСТРИЧНЫЙ БАР', 0],
+      ['Мидии', 10, 'УСТРИЧНЫЙ БАР', 1],
+      ['Фин де Бретань №3', 4, 'Устричный бар', 2],
+    ]);
+
+    const items = await fetchMenu();
+
+    expect(lines(items)).toEqual(['Фин де Бретань №3 — 4', 'Мидии — 10']);
+  });
+
   test('the partner cabinet still lists every row of both files', async () => {
     const menu = [['эспрессо S', 3.5, 'КОФЕ', 0], ['американо S', 4, 'КОФЕ', 1]];
     await insertItems(photoId, menu);

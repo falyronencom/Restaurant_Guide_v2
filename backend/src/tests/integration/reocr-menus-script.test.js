@@ -232,14 +232,17 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     const base = await yesterday();
     const files = {};
     const ids = {};
-    for (const [label, flag] of [
-      ['панель: «Снять флаг»', DELTA_FLAG],
-      ['скрипт снятия флагов', DELTA_FLAG],
-      ['панель: «Скрыть»', null],
-      ['панель: «Скрыть», затем «Показать»', null],
+    // A dish of its own in each file: one dish in two files of a venue is one
+    // menu's line, and «Скрыть» reaches its copy (adminService,
+    // applyToMenuItemCopies) — the four writers here are about one file each.
+    for (const [label, flag, dish] of [
+      ['панель: «Снять флаг»', DELTA_FLAG, 'Суп'],
+      ['скрипт снятия флагов', DELTA_FLAG, 'Борщ'],
+      ['панель: «Скрыть»', null, 'Солянка'],
+      ['панель: «Скрыть», затем «Показать»', null, 'Уха'],
     ]) {
       files[label] = await seedFile(cafe);
-      ids[label] = await seedItem(files[label], 'Суп', { flag, base });
+      ids[label] = await seedItem(files[label], dish, { flag, base });
     }
     const actor = { adminUserId: adminId, ipAddress: '127.0.0.1', userAgent: 'jest' };
 
@@ -455,8 +458,12 @@ describe('страж принципа: флаг живёт только на н�
       'hideMenuItem: только is_hidden_by_admin и hidden_reason — содержимое не меняется'],
     ['src/services/adminService.js · вызов updateById', 'unhideMenuItem: то же'],
     ['src/services/adminService.js · вызов updateById', 'dismissMenuItemFlag: sanity_flag = null'],
+    ['src/services/adminService.js · вызов updateById',
+      'applyToMenuItemCopies: «Скрыть»/«Вернуть» на копиях — только is_hidden_by_admin и hidden_reason'],
     ['src/services/partnerMenuItemService.js · вызов updateById',
       'updateMenuItem: правка партнёра обнуляет флаг всегда (последний тест)'],
+    ['src/services/partnerMenuItemService.js · вызов updateById',
+      'updateMenuItem: та же правка на копиях строки — те же поля, флаг обнуляется'],
   ];
 
   test('якорь: сканер узнаёт каждую форму записи и не принимает за неё снятие и чтение', () => {

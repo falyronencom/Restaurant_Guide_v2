@@ -15,6 +15,7 @@ import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { findCopies } from '../projections/menuItemProjections.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
@@ -109,7 +110,22 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   // Partner edit implies they vouch for the values — clear sanity_flag.
   filteredUpdates.sanity_flag = null;
 
+  // The guest sees one line for a dish the menu's files share
+  // (collapseMenuRepeats); an edit of one copy reaches the others, or the guest
+  // would see the old price next to the new one. The copies are found before
+  // the edit — by the values the line has now — among the rows the guest sees:
+  // a copy the moderator hid is the moderator's and stays as it is, and the
+  // guest's grouping knows no hidden rows.
+  const visibleRows = await MenuItemModel.getByEstablishmentId(
+    existing.establishment_id,
+    { includeHidden: false },
+  );
+  const copies = findCopies(menuItemId, visibleRows);
+
   const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
+  for (const copy of copies) {
+    await MenuItemModel.updateById(copy.id, filteredUpdates);
+  }
 
   // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
   // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
@@ -122,6 +138,7 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     menuItemId,
     partnerId,
     fields: Object.keys(filteredUpdates),
+    copies: copies.map(copy => copy.id),
   });
 
   return updated;
