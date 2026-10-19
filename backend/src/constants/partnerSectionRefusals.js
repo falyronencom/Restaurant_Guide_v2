@@ -85,6 +85,15 @@ export const PROMOTION_REFUSALS = Object.freeze({
   imageTooLarge: 'Картинка больше 10 МБ. Выберите фото поменьше.',
   establishmentRequired: 'Не выбрано заведение.',
   titleRequired: 'Укажите название акции.',
+  // The fields the controller checks before the service, so before the cloud
+  // and the database (promotionController.js, from 18.10.2026; the wording
+  // approved by the Coordinator 17.10.2026). Until then a title over 255
+  // characters, a date the calendar lacks or a position past the column came
+  // back as 500, and a description sent as an array was stored as text.
+  titleTooLong: 'Название акции — не длиннее 255 знаков',
+  dateInvalid: 'Дата начала или окончания акции указана неверно',
+  positionInvalid: 'Позиция акции — целое число от 0 до 1 000 000',
+  notText: 'Описание и условия акции должны быть текстом',
   dailyUploadLimit: DAILY_UPLOAD_LIMIT,
 });
 
