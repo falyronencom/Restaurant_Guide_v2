@@ -381,7 +381,8 @@ class PartnerRegistrationProvider with ChangeNotifier {
   /// Get count of selected cuisine types
   int get selectedCuisineCount => _data.cuisineTypes.length;
 
-  /// Шаг кухни можно пройти без выбора: все категории — бар или клуб.
+  /// Шаг кухни можно пройти без выбора: все категории — из набора
+  /// [CategoryOptions.cuisineOptionalIds].
   bool get isCuisineOptional => !_data.cuisineRequired;
 
   /// Шаг кухни выполнен: кухня выбрана или не нужна.
