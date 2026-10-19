@@ -7,9 +7,17 @@
  * `info`. The pre-fix redactor only inspected `info.message`-as-object and
  * `info.meta` (paths that never occur here), so `[REDACTED]` never fired.
  * These tests pin the formatter to the real call shape.
+ *
+ * The last describe reads the line the app's own logger prints, in both of
+ * its chains: the formatter is only as good as its place in the chain.
  */
 
+import { spawnSync } from 'child_process';
+import { dirname, resolve } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { redactSensitiveData } from '../../utils/logger.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const transform = (info) => redactSensitiveData().transform(info);
 
@@ -99,5 +107,28 @@ describe('redactSensitiveData (OSB-I1)', () => {
     expect(out.correlationId).toBe('req-1');
     expect(out.count).toBe(3);
     expect(out.nothing).toBeNull();
+  });
+});
+
+// A logger built without the formatter, or with it after json() (the line is
+// written by then), prints the password while every test above stays green.
+// The real logger in a child process, with the environment that picks its chain.
+describe('the app logger (utils/logger.js) — what it actually prints', () => {
+  const loggerUrl = pathToFileURL(resolve(__dirname, '../../utils/logger.js')).href;
+
+  test.each(['production', 'development'])('%s chain: the password and the token come out [REDACTED]', (nodeEnv) => {
+    const script = `const { default: logger } = await import(${JSON.stringify(loggerUrl)});\n`
+      + "logger.error('login failed', { password: 'hunter2', token: 'abc123' });";
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      env: { ...process.env, NODE_ENV: nodeEnv, LOG_LEVEL: 'info' },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    const printed = `${run.stdout}${run.stderr}`;
+
+    expect(printed).toContain('login failed'); // the line was written at all
+    expect(printed.match(/\[REDACTED\]/g)).toHaveLength(2); // the password and the token
+    expect(printed).not.toContain('hunter2');
+    expect(printed).not.toContain('abc123');
   });
 });

@@ -11,7 +11,8 @@
  * tested with a warm cache. A change made in the database by hand applies
  * within the cache bound — those cases are tested from a cold cache (the
  * account has not been seen since its token was issued, the usual situation
- * for a token picked up hours later).
+ * for a token picked up hours later), and once with a warm cache, waiting out
+ * the bound itself.
  *
  * The token is always the one issued before the change, presented exactly as
  * clients do (Authorization: Bearer). What the clients do with the 401
@@ -126,4 +127,22 @@ describe('role changed — the role in the database wins over the role in the to
       .set('Authorization', bearer(account))
       .expect(200);
   });
+});
+
+describe('a change made by hand applies within the cache bound', () => {
+  // The bound is the live cache's, not only a constant's: a warm answer is kept
+  // for at most ACCOUNT_STATUS_TTL_MS (10 s) — what scripts/set-user-active.js
+  // tells the operator (unit/accountStatus.test.js pins the constant). The
+  // cache keeps its own clock, so this waits in real time.
+  test('a switched-off account with a warm cache is refused once 10 s have passed', async () => {
+    const account = await newAccount('user');
+    await touch(account).expect(200);
+    await query('UPDATE users SET is_active = false WHERE id = $1', [account.user.id]);
+
+    await new Promise((resolve) => setTimeout(resolve, 10200));
+
+    const res = await touch(account);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('ACCOUNT_INACTIVE');
+  }, 20000);
 });

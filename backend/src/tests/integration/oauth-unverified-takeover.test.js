@@ -211,16 +211,21 @@ describe('запись с неподтверждённым e-mail переход
     expect(inDb.phone_verified).toBe(false);
   });
 
-  test('партнёрские карточки не наследуются молча: активная приостановлена с причиной, ожидающая — как была', async () => {
+  test('партнёрские карточки не наследуются молча: каждая активная приостановлена с причиной, ожидающая — как была', async () => {
     const { user, activeCard, pendingCard } = await registeredWithoutProof({ partner: true });
+    // Вторая активная: приостанавливаются все активные карточки записи, а не
+    // первая найденная — с одной карточкой этого не различить.
+    const secondActive = await createTestEstablishment(user.id);
 
     await signInWith('yandex').expect(200);
 
-    const active = await cardState(activeCard.id);
-    expect(active.status).toBe('suspended');
-    expect(active.notes.suspend_reason).toBe(TAKEOVER_REASON);
-    expect(active.notes.suspended_from).toBe('active');
-    expect(typeof active.notes.suspended_at).toBe('string');
+    for (const card of [activeCard, secondActive]) {
+      const active = await cardState(card.id);
+      expect(active.status).toBe('suspended');
+      expect(active.notes.suspend_reason).toBe(TAKEOVER_REASON);
+      expect(active.notes.suspended_from).toBe('active');
+      expect(typeof active.notes.suspended_at).toBe('string');
+    }
 
     expect(await cardState(pendingCard.id)).toEqual({ status: 'pending', notes: null });
 
@@ -229,22 +234,25 @@ describe('запись с неподтверждённым e-mail переход
     expect(inDb.role).toBe('partner');
     expect(inDb.id).toBe(user.id);
 
-    // Журнал: приостановка записана как действие без модератора, с причиной.
-    const { rows: audit } = await query(
-      "SELECT user_id, new_data FROM audit_log WHERE entity_id = $1 AND action = 'suspend'",
-      [activeCard.id],
-    );
-    expect(audit).toHaveLength(1);
-    expect(audit[0].user_id).toBeNull();
-    expect(audit[0].new_data.reason).toBe(TAKEOVER_REASON);
-    expect(audit[0].new_data.account_takeover).toBe('yandex');
+    // Журнал: приостановка каждой записана как действие без модератора, с причиной.
+    for (const card of [activeCard, secondActive]) {
+      const { rows: audit } = await query(
+        "SELECT user_id, new_data FROM audit_log WHERE entity_id = $1 AND action = 'suspend'",
+        [card.id],
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0].user_id).toBeNull();
+      expect(audit[0].new_data.reason).toBe(TAKEOVER_REASON);
+      expect(audit[0].new_data.account_takeover).toBe('yandex');
+    }
 
-    // Новый держатель записи узнаёт о приостановке.
+    // Новый держатель записи узнаёт о приостановке каждой — и только о них.
     const { rows: notices } = await query(
-      "SELECT 1 FROM notifications WHERE user_id = $1 AND establishment_id = $2 AND type = 'establishment_suspended'",
-      [user.id, activeCard.id],
+      "SELECT establishment_id FROM notifications WHERE user_id = $1 AND type = 'establishment_suspended'",
+      [user.id],
     );
-    expect(notices).toHaveLength(1);
+    expect(notices.map((row) => row.establishment_id).sort())
+      .toEqual([activeCard.id, secondActive.id].sort());
   });
 
   test('повторный вход после перехода — обычный вход в ту же запись', async () => {
