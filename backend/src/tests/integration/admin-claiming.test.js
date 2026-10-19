@@ -222,6 +222,37 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
     expect(entry.new_data.partner_id).toBe(targetUser.user.id);
   });
 
+  test('the legal record goes with the card: the legal entity stays, the previous holder\'s contacts leave', async () => {
+    // Deleting the previous holder's account wipes the contacts in the
+    // records under their id (accountDeletionService). What the new holder
+    // writes after the claim must be under the new holder's (Phase 3.5 lens
+    // review, account deletion, 18.10.2026).
+    const { partner: previous, establishment } = await createPartnerWithEstablishment('active');
+    await query(
+      `INSERT INTO partner_documents (partner_id, establishment_id, document_type, document_url,
+                                      company_name, tax_id, contact_person, contact_email)
+       VALUES ($1, $2, 'registration_certificate', '', 'ООО «Вкус»', '191234567', 'Иван Прежний', 'ivan@test.com')`,
+      [previous.user.id, establishment.id],
+    );
+    const targetUser = await createRegularUser();
+
+    await request(app)
+      .post(`/api/v1/admin/establishments/${establishment.id}/claim`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ user_id: targetUser.user.id })
+      .expect(200);
+
+    const docs = await query(
+      `SELECT partner_id, company_name, tax_id, contact_person, contact_email
+       FROM partner_documents WHERE establishment_id = $1`,
+      [establishment.id],
+    );
+    expect(docs.rows).toEqual([{
+      partner_id: targetUser.user.id, company_name: 'ООО «Вкус»', tax_id: '191234567',
+      contact_person: null, contact_email: null,
+    }]);
+  });
+
   test('should rollback partner_id if transaction fails', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const oldPartnerId = establishment.partner_id;

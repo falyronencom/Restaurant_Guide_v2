@@ -15,6 +15,7 @@
 
 import express from 'express';
 import * as authController from '../../controllers/authController.js';
+import * as accountDeletionController from '../../controllers/accountDeletionController.js';
 import {
   validateRegister,
   validateLogin,
@@ -319,6 +320,43 @@ router.post(
   }),
   validateResetPassword,
   authController.resetPassword,
+);
+
+/**
+ * GET /api/v1/auth/account/deletion
+ *
+ * Protected endpoint. Whether the caller's account may be deleted now, and if
+ * not — why, as the person reads it (a holder of cards: «напишите в
+ * поддержку»). The app asks before it shows the confirmation.
+ */
+router.get(
+  '/account/deletion',
+  authenticate,
+  accountDeletionController.getDeletionCheck,
+);
+
+/**
+ * DELETE /api/v1/auth/account
+ *
+ * Protected endpoint. Deletes the caller's account by anonymisation
+ * (services/accountDeletionService.js), body { confirmation: 'УДАЛИТЬ' }.
+ * Every session of the account ends; the client signs out locally.
+ *
+ * Middleware chain:
+ *   1. Authentication: verify access token
+ *   2. Rate limiter: 10 per hour per account — a deletion is made once; the
+ *      limit only caps a client stuck in a retry loop
+ *   3. Controller: check the word, delete
+ */
+router.delete(
+  '/account',
+  authenticate,
+  createRateLimiter({
+    limit: 10,
+    windowSeconds: 3600,
+    keyPrefix: 'account-delete',
+  }),
+  accountDeletionController.deleteAccount,
 );
 
 export default router;

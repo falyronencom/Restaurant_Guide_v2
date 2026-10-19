@@ -11,6 +11,7 @@
  */
 
 import * as ReviewModel from '../models/reviewModel.js';
+import { publicAuthorId } from '../projections/reviewProjections.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
@@ -339,7 +340,7 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
     created_at: review.created_at,
     updated_at: review.updated_at,
     author: {
-      id: review.user_id,
+      id: publicAuthorId(review),
       name: review.author_name,
       avatar_url: review.author_avatar,
     },
@@ -374,9 +375,11 @@ export const getUserReviews = async (userId, options = {}) => {
     limit = 10,
   } = options;
 
-  // Verify user exists
+  // Verify user exists. A switched-off account — deleted or blocked — has no
+  // public list: by its id it would gather every review of a deleted person
+  // under one address (reviewProjections.publicAuthorId).
   const user = await ReviewModel.getUserById(userId);
-  if (!user) {
+  if (!user || user.is_active === false) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 

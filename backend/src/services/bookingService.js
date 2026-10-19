@@ -292,6 +292,11 @@ export const createBooking = async (userId, data, { now = null } = {}) => {
     confirmationTimeoutHours: settings.confirmation_timeout_hours,
     now,
   });
+  // The account was switched off while this request was on its way — a
+  // deletion or a block (BookingModel.create reads it under a lock).
+  if (!booking) {
+    throw new AppError('Учётка отключена — забронировать нельзя', 403, 'USER_INACTIVE');
+  }
 
   // 11. Track analytics (non-blocking)
   PartnerAnalyticsModel.trackBookingRequest(establishmentId).catch(() => {});

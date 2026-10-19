@@ -12,6 +12,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
 import 'package:restaurant_guide_mobile/screens/notifications/notification_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/partner/promotion_hub_screen.dart';
+import 'package:restaurant_guide_mobile/screens/profile/my_data_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/user_bookings_screen.dart';
 import 'package:restaurant_guide_mobile/screens/profile/notification_preferences_screen.dart';
 import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
@@ -712,6 +713,12 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
 
                           const SizedBox(height: 24),
 
+                          // «Мои данные» — что о человеке знает приложение,
+                          // и «Удалить учётку» (бриф В1, 18.10.2026)
+                          _buildMyDataEntry(),
+
+                          const SizedBox(height: 12),
+
                           // Bookings section
                           _buildBookingsEntry(),
 
@@ -964,6 +971,44 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
           fontSize: radius * 0.7,
           color: _backgroundColor,
           fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+
+  /// Entry to «Мои данные» — styled as the bookings entry below it.
+  Widget _buildMyDataEntry() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: GestureDetector(
+        key: const Key('profile-my-data-entry'),
+        onTap: () {
+          Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(builder: (context) => const MyDataScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.badge_outlined, color: AppTheme.primaryOrange),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Мои данные',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: AppTheme.gray400),
+            ],
+          ),
         ),
       ),
     );

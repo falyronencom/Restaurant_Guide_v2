@@ -30,6 +30,22 @@ void main() {
       expect(r.userName, 'Пётр');
     });
 
+    test('учётка автора удалена: id автора null — «Гость», пустой идентификатор', () {
+      // Сервер не отдаёт id автора отключённой учётки — удалённой или
+      // заблокированной (В1, 19.10.2026): по нему связались бы все отзывы
+      // удалённого человека. Приложение, которое уже стоит у людей, читает
+      // такой отзыв, а «мой ли он» ему не отвечает.
+      final row = reviewRow(authorName: 'Гость');
+      final author = row['author'] as Map<String, dynamic>;
+      author['id'] = null;
+      author['avatar_url'] = null;
+
+      final r = Review.fromJson(row);
+      expect(r.userName, 'Гость');
+      expect(r.userId, '');
+      expect(r.userAvatar, isNull);
+    });
+
     test('автор без имени — «Аноним», а не пустая строка', () {
       final row = reviewRow();
       (row['author'] as Map<String, dynamic>).remove('name');

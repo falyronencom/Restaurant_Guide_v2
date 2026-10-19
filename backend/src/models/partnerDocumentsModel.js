@@ -116,6 +116,30 @@ export const findByEstablishmentId = async (establishmentId) => {
 };
 
 /**
+ * Pass a card's legal record to its new holder — in the claim's transaction
+ * (adminService.claimEstablishment). The legal entity's name and tax number
+ * stay: they describe the establishment. The contact person and the e-mail
+ * were the previous holder's and leave with them; the new holder writes their
+ * own. From then on the record is under the new holder's id, so deleting the
+ * previous holder's account (accountDeletionService) wipes nothing the new
+ * holder wrote (Phase 3.5 lens review, account deletion, 18.10.2026).
+ *
+ * @param {Object} client - pg client inside the claim's transaction
+ * @param {string} establishmentId
+ * @param {string} newPartnerId
+ * @returns {Promise<number>} records passed
+ */
+export const passToHolder = async (client, establishmentId, newPartnerId) => {
+  const result = await client.query(
+    `UPDATE partner_documents
+        SET partner_id = $2, contact_person = NULL, contact_email = NULL
+      WHERE establishment_id = $1 AND partner_id <> $2`,
+    [establishmentId, newPartnerId],
+  );
+  return result.rowCount;
+};
+
+/**
  * Update partner document by establishment ID
  *
  * Updates only the provided fields. Used for syncing legal info on establishment edits.

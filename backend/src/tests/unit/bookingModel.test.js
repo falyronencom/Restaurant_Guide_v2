@@ -16,9 +16,16 @@ import { v4 as uuidv4 } from 'uuid';
 // ============================================================================
 
 const mockQuery = jest.fn();
+// create() runs on a client of its own: BEGIN, the account under a share
+// lock, the INSERT, COMMIT. resetMocks clears every implementation before each
+// test, so the client is handed out again by answer() in the test itself.
+const mockClientQuery = jest.fn();
+const mockRelease = jest.fn();
+const mockGetClient = jest.fn();
 
 jest.unstable_mockModule('../../config/database.js', () => ({
   default: { query: mockQuery },
+  getClient: mockGetClient,
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
@@ -62,8 +69,22 @@ const flat = (sql) => sql.replace(/\s+/g, ' ').trim();
 // ============================================================================
 
 describe('create', () => {
-  it('inserts a booking and returns the row', async () => {
-    mockQuery.mockResolvedValue({ rows: [mockBookingRow] });
+  /** The client answers by statement: the account active or not, the INSERT a row. */
+  const answer = ({ active = true, insert = { rows: [mockBookingRow] } } = {}) => {
+    mockGetClient.mockResolvedValue({ query: mockClientQuery, release: mockRelease });
+    mockClientQuery.mockImplementation(async (sql) => {
+      if (String(sql).startsWith('SELECT is_active')) return { rows: [{ is_active: active }] };
+      if (String(sql).includes('INSERT INTO bookings')) {
+        if (insert instanceof Error) throw insert;
+        return insert;
+      }
+      return { rows: [] };
+    });
+  };
+  const statements = () => mockClientQuery.mock.calls.map(([sql]) => flat(String(sql)));
+
+  it('inserts a booking and returns the row — after reading the account under a share lock, in one transaction', async () => {
+    answer();
 
     const result = await Model.create({
       establishmentId: EST_ID,
@@ -77,8 +98,19 @@ describe('create', () => {
     });
 
     expect(result).toEqual(mockBookingRow);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockQuery.mock.calls[0];
+    // An account deletion or a block holds the account row FOR UPDATE: the
+    // share lock waits for it, and the INSERT comes only after the account
+    // is read again (account deletion, Phase 3.5, R6).
+    expect(statements()).toEqual([
+      'BEGIN',
+      'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+      expect.stringContaining('INSERT INTO bookings'),
+      'COMMIT',
+    ]);
+    expect(mockClientQuery.mock.calls[1][1]).toEqual([USER_ID]);
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+    expect(mockQuery).not.toHaveBeenCalled();
+    const [sql, params] = mockClientQuery.mock.calls[2];
     expect(sql).toContain('INSERT INTO bookings');
     expect(sql).toContain('RETURNING *');
     // expires_at comes from the database clock plus the timeout; no JS Date is
@@ -88,8 +120,26 @@ describe('create', () => {
     expect(params.some((value) => value instanceof Date)).toBe(false);
   });
 
-  it('propagates DB errors', async () => {
-    mockQuery.mockRejectedValue(new Error('DB error'));
+  it('the account was switched off meanwhile — nothing inserted, null', async () => {
+    answer({ active: false });
+
+    const result = await Model.create({
+      establishmentId: EST_ID,
+      userId: USER_ID,
+      bookingDate: '2026-04-10',
+      bookingTime: '12:00',
+      guestCount: 2,
+      contactPhone: '+375291234567',
+      confirmationTimeoutHours: 4,
+    });
+
+    expect(result).toBeNull();
+    expect(statements()).toEqual(['BEGIN', 'SELECT is_active FROM users WHERE id = $1 FOR SHARE', 'ROLLBACK']);
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates DB errors — rolled back, the client released', async () => {
+    answer({ insert: new Error('DB error') });
 
     await expect(Model.create({
       establishmentId: EST_ID,
@@ -100,6 +150,9 @@ describe('create', () => {
       contactPhone: '+375291234567',
       confirmationTimeoutHours: 4,
     })).rejects.toThrow('DB error');
+    expect(statements()).toContain('ROLLBACK');
+    expect(statements()).not.toContain('COMMIT');
+    expect(mockRelease).toHaveBeenCalledTimes(1);
   });
 });
 

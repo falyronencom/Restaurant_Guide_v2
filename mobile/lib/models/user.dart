@@ -9,6 +9,11 @@ class User {
   final String? name;
   final String? avatarUrl;
   final String role;
+
+  /// Как человек входит: 'email', 'phone', 'google', 'yandex' — для «Мои
+  /// данные». Сервер шлёт его в каждом ответе с профилем (`authMethod`); у
+  /// профиля, сохранённого до этого поля, — `null`.
+  final String? authMethod;
   final bool isVerified;
   final bool emailVerified;
   final bool phoneVerified;
@@ -22,6 +27,7 @@ class User {
     this.name,
     this.avatarUrl,
     this.role = 'user',
+    this.authMethod,
     this.isVerified = false,
     this.emailVerified = false,
     this.phoneVerified = false,
@@ -44,6 +50,8 @@ class User {
       name: json['name'] as String?,
       avatarUrl: json['avatar_url'] as String? ?? json['avatarUrl'] as String?,
       role: json['role'] as String? ?? 'user',
+      authMethod:
+          json['auth_method'] as String? ?? json['authMethod'] as String?,
       // is_verified is a derived/legacy flag; if backend sent it, honor it,
       // otherwise treat user as "verified" if either channel is verified
       isVerified: json['is_verified'] as bool? ??
@@ -73,6 +81,7 @@ class User {
       if (name != null) 'name': name,
       if (avatarUrl != null) 'avatar_url': avatarUrl,
       'role': role,
+      if (authMethod != null) 'auth_method': authMethod,
       'is_verified': isVerified,
       'email_verified': emailVerified,
       'phone_verified': phoneVerified,
@@ -89,6 +98,7 @@ class User {
     String? name,
     String? avatarUrl,
     String? role,
+    String? authMethod,
     bool? isVerified,
     bool? emailVerified,
     bool? phoneVerified,
@@ -102,6 +112,7 @@ class User {
       name: name ?? this.name,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       role: role ?? this.role,
+      authMethod: authMethod ?? this.authMethod,
       isVerified: isVerified ?? this.isVerified,
       emailVerified: emailVerified ?? this.emailVerified,
       phoneVerified: phoneVerified ?? this.phoneVerified,
