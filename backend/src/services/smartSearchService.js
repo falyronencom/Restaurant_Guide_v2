@@ -1032,10 +1032,22 @@ function paginationOf(total, page, limit) {
  * экрана отсекли все совпавшие — обычная выдача. `ids` — совпавшие, которых
  * показывать; без режима не читаются.
  *
- * @returns {Promise<{ establishments: object[], pagination: object, nameOnly: boolean, shown: number }>}
+ * `readingIsNoise` — фильтры экрана отсекли все совпавшие в режиме 'only':
+ * выдача под ними собрана по прочтению, которое этот режим считает шумом от
+ * слов названия («urban dzen cafe» → тип «Кафе»). Совпадением она не
+ * считается — «ничего не найдено» и запасная выдача (сверка находок
+ * тестировщика с сайтом, 18.10, Ш3). В режимах 'first' и 'rescue' прочтение
+ * — часть ответа (блюдо, удобство, общее слово), признак не ставится.
+ *
+ * @returns {Promise<{ establishments: object[], pagination: object, nameOnly: boolean, shown: number, readingIsNoise: boolean }>}
  */
 async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page, limit, offset }) {
-  const plain = async () => ({ ...(await runSearch({ ...filters, limit, offset, page })), nameOnly: false, shown: 0 });
+  const plain = async () => ({
+    ...(await runSearch({ ...filters, limit, offset, page })),
+    nameOnly: false,
+    shown: 0,
+    readingIsNoise: false,
+  });
   if (!mode) return plain();
 
   let main = null;
@@ -1051,7 +1063,10 @@ async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page
     page: 1,
   });
   const hits = named.establishments;
-  if (hits.length === 0) return main ?? plain();
+  if (hits.length === 0) {
+    if (main) return main;
+    return { ...(await plain()), readingIsNoise: mode === 'only' };
+  }
 
   if (mode !== 'first') {
     return {
@@ -1059,6 +1074,7 @@ async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page
       pagination: paginationOf(hits.length, page, limit),
       nameOnly: true,
       shown: hits.length,
+      readingIsNoise: false,
     };
   }
 
@@ -1075,6 +1091,7 @@ async function searchWithNameMatches({ mode, ids, filters, explicitFilters, page
     pagination: paginationOf(hits.length + rest.pagination.total, page, limit),
     nameOnly: false,
     shown: hits.length,
+    readingIsNoise: false,
   };
 }
 
@@ -1141,7 +1158,7 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
 
   const resultPagination = searchResult.pagination || { total: 0, page, limit, totalPages: 0 };
   const matchedTotal = matchedTotalOf({
-    understood: isPhraseUnderstood(intent, query),
+    understood: !searchResult.readingIsNoise && isPhraseUnderstood(intent, query),
     total: resultPagination.total || 0,
     shown: searchResult.shown || 0,
   });

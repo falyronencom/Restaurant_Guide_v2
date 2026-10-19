@@ -22,7 +22,18 @@ jest.mock('@/components/catalog/FilterShelf', () => ({
   FilterShelf: () => null,
 }));
 jest.mock('@/components/catalog/ResultsSwitcher', () => ({
-  ResultsSwitcher: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ResultsSwitcher: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode;
+    children: ReactNode;
+  }) => (
+    <>
+      {header}
+      {children}
+    </>
+  ),
 }));
 
 // Cards and the favourites island need the auth provider; the split tests

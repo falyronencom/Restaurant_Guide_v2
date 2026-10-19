@@ -10,7 +10,18 @@ import { ResultsView } from '@/components/catalog/ResultsView';
 jest.mock('@/components/catalog/FilterShelf', () => ({ FilterShelf: () => null }));
 jest.mock('@/components/catalog/SortSelect', () => ({ SortSelect: () => null }));
 jest.mock('@/components/catalog/ResultsSwitcher', () => ({
-  ResultsSwitcher: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ResultsSwitcher: ({
+    header,
+    children,
+  }: {
+    header?: React.ReactNode;
+    children: React.ReactNode;
+  }) => (
+    <>
+      {header}
+      {children}
+    </>
+  ),
 }));
 
 const EMPTY = {

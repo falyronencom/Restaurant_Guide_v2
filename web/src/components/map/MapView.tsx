@@ -209,6 +209,9 @@ export default function MapView({
   // indicator. Only the latest-issued refetch writes it (generation guard).
   const [dataStatus, setDataStatus] = useState<DataStatus>('idle');
   const [count, setCount] = useState<number | null>(null);
+  // Phrase map only: how the latest set splits into matches and suggestions
+  // (phraseMapNote). null — no phrase, or no split to tell.
+  const [phraseSplit, setPhraseSplit] = useState<PhraseSplit | null>(null);
   // Bumped by the "retry" control after a map-init failure; recreates the map
   // by re-running the lifecycle effect.
   const [retryToken, setRetryToken] = useState(0);
@@ -243,6 +246,8 @@ export default function MapView({
   // treat that URL as having no focus at all rather than silently arming an
   // anchor that can never resolve. Every producer emits all three together
   // (see EstablishmentMapOverlay).
+  const note = phraseMapNote(filters.search, phraseSplit);
+
   const focusLat = asFloat(searchParams.flat);
   const focusLng = asFloat(searchParams.flng);
   const hasFocusCenter = focusLat != null && focusLng != null;
@@ -501,7 +506,12 @@ export default function MapView({
             // so the map can't settle on an out-of-order earlier fetch (which
             // would then disagree with the server-rendered list).
             if (cancelled || !map || gen !== generation) return;
-            setCount(applyData(data));
+            setCount(applyData(data.markers));
+            setPhraseSplit(
+              data.matchedTotal == null
+                ? null
+                : { matchedTotal: data.matchedTotal, total: data.markers.length },
+            );
             setDataStatus('idle');
           } catch {
             // Same generation guard: a stale failure must not overwrite a
@@ -601,19 +611,37 @@ export default function MapView({
         )}
 
         {/* Status badge / refetch indicator (top-left); hidden on empty + error,
-            which surface their own centred panel. */}
+            which surface their own centred panel. Above it, under a phrase
+            nothing (or not everything) matched, the note that says so — the
+            pins below are suggestions, not finds (сверка находок
+            тестировщика с сайтом, 18.10, Ш1). */}
         {status === 'ready' &&
           (dataStatus === 'fetching' ||
             (dataStatus === 'idle' && (count ?? 0) > 0)) && (
-            <div className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-caption-l text-foreground shadow">
-              {dataStatus === 'fetching' ? (
-                <span className="flex items-center gap-2">
-                  <span className="size-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-                  Обновление…
-                </span>
-              ) : (
-                `Заведений на карте: ${count}`
+            <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
+              {dataStatus === 'idle' && note && (
+                <div
+                  role="status"
+                  className="max-w-full rounded-card bg-white/95 px-4 py-2 shadow"
+                >
+                  <p className="break-words text-body-m font-medium text-foreground">
+                    {note.title}
+                  </p>
+                  <p className="text-body-s text-muted-foreground">
+                    {note.hint}
+                  </p>
+                </div>
               )}
+              <div className="rounded-full bg-white/90 px-3 py-1 text-caption-l text-foreground shadow">
+                {dataStatus === 'fetching' ? (
+                  <span className="flex items-center gap-2">
+                    <span className="size-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+                    Обновление…
+                  </span>
+                ) : (
+                  `Заведений на карте: ${count}`
+                )}
+              </div>
             </div>
           )}
 
@@ -705,10 +733,40 @@ function detailHref(
   return `/${citySlug}/${categorySlug}/${m.slug}`;
 }
 
+type PhraseSplit = { matchedTotal: number; total: number };
+
+/**
+ * The note over the phrase map when the set is not all matches — the list's
+ * split (ResultsView), said over the pins: nothing matched → «По запросу «…»
+ * ничего не найдено», the pins are places that may suit; some matched → how
+ * many, the rest may suit. null — no phrase, no split, or every pin a match.
+ */
+export function phraseMapNote(
+  phrase: string | undefined,
+  split: PhraseSplit | null,
+): { title: string; hint: string } | null {
+  const text = phrase?.trim();
+  if (!text || !split) return null;
+  const { matchedTotal, total } = split;
+  if (total === 0 || matchedTotal >= total) return null;
+  return matchedTotal === 0
+    ? {
+        title: `По запросу «${text}» ничего не найдено`,
+        hint: 'На карте — места, которые могут подойти',
+      }
+    : {
+        title: `По запросу «${text}» найдено: ${matchedTotal}`,
+        hint: 'Остальные на карте — места, которые могут подойти',
+      };
+}
+
 async function fetchMarkers(
   box: Box,
   filters: MapFilters,
-): Promise<PublicEstablishmentMapMarker[]> {
+): Promise<{
+  markers: PublicEstablishmentMapMarker[];
+  matchedTotal: number | null;
+}> {
   const res = await fetch(`/api/map?${markersQuery(box, filters)}`);
   // Throw (not return []) so the caller can tell a fetch failure apart from a
   // genuine empty viewport: the former drives the error panel + retry, the
@@ -716,8 +774,14 @@ async function fetchMarkers(
   if (!res.ok) throw new Error(`Map fetch failed: ${res.status}`);
   const data = (await res.json()) as {
     establishments?: PublicEstablishmentMapMarker[];
+    /** Phrase map only (api/map/route.ts): the first N markers match. */
+    matchedTotal?: number | null;
   };
-  return data.establishments ?? [];
+  return {
+    markers: data.establishments ?? [],
+    matchedTotal:
+      typeof data.matchedTotal === 'number' ? data.matchedTotal : null,
+  };
 }
 
 /** The /api/map query for a viewport box + the active filters. */

@@ -19,6 +19,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 
+// MenuBlock pulls in the menu-retry island's Server Action (next/cache needs
+// web globals jsdom lacks); no case here reaches it.
+jest.mock('@/lib/menu/actions', () => ({ reloadMenuAction: jest.fn() }));
+
 import { MenuBlock } from '@/components/establishment/MenuBlock';
 import { RestaurantSchema } from '@/components/establishment/RestaurantSchema';
 import { ReviewSchema } from '@/components/establishment/ReviewSchema';

@@ -11,26 +11,39 @@
  *   3. PDF — «Скачать PDF» download button(s) in the photo-menu header. PDFs
  *      keep the preview + download flow and never enter the photo lightbox.
  *
- * Empty-state: nothing rendered beyond the heading when there is no menu data.
- * Server Component throughout.
+ * Empty-state: «Меню пока не загружено.» when there is no menu data. When the
+ * page could not load the text menu (`menuItems` null — a failed fetch, not an
+ * empty menu) it says neither that nor nothing: MenuLoadFailed loads the items
+ * from the visitor's browser and drops the cached failed page (сверка находок
+ * тестировщика с сайтом, 18.10, Ш8 — the reviews' fix of PR #81, for the menu).
+ * Server Component throughout, except that island.
  */
 
 import Image from 'next/image';
-import { AlertCircle, ChefHat, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 import {
   LightboxProvider,
   LightboxTrigger,
   type LightboxPhoto,
 } from '@/components/establishment/Lightbox';
+import {
+  MenuAutoExtractedNote,
+  MenuItemsList,
+} from '@/components/establishment/MenuItemsList';
+import { MenuLoadFailed } from '@/components/establishment/MenuLoadFailed';
 import { JsonLdScript } from '@/components/JsonLdScript';
 import type { PublicMenuItem, PublicMedia } from '@/lib/api/types';
 
 type MenuBlockProps = {
-  menuItems: PublicMenuItem[];
+  /** null — the page's fetch of the text menu failed (not: there is none). */
+  menuItems: PublicMenuItem[] | null;
   menuPhotos: PublicMedia[];
   pdfFallbacks: PublicMedia[];
   establishmentName: string;
+  /** For MenuLoadFailed: whose items to load, which cached page to drop. */
+  slug?: string;
+  detailPath?: string;
 };
 
 export function MenuBlock({
@@ -38,8 +51,11 @@ export function MenuBlock({
   menuPhotos,
   pdfFallbacks,
   establishmentName,
+  slug = '',
+  detailPath = '',
 }: MenuBlockProps) {
-  const hasItems = menuItems.length > 0;
+  const items = menuItems ?? [];
+  const hasItems = items.length > 0;
   const hasPhotos = menuPhotos.length > 0;
   const hasPdfs = pdfFallbacks.length > 0;
   // Two identical «Скачать PDF» buttons are indistinguishable; number them
@@ -47,8 +63,7 @@ export function MenuBlock({
   // the plain «Скачать PDF» label.
   const multiplePdfs = pdfFallbacks.length > 1;
 
-  const groups = hasItems ? groupByCategory(menuItems) : [];
-  const cleanItems = menuItems.filter((i) => i.quality_tier === 'clean');
+  const cleanItems = items.filter((i) => i.quality_tier === 'clean');
   const jsonLd = buildMenuJsonLd(establishmentName, cleanItems);
 
   const shownPhotos = menuPhotos.slice(0, 4);
@@ -59,64 +74,18 @@ export function MenuBlock({
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <h2 className='font-display text-[20px] font-semibold'>Меню</h2>
         {hasItems ? (
-          <span className='inline-flex items-center gap-1.5 rounded-[var(--radius-s)] bg-[#F7EFE6] px-2.5 py-1.5 text-body-s text-[#A07A52]'>
-            <AlertCircle className='size-3.5 shrink-0' aria-hidden='true' />
-            Меню извлечено автоматически — уточняйте у заведения
-          </span>
+          <MenuAutoExtractedNote />
         ) : null}
       </div>
 
       {hasItems ? (
-        <div className='flex flex-col gap-6 rounded-card bg-figma-bg-warm p-l'>
-          {groups.map((group) => (
-            <div key={group.category ?? '__uncategorized__'}>
-              {group.category ? (
-                <h3 className='mb-2 flex items-center gap-2.5 font-display text-[15px] font-medium text-foreground'>
-                  <span className='flex size-[26px] shrink-0 items-center justify-center rounded-[var(--radius-s)] bg-background text-brand'>
-                    <ChefHat className='size-4' aria-hidden='true' />
-                  </span>
-                  {group.category}
-                </h3>
-              ) : null}
-              <ul>
-                {group.items.map((item) => (
-                  <li
-                    key={item.id}
-                    className='flex items-baseline gap-2.5 border-t border-figma-divider py-[11px]'
-                  >
-                    <span className='text-[15px] text-foreground'>
-                      {item.item_name}
-                      {item.quality_tier === 'needs_caution' ? (
-                        <span
-                          title='Эта позиция требует уточнения у заведения'
-                          className='ml-2 inline-flex items-center gap-1 rounded-xs bg-background px-1.5 py-0.5 text-caption-s font-medium text-figma-text-dark'
-                        >
-                          <AlertCircle className='size-3' aria-hidden='true' />
-                          уточнить
-                        </span>
-                      ) : null}
-                    </span>
-                    <span
-                      aria-hidden='true'
-                      className='-translate-y-[3px] flex-1 border-b border-dotted border-[#CFC8BC]'
-                    />
-                    {/* No price (a dish inside a set) — a grey dash, so it does
-                        not read as a price of its own (Design, 29.09.2026). */}
-                    <span
-                      className={`whitespace-nowrap text-[15px] font-semibold ${
-                        item.price_byn == null
-                          ? 'text-figma-text-grey'
-                          : 'text-foreground'
-                      }`}
-                    >
-                      {formatPrice(item.price_byn)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <MenuItemsList menuItems={items} />
+      ) : menuItems === null ? (
+        <MenuLoadFailed
+          slug={slug}
+          detailPath={detailPath}
+          hasOtherMenu={hasPhotos || hasPdfs}
+        />
       ) : null}
 
       {hasPhotos || hasPdfs ? (
@@ -196,7 +165,7 @@ export function MenuBlock({
         </div>
       ) : null}
 
-      {!hasItems && !hasPhotos && !hasPdfs ? (
+      {menuItems !== null && !hasItems && !hasPhotos && !hasPdfs ? (
         <p className='text-body-m text-muted-foreground'>
           Меню пока не загружено.
         </p>
@@ -210,34 +179,6 @@ export function MenuBlock({
 }
 
 // -- internals --------------------------------------------------------------
-
-type Group = {
-  category: string | null;
-  items: PublicMenuItem[];
-};
-
-function groupByCategory(items: PublicMenuItem[]): Group[] {
-  const map = new Map<string | null, PublicMenuItem[]>();
-  for (const item of items) {
-    const key =
-      item.category_raw && item.category_raw.length > 0
-        ? item.category_raw
-        : null;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(item);
-  }
-  return Array.from(map.entries()).map(([category, items]) => ({
-    category,
-    items: items.slice().sort((a, b) => a.position - b.position),
-  }));
-}
-
-/** «14 BYN» for whole prices, «14,50 BYN» otherwise; «—» when null. */
-function formatPrice(byn: number | null): string {
-  if (byn == null) return '—';
-  if (byn % 1 === 0) return `${byn} BYN`;
-  return `${byn.toFixed(2).replace('.', ',')} BYN`;
-}
 
 /**
  * Build Schema.org/Menu JSON-LD from CLEAN items only.

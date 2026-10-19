@@ -101,6 +101,17 @@ function sortFromPhrase(
 }
 
 /**
+ * The phrase map's data: the markers, in the result set's order, and how many
+ * of them, from the start, match the phrase (`matchedTotal`, as for the list;
+ * null — a backend without the field). The rest are suggestions, and the map
+ * says so (сверка находок тестировщика с сайтом, 18.10, Ш1).
+ */
+export type PhraseMapMarkers = {
+  markers: PublicEstablishmentMapMarker[];
+  matchedTotal: number | null;
+};
+
+/**
  * Markers for the results map when a phrase is active, or null when the map
  * should take its classic path (no phrase, an untranslatable slug, or the smart
  * endpoint failed).
@@ -114,7 +125,7 @@ function sortFromPhrase(
 export async function getPhraseMapMarkers(
   params: CatalogParams,
   meta: PublicMetadata,
-): Promise<PublicEstablishmentMapMarker[] | null> {
+): Promise<PhraseMapMarkers | null> {
   const body = toSmartSearchBody(
     { ...params, page: 1, limit: SMART_SEARCH_MAX_LIMIT },
     meta,
@@ -122,7 +133,11 @@ export async function getPhraseMapMarkers(
   if (!body) return null;
   try {
     const smart = await smartSearch(body);
-    return smart.establishments.map(toMapMarker);
+    return {
+      markers: smart.establishments.map(toMapMarker),
+      matchedTotal:
+        typeof smart.matchedTotal === 'number' ? smart.matchedTotal : null,
+    };
   } catch (err) {
     logFallback('map', err);
     return null;

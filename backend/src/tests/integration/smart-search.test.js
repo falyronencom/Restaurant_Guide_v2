@@ -1515,6 +1515,32 @@ describe('Smart Search - поиск по названию заведения', (
     expect(data.matched).toBe(true);
     expect(data.matchedTotal).toBe(1);
   });
+
+  // Фильтры экрана отсекли совпавшее по названию (сверка находок тестировщика
+  // с сайтом, 18.10, Ш3). Прежде выдача по прочтению, которое режим «только
+  // совпавшие» считает шумом, засчитывалась совпадением.
+
+  test('«urban dzen cafe» с фильтром «Кафе»: кофейня отсечена — «ничего не найдено», кафе «Ромашка» — запасная выдача', async () => {
+    const data = await smart('urban dzen cafe', p1Intent({ category: 'Кафе' }), { categories: ['Кафе'] });
+
+    expect(namesOf(data)).toEqual(['Ромашка']);
+    expect(data.matched).toBe(false);
+    expect(data.matchedTotal).toBe(0);
+  });
+
+  test('без фильтра то же название — совпадение, как прежде', async () => {
+    const data = await smart('urban dzen cafe', p1Intent({ category: 'Кафе' }));
+
+    expect(namesOf(data)).toEqual(['urban dzen cafe']);
+    expect(data.matchedTotal).toBe(1);
+  });
+
+  test('граница: «underdog пицца» с фильтром «$$$» — underdog отсечён, но пицца — часть фразы: «Итальяно» остаётся совпадением', async () => {
+    const data = await smart('underdog пицца', p1Intent({ dish: 'пицца', dish_variants: ['pizza'] }), { priceRange: ['$$$'] });
+
+    expect(namesOf(data)).toEqual(['Итальяно']);
+    expect(data.matchedTotal).toBe(1);
+  });
 });
 
 // --- Удобства из фразы (29.09.2026) ------------------------------------------

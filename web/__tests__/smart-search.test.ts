@@ -400,10 +400,28 @@ describe('getPhraseMapMarkers', () => {
     });
   });
 
-  it('returns the smart results as map markers', async () => {
-    const markers = await getPhraseMapMarkers({ city: 'minsk', search: 'терраса' }, META);
+  it('returns the smart results as map markers; no matchedTotal on the wire → null', async () => {
+    const phrase = await getPhraseMapMarkers({ city: 'minsk', search: 'терраса' }, META);
 
-    expect(markers).toEqual([toMapMarker(listing({ id: 'smart', name: 'Smart' }))]);
+    expect(phrase).toEqual({
+      markers: [toMapMarker(listing({ id: 'smart', name: 'Smart' }))],
+      matchedTotal: null,
+    });
+  });
+
+  it('carries matchedTotal — the map says the pins are suggestions (Ш1)', async () => {
+    (smartSearch as jest.Mock).mockResolvedValue({
+      intent: null,
+      establishments: [listing({ id: 'smart', name: 'Smart' })],
+      pagination: { ...PAGE, total: 1 },
+      fallback: false,
+      matched: false,
+      matchedTotal: 0,
+    });
+
+    const phrase = await getPhraseMapMarkers({ city: 'minsk', search: 'Buno' }, META);
+
+    expect(phrase?.matchedTotal).toBe(0);
   });
 
   it('null (→ classic map) without a phrase, and when the smart endpoint fails', async () => {
