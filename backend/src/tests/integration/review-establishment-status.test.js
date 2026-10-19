@@ -22,7 +22,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query, countRecords } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
-import redisClient, { connectRedis, deleteKey, getCounter } from '../../config/redis.js';
+import redisClient, { connectRedis, deleteKey, getCounter, setWithExpiry } from '../../config/redis.js';
 
 const CONTENT = 'Достаточно длинный и содержательный отзыв длиной более двадцати символов.';
 const REFUSAL = 'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя';
@@ -120,6 +120,28 @@ test('действующая карточка принимает отзыв, к�
   expect(response.body.data.review.establishment_id).toBe(establishmentId);
   expect(await reviewsOf(establishmentId)).toBe(1);
   expect(await getCounter(quotaKey(author.id))).toBe(1);
+});
+
+test('лимит исчерпан: на карточку вне каталога — отказ карточки, на действующую — отказ лимита', async () => {
+  // Десять отзывов за минские сутки уже оставлены.
+  await setWithExpiry(quotaKey(author.id), '10', 3600);
+  const suspended = await establishmentWithStatus('suspended');
+  const active = await establishmentWithStatus('active');
+
+  const toSuspended = await submitReview(suspended);
+  expect(toSuspended.status).toBe(400);
+  expect(toSuspended.body.error.code).toBe('ESTABLISHMENT_NOT_ACTIVE');
+  expect(toSuspended.body.message).toBe(REFUSAL);
+  expect(await getCounter(quotaKey(author.id))).toBe(10);
+
+  const toActive = await submitReview(active);
+  expect(toActive.status).toBe(429);
+  expect(toActive.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  expect(toActive.body.message).toBe(
+    'Лимит отзывов на сегодня исчерпан: не больше 10 в день. Новый отзыв можно написать завтра.',
+  );
+  expect(await getCounter(quotaKey(author.id))).toBe(10);
+  expect(await reviewsOf(suspended) + await reviewsOf(active)).toBe(0);
 });
 
 test('несуществующая карточка — по-прежнему 404 ESTABLISHMENT_NOT_FOUND', async () => {
