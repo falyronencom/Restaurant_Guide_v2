@@ -1233,6 +1233,11 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
+  /// Нижняя граница подбора кегля заголовков разделов (макет — 30). При
+  /// системном шрифте ×3,1 это ≈ 37 пт на экране: заголовок крупнее текста
+  /// раздела, а слово целое — ниже границы оно уходит в многоточие.
+  static const double _sectionTitleMinFontSize = 12;
+
   /// Build collapsible description section
   Widget _buildDescriptionSection() {
     final description = _establishment?.description;
@@ -1257,13 +1262,20 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(
                 children: [
-                  const Text(
-                    'Описание',
-                    style: TextStyle(
-                      fontFamily: AppTheme.fontDisplayFamily,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w400,
-                      color: AppTheme.textPrimary,
+                  // Кегль — по ширине, как у названия: при крупном системном
+                  // шрифте «Описание» со стрелкой не помещались в строку
+                  // (Н9, 19.10.2026).
+                  const Flexible(
+                    child: AdaptiveTitle(
+                      text: 'Описание',
+                      minFontSize: _sectionTitleMinFontSize,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontDisplayFamily,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w400,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1567,16 +1579,22 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const Text(
-                  'Отзывы',
-                  style: TextStyle(
-                    fontFamily: AppTheme.fontDisplayFamily,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w400,
-                    color: _backgroundColor,
+                // Кегль — по ширине, как у названия (Н9, 19.10.2026): при
+                // крупном шрифте «Отзывы» и счётчик не помещались в строку.
+                const Expanded(
+                  child: AdaptiveTitle(
+                    text: 'Отзывы',
+                    minFontSize: _sectionTitleMinFontSize,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: AppTheme.fontDisplayFamily,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w400,
+                      color: _backgroundColor,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 // Reviews count with arrow
                 GestureDetector(
                   onTap: () {
