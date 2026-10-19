@@ -11,8 +11,6 @@ import 'package:restaurant_guide_mobile/screens/splash/splash_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/method_selection_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/email_registration_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/email_verification_screen.dart';
-import 'package:restaurant_guide_mobile/screens/auth/phone_registration_screen.dart';
-import 'package:restaurant_guide_mobile/screens/auth/phone_verification_screen.dart';
 import 'package:restaurant_guide_mobile/screens/auth/login_screen.dart';
 import 'package:restaurant_guide_mobile/screens/search/results_list_screen.dart';
 import 'package:restaurant_guide_mobile/screens/search/filter_screen.dart';
@@ -151,10 +149,6 @@ class RestaurantGuideApp extends StatelessWidget {
               const EmailRegistrationScreen(),
           '/auth/email-verification': (context) =>
               const EmailVerificationScreen(),
-          '/auth/phone-registration': (context) =>
-              const PhoneRegistrationScreen(),
-          '/auth/phone-verification': (context) =>
-              const PhoneVerificationScreen(),
           '/profile/edit': (context) => const EditProfileScreen(),
           '/partner/register': (context) => const PartnerRegistrationScreen(),
         },
