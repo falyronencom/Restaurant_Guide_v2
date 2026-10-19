@@ -18,6 +18,7 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   getUserById: jest.fn(),
   establishmentExists: jest.fn(),
+  getEstablishmentStatus: jest.fn(),
   findExistingReview: jest.fn(),
   createReview: jest.fn(),
   updateEstablishmentAggregates: jest.fn(),
@@ -85,7 +86,7 @@ describe('reviewService', () => {
     beforeEach(() => {
       // Setup default mocks for successful creation
       ReviewModel.getUserById.mockResolvedValue(mockUser);
-      ReviewModel.establishmentExists.mockResolvedValue(true);
+      ReviewModel.getEstablishmentStatus.mockResolvedValue('active');
       ReviewModel.findExistingReview.mockResolvedValue(null);
       ReviewModel.createReview.mockResolvedValue(mockReview);
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
@@ -107,7 +108,7 @@ describe('reviewService', () => {
       expect(ReviewModel.getUserById).toHaveBeenCalledWith('user-123');
 
       // Verify establishment validation
-      expect(ReviewModel.establishmentExists).toHaveBeenCalledWith('estab-123');
+      expect(ReviewModel.getEstablishmentStatus).toHaveBeenCalledWith('estab-123');
 
       // Verify the quota slot is reserved before anything is written
       // The window ends at Minsk midnight — a number of seconds within the day.
@@ -162,13 +163,26 @@ describe('reviewService', () => {
     });
 
     test('should throw error if establishment not found', async () => {
-      ReviewModel.establishmentExists.mockResolvedValue(false);
+      ReviewModel.getEstablishmentStatus.mockResolvedValue(null);
 
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 404,
         code: 'ESTABLISHMENT_NOT_FOUND',
       });
 
+      expect(ReviewModel.createReview).not.toHaveBeenCalled();
+    });
+
+    test('refuses a card the catalogue does not show, before the quota slot is reserved', async () => {
+      ReviewModel.getEstablishmentStatus.mockResolvedValue('suspended');
+
+      await expect(createReview(validReviewData)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'ESTABLISHMENT_NOT_ACTIVE',
+        message: 'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя',
+      });
+
+      expect(incrementWithExpiry).not.toHaveBeenCalled();
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
     });
 

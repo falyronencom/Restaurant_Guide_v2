@@ -175,6 +175,13 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
           'Проверьте правильность заполнения формы';
     }
 
+    if (getErrorCode() == 'ESTABLISHMENT_NOT_ACTIVE') {
+      // Карточки нет в каталоге (на модерации, приостановлена, …) — новый
+      // отзыв сервер не принимает и объясняет это сам (решение 19.10.2026).
+      return russianServerText(responseData) ??
+          'Это заведение сейчас не принимает отзывы';
+    }
+
     // Network error
     if (e.type == DioExceptionType.connectionError ||
         e.type == DioExceptionType.connectionTimeout) {
