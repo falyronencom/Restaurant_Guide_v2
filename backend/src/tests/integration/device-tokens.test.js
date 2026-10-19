@@ -138,4 +138,26 @@ describe('PUT /api/v1/notifications/device-token — one active account per devi
     expect(await activeTokensOf(second)).toEqual([]);
     expect(await activeTokensOf(first)).toEqual([]);
   });
+
+  // Above, the first account was already released by the takeover before the
+  // sign-out, so a sign-out that switched off every holder would look the
+  // same. Here the one signing out is NOT the current holder: the previous
+  // holder's late sign-out, then an account that never had the token — the
+  // current holder keeps its push.
+  test('a sign-out by an account that does not hold the token leaves the current holder on', async () => {
+    await registerAs(first, DEVICE);
+    await registerAs(second, DEVICE);
+    const stranger = await createUserAndGetTokens({
+      email: `device-stranger-${Date.now()}@test.com`, password: 'Stranger123!@#', name: 'Чужой', role: 'user',
+    });
+
+    for (const account of [first, stranger]) {
+      await request(app)
+        .delete('/api/v1/notifications/device-token')
+        .set('Authorization', `Bearer ${account.accessToken}`)
+        .send({ fcm_token: DEVICE })
+        .expect(200);
+      expect(await activeTokensOf(second)).toEqual([DEVICE]);
+    }
+  });
 });

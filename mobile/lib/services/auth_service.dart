@@ -76,72 +76,6 @@ class AuthService {
     }
   }
 
-  /// Verify SMS code for phone registration
-  ///
-  /// Returns AuthResponse with tokens and user data
-  Future<AuthResponse> verifyCode({
-    required String code,
-    required String verificationToken,
-  }) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/auth/verify',
-        data: {
-          'code': code,
-          'verification_token': verificationToken,
-        },
-      );
-
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final responseData = data['data'] as Map<String, dynamic>? ?? data;
-
-        final authResponse = AuthResponse.fromJson(responseData);
-
-        // Store tokens and user
-        await _storeAuthData(authResponse);
-
-        return authResponse;
-      } else {
-        throw Exception('Verification failed');
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  /// Verify email token from email confirmation link
-  ///
-  /// Returns AuthResponse with tokens and user data
-  Future<AuthResponse> verifyEmail({
-    required String emailToken,
-  }) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/auth/verify',
-        data: {
-          'email_token': emailToken,
-        },
-      );
-
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final responseData = data['data'] as Map<String, dynamic>? ?? data;
-
-        final authResponse = AuthResponse.fromJson(responseData);
-
-        // Store tokens and user
-        await _storeAuthData(authResponse);
-
-        return authResponse;
-      } else {
-        throw Exception('Email verification failed');
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
   /// Send (or re-send) a 6-digit email verification code to the
   /// authenticated user's email.
   ///
@@ -183,42 +117,11 @@ class AuthService {
     throw Exception('Email verification failed');
   }
 
-  /// Resend verification code (for SMS or email)
-  ///
-  /// Returns new verification token
-  Future<RegisterResponse> resendVerification({
-    String? email,
-    String? phone,
-    required String authMethod,
-  }) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/auth/resend-verification',
-        data: {
-          if (email != null) 'email': email,
-          if (phone != null) 'phone': phone,
-          'auth_method': authMethod,
-        },
-      );
-
-      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final responseData = data['data'] as Map<String, dynamic>? ?? data;
-
-        return RegisterResponse.fromJson(responseData);
-      } else {
-        throw Exception('Failed to resend verification');
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
   // ============================================================================
   // Authentication Operations
   // ============================================================================
 
-  /// Login with email/phone and password
+  /// Login with email and password
   ///
   /// Returns AuthResponse with tokens and user data
   /// Tokens are stored automatically
@@ -230,7 +133,9 @@ class AuthService {
       final response = await _apiClient.post(
         '/api/v1/auth/login',
         data: {
-          'email': emailOrPhone, // Backend accepts email or phone in 'email' field
+          // Только почта: номер телефона в этом поле сервер отклоняет (422),
+          // поэтому вход по номеру в приложении не предлагается.
+          'email': emailOrPhone,
           'password': password,
         },
       );
@@ -649,24 +554,6 @@ class AuthService {
       } else {
         throw Exception('Failed to upload avatar');
       }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  /// Change password
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    try {
-      await _apiClient.post(
-        '/api/v1/auth/change-password',
-        data: {
-          'current_password': currentPassword,
-          'new_password': newPassword,
-        },
-      );
     } catch (e) {
       rethrow;
     }

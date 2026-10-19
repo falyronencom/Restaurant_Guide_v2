@@ -165,6 +165,11 @@ describe('canon CHECK — accept / reject', () => {
     ['A8', ['Бар']],
     ['A9', ['Клуб']],
     ['A10', ['Бар', 'Клуб']],
+    // Ш17 (19.10.2026): the same set as the server's CUISINE_OPTIONAL_CATEGORIES.
+    ['A16', ['Кальянная']],
+    ['A17', ['Боулинг']],
+    ['A18', ['Караоке']],
+    ['A19', ['Бильярд']],
   ])('accepts an empty cuisines array for %s %j', async (name, categories) => {
     await expect(
       insertEst(scratchPool, {
@@ -180,6 +185,7 @@ describe('canon CHECK — accept / reject', () => {
     ['A12', ['Клуб', 'Кафе']],
     ['A13', ['Паб']],
     ['A14', null],
+    ['A20', ['Боулинг', 'Паб']],
   ])('rejects an empty cuisines array for %s %j', async (name, categories) => {
     await expect(
       insertEst(scratchPool, {

@@ -129,6 +129,19 @@ describe('establishmentService', () => {
       );
     });
 
+    // The owner is the authenticated partner even when the data names another:
+    // the service picks the fields it stores, partner_id among them from the session.
+    test('a partner_id in the data does not change the owner', async () => {
+      EstablishmentModel.checkDuplicateName.mockResolvedValue(false);
+      EstablishmentModel.createEstablishment.mockResolvedValue(mockEstablishment);
+
+      await createEstablishment(partnerId, { ...validEstablishmentData, partner_id: 'someone-else' });
+
+      expect(EstablishmentModel.createEstablishment).toHaveBeenCalledWith(
+        expect.objectContaining({ partner_id: partnerId }),
+      );
+    });
+
     test('should throw error for invalid city', async () => {
       const invalidData = {
         ...validEstablishmentData,
@@ -813,35 +826,74 @@ describe('establishmentService', () => {
       });
     });
 
-    test('should reject submission when status not draft or rejected', async () => {
+    // Draft, rejected and suspended may be sent — a suspended card is sent again
+    // after the moderator's remark (the old name, «not draft or rejected», left
+    // suspended out). Every other status is refused: an active card sent again
+    // would leave the catalogue until the moderator answers.
+    test.each(['pending', 'active', 'archived'])(
+      'should reject submission when status is %s (only draft, rejected or suspended are sent)',
+      async (status) => {
+        EstablishmentModel.checkOwnership.mockResolvedValue(true);
+        EstablishmentModel.findEstablishmentById.mockResolvedValue({
+          ...mockEstablishment,
+          status,
+        });
+
+        await expect(
+          submitEstablishmentForModeration(establishmentId, partnerId)
+        ).rejects.toMatchObject({
+          statusCode: 400,
+          code: 'INVALID_STATUS_FOR_SUBMISSION',
+        });
+        expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
+      },
+    );
+
+    // …and the two sent besides a draft: a rejected card after its fixes, a
+    // suspended one after the moderator's remark.
+    test.each([
+      ['rejected', null],
+      ['suspended', JSON.stringify({ suspend_reason: 'Жалобы гостей' })],
+    ])('should submit a %s card (sent again after fixes)', async (status, moderationNotes) => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         ...mockEstablishment,
-        status: 'pending',
+        status,
+        moderation_notes: moderationNotes,
       });
+      const submitted = { id: establishmentId, status: 'pending', updated_at: new Date() };
+      EstablishmentModel.submitForModeration.mockResolvedValue(submitted);
 
-      await expect(
-        submitEstablishmentForModeration(establishmentId, partnerId)
-      ).rejects.toMatchObject({
-        statusCode: 400,
-        code: 'INVALID_STATUS_FOR_SUBMISSION',
-      });
+      await expect(submitEstablishmentForModeration(establishmentId, partnerId)).resolves.toEqual(submitted);
+      expect(EstablishmentModel.submitForModeration).toHaveBeenCalledWith(establishmentId);
     });
 
-    test('should reject when required fields missing', async () => {
+    // Each required field on its own: a card missing only that one is not sent,
+    // and the refusal names it (the words of establishmentRefusals.js).
+    test.each([
+      ['name', { name: null }, 'название'],
+      ['city', { city: null }, 'город'],
+      ['address', { address: null }, 'адрес'],
+      ['latitude', { latitude: null }, 'точку на карте'],
+      ['longitude', { longitude: null }, 'точку на карте'],
+      ['categories', { categories: [] }, 'категорию'],
+      ['cuisines', { cuisines: [] }, 'кухню'],
+      ['working_hours', { working_hours: null }, 'часы работы'],
+    ])('should reject when a required field is missing: %s', async (_field, override, named) => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({
         ...mockEstablishment,
         status: 'draft',
-        name: null,
+        ...override,
       });
 
-      await expect(
-        submitEstablishmentForModeration(establishmentId, partnerId)
-      ).rejects.toMatchObject({
+      const refusal = submitEstablishmentForModeration(establishmentId, partnerId);
+      await expect(refusal).rejects.toMatchObject({
         statusCode: 400,
         code: 'INCOMPLETE_ESTABLISHMENT',
       });
+      await expect(refusal).rejects.toThrow(named);
+      expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
     });
 
     test('should submit draft and return pending status', async () => {

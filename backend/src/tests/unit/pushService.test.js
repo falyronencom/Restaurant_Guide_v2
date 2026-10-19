@@ -89,6 +89,10 @@ describe('pushService', () => {
 
       await sendPush(userId, basePayload);
 
+      // The tokens and the preferences are those of the recipient — the mocks
+      // answer any id, so the id they were asked about is the check.
+      expect(mockFindByUserId).toHaveBeenCalledWith(userId);
+      expect(mockGetByUserId).toHaveBeenCalledWith(userId);
       expect(mockSendEachForMulticast).toHaveBeenCalledWith(
         expect.objectContaining({
           notification: { title: basePayload.title, body: basePayload.message },
@@ -452,6 +456,18 @@ describe('pushService', () => {
       const categories = new Set(Object.values(TYPE_CATEGORY_MAP).filter(Boolean));
       categories.forEach((category) => {
         expect(CATEGORY_PREF_FIELD[category]).toMatch(/_push_enabled$/);
+      });
+    });
+
+    // «A preference field» is not enough: each category reads ITS column of
+    // notification_preferences (migrations 022, 033) — a swap of two would
+    // still match the pattern above while an opt-out silenced the wrong pushes.
+    test('each category reads its own preference column', () => {
+      expect(CATEGORY_PREF_FIELD).toEqual({
+        booking: 'booking_push_enabled',
+        reviews: 'reviews_push_enabled',
+        promotions: 'promotions_push_enabled',
+        menu: 'menu_push_enabled',
       });
     });
 

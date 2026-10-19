@@ -112,8 +112,8 @@ void main() {
             status: 400,
           ));
 
-      final ok = await auth.registerWithPhone(
-        phone: '+375291234567',
+      final ok = await auth.registerWithEmail(
+        email: 'new@example.com',
         password: 'Secret123',
         name: 'Анна',
       );

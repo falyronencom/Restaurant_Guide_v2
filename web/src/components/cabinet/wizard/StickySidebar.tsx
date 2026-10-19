@@ -55,7 +55,7 @@ export function StickySidebar({
   saveLabel: string;
   error: string | null;
   notice: string | null;
-  /** A bar or a club: the checklist item does not ask for a cuisine (decision В5). */
+  /** A cuisine-optional category: the checklist item does not ask for a cuisine (В5, Ш17). */
   cuisineOptional?: boolean;
 }) {
   const score = serverScore ?? completeness;

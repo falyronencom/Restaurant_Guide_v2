@@ -15,7 +15,8 @@ import 'package:restaurant_guide_mobile/screens/partner/partner_registration_scr
 ///   вопроса (Х10) — находки тестировщика 17.10.2026.
 void main() {
   group('кухня по категориям', () {
-    bool cuisineStepPasses(List<String> categories) => PartnerRegistrationProvider(
+    bool cuisineStepPasses(List<String> categories) =>
+        PartnerRegistrationProvider(
           initialStep: 1,
           initialData: PartnerRegistration(categories: categories),
         ).canProceed();
@@ -26,7 +27,23 @@ void main() {
       expect(cuisineStepPasses(['bar', 'nightclub']), isTrue);
     });
 
-    test('ресторан, бар и ресторан, клуб и кафе, паб — без кухни не пройти', () {
+    // Ш17 (19.10.2026): кальянная, боулинг, караоке и бильярд — тоже.
+    test(
+        'кальянная, боулинг, караоке, бильярд — шаг кухни проходится без выбора',
+        () {
+      expect(cuisineStepPasses(['hookah']), isTrue);
+      expect(cuisineStepPasses(['bowling']), isTrue);
+      expect(cuisineStepPasses(['karaoke']), isTrue);
+      expect(cuisineStepPasses(['billiards']), isTrue);
+      expect(cuisineStepPasses(['bowling', 'billiards']), isTrue);
+    });
+
+    test('боулинг и паб — без кухни не пройти: правило паба сильнее', () {
+      expect(cuisineStepPasses(['bowling', 'pub']), isFalse);
+    });
+
+    test('ресторан, бар и ресторан, клуб и кафе, паб — без кухни не пройти',
+        () {
       expect(cuisineStepPasses(['restaurant']), isFalse);
       expect(cuisineStepPasses(['bar', 'restaurant']), isFalse);
       expect(cuisineStepPasses(['nightclub', 'cafe_dining']), isFalse);
@@ -43,12 +60,13 @@ void main() {
       expect(data.toJson()['categories'], ['Бар']);
     });
 
-    test('бар и клуб — те же категории, что на сервере', () {
+    test('набор — те же категории, что на сервере', () {
       final names = CategoryOptions.items
           .where((c) => CategoryOptions.cuisineOptionalIds.contains(c.id))
           .map((c) => c.name)
           .toSet();
-      expect(names, {'Бар', 'Клуб'});
+      expect(
+          names, {'Бар', 'Клуб', 'Кальянная', 'Боулинг', 'Караоке', 'Бильярд'});
     });
   });
 
@@ -81,11 +99,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  PartnerRegistrationProvider wizard(WidgetTester tester) => tester
-      .element(find.byType(PageView))
-      .read<PartnerRegistrationProvider>();
+  PartnerRegistrationProvider wizard(WidgetTester tester) =>
+      tester.element(find.byType(PageView)).read<PartnerRegistrationProvider>();
 
-  const hint = 'Бару и клубу кухню выбирать необязательно — '
+  const hint = 'Для этого заведения кухню выбирать необязательно — '
       'можно сразу нажать «Продолжить».';
 
   group('шаг «Категория кухни»', () {
@@ -98,6 +115,28 @@ void main() {
       await tester.tap(find.text('Продолжить'));
       await tester.pumpAndSettle();
       expect(wizard(tester).currentStep, 2);
+    });
+
+    testWidgets('у боулинга — подсказка, «Продолжить» ведёт дальше без кухни',
+        (tester) async {
+      await openWizard(tester,
+          step: 1, data: const PartnerRegistration(categories: ['bowling']));
+
+      expect(find.text(hint), findsOneWidget);
+      await tester.tap(find.text('Продолжить'));
+      await tester.pumpAndSettle();
+      expect(wizard(tester).currentStep, 2);
+    });
+
+    testWidgets('у паба подсказки нет и «Продолжить» не ведёт дальше',
+        (tester) async {
+      await openWizard(tester,
+          step: 1, data: const PartnerRegistration(categories: ['pub']));
+
+      expect(find.text(hint), findsNothing);
+      await tester.tap(find.text('Продолжить'));
+      await tester.pumpAndSettle();
+      expect(wizard(tester).currentStep, 1);
     });
 
     testWidgets('у ресторана подсказки нет и «Продолжить» не ведёт дальше',

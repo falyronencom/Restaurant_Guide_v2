@@ -101,9 +101,32 @@ describe('создание', () => {
       .expect(422);
   });
 
-  test('паб без кухни — отказ: решение только о баре и клубе', async () => {
+  test('паб без кухни — отказ: паб остаётся с кухней (Ш17)', async () => {
     await create({ ...base(), name: 'Паб', categories: ['Паб'], cuisines: [] })
       .expect(422);
+  });
+
+  // Ш17 (19.10.2026): кальянная, боулинг, караоке и бильярд — тоже без кухни.
+  test.each([
+    ['Кальянная'],
+    ['Боулинг'],
+    ['Караоке'],
+    ['Бильярд'],
+  ])('%s без кухни принимается, в базе пустой список', async (category) => {
+    const response = await create({ ...base(), name: `${category} без кухни`, categories: [category], cuisines: [] })
+      .expect(201);
+
+    expect(await storedCuisines(response.body.data.establishment.id)).toEqual([]);
+  });
+
+  test('боулинг и паб без кухни — отказ: правило паба сильнее', async () => {
+    await create({ ...base(), name: 'Боулинг-паб', categories: ['Боулинг', 'Паб'], cuisines: [] })
+      .expect(422);
+  });
+
+  test('кальянная и бар без кухни принимаются', async () => {
+    await create({ ...base(), name: 'Кальянная-бар', categories: ['Кальянная', 'Бар'], cuisines: [] })
+      .expect(201);
   });
 
   test('бар с четырьмя кухнями — отказ: больше трёх нельзя никому', async () => {
@@ -179,6 +202,13 @@ describe('правка', () => {
 });
 
 describe('отправка на модерацию', () => {
+  test('караоке без кухни уходит на модерацию', async () => {
+    const response = await create({ ...base(), name: 'Караоке', categories: ['Караоке'], cuisines: [] }).expect(201);
+
+    const submitted = await submit(response.body.data.establishment.id).expect(200);
+    expect(submitted.body.data.establishment.status).toBe('pending');
+  });
+
   test('бар без кухни уходит на модерацию', async () => {
     const response = await create({ ...base(), name: 'Бар', categories: ['Бар'], cuisines: [] }).expect(201);
 

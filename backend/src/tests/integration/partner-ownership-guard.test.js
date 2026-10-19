@@ -191,6 +191,7 @@ const fingerprint = async () => {
 };
 
 let attackerToken;
+let attackerUserId;
 let baseline;
 
 const phone = () => `+37529${Math.floor(1000000 + Math.random() * 9000000)}`;
@@ -209,9 +210,10 @@ beforeAll(async () => {
     email: 'guard-guest2@test.com', phone: phone(), password: 'Guest123!@#', name: 'Гость Второй', role: 'user',
   });
   attackerToken = attacker.accessToken;
+  attackerUserId = attacker.user.id;
 
   // У нападающего своё заведение: он настоящий партнёр, а не пользователь с ролью.
-  await createTestEstablishment(attacker.user.id);
+  f.attackerEst = (await createTestEstablishment(attacker.user.id)).id;
 
   const est = await createTestEstablishment(victim.user.id);
   f.est = est.id;
@@ -385,5 +387,31 @@ describe('чужой партнёр получает отказ, и база н�
     await new Promise((resolveWait) => setTimeout(resolveWait, 750));
 
     expect(await fingerprint()).toEqual(baseline);
+  });
+});
+
+// Сводка — в исключениях выше («по своим заведениям — id не принимает»): её
+// «свои» держит не проверка владельца, а условие выборки модели
+// (partnerAnalyticsModel.getPartnerEstablishments), и юнит-тест модели видит
+// его только подстроками на подменённом пуле. Здесь — живая база: в ответе
+// нападающего только его действующая и приостановленная карточки; ни карточки
+// жертвы, ни своих черновика, на модерации, отклонённой и архивной. Последним
+// в файле: эти строки меняют базу.
+describe('сводка без id — только свои заведения', () => {
+  test('GET /partner/analytics/overview: только свои карточки, и только действующие или приостановленные', async () => {
+    // Своя карточка в каждом статусе схемы, кроме действующей (она уже есть).
+    const own = {};
+    for (const status of ['suspended', 'draft', 'pending', 'rejected', 'archived']) {
+      own[status] = (await createTestEstablishment(attackerUserId)).id;
+      await query('UPDATE establishments SET status = $2 WHERE id = $1', [own[status], status]);
+    }
+
+    const res = await request(app)
+      .get('/api/v1/partner/analytics/overview')
+      .set('Authorization', `Bearer ${attackerToken}`)
+      .expect(200);
+
+    expect(res.body.data.establishments.map((e) => e.establishment_id).sort())
+      .toEqual([f.attackerEst, own.suspended].sort());
   });
 });
