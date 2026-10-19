@@ -336,43 +336,59 @@ void main() {
     });
   });
 
-  testWidgets(
-      'после отказа действия профиль показывает список заведений, '
-      'а не «проверьте интернет»', (tester) async {
-    // До 13.10.2026 отказ любого действия на экране заведения записывался в
-    // ту же ошибку, что и неудачная загрузка списка. Профиль под экраном
-    // заведения (тот же стек вкладки) по ней прятал список и писал «Не
-    // удалось загрузить данные. Проверьте интернет-соединение.» — пока
-    // партнёр не нажмёт «Повторить» или не переключит вкладку.
-    action = (_) => jsonBody(
-          _refusal('Cannot suspend. Establishment must be in active status.',
-              'INVALID_STATUS_TRANSITION'),
-          status: 400,
-        );
-    final partner = PartnerDashboardProvider();
-    addTearDown(partner.dispose);
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        ChangeNotifierProvider<AuthProvider>(create: (_) => _SignedIn()),
-        ChangeNotifierProvider.value(value: partner),
-        ChangeNotifierProvider(create: (_) => NotificationProvider()),
-      ],
-      child: const MaterialApp(home: ProfileScreen()),
-    ));
-    await tester.pumpAndSettle();
-    expect(find.text(_name), findsOneWidget,
-        reason: 'список не загрузился — проверка ниже ничего не докажет');
+  // До 13.10.2026 отказ любого действия на экране заведения записывался в ту
+  // же ошибку, что и неудачная загрузка списка. Профиль под экраном заведения
+  // (тот же стек вкладки) по ней прятал список и писал «Не удалось загрузить
+  // данные. Проверьте интернет-соединение.» — пока партнёр не нажмёт
+  // «Повторить» или не переключит вкладку. «Любого» — значит, каждого из пяти
+  // действий экрана: у каждого своя ветка отказа в провайдере.
+  final actions = <String, Future<bool> Function(PartnerDashboardProvider)>{
+    'приостановить': (p) => p.suspendEstablishment(_id),
+    'возобновить': (p) => p.resumeEstablishment(_id),
+    'удалить': (p) => p.deleteEstablishment(_id),
+    'повторно отправить на модерацию': (p) => p.resubmitForModeration(_id),
+    'сохранить время работы': (p) => p.updateEstablishment(
+          _id,
+          const <String, dynamic>{'working_hours': <String, dynamic>{}},
+          failureMessage:
+              'Не удалось сохранить время работы. Попробуйте ещё раз.',
+        ),
+  };
+  for (final entry in actions.entries) {
+    testWidgets(
+        'после отказа действия «${entry.key}» профиль показывает список '
+        'заведений, а не «проверьте интернет»', (tester) async {
+      action = (_) => jsonBody(
+            _refusal('Cannot suspend. Establishment must be in active status.',
+                'INVALID_STATUS_TRANSITION'),
+            status: 400,
+          );
+      final partner = PartnerDashboardProvider();
+      addTearDown(partner.dispose);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(create: (_) => _SignedIn()),
+          ChangeNotifierProvider.value(value: partner),
+          ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ],
+        child: const MaterialApp(home: ProfileScreen()),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text(_name), findsOneWidget,
+          reason: 'список не загрузился — проверка ниже ничего не докажет');
 
-    // Так действие зовёт экран заведения, открытый поверх профиля.
-    final suspending = partner.suspendEstablishment(_id);
-    await tester.pumpAndSettle();
-    expect(await suspending, isFalse,
-        reason: 'действие должно было не удаться — иначе проверка пустая');
+      // Так действие зовёт экран заведения, открытый поверх профиля.
+      final acting = entry.value(partner);
+      await tester.pumpAndSettle();
+      expect(await acting, isFalse,
+          reason: 'действие должно было не удаться — иначе проверка пустая');
 
-    expect(find.text(_name), findsOneWidget);
-    expect(
-      find.text('Не удалось загрузить данные. Проверьте интернет-соединение.'),
-      findsNothing,
-    );
-  });
+      expect(find.text(_name), findsOneWidget);
+      expect(
+        find.text(
+            'Не удалось загрузить данные. Проверьте интернет-соединение.'),
+        findsNothing,
+      );
+    });
+  }
 }

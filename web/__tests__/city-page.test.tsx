@@ -113,10 +113,15 @@ describe('CityPage — city-wide getCatalog mapping', () => {
   it('fetches the whole city (no category) with parsed facets', async () => {
     await CityPage({
       params: P(),
+      // Every facet the page parses, not three of them: features, the rating
+      // floor and the order reach the fetch the same way.
       searchParams: SP({
         cuisine: 'italian,asian',
         priceRange: '$,$$',
         hours: 'until_22',
+        features: 'terrace,wifi',
+        minRating: '4',
+        sort_by: 'rating',
       }),
     });
 
@@ -126,6 +131,9 @@ describe('CityPage — city-wide getCatalog mapping', () => {
     expect(arg.cuisines).toEqual(['italian', 'asian']);
     expect(arg.priceRange).toEqual(['$', '$$']);
     expect(arg.hours_filter).toBe('until_22');
+    expect(arg.features).toEqual(['terrace', 'wifi']);
+    expect(arg.minRating).toBe(4);
+    expect(arg.sort_by).toBe('rating');
   });
 
   it('passes undefined (not empty arrays) when no facets are selected', async () => {
@@ -422,7 +430,9 @@ describe('CityPage — invalid slug', () => {
     ).rejects.toThrow('NEXT_NOT_FOUND');
 
     expect(notFound).toHaveBeenCalledTimes(1);
-    // Short-circuits before fetching the catalog.
+    // Short-circuits before ANY data fetch: the catalog, and the live-cities
+    // probe, which asks the backend about every city.
     expect(getCatalog).not.toHaveBeenCalled();
+    expect(getLiveCities).not.toHaveBeenCalled();
   });
 });

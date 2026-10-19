@@ -35,6 +35,7 @@ const REFUSED: Array<[string, string]> = [
   ['https://res.cloudinary.com/davrzdre8/image/fetch/https://tracker.example/x.png', 'наше облако, но доставка чужого файла (fetch)'],
   ['https://res.cloudinary.com/davrzdre8/image/upload/v1/avatars/user-1/photo.svg', 'svg из нашего облака: next/image пустил бы его мимо оптимизатора'],
   ['https://tracker.example@lh3.googleusercontent.com/a/x', 'логин в адресе'],
+  ['https://:secret@lh3.googleusercontent.com/a/x', 'пароль в адресе без логина'],
   ['https://lh3.googleusercontent.com:8443/a/x', 'порт в адресе'],
   ['/uploads/avatars/0a1b2c3d.jpg', 'старый локальный путь (один такой на проде)'],
   ['//lh3.googleusercontent.com/a/x', 'адрес без схемы'],
@@ -58,6 +59,15 @@ describe('avatarSource — откуда грузится аватар автор
     expect(avatarSource('https://LH3.GoogleUserContent.com/a/x')).toEqual({
       src: 'https://lh3.googleusercontent.com/a/x',
       optimized: false,
+    });
+    // И из нашего облака — у него своя ветка возврата.
+    expect(
+      avatarSource(
+        'https://RES.Cloudinary.com/davrzdre8/image/upload/v1/avatars/user-1/photo.jpg',
+      ),
+    ).toEqual({
+      src: 'https://res.cloudinary.com/davrzdre8/image/upload/v1/avatars/user-1/photo.jpg',
+      optimized: true,
     });
   });
 

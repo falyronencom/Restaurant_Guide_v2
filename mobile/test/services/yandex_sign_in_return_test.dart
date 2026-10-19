@@ -97,29 +97,39 @@ void main() {
   const instant = Duration(seconds: 1);
 
   group('Ожидание экрана', () {
-    testWidgets(
-        'Android: ответ, пришедший, пока приложение не на экране, уходит на '
-        'сервер после возврата на экран', (tester) async {
-      setLifecycle(tester, AppLifecycleState.paused);
+    // «Не на экране» — всё, кроме `resumed` (признак, по которому плагин
+    // входа отменяет незавершённые входы): по дороге из браузера приложение
+    // бывает и `inactive`, и `hidden`, а не только `paused`.
+    for (final away in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      testWidgets(
+          'Android: ответ, пришедший, пока приложение не на экране '
+          '(${away.name}), уходит на сервер после возврата на экран',
+          (tester) async {
+        setLifecycle(tester, away);
 
-      signIn();
-      await tester.pump(const Duration(seconds: 30));
+        signIn();
+        await tester.pump(const Duration(seconds: 30));
 
-      expect(adapter.requests, isEmpty,
-          reason: 'приложение не на экране — при энергосбережении сеть ему '
-              'закрыта, запрос упал бы `Failed host lookup`');
-      expect(outcome, isNull);
+        expect(adapter.requests, isEmpty,
+            reason: 'приложение не на экране — при энергосбережении сеть ему '
+                'закрыта, запрос упал бы `Failed host lookup`');
+        expect(outcome, isNull);
 
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pump(instant);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pump(instant);
 
-      expect(tokensSent(), ['ya-token'],
-          reason: 'после возврата на экран ответ Яндекса уходит ровно один раз');
-      expect(outcome, isA<AuthResponse>());
-      expect((outcome as AuthResponse).user.id, 'u-ya');
-      expect(storage['access_token'], 'access-1');
-      expect(storage['refresh_token'], 'refresh-1');
-    });
+        expect(tokensSent(), ['ya-token'],
+            reason: 'после возврата на экран ответ Яндекса уходит ровно один раз');
+        expect(outcome, isA<AuthResponse>());
+        expect((outcome as AuthResponse).user.id, 'u-ya');
+        expect(storage['access_token'], 'access-1');
+        expect(storage['refresh_token'], 'refresh-1');
+      });
+    }
 
     testWidgets('Android: приложение уже на экране — ответ уходит сразу',
         (tester) async {
@@ -275,16 +285,25 @@ void main() {
               '«Произошла ошибка» — человек не понимает, что делать');
     });
 
-    test('сервер не ответил вовремя — тоже «нет связи»', () async {
-      final auth = await provider(DioException(
-        requestOptions: RequestOptions(path: '/api/v1/auth/oauth'),
-        type: DioExceptionType.connectionTimeout,
-        error: 'Сервер не отвечает. Проверьте подключение.',
-      ));
+    // «Не ответил вовремя» — любой из трёх сроков транспорта: соединиться,
+    // отправить, дождаться ответа.
+    for (final type in const [
+      DioExceptionType.connectionTimeout,
+      DioExceptionType.sendTimeout,
+      DioExceptionType.receiveTimeout,
+    ]) {
+      test('сервер не ответил вовремя (${type.name}) — тоже «нет связи»',
+          () async {
+        final auth = await provider(DioException(
+          requestOptions: RequestOptions(path: '/api/v1/auth/oauth'),
+          type: type,
+          error: 'Сервер не отвечает. Проверьте подключение.',
+        ));
 
-      expect(await auth.loginWithYandex(), isFalse);
-      expect(auth.errorMessage, AuthProvider.yandexNoConnectionMessage);
-    });
+        expect(await auth.loginWithYandex(), isFalse);
+        expect(auth.errorMessage, AuthProvider.yandexNoConnectionMessage);
+      });
+    }
 
     test('отказ браузера по существу — прежний текст', () async {
       final auth =

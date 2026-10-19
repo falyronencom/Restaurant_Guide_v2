@@ -91,6 +91,15 @@ class _GatedServer implements ModerationService {
   }
 
   @override
+  Future<void> updateCoordinates({
+    required String id,
+    required double latitude,
+    required double longitude,
+  }) async {
+    calls.add('coordinates:$id');
+  }
+
+  @override
   Future<ActiveListResponse> getActiveEstablishments({
     int page = 1,
     int perPage = 20,
@@ -331,6 +340,14 @@ void main() {
       pending.selectEstablishment('f');
       expect(await pending.approveEstablishment(), isFalse);
       expect(await pending.rejectEstablishment(), isFalse);
+      // «Действие» — каждое, что берёт показанную карточку: правка
+      // координат тоже. Без await до проверки: ушедшая правка ждала бы
+      // перечитывания карточки, на которое этот стенд не отвечает.
+      final coordinates = pending.updateCoordinates(53.9, 27.56);
+      await pumpEventQueue();
+      expect(server.calls.where((c) => c.startsWith('coordinates:')), isEmpty,
+          reason: 'правка координат ушла к карточке, которой нет на экране');
+      expect(await coordinates, isFalse);
 
       expect(
         server.calls.where((c) => !c.startsWith('detail:')),
@@ -371,6 +388,13 @@ void main() {
       final done = provider.suspendEstablishment('Жалобы посетителей');
       await pumpEventQueue();
       provider.resetAccountScope();
+      // Вошедший открыл ту же карточку — ошибка чужого действия не о нём.
+      // Без этого после сброса выбранной карточки нет, и ошибку отсёк бы уже
+      // «выбрана другая», а не смена аккаунта (так же, как у очереди и
+      // приостановленных ниже).
+      provider.selectEstablishment('a');
+      server.answer('a', _detail('a', forAdmin: false), index: 1);
+      await pumpEventQueue();
       server.suspendGate!.completeError(Exception('HTTP 500'));
       final ok = await done;
 

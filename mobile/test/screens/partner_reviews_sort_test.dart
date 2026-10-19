@@ -28,7 +28,8 @@ const _placeId = '11111111-1111-4111-8111-111111111111';
 /// Отзывы заведения: номер — порядок написания (1 — самый старый).
 /// Лучший (5★) — самый старый, худший (1★) — второй: оба далеко за первой
 /// страницей «сначала новые».
-const _count = 23;
+/// Тесты «сначала старые» ставят и 13 — две страницы; [setUp] возвращает 23.
+var _count = 23;
 
 int _rating(int n) => n == 1 ? 5 : (n == 2 ? 1 : 2 + n % 3);
 DateTime _createdAt(int n) => DateTime.utc(2026, 1, 1).add(Duration(days: n));
@@ -39,7 +40,8 @@ var _arrived = 0;
 List<int> get _all => [for (var n = 1; n <= _count + _arrived; n++) n];
 
 /// Порядок сервера: `newest` — created_at DESC; `highest` — rating DESC,
-/// затем новые; `lowest` — rating ASC, затем новые; незнакомое — `newest`.
+/// затем новые; `lowest` — rating ASC, затем новые; без `sort` — `newest`.
+/// Незнакомое значение до порядка не доходит — см. [_server].
 List<int> _serverOrder(String? sort) {
   int newer(int a, int b) => _createdAt(b).compareTo(_createdAt(a));
   final rows = [..._all];
@@ -60,8 +62,32 @@ List<int> _serverOrder(String? sort) {
   return rows;
 }
 
+/// Порядки, которые знает сервер (`reviewValidation.js`, `query('sort')`).
+const _serverSorts = {'newest', 'highest', 'lowest'};
+
 ResponseBody _server(RequestOptions options) {
   final q = options.queryParameters;
+  final sort = q['sort'] as String?;
+  // Незнакомый порядок сервер не подменяет «новыми», а отвергает — `validate`
+  // бэкенда, 422. Заглушка, отвечавшая на него «новыми», не видела, что экран
+  // просит порядок, которого у сервера нет.
+  if (sort != null && !_serverSorts.contains(sort)) {
+    return jsonBody(<String, dynamic>{
+      'success': false,
+      'message': 'Validation failed',
+      'error': <String, dynamic>{
+        'code': 'VALIDATION_ERROR',
+        'details': [
+          <String, dynamic>{
+            'field': 'sort',
+            'message': 'Sort must be one of: newest, highest, lowest',
+            'value': sort,
+          },
+        ],
+      },
+      'timestamp': '2026-10-17T10:00:00.000Z',
+    }, status: 422);
+  }
   final page = q['page'] as int;
   final limit = q['limit'] as int;
   final rows = _serverOrder(q['sort'] as String?)
@@ -176,26 +202,39 @@ void main() {
     late StubAdapter wire;
     setUp(() {
       _arrived = 0;
+      _count = 23;
       wire = installWireStand(_server);
     });
 
-    testWidgets('«По дате (старые)»: от самого старого через все страницы',
-        (tester) async {
-      await _pump(tester);
-      expect(_visible(tester).first, 23, reason: 'сначала — новые');
+    // Три страницы и две: самая старая — последняя, и при двух она же
+    // вторая; граница «страниц больше одной» видна только на двух.
+    for (final (count, pages) in [
+      (23, [1, 3, 2, 1]),
+      (13, [1, 2, 1]),
+    ]) {
+      testWidgets('«По дате (старые)»: от самого старого через все страницы '
+          '($count отзывов)', (tester) async {
+        _count = count;
+        await _pump(tester);
+        expect(_visible(tester).first, count, reason: 'сначала — новые');
 
-      await _choose(tester, 'По дате (старые)');
-      await tester.pumpAndSettle();
+        await _choose(tester, 'По дате (старые)');
+        await tester.pumpAndSettle();
 
-      expect(_visible(tester).first, 1,
-          reason: 'самый старый отзыв — на последней странице сервера');
-      expect(await _wholeList(tester), _all,
-          reason: 'все 23 по возрастанию даты, ни одного дважды');
-      final afterChoice = wire.requests.skip(1);
-      expect(afterChoice.map((r) => r.queryParameters['page']), [1, 3, 2, 1],
-          reason: 'первая страница говорит, сколько их; дальше — '
-              'с последней к первой');
-    });
+        expect(wire.requests.map((r) => r.queryParameters['sort']),
+            everyElement(isIn(_serverSorts)),
+            reason: 'сервер знает только newest, highest и lowest — на '
+                'прочее он отвечает 422');
+        expect(_visible(tester).first, 1,
+            reason: 'самый старый отзыв — на последней странице сервера');
+        expect(await _wholeList(tester), _all,
+            reason: 'все $count по возрастанию даты, ни одного дважды');
+        final afterChoice = wire.requests.skip(1);
+        expect(afterChoice.map((r) => r.queryParameters['page']), pages,
+            reason: 'первая страница говорит, сколько их; дальше — '
+                'с последней к первой');
+      });
+    }
 
     testWidgets('«По рейтингу (высокий)»: подгрузка — в том же порядке',
         (tester) async {
@@ -239,6 +278,7 @@ void main() {
     late _HeldWire wire;
     setUp(() {
       _arrived = 0;
+      _count = 23;
       installWireStand(_server);
       wire = _HeldWire();
       // Поверх стенда: tearDown стенда вернёт исходный транспорт.

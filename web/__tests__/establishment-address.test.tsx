@@ -213,6 +213,18 @@ describe('establishment page — one address per card', () => {
     expect(permanentRedirect).not.toHaveBeenCalled();
   });
 
+  // Rule 4 names both halves of the address: an unknown CITY is a 404 too.
+  it('still answers 404, not a redirect, for an unknown city', async () => {
+    (validateCitySlug as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      EstablishmentPage({ params: P('zz-gorod', 'restaurants', 'any-slug') }),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+
+    expect(getBySlug).not.toHaveBeenCalled();
+    expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+
   it('sends a card outside the URL canon to the fallback address', async () => {
     serve(card('legacy-card', { city_slug: null, category_slug: null }));
 
@@ -270,8 +282,15 @@ describe('establishment metadata — canonical from the card, not the request', 
     expect(meta.alternates?.canonical).toBe('/minsk/restaurants/meta-legacy');
   });
 
-  it('is absent when the card cannot be loaded', async () => {
-    (getBySlug as jest.Mock).mockRejectedValue(new ApiError(404, 'Not found'));
+  // "Cannot be loaded" is not only the card's 404: a backend failure and a
+  // broken transport (serverFetch throws ApiError 0) leave no card either, and
+  // the metadata takes another branch for them.
+  it.each([
+    ['the card is gone (404)', new ApiError(404, 'Not found')],
+    ['the backend fails (500)', new ApiError(500, 'Internal error')],
+    ['the transport breaks', new ApiError(0, 'Fetch failed')],
+  ])('is absent when the card cannot be loaded: %s', async (_case, err) => {
+    (getBySlug as jest.Mock).mockRejectedValue(err);
 
     const meta = await generateDetailMetadata({
       params: P('minsk', 'restaurants', 'meta-ghost'),
@@ -341,8 +360,12 @@ describe('reviews page — one address per card', () => {
     );
   });
 
-  it('has no canonical when the card cannot be loaded', async () => {
-    (getBySlug as jest.Mock).mockRejectedValue(new ApiError(404, 'Not found'));
+  it.each([
+    ['the card is gone (404)', new ApiError(404, 'Not found')],
+    ['the backend fails (500)', new ApiError(500, 'Internal error')],
+    ['the transport breaks', new ApiError(0, 'Fetch failed')],
+  ])('has no canonical when the card cannot be loaded: %s', async (_case, err) => {
+    (getBySlug as jest.Mock).mockRejectedValue(err);
 
     const meta = await generateReviewsMetadata({
       params: P('minsk', 'restaurants', 'reviews-ghost'),

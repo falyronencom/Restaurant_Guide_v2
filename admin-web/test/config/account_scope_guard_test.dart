@@ -138,10 +138,13 @@ void main() {
         final file = File('lib/providers/$fileName.dart');
         expect(file.existsSync(), isTrue,
             reason: 'не найден исходник ${file.path}');
+        // Регистрируется именно сброс: другой оповещающий метод (например,
+        // снятие выбора) прошёл бы проверку оповещения ниже, а очередь и метки
+        // запросов пережили бы выход. Комментарии — вон.
         expect(
-          file.readAsStringSync(),
-          contains('AccountScope.register('),
-          reason: '$name обязан регистрировать сброс при смене аккаунта',
+          file.readAsStringSync().replaceAll(RegExp(r'//[^\n]*'), ''),
+          contains('AccountScope.register(resetAccountScope)'),
+          reason: '$name обязан регистрировать свой resetAccountScope',
         );
       }
     });
@@ -173,12 +176,31 @@ void main() {
             RegExp(r'void resetAccountScope\(\) \{([\s\S]*?)\r?\n  \}')
                 .firstMatch(source);
         expect(reset, isNotNull, reason: '$name: не найден resetAccountScope');
-        expect(
-          RegExp(r'_\w+\+\+;').hasMatch(reset!.group(1)!),
-          isTrue,
-          reason: '$name: сброс не сдвигает ни одной метки запроса — поздний '
-              'ответ прежнего аккаунта ляжет в состояние нового',
-        );
+        // Закомментированная строка метку не сдвигает — комментарии вон.
+        String code(String text) => text.replaceAll(RegExp(r'//[^\n]*'), '');
+        final body = code(reset!.group(1)!);
+        final bumped = RegExp(r'(_\w+)\+\+;')
+            .allMatches(body)
+            .map((m) => m.group(1)!)
+            .toSet();
+        expect(bumped, isNotEmpty,
+            reason: '$name: сброс не сдвигает ни одной метки запроса — поздний '
+                'ответ прежнего аккаунта ляжет в состояние нового');
+        // Метка — у КАЖДОГО запроса: у провайдера со списком и карточкой
+        // их две, и сдвинутая метка списка не защищает поздний ответ
+        // карточки. Метки — счётчики `_generation`, `_…Seq`, `_…Request`,
+        // которые провайдер сдвигает, отправляя запрос.
+        final rest = code(source.replaceRange(reset.start, reset.end, ''));
+        final tags = RegExp(r'(?:\+\+(_\w+)|(_\w+)\+\+)')
+            .allMatches(rest)
+            .map((m) => m.group(1) ?? m.group(2)!)
+            .where((tag) => RegExp(r'^_(generation|\w*Seq|\w*Request)$')
+                .hasMatch(tag))
+            .toSet();
+        expect(tags.difference(bumped), isEmpty,
+            reason: '$name: метки запросов, которые сброс не сдвигает, — '
+                'поздний ответ прежнего аккаунта на эти запросы ляжет в '
+                'состояние нового');
       }
     });
   });
@@ -223,6 +245,15 @@ void main() {
           1,
           reason: '${entry.key} не зарегистрировал сброс в конструкторе',
         );
+        // Запись в реестре — метод этого провайдера, а не пустая: пустая дала
+        // бы ту же единицу. Каждый сброс оповещает экран — по оповещению видно,
+        // что вызван метод этого провайдера; что это именно resetAccountScope,
+        // держит текстовая проверка выше.
+        var notified = 0;
+        provider.addListener(() => notified++);
+        AccountScope.resetAll();
+        expect(notified, greaterThan(0),
+            reason: '${entry.key}: реестр вызывает не его сброс');
         provider.dispose();
       }
     });

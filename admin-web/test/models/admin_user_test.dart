@@ -61,6 +61,27 @@ void main() {
     expect(user('admin').canResetName, isFalse);
   });
 
+  test('роль и служебность — из ключей сервера, а не значения по умолчанию',
+      () {
+    // Разбор по умолчанию даёт «user» и «не служебная» — карточка выше их и
+    // подаёт, поэтому ключи `role` и `is_service_account` она не видит, а
+    // проверка порядка защиты строит человека конструктором. От этих ключей
+    // зависит, предложит ли панель блокировку.
+    AdminUser parse(Map<String, dynamic> keys) =>
+        AdminUser.fromJson(<String, dynamic>{'id': 'p', ...keys});
+
+    final admin = parse(<String, dynamic>{'role': 'admin'});
+    expect(admin.role, 'admin');
+    expect(admin.protection, AdminUserProtection.panelAccount);
+
+    final service = parse(<String, dynamic>{
+      'role': 'partner',
+      'is_service_account': true,
+    });
+    expect(service.isServiceAccount, isTrue);
+    expect(service.protection, AdminUserProtection.serviceAccount);
+  });
+
   test('защищают карточки в каталоге или на модерации, а не черновики', () {
     AdminUser parse(Map<String, dynamic> extra) => AdminUser.fromJson(
         <String, dynamic>{'id': 'p', 'role': 'partner', ...extra});

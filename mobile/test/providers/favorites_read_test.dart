@@ -41,12 +41,13 @@ void main() {
   late StubAdapter wire;
 
   /// Ответ на чтение избранного, который тест держит до своего слова.
-  ResponseBody held(Completer gate, Map<String, dynamic> body) {
+  ResponseBody held(Completer gate, Map<String, dynamic> body,
+      {int status = 200}) {
     return ResponseBody(
       Stream<Uint8List>.fromFuture(gate.future.then(
         (_) => Uint8List.fromList(utf8.encode(jsonEncode(body))),
       )),
-      200,
+      status,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
@@ -74,7 +75,13 @@ void main() {
       }
       if (path == '/api/v1/favorites') {
         // 400, а не 500: на 5xx транспорт сам повторяет запрос с задержкой.
-        if (failReads) return jsonBody({'success': false}, status: 400);
+        if (failReads) {
+          final refusal = {'success': false};
+          if (gates.isNotEmpty) {
+            return held(gates.removeAt(0), refusal, status: 400);
+          }
+          return jsonBody(refusal, status: 400);
+        }
         // Снимок сервера берётся в момент запроса: придержанный ответ
         // «стареет», как настоящий.
         final body = favoritesEnvelope(favorites: server.values.toList());
@@ -184,6 +191,37 @@ void main() {
     expect(reads(), 2);
     expect(listIds(p), ['c'], reason: 'чужие места не появляются');
     expect(p.favoriteIds, {'c'});
+  });
+
+  test('сброс аккаунта во время чтения: поздний отказ прежнего не доходит до '
+      'нового', () async {
+    // «Ответ прежнего» — и отказ тоже. Отказ аккаунта A под чтением B
+    // показал бы B сбой и опустил бы флаг загрузки, пока B ещё читает; успех
+    // B ошибку не снимает, и она осталась бы над прочитанным списком.
+    final gateA = Completer<void>();
+    final gateB = Completer<void>();
+    gates.addAll([gateA, gateB]);
+    failReads = true; // чтение A сорвётся — но позже, чем начнётся чтение B
+    final p = makeProvider();
+
+    final readA = p.ensureFavoritesLoaded();
+    await pumpEventQueue();
+    p.resetAccountScope();
+    failReads = false;
+    server = {'c': favoriteRow(id: 'c', name: 'Место c')};
+    final readB = p.ensureFavoritesLoaded();
+    await pumpEventQueue();
+    expect(reads(), 2, reason: 'предпосылка: B читает своим запросом');
+
+    gateA.complete(); // отказ A приходит, пока B ещё читает
+    await readA;
+    expect(p.favoritesError, isNull, reason: 'отказ A — не сбой B');
+    expect(p.isFavoritesLoading, isTrue, reason: 'чтение B ещё идёт');
+
+    gateB.complete();
+    await readB;
+    expect(listIds(p), ['c']);
+    expect(p.favoritesError, isNull);
   });
 
   test('сердечко, пока идёт чтение: место читается заново после ответа на '

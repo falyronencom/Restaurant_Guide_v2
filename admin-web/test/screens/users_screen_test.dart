@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
+import 'package:restaurant_guide_admin_web/config/router.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
@@ -431,6 +433,44 @@ void main() {
 
   test('userCardLocation ведёт на экран с id в запросе', () {
     expect(userCardLocation('abc'), '/settings/users?user=abc');
+  });
+
+  testWidgets('маршрут панели отдаёт экрану id из запроса ссылки',
+      (tester) async {
+    // Слой маршрута. Тест «ссылка из отзыва…» строит экран с initialUserId
+    // сам, а адрес «?user=<id>» разбирает маршрут панели — здесь исполняется
+    // его настоящий построитель.
+    final auth = StubAuthProvider.admin();
+    addTearDown(auth.dispose);
+    final router = createRouter(auth);
+    addTearDown(router.dispose);
+    GoRoute? usersRoute(List<RouteBase> routes) {
+      for (final route in routes) {
+        if (route is GoRoute && route.path == '/settings/users') return route;
+        final inner = usersRoute(route.routes);
+        if (inner != null) return inner;
+      }
+      return null;
+    }
+
+    final route = usersRoute(router.configuration.routes);
+    expect(route, isNotNull, reason: 'маршрута /settings/users нет');
+    await tester.pumpWidget(const SizedBox());
+    final state = GoRouterState(
+      router.configuration,
+      uri: Uri.parse('/settings/users?user=author-9'),
+      matchedLocation: '/settings/users',
+      fullPath: '/settings/users',
+      pathParameters: const <String, String>{},
+      pageKey: const ValueKey<String>('users'),
+    );
+
+    final screen = route!.builder!(tester.element(find.byType(SizedBox)), state);
+
+    expect(
+        screen,
+        isA<UsersScreen>()
+            .having((s) => s.initialUserId, 'initialUserId', 'author-9'));
   });
 
   group('describeUserActionError', () {

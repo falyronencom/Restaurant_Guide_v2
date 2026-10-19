@@ -98,6 +98,31 @@ void main() {
     expect(result.users.single.isActive, isFalse);
   });
 
+  test('карточка человека: свой адрес с id, конверт разобран', () async {
+    // Слой сервиса для ссылки «к автору»: экран людей в своих тестах получает
+    // карточку от подставного сервиса, и адрес запроса не видит никто.
+    // Конверт — adminUserController.getUser: `{ success, data: user }`.
+    final adapter = _StubAdapter((_) => _json(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{
+            'id': 'author-9',
+            'name': 'Автор Отзыва',
+            'role': 'user',
+            'is_active': true,
+            'review_count': 1,
+            'hidden_review_count': 0,
+            'establishment_count': 0,
+          },
+        }));
+
+    final user = await serviceOver(adapter).getUser('author-9');
+
+    expect(adapter.requests.single.method, 'GET');
+    expect(adapter.requests.single.path, '/api/v1/admin/users/author-9');
+    expect(user.id, 'author-9');
+    expect(user.name, 'Автор Отзыва');
+  });
+
   test('блокировка: причина в теле, флаг changed разобран', () async {
     var changed = true;
     final adapter = _StubAdapter((_) => _json(<String, dynamic>{

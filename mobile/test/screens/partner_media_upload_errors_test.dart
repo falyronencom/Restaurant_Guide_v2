@@ -157,6 +157,36 @@ void main() {
   }
 
   group('Фото интерьера', () {
+    testWidgets('загрузилось — фото в карточке интерьера, плашка успеха',
+        (tester) async {
+      // Путь «загрузилось → фото в карточке» не исполнял ни один тест: тест
+      // предела фото подменяет загрузку прямым вызовом провайдера. Ответ —
+      // как у маршрута загрузки (`tempMediaRoutes.js`, 201): три адреса
+      // разных размеров (`generateAllResolutions`), и в карточку идёт
+      // исходный, а не превью и не миниатюра.
+      const base = 'https://res.cloudinary.com/demo/image/upload';
+      const url = '$base/c_limit,w_1920/f_auto,q_auto/temp/u1/new';
+      respond = (_) => jsonBody(<String, dynamic>{
+            'success': true,
+            'data': <String, dynamic>{
+              'url': url,
+              'preview_url': '$base/c_limit,w_800/f_auto,q_auto/temp/u1/new',
+              'thumbnail_url': '$base/c_fill,w_200/f_auto,q_auto/temp/u1/new',
+              'public_id': 'temp/u1/new',
+              'file_type': 'image',
+            },
+          }, status: 201);
+
+      await tapAdd(tester, '+ Добавить фото');
+
+      expect(await snackBarText(tester), 'Фото успешно загружено');
+      final provider = tester
+          .element(find.byType(MediaStep))
+          .read<PartnerRegistrationProvider>();
+      expect(provider.data.interiorPhotos, [url]);
+      expect(provider.data.menuPhotos, isEmpty);
+    });
+
     testWidgets('без сети — фраза транспорта', (tester) async {
       respond = _noNetwork;
 
@@ -199,13 +229,33 @@ void main() {
     });
   });
 
-  testWidgets('фото меню, сбой сервера — общая фраза', (tester) async {
-    respond = _serverFailure;
+  group('Фото меню', () {
+    testWidgets('отказ сервера — его фраза целиком, без приставки',
+        (tester) async {
+      // Правило шапки — для каждой загрузки, и у фото меню своя ветка
+      // отказа. Ответ — как у маршрута загрузки сегодня (`tempMediaRoutes.js`,
+      // фото больше 10 МБ).
+      respond = (_) => jsonBody(<String, dynamic>{
+            'success': false,
+            'message': 'Фото больше 10 МБ. Выберите фото поменьше.',
+            'error': <String, dynamic>{'code': 'FILE_TOO_LARGE'},
+          }, status: 422);
 
-    await tapAdd(tester, '+ Добавить фото меню');
+      await tapAdd(tester, '+ Добавить фото меню');
 
-    expect(await snackBarText(tester),
-        'Не удалось загрузить фото меню. Попробуйте ещё раз.');
+      expect(await snackBarText(tester),
+          'Фото больше 10 МБ. Выберите фото поменьше.');
+      expect(wire.requests.single.path, '/api/v1/partner/media/upload');
+    });
+
+    testWidgets('сбой сервера — общая фраза', (tester) async {
+      respond = _serverFailure;
+
+      await tapAdd(tester, '+ Добавить фото меню');
+
+      expect(await snackBarText(tester),
+          'Не удалось загрузить фото меню. Попробуйте ещё раз.');
+    });
   });
 
   group('PDF меню', () {
