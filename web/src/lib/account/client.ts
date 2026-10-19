@@ -1,4 +1,6 @@
 import type {
+  AccountDeletionCheckResult,
+  DeleteAccountResult,
   LoadFavoritesResult,
   LoadProfileResult,
   UpdateProfileResult,
@@ -46,4 +48,13 @@ export function loadProfile(): Promise<LoadProfileResult> {
 
 export function updateProfileAction(name: string): Promise<UpdateProfileResult> {
   return postAccount<UpdateProfileResult>(`${BASE}/profile/update`, { name });
+}
+
+export function checkAccountDeletionAction(): Promise<AccountDeletionCheckResult> {
+  return postAccount<AccountDeletionCheckResult>(`${BASE}/deletion/check`);
+}
+
+/** `confirmation` — the word the person typed; the handler checks it too. */
+export function deleteAccountAction(confirmation: string): Promise<DeleteAccountResult> {
+  return postAccount<DeleteAccountResult>(`${BASE}/delete`, { confirmation });
 }

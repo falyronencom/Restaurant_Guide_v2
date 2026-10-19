@@ -55,6 +55,8 @@ export const NO_BANNER_PAGES: readonly string[] = [
   'forgot-password',
   'reset-password',
   'verify-email',
+  // «Как удалить учётку» — страница для Google Play (бриф В1, 18.10.2026).
+  'udalenie-uchetki',
 ];
 
 export function SiteHeader() {

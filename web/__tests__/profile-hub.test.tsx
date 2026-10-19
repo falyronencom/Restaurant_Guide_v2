@@ -21,6 +21,8 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/account/client', () => ({
   loadProfile: jest.fn(),
   updateProfileAction: jest.fn(),
+  checkAccountDeletionAction: jest.fn(),
+  deleteAccountAction: jest.fn(),
 }));
 const mockApplySession = jest.fn();
 const mockLogout = jest.fn();
@@ -38,11 +40,18 @@ jest.mock('@/components/auth/AuthProvider', () => ({
   }),
 }));
 
-import { loadProfile, updateProfileAction } from '@/lib/account/client';
+import {
+  checkAccountDeletionAction,
+  deleteAccountAction,
+  loadProfile,
+  updateProfileAction,
+} from '@/lib/account/client';
 import { ProfileHub } from '@/components/account/ProfileHub';
 
 const mockLoadProfile = loadProfile as jest.Mock;
 const mockUpdateProfile = updateProfileAction as jest.Mock;
+const mockCheckDeletion = checkAccountDeletionAction as jest.Mock;
+const mockDeleteAccount = deleteAccountAction as jest.Mock;
 
 function profile(overrides: Partial<AuthUserData> = {}): AuthUserData {
   return {
@@ -186,6 +195,29 @@ it("shows the server's own refusal of the name as is (the name rule, мат)", a
   ).toBeInTheDocument();
   expect(input).toHaveAttribute('maxLength', '50');
   expect(mockApplySession).not.toHaveBeenCalled();
+});
+
+it('carries the account deletion; once it ends, only its outcome stands in place of the profile', async () => {
+  // Brief В1: the name, the e-mail, «Сохранить» and «Выйти» belonged to the
+  // account that is gone.
+  mockLoadProfile.mockResolvedValue({ ok: true, profile: profile() });
+  mockCheckDeletion.mockResolvedValue({ ok: true, allowed: true, refusal: null });
+  mockDeleteAccount.mockResolvedValue({ ok: true });
+  const user = userEvent.setup();
+  render(<ProfileHub />);
+
+  await user.click(await screen.findByRole('button', { name: 'Удалить…' }));
+  await user.type(
+    await screen.findByLabelText('Чтобы подтвердить, введите слово УДАЛИТЬ'),
+    'УДАЛИТЬ',
+  );
+  await user.click(screen.getByRole('button', { name: 'Удалить учётку' }));
+
+  expect(await screen.findByText('Учётка удалена.')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Имя')).not.toBeInTheDocument();
+  expect(screen.queryByText('v@example.by')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Выйти' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Удалить учётку' })).not.toBeInTheDocument();
 });
 
 it('logs out and navigates home', async () => {

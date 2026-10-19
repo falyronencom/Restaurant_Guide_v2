@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import {
+  DeleteAccountSection,
+  DeletionEndedPanel,
+  type DeletionOutcome,
+} from '@/components/account/DeleteAccountSection';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -27,6 +32,10 @@ import { cn } from '@/lib/utils';
  * name updates without a reload. «Сменить пароль» rides the existing
  * /forgot-password email flow and only shows for password accounts
  * (authMethod=email) — OAuth accounts have no password to change.
+ *
+ * Once the account is deleted (brief В1, 18.10.2026), the hub shows only how
+ * the deletion ended: the name, the e-mail, «Сохранить» and «Выйти» belonged
+ * to an account that is gone.
  */
 
 type LoadState =
@@ -59,6 +68,7 @@ export function ProfileHub() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [ended, setEnded] = useState<DeletionOutcome | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +131,10 @@ export function ProfileHub() {
     await logout();
     router.replace('/');
   };
+
+  if (ended) {
+    return <DeletionEndedPanel outcome={ended} />;
+  }
 
   if (state.phase === 'loading') {
     return (
@@ -251,6 +265,8 @@ export function ProfileHub() {
           {loggingOut ? 'Выход…' : 'Выйти'}
         </Button>
       </section>
+
+      <DeleteAccountSection onEnded={setEnded} />
     </div>
   );
 }

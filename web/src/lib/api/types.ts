@@ -144,7 +144,8 @@ export type PublicReview = {
   created_at: string;
   updated_at: string;
   author: {
-    id: string;
+    /** null once the author's account is switched off — deleted («Гость») or blocked. */
+    id: string | null;
     name: string;
     avatar_url: string | null;
   };

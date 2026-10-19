@@ -1,11 +1,18 @@
 import 'server-only';
 
 import { getFavorites } from '@/lib/api/endpoints/favorites';
-import { getMe, putProfileName } from '@/lib/api/endpoints/profile';
+import {
+  deleteOwnAccount,
+  getAccountDeletionCheck,
+  getMe,
+  putProfileName,
+} from '@/lib/api/endpoints/profile';
 import { personText } from '@/lib/api/person-text';
 import { ApiError } from '@/lib/api/types';
-import { getSessionUser, writeUser } from '@/lib/auth/session';
+import { clearSession, getSessionUser, writeUser } from '@/lib/auth/session';
 import type {
+  AccountDeletionCheckResult,
+  DeleteAccountResult,
   LoadFavoritesResult,
   LoadProfileResult,
   UpdateProfileResult,
@@ -80,4 +87,34 @@ export async function updateProfile(name: string): Promise<UpdateProfileResult> 
       ? { ok: false, code: codeFromError(err), message }
       : { ok: false, code: codeFromError(err) };
   }
+}
+
+/** May the account be deleted now — the island asks before it shows the word. */
+export async function checkAccountDeletion(): Promise<AccountDeletionCheckResult> {
+  try {
+    const check = await getAccountDeletionCheck();
+    return { ok: true, allowed: check.allowed === true, refusal: check.refusal ?? null };
+  } catch (err) {
+    return { ok: false, code: codeFromError(err) };
+  }
+}
+
+/**
+ * Delete the account (brief В1); `confirmation` — the word as typed. On
+ * success the session cookies go too: the backend has already ended every
+ * session, and a browser left holding them would show a signed-in header over
+ * an account that no longer exists.
+ *
+ * A refusal comes back as its code only: the island asks the check again,
+ * whose answer carries the refusal's text and says what holds the account
+ * now — the cards that appeared, a block from the panel meanwhile.
+ */
+export async function deleteAccount(confirmation: string): Promise<DeleteAccountResult> {
+  try {
+    await deleteOwnAccount(confirmation);
+  } catch (err) {
+    return { ok: false, code: codeFromError(err) };
+  }
+  await clearSession();
+  return { ok: true };
 }
