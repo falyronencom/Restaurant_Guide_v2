@@ -28,7 +28,8 @@ export function ClassificationSection({ form, patch, disabled }: SectionProps) {
     }
   };
 
-  // Decision В5 (17.10.2026): a bar or a club may leave the cuisine out.
+  // Decision В5 (17.10.2026), widened 19.10.2026 (Ш17): a bar, a club, a
+  // hookah lounge, bowling, karaoke or billiards may leave the cuisine out.
   const cuisineOptional =
     form.categories.length > 0 && !isCuisineRequired(form.categories);
 
@@ -36,7 +37,7 @@ export function ClassificationSection({ form, patch, disabled }: SectionProps) {
     <SectionCard
       id="section-classification"
       title="Классификация"
-      description="Выберите тип заведения и кухню — так гости находят вас в каталоге. Бару и клубу кухню можно не выбирать."
+      description="Выберите тип заведения и кухню — так гости находят вас в каталоге. Бару, клубу, кальянной, боулингу, караоке и бильярду кухню можно не выбирать."
     >
       <Field label={`Категории — до ${MAX_CATEGORIES}`}>
         <div className="flex flex-wrap gap-2">

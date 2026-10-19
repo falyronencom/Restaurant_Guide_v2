@@ -278,7 +278,7 @@ class PartnerEstablishmentCard extends StatelessWidget {
             color: isPremium ? _backgroundColor : AppTheme.textPrimary,
           ),
         ),
-        // Cuisine — у бара и клуба её может не быть: тогда строки нет
+        // Cuisine — у бара, клуба, кальянной и т. п. её может не быть: тогда строки нет
         if (establishment.cuisineDisplayName.isNotEmpty)
           Text(
             establishment.cuisineDisplayName,

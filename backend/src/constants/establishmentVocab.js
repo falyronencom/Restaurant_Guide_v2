@@ -86,19 +86,31 @@ export const ATTRIBUTE_CANON = Object.freeze([
 ]);
 
 /**
- * Categories whose card may carry no cuisine (decision of the Coordinator В5,
- * 17.10.2026: a bar or a club need not pick a cuisine). Every other category
- * keeps the rule «1–3 cuisines».
+ * Categories whose card may carry no cuisine. Decision of the Coordinator В5,
+ * 17.10.2026: a bar and a club; widened 19.10.2026 (Ш17): a hookah lounge,
+ * bowling, karaoke and billiards too. A pub still needs a cuisine. Every other
+ * category keeps the rule «1–3 cuisines».
+ *
+ * Mirrors: migration 030 (the cuisines CHECK), web/src/lib/partner/constants.ts,
+ * mobile/lib/models/partner_registration.dart (CategoryOptions.cuisineOptionalIds).
  */
-export const CUISINE_OPTIONAL_CATEGORIES = Object.freeze(['Бар', 'Клуб']);
+export const CUISINE_OPTIONAL_CATEGORIES = Object.freeze([
+  'Бар',
+  'Клуб',
+  'Кальянная',
+  'Боулинг',
+  'Караоке',
+  'Бильярд',
+]);
 
 const CUISINE_OPTIONAL_SET = new Set(CUISINE_OPTIONAL_CATEGORIES);
 
 /**
  * Whether a card with these categories must name at least one cuisine.
  *
- * A cuisine may be left out only when EVERY category is a bar or a club: a card
- * that is a bar and a restaurant follows the restaurant's rule. No categories
+ * A cuisine may be left out only when EVERY category is cuisine-optional: a card
+ * that is a bar and a restaurant (or a bowling and a pub) follows the rule of
+ * the category that needs a cuisine. No categories
  * (or not a list) → required, the stricter answer.
  *
  * @param {unknown} categories

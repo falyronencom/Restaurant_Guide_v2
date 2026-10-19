@@ -26,7 +26,7 @@ import {
 } from '@/lib/partner/constants';
 import type { WizardFormState } from '@/lib/partner/form';
 
-/** ≥1 cuisine, or none needed — a bar or a club (decision В5, 17.10.2026). */
+/** ≥1 cuisine, or none needed — a cuisine-optional category (decision В5, Ш17). */
 function hasCuisineIfRequired(form: WizardFormState): boolean {
   return form.cuisines.length >= 1 || !isCuisineRequired(form.categories);
 }
@@ -59,7 +59,7 @@ export type E1Checklist = {
   photos: boolean; // ≥ E1_MIN_PHOTOS establishment (interior) photos
   menu: boolean; // ≥1 menu photo OR PDF
   hours: boolean; // ≥1 open day with times
-  classification: boolean; // ≥1 category AND ≥1 cuisine (none needed for a bar or a club)
+  classification: boolean; // ≥1 category AND ≥1 cuisine (none needed for a cuisine-optional category)
   /** ≥ E1_MIN_DESCRIPTION chars — PROGRESS ONLY, never gates Submit (see header). */
   description: boolean;
   passed: boolean; // every gating item above (description excluded)

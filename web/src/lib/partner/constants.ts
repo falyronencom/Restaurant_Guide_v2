@@ -50,14 +50,22 @@ export const MAX_CUISINES = 3;
 
 /**
  * Categories whose card may go without a cuisine — decision of the Coordinator
- * В5 (17.10.2026), mirrors backend CUISINE_OPTIONAL_CATEGORIES
- * (backend/src/constants/establishmentVocab.js).
+ * В5 (17.10.2026: a bar, a club), widened 19.10.2026 (Ш17: a hookah lounge,
+ * bowling, karaoke, billiards; a pub still needs one). Mirrors backend
+ * CUISINE_OPTIONAL_CATEGORIES (backend/src/constants/establishmentVocab.js).
  */
-export const CUISINE_OPTIONAL_CATEGORIES: readonly string[] = ['Бар', 'Клуб'];
+export const CUISINE_OPTIONAL_CATEGORIES: readonly string[] = [
+  'Бар',
+  'Клуб',
+  'Кальянная',
+  'Боулинг',
+  'Караоке',
+  'Бильярд',
+];
 
 /**
  * Whether the card must name at least one cuisine. Only when EVERY category is a
- * bar or a club may it go without one: a bar that is also a restaurant follows
+ * cuisine-optional may it go without one: a bar that is also a restaurant follows
  * the restaurant's rule. No category yet → required. Mirrors backend
  * isCuisineRequired — the server refuses what this lets through otherwise.
  */
