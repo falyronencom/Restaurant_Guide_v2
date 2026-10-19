@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AuthMenu } from '@/components/auth/AuthMenu';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { isPartner } from '@/lib/auth/roles';
 import { cn } from '@/lib/utils';
 
 import { MobileNav } from './MobileNav';
@@ -38,18 +40,35 @@ import { MobileNav } from './MobileNav';
  * Server Component and the public subtree keeps its ISR posture. AuthMenu is the
  * other client island.
  */
+/**
+ * One-segment pages of the (public) group that have NO photo banner — every
+ * static folder next to [city]. Anything else one segment deep is a city page
+ * with a banner, and the header overlays it: transparent, white wordmark and
+ * controls. On these pages that was white on a white page (сверка находок
+ * тестировщика с сайтом, 18.10: «Забыли пароль», «Новый пароль»,
+ * «Подтверждение почты»). site-header.test.tsx checks the list against the
+ * folders, so a new page cannot be forgotten here.
+ */
+export const NO_BANNER_PAGES: readonly string[] = [
+  'login',
+  'register',
+  'forgot-password',
+  'reset-password',
+  'verify-email',
+  // «Как удалить учётку» — страница для Google Play (бриф В1, 18.10.2026).
+  'udalenie-uchetki',
+];
+
 export function SiteHeader() {
   const pathname = usePathname();
   const isHome = pathname === '/';
+  const { user } = useAuth();
   // Routes with a photo banner the header overlays: home, the city page
-  // (/{city}) and the catalog (/{city}/{category}). Auth pages (/login,
-  // /register) and «Как удалить учётку» (/udalenie-uchetki) are also 1-segment
-  // but have NO banner — exclude them. The detail page (3 segments) and
-  // reviews (4) keep the solid header.
+  // (/{city}) and the catalog (/{city}/{category}). The detail page (3
+  // segments) and reviews (4) keep the solid header.
   const segments = pathname.split('/').filter(Boolean);
   const isCity =
-    segments.length === 1 &&
-    !['login', 'register', 'udalenie-uchetki'].includes(segments[0]);
+    segments.length === 1 && !NO_BANNER_PAGES.includes(segments[0]);
   const isCatalog = segments.length === 2;
   const hasOverlayHero = isHome || isCity || isCatalog;
   const [scrolled, setScrolled] = useState(false);
@@ -102,17 +121,21 @@ export function SiteHeader() {
 
         {/* Desktop — partner CTA + account control inline (md and up). */}
         <div className="hidden items-center gap-m text-body-m md:flex">
-          <Link
-            href="/login?returnTo=/cabinet/new"
-            className={cn(
-              'rounded-[10px] border px-m py-2 font-medium transition-colors',
-              overlay
-                ? 'border-white/70 text-white hover:bg-white/10'
-                : 'border-border text-foreground hover:bg-muted',
-            )}
-          >
-            Стать партнёром
-          </Link>
+          {/* A partner already is one — their way to the cabinet is
+              «Мои заведения» in the account menu (С8). */}
+          {!isPartner(user) && (
+            <Link
+              href="/login?returnTo=/cabinet/new"
+              className={cn(
+                'rounded-[10px] border px-m py-2 font-medium transition-colors',
+                overlay
+                  ? 'border-white/70 text-white hover:bg-white/10'
+                  : 'border-border text-foreground hover:bg-muted',
+              )}
+            >
+              Стать партнёром
+            </Link>
+          )}
           <AuthMenu overlay={overlay} />
         </div>
 

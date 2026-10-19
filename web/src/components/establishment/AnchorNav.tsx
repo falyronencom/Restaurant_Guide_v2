@@ -10,7 +10,7 @@
  *   - useState/useEffect required for active-section tracking
  *   - IntersectionObserver is a browser API, не существует на сервере
  *   - Sticky positioning itself — CSS-only (handled by parent / this nav's
- *     className `sticky top-0`), не требует JS; only the active-highlight
+ *     className `sticky top-[73px]`, under the site header), не требует JS; only the active-highlight
  *     does.
  *
  * Without JS the nav still renders + scrolls to anchors on click (native
@@ -69,7 +69,10 @@ export function AnchorNav({ items }: { items: AnchorItem[] }) {
   return (
     <nav
       aria-label='Разделы заведения'
-      className='sticky top-0 z-10 -mx-l overflow-x-auto border-b border-border bg-background/95 px-l py-s backdrop-blur'
+      // top-[73px]: sticks right BELOW the sticky site header (72px + 1px
+      // border, SiteHeader — z-50, solid background). At top-0 the stuck nav
+      // hid under the header and was never seen.
+      className='sticky top-[73px] z-10 -mx-l overflow-x-auto border-b border-border bg-background/95 px-l py-s backdrop-blur'
       style={{ scrollbarWidth: 'none' }}
     >
       <ul className='flex gap-l whitespace-nowrap'>

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadProfile, updateProfileAction } from '@/lib/account/client';
 import type { AuthUserData } from '@/lib/api/types';
+import { verifyEmailHref } from '@/lib/auth/verify-email-href';
 import { cn } from '@/lib/utils';
 
 /*
@@ -198,14 +199,22 @@ export function ProfileHub() {
         <div className="flex flex-col gap-2">
           <span className="text-body-s text-figma-text-dark">Email</span>
           <div className="flex flex-wrap items-center gap-s">
-            <span className="text-body-m text-foreground">{profile.email}</span>
+            {/* min-w-0 + wrap-anywhere: an address has no spaces, and «.»/«@»
+                give the browser no break point, so a long one ran past the
+                card on a phone (п. 22). It now wraps inside the card. */}
+            <span
+              data-testid="profile-email"
+              className="min-w-0 max-w-full text-body-m text-foreground wrap-anywhere"
+            >
+              {profile.email}
+            </span>
             {profile.emailVerified ? (
               <Badge variant="secondary">Подтверждён</Badge>
             ) : (
               <>
                 <Badge variant="outline">Не подтверждён</Badge>
                 <Link
-                  href="/verify-email"
+                  href={verifyEmailHref('/profile')}
                   className="text-body-s font-medium text-brand-dark hover:underline"
                 >
                   Подтвердить
@@ -213,6 +222,13 @@ export function ProfileHub() {
               </>
             )}
           </div>
+          {/* No e-mail change on the server yet (PUT /auth/profile takes the
+              name only) — say so instead of leaving the visitor to look for
+              it (п. 24). No support address: there is no mailbox yet
+              (Координатор, 18.10). */}
+          <p className="text-body-s text-figma-text-dark">
+            Сменить почту пока нельзя.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">

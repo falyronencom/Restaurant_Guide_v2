@@ -2,13 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { getReviews } from '@/lib/api/endpoints/establishments';
 import {
   createReview,
   deleteReview,
   updateReview,
 } from '@/lib/api/endpoints/reviews';
 import { personText } from '@/lib/api/person-text';
-import { ApiError } from '@/lib/api/types';
+import { ApiError, type PublicReview } from '@/lib/api/types';
+import { DETAIL_REVIEWS_LIMIT } from '@/lib/establishment-helpers';
 
 /*
  * Review Server Actions (reviews-write Slice 1 create + Slice 2 edit/delete).
@@ -119,6 +121,53 @@ export async function deleteReviewAction(input: {
   }
   revalidatePath(input.detailPath);
   return { ok: true };
+}
+
+export type ReloadReviewsResult =
+  | { ok: true; reviews: PublicReview[]; total: number }
+  | { ok: false };
+
+/**
+ * Re-fetch the detail page's review slice after the page's own fetch failed
+ * (ReviewsLoadFailed calls it from the visitor's browser — the public API URL
+ * is server-only, hence an action, not a client fetch).
+ *
+ * On success it also busts the literal detail path: the ISR page cached the
+ * failed render (no reviews in its HTML), and without this it would keep it
+ * for up to an hour (revalidate = 3600). The path is only revalidated when it
+ * is a detail address of THIS slug — `/{city}/{category}/{slug}` — so the
+ * action cannot be pointed at an arbitrary route.
+ */
+export async function reloadReviewsAction(input: {
+  slug: string;
+  detailPath: string;
+}): Promise<ReloadReviewsResult> {
+  let result;
+  try {
+    result = await getReviews(input.slug, { limit: DETAIL_REVIEWS_LIMIT });
+  } catch {
+    return { ok: false };
+  }
+  if (isDetailPathOf(input.detailPath, input.slug)) {
+    revalidatePath(input.detailPath);
+  }
+  return {
+    ok: true,
+    reviews: result.reviews,
+    total: result.pagination.total,
+  };
+}
+
+const PATH_SEGMENT = /^[a-z0-9-]+$/i;
+
+function isDetailPathOf(path: string, slug: string): boolean {
+  const parts = path.split('/');
+  return (
+    parts.length === 4 &&
+    parts[0] === '' &&
+    parts[3] === slug &&
+    parts.slice(1).every((part) => PATH_SEGMENT.test(part))
+  );
 }
 
 function mapReviewError(

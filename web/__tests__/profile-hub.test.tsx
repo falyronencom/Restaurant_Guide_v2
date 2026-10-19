@@ -92,9 +92,10 @@ it('renders the hub for an unverified email account', async () => {
   expect(await screen.findByLabelText('Имя')).toHaveValue('Всеволод');
   expect(screen.getByText('v@example.by')).toBeInTheDocument();
   expect(screen.getByText('Не подтверждён')).toBeInTheDocument();
+  // The confirm page leads back here (after the code, or «Позже»).
   expect(screen.getByRole('link', { name: 'Подтвердить' })).toHaveAttribute(
     'href',
-    '/verify-email',
+    '/verify-email?returnTo=%2Fprofile',
   );
   expect(
     screen.getByRole('link', { name: 'Сменить пароль' }),
@@ -228,4 +229,34 @@ it('logs out and navigates home', async () => {
 
   await waitFor(() => expect(mockLogout).toHaveBeenCalled());
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
+});
+
+// Сверка находок тестировщика с сайтом, 18.10, пп. 22 и 24.
+describe('the e-mail row', () => {
+  const LONG = 'a.very.long.first.and.last.name.2001@university-example.by';
+
+  it('a long address wraps inside the card instead of running past it (п. 22)', async () => {
+    mockLoadProfile.mockResolvedValue({
+      ok: true,
+      profile: profile({ email: LONG }),
+    });
+    render(<ProfileHub />);
+
+    const email = await screen.findByTestId('profile-email');
+    expect(email).toHaveTextContent(LONG);
+    expect(email).toHaveClass('min-w-0', 'max-w-full', 'wrap-anywhere');
+  });
+
+  it('says the address cannot be changed yet — and names no support address (п. 24)', async () => {
+    mockLoadProfile.mockResolvedValue({ ok: true, profile: profile() });
+    const { container } = render(<ProfileHub />);
+
+    expect(
+      await screen.findByText('Сменить почту пока нельзя.'),
+    ).toBeInTheDocument();
+    // No mailbox exists yet (Координатор, 18.10): no address, no «поддержк…».
+    expect(container.textContent).not.toMatch(/поддержк/i);
+    expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(container.textContent?.match(/@/g)).toHaveLength(1); // the user's own
+  });
 });

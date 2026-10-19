@@ -109,7 +109,7 @@ export function FavoritesProvider({
   const toggle = useCallback(
     async (id: string) => {
       if (!isAuthenticated) {
-        requestLogin();
+        requestLogin({ fallbackToLoginPage: true });
         return;
       }
       // Read/write the authoritative ref synchronously so rapid same-card taps

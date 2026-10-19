@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { PARTNER_CABINET_HREF, isPartner } from '@/lib/auth/roles';
 
 type Props = {
   /* On the home hero the header is a transparent overlay → light burger. */
@@ -71,19 +72,31 @@ export function MobileNav({ overlay = false }: Props) {
         </SheetHeader>
 
         <nav className="flex flex-col gap-1 p-3">
-          <Link
-            href="/login?returnTo=/cabinet/new"
-            onClick={close}
-            className={itemClass}
-          >
-            Стать партнёром
-          </Link>
+          {/* A partner is one already — «Мои заведения» below instead (С8). */}
+          {!isPartner(user) && (
+            <Link
+              href="/login?returnTo=/cabinet/new"
+              onClick={close}
+              className={itemClass}
+            >
+              Стать партнёром
+            </Link>
+          )}
 
           {status === 'authenticated' && user ? (
             <>
               <div className="mt-2 truncate border-t border-border px-3 pt-3 pb-1 text-body-s text-muted-foreground">
                 {user.name || user.email}
               </div>
+              {isPartner(user) && (
+                <Link
+                  href={PARTNER_CABINET_HREF}
+                  onClick={close}
+                  className={itemClass}
+                >
+                  Мои заведения
+                </Link>
+              )}
               <Link href="/favorites" onClick={close} className={itemClass}>
                 Избранное
               </Link>
