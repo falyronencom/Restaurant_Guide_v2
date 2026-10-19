@@ -243,7 +243,9 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
   });
 
   describe('Integration Data Consistency', () => {
-    test('Cannot review establishment not in favorites', async () => {
+    // The body has always asserted that the review is accepted (201); the old
+    // name, «Cannot review establishment not in favorites», said the opposite.
+    test('Can review an establishment that is not in favorites — a review does not need a favorite', async () => {
       // This should still work - favorites and reviews are independent
       // (In some systems they might be linked, but not in ours)
 

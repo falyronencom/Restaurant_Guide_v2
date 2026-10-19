@@ -159,6 +159,36 @@ describe('PATCH /api/v1/partner/menu-items/:id', () => {
     expect(res.body.data.sanity_flag).toBeNull();
   });
 
+  // «Allowed fields» — each of the three on its own; and each such edit clears
+  // the flag: the partner vouches for the item whatever field they touched.
+  test.each([
+    ['item_name', 'Только имя'],
+    ['price_byn', 9.25],
+    ['category_raw', 'Супы'],
+  ])('an edit of %s alone is stored and clears sanity_flag', async (field, value) => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    const item = await seedMenuItem(estId, mediaId, {
+      itemName: 'Старое имя',
+      priceByn: 3,
+      sanityFlag: { reason: 'price_below_threshold', details: {} },
+    });
+
+    await request(app)
+      .patch(`/api/v1/partner/menu-items/${item.id}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ [field]: value })
+      .expect(200);
+
+    const { rows: [row] } = await query(
+      `SELECT ${field} AS value, sanity_flag FROM menu_items WHERE id = $1`,
+      [item.id],
+    );
+    expect(field === 'price_byn' ? Number(row.value) : row.value).toBe(value);
+    expect(row.sanity_flag).toBeNull();
+  });
+
   // Until 2026-10-07 the partner could edit a hidden item by its id (200, the
   // item stayed hidden). Since a re-read carries the moderator's «Скрыть» over
   // by the dish name, a renamed hidden item would come back visible after the
@@ -258,12 +288,17 @@ describe('POST /api/v1/partner/establishments/:id/retry-ocr', () => {
     expect(jobs.rows).toHaveLength(1);
   });
 
-  test('mixed media: PDFs and menu photos enqueued, interior photos excluded', async () => {
+  // Every photo that is not a menu stays out (establishment_media_type_check:
+  // interior, exterior, menu, dishes) — each recognition is paid for, and a
+  // dish photo read as a menu would make dishes out of a picture.
+  test('mixed media: PDFs and menu photos enqueued, interior, exterior and dish photos excluded', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     const pdfId = await seedPdfMedia(estId);
     const menuPhotoId = await seedPhotoMedia(estId, 'menu');
     await seedPhotoMedia(estId, 'interior');
+    await seedPhotoMedia(estId, 'exterior');
+    await seedPhotoMedia(estId, 'dishes');
 
     const res = await request(app)
       .post(`/api/v1/partner/establishments/${estId}/retry-ocr`)

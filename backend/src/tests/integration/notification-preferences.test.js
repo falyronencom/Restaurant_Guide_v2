@@ -114,6 +114,33 @@ describe('PUT /api/v1/notifications/preferences — menu_push_enabled', () => {
     expect(getResponse.body.data.booking_push_enabled).toBe(false);
   });
 
+  // The app sends only the toggled category (mobile notification_preferences_
+  // provider). A category the user switched off stays off through updates of
+  // the others — through both statements of the model: an update that names
+  // menu_push_enabled and one that does not.
+  test('a one-category update keeps the other categories as the user left them', async () => {
+    const put = (body) => request(app)
+      .put(PREFS_URL)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(body)
+      .expect(200);
+
+    await put({ reviews_push_enabled: false, promotions_push_enabled: false });
+    await put({ booking_push_enabled: false }); // without menu_push_enabled
+    await put({ menu_push_enabled: false }); // with menu_push_enabled
+
+    const getResponse = await request(app)
+      .get(PREFS_URL)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .expect(200);
+    expect(getResponse.body.data).toEqual(expect.objectContaining({
+      booking_push_enabled: false,
+      reviews_push_enabled: false,
+      promotions_push_enabled: false,
+      menu_push_enabled: false,
+    }));
+  });
+
   test('re-enabling menu push updates the existing row', async () => {
     await request(app)
       .put(PREFS_URL)

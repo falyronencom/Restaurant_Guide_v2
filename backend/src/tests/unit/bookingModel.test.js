@@ -54,6 +54,9 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+/** A statement with its whitespace folded, so a predicate reads as written. */
+const flat = (sql) => sql.replace(/\s+/g, ' ').trim();
+
 // ============================================================================
 // Create
 // ============================================================================
@@ -183,10 +186,16 @@ describe('getByEstablishmentId', () => {
     expect(result.items).toHaveLength(1);
     expect(result.total).toBe(1);
 
-    // First query should be the expiry UPDATE
-    const [firstSql] = mockQuery.mock.calls[0];
+    // First query should be the expiry UPDATE — of pending bookings past their
+    // deadline at this establishment: a confirmed one past it stays confirmed,
+    // another card's bookings are not this read's business.
+    const [firstSql, firstParams] = mockQuery.mock.calls[0];
     expect(firstSql).toContain("status = 'expired'");
-    expect(firstSql).toContain('expires_at < NOW()');
+    for (const predicate of ["status = 'pending'", 'expires_at < NOW()', 'establishment_id = $1']) {
+      expect(flat(firstSql)).toContain(predicate);
+    }
+    expect(flat(firstSql)).not.toMatch(/\bOR\b/i); // all of them, not any
+    expect(firstParams).toEqual([EST_ID]);
   });
 
   it('applies status filter', async () => {
@@ -217,9 +226,15 @@ describe('getByUserId', () => {
     const result = await Model.getByUserId(USER_ID);
 
     expect(result).toEqual([]);
-    const [firstSql] = mockQuery.mock.calls[0];
+    // Expiry, not cancellation: only pending bookings, only past the deadline,
+    // only this user's.
+    const [firstSql, firstParams] = mockQuery.mock.calls[0];
     expect(firstSql).toContain("status = 'expired'");
-    expect(firstSql).toContain('user_id = $1');
+    for (const predicate of ["status = 'pending'", 'expires_at < NOW()', 'user_id = $1']) {
+      expect(flat(firstSql)).toContain(predicate);
+    }
+    expect(flat(firstSql)).not.toMatch(/\bOR\b/i);
+    expect(firstParams).toEqual([USER_ID]);
   });
 });
 
@@ -253,6 +268,16 @@ describe('getActiveForEstablishmentAndUser', () => {
 
     const result = await Model.getActiveForEstablishmentAndUser(USER_ID, EST_ID);
     expect(result).toEqual(mockBookingRow);
+
+    // The mock hands back a row whatever was asked; «active» is decided by the
+    // statement: this user, this card, pending or confirmed — a booking that is
+    // over does not hold the one-per-establishment slot.
+    const [sql, params] = mockQuery.mock.calls[1];
+    for (const predicate of ['user_id = $1', 'establishment_id = $2', "status IN ('pending', 'confirmed')"]) {
+      expect(flat(sql)).toContain(predicate);
+    }
+    expect(flat(sql)).not.toMatch(/\bOR\b/i);
+    expect(params).toEqual([USER_ID, EST_ID]);
   });
 
   it('returns null if no active booking', async () => {
