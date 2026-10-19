@@ -9,7 +9,12 @@
  * Все моменты заданы в UTC-литералах: полночь Минска — это 21:00 UTC.
  */
 
+import { spawnSync } from 'child_process';
+import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { minskDate, secondsUntilMinskMidnight } from '../../utils/minskDay.js';
+
+const MODULE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'utils', 'minskDay.js');
 
 describe('secondsUntilMinskMidnight — граница суток по Минску, не по процессу', () => {
   test.each([
@@ -42,5 +47,43 @@ describe('minskDate — дата суток Минска для счётчико
     ['однозначные месяц и день — с нулём впереди', '2026-03-04T12:00:00Z', '2026-03-04'],
   ])('%s: %s → %s', (_label, iso, expected) => {
     expect(minskDate(new Date(iso))).toBe(expected);
+  });
+});
+
+// «Не по часам процесса»: набор идёт под Europe/Minsk (CI), где пояс процесса
+// и пояс продукта совпадают — там ответ по часам процесса неотличим от ответа
+// по именованному поясу. Здесь тот же модуль считает в отдельном процессе с
+// другим поясом: UTC (прод) и Pacific/Kiritimati (+14, далеко от обоих).
+describe('граница суток не зависит от пояса процесса', () => {
+  const INSTANTS = [
+    '2026-10-11T20:59:59Z', // 23:59:59 в Минске
+    '2026-10-11T21:00:00Z', // полночь Минска
+    '2026-10-11T09:00:00Z', // полдень Минска
+    '2026-10-18T00:00:00Z', // полночь UTC — в Минске 03:00
+    '2025-12-31T21:00:00Z', // Новый год в Минске
+  ];
+
+  test.each(['UTC', 'Pacific/Kiritimati'])('в процессе с поясом %s — те же даты и те же секунды', (tz) => {
+    const script = `
+      import { minskDate, secondsUntilMinskMidnight } from ${JSON.stringify(pathToFileURL(MODULE).href)};
+      const out = ${JSON.stringify(INSTANTS)}.map((iso) => [minskDate(new Date(iso)), secondsUntilMinskMidnight(new Date(iso))]);
+      console.log(JSON.stringify({ zone: Intl.DateTimeFormat().resolvedOptions().timeZone, out }));
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      env: { ...process.env, TZ: tz },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    expect(child.stderr).toBe('');
+    const { zone, out } = JSON.parse(child.stdout);
+
+    expect(zone).toBe(tz); // процесс и правда в этом поясе
+    expect(out).toEqual([
+      ['2026-10-11', 1],
+      ['2026-10-12', 86400],
+      ['2026-10-11', 43200],
+      ['2026-10-18', 75600],
+      ['2026-01-01', 86400],
+    ]);
   });
 });

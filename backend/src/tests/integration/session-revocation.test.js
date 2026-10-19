@@ -38,6 +38,7 @@ import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { invalidateAccountStatus, markSessionsRevoked } from '../../services/accountStatus.js';
 import { storedRefreshToken } from '../../utils/refreshTokenStorage.js';
+import { endAllSessions } from '../../../scripts/lib/operator-password.js';
 
 const GRACE_ENV = 'REFRESH_REUSE_GRACE_SECONDS';
 const originalGrace = process.env[GRACE_ENV];
@@ -238,7 +239,13 @@ describe('граница — миллисекунда метки', () => {
 });
 
 describe('метка не движется назад', () => {
-  test('более ранняя запись (часы шагнули назад, два отзыва наперегонки) не отменяет более позднюю', async () => {
+  // Метку пишут двое: сервер (accountStatus.markSessionsRevoked) и скрипты
+  // оператора на его машине (scripts/lib/operator-password.js, endAllSessions)
+  // — у каждого свой запрос, поэтому каждый своей строкой.
+  test.each([
+    ['сервер', markSessionsRevoked],
+    ['скрипт оператора', endAllSessions],
+  ])('более ранняя запись (часы шагнули назад, два отзыва наперегонки) не отменяет более позднюю: %s', async (_writer, write) => {
     const account = await register();
     const later = new Date(Date.now() + 60 * 60 * 1000);
     await stampSessionsRevoked(account.userId, later);
@@ -246,7 +253,7 @@ describe('метка не движется назад', () => {
     const client = await getClient();
     try {
       await client.query('BEGIN');
-      await markSessionsRevoked(client, account.userId);
+      await write(client, account.userId);
       await client.query('COMMIT');
     } finally {
       client.release();

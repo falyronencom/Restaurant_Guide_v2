@@ -36,13 +36,30 @@ describe('projectForViewer', () => {
     });
   });
 
+  // Every key of the specification of point 3 — the same literal list the
+  // route sentinel keeps (admin-viewer-sentinel.test.js, WITHHELD_KEYS), not
+  // imported from the layer. Most of them are already null upstream on every
+  // route, so here the layer is the only witness that it withholds them.
+  test.each([
+    'author_email', 'reviewer_name', 'admin_name', 'admin_email',
+    'contact_person', 'contact_email', 'contact_phone', 'registration_doc_url', 'document_url',
+    'partner_name', 'partner_email', 'partner_phone',
+    'user_name', 'user_email', 'user_phone', 'owner_name', 'owner_email', 'owner_phone',
+    'ip_address', 'user_agent',
+    'hidden_review_ids', 'restored_review_ids',
+  ])('withholds %s, nested and at the top', (key) => {
+    const out = projectForViewer({ data: [{ id: 'x', [key]: 'personal', inner: { [key]: ['personal'] } }] });
+
+    expect(out).toEqual({ data: [{ id: 'x', [key]: null, inner: { [key]: null } }] });
+  });
+
   test('a person object keeps its id and time, loses name and contacts', () => {
     const at = new Date('2026-10-12T10:00:00Z');
     const out = projectForViewer({
-      data: { suspended_by: { id: 'u1', name: 'Модератор', email: 'm@x.by', at } },
+      data: { suspended_by: { id: 'u1', name: 'Модератор', email: 'm@x.by', phone: '+375291112233', at } },
     });
 
-    expect(out.data.suspended_by).toEqual({ id: 'u1', name: null, email: null, at });
+    expect(out.data.suspended_by).toEqual({ id: 'u1', name: null, email: null, phone: null, at });
     expect(out.data.suspended_by.at).toBeInstanceOf(Date);
   });
 

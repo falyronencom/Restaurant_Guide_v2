@@ -169,6 +169,8 @@ describe('notificationService', () => {
         'booking_expired',
         'booking_cancelled',
         'promotion_new',
+        'menu_parsed',
+        'menu_item_hidden_by_admin',
       ];
 
       for (const type of validTypes) {

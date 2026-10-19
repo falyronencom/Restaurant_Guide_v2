@@ -33,7 +33,12 @@ adminRoutes.get(PROBE, (req, res) => res.json({
   success: true,
   data: { reached: true, admin_email: 'leak@team.by' },
 }));
-adminRoutes.post(PROBE, (req, res) => res.json({ success: true, data: { acted: true } }));
+// «Any other method is admin-only» — every method a panel action can use,
+// not only POST: the gate decides by method, so each one is a member.
+const ACTION_METHODS = ['post', 'put', 'patch', 'delete'];
+for (const method of ACTION_METHODS) {
+  adminRoutes[method](PROBE, (req, res) => res.json({ success: true, data: { acted: method } }));
+}
 
 const tokens = {};
 
@@ -55,26 +60,35 @@ afterAll(async () => {
 });
 
 describe('a panel route registered without a tier is closed by the server', () => {
-  test('anonymous: 401 on read and on action', async () => {
+  /** Status of every action method for one caller, as one comparable object. */
+  const actionStatuses = async (token) => {
+    const statuses = {};
+    for (const method of ACTION_METHODS) {
+      const call = request(app)[method](URL);
+      if (token) call.set('Authorization', `Bearer ${token}`);
+      statuses[method] = (await call.send({})).status;
+    }
+    return statuses;
+  };
+  const every = (status) => Object.fromEntries(ACTION_METHODS.map((method) => [method, status]));
+
+  test('anonymous: 401 on read and on every action method', async () => {
     await request(app).get(URL).expect(401);
-    await request(app).post(URL).send({}).expect(401);
+    expect(await actionStatuses(null)).toEqual(every(401));
   });
 
-  test.each(['user', 'partner'])('%s: 403 on read and on action', async (role) => {
+  test.each(['user', 'partner'])('%s: 403 on read and on every action method', async (role) => {
     await request(app).get(URL).set('Authorization', `Bearer ${tokens[role]}`).expect(403);
-    await request(app).post(URL).set('Authorization', `Bearer ${tokens[role]}`).send({}).expect(403);
+    expect(await actionStatuses(tokens[role])).toEqual(every(403));
   });
 
-  test('viewer: reads, through the viewer projection; may not act', async () => {
+  test('viewer: reads, through the viewer projection; may not act by any method', async () => {
     const read = await request(app).get(URL)
       .set('Authorization', `Bearer ${tokens.viewer}`)
       .expect(200);
     expect(read.body.data).toEqual({ reached: true, admin_email: null });
 
-    await request(app).post(URL)
-      .set('Authorization', `Bearer ${tokens.viewer}`)
-      .send({})
-      .expect(403);
+    expect(await actionStatuses(tokens.viewer)).toEqual(every(403));
   });
 
   test('viewer: HEAD is a read, not an action', async () => {
@@ -83,16 +97,13 @@ describe('a panel route registered without a tier is closed by the server', () =
       .expect(200);
   });
 
-  test('admin: reads and acts', async () => {
+  test('admin: reads and acts by every action method', async () => {
     const read = await request(app).get(URL)
       .set('Authorization', `Bearer ${tokens.admin}`)
       .expect(200);
     expect(read.body.data.admin_email).toBe('leak@team.by');
 
-    await request(app).post(URL)
-      .set('Authorization', `Bearer ${tokens.admin}`)
-      .send({})
-      .expect(200);
+    expect(await actionStatuses(tokens.admin)).toEqual(every(200));
   });
 
   test('a CORS preflight is answered before the gate — the panel lives on another origin', async () => {

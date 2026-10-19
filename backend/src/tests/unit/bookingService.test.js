@@ -363,6 +363,17 @@ describe('createBooking', () => {
     await expect(createBooking(USER_ID, { establishmentId: EST_ID }))
       .rejects.toThrow('обязательные поля');
   });
+
+  // Each required field on its own: a missing one among the others present.
+  it.each(['establishmentId', 'date', 'time', 'guestCount', 'contactPhone'])(
+    'rejects when the one required field %s is missing',
+    async (field) => {
+      const data = validBookingData();
+      delete data[field];
+      await expect(createBooking(USER_ID, data)).rejects.toThrow('обязательные поля');
+      expect(BookingModel.create).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // ============================================================================

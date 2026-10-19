@@ -93,6 +93,14 @@ describe('удаление и правка отзыва автором', () => {
       .send({ rating: 1 });
     expectRefusal(response, 403, 'UNAUTHORIZED_REVIEW_MODIFICATION', 'Изменить можно только свой отзыв');
   });
+
+  test('отзыв, которого нет, не изменить: 404 и русский текст', async () => {
+    const response = await request(app)
+      .put(`/api/v1/reviews/${randomUUID()}`)
+      .set('Authorization', `Bearer ${author.accessToken}`)
+      .send({ rating: 1 });
+    expectRefusal(response, 404, 'REVIEW_NOT_FOUND', 'Отзыв не найден — возможно, его уже удалили');
+  });
 });
 
 describe('ответ владельца', () => {
@@ -140,5 +148,15 @@ describe('ответ владельца', () => {
       'UNAUTHORIZED_PARTNER_RESPONSE',
       'Отвечать можно только на отзывы о своих заведениях',
     );
+  });
+
+  test('на удалённый отзыв не ответить: 404 и русский текст', async () => {
+    const reviewId = await insertReview();
+    await query('UPDATE reviews SET is_deleted = TRUE WHERE id = $1', [reviewId]);
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ response: 'Спасибо за ваш отзыв!' });
+    expectRefusal(response, 404, 'REVIEW_NOT_FOUND', 'Отзыв не найден — возможно, его уже удалили');
   });
 });

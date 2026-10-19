@@ -11,8 +11,12 @@
  * - Expiration handling
  */
 
+import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
-import { createHmac } from 'crypto';
+import nodeCrypto, { createHmac } from 'crypto';
+import { spawnSync } from 'child_process';
+import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -84,14 +88,14 @@ describe('jwt utilities', () => {
       const token1 = generateAccessToken(payload);
       expect(token1).toBeDefined();
 
-      // Wait 1ms to ensure different iat (issued at) timestamp
+      // Wait a few ms to ensure a different issue time (iatMs is per millisecond)
       const token2 = new Promise(resolve => {
-        setTimeout(() => resolve(generateAccessToken(payload)), 1);
+        setTimeout(() => resolve(generateAccessToken(payload)), 5);
       });
 
       return token2.then(t2 => {
         expect(typeof t2).toBe('string');
-        expect(t2).toBeDefined();
+        expect(t2).not.toBe(token1);
       });
     });
   });
@@ -148,7 +152,9 @@ describe('jwt utilities', () => {
       expect(token1).not.toBe(token3);
     });
 
-    test('should be cryptographically random', () => {
+    // Uniqueness of 100 tokens cannot tell a CSPRNG from Math.random or a
+    // counter: that is a separate claim, held by the next test.
+    test('100 tokens are all different', () => {
       const tokens = new Set();
 
       // Generate 100 tokens
@@ -158,6 +164,15 @@ describe('jwt utilities', () => {
 
       // All should be unique
       expect(tokens.size).toBe(100);
+    });
+
+    test('should be cryptographically random: 32 bytes of crypto.randomBytes, hex', () => {
+      const randomBytes = jest.spyOn(nodeCrypto, 'randomBytes');
+
+      const token = generateRefreshToken();
+
+      expect(randomBytes).toHaveBeenCalledWith(32);
+      expect(token).toBe(randomBytes.mock.results[0].value.toString('hex'));
     });
   });
 
@@ -179,6 +194,30 @@ describe('jwt utilities', () => {
       expect(deriveSuccessorRefreshToken('b'.repeat(64), rowId)).not.toBe(base);
       expect(deriveSuccessorRefreshToken(predecessor, '00000000-0000-4000-8000-000000000000'))
         .not.toBe(base);
+    });
+
+    // The key comes from JWT_SECRET, read once when the module loads: the same
+    // inputs are derived again in a process of its own, under the same secret
+    // (the control) and under another one.
+    test('changes with the server secret: another JWT_SECRET gives another successor', () => {
+      const jwtModule = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'utils', 'jwt.js');
+      const deriveUnder = (secret) => {
+        const script = `
+          import { deriveSuccessorRefreshToken } from ${JSON.stringify(pathToFileURL(jwtModule).href)};
+          console.log('DERIVED=' + deriveSuccessorRefreshToken(${JSON.stringify(predecessor)}, ${JSON.stringify(rowId)}));
+        `;
+        const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+          env: { ...process.env, JWT_SECRET: secret },
+          encoding: 'utf8',
+          timeout: 10000,
+        });
+        expect(child.status).toBe(0);
+        return (child.stdout.match(/DERIVED=([0-9a-f]+)/) || [])[1];
+      };
+      const derived = deriveSuccessorRefreshToken(predecessor, rowId);
+
+      expect(deriveUnder(TEST_JWT_SECRET)).toBe(derived);
+      expect(deriveUnder(`${TEST_JWT_SECRET}-rotated`)).not.toBe(derived);
     });
 
     test('is keyed by the server secret: the inputs alone do not give it', () => {

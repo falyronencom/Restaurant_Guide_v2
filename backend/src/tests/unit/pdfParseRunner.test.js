@@ -15,6 +15,7 @@
  * (utils/syntheticPdf.js) and parsed by the real child, real pdf-parse.
  */
 
+import { fork } from 'child_process';
 import { EventEmitter } from 'events';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -207,8 +208,23 @@ describe('the memory limit', () => {
     });
   }, 40000);
 
-  test('resident memory above the limit (read from /proc on Linux) kills the child at the next sample', async () => {
+  /** fork, recording whether the runner handed the child its file. */
+  const recordingFork = (handovers) => (...args) => {
+    const forked = fork(...args);
+    const send = forked.send.bind(forked);
+    forked.send = (...message) => {
+      handovers.push(message[0]);
+      return send(...message);
+    };
+    return forked;
+  };
+
+  // Memory over the limit from the start: the child is killed before it is
+  // handed the file — by the reading taken when it is ready (or by an earlier
+  // periodic one), never after the parse began.
+  test('resident memory above the limit (read from /proc on Linux) from the start kills the child before it is handed the file', async () => {
     const pids = new Set();
+    const handovers = [];
     const limitMb = 64;
     const started = Date.now();
 
@@ -217,6 +233,7 @@ describe('the memory limit', () => {
       timeoutMs: 10000,
       memoryLimitMb: limitMb,
       childModule: child('silent'),
+      forkChild: recordingFork(handovers),
       readResident: (pid) => {
         pids.add(pid);
         return limitMb * 1024 * 1024 + 1;
@@ -224,7 +241,33 @@ describe('the memory limit', () => {
     }).catch((e) => e);
 
     expect(error).toMatchObject({ code: PDF_PARSE_LIMIT, reason: 'memory' });
+    expect(handovers).toEqual([]);
     expect(Date.now() - started).toBeLessThan(MEMORY_SAMPLE_INTERVAL_MS + 2000);
+    expect(await waitUntilGone([...pids][0])).toBe(true);
+  }, 15000);
+
+  // Memory that crosses the limit only after the child took the file: what
+  // catches it is a periodic reading — the readings answer «over» only once
+  // the file was handed over, whenever the first tick falls.
+  test('resident memory that crosses the limit after the child took the file kills it at a periodic sample', async () => {
+    const pids = new Set();
+    const handovers = [];
+    const limitMb = 64;
+
+    const error = await parsePdfIsolated(Buffer.from('%PDF'), {
+      maxPages: 20,
+      timeoutMs: 10000,
+      memoryLimitMb: limitMb,
+      childModule: child('silent'),
+      forkChild: recordingFork(handovers),
+      readResident: (pid) => {
+        pids.add(pid);
+        return handovers.length > 0 ? limitMb * 1024 * 1024 + 1 : limitMb * 1024 * 1024;
+      },
+    }).catch((e) => e);
+
+    expect(error).toMatchObject({ code: PDF_PARSE_LIMIT, reason: 'memory' });
+    expect(handovers).toHaveLength(1);
     expect(await waitUntilGone([...pids][0])).toBe(true);
   }, 15000);
 
@@ -314,6 +357,8 @@ describe('classifyChildEnd — how an end the runner did not cause counts', () =
     ['SIGKILL from outside, memory never read', { exitSignal: 'SIGKILL' }, null, 'PDF parse process was killed from outside (SIGKILL, resident memory unknown)'],
     ['Ctrl+C reaching the child', { exitSignal: 'SIGINT' }, null, 'PDF parse process ended without a result (signal SIGINT)'],
     ['a platform stop', { exitSignal: 'SIGTERM' }, null, 'PDF parse process ended without a result (signal SIGTERM)'],
+    // The third stop from outside the runner names: a closed terminal session.
+    ['a closed session', { exitSignal: 'SIGHUP' }, null, 'PDF parse process ended without a result (signal SIGHUP)'],
     ['exit code 0 with no answer', { code: 0 }, null, 'PDF parse process ended without a result (exit code 0)'],
     ['a crash, exit code 3', { code: 3 }, 'exit', 'PDF parse process ended without a result (exit code 3)'],
     ['a crash, SIGSEGV', { exitSignal: 'SIGSEGV' }, 'exit', 'PDF parse process ended without a result (signal SIGSEGV)'],

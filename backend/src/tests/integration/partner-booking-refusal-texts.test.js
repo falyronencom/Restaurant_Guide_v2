@@ -75,7 +75,10 @@ afterAll(async () => {
 });
 
 describe('Статус брони изменился, пока экран был открыт', () => {
-  test('подтвердить бронь, у которой истекло время на ответ', async () => {
+  // Бронь, уже снятая по истечении времени (статус expired), — как её видит
+  // экран после того, как список прочитан. Бронь со сроком в прошлом, но ещё
+  // pending, подтверждение сейчас принимает (отчёт аудита честности 18.10).
+  test('подтвердить бронь, уже снятую по истечении времени на ответ', async () => {
     const id = await insertBooking('expired');
     const res = await act('confirm', id);
 
@@ -98,6 +101,7 @@ describe('Статус брони изменился, пока экран был
     const res = await act('confirm', id);
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_STATUS');
     expect(res.body.message).toBe(`Бронь уже подтверждена.${REFRESH}`);
   });
 
@@ -106,6 +110,7 @@ describe('Статус брони изменился, пока экран был
     const res = await act('decline', id, { body: { reason: 'Мест нет' } });
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_STATUS');
     expect(res.body.message).toBe(`Бронь уже отклонена.${REFRESH}`);
   });
 
@@ -114,6 +119,7 @@ describe('Статус брони изменился, пока экран был
     const res = await act('no-show', id);
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_STATUS');
     expect(res.body.message).toBe(`Бронь ещё не подтверждена.${REFRESH}`);
   });
 
@@ -122,6 +128,7 @@ describe('Статус брони изменился, пока экран был
     const res = await act('complete', id);
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_STATUS');
     expect(res.body.message).toBe(`Бронь уже отмечена: гость не пришёл.${REFRESH}`);
   });
 
@@ -130,26 +137,40 @@ describe('Статус брони изменился, пока экран был
     const res = await act('no-show', id);
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_STATUS');
     expect(res.body.message).toBe(`Бронь уже отмечена как состоявшаяся.${REFRESH}`);
   });
 });
 
 describe('Бронь или заведение не найдены', () => {
-  test('брони нет — 404, «Бронь не найдена…»', async () => {
-    const res = await act('confirm', randomUUID());
+  // Каждое действие партнёра проверяет бронь само (bookingService: confirm,
+  // decline, no-show, complete) — поэтому каждое здесь своей строкой.
+  // Статус брони — тот, при котором действие прошло бы: отказ может прийти
+  // только от проверки «бронь этого заведения», не от статуса.
+  const ACTIONS = [
+    ['confirm', undefined, 'pending'],
+    ['decline', { reason: 'Мест нет' }, 'pending'],
+    ['no-show', undefined, 'confirmed'],
+    ['complete', undefined, 'confirmed'],
+  ];
+
+  test.each(ACTIONS)('брони нет — 404, «Бронь не найдена…»: %s', async (action, body) => {
+    const res = await act(action, randomUUID(), { body });
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
     expect(res.body.message).toBe('Бронь не найдена. Обновите список броней.');
   });
 
-  test('бронь другого заведения того же партнёра — 403, тот же текст', async () => {
-    const id = await insertBooking('pending', otherEst.id);
-    const res = await act('confirm', id);
+  test.each(ACTIONS)('бронь другого заведения того же партнёра — 403, тот же текст, бронь не тронута: %s', async (action, body, status) => {
+    const id = await insertBooking(status, otherEst.id);
+    const res = await act(action, id, { body });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('FORBIDDEN');
     expect(res.body.message).toBe('Бронь не найдена. Обновите список броней.');
+    const { rows: [after] } = await query('SELECT status FROM bookings WHERE id = $1', [id]);
+    expect(after.status).toBe(status);
   });
 
   test('чужое заведение — 403, текст не говорит, есть ли оно', async () => {
@@ -159,6 +180,11 @@ describe('Бронь или заведение не найдены', () => {
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('FORBIDDEN');
     expect(res.body.message).toBe('Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.');
+
+    // «Не говорит, есть ли оно»: заведения, которого нет вовсе, ответ тот же.
+    const missing = await act('confirm', id, { token: strangerToken, establishmentId: randomUUID() });
+    expect({ status: missing.status, code: missing.body.error?.code, message: missing.body.message })
+      .toEqual({ status: res.status, code: res.body.error.code, message: res.body.message });
   });
 
   test('список броней чужого заведения — тот же текст', async () => {
@@ -172,9 +198,15 @@ describe('Бронь или заведение не найдены', () => {
 });
 
 describe('Причина отказа', () => {
-  test('отклонить без причины — «Укажите причину отказа.»', async () => {
+  // «Без причины» — и пробелы, и пустая строка, и причина, которой нет вовсе.
+  test.each([
+    ['одни пробелы', { reason: '   ' }],
+    ['пустая строка', { reason: '' }],
+    ['поля нет', {}],
+    ['null', { reason: null }],
+  ])('отклонить без причины — «Укажите причину отказа.»: %s', async (_label, body) => {
     const id = await insertBooking('pending');
-    const res = await act('decline', id, { body: { reason: '   ' } });
+    const res = await act('decline', id, { body });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');

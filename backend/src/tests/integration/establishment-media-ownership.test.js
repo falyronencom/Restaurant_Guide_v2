@@ -268,6 +268,10 @@ describe('Создание: чужая ссылка в любом поле — �
     ['фото чужой карточки', (self, other, otherCard) =>
       deliveryUrl(`establishments/${otherCard.id}/interior/victim0002`)],
     ['сторонний сайт', () => 'https://images.example.org/victim0003.jpg'],
+    // Путь нашего облака и своя папка — но на чужом хосте: держит только
+    // проверка хоста (у строки выше чужой и путь).
+    ['своя папка на чужом хосте', (self) =>
+      `https://images.example.org/test/image/upload/v1/establishments/temp/${self.id}/interior/own0001.jpg`],
     ['своя папка в другом облаке', (self) =>
       `https://res.cloudinary.com/othercloud/image/upload/v1/establishments/temp/${self.id}/interior/own0001.jpg`],
     ['своя папка по http', (self) =>
