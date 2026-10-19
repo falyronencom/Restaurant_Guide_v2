@@ -190,6 +190,10 @@ function messageForCreateCode(
       return 'Слишком часто, попробуйте позже.';
     case 'ESTABLISHMENT_NOT_FOUND':
       return 'Заведение не найдено.';
+    case 'ESTABLISHMENT_NOT_ACTIVE':
+      // The card left the catalogue (suspended, on moderation…) while its page
+      // was still cached — the backend takes no new review there (19.10.2026).
+      return 'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя.';
     case 'NO_SESSION':
       // The CTA gates on auth, so this should not be reached from the modal.
       return 'Войдите, чтобы оставить отзыв.';
