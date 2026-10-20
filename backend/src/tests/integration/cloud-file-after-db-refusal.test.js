@@ -32,6 +32,8 @@ import { v2 as cloudinarySdk } from 'cloudinary';
 import app from '../../server.js';
 import pool from '../../config/database.js';
 import logger from '../../utils/logger.js';
+import { ownedFolders } from '../../config/cloudinary.js';
+import { discardUnrecordedUpload } from '../../services/unrecordedUpload.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 
@@ -353,21 +355,34 @@ describe('медиа карточки', () => {
 
   const NEXT_POSITION = /COALESCE\(MAX\(position\), -1\) \+ 1/;
 
-  // Маршрут медиа карточки принимает id прописными (isUUID), и файл ложится в
-  // папку с прописными, которую deleteImage своей не признаёт: удаление
-  // отказано — файл остаётся, журнал должен его назвать.
-  test('id карточки прописными: удаление отказано — файл назван в журнале', async () => {
+  // До 20.10.2026 маршрут медиа карточки принимал id прописными (isUUID), и
+  // файл ложился в папку с прописными, которую deleteImage своей не признаёт:
+  // удаление после отказа базы отказывалось, файл оставался. Теперь — только
+  // канонический id, отказ до облака (находка Н9, сессия Г).
+  test('id карточки прописными: отказ до облака — в облако ничего не ушло', async () => {
     const { token, card } = await newPartner();
-    const upperId = card.id.toUpperCase();
     refuseStatement(/INSERT INTO establishment_media/);
+
+    const res = await uploadMedia(token, card.id.toUpperCase());
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
+    expect(uploaded).toEqual([]);
+    expect(await mediaOf(card.id)).toEqual([]);
+  });
+
+  // Ни один загрузчик теперь не кладёт файл в чужую папку, но правило
+  // удаления держит и такой файл: удаление отказано — файл остаётся, журнал
+  // его называет (прежняя проверка через маршрут, теперь — прямо).
+  test('файл вне папок карточки: удаление отказано — файл назван в журнале', async () => {
+    const { card } = await newPartner();
+    const outside = `establishments/${card.id.toUpperCase()}/interior/fresh0001`;
     const warn = jest.spyOn(logger, 'warn');
 
-    const res = await uploadMedia(token, upperId);
+    await discardUnrecordedUpload(outside, [ownedFolders.establishment(card.id)], null);
 
-    expect(res.status).toBe(500);
-    expect(uploaded).toEqual([`establishments/${upperId}/interior/fresh0001`]);
     expect(destroy).not.toHaveBeenCalled();
-    expect(warnedAbout(warn, `establishments/${upperId}/interior/fresh0001`))
+    expect(warnedAbout(warn, outside))
       .toEqual(['Uploaded file the database did not record is left in the cloud']);
   });
 

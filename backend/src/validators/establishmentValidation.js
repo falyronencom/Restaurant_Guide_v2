@@ -20,6 +20,7 @@ import { body, param, query } from 'express-validator';
 import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { BELARUS_PHONE_REGEX } from '../constants/belarusPhone.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
+import { fitsVarchar } from '../utils/textLength.js';
 
 // Field messages here stay in English where the app translates them itself
 // (mobile api_client.dart, _validationMessages — keyed on these very strings,
@@ -45,6 +46,25 @@ const VALID_PRICE_RANGES = ['$', '$$', '$$$'];
  * Valid status values
  */
 const VALID_STATUSES = ['draft', 'pending', 'active', 'suspended'];
+
+/**
+ * The name and the address go to varchar columns — establishments.name
+ * varchar(255), .address varchar(500) — and are counted as the database counts
+ * them (utils/textLength.js): isLength skipped the variation selectors, so 255
+ * × «❤️» passed as 255 and reached the database as 510 characters — 22001, a
+ * 500. The description is text: isLength stays there. The messages are the
+ * same strings — the app translates them by these very words.
+ */
+const nameFits = fitsVarchar(255, { min: 1 });
+const addressFits = fitsVarchar(500, { min: 1 });
+
+/**
+ * establishments.website is varchar(255), and isURL admits 2084 characters: a
+ * link with long tracking parameters passed and came back as 22001, a 500
+ * (review of 20.10.2026). The message is the one of a wrong link — the app
+ * translates that string; there is no text of a too-long link to translate.
+ */
+const websiteFits = fitsVarchar(255);
 
 // BELARUS_PHONE_REGEX (mobile operator codes + city/region area codes) is
 // imported from constants/belarusPhone.js — shared with the seed bulk-import.
@@ -79,7 +99,7 @@ export const validateCreate = [
     .trim()
     .notEmpty()
     .withMessage('Establishment name is required')
-    .isLength({ min: 1, max: 255 })
+    .custom(nameFits)
     .withMessage('Establishment name must be between 1 and 255 characters'),
 
   // Description validation (optional)
@@ -102,7 +122,7 @@ export const validateCreate = [
     .trim()
     .notEmpty()
     .withMessage('Address is required')
-    .isLength({ min: 1, max: 500 })
+    .custom(addressFits)
     .withMessage('Address must be between 1 and 500 characters'),
 
   // Latitude validation
@@ -139,6 +159,8 @@ export const validateCreate = [
     .optional()
     .trim()
     .isURL()
+    .withMessage('Website must be a valid URL')
+    .custom(websiteFits)
     .withMessage('Website must be a valid URL'),
 
   // Categories validation
@@ -224,7 +246,7 @@ export const validateUpdate = [
     .trim()
     .notEmpty()
     .withMessage('Establishment name cannot be empty')
-    .isLength({ min: 1, max: 255 })
+    .custom(nameFits)
     .withMessage('Establishment name must be between 1 and 255 characters'),
 
   // Description validation (optional)
@@ -240,7 +262,7 @@ export const validateUpdate = [
     .trim()
     .notEmpty()
     .withMessage('Address cannot be empty')
-    .isLength({ min: 1, max: 500 })
+    .custom(addressFits)
     .withMessage('Address must be between 1 and 500 characters'),
 
   // Phone, email, website, average check — optional at create and at submit.
@@ -265,6 +287,8 @@ export const validateUpdate = [
     .optional({ values: 'null' })
     .trim()
     .isURL()
+    .withMessage('Website must be a valid URL')
+    .custom(websiteFits)
     .withMessage('Website must be a valid URL'),
 
   // Categories validation (optional for updates)

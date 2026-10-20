@@ -14,10 +14,17 @@
  * Note on file uploads: File validation (type, size) is handled by multer
  * middleware and business logic in the service layer. This validation focuses
  * on metadata fields (type, caption, is_primary).
+ *
+ * The card id in the URL is checked by the route before anything else
+ * (routes/v1/mediaRoutes.js requireCanonicalCardId): only the id as the
+ * database writes it — the cloud folder is named after it. The field texts are
+ * the partner's (MEDIA_REFUSALS, from 20.10.2026; English before) and the
+ * routes answer with validatePersonText: the first of them is the summary.
  */
 
 import { body, param, query } from 'express-validator';
-import { longerThan } from '../utils/textLength.js';
+import { fitsVarchar } from '../utils/textLength.js';
+import { MEDIA_REFUSALS } from '../constants/partnerSectionRefusals.js';
 
 /**
  * The longest caption establishment_media.caption holds — varchar(255),
@@ -31,7 +38,7 @@ import { longerThan } from '../utils/textLength.js';
  * its text are the same as before.
  */
 const CAPTION_MAX_CHARS = 255;
-const captionFits = (value) => typeof value === 'string' && !longerThan(value, CAPTION_MAX_CHARS);
+const captionFits = fitsVarchar(CAPTION_MAX_CHARS);
 
 /**
  * Valid media type values
@@ -44,7 +51,8 @@ const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
  * POST /api/v1/partner/establishments/:id/media
  * 
  * Required:
- * - id: Valid UUID of establishment (path parameter)
+ * - id: the card id, as the database writes it (path parameter; checked
+ *   by the route, routes/v1/mediaRoutes.js)
  * - type: Valid media type ('interior', 'exterior', 'menu', 'dishes')
  * - file: Image file (handled by multer, not validated here)
  * 
@@ -53,34 +61,26 @@ const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
  * - is_primary: Boolean
  */
 export const validateUpload = [
-  // Establishment ID parameter validation
-  param('id')
-    .trim()
-    .notEmpty()
-    .withMessage('Establishment ID is required')
-    .isUUID()
-    .withMessage('Establishment ID must be a valid UUID'),
-
   // Media type validation
   body('type')
     .trim()
     .notEmpty()
-    .withMessage('Media type is required')
+    .withMessage(MEDIA_REFUSALS.uploadFormInvalid)
     .isIn(VALID_MEDIA_TYPES)
-    .withMessage(`Media type must be one of: ${VALID_MEDIA_TYPES.join(', ')}`),
+    .withMessage(MEDIA_REFUSALS.uploadFormInvalid),
 
   // Caption validation (optional)
   body('caption')
     .optional()
     .trim()
     .custom(captionFits)
-    .withMessage('Caption must not exceed 255 characters'),
+    .withMessage(MEDIA_REFUSALS.captionTooLong),
 
   // is_primary validation (optional, defaults to false)
   body('is_primary')
     .optional()
     .isBoolean()
-    .withMessage('is_primary must be a boolean value (true or false)')
+    .withMessage(MEDIA_REFUSALS.uploadFormInvalid)
     .toBoolean(),
 ];
 
@@ -90,25 +90,18 @@ export const validateUpload = [
  * GET /api/v1/partner/establishments/:id/media
  * 
  * Required:
- * - id: Valid UUID of establishment (path parameter)
+ * - id: the card id, as the database writes it (path parameter; checked
+ *   by the route, routes/v1/mediaRoutes.js)
  * 
  * Optional:
  * - type: Valid media type for filtering
  */
 export const validateGetMedia = [
-  // Establishment ID parameter validation
-  param('id')
-    .trim()
-    .notEmpty()
-    .withMessage('Establishment ID is required')
-    .isUUID()
-    .withMessage('Establishment ID must be a valid UUID'),
-
   // Type query parameter validation (optional filter)
   query('type')
     .optional()
     .isIn(VALID_MEDIA_TYPES)
-    .withMessage(`Type filter must be one of: ${VALID_MEDIA_TYPES.join(', ')}`),
+    .withMessage(MEDIA_REFUSALS.listFilterInvalid),
 ];
 
 /**
@@ -117,7 +110,8 @@ export const validateGetMedia = [
  * PUT /api/v1/partner/establishments/:id/media/:mediaId
  * 
  * Required:
- * - id: Valid UUID of establishment (path parameter)
+ * - id: the card id, as the database writes it (path parameter; checked
+ *   by the route, routes/v1/mediaRoutes.js)
  * - mediaId: Valid UUID of media (path parameter)
  * 
  * Optional (at least one field must be provided):
@@ -126,41 +120,35 @@ export const validateGetMedia = [
  * - is_primary: Boolean
  */
 export const validateUpdate = [
-  // Establishment ID parameter validation
-  param('id')
-    .trim()
-    .notEmpty()
-    .withMessage('Establishment ID is required')
-    .isUUID()
-    .withMessage('Establishment ID must be a valid UUID'),
-
-  // Media ID parameter validation
+  // Media ID parameter validation: an id that names no file
   param('mediaId')
     .trim()
     .notEmpty()
-    .withMessage('Media ID is required')
+    .withMessage(MEDIA_REFUSALS.mediaNotFound)
     .isUUID()
-    .withMessage('Media ID must be a valid UUID'),
+    .withMessage(MEDIA_REFUSALS.mediaNotFound),
 
   // Caption validation (optional)
   body('caption')
     .optional()
     .trim()
     .custom(captionFits)
-    .withMessage('Caption must not exceed 255 characters'),
+    .withMessage(MEDIA_REFUSALS.captionTooLong),
 
   // Position validation (optional)
+  // position is an integer column: past 2147483647 the database refused
+  // (22003) and the partner read a 500
   body('position')
     .optional()
-    .isInt({ min: 0 })
-    .withMessage('Position must be a non-negative integer')
+    .isInt({ min: 0, max: 2147483647 })
+    .withMessage(MEDIA_REFUSALS.changeInvalid)
     .toInt(),
 
   // is_primary validation (optional)
   body('is_primary')
     .optional()
     .isBoolean()
-    .withMessage('is_primary must be a boolean value (true or false)')
+    .withMessage(MEDIA_REFUSALS.changeInvalid)
     .toBoolean(),
 ];
 
@@ -170,24 +158,17 @@ export const validateUpdate = [
  * DELETE /api/v1/partner/establishments/:id/media/:mediaId
  * 
  * Required:
- * - id: Valid UUID of establishment (path parameter)
+ * - id: the card id, as the database writes it (path parameter; checked
+ *   by the route, routes/v1/mediaRoutes.js)
  * - mediaId: Valid UUID of media (path parameter)
  */
 export const validateDelete = [
-  // Establishment ID parameter validation
-  param('id')
-    .trim()
-    .notEmpty()
-    .withMessage('Establishment ID is required')
-    .isUUID()
-    .withMessage('Establishment ID must be a valid UUID'),
-
-  // Media ID parameter validation
+  // Media ID parameter validation: an id that names no file
   param('mediaId')
     .trim()
     .notEmpty()
-    .withMessage('Media ID is required')
+    .withMessage(MEDIA_REFUSALS.mediaNotFound)
     .isUUID()
-    .withMessage('Media ID must be a valid UUID'),
+    .withMessage(MEDIA_REFUSALS.mediaNotFound),
 ];
 

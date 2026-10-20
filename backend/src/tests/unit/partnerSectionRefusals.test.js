@@ -32,8 +32,11 @@ import * as REFUSALS from '../../constants/partnerSectionRefusals.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = (relative) => readFileSync(resolve(__dirname, '../..', relative), 'utf8');
 
-/** Латиница, которой можно быть в тексте партнёра: названия форматов файлов. */
-const ALLOWED_LATIN = ['JPG', 'PNG', 'WebP', 'HEIC', 'PDF'];
+/**
+ * Латиница, которой можно быть в тексте партнёра: названия форматов файлов
+ * (JPEG — в тексте аватара, по директиве 20.10.2026).
+ */
+const ALLOWED_LATIN = ['JPEG', 'JPG', 'PNG', 'WebP', 'HEIC', 'PDF'];
 
 const latinWords = (text) =>
   ALLOWED_LATIN.reduce((rest, word) => rest.split(word).join(''), text).match(/[A-Za-z]+/g) ?? [];
@@ -90,9 +93,22 @@ const unreadMessageShapes = (code) => {
 
 /**
  * Текст из списка — это ровно член группы или вызов члена: `GROUP.x`,
- * `GROUP.f(…)`. Склейка `GROUP.x + ' …'` уже не текст из списка.
+ * `GROUP.f(…)`. Склейка `GROUP.x + ' …'` уже не текст из списка. Групп может
+ * быть несколько: 'A_REFUSALS|B_REFUSALS'.
  */
-const fromGroup = (group) => new RegExp(`^${group}\\.\\w+(\\(.*\\))?$`);
+const fromGroup = (group) => new RegExp(`^(?:${group})\\.\\w+(\\(.*\\))?$`);
+
+/** Аргумент каждого `.withMessage(` — до закрывающей скобки в конце строки. */
+const withMessageTexts = (code) =>
+  [...code.matchAll(/\.withMessage\(\s*(.*?)\)\s*,?\s*$/gm)].map((match) => match[1].trim());
+
+/** Кусок исходника от `start` до первого `end` после него (end не входит). */
+const slice = (code, start, end) => {
+  const from = code.indexOf(start);
+  expect(from).toBeGreaterThanOrEqual(0);
+  const to = code.indexOf(end, from + start.length);
+  return code.slice(from, to === -1 ? undefined : to);
+};
 
 /** Строка или шаблон с кириллицей прямо в коде. */
 const cyrillicLiteral = (value) => /^['`]/.test(value) && /[А-Яа-яЁё]/.test(value);
@@ -118,9 +134,10 @@ describe('Отказы партнёру вне карточки: тексты', 
   it('каждый текст — по-русски: есть кириллица, нет латиницы, кроме названий форматов', () => {
     const all = texts();
     // Сторож перебора: тексты нашлись (9 загрузки + 2 вызова предела облака
-    // + 3 брони + 9 вызовов статуса + 11 акций + 1 вызов лимита на 19.10.2026;
-    // 33 на 18.10.2026, 27 на 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(35);
+    // + 3 брони + 9 вызовов статуса + 11 акций + 1 вызов лимита + 5 медиа
+    // карточки + 3 аватара на 20.10.2026; 35 на 19.10.2026, 33 на 18.10.2026,
+    // 27 на 13.10.2026).
+    expect(all.length).toBeGreaterThanOrEqual(43);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -207,10 +224,9 @@ describe('Отказы партнёру вне карточки: исходни�
 
   // Медиа карточки отказывают файлу по тем же правилам, что мастер, — его
   // текстами (с 19.10.2026; до того — английский, сайт переводил по коду).
-  // Отказы сервиса медиа (mediaService.js) этим разбором не держатся: в файле
-  // и другие действия с медиа, их тексты проход не трогал; формулировки
-  // загрузки держит integration/upload-module-hardening.test.js.
-  it('медиа карточки (mediaRoutes.js): ответы отказа загрузчика — из UPLOAD_REFUSALS', () => {
+  // Формулировки загрузки держит integration/upload-module-hardening.test.js,
+  // остальных действий — integration/media-avatar-promotion-refusals.test.js.
+  it('медиа карточки (mediaRoutes.js): ответы отказа загрузчика — из UPLOAD_REFUSALS, отказ id — текст карточки', () => {
     const code = source('routes/v1/mediaRoutes.js');
     expect(unreadMessageShapes(code)).toEqual([]);
     const messages = messageTexts(code);
@@ -218,6 +234,63 @@ describe('Отказы партнёру вне карточки: исходни�
     expect(messages.length).toBeGreaterThanOrEqual(4);
     // То же исключение, что у мастера: прочие отказы разбора формы multer.
     expect(notFrom('UPLOAD_REFUSALS', messages, { allowed: ['error.message'] })).toEqual([]);
+    // id карточки не так, как его пишет база, — отказ чужой или удалённой
+    // карточки (1 на 20.10.2026).
+    const refusals = appErrorTexts(code);
+    expect(refusals.length).toBeGreaterThanOrEqual(1);
+    expect(notFrom('ESTABLISHMENT_REFUSALS', refusals)).toEqual([]);
+  });
+
+  // С 20.10.2026 и остальные отказы медиа карточки — по-русски: поля
+  // (валидатор), список, правка, удаление (сервис).
+  it('медиа карточки (mediaValidation.js): каждый текст поля — из MEDIA_REFUSALS', () => {
+    const found = withMessageTexts(source('validators/mediaValidation.js'));
+    // Сторож разбора: тексты нашлись (12 на 20.10.2026).
+    expect(found.length).toBeGreaterThanOrEqual(12);
+    expect(notFrom('MEDIA_REFUSALS', found)).toEqual([]);
+  });
+
+  it('медиа карточки (mediaService.js): каждый отказ — из словарей отказов', () => {
+    const found = appErrorTexts(source('services/mediaService.js'));
+    // Сторож разбора: отказы нашлись (21 на 20.10.2026).
+    expect(found.length).toBeGreaterThanOrEqual(21);
+    // Сбои сервера (500) — английские строки, которых никто не читает:
+    // errorHandler отвечает на английский 500 общей фразой «Сбой на сервере…»
+    // (errorHandlerServerFailure.test.js); тексты не трогались.
+    const serverFailures = [
+      "'Failed to upload media'",
+      "'Failed to fetch media'",
+      "'Failed to update media'",
+      "'Failed to delete media'",
+      // Вызов с двумя аргументами: разбор обрывает его на первой запятой.
+      'ESTABLISHMENT_REFUSALS.photoLimit(type',
+    ];
+    expect(notFrom('MEDIA_REFUSALS|UPLOAD_REFUSALS|ESTABLISHMENT_REFUSALS', found, { allowed: serverFailures }))
+      .toEqual([]);
+
+    // Контроллер медиа: «файл не выбран» и правка без полей (1 AppError и
+    // 1 ответ на 20.10.2026).
+    const controller = source('controllers/mediaController.js');
+    expect(unreadMessageShapes(controller)).toEqual([]);
+    expect(appErrorTexts(controller).length).toBeGreaterThanOrEqual(1);
+    expect(messageTexts(controller).length).toBeGreaterThanOrEqual(1);
+    expect(notFrom('MEDIA_REFUSALS|UPLOAD_REFUSALS', [...appErrorTexts(controller), ...messageTexts(controller)]))
+      .toEqual([]);
+  });
+
+  // Аватар — учётки любого, не только партнёра; его тексты здесь, рядом с
+  // текстами других загрузчиков (с 20.10.2026; до того — английский).
+  it('аватар (authRoutes.js POST /avatar, authController.uploadAvatar): каждый отказ — из AVATAR_REFUSALS', () => {
+    const route = slice(source('routes/v1/authRoutes.js'), "'/avatar',", 'authController.uploadAvatar');
+    const controller = slice(source('controllers/authController.js'), 'export async function uploadAvatar', '\nexport ');
+    for (const code of [route, controller]) {
+      expect(unreadMessageShapes(code)).toEqual([]);
+      // Сторож разбора: ответы с текстом нашлись (2 и 2 на 20.10.2026).
+      expect(messageTexts(code).length).toBeGreaterThanOrEqual(2);
+      // Суточный лимит загрузок — одна фраза у всех загрузчиков.
+      expect(notFrom('AVATAR_REFUSALS', messageTexts(code), { allowed: ['UPLOAD_REFUSALS.dailyLimit'] }))
+        .toEqual([]);
+    }
   });
 
   it('брони (bookingService.js): каждый отказ партнёру — из BOOKING_REFUSALS', () => {

@@ -25,3 +25,21 @@ export const longerThan = (text, max) => {
   }
   return false;
 };
+
+/**
+ * A check for express-validator's custom(): the value is a string that a
+ * varchar(max) column holds — from `min` to `max` characters as the database
+ * counts them. It replaces isLength({ min, max }) where the field is written
+ * to such a column (review of PR #112, finding 7). Anything but a string does
+ * not fit: isLength judged each item of an array (a field sent twice in a
+ * form, or an array in JSON), and pg wrote the array as its literal
+ * {"a","b"} — a value nobody typed, or a 500 when the literal is longer than
+ * the column (a card's name sent as an array was a 500 before 20.10.2026).
+ *
+ * @param {number} max
+ * @param {{ min?: number }} [options]
+ * @returns {(value: *) => boolean}
+ */
+export const fitsVarchar = (max, { min = 0 } = {}) => (value) => typeof value === 'string'
+  && (min === 0 || longerThan(value, min - 1))
+  && !longerThan(value, max);
