@@ -1,0 +1,181 @@
+{
+  "_about": "Действия, которые пишутся в журнал (audit_log). Один список на сервер и панель: его сверяют подписи журнала (auditLogModel.js, admin-audit-log-summaries.test.js), писатели журнала (auditLogActionsGuard.test.js ищет коды в коде сервиса и скриптов) и фильтр панели (admin-web/test/config/moderation_vocabulary_test.dart). Новое действие — строка здесь, ветка CASE в auditLogModel.js и подпись в moderation_vocabulary.dart; забыть одно из трёх гейт не даст. summary_without_actor — подпись записи без автора (user_id NULL: скрипт оператора или система), если она другая.",
+  "actions": [
+    {
+      "action": "moderate_approve",
+      "entity_type": "establishment",
+      "summary": "Одобрено заведение"
+    },
+    {
+      "action": "moderate_reject",
+      "entity_type": "establishment",
+      "summary": "Отклонено заведение"
+    },
+    {
+      "action": "suspend",
+      "entity_type": "establishment",
+      "summary": "Приостановлено заведение"
+    },
+    {
+      "action": "unsuspend",
+      "entity_type": "establishment",
+      "summary": "Возобновлено заведение"
+    },
+    {
+      "action": "partner_pause",
+      "entity_type": "establishment",
+      "summary": "Партнёр приостановил заведение"
+    },
+    {
+      "action": "partner_resume",
+      "entity_type": "establishment",
+      "summary": "Партнёр возобновил заведение"
+    },
+    {
+      "action": "admin_update_coordinates",
+      "entity_type": "establishment",
+      "summary": "Координаты обновлены"
+    },
+    {
+      "action": "admin_update_slug",
+      "entity_type": "establishment",
+      "summary": "Адрес страницы изменён"
+    },
+    {
+      "action": "claim_establishment",
+      "entity_type": "establishment",
+      "summary": "Заведение передано партнёру"
+    },
+    {
+      "action": "partner_delete_establishment",
+      "entity_type": "establishment",
+      "summary": "Заведение удалено партнёром",
+      "summary_without_actor": "Заведение удалено вместе с учётной записью по заявке в поддержку"
+    },
+    {
+      "action": "review_hide",
+      "entity_type": "review",
+      "summary": "Скрыт отзыв"
+    },
+    {
+      "action": "review_show",
+      "entity_type": "review",
+      "summary": "Показан отзыв"
+    },
+    {
+      "action": "review_delete",
+      "entity_type": "review",
+      "summary": "Удалён отзыв"
+    },
+    {
+      "action": "hide_menu_item",
+      "entity_type": "menu_item",
+      "summary": "Скрыта позиция меню"
+    },
+    {
+      "action": "unhide_menu_item",
+      "entity_type": "menu_item",
+      "summary": "Показана позиция меню"
+    },
+    {
+      "action": "dismiss_sanity_flag",
+      "entity_type": "menu_item",
+      "summary": "Снят флаг с позиции меню"
+    },
+    {
+      "action": "upgrade_user_to_partner",
+      "entity_type": "user",
+      "summary": "Пользователь повышен до партнёра"
+    },
+    {
+      "action": "user_block",
+      "entity_type": "user",
+      "summary": "Пользователь заблокирован"
+    },
+    {
+      "action": "user_unblock",
+      "entity_type": "user",
+      "summary": "Пользователь разблокирован"
+    },
+    {
+      "action": "user_reset_name",
+      "entity_type": "user",
+      "summary": "Имя пользователя сброшено"
+    },
+    {
+      "action": "user_delete_account",
+      "entity_type": "user",
+      "summary": "Пользователь удалил учётную запись",
+      "summary_without_actor": "Учётная запись удалена по заявке в поддержку"
+    },
+    {
+      "action": "change_email",
+      "entity_type": "user",
+      "summary": "Адрес e-mail учётной записи изменён"
+    },
+    {
+      "action": "mark_service_account",
+      "entity_type": "user",
+      "summary": "Учётная запись отмечена служебной"
+    },
+    {
+      "action": "operator_create_admin",
+      "entity_type": "user",
+      "summary": "Создан администратор"
+    },
+    {
+      "action": "operator_reset_admin",
+      "entity_type": "user",
+      "summary": "Администратору задан пароль"
+    },
+    {
+      "action": "operator_promote_admin",
+      "entity_type": "user",
+      "summary": "Учётная запись повышена до администратора"
+    }
+  ],
+  "_about_fields": "Ключи old_data/new_data, которые пишут писатели журнала. Панель переводит каждый (moderation_vocabulary.dart, kAuditFieldLabels; сверяет moderation_vocabulary_test.dart), сторож сервера (auditLogActionsGuard.test.js) ищет ключи в коде писателей и требует их здесь. Ключи из «...spread» сторож не видит — они вписаны руками (counts удаления учётной записи).",
+  "fields": [
+    "status",
+    "reason",
+    "moderation_notes",
+    "latitude",
+    "longitude",
+    "slug",
+    "partner_id",
+    "role",
+    "is_hidden_by_admin",
+    "copy_of",
+    "sanity_flag",
+    "is_visible",
+    "is_deleted",
+    "establishment_id",
+    "is_active",
+    "hidden_review_ids",
+    "restored_review_ids",
+    "restore_reviews",
+    "user_name",
+    "account_takeover",
+    "actor",
+    "auth_method",
+    "reviews_kept",
+    "bookings_cancelled",
+    "favorites_removed",
+    "drafts_deleted",
+    "access_tokens_revoked",
+    "user_email",
+    "provider_linked",
+    "had_password",
+    "password_cleared",
+    "sessions_ended",
+    "devices_switched_off",
+    "reset_links_spent",
+    "email_codes_spent",
+    "is_service_account",
+    "name",
+    "city",
+    "item_name",
+    "establishment_name",
+    "establishment_city"
+  ]
+}

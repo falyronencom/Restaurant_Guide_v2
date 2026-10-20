@@ -228,19 +228,26 @@ describe('scripts/dismiss-menu-flags — на базе', () => {
          FROM audit_log`,
     );
     expect(audit).toHaveLength(2);
-    const entry = (entityId, flag) => ({
+    // Название позиции и заведения — снимком: журнал называет позицию
+    // словами, а не 8 знаками id (проход по панели модератора, 20.10, A3-03).
+    const entry = (entityId, itemName, flag) => ({
       user_id: adminId,
       action: 'dismiss_sanity_flag',
       entity_type: 'menu_item',
       entity_id: entityId,
-      old_data: { sanity_flag: flag },
+      old_data: {
+        item_name: itemName,
+        establishment_name: 'Le Pigeon',
+        establishment_city: 'Минск',
+        sanity_flag: flag,
+      },
       new_data: { sanity_flag: null },
       ip_address: null,
       user_agent: 'scripts/dismiss-menu-flags',
     });
     expect(audit).toEqual(expect.arrayContaining([
-      entry(ids.syrniki, SYRNIKI_FLAG),
-      entry(ids.tea, TEA_FLAG),
+      entry(ids.syrniki, 'Сырники', SYRNIKI_FLAG),
+      entry(ids.tea, 'Чай', TEA_FLAG),
     ]));
 
     expect([...result.dismissed].sort()).toEqual([ids.syrniki, ids.tea].sort());
