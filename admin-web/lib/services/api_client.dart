@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:restaurant_guide_admin_web/config/environment.dart';
 import 'package:restaurant_guide_admin_web/services/session_events.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Итог попытки обновить токен.
 ///
@@ -133,11 +134,10 @@ class ApiClient {
   ///
   /// Отдельно от [_credentialPaths] намеренно. В ветке 401 он один из трёх
   /// равноправных: обновлять по отказу во входе нечем и незачем. А в ветке
-  /// повторов 5xx исключён ТОЛЬКО он — там причина другая: у обновления
+  /// повторов 5xx он исключён по другой причине, чем действия: у обновления
   /// каждый повтор есть предъявление погашаемого токена, и счёт предъявлений
-  /// решает судьбу сессии. У входа погашать нечего, и снимать его с лестницы
-  /// значило бы менять поведение без причины: 502 от edge в окно деплоя
-  /// отдавал бы оператору ошибку вместо тихого повтора.
+  /// решает судьбу сессии. Вход на лестнице остаётся: погашать у него нечего,
+  /// и 502 от edge в окно деплоя переживается тихим повтором.
   static const String _refreshPath = '/api/v1/auth/refresh';
 
   /// Пути, чей 401 — отказ в учётных данных, а не истёкшая сессия: сам вход
@@ -153,6 +153,21 @@ class ApiClient {
 
   static bool _isRefreshRequest(RequestOptions options) =>
       options.uri.path.endsWith(_refreshPath);
+
+  /// Пути входа — панельный и общий.
+  static const List<String> _loginPaths = <String>[
+    '/api/v1/admin/auth/login',
+    '/api/v1/auth/login',
+  ];
+
+  /// Что повторяется при 5xx: чтение и вход — см. ветку 5xx в
+  /// [_createErrorInterceptor]. Обновление токена — никогда.
+  static bool _isRetriableOn5xx(RequestOptions options) {
+    if (_isRefreshRequest(options)) return false;
+    final method = options.method.toUpperCase();
+    if (method == 'GET' || method == 'HEAD') return true;
+    return _loginPaths.any((path) => options.uri.path.endsWith(path));
+  }
 
   /// Метка запроса, уже повторённого после обновления токена. Его 401 —
   /// ответ по существу (право отозвано, роль изменилась), а не истёкшая
@@ -198,7 +213,7 @@ class ApiClient {
             return handler.reject(
               DioException(
                 requestOptions: error.requestOptions,
-                error: 'Service temporarily unavailable. Please try again.',
+                error: kServiceUnavailablePhrase,
                 type: DioExceptionType.badResponse,
               ),
             );
@@ -208,7 +223,7 @@ class ApiClient {
             return handler.reject(
               DioException(
                 requestOptions: error.requestOptions,
-                error: 'Authentication failed. Please log in again.',
+                error: kSessionExpiredPhrase,
                 type: DioExceptionType.badResponse,
               ),
             );
@@ -217,30 +232,26 @@ class ApiClient {
 
         // Handle 5xx server errors - retry with exponential backoff.
         //
-        // Путь обновления токена из этой ветки исключён (13.09.2026). Причина
-        // не в самой лестнице, а в её УМНОЖЕНИИ на повтор цикла: обновление
-        // повторяется владельцем замка, `_retry` строит свежие
-        // `RequestOptions`, счётчик `retryCount` начинается с нуля, и худший
-        // счёт предъявлений одного refresh-токена был `2 * (maxRetryAttempts
-        // + 1)` = 8, растянутых на две лестницы. Предъявление вне льготного
-        // окна бэкенда — это 403 и отзыв ВСЕХ сессий пользователя, поэтому
-        // счёт предъявлений здесь не безразличен, в отличие от любого другого
-        // запроса.
+        // **Только чтение и вход** (20.10.2026, проход по панели модератора,
+        // пункты A1-16 и A3-28). Действие повторять нельзя: 502 от edge
+        // Railway приходит и тогда, когда сервер действие уже выполнил, —
+        // повтор получал «уже одобрено / уже скрыто», и панель показывала
+        // сбой по сработавшему действию. Модератор видит отказ и решает сам, а
+        // экран после отказа «уже изменено» перечитывает данные. Выход тоже
+        // больше не повторяется: у него потолок ожидания.
         //
-        // Теперь их ровно два, и оба уходят не позже таймаута приёма (30 с)
-        // от ротации — то есть заведомо внутри окна (60 с). Это то самое
-        // «худший повтор через ~31 с», из которого выведено значение окна
-        // (SDL CAT-D-2.1); с лестницей вывод под ним не держался.
+        // Вход остался на лестнице (решение 13.09.2026): повтор входа на
+        // сервере ничего не меняет, а 502 в окно деплоя переживается тихо.
         //
-        // Цена размена принята Координатором 13.09: короткий 502 от edge
-        // больше не переживается дроблением пауз 0,5 / 1 / 1,5 с — его
-        // покрывает единственный немедленный повтор цикла. Для ВСЕХ ОСТАЛЬНЫХ
-        // запросов, включая вход, лестница осталась как была: снят
-        // [_isRefreshRequest], а не [_isCredentialRequest].
+        // Путь обновления токена исключён (13.09.2026): каждый его повтор —
+        // предъявление погашаемого токена, а предъявление вне льготного окна
+        // бэкенда — 403 и отзыв ВСЕХ сессий пользователя. Предъявлений на цикл
+        // ровно два (см. [_attemptTokenRefresh]); лестница их умножала до
+        // восьми.
         if (error.response != null &&
             error.response!.statusCode! >= 500 &&
             error.response!.statusCode! < 600 &&
-            !_isRefreshRequest(error.requestOptions)) {
+            _isRetriableOn5xx(error.requestOptions)) {
           final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
           if (retryCount < Environment.maxRetryAttempts) {
             final retryCountInt = retryCount as int;
@@ -250,8 +261,12 @@ class ApiClient {
             try {
               final response = await _retry(error.requestOptions);
               return handler.resolve(response);
+            } on DioException catch (e) {
+              // Отказ последнего повтора уже прошёл этот перехватчик и
+              // несёт русскую фразу; исходный отказ без неё — нет.
+              return handler.reject(e);
             } catch (e) {
-              return handler.reject(error);
+              return handler.reject(_enhanceError(error));
             }
           }
         }
@@ -439,77 +454,17 @@ class ApiClient {
     );
   }
 
+  /// Отказ с фразой для человека в `error`: текст сервера по-русски или
+  /// фраза по коду, статусу, виду сбоя — один разбор на всю панель
+  /// ([describeError]). Ответ сервера при пересборке сохраняется: провайдер
+  /// разбирает его сам и знает, о чём экран (404 — «заведение» или «отзыв»).
   DioException _enhanceError(DioException error) {
-    String userMessage;
-
-    switch (error.type) {
-      case DioExceptionType.connectionTimeout:
-      case DioExceptionType.sendTimeout:
-      case DioExceptionType.receiveTimeout:
-        userMessage =
-            'Connection timeout. Please check your internet connection.';
-        break;
-      case DioExceptionType.badResponse:
-        userMessage = _extractErrorMessage(error.response);
-        break;
-      case DioExceptionType.cancel:
-        userMessage = 'Request cancelled.';
-        break;
-      case DioExceptionType.connectionError:
-        userMessage = 'No internet connection. Please check your network.';
-        break;
-      case DioExceptionType.unknown:
-      default:
-        userMessage = 'An unexpected error occurred. Please try again.';
-    }
-
     return DioException(
       requestOptions: error.requestOptions,
       response: error.response,
       type: error.type,
-      error: userMessage,
+      error: describeError(error),
     );
-  }
-
-  String _extractErrorMessage(Response? response) {
-    if (response == null) {
-      return 'Server error occurred. Please try again later.';
-    }
-
-    if (response.data is Map<String, dynamic>) {
-      final data = response.data as Map<String, dynamic>;
-      if (data.containsKey('error')) {
-        final error = data['error'];
-        if (error is Map<String, dynamic> && error.containsKey('message')) {
-          return error['message'] as String;
-        }
-        if (error is String) {
-          return error;
-        }
-      }
-      if (data.containsKey('message')) {
-        return data['message'] as String;
-      }
-    }
-
-    switch (response.statusCode) {
-      case 400:
-        return 'Invalid request. Please check your input.';
-      case 401:
-        return 'Authentication required. Please log in.';
-      case 403:
-        return 'Access denied.';
-      case 404:
-        return 'Resource not found.';
-      case 422:
-        return 'Validation error. Please check your input.';
-      case 500:
-      case 502:
-      case 503:
-        return 'Server error. Please try again later.';
-      default:
-        return 'Error occurred (${response.statusCode}).';
-    }
   }
 
   // ============================================================================

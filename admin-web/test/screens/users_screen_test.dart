@@ -13,6 +13,8 @@ import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/users/users_screen.dart';
 import 'package:restaurant_guide_admin_web/services/admin_user_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 import '../helpers/stub_auth.dart';
 
@@ -27,6 +29,9 @@ class _FakeUserService implements AdminUserService {
   final Map<String, AdminUser> cards;
   final List<String> calls = <String>[];
   Object? failWith;
+
+  /// Отказ чтения — списка и карточки.
+  Object? readFailure;
 
   /// Что сервер ответит в `changed`.
   bool changed = true;
@@ -45,6 +50,8 @@ class _FakeUserService implements AdminUserService {
     String? status,
   }) async {
     calls.add('list search=${search ?? ''} status=${status ?? ''}');
+    final failure = readFailure;
+    if (failure != null) throw failure;
     return AdminUserListResponse(
       users: users,
       total: users.length,
@@ -56,6 +63,8 @@ class _FakeUserService implements AdminUserService {
   @override
   Future<AdminUser> getUser(String id) async {
     calls.add('get $id');
+    final failure = readFailure;
+    if (failure != null) throw failure;
     return cards[id]!;
   }
 
@@ -322,12 +331,17 @@ void main() {
         'заблокировать';
     fake.failWith = DioException(
       requestOptions: RequestOptions(path: '/api/v1/admin/users/u1/block'),
+      // Как приходит с сервера: текст — в теле ответа.
       response: Response<dynamic>(
         requestOptions: RequestOptions(path: '/api/v1/admin/users/u1/block'),
         statusCode: 409,
+        data: <String, dynamic>{
+          'success': false,
+          'message': refusal,
+          'error': <String, dynamic>{'code': 'PARTNER_HAS_ESTABLISHMENTS'},
+        },
       ),
       type: DioExceptionType.badResponse,
-      error: refusal,
     );
 
     await openRow(tester, 'Злой Комментатор');
@@ -473,8 +487,61 @@ void main() {
             .having((s) => s.initialUserId, 'initialUserId', 'author-9'));
   });
 
+  testWidgets('действие прошло, перечитка — нет: тосты о списке и карточке',
+      (tester) async {
+    // Сеть мигнула после блокировки: подпись «заблокирован» есть, а в
+    // «Состоянии» — «Активен» с кнопкой «Заблокировать». До 20.10 об этом не
+    // говорило ничто (пункт A2-07).
+    final fake = await pumpScreen(tester, [_user()]);
+    await openRow(tester, 'Злой Комментатор');
+    fake.readFailure = DioException(
+      requestOptions: RequestOptions(path: '/api/v1/admin/users'),
+      type: DioExceptionType.connectionError,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('user-block')));
+    await settle(tester);
+    await tester.enterText(
+        find.byKey(const ValueKey<String>('user-reason')), 'мусор');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('user-reason-confirm')));
+    await settle(tester);
+    await tester.pump();
+
+    expect(find.text('Список не обновился'), findsOneWidget);
+    expect(find.text('Карточка не обновилась'), findsOneWidget,
+        reason: 'тостов два — по одному на каждую неудачу');
+    expect(find.byType(AdminErrorToast), findsNWidgets(2));
+  });
+
+  testWidgets('карточка не загрузилась — «Повторить» под причиной',
+      (tester) async {
+    final fake = await pumpScreen(tester, [_user()], cards: <String, AdminUser>{});
+    fake.readFailure = DioException(
+      requestOptions: RequestOptions(path: '/api/v1/admin/users/u9'),
+      response: Response<dynamic>(
+        requestOptions: RequestOptions(path: '/api/v1/admin/users/u9'),
+        statusCode: 404,
+      ),
+      type: DioExceptionType.badResponse,
+    );
+    final provider = tester
+        .element(find.byType(UsersScreen))
+        .read<AdminUsersProvider>();
+    unawaited(provider.openUser('u9'));
+    await settle(tester);
+
+    expect(find.text('Карточка не загрузилась'), findsOneWidget);
+    expect(find.text(kUserNotFoundPhrase), findsOneWidget);
+    final calls = fake.calls.where((c) => c == 'get u9').length;
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Повторить'));
+    await settle(tester);
+    expect(fake.calls.where((c) => c == 'get u9').length, calls + 1);
+  });
+
   group('describeUserActionError', () {
-    DioException dio({int? status, Object? error, DioExceptionType? type}) =>
+    DioException dio({int? status, Object? body, DioExceptionType? type}) =>
         DioException(
           requestOptions: RequestOptions(path: '/x'),
           response: status == null
@@ -482,28 +549,38 @@ void main() {
               : Response<dynamic>(
                   requestOptions: RequestOptions(path: '/x'),
                   statusCode: status,
+                  data: body,
                 ),
           type: type ?? DioExceptionType.badResponse,
-          error: error,
         );
 
     test('английский текст сервера не доходит до модератора', () {
-      expect(describeUserActionError(dio(status: 403, error: 'Forbidden')),
-          'Доступ запрещён');
-      expect(describeUserActionError(dio(status: 500, error: 'Boom')),
-          'Произошла ошибка');
+      expect(
+          describeUserActionError(
+              dio(status: 403, body: <String, dynamic>{'message': 'Forbidden'})),
+          'Недостаточно прав для этого действия.');
+      expect(
+          describeUserActionError(
+              dio(status: 500, body: <String, dynamic>{'message': 'Boom'})),
+          kServerFailurePhrase);
     });
 
     test('русский текст сервера — как есть', () {
-      expect(describeUserActionError(dio(status: 422, error: 'Укажите причину')),
+      expect(
+          describeUserActionError(dio(
+              status: 422,
+              body: <String, dynamic>{'message': 'Укажите причину'})),
           'Укажите причину');
+    });
+
+    test('404 — о пользователе', () {
+      expect(describeUserActionError(dio(status: 404)), kUserNotFoundPhrase);
     });
 
     test('сеть', () {
       expect(
-        describeUserActionError(
-            dio(type: DioExceptionType.connectionError, error: 'No internet')),
-        'Ошибка соединения с сервером',
+        describeUserActionError(dio(type: DioExceptionType.connectionError)),
+        kNoConnectionPhrase,
       );
     });
   });

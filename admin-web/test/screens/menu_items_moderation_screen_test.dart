@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +28,7 @@ class _FakeService implements AdminMenuItemService {
   FlaggedMenuItemsResponse response = _response();
   Completer<FlaggedMenuItemsResponse>? gate;
   Object? error;
+  int loadCalls = 0;
 
   @override
   Future<FlaggedMenuItemsResponse> getFlaggedItems({
@@ -37,6 +39,7 @@ class _FakeService implements AdminMenuItemService {
     String? city,
     String? search,
   }) {
+    loadCalls++;
     if (error != null) return Future<FlaggedMenuItemsResponse>.error(error!);
     final pending = gate;
     if (pending != null) return pending.future;
@@ -45,12 +48,18 @@ class _FakeService implements AdminMenuItemService {
 
   Object? actionError;
 
+  int hideCalls = 0;
+  Completer<Map<String, dynamic>>? hideGate;
+
   @override
   Future<Map<String, dynamic>> hideItem({
     required String menuItemId,
     required String reason,
   }) async {
+    hideCalls++;
     if (actionError != null) throw actionError!;
+    final gate = hideGate;
+    if (gate != null) return gate.future;
     return <String, dynamic>{};
   }
 
@@ -61,6 +70,20 @@ class _FakeService implements AdminMenuItemService {
   @override
   Future<Map<String, dynamic>> dismissFlag(String menuItemId) async =>
       <String, dynamic>{};
+}
+
+/// Отказ сервера — как его отдаёт транспорт: статус и тело ответа.
+DioException _refusal(int status, Map<String, dynamic> body) {
+  final options = RequestOptions(path: '/api/v1/admin/menu-items/1/hide');
+  return DioException(
+    requestOptions: options,
+    response: Response<dynamic>(
+      requestOptions: options,
+      statusCode: status,
+      data: body,
+    ),
+    type: DioExceptionType.badResponse,
+  );
 }
 
 class _StubBadges extends BadgesProvider {
@@ -460,7 +483,11 @@ void main() {
       provider.selectItem('1');
       await tester.pumpAndSettle();
 
-      service.actionError = Exception('500');
+      service.actionError = _refusal(503, <String, dynamic>{
+        'success': false,
+        'message': 'Сбой на сервере. Попробуйте ещё раз через минуту.',
+        'error': <String, dynamic>{'code': 'INTERNAL_ERROR'},
+      });
       await tester.tap(find.text('Скрыть позицию'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, 'цена подтверждена по фото');
@@ -469,9 +496,65 @@ void main() {
       await tester.pumpAndSettle();
 
       // Тост показывает ЭКРАН: панель разбора размонтируется вместе с позицией,
-      // и её тост остался бы висеть с мёртвым контекстом.
+      // и её тост остался бы висеть с мёртвым контекстом. Причина — словами
+      // сервера (пункт A1-05): раньше на любой отказ — одна общая фраза.
       expect(find.text('Позиция не скрыта'), findsOneWidget);
-      expect(find.text('Очередь не изменилась. Попробуйте ещё раз.'), findsOneWidget);
+      expect(
+          find.text('Сбой на сервере. Попробуйте ещё раз через минуту. '
+              'Очередь не изменилась.'),
+          findsOneWidget);
+    });
+
+    testWidgets('«уже скрыта»: причина по коду отказа, список перечитан',
+        (tester) async {
+      // Позицию скрыл другой модератор: повтор получил бы тот же отказ, а
+      // строка висела бы в очереди до смены фильтра (пункт A1-06).
+      final service = _FakeService();
+      final provider = await _pump(tester, service: service);
+      provider.selectItem('1');
+      await tester.pumpAndSettle();
+      final loadsBefore = service.loadCalls;
+
+      service.actionError = _refusal(400, <String, dynamic>{
+        'success': false,
+        'message': 'Menu item is already hidden',
+        'error': <String, dynamic>{'code': 'MENU_ITEM_ALREADY_HIDDEN'},
+      });
+      await tester.tap(find.text('Скрыть позицию'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'цена подтверждена по фото');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Скрыть'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Позиция не скрыта'), findsOneWidget);
+      expect(find.text('Позиция уже скрыта.'), findsOneWidget);
+      expect(find.textContaining('Menu item'), findsNothing,
+          reason: 'английский текст сервера модератору не показывается');
+      expect(service.loadCalls, loadsBefore + 1,
+          reason: 'после отказа «уже не так» страница перечитана');
+    });
+
+    testWidgets('второе нажатие, пока действие в пути, второго запроса не шлёт',
+        (tester) async {
+      final service = _FakeService();
+      final provider = await _pump(tester, service: service);
+      provider.selectItem('1');
+      await tester.pumpAndSettle();
+
+      final gate = Completer<Map<String, dynamic>>();
+      service.hideGate = gate;
+      final first = provider.hideItem('1', 'причина');
+      // Не `await`: без защиты второй вызов ждал бы задержанный запрос.
+      bool? second;
+      unawaited(provider.hideItem('1', 'причина').then((v) => second = v));
+      await tester.pump();
+
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
+      expect(service.hideCalls, 1, reason: 'защита — в провайдере (A1-03)');
+      gate.complete(<String, dynamic>{});
+      await first;
+      await tester.pumpAndSettle();
     });
   });
 

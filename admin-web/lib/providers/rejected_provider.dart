@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// State management for the "Отказанные" (Rejected) screen.
 ///
@@ -156,13 +157,7 @@ class RejectedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('403')) return 'Доступ запрещён';
-    if (msg.contains('404')) return 'Заведение не найдено';
-    if (msg.contains('SocketException') || msg.contains('Connection')) {
-      return 'Ошибка соединения с сервером';
-    }
-    return 'Произошла ошибка';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error, notFound: kEstablishmentNotFoundPhrase);
 }

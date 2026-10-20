@@ -164,7 +164,8 @@ class _DetailPanel extends StatelessWidget {
     final provider = context.watch<RejectedProvider>();
 
     // Get rejection notes from the selected rejection item
-    final rejectionNotes = provider.selectedRejection?.rejectionNotes;
+    final rejection = provider.selectedRejection;
+    final rejectionNotes = rejection?.rejectionNotes;
 
     return ModerationDetailPanel(
       mode: DetailPanelMode.readonly,
@@ -172,6 +173,9 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      onRetryDetail: rejection == null
+          ? null
+          : () => context.read<RejectedProvider>().selectEstablishment(rejection),
       rejectionNotes: rejectionNotes,
     );
   }

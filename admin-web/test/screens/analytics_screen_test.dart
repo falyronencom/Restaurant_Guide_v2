@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -865,13 +866,13 @@ void main() {
 
       await tester.tap(find.text('7 дней'));
       await tester.pump();
-      service.failEstablishments(Exception('No internet'));
+      service.failEstablishments(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await tester.pumpAndSettle();
 
       // Полоса загрузки погасла, приглушение снялось — без сообщения
       // тридцатидневные числа выглядели бы ответом на вопрос о семи днях.
       expect(find.text('Статистика не обновилась'), findsOneWidget);
-      expect(find.textContaining('Нет подключения'), findsOneWidget);
+      expect(find.textContaining('Нет связи с сервером'), findsOneWidget);
 
       // Подпись описывает то, что на экране, и признаётся, что не обновилась.
       expect(
@@ -888,7 +889,7 @@ void main() {
 
       await tester.tap(find.text('7 дней'));
       await tester.pump();
-      service.failEstablishments(Exception('No internet'));
+      service.failEstablishments(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await tester.pumpAndSettle();
 
       // Именно эта строка утверждала невозможное: тридцатидневное окно,
@@ -904,7 +905,7 @@ void main() {
 
       await tester.tap(find.text('7 дней'));
       await tester.pump();
-      service.failEstablishments(Exception('No internet'));
+      service.failEstablishments(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Ещё раз'));

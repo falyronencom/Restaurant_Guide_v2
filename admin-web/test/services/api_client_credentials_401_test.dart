@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/services/api_client.dart';
 import 'package:restaurant_guide_admin_web/services/session_events.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// 401 на запросах за учётными данными — отказ, а не истёкшая сессия.
 ///
@@ -125,9 +126,14 @@ void main() {
     ));
 
     expect(error, isA<DioException>());
-    expect((error as DioException).error, 'Invalid email/phone or password',
-        reason: 'провайдер переводит именно эту фразу в «Неверный email или '
-            'пароль»; подмена текстом про повторный вход даёт общую ошибку');
+    final refusal = error as DioException;
+    expect(refusal.response?.statusCode, 401);
+    expect((refusal.response?.data as Map)['error']['code'],
+        'INVALID_CREDENTIALS',
+        reason: 'ответ сервера доходит как есть: по его коду разбор говорит '
+            '«Неверный email или пароль»; подмена отказом «сессия истекла» '
+            'потеряла бы и ответ, и причину');
+    expect(refusal.error, 'Неверный email или пароль');
     expect(
       adapter.requests.map((r) => r.uri.path).toList(),
       ['/api/v1/admin/auth/login'],
@@ -145,8 +151,7 @@ void main() {
 
     final error = await failure(api.get('/api/v1/admin/badges'));
 
-    expect((error as DioException).error,
-        'Authentication failed. Please log in again.');
+    expect((error as DioException).error, kSessionExpiredPhrase);
     expect(
       adapter.requests.map((r) => r.uri.path).toList(),
       ['/api/v1/admin/badges'],

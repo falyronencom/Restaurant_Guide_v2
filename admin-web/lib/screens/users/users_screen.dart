@@ -6,10 +6,12 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 /// Путь экрана. Ссылка из отзыва добавляет `?user=<id>`.
 const String kUsersPath = '/settings/users';
@@ -43,10 +45,17 @@ class _UsersScreenState extends State<UsersScreen> {
   final _searchController = TextEditingController();
   late final AdminUsersProvider _provider;
 
+  /// Сбой перечитки при данных на экране — тостом (пункт A2-07). Действие
+  /// перечитывает и список, и карточку; сеть мигнула — и «Активен» с кнопкой
+  /// «Заблокировать» оставались под подписью «Пользователь заблокирован».
+  final _listFailure = AdminErrorToastReporter();
+  final _detailFailure = AdminErrorToastReporter();
+
   @override
   void initState() {
     super.initState();
     _provider = context.read<AdminUsersProvider>();
+    _provider.addListener(_onProviderChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _provider.loadUsers();
@@ -66,8 +75,36 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   void dispose() {
+    _provider.removeListener(_onProviderChanged);
+    _listFailure.dispose();
+    _detailFailure.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onProviderChanged() {
+    // Пустой список показывает сообщение в колонке, пустая карточка — своё.
+    final listError =
+        _provider.users.isEmpty ? null : _provider.listError;
+    _listFailure.report(
+      this,
+      key: listError,
+      title: 'Список не обновился',
+      message: '${asSentence(listError ?? '')} '
+          'Строки на экране остались от прошлой загрузки.',
+      onRetry: () => _provider.loadUsers(page: _provider.currentPage),
+    );
+
+    final detailError =
+        _provider.selectedUser == null ? null : _provider.detailError;
+    _detailFailure.report(
+      this,
+      key: detailError,
+      title: 'Карточка не обновилась',
+      message: '${asSentence(detailError ?? '')} '
+          'Карточка на экране может быть устаревшей.',
+      onRetry: _provider.retryDetail,
+    );
   }
 
   @override
@@ -407,12 +444,20 @@ class _UserPanel extends StatelessWidget {
         return const Center(child: CircularProgressIndicator(strokeWidth: 2));
       }
       final error = provider.detailError;
-      return Center(
+      if (error != null) {
+        return AdminColumnMessage(
+          icon: Icons.cloud_off_outlined,
+          title: 'Карточка не загрузилась',
+          message: error,
+          onAction: provider.retryDetail,
+        );
+      }
+      return const Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Text(
-            error ?? 'Выберите человека слева',
-            style: const TextStyle(fontSize: 15, color: AppTheme.textSecondary),
+            'Выберите человека слева',
+            style: TextStyle(fontSize: 15, color: AppTheme.textSecondary),
           ),
         ),
       );

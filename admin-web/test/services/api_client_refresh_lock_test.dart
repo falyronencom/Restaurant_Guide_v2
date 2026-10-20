@@ -4,6 +4,7 @@ import 'package:restaurant_guide_admin_web/config/environment.dart';
 import 'package:restaurant_guide_admin_web/services/session_events.dart';
 
 import '../helpers/wire_stand.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Обновление токена: одно на всех, повтор без цикла, провал с одним
 /// сигналом.
@@ -80,8 +81,15 @@ void main() {
         .then<Object?>((_) => null, onError: (Object e) => e);
 
     expect(error, isA<DioException>());
-    expect((error as DioException).error, 'Token expired',
+    // Отказ повтора — настоящий ответ сервера, его и отдаём: тело ответа —
+    // от сервера, а запрос — уже повторённый после обновления. Текст для
+    // человека из него собирает общий разбор (`describeError`).
+    final refusal = error as DioException;
+    expect(refusal.response?.statusCode, 401);
+    expect((refusal.response?.data as Map)['error']['message'], 'Token expired',
         reason: 'отказ повтора — настоящий ответ сервера, его и отдаём');
+    expect(refusal.requestOptions.extra['retriedAfterRefresh'], isTrue,
+        reason: 'отдан отказ ПОВТОРА, а не исходный 401');
     expect(
       adapter.requests.map((r) => r.uri.path).toList(),
       ['/api/v1/admin/badges', '/api/v1/auth/refresh', '/api/v1/admin/badges'],
@@ -168,7 +176,7 @@ void main() {
 
     expect(error, isA<DioException>());
     expect((error as DioException).error,
-        'Service temporarily unavailable. Please try again.',
+        kServiceUnavailablePhrase,
         reason: 'запросу — временная ошибка, а не «войдите снова»');
     // Граница, ради которой путь `/auth/refresh` снят с ветки повторов 5xx
     // (13.09.2026). Раньше лестница УМНОЖАЛАСЬ на повтор цикла: четыре
@@ -203,7 +211,7 @@ void main() {
     expect(errors, everyElement(isA<DioException>()));
     expect(
       errors.map((e) => (e! as DioException).error).toSet(),
-      {'Authentication failed. Please log in again.'},
+      {kSessionExpiredPhrase},
     );
     final paths = adapter.requests.map((r) => r.uri.path).toList();
     expect(paths.where((p) => p == '/api/v1/auth/refresh').length, 1);
@@ -241,7 +249,7 @@ void main() {
 
     expect(error, isA<DioException>());
     expect((error! as DioException).error,
-        'Authentication failed. Please log in again.',
+        kSessionExpiredPhrase,
         reason: 'ответ получен, но сессии за ним уже нет');
     expect(
       adapter.requests.map((r) => r.uri.path).toList(),
@@ -277,7 +285,7 @@ void main() {
 
     expect(error, isA<DioException>());
     expect((error! as DioException).error,
-        'Authentication failed. Please log in again.',
+        kSessionExpiredPhrase,
         reason: 'вердикт выносит сервер, а не защищённое хранилище');
     expect(expired, 1, reason: 'провайдер обязан узнать об истёкшей сессии');
     expect(storage['refresh_token'], 'r1',
@@ -376,7 +384,7 @@ void main() {
 
       expect(error, isA<DioException>());
       expect((error! as DioException).error,
-          'Authentication failed. Please log in again.');
+          kSessionExpiredPhrase);
       expect(
         adapter.requests.map((r) => r.uri.path).toList(),
         ['/api/v1/admin/badges', '/api/v1/auth/refresh'],
@@ -423,7 +431,7 @@ void main() {
 
       expect(error, isA<DioException>());
       expect((error! as DioException).error,
-          'Authentication failed. Please log in again.',
+          kSessionExpiredPhrase,
           reason: 'вердикт второй попытки, а не временный отказ первой');
       expect(refreshCalls, 2,
           reason: 'приговор пришёл на повторе — третьей попытки не будет');
@@ -460,7 +468,7 @@ void main() {
 
       expect(error, isA<DioException>());
       expect((error! as DioException).error,
-          'Service temporarily unavailable. Please try again.');
+          kServiceUnavailablePhrase);
       expect(refreshCalls, 2,
           reason: 'попытка и ровно один повтор — лестницы попыток нет');
       expect(storage['refresh_token'], 'r1',

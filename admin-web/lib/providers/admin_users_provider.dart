@@ -1,8 +1,8 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_user_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Состояние экрана «Пользователи»: список, поиск, выбранный человек и его
 /// блокировка (проход тестировщика 17.10, п. 8).
@@ -105,6 +105,9 @@ class AdminUsersProvider extends ChangeNotifier {
     _selectedId = id;
     await _loadDetail();
   }
+
+  /// Повтор загрузки открытой карточки — «Повторить» под ошибкой и в тосте.
+  Future<void> retryDetail() => _loadDetail();
 
   Future<void> _loadDetail() async {
     final id = _selectedId;
@@ -236,30 +239,11 @@ class AdminUsersProvider extends ChangeNotifier {
 const String kUserActionNothingChanged =
     'Ничего не изменилось: так уже было — возможно, это сделал другой модератор';
 
-final RegExp _cyrillic = RegExp('[А-Яа-яЁё]');
-
-/// Текст отказа для модератора.
+/// Текст отказа для модератора — общий разбор панели ([describeError]).
 ///
 /// Сервер пишет отказы этих действий по-русски («У этого партнёра есть
-/// карточки заведений…», «Укажите причину») — их и показываем: в них сказано,
-/// почему. Всё остальное (английский текст, сеть) — общими словами, без кодов.
+/// карточки заведений…», «Укажите причину») — их разбор и показывает: в них
+/// сказано, почему.
 @visibleForTesting
-String describeUserActionError(Object error) {
-  if (error is DioException) {
-    final message = error.error;
-    if (message is String && _cyrillic.hasMatch(message)) return message;
-    switch (error.response?.statusCode) {
-      case 403:
-        return 'Доступ запрещён';
-      case 404:
-        return 'Пользователь не найден';
-    }
-    if (error.type == DioExceptionType.connectionError ||
-        error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.receiveTimeout ||
-        error.type == DioExceptionType.sendTimeout) {
-      return 'Ошибка соединения с сервером';
-    }
-  }
-  return 'Произошла ошибка';
-}
+String describeUserActionError(Object error) =>
+    describeError(error, notFound: kUserNotFoundPhrase);

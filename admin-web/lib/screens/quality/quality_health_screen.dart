@@ -5,6 +5,7 @@ import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/quality/health_summary_bar.dart';
@@ -75,7 +76,7 @@ class _QualityHealthScreenState extends State<QualityHealthScreen> {
       _dismissToast = showAdminErrorToast(
         context,
         title: 'Снимок не обновился',
-        message: '$message. На экране остался прежний снимок.',
+        message: '${asSentence(message)} На экране остался прежний снимок.',
         onRetry: () => _provider.refresh(),
       );
     });

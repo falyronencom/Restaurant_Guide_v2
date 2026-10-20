@@ -6,6 +6,7 @@ import 'package:restaurant_guide_admin_web/models/user.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/auth_service.dart';
 import 'package:restaurant_guide_admin_web/services/session_events.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Authentication status for admin panel
 enum AuthStatus { unauthenticated, authenticating, authenticated }
@@ -127,11 +128,18 @@ class AuthProvider with ChangeNotifier {
   // Login
   // ============================================================================
 
+  /// Вход в панель.
+  ///
+  /// [isLoading] вход не трогает: по нему роутер уводит на кадр
+  /// инициализации, и экран входа строился заново — с пустыми полями. После
+  /// каждой опечатки модератор набирал и почту, и пароль, а спиннер на кнопке
+  /// не был виден вовсе (проход по панели модератора, 20.10, пункт A3-07).
+  /// Ход входа — [AuthStatus.authenticating].
   Future<bool> login({
     required String email,
     required String password,
   }) async {
-    _isLoading = true;
+    if (_status == AuthStatus.authenticating) return false;
     _errorMessage = null;
     _status = AuthStatus.authenticating;
     notifyListeners();
@@ -150,13 +158,11 @@ class AuthProvider with ChangeNotifier {
       _lastUserId = user.id;
       _currentUser = user;
       _status = AuthStatus.authenticated;
-      _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       _errorMessage = _extractErrorMessage(e);
       _status = AuthStatus.unauthenticated;
-      _isLoading = false;
       notifyListeners();
       return false;
     }
@@ -166,14 +172,28 @@ class AuthProvider with ChangeNotifier {
   // Logout
   // ============================================================================
 
+  /// Потолок ожидания ответа сервера на выход.
+  ///
+  /// Пока выход идёт, виден кадр инициализации, и без потолка при недоступном
+  /// сервере он держался до таймаутов Dio — полминуты и больше, без единой
+  /// кнопки (проход по панели модератора, 20.10, пункт A3-09). Уведомить
+  /// сервер — дело «по возможности»; выйти локально можно всегда.
+  static const Duration logoutTimeout = Duration(seconds: 6);
+
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      await _authService.logout();
+      await _authService.logout().timeout(logoutTimeout);
     } catch (e) {
-      // Continue with local logout even if API call fails
+      // Сервер не ответил вовремя или отказал — выходим локально. Хранилище
+      // чистится здесь: сервис дошёл бы до этого только после ответа.
+      try {
+        await _authService.clearAuthData();
+      } catch (_) {
+        // Хранилище не отдало стирание — выход всё равно состоится.
+      }
     }
 
     _currentUser = null;
@@ -209,22 +229,17 @@ class AuthProvider with ChangeNotifier {
   // Helpers
   // ============================================================================
 
+  /// Текст отказа во входе — общий разбор панели ([describeError]) и две
+  /// фразы самого входа (пункт A3-08): лимит входа — пять попыток в минуту
+  /// с адреса, и «попробуйте позже» без срока заставляло жать снова; отказ
+  /// формата приходит английским «Request validation failed».
   String _extractErrorMessage(Object error) {
-    final message = error.toString();
-    // DioException wraps user-friendly messages in the error field
-    if (message.contains('Admin access required')) {
-      return 'Доступ только для администраторов';
+    switch (errorStatus(error)) {
+      case 429:
+        return 'Слишком много попыток входа. Подождите минуту и попробуйте снова.';
+      case 422:
+        return 'Email указан неверно — проверьте, как он написан.';
     }
-    if (message.contains('Invalid email/phone or password')) {
-      return 'Неверный email или пароль';
-    }
-    if (message.contains('No internet connection')) {
-      return 'Нет подключения к серверу';
-    }
-    if (message.contains('Connection timeout')) {
-      return 'Превышено время ожидания';
-    }
-    // Fallback
-    return 'Ошибка входа. Попробуйте снова.';
+    return describeError(error);
   }
 }

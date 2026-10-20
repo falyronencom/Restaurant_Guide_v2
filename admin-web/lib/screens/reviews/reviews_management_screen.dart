@@ -8,6 +8,7 @@ import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/users/users_screen.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
@@ -79,7 +80,7 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
       _dismissToast = showAdminErrorToast(
         context,
         title: 'Список не обновился',
-        message: '$message. Отзывы на экране остались от прошлой загрузки.',
+        message: '${asSentence(message)} Отзывы на экране остались от прошлой загрузки.',
         onRetry: () => _provider.loadReviews(page: _provider.currentPage),
       );
     });
@@ -1258,7 +1259,31 @@ class _Actions extends StatelessWidget {
 
     final reviews = context.read<AdminReviewsProvider>();
     final isVisible = state == ReviewState.visible;
+    final error = provider.submitError;
 
+    // Причина сбоя — строкой под кнопками, как у «Пользователей» (пункт
+    // A2-01). До 20.10 провайдер её писал, а экран не читал: отзыв на секунду
+    // менял вид и тихо возвращался.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 10,
+      children: <Widget>[
+        _buttons(context, reviews, isVisible),
+        if (error != null)
+          Text(
+            error,
+            key: const ValueKey<String>('review-action-error'),
+            style: const TextStyle(fontSize: 13, color: AppTheme.errorRed),
+          ),
+      ],
+    );
+  }
+
+  Widget _buttons(
+    BuildContext context,
+    AdminReviewsProvider reviews,
+    bool isVisible,
+  ) {
     return Row(
       spacing: 10,
       children: <Widget>[

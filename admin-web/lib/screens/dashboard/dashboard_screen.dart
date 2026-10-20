@@ -12,12 +12,14 @@ import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_inline_spinner.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -34,6 +36,11 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  late final DashboardProvider _provider;
+
+  /// Сбой обновления при числах на экране — тостом (пункт A3-02).
+  final _refreshFailure = AdminErrorToastReporter();
+
   /// Высота ряда метрик. Задана явно, а не подобрана содержимым: внутренняя
   /// раскладка карточки фиксирована (18 + 32 + 14 + 30 + 8 + 16 + 18), а
   /// предсказуемая высота позволяет отдать графику весь остаток окна.
@@ -46,6 +53,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _provider = context.read<DashboardProvider>();
+    _provider.addListener(_onProviderChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<DashboardProvider>().loadDashboard();
       // Строка «Сигналов здоровья данных» считается по тому же снимку, что
@@ -57,6 +66,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // от повторного скана каталога спасает двухминутный снимок на сервере.
       context.read<QualityHealthProvider>().load();
     });
+  }
+
+  @override
+  void dispose() {
+    _provider.removeListener(_onProviderChanged);
+    _refreshFailure.dispose();
+    super.dispose();
+  }
+
+  void _onProviderChanged() {
+    final error = _provider.overview == null ? null : _provider.error;
+    _refreshFailure.report(
+      this,
+      key: error,
+      title: 'Обзор не обновился',
+      message: '${asSentence(error ?? '')} '
+          '${_provider.isStale ? 'На экране остались числа за прежний период.' : 'На экране остались числа прошлой загрузки.'}',
+      onRetry: _provider.loadDashboard,
+    );
   }
 
   @override
@@ -72,7 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: 'Панель управления',
               subtitle: refreshing
                   ? 'обновляем'
-                  : 'Обзор платформы · сравнение с ${_previousPeriodLabel(provider.period)}',
+                  : _subtitle(provider),
               subtitleLeading: refreshing
                   ? const AdminInlineSpinner(size: 13)
                   : null,
@@ -90,6 +118,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       },
     );
+  }
+
+  /// Подпись описывает числа НА ЭКРАНЕ: после неудачной смены периода — их
+  /// прежний период и честное «не удалось обновить».
+  String _subtitle(DashboardProvider provider) {
+    if (provider.isStale && provider.error != null) {
+      final loaded = provider.loadedSelection?.period ?? provider.period;
+      return 'Обзор платформы · сравнение с ${_previousPeriodLabel(loaded)} '
+          '· не удалось обновить';
+    }
+    return 'Обзор платформы · сравнение с ${_previousPeriodLabel(provider.period)}';
   }
 
   Widget _body(

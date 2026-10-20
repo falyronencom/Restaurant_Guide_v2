@@ -3,6 +3,7 @@ import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// State management for the Dashboard screen
 class DashboardProvider with ChangeNotifier {
@@ -21,6 +22,11 @@ class DashboardProvider with ChangeNotifier {
   /// «7 дней» — и подсвечено «7 дней», а данные остались за произвольный
   /// диапазон. `PeriodSelection` такое состояние не выражает вовсе.
   PeriodSelection _selection = const PeriodSelection(period: '30d');
+
+  /// Период, за который посчитаны лежащие числа, — тот же приём, что у
+  /// вкладок аналитики. Смена периода, которая не удалась, оставляла под
+  /// новой подсветкой числа прежнего и молчала (пункт A3-02).
+  PeriodSelection? _loadedSelection;
 
   /// Счётчик поколений — как у вкладок аналитики: без него быстрая смена
   /// периода отдаёт победу ответившему последним, а не запрошенному последним.
@@ -41,6 +47,7 @@ class DashboardProvider with ChangeNotifier {
     _isLoading = false;
     _error = null;
     _selection = const PeriodSelection(period: '30d');
+    _loadedSelection = null;
     notifyListeners();
   }
 
@@ -52,6 +59,13 @@ class DashboardProvider with ChangeNotifier {
   String? get error => _error;
   String get period => _selection.period;
   PeriodSelection get selection => _selection;
+
+  /// Период лежащих чисел; `null` — чисел ещё нет.
+  PeriodSelection? get loadedSelection => _loadedSelection;
+
+  /// Числа на экране — за другой период, чем выбран: обновление не удалось.
+  bool get isStale =>
+      _overview != null && _loadedSelection?.key != _selection.key;
 
   /// Load dashboard data for the given period
   Future<void> loadDashboard([PeriodSelection? selection]) async {
@@ -82,6 +96,7 @@ class DashboardProvider with ChangeNotifier {
       final usersData = results[1] as UsersAnalyticsData;
       _registrationTimeline = usersData.registrationTimeline;
       _aggregation = usersData.aggregation;
+      _loadedSelection = requested;
     } catch (e) {
       if (generation != _generation) return;
       _error = _extractMessage(e);
@@ -93,11 +108,7 @@ class DashboardProvider with ChangeNotifier {
     }
   }
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('Connection timeout')) return 'Превышено время ожидания';
-    if (msg.contains('No internet')) return 'Нет подключения к серверу';
-    if (msg.contains('403')) return 'Доступ запрещён';
-    return 'Произошла ошибка. Попробуйте снова.';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error);
 }

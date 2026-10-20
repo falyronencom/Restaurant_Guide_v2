@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// State management for the Audit Log viewer screen
 class AuditLogProvider extends ChangeNotifier {
@@ -96,7 +97,13 @@ class AuditLogProvider extends ChangeNotifier {
   DateTime? get _to => _period == 'custom' ? _customTo : null;
 
   /// Load audit log entries with current filters
-  Future<void> loadEntries({int page = 1}) async {
+  ///
+  /// [selectionChanged] — запрос после смены фильтра или периода. Его сбой
+  /// очищает таблицу, и экран показывает карточку ошибки с «Повторить»:
+  /// прежние строки под новым фильтром выдавали бы прежнюю выборку за новую
+  /// (пункт A3-23). Сбой перелистывания строки оставляет — они той же
+  /// выборки, и о сбое говорит тост.
+  Future<void> loadEntries({int page = 1, bool selectionChanged = false}) async {
     final seq = ++_requestSeq;
     _isLoading = true;
     _error = null;
@@ -128,6 +135,13 @@ class AuditLogProvider extends ChangeNotifier {
       if (seq != _requestSeq) return;
       _isLoading = false;
       _error = _extractMessage(e);
+      if (selectionChanged) {
+        _entries = [];
+        _currentPage = 1;
+        _totalPages = 1;
+        _totalCount = 0;
+        _latestAt = null;
+      }
       notifyListeners();
     }
   }
@@ -136,14 +150,14 @@ class AuditLogProvider extends ChangeNotifier {
   void setActionFilter(String? action) {
     _actionFilter = action;
     _resetSelection();
-    loadEntries();
+    loadEntries(selectionChanged: true);
   }
 
   /// Set entity type filter and reload
   void setEntityTypeFilter(String? entityType) {
     _entityTypeFilter = entityType;
     _resetSelection();
-    loadEntries();
+    loadEntries(selectionChanged: true);
   }
 
   /// Сменить период. Для 'custom' границы приходят снаружи, для остальных
@@ -160,7 +174,7 @@ class AuditLogProvider extends ChangeNotifier {
     _customFrom = period == 'custom' ? from : null;
     _customTo = period == 'custom' && to != null ? _endOfDay(to) : null;
     _resetSelection();
-    loadEntries();
+    loadEntries(selectionChanged: true);
   }
 
   static DateTime _endOfDay(DateTime day) =>
@@ -174,7 +188,7 @@ class AuditLogProvider extends ChangeNotifier {
     _customFrom = null;
     _customTo = null;
     _resetSelection();
-    loadEntries();
+    loadEntries(selectionChanged: true);
   }
 
   /// Toggle expanded row for showing details
@@ -213,13 +227,7 @@ class AuditLogProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('403')) return 'Доступ запрещён';
-    if (msg.contains('401')) return 'Требуется авторизация';
-    if (msg.contains('SocketException') || msg.contains('Connection')) {
-      return 'Ошибка соединения с сервером';
-    }
-    return 'Произошла ошибка при загрузке журнала';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error);
 }

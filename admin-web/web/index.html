@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -31,8 +31,38 @@
 
   <title>NIRIVIO · Админ-панель</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Заглушка до старта приложения (проход по панели модератора, 20.10,
+    пункт A3-27): пока скачивается движок, страница была белой. Тот же кадр,
+    что рисует приложение на старте, — вордмарк по центру на сером фоне;
+    снимается первым кадром Flutter.
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #F5F5F5; }
+    #boot-placeholder {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #boot-placeholder .wordmark {
+      color: #DB4F13; font-size: 30px; font-weight: 600; letter-spacing: 0.5px;
+    }
+    #boot-placeholder .caption { color: #757575; font-size: 13px; }
+  </style>
 </head>
 <body>
+  <div id="boot-placeholder" aria-live="polite">
+    <div class="wordmark">NIRIVIO</div>
+    <div class="caption">Загружаем панель…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var placeholder = document.getElementById('boot-placeholder');
+      if (placeholder) placeholder.remove();
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

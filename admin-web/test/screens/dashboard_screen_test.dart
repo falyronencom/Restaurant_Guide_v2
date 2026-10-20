@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,7 +16,9 @@ import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Подставной сервис — руками, без mockito.
 ///
@@ -224,7 +227,7 @@ void main() {
       (tester) async {
     final fake = await pumpDashboard(tester);
 
-    fake.overview.completeError(Exception('Connection timeout'));
+    fake.overview.completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionTimeout));
     // Future.wait ждёт все ветки, а не только упавшую: пока вторая висит,
     // ошибка до провайдера не доходит.
     fake.users.complete(_users());
@@ -232,7 +235,7 @@ void main() {
 
     expect(find.byType(AdminErrorCard), findsOneWidget);
     expect(find.text('Обзор не загрузился'), findsOneWidget);
-    expect(find.text('Превышено время ожидания'), findsOneWidget);
+    expect(find.text(kTimeoutPhrase), findsOneWidget);
     expect(find.byType(SkeletonBlock), findsNothing);
     expect(find.byType(MetricCard), findsNothing);
   });
@@ -393,5 +396,46 @@ void main() {
         reason: 'подпись строки 3 не должна уезжать в многоточие',
       );
     });
+  });
+
+  testWidgets(
+      'сбой смены периода: тост «Обзор не обновился» и честная подпись',
+      (tester) async {
+    // До 20.10 сегмент подсвечивал «7 дней», подпись говорила «сравнение с
+    // предыдущими 7 днями», а числа оставались за 30 — без единого слова
+    // (пункт A3-02).
+    final fake = await pumpDashboard(tester);
+    fake.overview.complete(_overview());
+    fake.users.complete(_users());
+    await settle(tester);
+    expect(find.byType(MetricCard), findsWidgets, reason: 'предпосылка');
+
+    fake
+      ..overview = Completer<OverviewData>()
+      ..users = Completer<UsersAnalyticsData>();
+    await tester.tap(find.text('7 дней'));
+    await tester.pump();
+    fake.overview.completeError(DioException(
+        requestOptions: RequestOptions(path: '/'),
+        type: DioExceptionType.connectionError));
+    fake.users.complete(_users());
+    await settle(tester);
+    await tester.pump();
+
+    expect(find.byType(AdminErrorToast), findsOneWidget);
+    expect(find.text('Обзор не обновился'), findsOneWidget);
+    expect(
+        find.text('$kNoConnectionPhrase На экране остались числа за прежний '
+            'период.'),
+        findsOneWidget);
+    expect(
+        find.text('Обзор платформы · сравнение с предыдущими 30 днями '
+            '· не удалось обновить'),
+        findsOneWidget,
+        reason: 'подпись описывает числа на экране, а не выбор');
+    expect(find.text('Обзор платформы · сравнение с предыдущими 7 днями'),
+        findsNothing);
+    expect(find.byType(MetricCard), findsWidgets,
+        reason: 'прежние числа не стираются — их подписали честно');
   });
 }

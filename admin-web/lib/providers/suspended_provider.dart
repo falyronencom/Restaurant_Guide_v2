@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// State management for the "Приостановленные" (Suspended) screen.
 ///
@@ -87,6 +88,11 @@ class SuspendedProvider extends ChangeNotifier {
   bool get isSubmitting => _isSubmitting;
   String? get submitError => _submitError;
 
+  /// Что не получилось у последнего действия — заголовок тоста экрана;
+  /// читается вместе с [submitError].
+  String? get submitFailureTitle => _submitFailureTitle;
+  String? _submitFailureTitle;
+
   /// Load suspended establishments
   Future<void> loadSuspendedEstablishments({int page = 1}) async {
     final request = ++_listRequest;
@@ -170,7 +176,9 @@ class SuspendedProvider extends ChangeNotifier {
   /// раздел перечитывается, а не правится на месте.
   Future<bool> unsuspendEstablishment() async {
     final id = _shownId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, — не второе действие (пункт
+    // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -181,9 +189,7 @@ class SuspendedProvider extends ChangeNotifier {
       await _service.unsuspendEstablishment(id: id);
     } catch (e) {
       if (generation != _generation) return false; // аккаунт уже другой
-      _isSubmitting = false;
-      if (_selectedId == id) _submitError = _extractMessage(e);
-      notifyListeners();
+      _actionFailed(id, e, 'Заведение не возобновлено');
       return false;
     }
     if (generation != _generation) return false;
@@ -199,7 +205,9 @@ class SuspendedProvider extends ChangeNotifier {
   /// Карточка остаётся в разделе — с причиной и кнопкой «Возобновить».
   Future<bool> suspendEstablishment(String reason) async {
     final id = _shownId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, — не второе действие (пункт
+    // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -210,9 +218,7 @@ class SuspendedProvider extends ChangeNotifier {
       await _service.suspendEstablishment(id: id, reason: reason);
     } catch (e) {
       if (generation != _generation) return false; // аккаунт уже другой
-      _isSubmitting = false;
-      if (_selectedId == id) _submitError = _extractMessage(e);
-      notifyListeners();
+      _actionFailed(id, e, 'Заведение не приостановлено');
       return false;
     }
     if (generation != _generation) return false;
@@ -264,16 +270,29 @@ class SuspendedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('403')) return 'Доступ запрещён';
-    if (msg.contains('404')) return 'Заведение не найдено';
-    if (msg.contains('400')) return 'Некорректный запрос';
-    if (msg.contains('SocketException') || msg.contains('Connection')) {
-      return 'Ошибка соединения с сервером';
+  /// Неудача действия над [id].
+  ///
+  /// Причина ложится под ту карточку, над которой действовали, и только
+  /// если она всё ещё открыта; экран показывает её тостом (пункт A1-01: до
+  /// 20.10 экран `submitError` не читал, и сбой пропадал молча). Отказ «на
+  /// сервере уже не так» — заведение изменили или уже приостановили —
+  /// перечитывает раздел и карточку: повтор поверх устаревшей картинки
+  /// получил бы тот же отказ.
+  void _actionFailed(String id, Object error, String title) {
+    _isSubmitting = false;
+    if (_selectedId == id) {
+      _submitError = _extractMessage(error);
+      _submitFailureTitle = title;
     }
-    return 'Произошла ошибка';
+    notifyListeners();
+    if (refusalMeansStaleData(error)) {
+      _refreshAfterAction(id, _generation);
+    }
   }
+
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error, notFound: kEstablishmentNotFoundPhrase);
 
   /// «Возобновить» могло убрать единственную запись открытой страницы.
   /// Приостановленных при этом меньше не стало настолько, чтобы раздел

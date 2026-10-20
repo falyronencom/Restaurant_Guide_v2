@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// State management for the Reviews Management screen
 class AdminReviewsProvider extends ChangeNotifier {
@@ -143,7 +144,9 @@ class AdminReviewsProvider extends ChangeNotifier {
   /// the same request (the client retries 5xx) asks for the same state.
   Future<bool> setVisibility({required bool visible}) async {
     final id = _selectedId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, отсекается здесь, а не только
+    // серой кнопкой (пункт A2-19).
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -185,6 +188,9 @@ class AdminReviewsProvider extends ChangeNotifier {
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
+      // «Уже удалён», «видимость только что изменили»: откат вернул строку к
+      // состоянию до клика, а на сервере она уже другая — перечитать.
+      if (refusalMeansStaleData(e)) await loadReviews(page: _currentPage);
       return false;
     }
   }
@@ -192,7 +198,9 @@ class AdminReviewsProvider extends ChangeNotifier {
   /// Delete the selected review (optimistic with rollback)
   Future<bool> deleteReview(String? reason) async {
     final id = _selectedId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, отсекается здесь, а не только
+    // серой кнопкой (пункт A2-19).
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -232,6 +240,9 @@ class AdminReviewsProvider extends ChangeNotifier {
       _isSubmitting = false;
       _submitError = _extractMessage(e);
       notifyListeners();
+      // «Уже удалён», «видимость только что изменили»: откат вернул строку к
+      // состоянию до клика, а на сервере она уже другая — перечитать.
+      if (refusalMeansStaleData(e)) await loadReviews(page: _currentPage);
       return false;
     }
   }
@@ -322,14 +333,7 @@ class AdminReviewsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('403')) return 'Доступ запрещён';
-    if (msg.contains('404')) return 'Отзыв не найден';
-    if (msg.contains('400')) return 'Некорректный запрос';
-    if (msg.contains('SocketException') || msg.contains('Connection')) {
-      return 'Ошибка соединения с сервером';
-    }
-    return 'Произошла ошибка';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error, notFound: kReviewNotFoundPhrase);
 }

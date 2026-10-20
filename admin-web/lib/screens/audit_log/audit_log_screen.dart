@@ -9,6 +9,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
@@ -81,7 +82,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       _dismissToast = showAdminErrorToast(
         context,
         title: 'Страница не загрузилась',
-        message: '$message. Записи на экране остались от прошлой страницы.',
+        message: '${asSentence(message)} Записи на экране остались от прошлой страницы.',
         onRetry: () => _provider.loadEntries(page: _provider.currentPage),
       );
     });

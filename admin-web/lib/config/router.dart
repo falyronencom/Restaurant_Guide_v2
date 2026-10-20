@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/screens/not_found_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/splash_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/auth/login_screen.dart';
 import 'package:restaurant_guide_admin_web/screens/moderation/approved_screen.dart';
@@ -52,6 +53,9 @@ GoRouter createRouter(AuthProvider authProvider) {
   return GoRouter(
     initialLocation: '/',
     refreshListenable: authProvider,
+    // Неизвестный адрес — устаревшая закладка, опечатка. Стандартная страница
+    // пакета английская, с текстом исключения (пункт A3-25).
+    errorBuilder: (context, state) => const NotFoundScreen(),
     redirect: (BuildContext context, GoRouterState state) {
       final isAuthenticated = authProvider.isAuthenticated;
       final isLoading = authProvider.isLoading;

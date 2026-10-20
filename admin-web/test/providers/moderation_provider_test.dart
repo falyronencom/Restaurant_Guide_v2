@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 // Вердикты модератора на экране «Ожидают просмотра».
 //
@@ -52,6 +54,43 @@ class _FakeModerationService implements ModerationService {
     coordinateCalls++;
     // Бэкенд сохранил правку — значит следующий GET обязан отдать новую точку.
     details[id] = _detail(id: id, latitude: latitude, longitude: longitude);
+  }
+
+  int moderateCalls = 0;
+  int pendingListCalls = 0;
+  Object? failModerateWith;
+
+  /// Держит решение «в пути», пока тест не отпустит.
+  Completer<void>? moderateGate;
+
+  @override
+  Future<void> moderateEstablishment({
+    required String id,
+    required String action,
+    Map<String, String> moderationNotes = const {},
+  }) async {
+    moderateCalls++;
+    final failure = failModerateWith;
+    if (failure != null) throw failure;
+    final gate = moderateGate;
+    if (gate != null) await gate.future;
+  }
+
+  @override
+  Future<PendingListResponse> getPendingEstablishments({
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    pendingListCalls++;
+    return PendingListResponse(
+      establishments: <EstablishmentListItem>[
+        for (final id in details.keys)
+          EstablishmentListItem(id: id, name: 'Заведение $id'),
+      ],
+      total: details.length,
+      page: page,
+      pages: 1,
+    );
   }
 
   @override
@@ -147,9 +186,9 @@ void main() {
         ..approveField('unp');
 
       // Сеть отвалилась ровно на перечитывании детали после правки.
-      fake.failDetailWith = Exception('No internet');
+      fake.failDetailWith = DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError);
       await provider.updateCoordinates(53.902, 27.562);
-      expect(provider.detailError, 'Нет подключения к серверу');
+      expect(provider.detailError, kNoConnectionPhrase);
       expect(provider.checkedFieldCount, 2);
 
       // Тап по той же строке очереди — это «попробовать снова», а не смена
@@ -204,6 +243,62 @@ void main() {
       expect(provider.selectedDetail?.id, 'est-2');
       expect(provider.detailError, isNull);
       expect(provider.isLoadingDetail, isFalse);
+    });
+  });
+
+  group('Решение по заявке', () {
+    late _FakeModerationService fake;
+    late ModerationProvider provider;
+
+    setUp(() {
+      fake = _FakeModerationService()
+        ..details['est-1'] = _detail(id: 'est-1');
+      provider = ModerationProvider(service: fake);
+    });
+
+    test('второй клик «Одобрить», пока решение в пути, запроса не шлёт',
+        () async {
+      await provider.selectEstablishment('est-1');
+      fake.moderateGate = Completer<void>();
+
+      final first = provider.approveEstablishment();
+      bool? second;
+      unawaited(provider.approveEstablishment().then((v) => second = v));
+      await pumpEventQueue();
+
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
+      expect(fake.moderateCalls, 1, reason: 'защита — в провайдере (A1-03)');
+      fake.moderateGate!.complete();
+      expect(await first, isTrue);
+    });
+
+    test('«заявку уже разобрали»: причина словами, очередь перечитана',
+        () async {
+      await provider.selectEstablishment('est-1');
+      final options =
+          RequestOptions(path: '/api/v1/admin/establishments/est-1/moderate');
+      fake.failModerateWith = DioException(
+        requestOptions: options,
+        response: Response<dynamic>(
+          requestOptions: options,
+          statusCode: 400,
+          data: <String, dynamic>{
+            'success': false,
+            'message': "Cannot moderate establishment with status 'active'.",
+            'error': <String, dynamic>{'code': 'INVALID_STATUS_FOR_MODERATION'},
+          },
+        ),
+        type: DioExceptionType.badResponse,
+      );
+
+      final ok = await provider.approveEstablishment();
+      await pumpEventQueue();
+
+      expect(ok, isFalse);
+      expect(provider.submitError,
+          'Заявку уже разобрали — она больше не ждёт проверки.');
+      expect(fake.pendingListCalls, 1,
+          reason: 'очередь устарела — повтор получил бы тот же отказ');
     });
   });
 }
