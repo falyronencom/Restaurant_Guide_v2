@@ -24,9 +24,11 @@ import multer from 'multer';
 import * as MediaController from '../../controllers/mediaController.js';
 import * as MediaValidation from '../../validators/mediaValidation.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
-import { validate } from '../../middleware/errorHandler.js';
+import { AppError, validatePersonText } from '../../middleware/errorHandler.js';
 import { MULTIPART_LIMITS, createUpload, tempUploadStorage } from '../../middleware/upload.js';
 import { UPLOAD_REFUSALS } from '../../constants/partnerSectionRefusals.js';
+import { ESTABLISHMENT_REFUSALS } from '../../constants/establishmentRefusals.js';
+import { isCanonicalUuid } from '../../utils/canonicalUuid.js';
 
 const router = express.Router({ mergeParams: true });
 
@@ -104,6 +106,24 @@ router.use(authenticate);
 router.use(authorize(['partner']));
 
 /**
+ * The card id as the database writes it (utils/canonicalUuid.js), before the
+ * upload is read: Postgres reads an id in capitals as the same card, but the
+ * cloud folder is named after the id as the request wrote it
+ * (config/cloudinary.js ownedFolders) — the file went to
+ * establishments/<CAPITALS>/…, and the rollback after a refused write, or a
+ * later delete, could not remove it (review of PR #112, finding 1). Anything
+ * that is no UUID names no card either. The refusal is the one of a card that
+ * is gone or not the caller's, with its code; until 20.10.2026 a non-UUID got
+ * the validator's English 422.
+ */
+const requireCanonicalCardId = (req, res, next) => {
+  if (isCanonicalUuid(req.params.id)) return next();
+  return next(new AppError(ESTABLISHMENT_REFUSALS.notOwner, 404, 'ESTABLISHMENT_NOT_FOUND'));
+};
+
+router.use(requireCanonicalCardId);
+
+/**
  * Upload a new media file
  * 
  * POST /api/v1/partner/establishments/:id/media
@@ -120,7 +140,7 @@ router.use(authorize(['partner']));
  * - is_primary: Optional boolean (form field, default: false)
  * 
  * Flow: 
- * Authentication → Authorization → Multer Upload → Validation → Controller → Service
+ * Authentication → Authorization → Card id → Multer Upload → Validation → Controller → Service
  * 
  * The upload.single('file') middleware expects the file to be uploaded with
  * the field name 'file' in the multipart form data.
@@ -132,7 +152,7 @@ router.post(
   '/',
   upload.single('file'), // Process file upload with field name 'file'
   MediaValidation.validateUpload,
-  validate,
+  validatePersonText,
   MediaController.uploadMedia,
 );
 
@@ -157,7 +177,7 @@ router.post(
 router.get(
   '/',
   MediaValidation.validateGetMedia,
-  validate,
+  validatePersonText,
   MediaController.getMedia,
 );
 
@@ -193,7 +213,7 @@ router.get(
 router.put(
   '/:mediaId',
   MediaValidation.validateUpdate,
-  validate,
+  validatePersonText,
   MediaController.updateMedia,
 );
 
@@ -225,7 +245,7 @@ router.put(
 router.delete(
   '/:mediaId',
   MediaValidation.validateDelete,
-  validate,
+  validatePersonText,
   MediaController.deleteMedia,
 );
 

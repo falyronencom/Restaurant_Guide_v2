@@ -28,6 +28,7 @@ import {
 import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { uploadAvatar } from '../../middleware/upload.js';
+import { AVATAR_REFUSALS } from '../../constants/partnerSectionRefusals.js';
 
 const router = express.Router();
 
@@ -188,6 +189,9 @@ router.put(
  *
  * Protected endpoint to upload user avatar image.
  * Accepts multipart/form-data with field "avatar" (max 5MB, JPEG/PNG/WebP).
+ * The refusals' texts — AVATAR_REFUSALS (constants/partnerSectionRefusals.js,
+ * from 20.10.2026; English before); statuses and codes as before. multer's
+ * other refusals (Too many fields and the like) go on to errorHandler.
  *
  * Middleware chain:
  * 1. Authentication: Verify access token
@@ -203,13 +207,13 @@ router.post(
         if (err.code === 'LIMIT_FILE_SIZE') {
           return res.status(400).json({
             success: false,
-            error: { code: 'FILE_TOO_LARGE', message: 'File size must be under 5MB' },
+            error: { code: 'FILE_TOO_LARGE', message: AVATAR_REFUSALS.photoTooLarge },
           });
         }
         if (err.message === 'INVALID_FILE_TYPE') {
           return res.status(400).json({
             success: false,
-            error: { code: 'INVALID_FILE_TYPE', message: 'Only JPEG, PNG and WebP images are allowed' },
+            error: { code: 'INVALID_FILE_TYPE', message: AVATAR_REFUSALS.invalidFileType },
           });
         }
         return next(err);

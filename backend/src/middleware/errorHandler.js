@@ -241,9 +241,22 @@ export const asyncHandler = (fn) => {
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
  */
-export const validate = (req, res, next) => {
+export const validate = (req, res, next) => refuseInvalid(req, res, next, false);
+
+/**
+ * validate() whose summary is the first field text written for a person — a
+ * Russian one — when there is such: a client that reads only `message` shows
+ * it as is (the site does, web/src/lib/partner/errors.ts). The rule of
+ * authValidation.js; for the routes whose field texts are all Russian (the
+ * card's media, from 20.10.2026). Everywhere else the summary stays
+ * «Validation failed»: there the site names the fields itself, and a Russian
+ * summary would replace that.
+ */
+export const validatePersonText = (req, res, next) => refuseInvalid(req, res, next, true);
+
+const refuseInvalid = (req, res, next, personSummary) => {
   const errors = validationResult(req);
-  
+
   if (!errors.isEmpty()) {
     // Format validation errors for client response
     const formattedErrors = errors.array().map(err => ({
@@ -265,9 +278,13 @@ export const validate = (req, res, next) => {
     // helper never rejects, and the 422 does not wait for the disk.
     discardTempUpload(req.file);
 
+    const personText = personSummary
+      ? formattedErrors.map((err) => err.message).find((msg) => typeof msg === 'string' && /[А-Яа-яЁё]/.test(msg))
+      : undefined;
+
     return res.status(422).json({
       success: false,
-      message: 'Validation failed',
+      message: personText ?? 'Validation failed',
       error: {
         code: 'VALIDATION_ERROR',
         details: formattedErrors,

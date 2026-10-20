@@ -24,7 +24,7 @@ import {
   ownCloudPublicId,
   ownedFolders,
 } from '../config/cloudinary.js';
-import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { AVATAR_REFUSALS, UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
 import { discardUnrecordedUpload } from '../services/unrecordedUpload.js';
 import logger from '../utils/logger.js';
@@ -603,7 +603,7 @@ export async function uploadAvatar(req, res, next) {
         success: false,
         error: {
           code: 'NO_FILE',
-          message: 'No avatar file provided',
+          message: AVATAR_REFUSALS.fileRequired,
         },
       });
     }
@@ -672,7 +672,7 @@ export async function uploadAvatar(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_FILE_TYPE',
-          message: 'Only JPEG, PNG and WebP images are allowed',
+          message: AVATAR_REFUSALS.invalidFileType,
         },
       });
     }

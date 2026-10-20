@@ -128,3 +128,50 @@ export const UPLOAD_REFUSALS = Object.freeze({
   // card's media and the avatar (DAILY_UPLOAD_LIMIT above).
   dailyLimit: DAILY_UPLOAD_LIMIT,
 });
+
+/**
+ * The card's media past the file rules — the rest of
+ * /api/v1/partner/establishments/:id/media… (validators/mediaValidation.js,
+ * services/mediaService.js; from 20.10.2026, English before — the site
+ * translated by code, the app does not call these addresses). A card that is
+ * gone or not the caller's — and a card id not written as the database writes
+ * it (routes/v1/mediaRoutes.js) — is refused with the card's own text,
+ * ESTABLISHMENT_REFUSALS.notOwner. The fields below are ones the site's form
+ * fills itself — a wrong bucket, flag, position or id comes from a stale page
+ * or a hand-made request, so the text sends the partner to reload; the
+ * caption is the only free text. Wording by analogy with the approved texts (the upload
+ * form's — the site's own text for INVALID_MEDIA_TYPE; the caption's — the
+ * promotion's title), not yet approved as such.
+ */
+export const MEDIA_REFUSALS = Object.freeze({
+  // A media id that names no file of this card: missing, deleted meanwhile,
+  // of another card, or no id at all.
+  mediaNotFound: 'Файл не найден — возможно, его уже удалили. Обновите страницу.',
+  // Upload: the bucket missing or unknown, is_primary not a flag.
+  uploadFormInvalid: 'Не удалось загрузить файл. Обновите страницу и попробуйте ещё раз.',
+  // Update: position or is_primary not what the form sends.
+  changeInvalid: 'Не удалось сохранить изменения. Обновите страницу и попробуйте ещё раз.',
+  // List: an unknown bucket in the filter.
+  listFilterInvalid: 'Не удалось показать файлы. Обновите страницу и попробуйте ещё раз.',
+  // establishment_media.caption is varchar(255), counted as the database counts.
+  captionTooLong: 'Подпись к фото — не длиннее 255 знаков',
+});
+
+/**
+ * The avatar — POST /api/v1/auth/avatar (routes/v1/authRoutes.js,
+ * controllers/authController.js uploadAvatar). Every account's, not only a
+ * partner's; kept here with the other uploaders' texts under one guard. The
+ * app shows its own text («Не удалось загрузить аватар») and picks a photo of
+ * 512 px, far below the limit; the site does not upload avatars. Status and
+ * codes as before (400 FILE_TOO_LARGE, INVALID_FILE_TYPE, NO_FILE); English
+ * until 20.10.2026. The size text approved by the Coordinator on 20.10.2026
+ * («текст аватара — как предложил»); the other two — by the directive of that
+ * day.
+ */
+export const AVATAR_REFUSALS = Object.freeze({
+  // middleware/upload.js uploadAvatar: fileSize 5 MB.
+  photoTooLarge: 'Фото больше 5 МБ. Выберите фото поменьше.',
+  // middleware/upload.js imageFilter: image/jpeg, image/png, image/webp.
+  invalidFileType: 'Такой формат фото не подходит. Нужны JPEG, PNG или WebP.',
+  fileRequired: 'Выберите фото.',
+});

@@ -16,7 +16,7 @@ import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as CloudinaryUtil from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { MEDIA_REFUSALS, UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
@@ -102,10 +102,11 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
   const { type, caption, is_primary = false } = metadata;
 
   try {
-    // Validate media type
+    // Validate media type (the route's validator refuses it first, with the
+    // same text)
     if (!VALID_MEDIA_TYPES.includes(type)) {
       throw new AppError(
-        `Invalid media type. Must be one of: ${VALID_MEDIA_TYPES.join(', ')}`,
+        MEDIA_REFUSALS.uploadFormInvalid,
         422,
         'INVALID_MEDIA_TYPE',
       );
@@ -376,7 +377,7 @@ export const getMediaList = async (partnerId, establishmentId, filters = {}) => 
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
       throw new AppError(
-        'Establishment not found or access denied',
+        ESTABLISHMENT_REFUSALS.notOwner,
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -436,7 +437,7 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
       throw new AppError(
-        'Establishment not found or access denied',
+        ESTABLISHMENT_REFUSALS.notOwner,
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -446,7 +447,7 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
     const media = await MediaModel.findMediaById(mediaId);
     if (!media || media.establishment_id !== establishmentId) {
       throw new AppError(
-        'Media not found or does not belong to this establishment',
+        MEDIA_REFUSALS.mediaNotFound,
         404,
         'MEDIA_NOT_FOUND',
       );
@@ -586,7 +587,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
       throw new AppError(
-        'Establishment not found or access denied',
+        ESTABLISHMENT_REFUSALS.notOwner,
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -596,7 +597,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
     const media = await MediaModel.findMediaById(mediaId);
     if (!media || media.establishment_id !== establishmentId) {
       throw new AppError(
-        'Media not found or does not belong to this establishment',
+        MEDIA_REFUSALS.mediaNotFound,
         404,
         'MEDIA_NOT_FOUND',
       );
@@ -651,7 +652,7 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
 
     if (!deletedMedia) {
       throw new AppError(
-        'Media not found',
+        MEDIA_REFUSALS.mediaNotFound,
         404,
         'MEDIA_NOT_FOUND',
       );

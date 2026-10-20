@@ -183,6 +183,17 @@ export const getPromotions = asyncHandler(async (req, res) => {
   const partnerId = req.user.userId;
   const { establishmentId } = req.params;
 
+  // The card's id as the database writes it, as on create — the same refusal
+  // of a card not chosen. Until 20.10.2026 a non-UUID came back as the
+  // database's English 400 (22P02) and one in capitals was read as the card.
+  if (!isCanonicalUuid(establishmentId)) {
+    return res.status(400).json({
+      success: false,
+      message: PROMOTION_REFUSALS.establishmentRequired,
+      error: { code: 'VALIDATION_ERROR' },
+    });
+  }
+
   const promotions = await PromotionService.getPartnerPromotions(partnerId, establishmentId);
 
   res.status(200).json({
@@ -253,6 +264,12 @@ export const updatePromotion = asyncHandler(async (req, res) => {
 export const deletePromotion = asyncHandler(async (req, res) => {
   const partnerId = req.user.userId;
   const { id } = req.params;
+
+  // A promotion's id as the database writes it, as on update: anything else
+  // names no promotion (until 20.10.2026 — the database's English 400).
+  if (!isCanonicalUuid(id)) {
+    throw new AppError(PROMOTION_REFUSALS.promotionNotFound, 404, 'PROMOTION_NOT_FOUND');
+  }
 
   const promotion = await PromotionService.deactivatePromotion(partnerId, id);
 

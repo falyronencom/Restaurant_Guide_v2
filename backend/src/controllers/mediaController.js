@@ -17,9 +17,9 @@
  */
 
 import * as MediaService from '../services/mediaService.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { AppError, asyncHandler } from '../middleware/errorHandler.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
-import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { MEDIA_REFUSALS, UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -169,6 +169,13 @@ export const updateMedia = asyncHandler(async (req, res) => {
   
   if (req.body.is_primary !== undefined) {
     updates.is_primary = req.body.is_primary === 'true' || req.body.is_primary === true;
+  }
+
+  // Nothing to change: the model refused such an update with an error of its
+  // own («No fields to update»), and the partner read a 500 (review of
+  // 20.10.2026). The form never sends an empty change.
+  if (Object.keys(updates).length === 0) {
+    throw new AppError(MEDIA_REFUSALS.changeInvalid, 422, 'VALIDATION_ERROR');
   }
 
   // Call service layer to update media
