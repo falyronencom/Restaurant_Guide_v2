@@ -30,6 +30,7 @@ const {
   searchByBounds,
   checkSearchHealth,
 } = await import('../../services/searchService.js');
+const { default: logger } = await import('../../utils/logger.js');
 
 import { createMockEstablishment } from '../mocks/helpers.js';
 
@@ -706,30 +707,42 @@ describe('searchService', () => {
     });
   });
 
+  // GET /search/health отвечает без входа: «ok / сбой», без версии PostGIS и
+  // без текста ошибки (20.10.2026).
   describe('checkSearchHealth', () => {
-    test('should return healthy when PostGIS available', async () => {
+    test('PostGIS отвечает — healthy, версии в ответе нет', async () => {
       pool.query.mockResolvedValue({
-        rows: [{ version: '3.1.1' }],
+        rows: [{ version: '3.1 USE_GEOS=1 USE_PROJ=1 USE_STATS=1' }],
         rowCount: 1,
       });
 
       const result = await checkSearchHealth();
 
-      expect(result.healthy).toBe(true);
-      expect(result.postgis).toBe('3.1.1');
+      expect(Object.keys(result).sort()).toEqual(['healthy', 'postgis', 'timestamp']);
+      expect(result).toMatchObject({ healthy: true, postgis: 'healthy' });
+      expect(JSON.stringify(result)).not.toMatch(/3\.1|GEOS/);
 
       expect(pool.query).toHaveBeenCalledWith(`
       SELECT PostGIS_version() as version
     `);
     });
 
-    test('should return unhealthy when PostGIS not available', async () => {
-      pool.query.mockRejectedValue(new Error('function postgis_version does not exist'));
+    test('PostGIS не отвечает — unhealthy, текста ошибки в ответе нет; текст — в журнале', async () => {
+      const logged = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+      pool.query.mockRejectedValue(new Error('connect ECONNREFUSED 10.20.30.40:5432'));
 
-      const result = await checkSearchHealth();
+      try {
+        const result = await checkSearchHealth();
 
-      expect(result.healthy).toBe(false);
-      expect(result.error).toBeDefined();
+        expect(Object.keys(result).sort()).toEqual(['healthy', 'postgis', 'timestamp']);
+        expect(result).toMatchObject({ healthy: false, postgis: 'unhealthy' });
+        expect(JSON.stringify(result)).not.toMatch(/ECONNREFUSED|10\.20\.30/);
+        expect(logged).toHaveBeenCalledWith('Search health check failed', {
+          error: 'connect ECONNREFUSED 10.20.30.40:5432',
+        });
+      } finally {
+        logged.mockRestore();
+      }
     });
   });
 });

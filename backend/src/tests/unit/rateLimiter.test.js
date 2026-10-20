@@ -83,6 +83,73 @@ describe('rateLimiter middleware', () => {
       }),
     );
     expect(res.headers['X-RateLimit-Remaining']).toBe('0');
+    expect(res.headers['Retry-After']).toBe('12');
+  });
+
+  test('under the limit — no Retry-After', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    getTTL.mockResolvedValueOnce(50);
+
+    const limiter = createRateLimiter({ limit: 5, windowSeconds: 60, keyPrefix: 'test' });
+    const res = buildResponse();
+    await limiter({ ip: '1.1.1.1', method: 'POST', path: '/login' }, res, jest.fn());
+
+    expect(res.headers).not.toHaveProperty('Retry-After');
+  });
+});
+
+// A route limiter's counter lives until its bucket ends, not a whole window
+// from the first request: its time to live is what retry_after and Retry-After
+// name. Until 20.10.2026 a day's limit (the menu recognition restart, 86400 s)
+// lived 24 h from the first request while the bucket rolled over at 00:00 UTC.
+describe('createRateLimiter: the counter expires when its bucket ends', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test.each([
+    [86400, '2026-10-20T23:30:00.000Z', 1800],
+    [3600, '2026-10-20T14:59:50.000Z', 10],
+    [60, '2026-10-20T14:00:00.500Z', 60],
+  ])('window %i s at %s — expiry %i s, key of that bucket', async (windowSeconds, at, expiry) => {
+    const nowMs = Date.parse(at);
+    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    getTTL.mockResolvedValueOnce(expiry);
+
+    const limiter = createRateLimiter({ limit: 5, windowSeconds, keyPrefix: 'test' });
+    await limiter({ ip: '1.1.1.1', method: 'POST', path: '/x' }, buildResponse(), jest.fn());
+
+    expect(incrementWithExpiry).toHaveBeenLastCalledWith(
+      `ratelimit:test:1.1.1.1:${Math.floor(nowMs / (windowSeconds * 1000))}`,
+      expiry,
+    );
+  });
+});
+
+// Retry-After on a 429: whole seconds above zero only (RFC 9110), as the daily
+// allowances set it; Redis answers -1 / -2 for a key with no life left.
+describe('Retry-After on a 429, both limiters', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const refuse = async (limiter, ttl) => {
+    incrementWithExpiry.mockResolvedValueOnce(1000000);
+    getTTL.mockResolvedValueOnce(ttl);
+    const res = buildResponse();
+    await limiter({ ip: '9.9.9.9', method: 'GET', path: '/api/v1/x' }, res, jest.fn());
+    expect(res.status).toHaveBeenCalledWith(429);
+    return { header: res.headers['Retry-After'], retryAfter: res.json.mock.calls[0][0].error.details.retry_after };
+  };
+
+  test.each([
+    ['global', () => rateLimiter],
+    ['createRateLimiter', () => createRateLimiter({ limit: 5, windowSeconds: 60, keyPrefix: 'test' })],
+  ])('%s: the header is the body\'s retry_after; none for -1 and -2', async (_label, limiterOf) => {
+    expect(await refuse(limiterOf(), 30)).toEqual({ header: '30', retryAfter: 30 });
+    expect(await refuse(limiterOf(), -1)).toEqual({ header: undefined, retryAfter: -1 });
+    expect(await refuse(limiterOf(), -2)).toEqual({ header: undefined, retryAfter: -2 });
   });
 });
 

@@ -1409,26 +1409,32 @@ export async function getEstablishmentById(id) {
 }
 
 /**
- * Health check for search system
+ * Health check for search system: does PostGIS answer.
  *
- * @returns {Promise<Object>} Health status
+ * GET /api/v1/search/health answers without sign-in, so the result says only
+ * healthy or not — `postgis: 'healthy' | 'unhealthy'`. The failure's own text
+ * (it can name the database's address and user) goes to the log. Until
+ * 20.10.2026 the result carried that text, and PostGIS's version when healthy.
+ *
+ * @returns {Promise<{ healthy: boolean, postgis: 'healthy'|'unhealthy', timestamp: string }>}
  */
 export async function checkSearchHealth() {
   try {
     // Test PostGIS is available
-    const result = await pool.query(`
+    await pool.query(`
       SELECT PostGIS_version() as version
     `);
 
     return {
       healthy: true,
-      postgis: result.rows[0].version,
+      postgis: 'healthy',
       timestamp: new Date().toISOString(),
     };
   } catch (error) {
+    logger.error('Search health check failed', { error: error.message });
     return {
       healthy: false,
-      error: error.message,
+      postgis: 'unhealthy',
       timestamp: new Date().toISOString(),
     };
   }

@@ -130,6 +130,9 @@ describe('global limiter: a signed-in request spends its account budget', () => 
       message: RATE_LIMIT_TEXT,
       error: { code: 'RATE_LIMIT_EXCEEDED', details: { limit: 3, window: '1 minute' } },
     });
+    // Retry-After — the body's retry_after, a whole number of seconds (20.10.2026).
+    expect(refused.headers['retry-after']).toBe(String(refused.body.error.details.retry_after));
+    expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
 
     // An anonymous request from the same address: its budget is untouched.
     expect(limitOf(await anonymousMe())).toEqual({ status: 401, limit: '5', remaining: '4' });
