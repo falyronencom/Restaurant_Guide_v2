@@ -17,6 +17,7 @@ import * as CloudinaryUtil from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import { discardUnrecordedUpload } from './unrecordedUpload.js';
@@ -113,8 +114,10 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Verify establishment ownership
     const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
     if (!isOwner) {
+      // One text for a card that is gone and a stranger's — the card's own
+      // refusal (establishmentRefusals.js notOwner); the code stays.
       throw new AppError(
-        'Establishment not found or access denied',
+        ESTABLISHMENT_REFUSALS.notOwner,
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -124,7 +127,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
     if (!establishment) {
       throw new AppError(
-        'Establishment not found',
+        ESTABLISHMENT_REFUSALS.notFound,
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -137,7 +140,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       // PDF upload path — only allowed for type='menu'
       if (type !== 'menu') {
         throw new AppError(
-          'PDF uploads are only allowed for menu type',
+          UPLOAD_REFUSALS.pdfOnlyInMenu,
           422,
           'PDF_TYPE_MISMATCH',
         );
@@ -147,7 +150,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       // application/pdf, so the extension is the discriminating check.
       if (!CloudinaryUtil.hasValidPdfExtension(file.originalname)) {
         throw new AppError(
-          'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+          UPLOAD_REFUSALS.invalidFileType,
           422,
           'INVALID_FILE_TYPE',
         );
@@ -155,7 +158,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
 
       if (!CloudinaryUtil.isValidPdfSize(file.size)) {
         throw new AppError(
-          'PDF file size exceeds 60MB limit',
+          UPLOAD_REFUSALS.pdfTooLarge,
           422,
           'FILE_TOO_LARGE',
         );
@@ -164,9 +167,21 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       const pdfCount = await MediaModel.countPdfMedia(establishmentId);
       if (pdfCount >= MAX_PDFS_PER_ESTABLISHMENT) {
         throw new AppError(
-          `Maximum ${MAX_PDFS_PER_ESTABLISHMENT} PDF menu files allowed per establishment`,
+          ESTABLISHMENT_REFUSALS.pdfLimit(MAX_PDFS_PER_ESTABLISHMENT),
           403,
           'PDF_LIMIT_EXCEEDED',
+        );
+      }
+
+      // The cloud would refuse it after the transfer (config/cloudinary.js
+      // CLOUD_MAX_FILE_MB): refused here, with the reason and a way out —
+      // after the PDF count, so a partner with two PDFs is not first told to
+      // shrink a file the card cannot take anyway.
+      if (!CloudinaryUtil.fitsCloudFileLimit(file.size)) {
+        throw new AppError(
+          UPLOAD_REFUSALS.pdfOverCloudLimit(CloudinaryUtil.CLOUD_MAX_FILE_MB),
+          422,
+          'FILE_TOO_LARGE',
         );
       }
 
@@ -230,8 +245,10 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     const limit = MEDIA_LIMITS[limitType];
 
     if (currentCount >= limit) {
+      // The count is of this type's photos; the text names interior and menu
+      // photos, the other types as «фото» (ESTABLISHMENT_REFUSALS.photoLimit).
       throw new AppError(
-        `Upload limit reached for ${type} photos. Maximum ${limit} ${limitType} photos per establishment.`,
+        ESTABLISHMENT_REFUSALS.photoLimit(type, limit),
         403,
         'MEDIA_LIMIT_EXCEEDED',
       );
@@ -244,7 +261,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       !CloudinaryUtil.hasValidImageExtension(file.originalname)
     ) {
       throw new AppError(
-        'Invalid file type. Accepted formats: JPEG, PNG, WebP, HEIC, PDF',
+        UPLOAD_REFUSALS.invalidFileType,
         422,
         'INVALID_FILE_TYPE',
       );
@@ -253,7 +270,7 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Validate file size
     if (!CloudinaryUtil.isValidImageSize(file.size)) {
       throw new AppError(
-        'File size exceeds 10MB limit',
+        UPLOAD_REFUSALS.photoTooLarge,
         422,
         'FILE_TOO_LARGE',
       );

@@ -77,6 +77,10 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   isValidImageSize: jest.fn(() => true),
   isValidPdfType: jest.fn(() => true),
   isValidPdfSize: jest.fn(() => true),
+  // The cloud's file limit (config/cloudinary.js): passes unless a test says
+  // otherwise; the number is the real default.
+  fitsCloudFileLimit: jest.fn(() => true),
+  CLOUD_MAX_FILE_MB: 10,
   // Extension gates mirror the real logic — the format-rejection tests below
   // exercise real semantics, not a stub.
   hasValidImageExtension: jest.fn((name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0])),
@@ -147,6 +151,7 @@ beforeEach(async () => {
     cloudinary.isValidImageSize.mockReturnValue(true);
     cloudinary.isValidPdfType.mockReturnValue(true);
     cloudinary.isValidPdfSize.mockReturnValue(true);
+    cloudinary.fitsCloudFileLimit.mockReturnValue(true);
     cloudinary.hasValidImageExtension.mockImplementation((name) => /\.(jpe?g|png|webp|heic|jfif)$/i.test(String(name || '').split('?')[0]));
     cloudinary.hasValidPdfExtension.mockImplementation((name) => /\.pdf$/i.test(String(name || '').split('?')[0]));
     cloudinary.fileExtension.mockImplementation((name) => {

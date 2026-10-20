@@ -10,6 +10,8 @@ import * as PromotionService from '../services/promotionService.js';
 import { AppError, asyncHandler } from '../middleware/errorHandler.js';
 import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
+import { longerThan } from '../utils/textLength.js';
+import { isCanonicalUuid } from '../utils/canonicalUuid.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -35,26 +37,9 @@ const refuseTitle = (res) => res.status(400).json({
 /**
  * The longest title promotions.title holds — varchar(255). Postgres counts
  * characters and JavaScript's `length` counts UTF-16 units (an emoji is one
- * and two), so the title is counted by code points.
+ * and two), so the title is counted by code points (utils/textLength.js).
  */
 const TITLE_MAX_CHARS = 255;
-
-/**
- * Whether `text` has more than `max` code points, counted no further than
- * max + 1: a JSON body may carry megabytes in one field.
- *
- * @param {string} text
- * @param {number} max
- * @returns {boolean}
- */
-const longerThan = (text, max) => {
-  let count = 0;
-  for (let i = 0; i < text.length; i += text.codePointAt(i) > 0xFFFF ? 2 : 1) {
-    count += 1;
-    if (count > max) return true;
-  }
-  return false;
-};
 
 /** The highest position the refusal names: «от 0 до 1 000 000». */
 const POSITION_MAX = 1000000;
@@ -152,7 +137,11 @@ export const createPromotion = asyncHandler(async (req, res) => {
   // only after the disk is clean.
   let promotion;
   try {
-    if (!establishment_id) {
+    // The card's id as the database writes it (utils/canonicalUuid.js): one
+    // in capitals filed the picture in a folder the ownership rule does not
+    // recognise, anything else came back as the database's English 400. The
+    // refusal is the one of a missing card — the app sends the id it read.
+    if (!isCanonicalUuid(establishment_id)) {
       return res.status(400).json({
         success: false,
         message: PROMOTION_REFUSALS.establishmentRequired,
@@ -215,6 +204,13 @@ export const updatePromotion = asyncHandler(async (req, res) => {
   // the finally on every outcome, before the 200 leaves.
   let promotion;
   try {
+    // A promotion's id as the database writes it (utils/canonicalUuid.js);
+    // anything else names no promotion — the refusal of a missing one,
+    // before the picture goes to the cloud.
+    if (!isCanonicalUuid(id)) {
+      throw new AppError(PROMOTION_REFUSALS.promotionNotFound, 404, 'PROMOTION_NOT_FOUND');
+    }
+
     // Absent means «leave as is»; present, it follows the create rule.
     if (title !== undefined && !isTitle(title)) return refuseTitle(res);
     checkFields(req.body, false);

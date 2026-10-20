@@ -61,7 +61,8 @@ export const errorHandler = (err, req, res, _next) => {
   // multer's own refusals — the limits in middleware/upload.js
   // (MULTIPART_LIMITS), a field it cannot store — are the client's: 413 for
   // an oversized file, 400 otherwise. Routes with their own multer handler
-  // answer before this; the avatar and promotion routes reach it. A form
+  // answer before this (the promotions' only for an oversized picture); the
+  // avatar route reaches it, and the promotions with any other. A form
   // busboy cannot read at all is not a MulterError: createUpload turns it
   // into its own AppError (400) before any of these.
   if (err.name === 'MulterError') {

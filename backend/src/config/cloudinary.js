@@ -107,9 +107,47 @@ const RESOLUTION_CONFIG = {
  * - thumbnail: 200x150 fill crop for gallery tiles
  * - preview:   800x600 fit for larger detail display
  *
- * Size limit is 60MB (vs 10MB for images) to accommodate scanned menus.
+ * Size limit is 60MB (vs 10MB for images) to accommodate scanned menus; the
+ * cloud's own file limit below is lower on today's plan and refuses first.
  */
 const PDF_MAX_SIZE = 60 * 1024 * 1024; // 60MB in bytes
+
+/**
+ * The largest file the cloud takes on the account's plan, in megabytes
+ * (Cloudinary, Compare Plans, 17.10.2026: Free 10, Plus 20, Advanced 40). A PDF
+ * goes up as an image, so a menu PDF above it is refused by the cloud — until
+ * 10.2026 only after the whole file (up to 60 МБ) had reached our server, and
+ * the partner read «не удалось загрузить» with no reason. The uploaders now
+ * refuse such a PDF before the cloud (fitsCloudFileLimit). One number for a
+ * change of plan: CLOUDINARY_MAX_FILE_MB, 10 when unset (parseCloudMaxFileMb).
+ * The refusal names the number (UPLOAD_REFUSALS.pdfOverCloudLimit). A
+ * megabyte here is 1024 × 1024 bytes, as multer's limits and the refusals of
+ * size elsewhere count it.
+ */
+const DEFAULT_CLOUD_MAX_FILE_MB = 10;
+
+/**
+ * The cloud's file limit from the setting: whole megabytes written as digits
+ * («20»), more than 0. Unset or empty — the default, silently; anything else
+ * («20MB», «1e3», «0», «15.5») — the default, and the log says the setting was
+ * not taken.
+ *
+ * @param {string|undefined} raw - process.env.CLOUDINARY_MAX_FILE_MB
+ * @returns {number} megabytes
+ */
+export const parseCloudMaxFileMb = (raw) => {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  if (text === '') return DEFAULT_CLOUD_MAX_FILE_MB;
+  const megabytes = /^\d+$/.test(text) ? Number(text) : NaN;
+  if (Number.isSafeInteger(megabytes) && megabytes > 0) return megabytes;
+  logger.warn('CLOUDINARY_MAX_FILE_MB is not a whole number of megabytes; the default is used', {
+    value: raw,
+    defaultMb: DEFAULT_CLOUD_MAX_FILE_MB,
+  });
+  return DEFAULT_CLOUD_MAX_FILE_MB;
+};
+
+export const CLOUD_MAX_FILE_MB = parseCloudMaxFileMb(process.env.CLOUDINARY_MAX_FILE_MB);
 
 const PDF_THUMBNAIL_CONFIG = {
   page: 1,
@@ -674,6 +712,17 @@ export const isValidPdfType = (mimetype) => {
  */
 export const isValidPdfSize = (sizeInBytes) => {
   return sizeInBytes <= PDF_MAX_SIZE;
+};
+
+/**
+ * Whether the cloud takes a file of this size on the account's plan
+ * (CLOUD_MAX_FILE_MB above).
+ *
+ * @param {number} sizeInBytes - File size in bytes
+ * @returns {boolean} True if the cloud takes it
+ */
+export const fitsCloudFileLimit = (sizeInBytes) => {
+  return sizeInBytes <= CLOUD_MAX_FILE_MB * 1024 * 1024;
 };
 
 /**

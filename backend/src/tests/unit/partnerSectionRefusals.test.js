@@ -48,6 +48,8 @@ const BOOKING_STATUSES = ['pending', 'confirmed', 'declined', 'cancelled', 'expi
 const CALLS = {
   'BOOKING_REFUSALS.statusChanged': [...BOOKING_STATUSES, 'some_future_status', 'constructor'].map((s) => [s]),
   'PROMOTION_REFUSALS.activeLimit': [[3]],
+  // Предел облака — число из настройки (config/cloudinary.js): Free и Plus.
+  'UPLOAD_REFUSALS.pdfOverCloudLimit': [[10], [20]],
 };
 
 /** Все тексты модуля: строки как есть, функции — с аргументами из CALLS. */
@@ -115,9 +117,10 @@ const notFrom = (group, values, { allowed = [], cyrillic = false } = {}) => {
 describe('Отказы партнёру вне карточки: тексты', () => {
   it('каждый текст — по-русски: есть кириллица, нет латиницы, кроме названий форматов', () => {
     const all = texts();
-    // Сторож перебора: тексты нашлись (9 загрузки + 3 брони + 9 вызовов статуса
-    // + 11 акций + 1 вызов лимита на 18.10.2026; 27 на 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(33);
+    // Сторож перебора: тексты нашлись (9 загрузки + 2 вызова предела облака
+    // + 3 брони + 9 вызовов статуса + 11 акций + 1 вызов лимита на 19.10.2026;
+    // 33 на 18.10.2026, 27 на 13.10.2026).
+    expect(all.length).toBeGreaterThanOrEqual(35);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -200,6 +203,21 @@ describe('Отказы партнёру вне карточки: исходни�
     expect(notFrom('UPLOAD_REFUSALS', messages, { allowed: ['error.message'] })).toEqual([]);
     expect(appErrorTexts(code).length).toBeGreaterThanOrEqual(1);
     expect(notFrom('UPLOAD_REFUSALS', appErrorTexts(code))).toEqual([]);
+  });
+
+  // Медиа карточки отказывают файлу по тем же правилам, что мастер, — его
+  // текстами (с 19.10.2026; до того — английский, сайт переводил по коду).
+  // Отказы сервиса медиа (mediaService.js) этим разбором не держатся: в файле
+  // и другие действия с медиа, их тексты проход не трогал; формулировки
+  // загрузки держит integration/upload-module-hardening.test.js.
+  it('медиа карточки (mediaRoutes.js): ответы отказа загрузчика — из UPLOAD_REFUSALS', () => {
+    const code = source('routes/v1/mediaRoutes.js');
+    expect(unreadMessageShapes(code)).toEqual([]);
+    const messages = messageTexts(code);
+    // Сторож разбора: ответы с текстом нашлись (4 на 19.10.2026).
+    expect(messages.length).toBeGreaterThanOrEqual(4);
+    // То же исключение, что у мастера: прочие отказы разбора формы multer.
+    expect(notFrom('UPLOAD_REFUSALS', messages, { allowed: ['error.message'] })).toEqual([]);
   });
 
   it('брони (bookingService.js): каждый отказ партнёру — из BOOKING_REFUSALS', () => {
