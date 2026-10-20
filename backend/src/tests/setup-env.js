@@ -64,6 +64,24 @@ if (process.env.YANDEX_CLIENT_ID === undefined) {
   process.env.YANDEX_CLIENT_ID = '';
 }
 
+// Пределы общего лимитера — как в CI, где они не заданы: пустая строка =
+// «не задано» для резолвера (middleware/rateLimiter.js), то есть умолчания.
+// Безусловно, а не «если не задано»: в .env разработчика они бывают (1000 и
+// 3000 вместо 100 и 300), а наборы на умолчаниях с ними вели себя не как в CI.
+// Набор, которому нужны свои пределы, ставит их сам до загрузки сервера
+// (rate-limit-by-account, суточные пределы загрузок) — этот файл идёт раньше.
+// Счётчики живут в Redis: в CI он свежий, раннер изоляции (scripts/test-isolated)
+// чистит свой индекс на старте; обычная команда (индекс 1) не чистит — второй
+// полный прогон ею в тот же час может упереться в 300 запросов анонима.
+for (const name of [
+  'RATE_LIMIT_AUTHENTICATED',
+  'RATE_LIMIT_WINDOW_AUTHENTICATED',
+  'RATE_LIMIT_UNAUTHENTICATED',
+  'RATE_LIMIT_WINDOW_UNAUTHENTICATED',
+]) {
+  process.env[name] = '';
+}
+
 // Verify we're in test environment
 if (process.env.NODE_ENV !== 'test') {
   console.error('ERROR: Tests must run in NODE_ENV=test environment!');

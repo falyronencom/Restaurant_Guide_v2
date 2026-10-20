@@ -23,7 +23,11 @@
  * Под каким поясом что краснело на старом коде: шаги 5 и 7 — только под UTC
  * (пояс прода; отдельный шаг CI гоняет эти тесты под TZ=UTC), шаг 9 — только
  * под Europe/Minsk (основной прогон). Часы работы фикстуры — круглые сутки:
- * иначе «минуту назад» утром превращалось бы в TIME_OUTSIDE_HOURS.
+ * иначе «минуту назад» утром превращалось бы в TIME_OUTSIDE_HOURS. Круглые —
+ * это 00:00–00:00 (закрытие в час открытия — сутки, isTimeWithinRange), а не
+ * 00:00–23:59: последняя минута суток в таких часах закрыта, и до 20.10.2026
+ * «бронь через 2 часа», запущенная в 21:59 по Минску, получала 400 — гейт
+ * краснел раз в сутки (PR #66, 17.10).
  */
 
 import request from 'supertest';
@@ -32,7 +36,7 @@ import * as BookingService from '../../services/bookingService.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 
-const ALL_DAY = { open: '00:00', close: '23:59' };
+const ALL_DAY = { open: '00:00', close: '00:00' };
 const ROUND_THE_CLOCK = {
   monday: ALL_DAY, tuesday: ALL_DAY, wednesday: ALL_DAY, thursday: ALL_DAY,
   friday: ALL_DAY, saturday: ALL_DAY, sunday: ALL_DAY,
@@ -194,6 +198,33 @@ describe('createBooking — внедрённые часы: окно 00:00–03:0
     const booking = await create('2026-09-24', '12:00');
 
     expect((await expiresAtUtc(booking.id)).toISOString()).toBe('2026-09-24T01:30:00.000Z');
+  });
+
+  test('«через 2 часа» у края суток принята при любом «сейчас»: слоты 23:58, 23:59, 00:00, 01:59', async () => {
+    // Слот считается, как в HTTP-тесте «бронь через 2 часа»: минские часы
+    // «сейчас + 2 ч». «Сейчас» — по Минску 21:58:30, 21:59:30, 22:00:30, 23:59:30
+    // 24.09.2026; последние два дают слот уже 25.09.
+    const results = [];
+    for (const nowUtc of [
+      '2026-09-24T18:58:30Z', '2026-09-24T18:59:30Z', '2026-09-24T19:00:30Z', '2026-09-24T20:59:30Z',
+    ]) {
+      const now = new Date(nowUtc);
+      const slot = minsk(new Date(now.getTime() + 2 * 3600 * 1000));
+      const code = await BookingService.createBooking(
+        guestId,
+        { establishmentId: est.id, ...slot, guestCount: 2, contactPhone: '+375291112233' },
+        { now },
+      ).then(() => 'CREATED', (error) => error.code);
+      results.push({ ...slot, code });
+      await query('DELETE FROM bookings');
+    }
+
+    expect(results).toEqual([
+      { date: '2026-09-24', time: '23:58', code: 'CREATED' },
+      { date: '2026-09-24', time: '23:59', code: 'CREATED' },
+      { date: '2026-09-25', time: '00:00', code: 'CREATED' },
+      { date: '2026-09-25', time: '01:59', code: 'CREATED' },
+    ]);
   });
 
   test('день недели — по минской дате: воскресенье 27.09 закрыто — CLOSED_DAY', async () => {

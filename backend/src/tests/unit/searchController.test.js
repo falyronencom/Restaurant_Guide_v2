@@ -170,7 +170,7 @@ describe('searchController', () => {
       const next = jest.fn();
       searchService.checkSearchHealth.mockResolvedValue({
         healthy: false,
-        error: 'PostGIS not available'
+        postgis: 'unhealthy'
       });
 
       await searchHealth(req, res, next);
@@ -180,7 +180,7 @@ describe('searchController', () => {
         success: false,
         data: {
           healthy: false,
-          error: 'PostGIS not available'
+          postgis: 'unhealthy'
         }
       });
     });

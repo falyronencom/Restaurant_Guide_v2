@@ -8,7 +8,8 @@ import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
 import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
-import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { AppError, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { INSUFFICIENT_ROLE_MESSAGE } from './middleware/auth.js';
 import { requestGuard } from './middleware/requestGuard.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
@@ -88,7 +89,10 @@ const corsOptions = {
         return callback(null, true);
       }
     }
-    callback(new Error('Not allowed by CORS'));
+    // Any other site is refused like a role the route does not admit: 403
+    // FORBIDDEN with its sentence, a warning in the log. Until 20.10.2026 a
+    // plain Error — a 500 with its stack in the log.
+    callback(new AppError(INSUFFICIENT_ROLE_MESSAGE, 403, 'FORBIDDEN'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -110,13 +114,6 @@ app.use(
 );
 
 /**
- * Request parsing middleware.
- * ...existing code...
- */
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-/**
  * Request correlation ID middleware.
  * ...existing code...
  */
@@ -130,9 +127,19 @@ app.use((req, res, next) => {
  * Global rate limiting middleware — ahead of every route, and so of every
  * route's authenticate: it verifies the access token itself to count a
  * signed-in request against its account, anything else against its address
- * (middleware/rateLimiter.js).
+ * (middleware/rateLimiter.js). It reads only the headers, so it stands before
+ * the body is read: a request it refuses with 429 is not parsed (until
+ * 20.10.2026 every body was, up to 10 MB, refused or not).
  */
 app.use(rateLimiter);
+
+/**
+ * Request parsing middleware — after the limiter, before the request guard,
+ * which reads the parsed body.
+ * ...existing code...
+ */
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /**
  * Serve uploaded files (avatars, images) as static assets.

@@ -11,7 +11,11 @@ import logger from '../utils/logger.js';
  * Health check philosophy:
  * - Fast: Should respond in <100ms to avoid triggering load balancer timeouts
  * - Comprehensive: Check all critical dependencies, not just that the server is running
- * - Informative: Provide enough detail for debugging without exposing security issues
+ * - Healthy or unhealthy per dependency, and nothing more: the endpoint answers
+ *   without sign-in, so an error's own text (addresses, ports, the database
+ *   user) goes to the log only. Until 20.10.2026 the response carried that
+ *   text, and the process's memory too. Railway's health check reads only the
+ *   status code; uptime tells which deploy answers.
  * 
  * Response format follows industry standards for health checks, making it compatible
  * with common monitoring tools (Kubernetes, AWS ELB, etc.).
@@ -30,7 +34,6 @@ export const healthCheck = async (req, res) => {
     checks: {
       database: { status: 'unknown', responseTime: null },
       redis: { status: 'unknown', responseTime: null },
-      memory: { status: 'healthy', usage: null },
     },
   };
 
@@ -46,7 +49,6 @@ export const healthCheck = async (req, res) => {
     health.status = 'unhealthy';
     health.checks.database = {
       status: 'unhealthy',
-      error: error.message,
       responseTime: null,
     };
     logger.error('Database health check failed', { error: error.message });
@@ -69,25 +71,10 @@ export const healthCheck = async (req, res) => {
     health.status = 'unhealthy';
     health.checks.redis = {
       status: 'unhealthy',
-      error: error.message,
       responseTime: null,
     };
     logger.error('Redis health check failed', { error: error.message });
   }
-
-  // Check memory usage
-  const memoryUsage = process.memoryUsage();
-  const memoryUsageMB = {
-    rss: Math.round(memoryUsage.rss / 1024 / 1024),
-    heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
-    heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-    external: Math.round(memoryUsage.external / 1024 / 1024),
-  };
-
-  health.checks.memory = {
-    status: 'healthy',
-    usage: memoryUsageMB,
-  };
 
   // Calculate total response time
   health.responseTime = Date.now() - startTime;

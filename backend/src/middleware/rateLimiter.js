@@ -170,6 +170,23 @@ const describeWindow = (seconds) => {
 };
 
 /**
+ * Retry-After on a limiter's 429: the counter's time to live, the body's
+ * retry_after — a whole number of seconds above zero only (RFC 9110
+ * delay-seconds), as the daily allowances set it (errorHandler.js). Redis
+ * answers -1 or -2 for a key without a life left; then no header, and the body
+ * stays as it was. The partner's app reads the header when a restart of menu
+ * recognition is refused; without it, it waits 60 s.
+ *
+ * @param {Object} res - Express response
+ * @param {number} ttl - Seconds, from getTTL
+ */
+const setRetryAfter = (res, ttl) => {
+  if (Number.isInteger(ttl) && ttl > 0) {
+    res.set({ 'Retry-After': String(ttl) });
+  }
+};
+
+/**
  * Global rate limiting middleware with two tiers: a signed-in request spends
  * its account's budget, any other request its address's (countedAs).
  *
@@ -185,6 +202,7 @@ const describeWindow = (seconds) => {
  * - X-RateLimit-Limit: Maximum requests allowed in window
  * - X-RateLimit-Remaining: Requests remaining in current window
  * - X-RateLimit-Reset: Unix timestamp when window resets
+ * - Retry-After (on a 429 only): seconds until the window resets (setRetryAfter)
  *
  * @param {{ user: { limit: number, windowSeconds: number },
  *   ip: { limit: number, windowSeconds: number } }} tiers - resolveRateLimitTiers().tiers
@@ -226,6 +244,7 @@ export const createGlobalRateLimiter = (tiers) => async (req, res, next) => {
         method: req.method,
       });
 
+      setRetryAfter(res, ttl);
       return res.status(429).json({
         success: false,
         message: RATE_LIMIT_MESSAGE,
@@ -301,11 +320,15 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
   return async (req, res, next) => {
     try {
       const identifier = req.user?.userId || req.ip;
-      const now = new Date();
-      const timeUnit = Math.floor(now.getTime() / (windowSeconds * 1000));
-      const rateLimitKey = `ratelimit:${keyPrefix}:${identifier}:${timeUnit}`;
+      // The counter of the current bucket expires when the bucket ends, as the
+      // global limiter's does: its time to live is what retry_after and
+      // Retry-After name. Until 20.10.2026 it lived a whole window from the
+      // first request while the bucket rolled over earlier — a day's limit
+      // could name 20 hours to wait when it renewed within the hour.
+      const bucket = bucketAt(windowSeconds, Date.now());
+      const rateLimitKey = `ratelimit:${keyPrefix}:${identifier}:${bucket.index}`;
 
-      const currentCount = await incrementWithExpiry(rateLimitKey, windowSeconds);
+      const currentCount = await incrementWithExpiry(rateLimitKey, bucket.secondsLeft);
       const remaining = Math.max(0, limit - currentCount);
       const ttl = await getTTL(rateLimitKey);
       const resetTime = Math.floor(Date.now() / 1000) + ttl;
@@ -324,6 +347,7 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
           path: req.path,
         });
 
+        setRetryAfter(res, ttl);
         return res.status(429).json({
           success: false,
           message: RATE_LIMIT_MESSAGE,
