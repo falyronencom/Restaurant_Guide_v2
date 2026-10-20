@@ -303,9 +303,11 @@ void main() {
       fake.actionGate = Completer<void>();
 
       final first = provider.setVisibility(visible: false);
-      final second = await provider.setVisibility(visible: false);
+      bool? second;
+      unawaited(provider.setVisibility(visible: false).then((v) => second = v));
+      await pumpEventQueue();
 
-      expect(second, isFalse);
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
       expect(fake.toggleCalls, 1, reason: 'защита — в провайдере (A2-19)');
       fake.actionGate!.complete();
       await first;

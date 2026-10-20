@@ -262,9 +262,11 @@ void main() {
       fake.moderateGate = Completer<void>();
 
       final first = provider.approveEstablishment();
-      final second = await provider.approveEstablishment();
+      bool? second;
+      unawaited(provider.approveEstablishment().then((v) => second = v));
+      await pumpEventQueue();
 
-      expect(second, isFalse);
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
       expect(fake.moderateCalls, 1, reason: 'защита — в провайдере (A1-03)');
       fake.moderateGate!.complete();
       expect(await first, isTrue);

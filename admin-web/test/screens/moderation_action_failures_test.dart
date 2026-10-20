@@ -289,8 +289,14 @@ void main() {
       expect(find.byKey(const ValueKey<String>('entity-action-busy')),
           findsOneWidget);
 
-      final second = await provider.suspendEstablishment('Жалобы посетителей');
-      expect(second, isFalse);
+      // Не `await`: без защиты второй вызов ждал бы запрос, который тест
+      // держит, — и тест висел бы вместо того, чтобы покраснеть.
+      bool? second;
+      unawaited(provider
+          .suspendEstablishment('Жалобы посетителей')
+          .then((v) => second = v));
+      await tester.pump();
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
       expect(server.calls.where((c) => c.contains('/suspend')).toList(),
           hasLength(1),
           reason: 'защита от второго запроса — в провайдере');

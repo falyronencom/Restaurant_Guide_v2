@@ -545,9 +545,12 @@ void main() {
       final gate = Completer<Map<String, dynamic>>();
       service.hideGate = gate;
       final first = provider.hideItem('1', 'причина');
-      final second = await provider.hideItem('1', 'причина');
+      // Не `await`: без защиты второй вызов ждал бы задержанный запрос.
+      bool? second;
+      unawaited(provider.hideItem('1', 'причина').then((v) => second = v));
+      await tester.pump();
 
-      expect(second, isFalse);
+      expect(second, isFalse, reason: 'второй вызов отсечён сразу');
       expect(service.hideCalls, 1, reason: 'защита — в провайдере (A1-03)');
       gate.complete(<String, dynamic>{});
       await first;
