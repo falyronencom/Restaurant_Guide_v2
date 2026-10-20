@@ -16,7 +16,9 @@ class NotificationsScreen extends StatelessWidget {
       children: [
         AdminScreenHeader(
           title: 'Уведомления',
-          subtitle: 'Раздел в разработке — событий пока нет',
+          // «В разработке» говорит статус ниже — дважды подряд это шум
+          // (проход по панели 20.10, A2-16).
+          subtitle: 'Событий пока нет',
         ),
         Expanded(
           child: AdminEmptyState.section(
@@ -33,7 +35,9 @@ class NotificationsScreen extends StatelessWidget {
               ),
               EmptyStateRow(
                 icon: Icons.reviews_outlined,
-                text: 'Отзывы с низкой оценкой и жалобы',
+                // Без «жалоб»: механизма жалоб нет и по решению В10 не
+                // будет — экран «Отзывы» отказался от этой строки так же.
+                text: 'Отзывы с низкой оценкой',
               ),
               EmptyStateRow(
                 icon: Icons.monitor_heart_outlined,

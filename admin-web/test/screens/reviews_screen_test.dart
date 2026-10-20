@@ -37,6 +37,9 @@ class _FakeAdminReviewService implements AdminReviewService {
     int perPage = 20,
     String? status,
     int? rating,
+    int? ratingMin,
+    int? ratingMax,
+    String? authorId,
     String? search,
     String? sort,
     DateTime? from,
@@ -58,7 +61,7 @@ class _FakeAdminReviewService implements AdminReviewService {
   Object? visibilityFailure;
 
   @override
-  Future<void> setVisibility(String id, {required bool isVisible}) async {
+  Future<void> setVisibility(String id, {required bool isVisible, String? reason}) async {
     final failure = visibilityFailure;
     if (failure != null) throw failure;
   }

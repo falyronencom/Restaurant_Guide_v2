@@ -48,6 +48,7 @@ class _FakeUserService implements AdminUserService {
     int perPage = 20,
     String? search,
     String? status,
+    String? role,
   }) async {
     calls.add('list search=${search ?? ''} status=${status ?? ''}');
     final failure = readFailure;
@@ -77,17 +78,30 @@ class _FakeUserService implements AdminUserService {
     return changed;
   }
 
-  @override
-  Future<bool> block(String id, {required String reason}) =>
-      _act('block', id, reason);
+  /// Сколько отзывов «скрыла» блокировка — для итоговой фразы.
+  int? hiddenReviews;
+
+  /// Что «скажет» разблокировка о снятой блокировке.
+  AdminUserUnblockResult Function(bool changed)? unblockAnswer;
 
   @override
-  Future<bool> unblock(
+  Future<AdminUserBlockResult> block(String id, {required String reason}) async =>
+      AdminUserBlockResult(
+        changed: await _act('block', id, reason),
+        hiddenReviews: hiddenReviews,
+      );
+
+  @override
+  Future<AdminUserUnblockResult> unblock(
     String id, {
     required String reason,
     bool restoreReviews = true,
-  }) =>
-      _act('unblock', id, restoreReviews ? reason : '$reason; без отзывов');
+  }) async {
+    final changed = await _act(
+        'unblock', id, restoreReviews ? reason : '$reason; без отзывов');
+    return unblockAnswer?.call(changed) ??
+        AdminUserUnblockResult(changed: changed);
+  }
 
   @override
   Future<bool> resetName(String id, {required String reason}) =>
@@ -172,6 +186,7 @@ void main() {
   testWidgets('администратор: строка, карточка и блокировка с причиной',
       (tester) async {
     final fake = await pumpScreen(tester, [_user()]);
+    fake.hiddenReviews = 2;
 
     expect(find.text('Злой Комментатор'), findsOneWidget);
     expect(find.textContaining('angry@example.com'), findsOneWidget);
@@ -184,7 +199,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('user-block')));
     await settle(tester);
     expect(find.text('Заблокировать пользователя?'), findsOneWidget);
-    expect(find.text(kBlockConsequences), findsOneWidget);
+    // Последствия и то, что увидит сам человек (A2-22) — одним текстом.
+    expect(find.text('$kBlockConsequences\n\n$kBlockWhatTheyNotice'),
+        findsOneWidget);
 
     // Без причины подтвердить нельзя.
     final confirm = find.byKey(const ValueKey<String>('user-reason-confirm'));
@@ -199,7 +216,9 @@ void main() {
     await settle(tester);
 
     expect(fake.calls, contains('block u1 «мат в отзывах»'));
-    expect(find.text('Пользователь заблокирован, его отзывы скрыты'),
+    // Итог — счётом сервера, а не обещанием «его отзывы скрыты» (проход по
+    // панели 20.10, A2-06): фейк скрыл два.
+    expect(find.text('Пользователь заблокирован, скрыто отзывов: 2'),
         findsOneWidget);
   });
 
