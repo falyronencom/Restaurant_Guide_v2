@@ -59,8 +59,12 @@ class ShareBar extends StatelessWidget {
             spacing: _gap,
             children: [
               for (var i = 0; i < merged.length; i++)
+                // Высота — явно. `Row` даёт детям свободную высоту от нуля, а
+                // `DecoratedBox` без ребёнка берёт наименьшую — ноль: полоса
+                // не рисовалась вовсе, хотя ширины считались верно (F-17).
                 SizedBox(
                   width: widths[i],
+                  height: height,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: merged[i].color,

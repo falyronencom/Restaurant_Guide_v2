@@ -12,22 +12,45 @@ import 'package:restaurant_guide_admin_web/widgets/admin_sidebar.dart';
 class AdminShell extends StatefulWidget {
   final Widget child;
 
-  const AdminShell({super.key, required this.child});
+  /// Путь открытого экрана. Каркас переживает навигацию, и смена пути —
+  /// единственный признак того, что модератор перешёл на другой экран.
+  final String? location;
+
+  const AdminShell({super.key, required this.child, this.location});
 
   @override
   State<AdminShell> createState() => _AdminShellState();
 }
 
 class _AdminShellState extends State<AdminShell> {
+  late final BadgesProvider _badges;
+
   @override
   void initState() {
     super.initState();
-    // Счётчики очередей грузятся один раз на шелл: рейл переживает навигацию.
-    // На сервере ответ закэширован на 30 с, поэтому повторный вызов после
-    // модерации дёшев — экраны могут дёргать load() сами.
+    // Счётчики очередей: при входе, раз в минуту и при переходе на другой
+    // экран (A3-21, F-20). На сервере ответ закэширован на 30 с, поэтому
+    // повторный вызов дёшев — экраны после своих действий дёргают load() сами.
+    _badges = context.read<BadgesProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<BadgesProvider>().load();
+      if (!mounted) return;
+      _badges.load();
+      _badges.startAutoRefresh();
     });
+  }
+
+  @override
+  void didUpdateWidget(AdminShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.location != widget.location) {
+      _badges.refreshIfOlderThan(BadgesProvider.refreshOnNavigationAfter);
+    }
+  }
+
+  @override
+  void dispose() {
+    _badges.stopAutoRefresh();
+    super.dispose();
   }
 
   @override

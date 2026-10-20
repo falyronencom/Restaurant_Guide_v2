@@ -613,7 +613,8 @@ void main() {
 
       final bar = tester.getRect(find.byType(HealthSummaryBar));
       final note = tester.getRect(
-        find.text('Распределение цен подключается на импорте 500 заведений'),
+        find.text('Проверка цен включится, когда заведений станет '
+            'достаточно для сравнения'),
       );
       expect(
         bar.right - note.right,

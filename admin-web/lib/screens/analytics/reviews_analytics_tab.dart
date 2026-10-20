@@ -8,6 +8,7 @@ import 'package:restaurant_guide_admin_web/providers/reviews_analytics_provider.
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_tab_scaffold.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/canon_combo_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 
 /// Вкладка «Отзывы и оценки» — кадр 09.
@@ -66,59 +67,46 @@ class ReviewsAnalyticsTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: AnalyticsTabScaffold.gap,
       children: <Widget>[
-        SizedBox(
-          height: AnalyticsTabScaffold.metricsHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: AnalyticsTabScaffold.gap,
-            children: <Widget>[
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.reviews_outlined,
-                  label: 'Всего отзывов',
-                  value: formatCount(data.total),
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.add_comment_outlined,
-                  label: 'Новых за период',
-                  value: formatCount(data.newInPeriod),
-                  changePercent: data.changePercent,
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.star_outline,
-                  label: 'Средняя оценка',
-                  value: formatDecimal(data.averageRating),
-                  // «за всё время», а не «из 5». Шкала и так очевидна, а вот
-                  // срок — нет: под шапкой с периодом оценка читается как
-                  // «средняя за этот месяц», тогда как это среднее по всем
-                  // отзывам за всю историю. Динамику за период показывает
-                  // зелёная линия на графике выше — приписка их разводит.
-                  valueNote: 'за всё время',
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.reply_outlined,
-                  label: 'Партнёр ответил',
-                  value: formatShare(
-                    stats.totalWithResponse,
-                    stats.totalReviews,
-                  ),
-                  valueNote: countWithNoun(
-                    stats.totalWithResponse,
-                    'отзыв',
-                    'отзыва',
-                    'отзывов',
-                  ),
-                ),
-              ),
-            ],
+        AnalyticsTabScaffold.metrics(<Widget>[
+          MetricCard(
+            icon: Icons.reviews_outlined,
+            label: 'Всего отзывов',
+            value: formatCount(data.total),
           ),
-        ),
+          MetricCard(
+            icon: Icons.add_comment_outlined,
+            label: 'Новых за период',
+            value: formatCount(data.newInPeriod),
+            changePercent: data.changePercent,
+          ),
+          MetricCard(
+            icon: Icons.star_outline,
+            label: 'Средняя оценка',
+            value: formatDecimal(data.averageRating),
+            // «за всё время», а не «из 5». Шкала и так очевидна, а вот
+            // срок — нет: под шапкой с периодом оценка читается как
+            // «средняя за этот месяц», тогда как это среднее по всем
+            // отзывам за всю историю. Динамику за период показывает
+            // зелёная линия на графике выше — приписка их разводит.
+            valueNote: 'за всё время',
+          ),
+          MetricCard(
+            icon: Icons.reply_outlined,
+            label: 'Партнёр ответил',
+            value: formatShare(
+              stats.totalWithResponse,
+              stats.totalReviews,
+            ),
+            // Доля по всем отзывам, а не за период — как у средней
+            // оценки (A3-16).
+            valueNote: '${countWithNoun(
+              stats.totalWithResponse,
+              'отзыв',
+              'отзыва',
+              'отзывов',
+            )} · за всё время',
+          ),
+        ]),
         SizedBox(
           height: chartHeight,
           child: AnalyticsPanel(
@@ -130,7 +118,8 @@ class ReviewsAnalyticsTab extends StatelessWidget {
             titleTrailing: <Widget>[
               ChartLegend(
                 color: AppTheme.primaryOrange.withValues(alpha: 0.85),
-                label: 'отзывов в день — шкала слева',
+                label:
+                    'отзывов ${perBucketLabel(data.aggregation)} — шкала слева',
                 mark: LegendMark.bar,
               ),
               const ChartLegend(
@@ -174,6 +163,7 @@ class _RatingPanel extends StatelessWidget {
     if (total == 0) {
       return const AnalyticsPanel(
         title: 'Распределение оценок',
+        asOfToday: true,
         child: PanelEmpty('Отзывов пока нет'),
       );
     }
@@ -185,6 +175,7 @@ class _RatingPanel extends StatelessWidget {
 
     return AnalyticsPanel(
       title: 'Распределение оценок',
+      asOfToday: true,
       expandChild: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -351,7 +342,8 @@ class _OpenInReviews extends StatelessWidget {
                   color: AppTheme.textDark,
                 ),
               ),
-              Icon(Icons.arrow_forward, size: 16, color: AppTheme.textSecondary),
+              Icon(Icons.arrow_forward,
+                  size: 16, color: AppTheme.textSecondary),
             ],
           ),
         ),
@@ -371,6 +363,7 @@ class _ResponsePanel extends StatelessWidget {
     if (stats.totalReviews == 0) {
       return const AnalyticsPanel(
         title: 'Ответы партнёров',
+        asOfToday: true,
         child: PanelEmpty('Отвечать пока не на что'),
       );
     }
@@ -379,6 +372,7 @@ class _ResponsePanel extends StatelessWidget {
 
     return AnalyticsPanel(
       title: 'Ответы партнёров',
+      asOfToday: true,
       expandChild: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -485,7 +479,8 @@ class _ResponsePanel extends StatelessWidget {
     final pace = hours <= 0
         ? 'Партнёры отвечают'
         : hours < 1
-            ? 'Партнёры отвечают в среднем за ${(hours * 60).round()} минут'
+            ? 'Партнёры отвечают в среднем за '
+                '${countWithNoun((hours * 60).round(), 'минуту', 'минуты', 'минут')}'
             : hours < 24
                 ? 'Партнёры отвечают в среднем за '
                     '${countWithNoun(hours.round(), 'час', 'часа', 'часов')}'

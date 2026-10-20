@@ -509,11 +509,15 @@ void main() {
       expect(find.text('Ирина К.'), findsWidgets);
       expect(find.text('2 / 5'), findsOneWidget);
       expect(find.text('Golden Coffee, Гродно'), findsOneWidget);
-      expect(find.text('до'), findsOneWidget);
-      expect(find.text('после'), findsOneWidget);
+      // Изменение — словами, а не JSON (К-3, A3-04).
+      expect(
+        find.text('Виден в приложении: да  →  нет', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('is_visible'), findsNothing);
     });
 
-    testWidgets('«после» берёт цвет действия, «до» остаётся нейтральным',
+    testWidgets('полоса изменения берёт цвет действия',
         (tester) async {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[
@@ -528,26 +532,18 @@ void main() {
       await tester.tap(find.text('Одобрено заведение'));
       await tester.pump();
 
-      Color edgeColor(String label) {
-        final box = tester.widget<Container>(
-          find
-              .ancestor(
-                of: find.text(label),
-                matching: find.byType(Container),
-              )
-              .first,
-        );
-        return ((box.decoration! as BoxDecoration).border! as Border)
-            .left
-            .color;
-      }
-
+      final line =
+          find.text('Статус: на модерации  →  в каталоге', findRichText: true);
+      expect(line, findsOneWidget);
+      final box = tester.widget<Container>(
+        find.ancestor(of: line, matching: find.byType(Container)).first,
+      );
       // Постоянный красный, как в единственном примере кадра, у одобрения
       // читался бы как ошибка.
-      expect(edgeColor('после'), AppTheme.statusGreen);
-      // Прошлое состояние — уже история, красить её в цвет действия значило бы
-      // обвинять сами данные.
-      expect(edgeColor('до'), AppTheme.textGrey);
+      expect(
+        ((box.decoration! as BoxDecoration).border! as Border).left.color,
+        AppTheme.statusGreen,
+      );
     });
 
     testWidgets('запись без контекста и без данных не рисует пустых колонок',
@@ -592,14 +588,15 @@ void main() {
       expect(left(find.textContaining('14 июля')), left(find.text('ДАТА И ВРЕМЯ')));
       expect(left(dotFinder), left(find.text('ДЕЙСТВИЕ')));
       expect(left(find.text('Кухмістр')), left(find.text('ОБЪЕКТ')));
-      // У колонки администратора первым идёт кружок аватара.
+      // У колонки «Кто» первым идёт кружок аватара.
       expect(
         left(find.ancestor(of: find.text('В'), matching: find.byType(Container)).first),
-        left(find.text('АДМИНИСТРАТОР')),
+        left(find.text('КТО')),
       );
     });
 
-    testWidgets('ширины закреплены по кадру 06', (tester) async {
+    testWidgets('ширины: дата 150, «Кто» 170, действие и объект поровну',
+        (tester) async {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
 
@@ -608,23 +605,22 @@ void main() {
 
       // Отступ тела 24 плюс отступ ячейки 14.
       expect(dateLeft, 38);
-      // Колонка даты — 168 из `168px 467px 260px 200px 36px` кадра.
-      expect(left(dotFinder) - dateLeft, 168);
+      // Колонка даты — 150: столько занимает «14 июля 09:41» с отступами.
+      expect(left(dotFinder) - dateLeft, 150);
       // Колонка шеврона — 36, прижата к правому краю тела.
       expect(
         tester.getRect(find.byIcon(Icons.expand_more).last).center.dx,
         1440 - 24 - 36 / 2,
       );
-      // Остальные три ширины кадра. Администратор — 200 перед шевроном:
-      // колонка начинается за 236 от правого края тела (подпись — с отступом
-      // ячейки 14).
-      expect(left(find.text('АДМИНИСТРАТОР')) - 14, 1440 - 24 - 36 - 200);
-      // Действие и объект делят остаток в пропорции кадра 467:260.
+      // «Кто» — 170 перед шевроном (подпись — с отступом ячейки 14).
+      expect(left(find.text('КТО')) - 14, 1440 - 24 - 36 - 170);
+      // Действие и объект делят остаток поровну: по кадру объекту доставалось
+      // 260 из 727, и на 1150 имя резалось до восьми букв (Ч36, A3-13).
       final actionWidth =
           left(find.text('ОБЪЕКТ')) - left(find.text('ДЕЙСТВИЕ'));
       final objectWidth =
-          left(find.text('АДМИНИСТРАТОР')) - left(find.text('ОБЪЕКТ'));
-      expect(actionWidth / objectWidth, closeTo(467 / 260, 1e-6));
+          left(find.text('КТО')) - left(find.text('ОБЪЕКТ'));
+      expect(actionWidth, closeTo(objectWidth, 1e-6));
     });
 
     testWidgets('высоты шапки и строки — 40 и 52', (tester) async {

@@ -18,7 +18,11 @@ import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart'
 /// то есть относится не к этой колонке, а к экрану. По канону слот шапки для
 /// того и заведён.
 class ApprovedScreen extends StatefulWidget {
-  const ApprovedScreen({super.key});
+  /// Поиск при входе (`/moderation/approved?q=…`) — переход из «Здоровья
+  /// данных» к карточке под сигналом (К-6). Пусто — обычный список.
+  final String? initialSearch;
+
+  const ApprovedScreen({super.key, this.initialSearch});
 
   @override
   State<ApprovedScreen> createState() => _ApprovedScreenState();
@@ -52,8 +56,15 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
     super.initState();
     _provider = context.read<ApprovedProvider>();
     _provider.addListener(_onProviderChanged);
+    final query = widget.initialSearch?.trim() ?? '';
+    if (query.isNotEmpty) _searchController.text = query;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ApprovedProvider>().loadActiveEstablishments();
+      final approved = context.read<ApprovedProvider>();
+      if (query.isNotEmpty) {
+        approved.searchEstablishments(query);
+      } else {
+        approved.loadActiveEstablishments();
+      }
     });
   }
 

@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/audit_change_text.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
@@ -82,7 +84,8 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       _dismissToast = showAdminErrorToast(
         context,
         title: 'Страница не загрузилась',
-        message: '${asSentence(message)} Записи на экране остались от прошлой страницы.',
+        message:
+            '${asSentence(message)} Записи на экране остались от прошлой страницы.',
         onRetry: () => _provider.loadEntries(page: _provider.currentPage),
       );
     });
@@ -102,8 +105,27 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           // читаемыми, о загрузке сообщает полоска по кромке шапки.
           busy: provider.isLoading && provider.entries.isNotEmpty,
           actions: <Widget>[
+            // Подпись «последняя 4 минуты назад» стареет, пока экран открыт, и
+            // новых записей без перехода туда-обратно было не увидеть (A3-29).
+            OutlinedButton.icon(
+              onPressed: provider.isLoading
+                  ? null
+                  : () => context
+                      .read<AuditLogProvider>()
+                      .loadEntries(page: provider.currentPage),
+              style: AppTheme.canonHeaderAction(),
+              icon: const Icon(
+                Icons.refresh,
+                size: 18,
+                color: AppTheme.primaryOrangeDark,
+              ),
+              label: const Text('Обновить'),
+            ),
             PeriodSelector(
               currentPeriod: provider.period,
+              // Даты выбранного периода видны рядом с контролом, и пикер
+              // открывается на них, а не на «последних 30 днях» (A3-24).
+              customRange: _customRange(provider),
               onPeriodChanged: (selection) =>
                   context.read<AuditLogProvider>().setPeriod(
                         selection.period,
@@ -140,17 +162,37 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       'записи',
       'записей',
     );
-    final period = switch (provider.period) {
-      '7d' => 'за 7 дней',
-      '30d' => 'за 30 дней',
-      '90d' => 'за 90 дней',
-      _ => 'за выбранный период',
-    };
+    final period = 'за ${auditPeriodLabel(provider)}';
 
     final latest = provider.latestAt;
     if (latest == null) return '$count $period';
     return '$count $period · последняя ${formatRelativePast(latest)}';
   }
+
+  static DateTimeRange? _customRange(AuditLogProvider provider) {
+    final from = provider.customFrom;
+    final to = provider.customTo;
+    if (provider.period != 'custom' || from == null || to == null) return null;
+    return DateTimeRange(start: from, end: to);
+  }
+}
+
+/// Период журнала словами: «7 дней», «1 — 10 октября».
+///
+/// У произвольного периода — его даты, а не «выбранный диапазон»: подпись
+/// шапки и пустого результата говорила «за выбранный период», и какой он —
+/// узнать было негде (A3-24).
+String auditPeriodLabel(AuditLogProvider provider) {
+  final from = provider.customFrom;
+  final to = provider.customTo;
+  return switch (provider.period) {
+    '7d' => '7 дней',
+    '30d' => '30 дней',
+    '90d' => '90 дней',
+    _ when from != null && to != null =>
+      '${formatDayMonthLocal(from)} — ${formatDayMonthLocal(to)}',
+    _ => 'выбранный период',
+  };
 }
 
 // =============================================================================
@@ -241,7 +283,7 @@ class _Content extends StatelessWidget {
         reason: message,
         message: 'Записи на сервере на месте — не удалось их получить. '
             'Повторите попытку; если не пройдёт и со второго раза, '
-            'отправьте код разработчику.',
+            'напишите разработчику, указав время.',
         technical: 'GET /api/v1/admin/audit-log',
         onRetry: () => context.read<AuditLogProvider>().loadEntries(),
       );
@@ -317,7 +359,7 @@ class _Content extends StatelessWidget {
         if (provider.period != AuditLogProvider.defaultPeriod)
           EmptyStateRow(
             icon: Icons.schedule,
-            text: 'Период: ${_periodRowLabel(provider.period)}',
+            text: 'Период: ${auditPeriodLabel(provider)}',
             onRemove: () => audit.setPeriod(AuditLogProvider.defaultPeriod),
           ),
       ],
@@ -325,32 +367,31 @@ class _Content extends StatelessWidget {
       resetHint: 'Вернёт журнал к последним 30 дням без отбора.',
     );
   }
-
-  static String _periodRowLabel(String period) => switch (period) {
-        '7d' => '7 дней',
-        '30d' => '30 дней',
-        '90d' => '90 дней',
-        _ => 'выбранный диапазон',
-      };
 }
 
 // =============================================================================
 // Раскладка таблицы
 // =============================================================================
 
-/// Ширины колонок кадра 06: `168px 467px 260px 200px 36px` при внутренней
-/// ширине 1132.
+/// Ширины колонок. Кадр 06 рисовал `168px 467px 260px 200px 36px` при
+/// внутренней ширине 1132 — то есть для окна 1440.
 ///
-/// Дата, администратор и шеврон закреплены в пикселях: их содержимое не
-/// растёт от ширины окна, и «плавающая» дата на широком экране разъезжается с
-/// соседней строкой. Действие и объект тянутся в исходной пропорции 467:260 —
-/// именно они переполняются длинными названиями.
+/// Дата, «Кто» и шеврон закреплены в пикселях: их содержимое не растёт от
+/// ширины окна, и «плавающая» дата на широком экране разъезжается с соседней
+/// строкой. Действие и объект тянутся поровну. По кадру объекту доставалось
+/// 260 из 727 — на окне 1150 (Chrome с боковой панелью) имя обрезалось до
+/// восьми букв рядом с id, на 1024 оставалась одна-две (Ч36, A3-13). Дата и
+/// «Кто» ужаты до того, что в них реально помещается.
 abstract final class _TableLayout {
-  static const double dateWidth = 168;
-  static const int actionFlex = 467;
-  static const int objectFlex = 260;
-  static const double adminWidth = 200;
+  static const double dateWidth = 150;
+  static const int actionFlex = 1;
+  static const int objectFlex = 1;
+  static const double adminWidth = 170;
   static const double chevronWidth = 36;
+
+  /// Уже этого ячейка «Объект» не показывает id рядом с именем: имя важнее, а
+  /// id остаётся в подсказке и в раскрытой строке.
+  static const double objectIdMinWidth = 210;
 
   static const double headerHeight = 40;
   static const double rowHeight = 52;
@@ -395,7 +436,9 @@ class _TableHeader extends StatelessWidget {
         date: const _HeaderCell('Дата и время'),
         action: const _HeaderCell('Действие'),
         object: const _HeaderCell('Объект'),
-        admin: const _HeaderCell('Администратор'),
+        // «Кто», а не «Администратор»: в журнале пишут и партнёр, и сам
+        // человек, и скрипт оператора, и система (A3-06).
+        admin: const _HeaderCell('Кто'),
         trailing: const SizedBox.shrink(),
       ),
     );
@@ -535,15 +578,21 @@ class _ActionCell extends StatelessWidget {
           decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
         ),
         Expanded(
-          child: Text(
-            summary,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
+          // Полная подпись — при наведении: длинная («Заведение удалено
+          // вместе с учётной записью по заявке в поддержку») режется.
+          child: Tooltip(
+            message: summary,
+            waitDuration: const Duration(milliseconds: 400),
+            child: Text(
+              summary,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -567,41 +616,76 @@ class _ObjectCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ctx = entry.entityContext;
     // У отзыва берём автора, а не заведение: моноширинный идентификатор рядом
     // с заголовком — это идентификатор ОТЗЫВА, и имя заведения над ним
     // подталкивало бы скопировать одно, думая про другое. Заведение при этом
     // не теряется — оно в раскрытой строке.
     // У действия над человеком (блокировка, сброс имени) — его нынешнее имя.
-    final name = ctx?['reviewer_name'] ?? ctx?['user_name'] ?? ctx?['name'];
-    // Обрезается то же значение, что и проверяется: иначе ведущие пробелы из
-    // `entity_context` доехали бы до вёрстки и сдвинули колонку.
-    final title = name is String && name.trim().isNotEmpty
-        ? name.trim()
-        : auditEntityLabel(entry.entityType);
+    // У позиции меню — её название (снимок на момент действия, A3-03): было
+    // «Позиция меню 7f5534fa».
+    final title = auditObjectTitle(entry);
     final id = entry.entityId;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      spacing: 7,
-      children: <Widget>[
-        Flexible(
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showId =
+            id != null && constraints.maxWidth >= _TableLayout.objectIdMinWidth;
+        return Tooltip(
+          message: id == null ? title : '$title · ${shortEntityId(id)}',
+          waitDuration: const Duration(milliseconds: 400),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            spacing: 7,
+            children: <Widget>[
+              Flexible(
+                child: Text(
+                  title,
+                  style:
+                      const TextStyle(fontSize: 13, color: AppTheme.textDark),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (showId)
+                Text(
+                  shortEntityId(id),
+                  style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
+                ),
+            ],
           ),
-        ),
-        if (id != null)
-          Text(
-            shortEntityId(id),
-            style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
-          ),
-      ],
+        );
+      },
     );
   }
+}
+
+/// Имя объекта записи: автор отзыва, человек, заведение, позиция меню; без
+/// имени — тип объекта словом.
+String auditObjectTitle(AuditLogEntry entry) {
+  final ctx = entry.entityContext;
+  final name = ctx?['reviewer_name'] ??
+      ctx?['user_name'] ??
+      ctx?['name'] ??
+      ctx?['item_name'];
+  // Обрезается то же значение, что и проверяется: иначе ведущие пробелы из
+  // `entity_context` доехали бы до вёрстки и сдвинули колонку.
+  return name is String && name.trim().isNotEmpty
+      ? name.trim()
+      : auditEntityLabel(entry.entityType);
+}
+
+/// Кто действовал — словами. Имя или e-mail человека; у записи без
+/// автора-человека — «Скрипт оператора» или «Система» (было «не указан» с
+/// «?», A3-06, Ч37); просмотрщику — роль. `null` — сервер не сказал ничего.
+String? auditActorLabel(AuditLogEntry entry) {
+  final person = entry.adminName ?? entry.adminEmail;
+  if (person != null && person.trim().isNotEmpty) return person.trim();
+  return switch (entry.actorKind) {
+    'operator_script' => 'Скрипт оператора',
+    'system' => 'Система',
+    _ => actorRoleLabel(entry.actorRole),
+  };
 }
 
 /// Первые восемь знаков UUID — столько же, сколько показывает `git` у хеша.
@@ -616,12 +700,11 @@ class _AdminCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Просмотрщику сервер не называет людей — остаётся роль исполнителя.
-    final name =
-        entry.adminName ?? entry.adminEmail ?? actorRoleLabel(entry.actorRole);
+    final name = auditActorLabel(entry);
     // Свои действия помечены брендовым кружком, чужие — серым. Журнал ведут
     // несколько человек, и первый вопрос к незнакомой записи — «это не я ли».
-    final currentEmail =
-        context.select<AuthProvider, String?>((auth) => auth.currentUser?.email);
+    final currentEmail = context
+        .select<AuthProvider, String?>((auth) => auth.currentUser?.email);
     final isSelf = currentEmail != null &&
         entry.adminEmail != null &&
         entry.adminEmail!.toLowerCase() == currentEmail.toLowerCase();
@@ -704,30 +787,7 @@ class _EntryDetails extends StatelessWidget {
       if (hasChange)
         _DetailColumn(
           title: 'Изменение',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            spacing: 8,
-            children: <Widget>[
-              if (entry.oldData != null)
-                _ChangeBlock(
-                  label: 'до',
-                  data: entry.oldData!,
-                  // Прошлое состояние нейтрально: это уже история, и красить
-                  // её в цвет действия значило бы обвинять сами данные.
-                  accent: AppTheme.textGrey,
-                ),
-              if (entry.newData != null)
-                _ChangeBlock(
-                  label: 'после',
-                  data: entry.newData!,
-                  // Результат берёт цвет действия. Постоянный красный, как в
-                  // единственном примере кадра, у одобрения читался бы как
-                  // ошибка — а кадр рисует именно скрытие отзыва.
-                  accent: accent,
-                ),
-            ],
-          ),
+          child: _ChangeLines(entry: entry, accent: accent),
         ),
     ];
 
@@ -763,7 +823,8 @@ class _EntryDetails extends StatelessWidget {
     if (entry.entityType == 'review') {
       final reviewer = ctx['reviewer_name'];
       if (reviewer is String && reviewer.trim().isNotEmpty) {
-        rows.add(_ContextRow(label: 'Автор', value: Text(reviewer, style: _valueStyle)));
+        rows.add(_ContextRow(
+            label: 'Автор', value: Text(reviewer, style: _valueStyle)));
       }
 
       final rating = ctx['rating'];
@@ -771,9 +832,11 @@ class _EntryDetails extends StatelessWidget {
         rows.add(_ContextRow(label: 'Оценка', value: _Rating(rating.toInt())));
       }
 
-      final place = _joinPlace(ctx['establishment_name'], ctx['establishment_city']);
+      final place =
+          _joinPlace(ctx['establishment_name'], ctx['establishment_city']);
       if (place != null) {
-        rows.add(_ContextRow(label: 'Заведение', value: Text(place, style: _valueStyle)));
+        rows.add(_ContextRow(
+            label: 'Заведение', value: Text(place, style: _valueStyle)));
       }
 
       final snippet = ctx['text_snippet'];
@@ -800,12 +863,27 @@ class _EntryDetails extends StatelessWidget {
     } else if (entry.entityType == 'establishment') {
       final place = _joinPlace(ctx['name'], ctx['city']);
       if (place != null) {
-        rows.add(_ContextRow(label: 'Заведение', value: Text(place, style: _valueStyle)));
+        rows.add(_ContextRow(
+            label: 'Заведение', value: Text(place, style: _valueStyle)));
       }
     } else if (entry.entityType == 'user') {
       final name = ctx['user_name'];
       if (name is String && name.trim().isNotEmpty) {
-        rows.add(_ContextRow(label: 'Пользователь', value: Text(name.trim(), style: _valueStyle)));
+        rows.add(_ContextRow(
+            label: 'Пользователь',
+            value: Text(name.trim(), style: _valueStyle)));
+      }
+    } else if (entry.entityType == 'menu_item') {
+      final item = ctx['item_name'];
+      if (item is String && item.trim().isNotEmpty) {
+        rows.add(_ContextRow(
+            label: 'Позиция', value: Text(item.trim(), style: _valueStyle)));
+      }
+      final place =
+          _joinPlace(ctx['establishment_name'], ctx['establishment_city']);
+      if (place != null) {
+        rows.add(_ContextRow(
+            label: 'Заведение', value: Text(place, style: _valueStyle)));
       }
     }
 
@@ -886,7 +964,8 @@ class _Rating extends StatelessWidget {
               Icon(
                 Icons.star,
                 size: 15,
-                color: i <= value ? AppTheme.primaryOrange : AppTheme.strokeGrey,
+                color:
+                    i <= value ? AppTheme.primaryOrange : AppTheme.strokeGrey,
               ),
           ],
         ),
@@ -896,46 +975,154 @@ class _Rating extends StatelessWidget {
   }
 }
 
-/// Состояние «до» или «после»: полоса цвета слева и содержимое моноширинным.
-class _ChangeBlock extends StatelessWidget {
-  final String label;
-  final Map<String, dynamic> data;
+/// Что изменилось — строками «Статус: на модерации → отклонена».
+///
+/// Раньше здесь стоял JSON «до» и «после» моноширинным (К-3, A3-04). Исходник
+/// не пропал: он под «Исходная запись», и «Скопировать код» кладёт его в
+/// буфер — для разработчика и для письма в поддержку.
+class _ChangeLines extends StatefulWidget {
+  final AuditLogEntry entry;
   final Color accent;
 
-  const _ChangeBlock({
-    required this.label,
-    required this.data,
-    required this.accent,
-  });
+  const _ChangeLines({required this.entry, required this.accent});
+
+  @override
+  State<_ChangeLines> createState() => _ChangeLinesState();
+}
+
+class _ChangeLinesState extends State<_ChangeLines> {
+  bool _showRaw = false;
+
+  String get _raw =>
+      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+        'action': widget.entry.action,
+        if (widget.entry.oldData != null) 'old_data': widget.entry.oldData,
+        if (widget.entry.newData != null) 'new_data': widget.entry.newData,
+      });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.backgroundPrimary,
-        borderRadius: const BorderRadius.horizontal(
-          right: Radius.circular(AppTheme.radiusControl),
-        ),
-        border: Border(left: BorderSide(color: accent, width: 2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+    final lines =
+        describeAuditChange(widget.entry.oldData, widget.entry.newData);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      spacing: 8,
+      children: <Widget>[
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppTheme.backgroundPrimary,
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(AppTheme.radiusControl),
+            ),
+            // Полоса берёт цвет действия: у одобрения зелёная, у скрытия
+            // красная — как точка в строке таблицы.
+            border: Border(left: BorderSide(color: widget.accent, width: 2)),
           ),
-          const SizedBox(height: 5),
+          child: lines.isEmpty
+              ? const Text(
+                  'Подробностей изменения у записи нет',
+                  style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 6,
+                  children: <Widget>[
+                    for (final line in lines) _ChangeLineRow(line: line),
+                  ],
+                ),
+        ),
+        Row(
+          spacing: 4,
+          children: <Widget>[
+            TextButton.icon(
+              onPressed: () => setState(() => _showRaw = !_showRaw),
+              icon: Icon(
+                _showRaw ? Icons.expand_less : Icons.expand_more,
+                size: 16,
+              ),
+              label:
+                  Text(_showRaw ? 'Скрыть исходную запись' : 'Исходная запись'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontBodyFamily,
+                  fontSize: 12,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                minimumSize: const Size(0, 30),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => Clipboard.setData(ClipboardData(text: _raw)),
+              icon: const Icon(Icons.copy, size: 14),
+              label: const Text('Скопировать код'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                textStyle: const TextStyle(
+                  fontFamily: AppTheme.fontBodyFamily,
+                  fontSize: 12,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                minimumSize: const Size(0, 30),
+              ),
+            ),
+          ],
+        ),
+        if (_showRaw)
           SelectableText(
-            const JsonEncoder.withIndent('  ').convert(data),
+            _raw,
             style: AppTheme.mono(
               fontSize: 12,
               height: 1.55,
               color: AppTheme.textDark,
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _ChangeLineRow extends StatelessWidget {
+  final AuditChangeLine line;
+
+  const _ChangeLineRow({required this.line});
+
+  @override
+  Widget build(BuildContext context) {
+    final before = line.before;
+    final after = line.after;
+
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(
+            fontSize: 13, height: 1.45, color: AppTheme.textDark),
+        children: <InlineSpan>[
+          TextSpan(
+            text: '${line.label}: ',
+            style: const TextStyle(color: AppTheme.textSecondary),
+          ),
+          if (before != null && after != null) ...<InlineSpan>[
+            TextSpan(text: before),
+            const TextSpan(
+              text: '  →  ',
+              style: TextStyle(color: AppTheme.textGrey),
+            ),
+            TextSpan(
+              text: after,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ] else if (after != null)
+            TextSpan(
+              text: after,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            )
+          else
+            // Ключ был только «до»: значение прежнее, после действия его нет.
+            TextSpan(text: '$before (было)'),
         ],
       ),
     );

@@ -564,7 +564,8 @@ void main() {
         ),
       );
       expect(card.value, '23,1%');
-      expect(card.valueNote, '287 отзывов');
+      // Доля по всем отзывам — и подписана так (A3-16).
+      expect(card.valueNote, '287 отзывов · за всё время');
     });
 
     testWidgets('оценки идут сверху вниз от пяти звёзд к одной',
