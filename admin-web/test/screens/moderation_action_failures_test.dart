@@ -370,4 +370,26 @@ void main() {
           reason: '«Повторить» снова загрузило карточку (A1-15)');
     });
   });
+
+  // Переход из «Здоровья данных» к карточке под сигналом (проход по панели
+  // модератора, 20.10, К-6): «/moderation/approved?q=…» ищет сразу.
+  group('Одобренные · поиск при входе', () {
+    testWidgets('initialSearch — поиск по всем статусам, а не список активных',
+        (tester) async {
+      final server = _Server(status: 'active');
+      final provider = ApprovedProvider(service: _service(server));
+      addTearDown(provider.dispose);
+      await pumpScreen(
+        tester,
+        provider,
+        const ApprovedScreen(initialSearch: 'Кухмістр'),
+      );
+
+      expect(server.calls, contains('GET /api/v1/admin/establishments/search'));
+      expect(server.calls,
+          isNot(contains('GET /api/v1/admin/establishments/active')));
+      expect(provider.searchQuery, 'Кухмістр');
+      expect(find.widgetWithText(TextField, 'Кухмістр'), findsOneWidget);
+    });
+  });
 }

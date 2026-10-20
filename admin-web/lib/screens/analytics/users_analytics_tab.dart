@@ -75,7 +75,7 @@ class UsersAnalyticsTab extends StatelessWidget {
             value: formatCount(data.total),
             // Сервер считает только действующие учётные записи: удалённая
             // остаётся в базе пустой оболочкой, и раньше её считали (A3-20).
-            valueNote: 'без удалённых и заблокированных',
+            valueNote: 'действующие',
           ),
           MetricCard(
             icon: Icons.person_add_alt_outlined,

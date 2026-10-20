@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
@@ -80,6 +81,7 @@ AuditLogEntry _entry({
   String? adminName = 'Всеволод',
   String? adminEmail = 'vsevolod@nirivio.by',
   String? actorRole,
+  String? actorKind,
   DateTime? createdAt,
   Map<String, dynamic>? entityContext,
   Map<String, dynamic>? oldData,
@@ -94,6 +96,7 @@ AuditLogEntry _entry({
       adminName: adminName,
       adminEmail: adminEmail,
       actorRole: actorRole,
+      actorKind: actorKind,
       createdAt: createdAt ?? DateTime.utc(2026, 7, 14, 6, 41),
       entityContext: entityContext,
       oldData: oldData,
@@ -112,10 +115,11 @@ void main() {
   Future<_FakeAuditLogService> pumpScreen(
     WidgetTester tester, {
     String? currentAdminEmail = 'vsevolod@nirivio.by',
+    double width = 1440,
   }) async {
     final fake = _FakeAuditLogService();
 
-    tester.view.physicalSize = const Size(1440, 820);
+    tester.view.physicalSize = Size(width, 820);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -755,5 +759,214 @@ void main() {
       // ровно `null`: без обёртки пункт молча ничего бы не делал.
       expect(fake.lastAction, isNull);
     });
+  });
+
+  // Проход по панели модератора, 20.10, пакет П2.
+  group('Журнал читается человеком', () {
+    testWidgets('у позиции меню — её название, а не «Позиция меню» и id',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'hide_menu_item',
+          summary: 'Скрыта позиция меню',
+          entityType: 'menu_item',
+          entityId: '7f5534fa-0000-4000-8000-000000000000',
+          entityContext: <String, dynamic>{
+            'item_name': 'Сырники со сметаной',
+            'establishment_name': 'Кофейня у моста',
+            'establishment_city': 'Гродно',
+          },
+          oldData: <String, dynamic>{
+            'item_name': 'Сырники со сметаной',
+            'is_hidden_by_admin': false,
+          },
+          newData: <String, dynamic>{
+            'is_hidden_by_admin': true,
+            'reason': 'цена ошибочная',
+          },
+        ),
+      ]);
+
+      expect(find.text('Сырники со сметаной'), findsOneWidget);
+      expect(find.text('Позиция меню'), findsNothing);
+
+      await tester.tap(find.text('Скрыта позиция меню'));
+      await tester.pump();
+      // Контекст называет позицию и заведение; снимок названия в «до» не
+      // повторяется строкой изменения.
+      expect(find.text('Кофейня у моста, Гродно'), findsOneWidget);
+      expect(
+        find.text('Скрыта модератором: нет  →  да', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.text('Причина: цена ошибочная', findRichText: true),
+          findsOneWidget);
+      expect(find.textContaining('Позиция: ', findRichText: true), findsNothing);
+    });
+
+    testWidgets('флаг проверки — фразой с числами, а не кодом причины',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'dismiss_sanity_flag',
+          summary: 'Снят флаг с позиции меню',
+          entityType: 'menu_item',
+          oldData: <String, dynamic>{
+            'sanity_flag': <String, dynamic>{
+              'reason': 'price_delta_anomaly',
+              'details': <String, dynamic>{
+                'previousPrice': 185,
+                'currentPrice': 13,
+                'ratio': 14.2,
+              },
+            },
+          },
+          newData: <String, dynamic>{'sanity_flag': null},
+        ),
+      ]);
+
+      await tester.tap(find.text('Снят флаг с позиции меню'));
+      await tester.pump();
+
+      expect(
+        find.textContaining('Цена упала с 185 до 13 BYN — в 14,2 раза',
+            findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('price_delta_anomaly', findRichText: true),
+          findsNothing);
+      expect(find.textContaining('sanity_flag', findRichText: true),
+          findsNothing);
+    });
+
+    testWidgets('исходник — под «Исходная запись», код копируется',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          oldData: <String, dynamic>{'status': 'pending'},
+          newData: <String, dynamic>{'status': 'active'},
+        ),
+      ]);
+
+      await tester.tap(find.text('Одобрено заведение'));
+      await tester.pump();
+      expect(find.textContaining('"status"', findRichText: true), findsNothing);
+      expect(find.text('Скопировать код'), findsOneWidget);
+
+      await tester.tap(find.text('Исходная запись'));
+      await tester.pump();
+      expect(find.textContaining('"status": "pending"', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets('незнакомое поле и незнакомое действие не пропадают молча',
+        (tester) async {
+      // Сторож дрейфа: сервер завёл код, о котором панель не знает. Он виден
+      // как есть — а не спрятан за вежливой подписью и не пропал.
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'brand_new_action',
+          summary: 'brand_new_action (establishment)',
+          newData: <String, dynamic>{'strange_key': 7},
+        ),
+      ]);
+
+      expect(find.text('brand_new_action (establishment)'), findsOneWidget);
+      await tester.tap(find.text('brand_new_action (establishment)'));
+      await tester.pump();
+      expect(find.text('поле «strange_key»: 7', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets('скрипт оператора и система названы, а не «не указан»',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          id: 'a',
+          action: 'change_email',
+          summary: 'Адрес e-mail учётной записи изменён',
+          entityType: 'user',
+          adminName: null,
+          adminEmail: null,
+          actorKind: 'operator_script',
+        ),
+        _entry(
+          id: 'b',
+          action: 'suspend',
+          summary: 'Приостановлено заведение',
+          adminName: null,
+          adminEmail: null,
+          actorKind: 'system',
+        ),
+      ]);
+
+      expect(find.text('КТО'), findsOneWidget);
+      expect(find.text('Скрипт оператора'), findsOneWidget);
+      expect(find.text('Система'), findsOneWidget);
+      expect(find.text('не указан'), findsNothing);
+      expect(find.text('?'), findsNothing);
+    });
+
+    testWidgets('«Обновить» перечитывает журнал', (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+      final before = fake.calls;
+
+      await tester.tap(find.text('Обновить'));
+      await tester.pump();
+
+      expect(fake.calls, before + 1);
+    });
+
+    testWidgets('произвольный период назван датами', (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+
+      tester
+          .element(find.byType(AuditLogScreen))
+          .read<AuditLogProvider>()
+          .setPeriod(
+            'custom',
+            from: DateTime(2026, 10, 1),
+            to: DateTime(2026, 10, 10),
+          );
+      await tester.pump();
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+
+      expect(find.textContaining('за 1 октября — 10 октября'), findsOneWidget);
+      expect(find.text('01.10.2026 — 10.10.2026'), findsOneWidget);
+    });
+
+    for (final window in <double>[1024, 1150]) {
+      testWidgets(
+          'окно ${window.toInt()}: имя объекта не режется до восьми букв',
+          (tester) async {
+        // Тело без рейла 260 — экран здесь пампится без каркаса.
+        final fake = await pumpScreen(tester, width: window - 260);
+        await settle(tester, fake, entries: <AuditLogEntry>[
+          _entry(
+            entityContext: <String, dynamic>{
+              'name': 'Кофейня у моста',
+              'city': 'Гродно',
+            },
+          ),
+        ]);
+
+        expect(tester.takeException(), isNull);
+        final name = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text('Кофейня у моста'),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(name.didExceedMaxLines, isFalse,
+            reason: 'имя объекта обрезано многоточием');
+      });
+    }
   });
 }

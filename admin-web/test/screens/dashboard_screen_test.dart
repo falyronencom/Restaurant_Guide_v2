@@ -164,10 +164,11 @@ void main() {
   Future<_FakeAnalyticsService> pumpDashboard(
     WidgetTester tester, {
     QualityHealthData? health,
+    double width = 1180,
   }) async {
     final fake = _FakeAnalyticsService();
 
-    tester.view.physicalSize = const Size(1180, 820);
+    tester.view.physicalSize = Size(width, 820);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -310,6 +311,38 @@ void main() {
       find.text('За выбранный период регистраций не было'),
       findsOneWidget,
     );
+  });
+
+  // Окна 1024 и 1150 телом, без рейла 260 (решение А; Chrome с панелью).
+  group('Узкое окно', () {
+    for (final window in <double>[1024, 1150]) {
+      testWidgets('окно ${window.toInt()}: ни подписи, ни числа не обрезаны',
+          (tester) async {
+        final fake = await pumpDashboard(
+          tester,
+          width: window - 260,
+          health: _health(unreachable: 3, hangingFlags: 12),
+        );
+        fake.overview.complete(_overview());
+        fake.users.complete(_users());
+        await settle(tester);
+
+        expect(tester.takeException(), isNull);
+        final clipped = tester
+            .renderObjectList<RenderParagraph>(find.descendant(
+              of: find.byType(MetricCard),
+              matching: find.byType(RichText),
+            ))
+            .where((p) => p.didExceedMaxLines)
+            .map((p) => p.text.toPlainText())
+            .toList();
+        expect(clipped, isEmpty);
+        // Панель «Требует внимания» рядом с графиком, а график не полоска.
+        final chart = tester.getRect(find.text('Регистрации пользователей'));
+        final attention = tester.getRect(find.text('Требует внимания'));
+        expect(attention.left, greaterThan(chart.left + 300));
+      });
+    }
   });
 
   group('строка «Сигналов здоровья данных»', () {
