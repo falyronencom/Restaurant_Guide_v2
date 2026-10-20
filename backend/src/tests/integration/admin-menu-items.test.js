@@ -234,12 +234,12 @@ describe('hide / unhide — one menu uploaded as several files', () => {
      RETURNING id`,
     [estId],
   )).rows[0].id;
-  const insertItem = async (estId, mediaId, itemName, priceByn, { hiddenReason = null } = {}) => (await query(
+  const insertItem = async (estId, mediaId, itemName, priceByn, { hiddenReason = null, category = null } = {}) => (await query(
     `INSERT INTO menu_items
-       (establishment_id, media_id, item_name, price_byn, is_hidden_by_admin, hidden_reason, position)
-     VALUES ($1, $2, $3, $4, $5, $6, 0)
+       (establishment_id, media_id, item_name, price_byn, category_raw, is_hidden_by_admin, hidden_reason, position)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 0)
      RETURNING id`,
-    [estId, mediaId, itemName, priceByn, hiddenReason !== null, hiddenReason],
+    [estId, mediaId, itemName, priceByn, category, hiddenReason !== null, hiddenReason],
   )).rows[0].id;
   const rowOf = async (id) => (await query('SELECT * FROM menu_items WHERE id = $1', [id])).rows[0];
 
@@ -293,6 +293,30 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     expect((await rowOf(pdfLatte)).is_hidden_by_admin).toBe(false);
     expect((await rowOf(pdfLatte)).hidden_reason).toBeNull();
     expect((await rowOf(boardLatte)).is_hidden_by_admin).toBe(true);
+  });
+
+  test('hiding the oysters on the card hides them in the main menu — the same section', async () => {
+    // SFB, 2026-10-19: the files share too little to be copies, but the
+    // oysters stand under «УСТРИЧНЫЙ БАР» in both — the guest sees one line.
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const mainId = await insertMedia(establishment.id);
+    const cardId = await insertMedia(establishment.id);
+    const mainOysters = await insertItem(establishment.id, mainId, 'Плато устриц', 196, { category: 'УСТРИЧНЫЙ БАР' });
+    for (const [name, price] of [['Тартар', 25], ['Сибас', 38], ['Паста', 22], ['Тирамису', 14]]) {
+      await insertItem(establishment.id, mainId, name, price, { category: 'КУХНЯ' });
+    }
+    const cardOysters = await insertItem(establishment.id, cardId, 'Плато устриц', 196, { category: 'УСТРИЧНЫЙ БАР' });
+    for (const [name, price] of [['Шабли', 30], ['Мюскаде', 26], ['Шампанское', 45], ['Сет устриц', 174]]) {
+      await insertItem(establishment.id, cardId, name, price, { category: 'ВИНО' });
+    }
+
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${cardOysters}/hide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'нет в продаже' })
+      .expect(200);
+
+    expect((await rowOf(mainOysters)).is_hidden_by_admin).toBe(true);
   });
 
   test('a dish of another menu (breakfast vs lunch) stays as it was', async () => {

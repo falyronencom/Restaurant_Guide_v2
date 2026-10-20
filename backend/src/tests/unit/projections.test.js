@@ -624,7 +624,8 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
   test('files sharing half the lines of the smaller one are copies of one menu', () => {
     const rows = [
       ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф']),
-      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай']),
+      // Another spelling of the section: only the copy rule joins them.
+      ...menuOf('b', ['Эспрессо', 'Американо', 'Какао', 'Чай'], { category_raw: 'НАПИТКИ' }),
     ];
 
     expect(collapseMenuRepeats(rows)).toHaveLength(6);
@@ -641,7 +642,7 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
 
   test('the smaller file decides: a short board fully inside the big menu is a copy', () => {
     const rows = [
-      ...menuOf('board', ['Эспрессо', 'Американо']),
+      ...menuOf('board', ['Эспрессо', 'Американо'], { category_raw: 'НА ДОСКЕ' }),
       ...menuOf('pdf', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
     ];
 
@@ -668,7 +669,7 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
     const rows = [
       ...menuOf('a', ['Эспрессо', 'Американо', 'Латте', 'Раф', 'Какао', 'Чай']),
       ...menuOf('b', ['Эспрессо', 'Американо', 'Сок', 'Морс']),
-      ...menuOf('c', ['Сок', 'Морс', 'Лимонад', 'Квас']),
+      ...menuOf('c', ['Сок', 'Морс', 'Лимонад', 'Квас'], { category_raw: 'НАПИТКИ' }),
     ];
 
     expect(collapseMenuRepeats(rows)).toHaveLength(12);
@@ -689,6 +690,71 @@ describe('collapseMenuRepeats — one menu uploaded as several files', () => {
       'Латте / КОФЕ',
       'Сироп / ЧАЙ',
     ]);
+  });
+
+  test('a board without headings joins the menu it copies, and only it — in any order of the files', () => {
+    // Phase 3.5 review of option «А»: the board's line used to stand for every
+    // section and chained the breakfast «Морс» into the lunch one.
+    const ids = ['m1', 'm2', 'm3'];
+    const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    for (const order of orders) {
+      const [breakfastId, lunchId, boardId] = order.map(i => ids[i]);
+      const rows = [
+        ...menuOf(breakfastId, ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: 'ЗАВТРАК' }),
+        ...menuOf(lunchId, ['Морс', 'Борщ', 'Котлета', 'Салат', 'Суп'], { category_raw: 'ОБЕД' }),
+        ...menuOf(boardId, ['Морс', 'Борщ'], { category_raw: null }),
+      ];
+      const breakfastMors = rows.find(r => r.media_id === breakfastId && r.item_name === 'Морс');
+      const lunchMors = rows.find(r => r.media_id === lunchId && r.item_name === 'Морс');
+      const boardMors = rows.find(r => r.media_id === boardId && r.item_name === 'Морс');
+
+      const mors = collapseMenuRepeats(rows).filter(r => r.item_name === 'Морс');
+
+      expect(mors.map(r => r.category_raw).sort()).toEqual(['ЗАВТРАК', 'ОБЕД']);
+      expect(findCopies(breakfastMors.id, rows)).toEqual([]);
+      expect(findCopies(lunchMors.id, rows).map(r => r.id)).toEqual([boardMors.id]);
+    }
+  });
+
+  test('no line holds two rows that disagree — in any order of the files', () => {
+    // Breakfast and lunch both sell «Морс» under «НАПИТКИ»; the board without
+    // headings copies the lunch menu. The board's row agrees with lunch (one
+    // menu), not with breakfast (another menu, no section): never one line.
+    const ids = ['m1', 'm2', 'm3'];
+    const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    for (const order of orders) {
+      const [breakfastId, lunchId, boardId] = order.map(i => ids[i]);
+      const rows = [
+        row(breakfastId, 'Морс', '5.00', { category_raw: 'НАПИТКИ' }),
+        ...menuOf(breakfastId, ['Каша', 'Омлет', 'Сырники'], { category_raw: 'ЗАВТРАК' }),
+        row(lunchId, 'Морс', '5.00', { category_raw: 'НАПИТКИ' }),
+        ...menuOf(lunchId, ['Борщ', 'Котлета', 'Салат', 'Суп'], { category_raw: 'ОБЕД' }),
+        row(boardId, 'Морс', '5.00', { category_raw: null }),
+        row(boardId, 'Борщ', '5.00', { category_raw: null }),
+      ];
+      const of = media => rows.find(r => r.media_id === media && r.item_name === 'Морс');
+
+      expect(findCopies(of(breakfastId).id, rows).map(r => r.id)).not.toContain(of(boardId).id);
+      expect(findCopies(of(boardId).id, rows).map(r => r.id)).not.toContain(of(breakfastId).id);
+    }
+  });
+
+  test('two menus without headings keep a shared dish in each', () => {
+    const rows = [
+      ...menuOf('a', ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: null }),
+      ...menuOf('b', ['Морс', 'Борщ', 'Котлета', 'Салат'], { category_raw: null }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(8);
+  });
+
+  test('a section of symbols only is no section', () => {
+    const rows = [
+      ...menuOf('a', ['Морс', 'Каша', 'Омлет', 'Сырники'], { category_raw: '***' }),
+      ...menuOf('b', ['Морс', 'Борщ', 'Котлета', 'Салат'], { category_raw: '— • —' }),
+    ];
+
+    expect(collapseMenuRepeats(rows)).toHaveLength(8);
   });
 
   test('copies pair by section first, then by order', () => {
