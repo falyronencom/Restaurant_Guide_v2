@@ -139,6 +139,11 @@ class PromotionProvider with ChangeNotifier {
   }
 
   /// Update an existing promotion
+  ///
+  /// A field left `null` is not sent — the server keeps it as it is. To take
+  /// the end date off, pass [clearValidUntil]: the server reads an empty end
+  /// as «без срока» (promotionController.updatePromotion, PR #86). Until
+  /// 20.10.2026 a cleared end date was simply not sent, and the old one stayed.
   Future<bool> updatePromotion({
     required String promotionId,
     required String establishmentId,
@@ -147,7 +152,10 @@ class PromotionProvider with ChangeNotifier {
     String? imagePath,
     String? validFrom,
     String? validUntil,
+    bool clearValidUntil = false,
   }) async {
+    assert(!clearValidUntil || validUntil == null,
+        'an end date and its clearing at once');
     _actionError = null;
 
     try {
@@ -155,7 +163,10 @@ class PromotionProvider with ChangeNotifier {
         if (title != null) 'title': title,
         if (description != null) 'description': description,
         if (validFrom != null) 'valid_from': validFrom,
-        if (validUntil != null) 'valid_until': validUntil,
+        if (clearValidUntil)
+          'valid_until': ''
+        else if (validUntil != null)
+          'valid_until': validUntil,
         if (imagePath != null)
           'image': await MultipartFile.fromFile(imagePath, filename: 'promo.jpg'),
       });

@@ -38,10 +38,14 @@ import '../support/wire_stand.dart';
 const _imagePickerChannel = MethodChannel('plugins.flutter.io/image_picker');
 
 /// Выбор PDF: у `file_picker` реализация по умолчанию не задана вовсе.
+///
+/// [size] — размер, который сообщает выбор файла; по нему экран и решает,
+/// отправлять ли файл. Сам файл на диске — два байта.
 class _PickedPdf extends FilePicker {
-  _PickedPdf(this.path);
+  _PickedPdf(this.path, {this.size = 4});
 
   final String path;
+  final int size;
 
   @override
   Future<FilePickerResult?> pickFiles({
@@ -58,8 +62,12 @@ class _PickedPdf extends FilePicker {
     bool lockParentWindow = false,
     bool readSequential = false,
   }) async =>
-      FilePickerResult([PlatformFile(path: path, name: 'menu.pdf', size: 4)]);
+      FilePickerResult(
+          [PlatformFile(path: path, name: 'menu.pdf', size: size)]);
 }
+
+const _invalidTypeRefusal = 'Этот формат не подходит: фото — JPG, PNG, WebP '
+    'или HEIC, меню — ещё и PDF.';
 
 /// Сбой сервера. Для программной ошибки бэкенд отдаёт в `message` текст
 /// исключения как есть — английский и внутренний; партнёру он не годится.
@@ -199,19 +207,18 @@ void main() {
 
     testWidgets('отказ сервера — его фраза целиком, без приставки',
         (tester) async {
-      // Ответ маршрута загрузки на файл больше 10 МБ. Тексты этого маршрута
-      // сегодня английские (перевод текстов сервера — отдельная задача);
-      // правило одно — после перевода партнёр прочтёт русский без правки
-      // приложения.
+      // Ответ маршрута загрузки на фото больше 10 МБ (`tempMediaRoutes.js`,
+      // `UPLOAD_REFUSALS.photoTooLarge`; русский — с 19.10.2026).
       respond = (_) => jsonBody(<String, dynamic>{
             'success': false,
-            'message': 'File size exceeds 10MB limit',
+            'message': 'Фото больше 10 МБ. Выберите фото поменьше.',
             'error': <String, dynamic>{'code': 'FILE_TOO_LARGE'},
-          }, status: 413);
+          }, status: 422);
 
       await tapAdd(tester, '+ Добавить фото');
 
-      expect(await snackBarText(tester), 'File size exceeds 10MB limit');
+      expect(await snackBarText(tester),
+          'Фото больше 10 МБ. Выберите фото поменьше.');
       expect(wire.requests.single.path, '/api/v1/partner/media/upload');
     });
 
@@ -261,15 +268,17 @@ void main() {
   group('PDF меню', () {
     testWidgets('отказ сервера — его фраза целиком, без приставки',
         (tester) async {
+      // Ответ маршрута загрузки на файл не того формата (`tempMediaRoutes.js`,
+      // `UPLOAD_REFUSALS.invalidFileType`).
       respond = (_) => jsonBody(<String, dynamic>{
             'success': false,
-            'message': 'PDF file size exceeds 60MB limit',
-            'error': <String, dynamic>{'code': 'FILE_TOO_LARGE'},
+            'message': _invalidTypeRefusal,
+            'error': <String, dynamic>{'code': 'INVALID_FILE_TYPE'},
           }, status: 422);
 
       await tapAdd(tester, '+ Добавить PDF меню');
 
-      expect(await snackBarText(tester), 'PDF file size exceeds 60MB limit');
+      expect(await snackBarText(tester), _invalidTypeRefusal);
       expect(wire.requests.single.path, '/api/v1/partner/media/upload');
     });
 
@@ -280,6 +289,62 @@ void main() {
 
       expect(await snackBarText(tester),
           'Не удалось загрузить PDF меню. Попробуйте ещё раз.');
+    });
+  });
+
+  /// Предел PDF меню — предел облака на сегодняшнем тарифе, 10 МБ (мегабайт
+  /// — 1024 × 1024 байта, как у сервера). До 20.10.2026 приложение
+  /// пропускало PDF до 60 МБ: файл больше 10 МБ целиком ехал на сервер,
+  /// чтобы получить отказ, а подсказка под кнопкой обещала 60 МБ. Текст
+  /// отказа — фраза сервера (`UPLOAD_REFUSALS.pdfOverCloudLimit`),
+  /// утверждённая Координатором 17.10.2026; здесь — литералом, точным
+  /// равенством.
+  group('PDF меню: предел 10 МБ', () {
+    const tenMb = 10 * 1024 * 1024;
+
+    testWidgets('ровно 10 МБ — файл уходит на сервер', (tester) async {
+      FilePicker.platform = _PickedPdf(pdf.path, size: tenMb);
+      respond = (_) => jsonBody(<String, dynamic>{
+            'success': true,
+            'data': <String, dynamic>{
+              'url': 'https://res.cloudinary.com/demo/image/upload/menu.pdf',
+              'thumbnail_url':
+                  'https://res.cloudinary.com/demo/image/upload/pg_1/menu.jpg',
+              'preview_url':
+                  'https://res.cloudinary.com/demo/image/upload/pg_1/menu.jpg',
+              'file_type': 'pdf',
+            },
+          }, status: 201);
+
+      await tapAdd(tester, '+ Добавить PDF меню');
+
+      expect(await snackBarText(tester), 'PDF меню загружено');
+      expect(wire.requests.single.path, '/api/v1/partner/media/upload');
+    });
+
+    testWidgets('10 МБ и 1 байт — отказ до сервера, фразой сервера',
+        (tester) async {
+      FilePicker.platform = _PickedPdf(pdf.path, size: tenMb + 1);
+
+      await tapAdd(tester, '+ Добавить PDF меню');
+
+      expect(
+          await snackBarText(tester),
+          'Файл PDF больше 10 МБ — уменьшите его или загрузите меню '
+          'фотографиями');
+      expect(wire.requests, isEmpty,
+          reason: 'файл больше предела не должен уходить на сервер');
+    });
+
+    testWidgets('подсказка под кнопкой называет тот же предел',
+        (tester) async {
+      await tester.pumpWidget(ChangeNotifierProvider(
+        create: (_) => PartnerRegistrationProvider(),
+        child: const MaterialApp(home: Scaffold(body: MediaStep())),
+      ));
+
+      expect(find.text('Формат PDF, до 10 мб, максимум 2 файла'),
+          findsOneWidget);
     });
   });
 }
