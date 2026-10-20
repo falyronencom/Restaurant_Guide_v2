@@ -33,6 +33,20 @@ const ESTABLISHMENT_NOT_OWNED =
  */
 const DAILY_UPLOAD_LIMIT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
 
+/**
+ * A form the server will not read: busboy cannot read it as a whole
+ * (middleware/upload.js UNREADABLE_FORM_MESSAGE, every uploader — wording
+ * approved by the Coordinator on 16.10.2026, PR #52), or multer stops reading
+ * it at a limit — too many fields or parts, a bracketed field name, and on
+ * the avatar a file under another field's name (the card's media answers
+ * that one with UPLOAD_REFUSALS.unexpectedField). One sentence for the form
+ * whatever stopped it; no client sends such a form. multer's own refusals
+ * answer with it on the card's media and the avatar (from 20.10.2026;
+ * multer's English before), the wizard's upload and the promotions keep
+ * multer's text.
+ */
+const FORM_NOT_READ = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
+
 /** A booking's present status, as the partner reads it when an action is refused. */
 const BOOKING_STATUS_PHRASES = {
   pending: 'Бронь ещё не подтверждена.',
@@ -127,6 +141,8 @@ export const UPLOAD_REFUSALS = Object.freeze({
   // The account's daily allowance is spent — the same sentence answers the
   // card's media and the avatar (DAILY_UPLOAD_LIMIT above).
   dailyLimit: DAILY_UPLOAD_LIMIT,
+  // multer's other refusals on the card's media (FORM_NOT_READ above).
+  formNotRead: FORM_NOT_READ,
 });
 
 /**
@@ -174,4 +190,7 @@ export const AVATAR_REFUSALS = Object.freeze({
   // middleware/upload.js imageFilter: image/jpeg, image/png, image/webp.
   invalidFileType: 'Такой формат фото не подходит. Нужны JPEG, PNG или WebP.',
   fileRequired: 'Выберите фото.',
+  // multer's other refusals — a second field, too many fields and the like
+  // (FORM_NOT_READ above).
+  formNotRead: FORM_NOT_READ,
 });

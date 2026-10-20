@@ -20,6 +20,7 @@
 import * as adminService from '../services/adminService.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { isViewer } from '../config/panelRoles.js';
+import { isCanonicalUuid } from '../utils/canonicalUuid.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -443,9 +444,12 @@ export const claimEstablishment = asyncHandler(async (req, res) => {
     );
   }
 
-  // Basic UUID format check
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(user_id)) {
+  // The id as the database writes it (utils/canonicalUuid.js), from 20.10.2026.
+  // Postgres finds the account by an id in capitals too, but the service's
+  // «already this user's» check compares strings: the card's own owner in
+  // capitals passed it, and the card got claimed_at with no handover. The
+  // panel sends the id from the search, already canonical.
+  if (!isCanonicalUuid(user_id)) {
     throw new AppError(
       'user_id must be a valid UUID',
       422,

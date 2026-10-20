@@ -18,9 +18,35 @@ import * as EstablishmentController from '../../controllers/establishmentControl
 import * as EstablishmentValidation from '../../validators/establishmentValidation.js';
 import * as partnerMenuItemController from '../../controllers/partnerMenuItemController.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
-import { validate } from '../../middleware/errorHandler.js';
+import { AppError, validate } from '../../middleware/errorHandler.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
+import { ESTABLISHMENT_REFUSALS } from '../../constants/establishmentRefusals.js';
+import { isCanonicalUuid } from '../../utils/canonicalUuid.js';
 import mediaRoutes from './mediaRoutes.js';
+
+/**
+ * The card id as the database writes it (utils/canonicalUuid.js) on every
+ * /:id… route here, after the role check and before anything else (from
+ * 20.10.2026). Postgres reads an id in capitals or in braces as the same card,
+ * but saving the card builds the card's own file folder from the id as the
+ * request wrote it (services/establishmentService.js, ownedFolders) and
+ * refused the card's own files (422 MEDIA_URL_NOT_OWNED); the other routes
+ * did not check the id at all, and a non-UUID came back as the database's
+ * English 400. Each route refuses such an id as it refuses a card that is gone
+ * or not the caller's — the same status and code, the card's text (the menu's
+ * service still answers a foreign card in English: the app shows its own
+ * phrase there, the site translates by code). The card's media
+ * (mediaRoutes.js) has the same check of its own.
+ */
+const canonicalCardId = (message, status, code) => (req, res, next) => (
+  isCanonicalUuid(req.params.id) ? next() : next(new AppError(message, status, code))
+);
+// Opening the card: its service answers a foreign card 404 «не найдено».
+const cardIdOpen = canonicalCardId(ESTABLISHMENT_REFUSALS.notFound, 404, 'ESTABLISHMENT_NOT_FOUND');
+// Save, submit, pause, resume, delete: 403 FORBIDDEN with «нет доступа».
+const cardIdAction = canonicalCardId(ESTABLISHMENT_REFUSALS.notOwner, 403, 'FORBIDDEN');
+// The menu and its re-recognition: 404 ESTABLISHMENT_NOT_FOUND, as the media's.
+const cardIdMenu = canonicalCardId(ESTABLISHMENT_REFUSALS.notOwner, 404, 'ESTABLISHMENT_NOT_FOUND');
 
 // 5 OCR retries per partner per day — protects OpenRouter quota against abuse.
 const ocrRestartLimiter = createRateLimiter({
@@ -113,6 +139,7 @@ router.post(
 router.get(
   '/:id',
   authorize(['partner']),
+  cardIdOpen,
   EstablishmentValidation.validateGetDetails,
   validate,
   EstablishmentController.getEstablishmentDetails,
@@ -144,6 +171,7 @@ router.get(
 router.put(
   '/:id',
   authorize(['partner']),
+  cardIdAction,
   EstablishmentValidation.validateUpdate,
   validate,
   EstablishmentController.updateEstablishment,
@@ -178,6 +206,7 @@ router.put(
 router.post(
   '/:id/submit',
   authorize(['partner']),
+  cardIdAction,
   EstablishmentValidation.validateSubmit,
   validate,
   EstablishmentController.submitForModeration,
@@ -193,6 +222,7 @@ router.post(
 router.post(
   '/:id/suspend',
   authorize(['partner']),
+  cardIdAction,
   EstablishmentController.suspendEstablishment,
 );
 
@@ -206,6 +236,7 @@ router.post(
 router.post(
   '/:id/resume',
   authorize(['partner']),
+  cardIdAction,
   EstablishmentController.resumeEstablishment,
 );
 
@@ -217,6 +248,7 @@ router.post(
 router.delete(
   '/:id',
   authorize(['partner']),
+  cardIdAction,
   EstablishmentController.deleteEstablishment,
 );
 
@@ -231,6 +263,7 @@ router.delete(
 router.get(
   '/:id/menu-items',
   authorize(['partner']),
+  cardIdMenu,
   partnerMenuItemController.listMenuItems,
 );
 
@@ -243,6 +276,7 @@ router.get(
 router.post(
   '/:id/retry-ocr',
   authorize(['partner']),
+  cardIdMenu,
   ocrRestartLimiter,
   partnerMenuItemController.retryOcr,
 );

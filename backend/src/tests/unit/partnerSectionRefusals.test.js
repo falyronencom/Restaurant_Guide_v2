@@ -135,9 +135,10 @@ describe('Отказы партнёру вне карточки: тексты', 
     const all = texts();
     // Сторож перебора: тексты нашлись (9 загрузки + 2 вызова предела облака
     // + 3 брони + 9 вызовов статуса + 11 акций + 1 вызов лимита + 5 медиа
-    // карточки + 3 аватара на 20.10.2026; 35 на 19.10.2026, 33 на 18.10.2026,
-    // 27 на 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(43);
+    // карточки + 3 аватара на 20.10.2026, и фраза формы у загрузки и аватара
+    // — 45 вечером того же дня; 35 на 19.10.2026, 33 на 18.10.2026, 27 на
+    // 13.10.2026).
+    expect(all.length).toBeGreaterThanOrEqual(45);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -232,8 +233,9 @@ describe('Отказы партнёру вне карточки: исходни�
     const messages = messageTexts(code);
     // Сторож разбора: ответы с текстом нашлись (4 на 19.10.2026).
     expect(messages.length).toBeGreaterThanOrEqual(4);
-    // То же исключение, что у мастера: прочие отказы разбора формы multer.
-    expect(notFrom('UPLOAD_REFUSALS', messages, { allowed: ['error.message'] })).toEqual([]);
+    // Без исключения мастера: прочие отказы разбора формы multer отвечают
+    // фразой формы (UPLOAD_REFUSALS.formNotRead, с 20.10.2026).
+    expect(notFrom('UPLOAD_REFUSALS', messages)).toEqual([]);
     // id карточки не так, как его пишет база, — отказ чужой или удалённой
     // карточки (1 на 20.10.2026).
     const refusals = appErrorTexts(code);
@@ -291,6 +293,10 @@ describe('Отказы партнёру вне карточки: исходни�
       expect(notFrom('AVATAR_REFUSALS', messageTexts(code), { allowed: ['UPLOAD_REFUSALS.dailyLimit'] }))
         .toEqual([]);
     }
+    // Прочие отказы multer маршрут отдаёт обработчику ошибок фразой формы
+    // (1 AppError на 20.10.2026; до того — английский текст multer).
+    expect(appErrorTexts(route).length).toBeGreaterThanOrEqual(1);
+    expect(notFrom('AVATAR_REFUSALS', appErrorTexts(route))).toEqual([]);
   });
 
   it('брони (bookingService.js): каждый отказ партнёру — из BOOKING_REFUSALS', () => {
