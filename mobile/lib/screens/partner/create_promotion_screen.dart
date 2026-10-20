@@ -309,6 +309,18 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  /// The end date as the edit sends it: the new date when the partner picked
+  /// one, a clearing when they took the old one off, nothing when it is as it
+  /// was — an untouched date does not travel.
+  ({String? date, bool clear}) _validUntilChange() {
+    final before = widget.existingPromotion!.validUntil;
+    final now = _validUntil;
+    if (now == null) return (date: null, clear: before != null);
+    final date = _formatDateForApi(now);
+    final unchanged = before != null && _formatDateForApi(before) == date;
+    return (date: unchanged ? null : date, clear: false);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -318,6 +330,7 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
     bool success;
 
     if (_isEditMode) {
+      final validUntil = _validUntilChange();
       success = await provider.updatePromotion(
         promotionId: widget.existingPromotion!.id,
         establishmentId: widget.establishmentId,
@@ -325,7 +338,8 @@ class _CreatePromotionScreenState extends State<CreatePromotionScreen> {
         description: _descriptionController.text.trim(),
         imagePath: _imagePath,
         validFrom: _validFrom != null ? _formatDateForApi(_validFrom!) : null,
-        validUntil: _validUntil != null ? _formatDateForApi(_validUntil!) : null,
+        validUntil: validUntil.date,
+        clearValidUntil: validUntil.clear,
       );
     } else {
       success = await provider.createPromotion(

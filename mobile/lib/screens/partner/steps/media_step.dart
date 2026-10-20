@@ -10,6 +10,19 @@ import 'package:restaurant_guide_mobile/providers/partner_registration_provider.
 import 'package:restaurant_guide_mobile/services/media_service.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
+/// The largest menu PDF the server takes, in bytes: the cloud's file limit on
+/// today's plan (backend `config/cloudinary.js`, `CLOUD_MAX_FILE_MB`, 10 МБ —
+/// a megabyte is 1024 × 1024 bytes there too). Exactly 10 МБ still goes.
+/// Above it the server refuses only after the whole file has travelled, so
+/// the app refuses first, with the server's own wording
+/// (`UPLOAD_REFUSALS.pdfOverCloudLimit`, approved by the Coordinator
+/// 17.10.2026). The server's ceiling for files stays 60 МБ until build 37.
+const int menuPdfMaxBytes = 10 * 1024 * 1024;
+
+/// What the partner reads when the chosen PDF is above [menuPdfMaxBytes].
+const String menuPdfTooLargeText =
+    'Файл PDF больше 10 МБ — уменьшите его или загрузите меню фотографиями';
+
 /// Step 4: Media Upload
 /// Allows user to upload establishment photos and menu
 /// Based on Figma design: Media/Menu files frame
@@ -237,7 +250,7 @@ class _MediaStepState extends State<MediaStep> {
         // PDF option hint
         const Center(
           child: Text(
-            'Формат PDF, до 60 мб, максимум 2 файла',
+            'Формат PDF, до 10 мб, максимум 2 файла',
             style: TextStyle(
               fontSize: 13,
               color: _greyText,
@@ -549,8 +562,8 @@ class _MediaStepState extends State<MediaStep> {
       }
 
       // Client-side guard against oversized file before hitting backend
-      if (picked.size > 60 * 1024 * 1024) {
-        _showSnackBar('Размер PDF превышает 60 МБ', isError: true);
+      if (picked.size > menuPdfMaxBytes) {
+        _showSnackBar(menuPdfTooLargeText, isError: true);
         return;
       }
 
