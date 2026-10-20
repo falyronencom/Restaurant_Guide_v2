@@ -179,3 +179,48 @@ VoidCallback showAdminErrorToast(
 
   return remove;
 }
+
+/// Владелец тоста ошибки на экране: одна неудача — один тост.
+///
+/// Провайдер уведомляет много раз за одну неудачу, а тост должен появиться
+/// один; новая неудача снимает прежний тост. Экраны «Позиции меню», «Отзывы»
+/// и журнал держат то же устройство своими полями — этот класс для новых мест,
+/// чтобы не писать его в каждом экране заново.
+///
+/// Показ откладывается на кадр: уведомление может прийти во время сборки, а
+/// вставлять оверлей на этой фазе нельзя.
+class AdminErrorToastReporter {
+  VoidCallback? _dismiss;
+  Object? _reported;
+
+  /// Сообщить о неудаче [key]. Тот же [key], что в прошлый раз, — молчит;
+  /// `null` — неудачи нет, следующая (даже такая же) покажется снова.
+  void report(
+    State state, {
+    required Object? key,
+    required String title,
+    required String message,
+    VoidCallback? onRetry,
+  }) {
+    if (key == null) {
+      _reported = null;
+      return;
+    }
+    if (key == _reported) return;
+    _reported = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!state.mounted) return;
+      _dismiss?.call();
+      _dismiss = showAdminErrorToast(
+        state.context,
+        title: title,
+        message: message,
+        onRetry: onRetry,
+      );
+    });
+  }
+
+  /// Снять тост — экран уходит.
+  void dispose() => _dismiss?.call();
+}

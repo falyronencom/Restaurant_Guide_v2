@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Per-field review state during moderation session
 enum FieldReviewStatus { neutral, approved, rejected }
@@ -402,7 +403,9 @@ class ModerationProvider with ChangeNotifier {
 
   Future<bool> approveEstablishment() async {
     final id = _shownId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, — не второе решение (пункт
+    // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -439,13 +442,16 @@ class ModerationProvider with ChangeNotifier {
       if (_selectedId == id) _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();
+      _reloadIfQueueStale(e);
       return false;
     }
   }
 
   Future<bool> rejectEstablishment() async {
     final id = _shownId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, — не второе решение (пункт
+    // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -482,7 +488,17 @@ class ModerationProvider with ChangeNotifier {
       if (_selectedId == id) _submitError = _extractMessage(e);
       _isSubmitting = false;
       notifyListeners();
+      _reloadIfQueueStale(e);
       return false;
+    }
+  }
+
+  /// Заявку уже разобрал другой модератор или её изменил партнёр: очередь на
+  /// экране устарела, и повтор получил бы тот же отказ. Причина остаётся под
+  /// кнопками, пока заявка открыта; ушла из очереди — уходит с ней.
+  void _reloadIfQueueStale(Object error) {
+    if (refusalMeansStaleData(error)) {
+      loadPendingEstablishments(page: _currentPage);
     }
   }
 
@@ -493,7 +509,9 @@ class ModerationProvider with ChangeNotifier {
   /// Update establishment coordinates (admin correction)
   Future<bool> updateCoordinates(double latitude, double longitude) async {
     final id = _shownId;
-    if (id == null) return false;
+    // Второй клик, пока первый запрос в пути, — не второе решение (пункт
+    // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
+    if (id == null || _isSubmitting) return false;
     final generation = _generation;
 
     _isSubmitting = true;
@@ -530,12 +548,7 @@ class ModerationProvider with ChangeNotifier {
   // Helpers
   // ============================================================================
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('Connection timeout')) return 'Превышено время ожидания';
-    if (msg.contains('No internet')) return 'Нет подключения к серверу';
-    if (msg.contains('403')) return 'Доступ запрещён';
-    if (msg.contains('404')) return 'Заведение не найдено';
-    return 'Произошла ошибка. Попробуйте снова.';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error, notFound: kEstablishmentNotFoundPhrase);
 }

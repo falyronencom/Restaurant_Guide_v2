@@ -132,6 +132,34 @@ void main() {
 
     expect(service.calls, isEmpty);
     expect(find.byType(AlertDialog), findsOneWidget);
+    // Окно говорит, что не так: раньше «Сохранить» молча не делало ничего
+    // (пункт A1-09).
+    expect(find.text('Введите число, например 53.9045'), findsOneWidget);
+  });
+
+  testWidgets('запятая — обычный русский ввод — принимается', (tester) async {
+    final service = await openDialog(tester);
+
+    final fields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(fields.at(0), '53,9045');
+    await tester.enterText(fields.at(1), ' 27,55 ');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Сохранить'));
+    await tester.pumpAndSettle();
+
+    expect(service.calls, <String>['est-1 53.9045 27.55']);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('подписи полей — по-русски, без «latitude»', (tester) async {
+    await openDialog(tester);
+
+    expect(find.text('Широта'), findsOneWidget);
+    expect(find.text('Долгота'), findsOneWidget);
+    expect(find.textContaining('latitude'), findsNothing);
+    expect(find.textContaining('longitude'), findsNothing);
   });
 
   testWidgets('«Отмена» после правки поля закрывает окно без ошибок',

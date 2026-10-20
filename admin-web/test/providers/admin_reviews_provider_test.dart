@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_reviews_provider.dart';
 import 'package:restaurant_guide_admin_web/services/admin_review_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 // Отзывы: что провайдер знает о выборке и что делает после действия.
 //
@@ -71,12 +73,17 @@ class _FakeAdminReviewService implements AdminReviewService {
     );
   }
 
+  /// Держит действие «в пути», пока тест не отпустит.
+  Completer<void>? actionGate;
+
   @override
   Future<void> setVisibility(String id, {required bool isVisible}) async {
     toggleCalls++;
     visibilityTargets.add(isVisible);
     final failure = failActionWith;
     if (failure != null) throw failure;
+    final gate = actionGate;
+    if (gate != null) await gate.future;
   }
 
   @override
@@ -89,6 +96,24 @@ class _FakeAdminReviewService implements AdminReviewService {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Отказ сервера — как его отдаёт транспорт: статус и тело ответа.
+DioException _refusal(int status, String code, String message) {
+  final options = RequestOptions(path: '/api/v1/admin/reviews/r1');
+  return DioException(
+    requestOptions: options,
+    response: Response<dynamic>(
+      requestOptions: options,
+      statusCode: status,
+      data: <String, dynamic>{
+        'success': false,
+        'message': message,
+        'error': <String, dynamic>{'code': code},
+      },
+    ),
+    type: DioExceptionType.badResponse,
+  );
 }
 
 AdminReviewItem _review({
@@ -255,7 +280,38 @@ void main() {
       expect(provider.submitError, isNotNull);
     });
 
-    // «Цель явная» выше проверена только для скрытия: клиент, всегда
+    test('отказ «уже удалён»: причина словами, страница перечитана', () async {
+      // Другой модератор успел первым. Откат вернул строку к виду «до
+      // клика», а на сервере она уже другая (пункт A2-19).
+      await provider.loadReviews();
+      provider.selectReview('r1');
+      fake.failActionWith = _refusal(404, 'REVIEW_NOT_FOUND',
+          'Review not found or already deleted');
+
+      final ok = await provider.deleteReview('оскорбления');
+
+      expect(ok, isFalse);
+      expect(provider.submitError, kReviewNotFoundPhrase);
+      expect(fake.listCalls, <int>[1, 1],
+          reason: 'после отказа «уже не так» страница перечитана');
+    });
+
+    test('второй клик, пока действие в пути, второго запроса не шлёт',
+        () async {
+      await provider.loadReviews();
+      provider.selectReview('r1');
+      fake.actionGate = Completer<void>();
+
+      final first = provider.setVisibility(visible: false);
+      final second = await provider.setVisibility(visible: false);
+
+      expect(second, isFalse);
+      expect(fake.toggleCalls, 1, reason: 'защита — в провайдере (A2-19)');
+      fake.actionGate!.complete();
+      await first;
+    });
+
+
     // просящий `false`, прошёл бы его, а «Показать» прятало бы отзыв.
     test('«Показать» просит видимость, а не скрытие', () async {
       fake.reviews = <AdminReviewItem>[

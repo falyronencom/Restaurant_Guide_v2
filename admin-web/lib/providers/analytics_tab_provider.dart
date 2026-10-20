@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 
 /// Общее устройство вкладки аналитики: данные, период, ошибка, загрузка.
@@ -117,12 +118,7 @@ abstract class AnalyticsTabProvider<T> with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
   @protected
-  String extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('Connection timeout')) return 'Превышено время ожидания';
-    if (msg.contains('No internet')) return 'Нет подключения к серверу';
-    if (msg.contains('403')) return 'Доступ запрещён';
-    return 'Произошла ошибка. Попробуйте снова.';
-  }
+  String extractMessage(Object error) => describeError(error);
 }

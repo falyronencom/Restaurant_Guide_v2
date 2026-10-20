@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/services/quality_health_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Гонки в `QualityHealthProvider`.
 ///
@@ -115,7 +117,7 @@ void main() {
 
     fake.pending[1].complete(_data(222));
     await Future<void>.delayed(Duration.zero);
-    fake.pending[0].completeError(Exception('Connection timeout'));
+    fake.pending[0].completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionTimeout));
     await Future<void>.delayed(Duration.zero);
 
     expect(provider.data!.unreachableCount, 222);
@@ -128,13 +130,13 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     provider.refresh();
-    fake.pending[1].completeError(Exception('Connection timeout'));
+    fake.pending[1].completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionTimeout));
     await Future<void>.delayed(Duration.zero);
 
     // Данные остаются: экран покажет их и сообщит о сбое тостом. Обнулять их
     // значило бы потерять уже прочитанное из-за неудачного повтора.
     expect(provider.data!.unreachableCount, 111);
-    expect(provider.error, 'Превышено время ожидания');
+    expect(provider.error, kTimeoutPhrase);
   });
 
   test('после завершения обычная загрузка снова проходит', () async {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -51,6 +52,15 @@ class _FakeAdminReviewService implements AdminReviewService {
   @override
   Future<void> deleteReview(String id, {String? reason}) async {
     deleted.add((id, reason));
+  }
+
+  /// Чем ответить на «Скрыть / Показать».
+  Object? visibilityFailure;
+
+  @override
+  Future<void> setVisibility(String id, {required bool isVisible}) async {
+    final failure = visibilityFailure;
+    if (failure != null) throw failure;
   }
 
   @override
@@ -621,6 +631,36 @@ void main() {
       expect(find.text('Удалить'), findsNothing);
       // Сам разбор на месте: панель озаглавлена заведением.
       expect(find.text('Кухмістр'), findsWidgets);
+    });
+
+    testWidgets('сбой «Показать» — причина строкой под кнопками',
+        (tester) async {
+      // До 20.10 провайдер писал причину, а экран её не читал: отзыв на
+      // секунду менял вид и тихо возвращался (пункт A2-01).
+      final fake = await open(tester, _review(isVisible: false));
+      final options = RequestOptions(path: '/api/v1/admin/reviews/r1/visibility');
+      fake.visibilityFailure = DioException(
+        requestOptions: options,
+        response: Response<dynamic>(
+          requestOptions: options,
+          statusCode: 409,
+          data: <String, dynamic>{
+            'success': false,
+            'message': 'Review visibility was changed concurrently',
+            'error': <String, dynamic>{'code': 'VISIBILITY_CONFLICT'},
+          },
+        ),
+        type: DioExceptionType.badResponse,
+      );
+
+      await tester.tap(find.text('Показать отзыв'));
+      await tester.pump();
+      await tester.pump();
+
+      final error = find.byKey(const ValueKey<String>('review-action-error'));
+      expect(error, findsOneWidget);
+      expect(tester.widget<Text>(error).data,
+          'Видимость отзыва только что изменили.');
     });
 
     testWidgets('диалог скрытия предупреждает о пересчёте оценки',

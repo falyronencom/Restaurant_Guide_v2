@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_menu_item_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Область очереди по признаку скрытости.
 ///
@@ -79,6 +80,8 @@ class MenuItemsModerationProvider with ChangeNotifier {
 
   bool _isSubmittingAction = false;
   String? _actionError;
+  String? _actionErrorReason;
+  bool _actionRefusedAsStale = false;
 
   // ============================================================================
   // Getters
@@ -131,7 +134,17 @@ class MenuItemsModerationProvider with ChangeNotifier {
   List<String> get availableReasons => _reasons;
 
   bool get isSubmittingAction => _isSubmittingAction;
+
+  /// Какое действие не удалось: «Позиция не скрыта».
   String? get actionError => _actionError;
+
+  /// Почему — текст сервера или фраза по коду отказа; читается вместе с
+  /// [actionError].
+  String? get actionErrorReason => _actionErrorReason;
+
+  /// Отказ значил «на сервере уже не так» (позиция уже скрыта, меню
+  /// распознали заново) — после него список перечитан.
+  bool get actionRefusedAsStale => _actionRefusedAsStale;
 
   // ============================================================================
   // Account scope
@@ -165,6 +178,8 @@ class MenuItemsModerationProvider with ChangeNotifier {
     _reasons = const <String>[];
     _isSubmittingAction = false;
     _actionError = null;
+    _actionErrorReason = null;
+    _actionRefusedAsStale = false;
     notifyListeners();
   }
 
@@ -237,7 +252,7 @@ class MenuItemsModerationProvider with ChangeNotifier {
     } catch (e) {
       if (seq != _requestSeq) return;
       _isLoading = false;
-      _error = 'Не удалось загрузить список позиций';
+      _error = describeError(e);
       notifyListeners();
     }
   }
@@ -262,6 +277,7 @@ class MenuItemsModerationProvider with ChangeNotifier {
     if (_selectedId == id) return;
     _selectedId = id;
     _actionError = null;
+    _actionErrorReason = null;
     notifyListeners();
   }
 
@@ -354,8 +370,12 @@ class MenuItemsModerationProvider with ChangeNotifier {
     Future<Map<String, dynamic>> Function() action, {
     required String failure,
   }) async {
+    // Второй клик, пока первый запрос в пути, отсекается здесь (пункт A1-03).
+    if (_isSubmittingAction) return false;
     _isSubmittingAction = true;
     _actionError = null;
+    _actionErrorReason = null;
+    _actionRefusedAsStale = false;
     notifyListeners();
 
     try {
@@ -367,10 +387,17 @@ class MenuItemsModerationProvider with ChangeNotifier {
       return true;
     } catch (e) {
       // Сообщение называет ДЕЙСТВИЕ: тост показывает экран, и «не удалось
-      // выполнить действие» не сказало бы модератору, какое именно.
+      // выполнить действие» не сказало бы модератору, какое именно. Причина —
+      // отдельно: «уже скрыта» и «сервер не ответил» требуют разного.
       _actionError = failure;
+      _actionErrorReason = describeError(e);
+      _actionRefusedAsStale = refusalMeansStaleData(e);
       _isSubmittingAction = false;
       notifyListeners();
+      // Позицию уже скрыл другой модератор или её строку заменило новое
+      // распознавание: повтор получил бы тот же отказ, а строка висела бы в
+      // очереди до смены фильтра (пункт A1-06). Перечитать страницу.
+      if (_actionRefusedAsStale) await loadFlaggedItems();
       return false;
     }
   }

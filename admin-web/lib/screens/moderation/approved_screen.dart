@@ -10,6 +10,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 /// Экран «Одобренные» — каталог опубликованных заведений.
 ///
@@ -25,6 +26,12 @@ class ApprovedScreen extends StatefulWidget {
 
 class _ApprovedScreenState extends State<ApprovedScreen> {
   final _searchController = TextEditingController();
+  late final ApprovedProvider _provider;
+
+  /// Сбой действия — тостом (пункт A1-01). До 20.10 провайдер писал
+  /// причину, а экран её не читал: окно закрывалось, и ничего не происходило.
+  /// Повтора у тоста нет намеренно: кнопка действия рядом, в шапке.
+  final _actionFailure = AdminErrorToastReporter();
 
   static const List<CatalogSortOption> _sortOptions = <CatalogSortOption>[
     CatalogSortOption(value: 'newest', label: 'Сначала новые'),
@@ -43,6 +50,8 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
   @override
   void initState() {
     super.initState();
+    _provider = context.read<ApprovedProvider>();
+    _provider.addListener(_onProviderChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ApprovedProvider>().loadActiveEstablishments();
     });
@@ -50,8 +59,20 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
 
   @override
   void dispose() {
+    _provider.removeListener(_onProviderChanged);
+    _actionFailure.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onProviderChanged() {
+    final reason = _provider.submitError;
+    _actionFailure.report(
+      this,
+      key: reason,
+      title: _provider.submitFailureTitle ?? 'Действие не выполнено',
+      message: reason ?? '',
+    );
   }
 
   @override
@@ -361,6 +382,7 @@ class _EntityActions extends StatelessWidget {
     // партнёр. Пока карточка не загружена, решать не по чему — кнопок нет.
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
+      busy: provider.isSubmitting,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.canBeSuspendedByModerator
           ? (reason) => provider
@@ -392,6 +414,11 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      onRetryDetail: provider.selectedId == null
+          ? null
+          : () => context
+              .read<ApprovedProvider>()
+              .selectEstablishment(provider.selectedId!),
     );
   }
 }

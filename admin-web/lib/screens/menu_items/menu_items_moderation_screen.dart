@@ -6,6 +6,7 @@ import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/menu_items/flagged_menu_items_list_panel.dart';
@@ -69,6 +70,13 @@ class _MenuItemsModerationScreenState extends State<MenuItemsModerationScreen> {
 
     _reportedError = message;
     final isAction = actionFailure != null;
+    // Причина — от сервера: «Позиция уже скрыта» и «Сервер не ответил»
+    // требуют разного. После отказа «уже не так» провайдер перечитывает
+    // список, и «очередь не изменилась» было бы неправдой.
+    final reason = asSentence(_provider.actionErrorReason ?? '');
+    final actionMessage = _provider.actionRefusedAsStale
+        ? reason
+        : '$reason Очередь не изменилась.';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -79,8 +87,8 @@ class _MenuItemsModerationScreenState extends State<MenuItemsModerationScreen> {
         message: isAction
             // Повтора у действия нет намеренно: кнопка, которая его запускает,
             // стоит рядом и уже вернулась в рабочее состояние.
-            ? 'Очередь не изменилась. Попробуйте ещё раз.'
-            : '$message. Позиции на экране остались от прошлой загрузки.',
+            ? actionMessage
+            : '${asSentence(message)} Позиции на экране остались от прошлой загрузки.',
         onRetry: isAction ? null : () => _provider.refresh(),
       );
     });

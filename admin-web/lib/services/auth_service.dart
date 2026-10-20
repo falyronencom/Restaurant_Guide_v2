@@ -21,6 +21,14 @@ class AuthService {
   AuthService.withClient(this._apiClient)
       : _storage = const FlutterSecureStorage();
 
+  /// Номер сессии: растёт с каждым входом.
+  ///
+  /// Выход, не дождавшийся сервера, провайдер завершает локально (потолок
+  /// `AuthProvider.logoutTimeout`), а этот выход ещё летит. Если модератор
+  /// успел войти снова, поздний выход не должен ни гасить новую сессию на
+  /// сервере, ни стирать её токены из хранилища.
+  int _sessionEpoch = 0;
+
   // ============================================================================
   // Authentication Operations
   // ============================================================================
@@ -75,6 +83,7 @@ class AuthService {
   /// вызывает. Сессия мертва (обновление отвергнуто) — транспорт уже стёр
   /// токены, и второго выхода нет.
   Future<void> logout() async {
+    final epoch = _sessionEpoch;
     try {
       final refreshToken = await _storage.read(key: 'refresh_token');
 
@@ -87,7 +96,9 @@ class AuthService {
         }
         try {
           final current = await _storage.read(key: 'refresh_token');
-          if (current != null && current != refreshToken) {
+          if (epoch == _sessionEpoch &&
+              current != null &&
+              current != refreshToken) {
             await _postLogout(current);
           }
         } catch (e) {
@@ -95,9 +106,9 @@ class AuthService {
         }
       }
 
-      await clearAuthData();
+      if (epoch == _sessionEpoch) await clearAuthData();
     } catch (e) {
-      await clearAuthData();
+      if (epoch == _sessionEpoch) await clearAuthData();
       rethrow;
     }
   }
@@ -155,6 +166,7 @@ class AuthService {
   // ============================================================================
 
   Future<void> _storeAuthData(AuthResponse authResponse) async {
+    _sessionEpoch++;
     await _storage.write(
         key: 'access_token', value: authResponse.accessToken);
     await _storage.write(

@@ -9,6 +9,7 @@ import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 /// Экран «Приостановленные» — заведения, временно снятые с публикации.
 class SuspendedScreen extends StatefulWidget {
@@ -19,12 +20,38 @@ class SuspendedScreen extends StatefulWidget {
 }
 
 class _SuspendedScreenState extends State<SuspendedScreen> {
+  late final SuspendedProvider _provider;
+
+  /// Сбой действия — тостом (пункт A1-01). До 20.10 провайдер писал
+  /// причину, а экран её не читал: окно закрывалось, и ничего не происходило.
+  /// Повтора у тоста нет намеренно: кнопка действия рядом, в шапке.
+  final _actionFailure = AdminErrorToastReporter();
+
   @override
   void initState() {
     super.initState();
+    _provider = context.read<SuspendedProvider>();
+    _provider.addListener(_onProviderChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SuspendedProvider>().loadSuspendedEstablishments();
     });
+  }
+
+  @override
+  void dispose() {
+    _provider.removeListener(_onProviderChanged);
+    _actionFailure.dispose();
+    super.dispose();
+  }
+
+  void _onProviderChanged() {
+    final reason = _provider.submitError;
+    _actionFailure.report(
+      this,
+      key: reason,
+      title: _provider.submitFailureTitle ?? 'Действие не выполнено',
+      message: reason ?? '',
+    );
   }
 
   @override
@@ -211,6 +238,7 @@ class _EntityActions extends StatelessWidget {
     // загружена, решать не по чему — кнопок нет.
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
+      busy: provider.isSubmitting,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.isPausedByPartner
           ? (reason) => provider
@@ -239,6 +267,11 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      onRetryDetail: provider.selectedId == null
+          ? null
+          : () => context
+              .read<SuspendedProvider>()
+              .selectEstablishment(provider.selectedId!),
     );
   }
 }

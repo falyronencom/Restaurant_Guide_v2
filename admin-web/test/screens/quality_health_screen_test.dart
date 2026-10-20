@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -666,7 +667,7 @@ void main() {
     fake.next = Completer<QualityHealthData>();
     await tester.tap(find.text('Обновить'));
     await tester.pump();
-    fake.next.completeError(Exception('Connection timeout'));
+    fake.next.completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionTimeout));
     await tester.pump();
     await tester.pump();
 

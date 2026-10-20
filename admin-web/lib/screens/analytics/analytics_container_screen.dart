@@ -11,6 +11,7 @@ import 'package:restaurant_guide_admin_web/providers/users_analytics_provider.da
 import 'package:restaurant_guide_admin_web/screens/analytics/establishments_analytics_tab.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/reviews_analytics_tab.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/users_analytics_tab.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
@@ -107,7 +108,7 @@ class _AnalyticsContainerScreenState extends State<AnalyticsContainerScreen> {
       _dismissToast = showAdminErrorToast(
         context,
         title: 'Статистика не обновилась',
-        message: '$message. На экране остались числа за прежний период.',
+        message: '${asSentence(message)} На экране остались числа за прежний период.',
         onRetry: active.load,
       );
     });

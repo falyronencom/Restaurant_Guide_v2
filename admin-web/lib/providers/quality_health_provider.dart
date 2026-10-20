@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/quality_health_models.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/quality_health_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 /// Состояние панели «Здоровье данных» (AI-ops Brick-1, Tier-0, только чтение).
 ///
@@ -76,11 +77,7 @@ class QualityHealthProvider with ChangeNotifier {
   /// Кнопка «Обновить»: перечитать, минуя снимок сервера.
   Future<void> refresh() => load(force: true);
 
-  String _extractMessage(Object error) {
-    final msg = error.toString();
-    if (msg.contains('Connection timeout')) return 'Превышено время ожидания';
-    if (msg.contains('No internet')) return 'Нет подключения к серверу';
-    if (msg.contains('403')) return 'Доступ запрещён';
-    return 'Произошла ошибка. Попробуйте снова.';
-  }
+  /// Текст отказа для модератора — общий разбор панели ([describeError]).
+  String _extractMessage(Object error) =>
+      describeError(error);
 }

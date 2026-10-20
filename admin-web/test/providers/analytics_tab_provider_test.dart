@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 // Что уходит в запрос и чей ответ доезжает до экрана.
 //
@@ -255,7 +257,7 @@ void main() {
 
     test('отметка о летящем запросе снимается после сбоя', () async {
       service.gates[0] = Completer<EstablishmentsAnalyticsData>()
-        ..completeError(Exception('No internet'));
+        ..completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await provider.load();
 
       // Иначе отметка залипла бы, и вкладка перестала бы грузиться совсем.
@@ -282,16 +284,16 @@ void main() {
       await provider.load();
 
       service.gates[1] = Completer<EstablishmentsAnalyticsData>()
-        ..completeError(Exception('No internet'));
+        ..completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await provider.load(const PeriodSelection(period: '7d'));
 
-      expect(provider.error, 'Нет подключения к серверу');
+      expect(provider.error, kNoConnectionPhrase);
       expect(provider.data?.total, 7);
     });
 
     test('после сбоя вкладка остаётся отставшей и догрузится', () async {
       service.gates[0] = Completer<EstablishmentsAnalyticsData>()
-        ..completeError(Exception('No internet'));
+        ..completeError(DioException(requestOptions: RequestOptions(path: '/'), type: DioExceptionType.connectionError));
       await provider.load();
 
       expect(provider.error, isNotNull);

@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/models/audit_log_entry.dart';
 import 'package:restaurant_guide_admin_web/providers/audit_log_provider.dart';
 import 'package:restaurant_guide_admin_web/services/audit_log_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
 // Журнал действий: что уходит в запрос и что провайдер считает «выборкой».
 //
@@ -23,6 +25,9 @@ class _FakeAuditLogService implements AuditLogService {
   int total = 0;
   int pages_ = 1;
 
+  /// Отказ на следующие запросы.
+  Object? failWith;
+
   @override
   Future<AuditLogListResponse> getAuditLog({
     int page = 1,
@@ -32,6 +37,11 @@ class _FakeAuditLogService implements AuditLogService {
     DateTime? from,
     DateTime? to,
   }) async {
+    final failure = failWith;
+    if (failure != null) {
+      calls.add(<String, dynamic>{'page': page, 'action': action, 'failed': true});
+      throw failure;
+    }
     calls.add(<String, dynamic>{
       'page': page,
       'perPage': perPage,
@@ -235,6 +245,65 @@ void main() {
       provider.setActionFilter('suspend');
       // Раскрытая строка принадлежала прежней выборке.
       expect(provider.expandedEntryId, isNull);
+    });
+  });
+
+  group('Сбой загрузки', () {
+    // До 20.10 сбой смены фильтра оставлял в таблице строки прежней выборки
+    // под новым фильтром, а тост говорил «от прошлой страницы» (пункт A3-23).
+    final failure = DioException(
+      requestOptions: RequestOptions(path: '/api/v1/admin/audit-log'),
+      type: DioExceptionType.connectionError,
+    );
+
+    setUp(() {
+      fake
+        ..pages = <int, List<AuditLogEntry>>{
+          1: <AuditLogEntry>[_entry('e1', DateTime.utc(2026, 10, 1))],
+          2: <AuditLogEntry>[_entry('e2', DateTime.utc(2026, 9, 1))],
+        }
+        ..total = 21
+        ..pages_ = 2;
+    });
+
+    test('смены фильтра: таблица пуста, причина — для карточки с «Повторить»',
+        () async {
+      await provider.loadEntries();
+      expect(provider.entries, isNotEmpty, reason: 'предпосылка');
+
+      fake.failWith = failure;
+      provider.setActionFilter('user_block');
+      await pumpEventQueue();
+
+      expect(provider.entries, isEmpty,
+          reason: 'прежняя выборка под новым фильтром выдавала бы себя за новую');
+      expect(provider.totalCount, 0);
+      expect(provider.error, kNoConnectionPhrase);
+      expect(provider.actionFilter, 'user_block',
+          reason: 'фильтр остаётся выбранным — «Повторить» просит его же');
+
+      fake.failWith = null;
+      await provider.loadEntries();
+      expect(fake.calls.last['action'], 'user_block');
+    });
+
+    test('смены периода — так же', () async {
+      await provider.loadEntries();
+      fake.failWith = failure;
+      provider.setPeriod('7d');
+      await pumpEventQueue();
+
+      expect(provider.entries, isEmpty);
+      expect(provider.latestAt, isNull);
+    });
+
+    test('перелистывания: строки остаются — они той же выборки', () async {
+      await provider.loadEntries();
+      fake.failWith = failure;
+      await provider.loadEntries(page: 2);
+
+      expect(provider.entries.single.id, 'e1');
+      expect(provider.error, kNoConnectionPhrase);
     });
   });
 }

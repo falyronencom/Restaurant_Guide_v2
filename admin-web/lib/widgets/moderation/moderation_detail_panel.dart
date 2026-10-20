@@ -4,6 +4,7 @@ import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/utils/open_url.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/media/media_viewer.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
@@ -46,6 +47,10 @@ class ModerationDetailPanel extends StatefulWidget {
   final String? detailError;
   final String? selectedId;
 
+  /// Повтор загрузки карточки после сбоя. В режиме провайдера модерации —
+  /// повторный выбор той же заявки (вердикты при этом уцелеют).
+  final VoidCallback? onRetryDetail;
+
   // Действия над заведением живут в шапке экрана — см.
   // [ModerationEntityActions]. Панель их не принимает намеренно: приостановка
   // и назначение партнёра относятся к заведению целиком, а не к открытой
@@ -61,6 +66,7 @@ class ModerationDetailPanel extends StatefulWidget {
     this.isLoadingDetail,
     this.detailError,
     this.selectedId,
+    this.onRetryDetail,
     this.rejectionNotes,
   });
 
@@ -91,6 +97,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
     final bool isLoadingDetail;
     final String? detailError;
     final EstablishmentDetail? detail;
+    final VoidCallback? onRetryDetail;
     final bool isReadOnly = widget.mode != DetailPanelMode.moderation;
 
     if (widget.detail != null ||
@@ -101,6 +108,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       isLoadingDetail = widget.isLoadingDetail ?? false;
       detailError = widget.detailError;
       detail = widget.detail;
+      onRetryDetail = widget.onRetryDetail;
     } else {
       // Provider mode (backward compatible with Segment B)
       final provider = context.watch<ModerationProvider>();
@@ -108,6 +116,8 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       isLoadingDetail = provider.isLoadingDetail;
       detailError = provider.detailError;
       detail = provider.selectedDetail;
+      final id = provider.selectedId;
+      onRetryDetail = id == null ? null : () => provider.selectEstablishment(id);
     }
 
     if (selectedId == null) {
@@ -123,12 +133,14 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       return const Center(child: CircularProgressIndicator());
     }
 
+    // Сбой загрузки — с «Повторить» (пункт A1-15): раньше повтор был только
+    // повторным кликом по той же строке, и подсказки об этом не было.
     if (detailError != null) {
-      return Center(
-        child: Text(
-          detailError,
-          style: const TextStyle(color: Colors.red),
-        ),
+      return AdminColumnMessage(
+        icon: Icons.cloud_off_outlined,
+        title: 'Карточка не загрузилась',
+        message: detailError,
+        onAction: onRetryDetail,
       );
     }
 
@@ -290,6 +302,10 @@ class ModerationEntityActions extends StatelessWidget {
   final ValueChanged<String>? onClaim;
   final String establishmentName;
 
+  /// Действие в пути: кнопки гаснут, рядом крутится индикатор (пункт A1-03).
+  /// Повторный клик раньше открывал второе окно и слал второй запрос.
+  final bool busy;
+
   /// Куда «Возобновить» вернёт карточку — статус, из которого её приостановил
   /// модератор (`moderation_notes.suspended_from`): `active`, `suspended`
   /// (пауза партнёра), `pending`, `rejected`. Без него — на сайт: так
@@ -302,6 +318,7 @@ class ModerationEntityActions extends StatelessWidget {
     this.onUnsuspend,
     this.onClaim,
     this.unsuspendReturnsTo,
+    this.busy = false,
     required this.establishmentName,
   });
 
@@ -343,9 +360,11 @@ class ModerationEntityActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: 10,
       children: [
+          if (busy)
+            const AdminInlineSpinner(key: ValueKey<String>('entity-action-busy')),
           if (onSuspend != null)
             OutlinedButton.icon(
-              onPressed: () => _confirmSuspend(context),
+              onPressed: busy ? null : () => _confirmSuspend(context),
               icon: const Icon(Icons.pause_circle_outline, size: 18),
               label: const Text('Приостановить'),
               // Янтарный #FF9500 ушёл: в каноне такого оттенка нет, и
@@ -356,7 +375,7 @@ class ModerationEntityActions extends StatelessWidget {
             ),
           if (onUnsuspend != null)
             FilledButton.icon(
-              onPressed: () => _confirmUnsuspend(context),
+              onPressed: busy ? null : () => _confirmUnsuspend(context),
               icon: const Icon(Icons.play_circle_outline, size: 18),
               label: const Text('Возобновить'),
               // Салатовый #3FD00D тоже вне канона. Возобновление — обычное
@@ -379,7 +398,7 @@ class ModerationEntityActions extends StatelessWidget {
             ),
           if (onClaim != null)
             OutlinedButton.icon(
-              onPressed: () => _showClaimDialog(context),
+              onPressed: busy ? null : () => _showClaimDialog(context),
               icon: const Icon(
                 Icons.person_add_outlined,
                 size: 18,
@@ -1524,11 +1543,40 @@ class _CoordinateDialogState extends State<_CoordinateDialog> {
   late final TextEditingController _lonController =
       TextEditingController(text: widget.longitude.toStringAsFixed(6));
 
+  /// Поле, в котором «Сохранить» нашло не число, — до нового нажатия.
+  bool _latInvalid = false;
+  bool _lonInvalid = false;
+
+  static const String _notANumber = 'Введите число, например 53.9045';
+
   @override
   void dispose() {
     _latController.dispose();
     _lonController.dispose();
     super.dispose();
+  }
+
+  /// Число из поля. Запятая — обычный русский ввод («53,9045»): раньше
+  /// `double.tryParse` её не принимал, и «Сохранить» молча не делало ничего
+  /// (пункт A1-09).
+  static double? parseCoordinate(String text) {
+    final normalized = text.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    final value = double.tryParse(normalized);
+    return value != null && value.isFinite ? value : null;
+  }
+
+  void _save() {
+    final lat = parseCoordinate(_latController.text);
+    final lon = parseCoordinate(_lonController.text);
+    if (lat == null || lon == null) {
+      setState(() {
+        _latInvalid = lat == null;
+        _lonInvalid = lon == null;
+      });
+      return;
+    }
+    Navigator.pop(context, (lat, lon));
   }
 
   @override
@@ -1539,21 +1587,31 @@ class _CoordinateDialogState extends State<_CoordinateDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
+            key: const ValueKey<String>('coordinate-latitude'),
             controller: _latController,
-            decoration: const InputDecoration(
-              labelText: 'Широта (latitude)',
+            decoration: InputDecoration(
+              labelText: 'Широта',
               hintText: '53.900000',
+              errorText: _latInvalid ? _notANumber : null,
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) {
+              if (_latInvalid) setState(() => _latInvalid = false);
+            },
           ),
           const SizedBox(height: 12),
           TextField(
+            key: const ValueKey<String>('coordinate-longitude'),
             controller: _lonController,
-            decoration: const InputDecoration(
-              labelText: 'Долгота (longitude)',
+            decoration: InputDecoration(
+              labelText: 'Долгота',
               hintText: '27.550000',
+              errorText: _lonInvalid ? _notANumber : null,
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) {
+              if (_lonInvalid) setState(() => _lonInvalid = false);
+            },
           ),
         ],
       ),
@@ -1563,13 +1621,7 @@ class _CoordinateDialogState extends State<_CoordinateDialog> {
           child: const Text('Отмена'),
         ),
         ElevatedButton(
-          onPressed: () {
-            final lat = double.tryParse(_latController.text);
-            final lon = double.tryParse(_lonController.text);
-            if (lat != null && lon != null) {
-              Navigator.pop(context, (lat, lon));
-            }
-          },
+          onPressed: _save,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFDB4F13),
             foregroundColor: Colors.white,
