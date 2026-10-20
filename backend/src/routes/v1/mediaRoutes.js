@@ -257,8 +257,9 @@ router.delete(
  * texts of the wizard's upload (UPLOAD_REFUSALS — the same file rules, from
  * 19.10.2026; English before); the codes stay — the site translates by them
  * (web/src/lib/partner/errors.ts). multer's other refusals (Too many fields
- * and the like) keep its own text, as on the wizard's upload: a request no
- * client sends (multipart-limits.test.js holds those).
+ * and the like) — a request no client sends — answer with the form's one
+ * sentence, UPLOAD_REFUSALS.formNotRead (from 20.10.2026; multer's English
+ * before, the wizard's upload keeps it; multipart-limits.test.js holds both).
  *
  * This should be registered AFTER the routes that use multer uploads.
  */
@@ -285,10 +286,10 @@ router.use((error, req, res, next) => {
       });
     }
 
-    // Generic multer error
+    // Any other multer refusal: the form's sentence, the code as before.
     return res.status(400).json({
       success: false,
-      message: error.message,
+      message: UPLOAD_REFUSALS.formNotRead,
       error: {
         code: 'UPLOAD_ERROR',
       },

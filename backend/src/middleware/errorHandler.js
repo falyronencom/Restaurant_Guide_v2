@@ -55,14 +55,21 @@ export const errorHandler = (err, req, res, _next) => {
   // Default to 500 Internal Server Error if status not specified
   let statusCode = err.statusCode || 500;
   let errorCode = err.code || 'INTERNAL_ERROR';
-  let message = err.message || 'An unexpected error occurred';
+  // body-parser's refusal of a body that is not JSON carries V8's own text,
+  // and V8 quotes a piece of the body in it («Unexpected token 'S',
+  // ..."assword": Secr3t"...») — at login, part of a password. It went to the
+  // log below as is until 20.10.2026; now the log gets the reply's text.
+  let message = err.type === 'entity.parse.failed'
+    ? 'Request body contains invalid JSON'
+    : (err.message || 'An unexpected error occurred');
   let details = err.details || null;
 
   // multer's own refusals — the limits in middleware/upload.js
   // (MULTIPART_LIMITS), a field it cannot store — are the client's: 413 for
   // an oversized file, 400 otherwise. Routes with their own multer handler
-  // answer before this (the promotions' only for an oversized picture); the
-  // avatar route reaches it, and the promotions with any other. A form
+  // answer before this (the promotions' only for an oversized picture; the
+  // avatar's with an AppError of its own, from 20.10.2026); the promotions
+  // reach it with any other. A form
   // busboy cannot read at all is not a MulterError: createUpload turns it
   // into its own AppError (400) before any of these.
   if (err.name === 'MulterError') {
@@ -258,11 +265,14 @@ const refuseInvalid = (req, res, next, personSummary) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    // Format validation errors for client response
+    // Format validation errors for client response. The field's name and the
+    // refusal only, not its value: that is what the person typed — a review,
+    // a caption, a name — and it went to the log and back in the answer
+    // until 20.10.2026. No client reads it (the site, the app and the panel
+    // take `field` and `message`; checked that day).
     const formattedErrors = errors.array().map(err => ({
       field: err.path || err.param,
       message: err.msg,
-      value: err.value,
     }));
 
     logger.warn('Request validation failed', {

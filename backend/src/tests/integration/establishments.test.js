@@ -1449,13 +1449,15 @@ describe('Establishments System - List & Read Operations', () => {
       expect(response.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
     });
 
-    test('should reject invalid UUID format', async () => {
+    // A non-UUID names no card: refused as a missing one (routes/v1/
+    // establishmentRoutes.js, from 20.10.2026; 422 VALIDATION_ERROR before).
+    test('should reject invalid UUID format as a missing card', async () => {
       const response = await request(app)
         .get('/api/v1/partner/establishments/invalid-uuid')
         .set('Authorization', `Bearer ${partnerToken}`)
-        .expect(422);
+        .expect(404);
 
-      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
     });
   });
 });

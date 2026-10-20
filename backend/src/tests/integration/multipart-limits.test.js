@@ -38,6 +38,9 @@ import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.j
 
 const JPEG = { filename: 'photo.jpg', contentType: 'image/jpeg' };
 const UNREADABLE_FORM = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
+// Прочие отказы multer у медиа карточки и аватара — та же фраза формы
+// (с 20.10.2026; до того — английский текст multer, как у мастера и акций).
+const FORM_NOT_READ = UNREADABLE_FORM;
 
 let upload;
 let seq = 0;
@@ -114,7 +117,8 @@ describe('слишком много полей — 400 на каждом заг�
       .attach('avatar', Buffer.from('fake-jpeg'), JPEG));
 
     expect(response.status).toBe(400);
-    expect(response.body.message).toBe('Too many fields');
+    expect(response.body.message).toBe(FORM_NOT_READ);
+    expect(response.body.error.code).toBe('LIMIT_FIELD_COUNT');
     expect(upload).not.toHaveBeenCalled();
   });
 
@@ -129,7 +133,8 @@ describe('слишком много полей — 400 на каждом заг�
       .field('type', 'interior'));
 
     expect(response.status).toBe(400);
-    expect(response.body.message).toBe('Too many fields');
+    expect(response.body.message).toBe(FORM_NOT_READ);
+    expect(response.body.error.code).toBe('UPLOAD_ERROR');
     expect(upload).not.toHaveBeenCalled();
   });
 
@@ -146,6 +151,39 @@ describe('слишком много полей — 400 на каждом заг�
 
     expect(response.status).toBe(400);
     expect(response.body.message).toBe('Too many fields');
+    expect(upload).not.toHaveBeenCalled();
+  });
+});
+
+describe('медиа карточки и аватар: прочие отказы multer — фразой формы, коды прежние', () => {
+  test('аватар: файл под другим именем поля — 400 LIMIT_UNEXPECTED_FILE', async () => {
+    const { token } = await newAccount('user');
+
+    const response = await request(app)
+      .post('/api/v1/auth/avatar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('photo', Buffer.from('fake-jpeg'), JPEG);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe(FORM_NOT_READ);
+    expect(response.body.error.code).toBe('LIMIT_UNEXPECTED_FILE');
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  test('медиа карточки: имя поля со скобками — 400 UPLOAD_ERROR', async () => {
+    const { user, token } = await newAccount('partner');
+    const card = await createTestEstablishment(user.id);
+
+    const response = await request(app)
+      .post(`/api/v1/partner/establishments/${card.id}/media`)
+      .set('Authorization', `Bearer ${token}`)
+      .field('meta[a]', 'x')
+      .field('type', 'interior')
+      .attach('file', Buffer.from('fake-jpeg'), JPEG);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe(FORM_NOT_READ);
+    expect(response.body.error.code).toBe('UPLOAD_ERROR');
     expect(upload).not.toHaveBeenCalled();
   });
 });

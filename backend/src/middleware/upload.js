@@ -15,6 +15,7 @@ import fs from 'fs';
 import { AppError } from './errorHandler.js';
 import { bodyHasNul, bodyNulRefusal, textHasNul } from './requestGuard.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import logger from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,9 +70,11 @@ export const MULTIPART_LIMITS = Object.freeze({
  * wizard's photo upload (installed builds: the wizard after «Ошибка при
  * загрузке фото:», the promotion form its own text); the site has no text of
  * its own for INVALID_FORMAT and shows its general one. The wording was
- * approved by the Coordinator on 16.10.2026 (PR #52).
+ * approved by the Coordinator on 16.10.2026 (PR #52). The text lives with the
+ * uploaders' refusals: from 20.10.2026 it also answers multer's other
+ * refusals on the card's media and the avatar.
  */
-export const UNREADABLE_FORM_MESSAGE = 'Не удалось прочитать отправленные данные. Попробуйте ещё раз.';
+export const UNREADABLE_FORM_MESSAGE = UPLOAD_REFUSALS.formNotRead;
 
 /**
  * busboy's refusals of a form it cannot read as a whole: the body ends, by

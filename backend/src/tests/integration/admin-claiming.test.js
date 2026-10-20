@@ -199,6 +199,32 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
     expect(response.status).toBe(422);
   });
 
+  // The id as the database writes it only (utils/canonicalUuid.js), from
+  // 20.10.2026. Postgres found the account by an id in capitals, but the check
+  // «already this user's» compares the strings: the card's own owner written
+  // in capitals passed it, and a card nobody had handed over got claimed_at.
+  test('user_id in capitals — 422 INVALID_USER_ID, the card untouched', async () => {
+    const { partner, establishment } = await createPartnerWithEstablishment('active');
+    const other = await createRegularUser();
+
+    for (const userId of [partner.user.id, other.user.id]) {
+      const response = await request(app)
+        .post(`/api/v1/admin/establishments/${establishment.id}/claim`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ user_id: userId.toUpperCase() });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('INVALID_USER_ID');
+      expect(response.body.message).toBe('user_id must be a valid UUID');
+    }
+
+    const dbEstablishment = await getEstablishmentFromDb(establishment.id);
+    expect(dbEstablishment.partner_id).toBe(partner.user.id);
+    expect(dbEstablishment.claimed_at).toBeNull();
+    const role = await query('SELECT role FROM users WHERE id = $1', [other.user.id]);
+    expect(role.rows[0].role).toBe('user');
+  });
+
   test('should create audit log entry with old/new partner_id', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const oldPartnerId = establishment.partner_id;
