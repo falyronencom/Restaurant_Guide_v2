@@ -41,7 +41,7 @@ import * as qualityHealthController from '../../controllers/qualityHealthControl
 import * as badgesController from '../../controllers/badgesController.js';
 import { body, param } from 'express-validator';
 import { validateLogin } from '../../validators/authValidation.js';
-import { validate } from '../../middleware/errorHandler.js';
+import { validatePersonText } from '../../middleware/errorHandler.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { PANEL_READ_ROLES, PANEL_ACTION_ROLES } from '../../config/panelRoles.js';
@@ -313,7 +313,7 @@ router.post(
 // ============================================================================
 
 /**
- * GET /api/v1/admin/users?search=&status=active|blocked&page=1&per_page=20
+ * GET /api/v1/admin/users?search=&status=active|blocked|deleted&role=user|partner|panel&page=1&per_page=20
  *
  * The people of the platform. Read tier: a viewer sees the list without names
  * and contacts and may not search (adminUserService.getUsers).
@@ -463,13 +463,18 @@ router.get(
  * than a silent flip. Remove the alias once every deployed panel sends
  * is_visible.
  */
+// Field texts in Russian, and the summary is the first of them
+// (validatePersonText): the panel shows the server's text as it is
+// (walkthrough 20.10, A2-02).
+const reviewIdParam = param('id').isUUID().withMessage('Отзыв указан неверно — обновите страницу');
+
 const validateVisibility = [
-  param('id').isUUID().withMessage('Review id must be a UUID'),
+  reviewIdParam,
   body('is_visible')
     .exists({ checkNull: true })
-    .withMessage('is_visible is required: true to show, false to hide')
+    .withMessage('Не сказано, скрыть отзыв или показать')
     .isBoolean({ strict: true })
-    .withMessage('is_visible must be true or false'),
+    .withMessage('Не сказано, скрыть отзыв или показать'),
 ];
 
 router.post(
@@ -477,7 +482,7 @@ router.post(
   authenticate,
   writeAccess,
   validateVisibility,
-  validate,
+  validatePersonText,
   adminReviewController.setVisibility,
 );
 
@@ -486,21 +491,38 @@ router.post(
   authenticate,
   writeAccess,
   validateVisibility,
-  validate,
+  validatePersonText,
   adminReviewController.setVisibility,
+);
+
+/**
+ * POST /api/v1/admin/reviews/hide-batch
+ * Body: { review_ids: uuid[] (1–100), reason: string (required, ≤ 500) }
+ *
+ * Hide the chosen reviews at once with one reason — the reviews of one person
+ * (walkthrough 20.10, A2-09). One review_hide journal entry per hidden review,
+ * sharing new_data.batch_id. The checks and texts are in adminReviewService.
+ */
+router.post(
+  '/reviews/hide-batch',
+  authenticate,
+  writeAccess,
+  adminReviewController.hideReviewsBatch,
 );
 
 /**
  * POST /api/v1/admin/reviews/:id/delete
  *
  * Soft-delete a review and recalculate establishment aggregates.
- * Body: { reason: "string" } (optional)
+ * Body: { reason: "string" } (optional, ≤ 500)
  * Writes audit_log entry.
  */
 router.post(
   '/reviews/:id/delete',
   authenticate,
   writeAccess,
+  reviewIdParam,
+  validatePersonText,
   adminReviewController.deleteReview,
 );
 

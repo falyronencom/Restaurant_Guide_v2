@@ -13,6 +13,7 @@
 import pool from '../config/database.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
+import { escapeLike } from './adminReviewModel.js';
 
 /**
  * The statuses as SQL literals — a fixed list from the code, never input: the
@@ -20,6 +21,29 @@ import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
  */
 const CATALOGUE_TRACK_SQL = CATALOGUE_TRACK_STATUSES.map((status) => `'${status}'`).join(', ');
 import logger from '../utils/logger.js';
+
+/**
+ * Whether the holder deleted the account: its journal entry
+ * user_delete_account exists — the mark accountDeletionService reads
+ * (wasAccountDeleted). The literal, not the service's constant: a model does
+ * not import a service.
+ */
+const DELETED_SQL = `EXISTS (
+    SELECT 1 FROM audit_log del
+    WHERE del.entity_type = 'user' AND del.entity_id = u.id AND del.action = 'user_delete_account'
+  )`;
+
+/**
+ * A LIKE pattern that matches the text literally (adminReviewModel.escapeLike).
+ */
+const likeText = (value) => `%${escapeLike(value)}%`;
+
+/** The role filter of the list: the words the panel sends. */
+const ROLE_CONDITIONS = Object.freeze({
+  user: "u.role = 'user'",
+  partner: "u.role = 'partner'",
+  panel: "u.role IN ('admin', 'viewer')",
+});
 
 /**
  * The columns of one person. A viewer — the read-only panel role shown to
@@ -40,6 +64,10 @@ const userColumns = (viewer) => `
   u.role,
   u.auth_method,
   u.is_active,
+  -- A deleted account is switched off too, but it is not «blocked»: the
+  -- panel shows it as deleted, without buttons the server always refuses
+  -- (walkthrough 20.10, A2-05).
+  ${DELETED_SQL} AS is_deleted,
   ${serviceAccountFlagSql('u')} AS is_service_account,
   -- AT TIME ZONE 'UTC': the column is timestamp WITHOUT time zone and
   -- node-pg would otherwise read it in the process's local zone.
@@ -73,26 +101,33 @@ const countsJoin = (viewer) => `
  * holds at least three digits — the digits of the phone, whatever the
  * spacing either side was written with («+375 29 123» finds +375291234567).
  *
+ * «Заблокированные» are the accounts switched off and not deleted: a deleted
+ * account is its own filter (A2-05).
+ *
  * @param {Object} filters
  * @param {string} [filters.search]
- * @param {'active'|'blocked'} [filters.status]
+ * @param {'active'|'blocked'|'deleted'} [filters.status]
+ * @param {'user'|'partner'|'panel'} [filters.role]
  * @returns {{ whereClause: string, values: Array, paramIndex: number }}
  */
-const buildUserWhere = ({ search, status } = {}) => {
+const buildUserWhere = ({ search, status, role } = {}) => {
   const conditions = [];
   const values = [];
   let paramIndex = 1;
 
   if (status === 'active') conditions.push('u.is_active = TRUE');
-  if (status === 'blocked') conditions.push('u.is_active = FALSE');
+  if (status === 'blocked') conditions.push(`u.is_active = FALSE AND NOT ${DELETED_SQL}`);
+  if (status === 'deleted') conditions.push(DELETED_SQL);
+  if (ROLE_CONDITIONS[role]) conditions.push(ROLE_CONDITIONS[role]);
 
   const text = typeof search === 'string' ? search.trim() : '';
   if (text) {
+    // «%» and «_» match themselves (walkthrough 20.10, A2-20).
     const alternatives = [
-      `u.email ILIKE $${paramIndex}`,
-      `u.name ILIKE $${paramIndex}`,
+      `u.email ILIKE $${paramIndex} ESCAPE '\\'`,
+      `u.name ILIKE $${paramIndex} ESCAPE '\\'`,
     ];
-    values.push(`%${text}%`);
+    values.push(likeText(text));
     paramIndex += 1;
 
     const digits = text.replace(/\D/g, '');
@@ -141,7 +176,7 @@ export const getUsers = async (filters = {}, limit = 20, offset = 0) => {
 /**
  * How many people match the filters (for pagination).
  *
- * @param {Object} filters - { search, status }
+ * @param {Object} filters - { search, status, role }
  * @returns {Promise<number>}
  */
 export const countUsers = async (filters = {}) => {
@@ -155,11 +190,24 @@ export const countUsers = async (filters = {}) => {
   }
 };
 
+/** How many blocks and unblocks the card lists. */
+export const BLOCK_HISTORY_LIMIT = 20;
+
+/** How many of a partner's cards the person's card names. */
+export const PARTNER_CARDS_LIMIT = 10;
+
 /**
  * One person with the latest block or unblock from the journal: who did it,
  * when and why. The operator's script (scripts/set-user-active.js) writes the
  * same entries since 2026-10-18, with no admin (user_id NULL); a blocked
  * account without any entry was switched off by it before that.
+ *
+ * block_history — the latest blocks and unblocks, newest first: the reason of
+ * a block stays visible after the unblock (walkthrough 20.10, A2-15, Chrome
+ * pass p. 35). by_operator marks an entry of the operator's script. The
+ * counts of hidden and shown reviews come as numbers, never the ids.
+ * establishments — a partner's cards by name and status (Chrome pass p. 35);
+ * not for a viewer, who sees no person's name either.
  *
  * @param {string} userId
  * @param {Object} [options]
@@ -185,7 +233,41 @@ export const getUserById = async (userId, { viewer = false } = {}) => {
           AND al.action IN ('user_block', 'user_unblock')
         ORDER BY al.created_at DESC, al.id DESC
         LIMIT 1
-      ) AS last_block_action
+      ) AS last_block_action,
+      (
+        SELECT COALESCE(json_agg(entry ORDER BY entry.sort_at DESC, entry.id DESC), '[]'::json)
+        FROM (
+          SELECT
+            al.id,
+            al.created_at AS sort_at,
+            al.action,
+            ${viewer ? 'NULL::text' : "al.new_data ->> 'reason'"} AS reason,
+            al.created_at AT TIME ZONE 'UTC' AS created_at,
+            ${viewer ? 'NULL::text' : 'actor.name'} AS admin_name,
+            (al.user_id IS NULL AND al.new_data ? 'actor') AS by_operator,
+            CASE WHEN jsonb_typeof(al.new_data -> 'hidden_review_ids') = 'array'
+              THEN jsonb_array_length(al.new_data -> 'hidden_review_ids') END AS hidden_reviews,
+            CASE WHEN jsonb_typeof(al.new_data -> 'restored_review_ids') = 'array'
+              THEN jsonb_array_length(al.new_data -> 'restored_review_ids') END AS restored_reviews
+          FROM audit_log al
+          LEFT JOIN users actor ON actor.id = al.user_id
+          WHERE al.entity_type = 'user'
+            AND al.entity_id = u.id
+            AND al.action IN ('user_block', 'user_unblock')
+          ORDER BY al.created_at DESC, al.id DESC
+          LIMIT ${BLOCK_HISTORY_LIMIT}
+        ) entry
+      ) AS block_history,
+      ${viewer ? 'NULL::json' : `(
+        SELECT COALESCE(json_agg(card ORDER BY card.name, card.id), '[]'::json)
+        FROM (
+          SELECT e.id, e.name, e.city, e.status
+          FROM establishments e
+          WHERE e.partner_id = u.id
+          ORDER BY e.name, e.id
+          LIMIT ${PARTNER_CARDS_LIMIT}
+        ) card
+      )`} AS establishments
     FROM users u
     ${countsJoin(viewer)}
     WHERE u.id = $1
