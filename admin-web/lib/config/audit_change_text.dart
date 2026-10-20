@@ -54,8 +54,13 @@ const Set<String> kAuditContextFields = <String>{
   'city',
 };
 
-/// Русские имена ключей записи. Набор обязан покрывать `fields` общего
-/// списка сервера — проверяет тест.
+/// Ключи, которые на экран не выводятся вовсе: служебный идентификатор пачки
+/// скрытых разом отзывов (П7) нужен разработчику, а не модератору, — он в
+/// «Исходной записи» и в «Скопировать код».
+const Set<String> kAuditHiddenFields = <String>{'batch_id'};
+
+/// Русские имена ключей записи. Набор вместе с [kAuditHiddenFields] обязан
+/// покрывать `fields` общего списка сервера — проверяет тест.
 const Map<String, String> kAuditFieldLabels = <String, String>{
   'status': 'Статус',
   'reason': 'Причина',
@@ -98,6 +103,8 @@ const Map<String, String> kAuditFieldLabels = <String, String>{
   'item_name': 'Позиция',
   'establishment_name': 'Заведение',
   'establishment_city': 'Город',
+  // Пакетное скрытие отзывов одного автора (П7): по записи на отзыв.
+  'batch_size': 'В пачке',
 };
 
 /// Статус карточки — в единственном числе, как о ней говорят в записи.
@@ -178,6 +185,10 @@ String describeAuditValue(String key, Object? value) {
             (reason is String ? sanityFlagLabel(reason) : 'есть');
       }
       return 'есть';
+    case 'batch_size':
+      return value is num
+          ? countWithNoun(value.round(), 'отзыв', 'отзыва', 'отзывов')
+          : value.toString();
     case 'hidden_review_ids':
     case 'restored_review_ids':
       return value is List ? formatCount(value.length) : value.toString();
@@ -225,7 +236,8 @@ List<AuditChangeLine> describeAuditChange(
     ...before.keys,
     for (final key in after.keys)
       if (!before.containsKey(key)) key,
-  ].where((key) => !kAuditContextFields.contains(key));
+  ].where((key) =>
+      !kAuditContextFields.contains(key) && !kAuditHiddenFields.contains(key));
 
   return <AuditChangeLine>[
     for (final key in keys)

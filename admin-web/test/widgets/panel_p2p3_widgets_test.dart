@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:restaurant_guide_admin_web/config/audit_change_text.dart';
 import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -207,14 +208,35 @@ void main() {
       final fields = (json['fields'] as List<dynamic>).cast<String>();
 
       expect(fields, isNotEmpty);
-      final missing =
-          fields.where((f) => !kAuditFieldLabels.containsKey(f)).toList();
+      final missing = fields
+          .where((f) =>
+              !kAuditFieldLabels.containsKey(f) &&
+              !kAuditHiddenFields.contains(f))
+          .toList();
       expect(missing, isEmpty);
       for (final label in kAuditFieldLabels.values) {
         expect(label.replaceAll('E-mail', '').replaceAll('Google', ''),
             isNot(contains(RegExp(r'[A-Za-z]'))),
             reason: 'подпись поля латиницей: $label');
       }
+    });
+
+    test('пакетное скрытие (П7): «в пачке из N», id пачки не на экране', () {
+      final lines = describeAuditChange(
+        <String, dynamic>{'is_visible': true},
+        <String, dynamic>{
+          'is_visible': false,
+          'reason': 'тестовые отзывы',
+          'batch_id': '5d1f0000-0000-4000-8000-000000000000',
+          'batch_size': 3,
+        },
+      ).map((l) => l.toString()).toList();
+
+      expect(lines, <String>[
+        'Виден в приложении: да → нет',
+        'Причина: тестовые отзывы',
+        'В пачке: 3 отзыва',
+      ]);
     });
 
     test('значения — словами', () {
@@ -263,5 +285,31 @@ void main() {
       final flags = kQualitySignals.firstWhere((s) => s.id == 'hanging_flags');
       expect(flags.listRoute, '/moderation/menu-items');
     });
+  });
+
+  testWidgets('переход между страницами без просвечивания (Р6б, F-30)',
+      (tester) async {
+    final router = GoRouter(routes: <RouteBase>[
+      GoRoute(path: '/', builder: (_, __) => const Text('страница А')),
+      GoRoute(path: '/b', builder: (_, __) => const Text('страница Б')),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      MaterialApp.router(theme: AppTheme.lightTheme, routerConfig: router),
+    );
+
+    router.go('/b');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Посреди прежнего перехода новая страница стояла под затуханием или
+    // сдвигом — обе были видны полупрозрачными одна сквозь другую.
+    for (final type in <Type>[FadeTransition, SlideTransition, ScaleTransition]) {
+      expect(
+        find.ancestor(of: find.text('страница Б'), matching: find.byType(type)),
+        findsNothing,
+        reason: 'у новой страницы переход $type',
+      );
+    }
   });
 }

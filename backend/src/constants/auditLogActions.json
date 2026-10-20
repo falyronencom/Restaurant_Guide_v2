@@ -176,6 +176,8 @@
     "city",
     "item_name",
     "establishment_name",
-    "establishment_city"
+    "establishment_city",
+    "batch_id",
+    "batch_size"
   ]
 }

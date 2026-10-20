@@ -112,8 +112,7 @@ GoRouter createRouter(AuthProvider authProvider) {
         builder: (context, state) => const LoginScreen(),
       ),
       ShellRoute(
-        builder: (context, state, child) =>
-            AdminShell(location: state.uri.path, child: child),
+        builder: (context, state, child) => AdminShell(child: child),
         routes: [
           GoRoute(
             path: '/',
@@ -126,16 +125,8 @@ GoRouter createRouter(AuthProvider authProvider) {
           ),
           GoRoute(
             path: '/moderation/approved',
-            // `?q=` — поиск сразу при входе: так пример из «Здоровья данных»
-            // ведёт к самой карточке (К-6). Ключ по запросу — новый поиск при
-            // переходе с другим запросом, а не прежнее состояние экрана.
-            builder: (context, state) {
-              final query = state.uri.queryParameters['q'];
-              return ApprovedScreen(
-                key: ValueKey<String?>(query),
-                initialSearch: query,
-              );
-            },
+            builder: (context, state) =>
+                const ApprovedScreen(),
           ),
           GoRoute(
             path: '/moderation/rejected',

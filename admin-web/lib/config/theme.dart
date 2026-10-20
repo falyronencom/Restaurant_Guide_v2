@@ -588,6 +588,17 @@ class AppTheme {
       // test/config/theme_text_families_test.dart.
       fontFamily: fontBodyFamily,
 
+      // Переход между страницами — мгновенный. Стандартный переход Material
+      // на миг рисует обе страницы полупрозрачными одна поверх другой (F-30;
+      // решение Координатора 20.10, Р6б): в панели, где экраны сменяются
+      // кликом в меню слева, это читалось как сбой отрисовки.
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          for (final platform in TargetPlatform.values)
+            platform: const InstantPageTransitionsBuilder(),
+        },
+      ),
+
       colorScheme: const ColorScheme.light(
         primary: primaryOrange,
         onPrimary: textOnPrimary,
@@ -742,4 +753,19 @@ class AppTheme {
       ),
     );
   }
+}
+
+/// Переход страниц без анимации — новая страница сразу на месте прежней.
+class InstantPageTransitionsBuilder extends PageTransitionsBuilder {
+  const InstantPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      child;
 }
