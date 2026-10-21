@@ -77,6 +77,8 @@ export const VIEWER_WITHHELD_KEYS = Object.freeze(new Set([
  */
 export const VIEWER_PERSON_OBJECT_KEYS = Object.freeze(new Set([
   'suspended_by',
+  // The owner of the card on the moderation detail (A1-02, 2026-10-20).
+  'partner',
 ]));
 
 const PERSON_FIELDS = Object.freeze(new Set(['name', 'email', 'phone']));

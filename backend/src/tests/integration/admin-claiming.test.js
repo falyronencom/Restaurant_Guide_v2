@@ -215,7 +215,7 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
 
       expect(response.status).toBe(422);
       expect(response.body.error.code).toBe('INVALID_USER_ID');
-      expect(response.body.message).toBe('user_id must be a valid UUID');
+      expect(response.body.message).toBe('Идентификатор пользователя указан неверно');
     }
 
     const dbEstablishment = await getEstablishmentFromDb(establishment.id);

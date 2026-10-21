@@ -282,7 +282,7 @@ export const updateCoordinates = asyncHandler(async (req, res) => {
 
   if (latitude === undefined || longitude === undefined) {
     throw new AppError(
-      'latitude and longitude are required',
+      'Укажите широту и долготу',
       422,
       'MISSING_COORDINATES',
     );
@@ -290,7 +290,7 @@ export const updateCoordinates = asyncHandler(async (req, res) => {
 
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new AppError(
-      'latitude and longitude must be numbers',
+      'Широта и долгота должны быть числами',
       422,
       'INVALID_COORDINATES',
     );
@@ -438,7 +438,7 @@ export const claimEstablishment = asyncHandler(async (req, res) => {
 
   if (!user_id) {
     throw new AppError(
-      'user_id is required',
+      'Выберите пользователя, которому передать заведение',
       422,
       'MISSING_USER_ID',
     );
@@ -451,7 +451,7 @@ export const claimEstablishment = asyncHandler(async (req, res) => {
   // panel sends the id from the search, already canonical.
   if (!isCanonicalUuid(user_id)) {
     throw new AppError(
-      'user_id must be a valid UUID',
+      'Идентификатор пользователя указан неверно',
       422,
       'INVALID_USER_ID',
     );

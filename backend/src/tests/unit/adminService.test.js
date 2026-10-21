@@ -56,6 +56,7 @@ jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
 jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({
   hasCompletedJobForMedia: jest.fn(),
   enqueue: jest.fn(),
+  getPdfPageCounts: jest.fn(async () => new Map()),
 }));
 
 jest.unstable_mockModule('../../models/partnerDocumentsModel.js', () => ({
@@ -227,6 +228,7 @@ beforeEach(() => {
   EstablishmentService.validateCityCoordinates.mockReturnValue({ valid: true });
   // Rows of the establishment for «Скрыть»/«Вернуть» on copies — none by default.
   MenuItemModel.getByEstablishmentId.mockResolvedValue([]);
+  OcrJobModel.getPdfPageCounts.mockResolvedValue(new Map());
 });
 
 // ============================================================================
