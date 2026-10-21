@@ -13,9 +13,28 @@
  * Clicking a tile opens the in-page lightbox (client island) over the FULL
  * photo set — the «+N фотографий» overlay included. Tiles stay server-rendered;
  * only the provider/trigger shells are client components.
+ *
+ * Page weight (D1, 21.10.2026). Both trees are always in the HTML and one of
+ * them is display:none, so:
+ *   - every <Image> stays lazy (the default): a lazy image under display:none
+ *     is never fetched, an eager one is — `priority`/`preload` on a tile would
+ *     download the hidden tree's copy (on prod 18.10: +301 KB `w=1920` on a
+ *     desktop, a duplicate `w=750` on a phone with DPR 3);
+ *   - the first photo of each tree is preloaded by `preloadHero` with a media
+ *     query matching that tree's breakpoint — `next/image` cannot put `media`
+ *     on its own preload link — so only the visible copy is fetched early.
+ *     Next dev warns «LCP image … add loading="eager"» for the lazy hero:
+ *     expected — eager or `priority` brings the hidden copy back.
+ * `sizes` (measured 21.10): the carousel slide is 85% of the viewport minus
+ * the 2×24px page padding; the main tile is 689px once `max-w-6xl` caps the
+ * page at 1152px. Both are never below the box there and at 768–1024px. NOT
+ * covered: the main tile at 1025–1151px and the side tiles at 1025–1619px get
+ * a `sizes` a little under their box — as before D1, left for a separate
+ * decision since it adds bytes. Change the layout — change these.
  */
 
-import Image from 'next/image';
+import Image, { getImageProps } from 'next/image';
+import { preload } from 'react-dom';
 
 import {
   LightboxProvider,
@@ -55,6 +74,9 @@ export function Gallery({
     caption: p.caption ?? null,
   }));
 
+  preloadHero(main.preview_url ?? main.url, CAROUSEL_SIZES, PHONE_MEDIA);
+  preloadHero(main.preview_url ?? main.url, MAIN_TILE_SIZES, DESKTOP_MEDIA);
+
   return (
     <LightboxProvider
       photos={lightboxPhotos}
@@ -76,9 +98,9 @@ export function Gallery({
               src={photo.preview_url ?? photo.url}
               alt={photo.caption ?? `${establishmentName} — фото ${idx + 1}`}
               fill
-              sizes='85vw'
+              sizes={CAROUSEL_SIZES}
               className='object-cover'
-              priority={idx === 0}
+              fetchPriority={idx === 0 ? 'high' : undefined}
             />
           </LightboxTrigger>
         ))}
@@ -95,9 +117,9 @@ export function Gallery({
             src={main.preview_url ?? main.url}
             alt={main.caption ?? `${establishmentName} — главное фото`}
             fill
-            sizes='(max-width: 1024px) 60vw, 45vw'
+            sizes={MAIN_TILE_SIZES}
             className='object-cover'
-            priority
+            fetchPriority='high'
           />
         </LightboxTrigger>
 
@@ -157,6 +179,33 @@ export function Gallery({
 }
 
 // -- internals --------------------------------------------------------------
+
+/** Tailwind `md:` (48rem) splits the two trees: carousel below, mosaic at/above. */
+const PHONE_MEDIA = 'not all and (min-width: 48rem)';
+const DESKTOP_MEDIA = '(min-width: 48rem)';
+
+/** Carousel slide: `min-w-[85%]` of the viewport minus `px-l` on both sides. */
+const CAROUSEL_SIZES = 'calc(85vw - 40px)';
+
+/** Main mosaic tile: fixed 689px from 1152px up (`max-w-6xl`), else as before. */
+const MAIN_TILE_SIZES = '(min-width: 1152px) 690px, (max-width: 1024px) 60vw, 45vw';
+
+/**
+ * Preload one tree's hero photo for the viewports where that tree is shown —
+ * the same srcset/sizes `<Image fill sizes>` renders, so the browser picks the
+ * same candidate for the link and for the (lazy) <img>, and the <img> takes
+ * the preloaded response.
+ */
+function preloadHero(src: string, sizes: string, media: string) {
+  const { props } = getImageProps({ src, alt: '', fill: true, sizes });
+  preload(props.src, {
+    as: 'image',
+    imageSrcSet: props.srcSet,
+    imageSizes: props.sizes,
+    fetchPriority: 'high',
+    media,
+  });
+}
 
 /**
  * Filter media[] to gallery-eligible photos:
