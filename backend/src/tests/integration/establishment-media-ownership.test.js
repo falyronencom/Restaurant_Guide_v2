@@ -156,7 +156,7 @@ const expectRefusal = (response) => {
 // ============================================================================
 
 describe('Создание: ссылки из своих загрузок принимаются', () => {
-  test('ссылки, выданные маршрутом временных загрузок, сохраняются как есть во всех полях', async () => {
+  test('ссылки, выданные маршрутом временных загрузок, сохраняются; обложка — превью выбранного фото', async () => {
     const { partner, token } = await newPartner();
     const interior = await tempUpload(token, 'interior', PHOTO);
     const menuPhoto = await tempUpload(token, 'menu', PHOTO);
@@ -184,7 +184,7 @@ describe('Создание: ссылки из своих загрузок при
         type: 'menu', file_type: 'pdf', url: pdf.url, thumbnail_url: pdf.thumbnail_url, preview_url: pdf.preview_url,
       }),
     ]));
-    expect((await cardRow(cardId)).primary_image_url).toBe(interior.url);
+    expect((await cardRow(cardId)).primary_image_url).toBe(interior.preview_url);
   });
 
   test.each([
@@ -579,6 +579,8 @@ describe('Правка: обложку каталога из запроса не
       primary_image_url: 'https://images.example.org/cover.jpg',
     }).expect(200);
 
-    expect((await cardRow(card.id)).primary_image_url).toBe(own);
+    expect((await cardRow(card.id)).primary_image_url).toBe(
+      `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partner.id}/interior/own0001?_a=BAMAMiRg0`,
+    );
   });
 });

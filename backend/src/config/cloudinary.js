@@ -96,6 +96,44 @@ const RESOLUTION_CONFIG = {
 };
 
 /**
+ * What the cloud keeps of an uploaded photo (incoming transformation).
+ *
+ * Until 10.2026 the original was stored as sent: the site uploads the raw
+ * file (up to 10 MB, 1.8 MB on average), and storage alone would have used up
+ * about half of the free plan at 500 cards (load_costs ANALYSIS_20261018 §3.2;
+ * the Coordinator's decision, 21.10.2026, measure B). Only new uploads are
+ * stored smaller; the old originals stay as they are.
+ *
+ * - Menu photos keep the width every delivery and the menu recognition read
+ *   (`url` is the 'original' variant: c_limit,w_1920 with no height cap,
+ *   ocrService reads media.url), so recognition gets the same dimensions as
+ *   before; best automatic quality, because the delivery compresses again
+ *   (one more compression pass than before).
+ * - Every other photo (interior and the rest, promotions) keeps a long side
+ *   of 2560 px — headroom over the 1920 px delivered today. A photo taller
+ *   than 3:4 is delivered narrower than before (9:16 — 1440 px wide in place
+ *   of 1920), still above a phone screen's width.
+ *
+ * c_limit never enlarges: a photo already smaller (the app sends 1920 px) is
+ * stored as it is apart from the quality. PDFs and avatars have their own
+ * upload paths (uploadPdf, uploadAvatar) and are not affected.
+ */
+const INCOMING_CONFIG = {
+  menu: { width: RESOLUTION_CONFIG.original.width, crop: 'limit', quality: 'auto:best' },
+  photo: { width: 2560, height: 2560, crop: 'limit', quality: 'auto:good' },
+};
+
+/**
+ * The incoming transformation for a photo of this media type.
+ *
+ * @param {string} mediaType - 'interior', 'exterior', 'menu', 'dishes', 'promotions'
+ * @returns {Object[]} The upload's `transformation` option
+ */
+export const incomingTransformation = (mediaType) => [
+  { ...(mediaType === 'menu' ? INCOMING_CONFIG.menu : INCOMING_CONFIG.photo) },
+];
+
+/**
  * PDF menu configuration
  *
  * Cloudinary treats PDFs as multi-page images when uploaded with
@@ -215,14 +253,14 @@ export const cloudRefusedUpload = (error) => {
  */
 export const uploadImage = async (filePath, establishmentId, mediaType) => {
   try {
-    // Store the ORIGINAL as-is — no incoming transformation. Resizing at
-    // upload permanently destroys the master (a vertical phone photo capped
-    // at 1080 loses menu-text legibility forever) and double-compresses
-    // (q_auto at upload + q_auto at delivery). All sizing/quality happens at
-    // delivery time via generateImageUrl (Cloudinary's recommended model).
+    // The stored master is bounded (INCOMING_CONFIG). A menu photo keeps what
+    // the recognition reads — no height cap, a vertical menu needs its long
+    // side (the 07.2026 lesson of the h=1080 cap). Delivery sizes still come
+    // from generateImageUrl.
     const uploadResult = await cloudinary.uploader.upload(filePath, {
       folder: `establishments/${establishmentId}/${mediaType}`,
       resource_type: 'image',
+      transformation: incomingTransformation(mediaType),
     });
 
     logger.info('Image uploaded to Cloudinary', {
@@ -307,6 +345,59 @@ export const generateImageUrl = (publicId, resolution = 'original') => {
 export const generateAllResolutions = (publicId) => {
   return {
     url: generateImageUrl(publicId, 'original'),
+    preview_url: generateImageUrl(publicId, 'preview'),
+    thumbnail_url: generateImageUrl(publicId, 'thumbnail'),
+  };
+};
+
+/**
+ * The shapes of a photo link our server has issued for a stored photo: the
+ * 'original' delivery variant (generateAllResolutions — today's, and the one
+ * before the 2026-07-20 uplift) and the upload's own secure_url (no
+ * transformation). A version segment may follow; the public_id comes last,
+ * with an image extension or none.
+ */
+const ISSUED_PHOTO_LINK_FORMS = [
+  '',
+  'c_limit,w_1920/f_auto,fl_progressive,q_auto/',
+  'c_limit,h_1080,w_1920/f_auto,fl_progressive,q_auto/',
+];
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Preview and thumbnail of the photo a stored link shows, built from its
+ * public_id as generateAllResolutions builds them — or null, and then the
+ * link itself must serve as all three (the behaviour before 10.2026):
+ *
+ * - a link not on our cloud, or to a file outside a card's or a partner's
+ *   upload folder (assetHolder);
+ * - a link in any other shape than one we issued (ISSUED_PHOTO_LINK_FORMS):
+ *   another crop or a cut-out of the photo would show one picture in full
+ *   size and another in the lists and the catalog cover, and a segment the
+ *   public_id parser does not take for a transformation would name another
+ *   file (review before commit, lens, findings 1 and 3);
+ * - a file in a menu_pdf/ folder or a .pdf link: a PDF's file named as a
+ *   picture without an extension is delivered as the PDF itself (finding 2).
+ *
+ * The returned links name exactly the file of the given link.
+ *
+ * @param {string} url - A stored photo link
+ * @returns {{ preview_url: string, thumbnail_url: string }|null}
+ */
+export const photoVariantsOf = (url) => {
+  const publicId = ownCloudPublicId(url);
+  // A card's photo lies in a card's or a partner's upload folder; a segment
+  // the parser left in the id (`e_blur:300/v1/establishments/…`) fails here.
+  const holder = assetHolder(publicId);
+  if (!holder || holder.kind === 'avatars' || /(^|\/)menu_pdf\//.test(publicId)) return null;
+  const { pathname } = new URL(url);
+  const rest = pathname.slice(`/${cloudinary.config().cloud_name}/image/upload/`.length);
+  const forms = ISSUED_PHOTO_LINK_FORMS.map(escapeRegExp).join('|');
+  const extensions = [...IMAGE_FILE_EXTENSIONS, ...IMAGE_FILE_EXTENSIONS.map((ext) => ext.toUpperCase())].join('|');
+  const issued = new RegExp(`^(?:${forms})(?:v\\d+/)?${escapeRegExp(publicId)}(?:\\.(?:${extensions}))?$`);
+  if (!issued.test(rest)) return null;
+  return {
     preview_url: generateImageUrl(publicId, 'preview'),
     thumbnail_url: generateImageUrl(publicId, 'thumbnail'),
   };
