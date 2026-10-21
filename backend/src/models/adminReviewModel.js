@@ -12,6 +12,16 @@ import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 
 /**
+ * A LIKE pattern that matches the text literally: the backslash, «%» and «_»
+ * are escaped with the backslash named in ESCAPE (the rule of
+ * menuItemModel's search).
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+export const escapeLike = (value) => String(value).replace(/[\\%_]/g, (char) => `\\${char}`);
+
+/**
  * Build dynamic WHERE clause for admin review queries
  *
  * @param {Object} filters
@@ -32,9 +42,21 @@ const buildReviewWhere = (filters) => {
     values.push(filters.user_id);
   }
 
+  // The service has checked the three: whole numbers 1–5 (getReviews).
   if (filters.rating) {
     conditions.push(`r.rating = $${paramIndex++}`);
-    values.push(parseInt(filters.rating, 10));
+    values.push(filters.rating);
+  }
+
+  // A range — «оценка 1–2» of the analytics link (Chrome pass 20.10, p. 31).
+  if (filters.rating_min) {
+    conditions.push(`r.rating >= $${paramIndex++}`);
+    values.push(filters.rating_min);
+  }
+
+  if (filters.rating_max) {
+    conditions.push(`r.rating <= $${paramIndex++}`);
+    values.push(filters.rating_max);
   }
 
   // A viewer — the read-only panel role shown to people outside the project —
@@ -59,11 +81,13 @@ const buildReviewWhere = (filters) => {
     // For a viewer the search reads visible texts only: the text of a hidden
     // review is withheld from them, and a search over it would let the text be
     // guessed piece by piece from which queries match.
-    const searchCondition = `COALESCE(r.content, r.text, '') ILIKE $${paramIndex++}`;
+    // «%» and «_» are the moderator's characters, not wildcards: «100%»
+    // finds the text «100%», not every review (walkthrough 20.10, A2-20).
+    const searchCondition = `COALESCE(r.content, r.text, '') ILIKE $${paramIndex++} ESCAPE '\\'`;
     conditions.push(filters.viewer
       ? `(r.is_visible = true AND ${searchCondition})`
       : searchCondition);
-    values.push(`%${filters.search}%`);
+    values.push(`%${escapeLike(filters.search)}%`);
   }
 
   if (filters.from) {
@@ -146,7 +170,16 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       e.average_rating::float8 as establishment_average_rating,
       e.review_count as establishment_review_count,
       author.review_count as author_review_count,
-      author.average_rating::float8 as author_average_rating
+      author.average_rating::float8 as author_average_rating,
+      -- Заблокирован ли автор: «Показать» на его отзыве вернёт отзыв гостям,
+      -- а разблокировка его потом уже не тронет (пункт A2-11).
+      u.is_active as author_is_active,
+      -- Почему отзыв скрыт: последняя из записей «скрыт/показан модератором»
+      -- и «скрыт блокировкой автора» (её список hidden_review_ids). У
+      -- видимого и удалённого — ничего; скрытый без записи (скрипт оператора
+      -- или до журнала) — тоже ничего: панель не выдумывает причину.
+      hid.action as hidden_action,
+      hid.reason as hidden_reason
     FROM reviews r
     LEFT JOIN users u ON r.user_id = u.id
     LEFT JOIN establishments e ON r.establishment_id = e.id
@@ -160,6 +193,23 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       FROM reviews ar
       WHERE ar.user_id = r.user_id AND ar.is_deleted = FALSE ${authorVisibility}
     ) author ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT src.action, src.reason
+      FROM (
+        SELECT mod.action, mod.new_data ->> 'reason' as reason, mod.created_at, mod.id
+        FROM audit_log mod
+        WHERE mod.entity_type = 'review' AND mod.entity_id = r.id
+          AND mod.action IN ('review_hide', 'review_show')
+        UNION ALL
+        SELECT blk.action, blk.new_data ->> 'reason' as reason, blk.created_at, blk.id
+        FROM audit_log blk
+        WHERE blk.entity_type = 'user' AND blk.entity_id = r.user_id
+          AND blk.action = 'user_block'
+          AND blk.new_data -> 'hidden_review_ids' ? r.id::text
+      ) src
+      ORDER BY src.created_at DESC, src.id DESC
+      LIMIT 1
+    ) hid ON r.is_visible = FALSE AND r.is_deleted = FALSE
     ${whereClause}
     ORDER BY ${orderBy}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -309,4 +359,24 @@ export const getReviewForAdmin = async (reviewId) => {
     });
     throw error;
   }
+};
+
+/**
+ * Hide several reviews at once — those of them still visible and not deleted.
+ * The rest (already hidden, deleted, unknown) are left as they are: a repeat
+ * of the same batch changes nothing.
+ *
+ * @param {Object} client - pg client inside the caller's transaction
+ * @param {string[]} reviewIds
+ * @returns {Promise<Array<{id: string, establishment_id: string}>>} the reviews hidden now
+ */
+export const hideVisibleReviews = async (client, reviewIds) => {
+  const result = await client.query(
+    `UPDATE reviews
+     SET is_visible = FALSE, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ANY($1::uuid[]) AND is_visible = TRUE AND is_deleted = FALSE
+     RETURNING id, establishment_id`,
+    [reviewIds],
+  );
+  return result.rows;
 };

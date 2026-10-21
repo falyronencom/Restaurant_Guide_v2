@@ -8,6 +8,7 @@
  *   GET  /api/v1/admin/reviews                    — list all reviews (admin view)
  *   POST /api/v1/admin/reviews/:id/visibility        — set review visibility { is_visible }
  *   POST /api/v1/admin/reviews/:id/delete         — soft-delete review
+ *   POST /api/v1/admin/reviews/hide-batch         — hide chosen reviews { review_ids, reason }
  */
 
 import * as adminReviewService from '../services/adminReviewService.js';
@@ -30,6 +31,8 @@ export const listReviews = asyncHandler(async (req, res) => {
     establishment_id,
     user_id,
     rating,
+    rating_min,
+    rating_max,
     status,
     search,
     sort,
@@ -43,6 +46,8 @@ export const listReviews = asyncHandler(async (req, res) => {
     establishment_id,
     user_id,
     rating,
+    rating_min,
+    rating_max,
     status,
     search,
     sort,
@@ -55,7 +60,7 @@ export const listReviews = asyncHandler(async (req, res) => {
     adminId: req.user.userId,
     count: result.reviews.length,
     total: result.meta.total,
-    filters: { status, rating, search },
+    filters: { status, rating, rating_min, rating_max, author: Boolean(user_id), search: Boolean(search) },
     endpoint: 'GET /api/v1/admin/reviews',
   });
 
@@ -83,6 +88,7 @@ export const setVisibility = asyncHandler(async (req, res) => {
   const result = await adminReviewService.setVisibility(reviewId, isVisible, adminUserId, {
     ipAddress: req.ip,
     userAgent: req.get('user-agent'),
+    reason: req.body?.reason,
   });
 
   logger.info('Admin set review visibility', {
@@ -119,12 +125,34 @@ export const deleteReview = asyncHandler(async (req, res) => {
   logger.info('Admin deleted review', {
     adminId: adminUserId,
     reviewId,
-    reason: reason || 'no reason provided',
+    withReason: Boolean(reason),
     endpoint: 'POST /api/v1/admin/reviews/:id/delete',
   });
 
   res.status(200).json({
     success: true,
     data: { message: 'Review deleted successfully' },
+  });
+});
+
+/**
+ * POST /api/v1/admin/reviews/hide-batch
+ * Body: { review_ids: uuid[], reason: string }
+ *
+ * Hides the chosen reviews at once with one reason (the reviews of one
+ * person — walkthrough 20.10, A2-09). Already hidden, deleted or unknown
+ * reviews are skipped; the answer says how many were hidden.
+ */
+export const hideReviewsBatch = asyncHandler(async (req, res) => {
+  const result = await adminReviewService.hideReviewsBatch(
+    req.body?.review_ids,
+    req.body?.reason,
+    req.user.userId,
+    { ipAddress: req.ip, userAgent: req.get('user-agent') },
+  );
+
+  res.status(200).json({
+    success: true,
+    data: result,
   });
 });

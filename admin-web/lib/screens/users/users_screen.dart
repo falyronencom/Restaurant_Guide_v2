@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
@@ -6,6 +7,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/screens/reviews/reviews_management_screen.dart';
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
@@ -26,6 +28,31 @@ const String kBlockConsequences =
     'Человек не сможет войти, его сеансы и уведомления на телефоне '
     'прекратятся, а все его видимые отзывы скроются, и рейтинг заведений '
     'пересчитается без них.';
+
+/// Чего блокировка НЕ делает и что увидит сам человек (проход по панели
+/// 20.10, A2-22). Сверено с кодом 21.10: вход ищет только включённые учётки
+/// (`authService.verifyCredentials` — `AND is_active = true`), и приложение
+/// показывает общий отказ входа; брони блокировка не трогает, а новую
+/// выключенная учётка не создаст (`bookingModel.createBooking`).
+const String kBlockWhatTheyNotice =
+    'Сам человек причину не узнает: при входе по паролю он увидит «Неверный '
+    'email/телефон или пароль». Его брони у заведений останутся как есть, '
+    'новые он сделать не сможет.';
+
+/// Ширина содержимого экрана, с которой поиск и колонка сжимаются — как у
+/// «Отзывов» ([kReviewsNarrowWidth]).
+const double kUsersNarrowWidth = kReviewsNarrowWidth;
+
+/// Статус карточки заведения словами — в карточке партнёра.
+String establishmentStatusWord(String status) => switch (status) {
+      'active' => 'в каталоге',
+      'pending' => 'на модерации',
+      'suspended' => 'приостановлена',
+      'draft' => 'черновик',
+      'rejected' => 'отклонена',
+      'archived' => 'в архиве',
+      _ => 'статус не распознан',
+    };
 
 /// «Пользователи» — найти человека, заблокировать, разблокировать, сбросить
 /// имя (проход тестировщика 17.10, п. 8; решение Координатора В9).
@@ -56,6 +83,9 @@ class _UsersScreenState extends State<UsersScreen> {
     super.initState();
     _provider = context.read<AdminUsersProvider>();
     _provider.addListener(_onProviderChanged);
+    // Поиск живёт в провайдере и после ухода с экрана — поле показывает его
+    // (проход по панели 20.10, A2-18).
+    _searchController.text = _provider.searchQuery;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _provider.loadUsers();
@@ -109,6 +139,13 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _build(context, narrow: constraints.maxWidth < kUsersNarrowWidth),
+    );
+  }
+
+  Widget _build(BuildContext context, {required bool narrow}) {
     final provider = context.watch<AdminUsersProvider>();
     // Просмотрщику сервер поиск людей не даёт (поиск по имени отвечал бы,
     // зарегистрирован ли человек), поэтому поле ему не показывается.
@@ -128,20 +165,41 @@ class _UsersScreenState extends State<UsersScreen> {
             if (canSearch)
               _SearchField(
                 controller: _searchController,
+                width: narrow ? 150 : 300,
                 isSearchMode: provider.searchQuery.isNotEmpty,
                 onSubmit: provider.search,
                 onClear: _clearSearch,
               ),
+            // Подписаны: «Все» без подписи не говорило, все — кто (осмотр
+            // панели 20.10, п. 35). «Удалённые» — отдельно от
+            // «Заблокированных» (A2-05).
             AdminFilterDropdown<String>(
+              key: const ValueKey<String>('users-status-filter'),
+              label: 'Состояние',
               value: provider.statusFilter,
-              emptyLabel: 'Все',
+              emptyLabel: 'любое',
               options: const <AdminFilterOption<String>>[
-                AdminFilterOption<String>(value: null, label: 'Все'),
+                AdminFilterOption<String>(value: null, label: 'любое'),
                 AdminFilterOption<String>(value: 'active', label: 'Активные'),
                 AdminFilterOption<String>(
                     value: 'blocked', label: 'Заблокированные'),
+                AdminFilterOption<String>(value: 'deleted', label: 'Удалённые'),
               ],
               onChanged: provider.setStatusFilter,
+            ),
+            AdminFilterDropdown<String>(
+              key: const ValueKey<String>('users-role-filter'),
+              label: 'Роль',
+              value: provider.roleFilter,
+              emptyLabel: 'любая',
+              options: const <AdminFilterOption<String>>[
+                AdminFilterOption<String>(value: null, label: 'любая'),
+                AdminFilterOption<String>(value: 'user', label: 'Пользователи'),
+                AdminFilterOption<String>(value: 'partner', label: 'Партнёры'),
+                AdminFilterOption<String>(
+                    value: 'panel', label: 'Учётки панели'),
+              ],
+              onChanged: provider.setRoleFilter,
             ),
           ],
         ),
@@ -149,7 +207,10 @@ class _UsersScreenState extends State<UsersScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _UserListColumn(onResetFilters: _resetFilters),
+              _UserListColumn(
+                width: narrow ? 340 : 420,
+                onResetFilters: _resetFilters,
+              ),
               const Expanded(child: _UserPanel()),
             ],
           ),
@@ -175,12 +236,14 @@ class _UsersScreenState extends State<UsersScreen> {
 
 class _SearchField extends StatelessWidget {
   final TextEditingController controller;
+  final double width;
   final bool isSearchMode;
   final ValueChanged<String> onSubmit;
   final VoidCallback onClear;
 
   const _SearchField({
     required this.controller,
+    required this.width,
     required this.isSearchMode,
     required this.onSubmit,
     required this.onClear,
@@ -195,7 +258,7 @@ class _SearchField extends StatelessWidget {
         );
 
     return SizedBox(
-      width: 300,
+      width: width,
       height: AdminFilterDropdown.height,
       child: TextField(
         key: const ValueKey<String>('users-search'),
@@ -240,11 +303,11 @@ class _SearchField extends StatelessWidget {
 // =============================================================================
 
 class _UserListColumn extends StatelessWidget {
+  /// 420 на широком окне, 340 — на узком (см. [kUsersNarrowWidth]).
+  final double width;
   final VoidCallback onResetFilters;
 
-  const _UserListColumn({required this.onResetFilters});
-
-  static const double width = 420;
+  const _UserListColumn({required this.width, required this.onResetFilters});
 
   @override
   Widget build(BuildContext context) {
@@ -375,7 +438,7 @@ class _UserRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (!user.isActive) const _BlockedChip(),
+                  if (!user.isActive) _StateChip(user: user),
                 ],
               ),
               Text(
@@ -404,23 +467,28 @@ String displayUserName(AdminUser user) {
   return user.viewerRedacted ? kRedactedForViewerLabel : 'Без имени';
 }
 
-class _BlockedChip extends StatelessWidget {
-  const _BlockedChip();
+/// Метка выключенной учётки: «заблокирован» или «учётка удалена» — разное:
+/// удалённую не разблокируют (проход по панели 20.10, A2-05).
+class _StateChip extends StatelessWidget {
+  final AdminUser user;
+
+  const _StateChip({required this.user});
 
   @override
   Widget build(BuildContext context) {
+    final deleted = user.isDeleted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: AppTheme.errorTint(0.10),
+        color: deleted ? AppTheme.backgroundWarm : AppTheme.errorTint(0.10),
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
-      child: const Text(
-        'заблокирован',
+      child: Text(
+        deleted ? 'учётка удалена' : 'заблокирован',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: AppTheme.errorRed,
+          color: deleted ? AppTheme.textSecondary : AppTheme.errorRed,
         ),
       ),
     );
@@ -474,8 +542,15 @@ class _UserPanel extends StatelessWidget {
           children: <Widget>[
             _Heading(user: user),
             _Facts(user: user),
-            if (user.lastBlockAction != null)
-              _LastBlock(action: user.lastBlockAction!),
+            if (user.blockEntries.isNotEmpty)
+              _BlockHistory(entries: user.blockEntries)
+            else if (user.isBlocked)
+              const Text(
+                'Записи о блокировке в журнале нет — её ставили до того, как '
+                'панель и скрипт оператора начали её записывать.',
+                key: ValueKey<String>('user-block-unrecorded'),
+                style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+              ),
             if (canModerate) _Actions(provider: provider, user: user),
           ],
         ),
@@ -506,7 +581,7 @@ class _Heading extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        if (!user.isActive) const _BlockedChip(),
+        if (!user.isActive) _StateChip(user: user),
       ],
     );
   }
@@ -533,13 +608,21 @@ class _Facts extends StatelessWidget {
           _Fact(
             label: 'Почта или телефон',
             value: user.contact ??
-                (user.viewerRedacted ? kRedactedForViewerLabel : 'не указаны'),
+                (user.viewerRedacted
+                    ? kRedactedForViewerLabel
+                    : user.isDeleted
+                        ? 'стёрты при удалении учётки'
+                        : 'не указаны'),
             muted: user.contact == null,
           ),
           _Fact(label: 'Роль', value: actorRoleLabel(user.role) ?? user.role),
           _Fact(
             label: 'Состояние',
-            value: user.isActive ? 'Активен' : 'Заблокирован',
+            value: user.isDeleted
+                ? 'Учётка удалена'
+                : user.isActive
+                    ? 'Активен'
+                    : 'Заблокирован',
           ),
           _Fact(
             label: 'Отзывы',
@@ -556,6 +639,21 @@ class _Facts extends StatelessWidget {
                   ? formatCount(user.establishmentCount)
                   : '${formatCount(user.establishmentCount)}, в каталоге или '
                       'на модерации ${formatCount(user.liveEstablishmentCount)}',
+            ),
+          // Чьи это заведения — по названию (осмотр панели 20.10, п. 35).
+          // Просмотрщику сервер списка не даёт.
+          if (user.establishments?.isNotEmpty == true)
+            _Fact(
+              label: user.establishments!.length < user.establishmentCount
+                  ? 'Заведения (первые ${user.establishments!.length})'
+                  : 'Заведения',
+              value: user.establishments!
+                  .map((card) => [
+                        card.name.trim().isEmpty ? 'Без названия' : card.name,
+                        if (card.city?.trim().isNotEmpty == true) card.city!,
+                        establishmentStatusWord(card.status),
+                      ].join(' · '))
+                  .join('\n'),
             ),
           if (user.createdAt != null)
             _Fact(
@@ -592,10 +690,35 @@ class _Fact extends StatelessWidget {
   }
 }
 
-class _LastBlock extends StatelessWidget {
+/// Кто, когда и за что блокировал и разблокировал — новые сверху. После
+/// разблокировки причина блокировки остаётся видна (проход по панели 20.10,
+/// A2-15; осмотр п. 35).
+class _BlockHistory extends StatelessWidget {
+  final List<AdminUserBlockAction> entries;
+
+  const _BlockHistory({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey<String>('user-block-history'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: <Widget>[
+        Text(
+          entries.length == 1 ? 'Блокировка' : 'История блокировок',
+          style: AppTheme.canonFieldLabel,
+        ),
+        for (final entry in entries) _BlockEntry(action: entry),
+      ],
+    );
+  }
+}
+
+class _BlockEntry extends StatelessWidget {
   final AdminUserBlockAction action;
 
-  const _LastBlock({required this.action});
+  const _BlockEntry({required this.action});
 
   @override
   Widget build(BuildContext context) {
@@ -603,10 +726,20 @@ class _LastBlock extends StatelessWidget {
     final who = action.adminName?.trim();
     final head = [
       action.isBlock ? 'Заблокирован' : 'Разблокирован',
-      if (when != null) formatDateLocal(when),
-      if (who != null && who.isNotEmpty) who,
+      if (when != null) '${formatDateLocal(when)}, ${formatTimeLocal(when)}',
+      if (action.byOperator)
+        'оператор скриптом'
+      else if (who != null && who.isNotEmpty)
+        who,
     ].join(' · ');
     final reason = action.reason?.trim();
+    final hidden = action.hiddenReviews;
+    final restored = action.restoredReviews;
+    final count = action.isBlock
+        ? (hidden == null || action.byOperator
+            ? null
+            : 'скрыто отзывов: ${formatCount(hidden)}')
+        : (restored == null ? null : 'возвращено отзывов: ${formatCount(restored)}');
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -621,6 +754,11 @@ class _LastBlock extends StatelessWidget {
           Text(head, style: AppTheme.canonFieldLabel),
           if (reason != null && reason.isNotEmpty)
             Text('Причина: $reason', style: AppTheme.canonFieldValue),
+          if (count != null)
+            Text(
+              count,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
         ],
       ),
     );
@@ -658,6 +796,40 @@ class _Actions extends StatelessWidget {
     final error = provider.submitError;
     final done = provider.lastResult;
     final isSelf = context.watch<AuthProvider>().currentUser?.id == user.id;
+    final nameAlreadyReset = user.name == 'Пользователь';
+    final hasReviews = user.reviewCount > 0;
+
+    // Отзывы человека — на экране «Отзывы», где их можно отметить и скрыть
+    // разом (проход по панели 20.10, A2-09).
+    final reviewsLink = hasReviews
+        ? TextButton.icon(
+            key: const ValueKey<String>('user-author-reviews'),
+            onPressed: () => context.go(authorReviewsLocation(user.id)),
+            icon: const Icon(Icons.rate_review_outlined, size: 18),
+            label: Text(
+              'Отзывы автора (${formatCount(user.reviewCount)})',
+            ),
+          )
+        : null;
+
+    // Удалённая учётка — без кнопок: сервер всегда откажет (A2-05).
+    if (user.isDeleted) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 10,
+        children: <Widget>[
+          const Text(
+            'Учётку удалил её владелец. Удалённую учётку не блокируют, не '
+            'включают и не переименовывают: почта, телефон и имя стёрты, '
+            'войти в неё нельзя.',
+            key: ValueKey<String>('user-deleted-note'),
+            style: TextStyle(
+                fontSize: 13, height: 1.45, color: AppTheme.textSecondary),
+          ),
+          if (reviewsLink != null) reviewsLink,
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,7 +879,7 @@ class _Actions extends StatelessWidget {
             if (user.canResetName && !isSelf)
               OutlinedButton.icon(
                 key: const ValueKey<String>('user-reset-name'),
-                onPressed: busy || user.name == 'Пользователь'
+                onPressed: busy || nameAlreadyReset
                     ? null
                     : () => _ask(context, _ReasonDialog.resetName,
                         (answer) => provider.resetName(answer.reason)),
@@ -715,6 +887,7 @@ class _Actions extends StatelessWidget {
                 icon: const Icon(Icons.badge_outlined, size: 19),
                 label: const Text('Сбросить имя'),
               ),
+            if (reviewsLink != null) reviewsLink,
             if (busy)
               const SizedBox(
                 width: 20,
@@ -723,6 +896,13 @@ class _Actions extends StatelessWidget {
               ),
           ],
         ),
+        // Серая кнопка без слов не объясняет, почему нельзя (A2-17).
+        if (user.canResetName && !isSelf && nameAlreadyReset)
+          const Text(
+            'Имя уже «Пользователь» — сбрасывать нечего.',
+            key: ValueKey<String>('user-name-already-reset'),
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
         if (error != null)
           Text(
             error,
@@ -782,15 +962,18 @@ class _ReasonDialog extends StatefulWidget {
 
   static const _ReasonDialog block = _ReasonDialog(
     title: 'Заблокировать пользователя?',
-    body: kBlockConsequences,
+    body: '$kBlockConsequences\n\n$kBlockWhatTheyNotice',
     confirm: 'Заблокировать',
     destructive: true,
   );
 
+  /// Если блокировку ставил скрипт оператора, списка скрытых отзывов нет —
+  /// и возвращать нечего; диалог говорит об этом заранее (A2-06).
   static const _ReasonDialog unblock = _ReasonDialog(
     title: 'Разблокировать пользователя?',
     body: 'Человек снова сможет войти. Отзывы, скрытые модератором по одному, '
-        'останутся скрытыми в любом случае.',
+        'останутся скрытыми в любом случае. Если блокировку ставил оператор '
+        'скриптом, список скрытых отзывов не записан — они останутся как есть.',
     confirm: 'Разблокировать',
     offerRestore: true,
   );

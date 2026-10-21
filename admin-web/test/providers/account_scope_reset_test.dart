@@ -37,6 +37,9 @@ class _FakeReviewService implements AdminReviewService {
     int perPage = 20,
     String? status,
     int? rating,
+    int? ratingMin,
+    int? ratingMax,
+    String? authorId,
     String? search,
     String? sort,
     DateTime? from,
@@ -73,6 +76,7 @@ class _FakeUserService implements AdminUserService {
     int perPage = 20,
     String? search,
     String? status,
+    String? role,
   }) async =>
       const AdminUserListResponse(
           users: <AdminUser>[_person], total: 1, page: 1, pages: 1);

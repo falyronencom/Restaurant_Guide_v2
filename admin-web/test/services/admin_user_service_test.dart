@@ -136,14 +136,17 @@ void main() {
         }));
     final service = serviceOver(adapter);
 
-    expect(await service.block('u1', reason: 'мат'), isTrue);
+    final blocked = await service.block('u1', reason: 'мат');
+    expect(blocked.changed, isTrue);
+    // Счёт скрытых отзывов — для итога «скрыто отзывов: 3» (A2-06).
+    expect(blocked.hiddenReviews, 3);
     final request = adapter.requests.single;
     expect(request.method, 'POST');
     expect(request.path, '/api/v1/admin/users/u1/block');
     expect(request.data, <String, dynamic>{'reason': 'мат'});
 
     changed = false;
-    expect(await service.block('u1', reason: 'мат'), isFalse);
+    expect((await service.block('u1', reason: 'мат')).changed, isFalse);
   });
 
   test('сброс имени и разблокировка — свои адреса', () async {
