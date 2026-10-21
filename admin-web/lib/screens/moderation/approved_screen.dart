@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
@@ -18,7 +20,11 @@ import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart'
 /// то есть относится не к этой колонке, а к экрану. По канону слот шапки для
 /// того и заведён.
 class ApprovedScreen extends StatefulWidget {
-  const ApprovedScreen({super.key});
+  /// Запрос из адреса (`/moderation/approved?q=…`): экран открывается сразу
+  /// с поиском по нему и с текстом в поле — как будто его ввёл модератор.
+  final String? initialQuery;
+
+  const ApprovedScreen({super.key, this.initialQuery});
 
   @override
   State<ApprovedScreen> createState() => _ApprovedScreenState();
@@ -52,8 +58,15 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
     super.initState();
     _provider = context.read<ApprovedProvider>();
     _provider.addListener(_onProviderChanged);
+    final query = widget.initialQuery?.trim() ?? '';
+    if (query.isNotEmpty) _searchController.text = query;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ApprovedProvider>().loadActiveEstablishments();
+      final approved = context.read<ApprovedProvider>();
+      if (query.isNotEmpty) {
+        approved.searchEstablishments(query);
+      } else {
+        approved.loadActiveEstablishments();
+      }
     });
   }
 
@@ -82,7 +95,9 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
     return Column(
       children: [
         AdminScreenHeader(
-          title: 'Одобренные',
+          // Поиск идёт по всем статусам — и заголовок говорит об этом, а не
+          // остаётся «Одобренные» над найденными черновиками (Ч19, 20.10).
+          title: provider.isSearchMode ? 'Поиск по всем статусам' : 'Одобренные',
           subtitle: _subtitle(context, provider),
           // Обновление списка показывается полоской в шапке, а не подменой
           // карточек скелетоном: данные остаются читаемыми.
@@ -104,7 +119,9 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
                   context.read<ApprovedProvider>().searchEstablishments(query),
               onClear: () {
                 _searchController.clear();
-                context.read<ApprovedProvider>().clearSearch();
+                if (context.read<ApprovedProvider>().isSearchMode) {
+                  context.read<ApprovedProvider>().clearSearch();
+                }
               },
             ),
           ],
@@ -179,9 +196,10 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
 
     if (provider.isSearchMode) {
       final found = provider.totalCount;
+      final query = provider.searchQuery.trim();
       return found == 0
-          ? 'Совпадений нет'
-          : 'Найдено ${countWithNoun(found, 'заведение', 'заведения', 'заведений')}';
+          ? 'По «$query» совпадений нет'
+          : 'По «$query» найдено ${countWithNoun(found, 'заведение', 'заведения', 'заведений')}';
     }
 
     final published =
@@ -203,9 +221,13 @@ class _ApprovedScreenState extends State<ApprovedScreen> {
     final active = item is ActiveEstablishmentItem ? item : null;
     final found = item is SearchResultItem ? item : null;
 
+    final published = active?.publishedAt ?? found?.publishedAt;
     return ModerationCatalogCard(
       name: item.name,
-      date: active?.publishedAt ?? found?.publishedAt ?? item.updatedAt,
+      date: published ?? item.updatedAt,
+      // Дата подписана: без подписи было непонятно, заявка это, одобрение
+      // или создание (Ч17, 20.10).
+      dateLabel: published != null ? 'опубликовано' : 'изменено',
       subtitle: _typeAndCity(item),
       thumbnailUrl: item.thumbnailUrl,
       categories: item.categories,
@@ -290,7 +312,10 @@ class _Metric extends StatelessWidget {
 }
 
 /// Поиск по всем статусам — компактное поле в слоте шапки.
-class _SearchField extends StatelessWidget {
+///
+/// Ищет по мере ввода — после паузы, от двух букв; Enter ищет сразу (Ч19,
+/// 20.10: прежде поиск шёл только по Enter, и об этом ничего не говорило).
+class _SearchField extends StatefulWidget {
   final TextEditingController controller;
   final bool isSearchMode;
   final ValueChanged<String> onSubmit;
@@ -303,8 +328,47 @@ class _SearchField extends StatelessWidget {
     required this.onClear,
   });
 
+  /// Пауза после последней буквы: «кофейня» — не семь запросов.
+  static const Duration debounce = Duration(milliseconds: 450);
+
+  /// Короче — не ищем: одна буква совпадёт почти со всем каталогом.
+  static const int minLength = 2;
+
+  @override
+  State<_SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<_SearchField> {
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _run(String value) {
+    _debounce?.cancel();
+    final query = value.trim();
+    if (query.isEmpty) {
+      widget.onClear();
+    } else if (query.length >= _SearchField.minLength) {
+      widget.onSubmit(query);
+    }
+  }
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(_SearchField.debounce, () {
+      if (mounted) _run(value);
+    });
+    setState(() {}); // крестик очистки появляется и исчезает
+  }
+
   @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final isSearchMode = widget.isSearchMode;
     return SizedBox(
       width: 240,
       height: 40,
@@ -312,16 +376,10 @@ class _SearchField extends StatelessWidget {
         controller: controller,
         style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
         textAlignVertical: TextAlignVertical.center,
-        onSubmitted: (value) {
-          final query = value.trim();
-          if (query.isEmpty) {
-            onClear();
-          } else {
-            onSubmit(query);
-          }
-        },
+        onChanged: _onChanged,
+        onSubmitted: _run,
         decoration: InputDecoration(
-          hintText: 'Поиск по всем статусам',
+          hintText: 'Название — во всех статусах',
           hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
           isDense: true,
           contentPadding: EdgeInsets.zero,
@@ -331,11 +389,15 @@ class _SearchField extends StatelessWidget {
             color: AppTheme.textTertiary,
           ),
           prefixIconConstraints: const BoxConstraints(minWidth: 38),
-          suffixIcon: isSearchMode
+          suffixIcon: isSearchMode || controller.text.isNotEmpty
               ? IconButton(
                   icon: const Icon(Icons.close, size: 17),
                   color: AppTheme.textSecondary,
-                  onPressed: onClear,
+                  onPressed: () {
+                    _debounce?.cancel();
+                    widget.onClear();
+                    setState(() {});
+                  },
                   tooltip: 'Сбросить поиск',
                 )
               : null,
@@ -383,6 +445,8 @@ class _EntityActions extends StatelessWidget {
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
       busy: provider.isSubmitting,
+      compact: MediaQuery.sizeOf(context).width <
+          ModerationEntityActions.compactBelowWindowWidth,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.canBeSuspendedByModerator
           ? (reason) => provider
@@ -394,7 +458,8 @@ class _EntityActions extends StatelessWidget {
               .unsuspendEstablishment()
               .then((ok) => ok ? badges.load() : null)
           : null,
-      onClaim: (userId) => provider.claimEstablishment(userId),
+      onClaim: (userId, label) =>
+          provider.claimEstablishment(userId, userLabel: label),
     );
   }
 }
@@ -414,6 +479,10 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      listIsEmpty: !provider.isLoadingList &&
+          provider.listError == null &&
+          provider.totalCount == 0,
+      partnerLabel: detail == null ? null : provider.handedTo(detail.id),
       onRetryDetail: provider.selectedId == null
           ? null
           : () => context

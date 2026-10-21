@@ -79,15 +79,15 @@ void main() {
         (tester) async {
       await pumpCatalog(tester, itemCount: 1);
 
-      // 80 миниатюра + 12 паддинга сверху и снизу + 1.5 рамки с каждой
-      // стороны. Фотография внутри — в коробке фиксированного размера,
+      // 88 содержимого (миниатюра 80 + строка подписанной даты, Ч17, 21.10)
+      // + 12 паддинга сверху и снизу + 1.5 рамки с каждой стороны. Фотография внутри — в коробке фиксированного размера,
       // поэтому её пропорции на высоту строки не влияют: в кадре 05 ровно
       // это и было дефектом.
       expect(
         tester.getSize(find.byType(ModerationCatalogCard).first).height,
         ModerationCatalogCard.height,
       );
-      expect(ModerationCatalogCard.height, 107);
+      expect(ModerationCatalogCard.height, 115);
     });
 
     testWidgets('выбор карточки не сдвигает её геометрию', (tester) async {
@@ -101,8 +101,15 @@ void main() {
     testWidgets('дата в карточке — моноширинная', (tester) async {
       await pumpCatalog(tester, itemCount: 1);
 
-      final date = tester.widget<Text>(find.text('12.07.2026'));
-      expect(date.style?.fontFamily, AppTheme.fontMonoFamily);
+      // Дата — пролётом внутри строки «подпись + дата» (Ч17): моноширинной
+      // обязана быть сама дата, а не подпись перед ней.
+      final line = tester.widget<Text>(find.textContaining('12.07.2026'));
+      final spans = <TextSpan>[];
+      line.textSpan!.visitChildren((span) {
+        if (span is TextSpan && span.text == '12.07.2026') spans.add(span);
+        return true;
+      });
+      expect(spans.single.style?.fontFamily, AppTheme.fontMonoFamily);
     });
   });
 

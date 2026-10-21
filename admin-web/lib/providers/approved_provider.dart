@@ -85,6 +85,7 @@ class ApprovedProvider extends ChangeNotifier {
     _selectedId = null;
     _isSubmitting = false;
     _submitError = null;
+    _handedTo.clear();
     notifyListeners();
   }
 
@@ -375,8 +376,18 @@ class ApprovedProvider extends ChangeNotifier {
     return true;
   }
 
-  /// Claim the establishment shown in the detail panel for a target user
-  Future<bool> claimEstablishment(String userId) async {
+  /// Кому модератор передал карточку в этой сессии: id карточки → «Имя ·
+  /// почта» (пункт A1-02). До 21.10.2026 после «Назначить партнёра» окно
+  /// закрывалось, а проверить результат было нечем: владельца карточка не
+  /// показывает.
+  final Map<String, String> _handedTo = <String, String>{};
+
+  /// Кому передана карточка [id] в этой сессии; `null` — не передавалась.
+  String? handedTo(String id) => _handedTo[id];
+
+  /// Claim the establishment shown in the detail panel for a target user.
+  /// [userLabel] — подпись выбранного («Имя · почта»): её покажет карточка.
+  Future<bool> claimEstablishment(String userId, {String? userLabel}) async {
     final id = _shownId;
     // Второй клик, пока первый запрос в пути, — не второе действие (пункт
     // A1-03): кнопки гаснут, но защита — здесь, а не только в кнопке.
@@ -400,6 +411,7 @@ class ApprovedProvider extends ChangeNotifier {
     // карточки и только если она всё ещё открыта. Раньше перечитывание шло
     // через selectEstablishment и выходило ранним возвратом — деталь уже
     // была, и панель продолжала показывать прежнего владельца.
+    if (userLabel != null) _handedTo[id] = userLabel;
     _isSubmitting = false;
     notifyListeners();
     if (_selectedId == id) await _loadDetail(id);

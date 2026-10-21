@@ -226,6 +226,23 @@ void main() {
     expect(find.text('parking'), findsOneWidget);
   });
 
+  // Подпись — из словаря карточки, того же, что в модерации (П5, К-4): ключ
+  // остаётся рядом для сверки с каноном, ключ вне канона подписи не получает.
+  testWidgets('перепись подписывает ключи канона по-русски, чужой — нет',
+      (tester) async {
+    final fake = await pumpScreen(tester);
+    fake.next.complete(_data(keys: const <AttributeKeyCount>[
+      AttributeKeyCount(key: 'live_music', count: 12),
+      AttributeKeyCount(key: 'hookah', count: 3),
+    ]));
+    await tester.pump();
+
+    expect(find.text('Живая музыка  '), findsOneWidget);
+    expect(find.text('live_music'), findsOneWidget);
+    expect(find.text('hookah'), findsOneWidget);
+    expect(find.textContaining('Кальян'), findsNothing);
+  });
+
   testWidgets('«Обновить» перечитывает в обход снимка сервера',
       (tester) async {
     final fake = await pumpScreen(tester);

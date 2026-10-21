@@ -94,57 +94,85 @@ class _MenuItemsModerationScreenState extends State<MenuItemsModerationScreen> {
     });
   }
 
+  /// Ширина экрана, от которой три фильтра помещаются в шапку рядом с
+  /// поиском. Уже — они уходят строкой под шапку: на 1150 фильтры съедали
+  /// заголовок до «П…» и подпись до «2 пози…» (Ч24, F-03).
+  static const double filtersInHeaderMinWidth = 1180;
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MenuItemsModerationProvider>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdminScreenHeader(
-          title: 'Позиции меню',
-          subtitle: _subtitle(provider),
-          busy: provider.isRefreshing,
-          actions: <Widget>[
-            const _QueueSearchField(),
-            AdminFilterDropdown<String>(
-              value: provider.cityFilter,
-              emptyLabel: 'Все города',
-              options: <AdminFilterOption<String>>[
-                const AdminFilterOption<String>(value: null, label: 'Все города'),
-                for (final city in _cityOptions(provider))
-                  AdminFilterOption<String>(value: city, label: city),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final inHeader = constraints.maxWidth >= filtersInHeaderMinWidth;
+        final filters = _filters(provider);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AdminScreenHeader(
+              title: 'Позиции меню',
+              subtitle: _subtitle(provider),
+              busy: provider.isRefreshing,
+              actions: <Widget>[
+                const _QueueSearchField(),
+                if (inHeader) ...filters,
               ],
-              onChanged: provider.setCityFilter,
             ),
-            AdminFilterDropdown<String>(
-              value: provider.reasonFilter,
-              emptyLabel: 'Все причины',
-              options: <AdminFilterOption<String>>[
-                const AdminFilterOption<String>(value: null, label: 'Все причины'),
-                for (final reason in provider.availableReasons)
-                  AdminFilterOption<String>(
-                    value: reason,
-                    // Незнакомый код показывается кодом: так расхождение между
-                    // каноном бэкенда и словарём видно, а не спрятано.
-                    label: sanityFlagLabel(reason),
+            if (!inHeader)
+              Container(
+                key: const ValueKey<String>('menu-filters-row'),
+                padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: AppTheme.borderLight),
                   ),
-              ],
-              onChanged: provider.setReasonFilter,
+                ),
+                child: Wrap(spacing: 10, runSpacing: 8, children: filters),
+              ),
+            const Expanded(
+              child: Row(
+                children: <Widget>[
+                  FlaggedMenuItemsListPanel(),
+                  Expanded(child: MenuItemDetailPanel()),
+                ],
+              ),
             ),
-            _VisibilityFilter(provider: provider),
           ],
-        ),
-        const Expanded(
-          child: Row(
-            children: <Widget>[
-              FlaggedMenuItemsListPanel(),
-              Expanded(child: MenuItemDetailPanel()),
-            ],
-          ),
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  List<Widget> _filters(MenuItemsModerationProvider provider) {
+    return <Widget>[
+      AdminFilterDropdown<String>(
+        value: provider.cityFilter,
+        emptyLabel: 'Все города',
+        options: <AdminFilterOption<String>>[
+          const AdminFilterOption<String>(value: null, label: 'Все города'),
+          for (final city in _cityOptions(provider))
+            AdminFilterOption<String>(value: city, label: city),
+        ],
+        onChanged: provider.setCityFilter,
+      ),
+      AdminFilterDropdown<String>(
+        value: provider.reasonFilter,
+        emptyLabel: 'Все причины',
+        options: <AdminFilterOption<String>>[
+          const AdminFilterOption<String>(value: null, label: 'Все причины'),
+          for (final reason in provider.availableReasons)
+            AdminFilterOption<String>(
+              value: reason,
+              // Незнакомый код показывается кодом: так расхождение между
+              // каноном бэкенда и словарём видно, а не спрятано.
+              label: sanityFlagLabel(reason),
+            ),
+        ],
+        onChanged: provider.setReasonFilter,
+      ),
+      _VisibilityFilter(provider: provider),
+    ];
   }
 
   /// Варианты города — из ответа, но с выбранным значением обязательно.
@@ -342,7 +370,8 @@ class _QueueSearchFieldState extends State<_QueueSearchField> {
           enabledBorder: _searchBorder(AppTheme.strokeGrey),
           focusedBorder: _searchBorder(AppTheme.primaryOrange, width: 1.5),
           disabledBorder: _searchBorder(AppTheme.strokeGrey),
-          prefixIcon: const Icon(Icons.search, size: 17, color: AppTheme.gray500),
+          prefixIcon:
+              const Icon(Icons.search, size: 17, color: AppTheme.gray500),
           prefixIconConstraints: const BoxConstraints(minWidth: 38),
           suffixIcon: _controller.text.isEmpty
               ? null

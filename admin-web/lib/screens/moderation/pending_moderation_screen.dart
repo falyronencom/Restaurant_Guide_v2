@@ -83,13 +83,18 @@ class _PendingModerationScreenState extends State<PendingModerationScreen> {
   /// `updated_at`, и смешение двух отсчётов дало бы подпись, противоречащую
   /// бейджам под ней.
   String? _queueSubtitle(ModerationProvider provider) {
-    if (provider.isLoadingList) return null;
+    // Гасим подпись только на первой загрузке: после решения очередь
+    // перечитывается, и подпись не должна мигать на каждом шаге.
+    if (provider.isLoadingList && provider.establishments.isEmpty) return null;
     if (provider.listError != null) return null;
 
     final total = provider.totalCount;
     if (total == 0) return 'Очередь пуста';
 
     final queue = '${countWithNoun(total, 'заявка', 'заявки', 'заявок')} в очереди';
+    // Старейшая лежит на первой странице: очередь идёт по возрастанию
+    // ожидания. На второй «старейшая из показанных» была бы неправдой.
+    if (provider.currentPage != 1) return queue;
     final oldest = provider.oldestWaitingDays;
     if (oldest == null) return queue;
     // Не «пришла сегодня»: счёт идёт полными сутками, а не календарными

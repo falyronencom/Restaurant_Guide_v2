@@ -34,6 +34,32 @@ class _MediaViewerState extends State<MediaViewer> {
   late int _index = widget.initialIndex;
   late final TransformationController _transform = TransformationController();
 
+  /// Страница открытого PDF (с 1). До 21.10.2026 просмотр показывал только
+  /// первую, и «Меню проверено» ставилось, не видя остальных (пункт A1-22).
+  int _page = 1;
+
+  int? get _pageCount => _current.isPdf ? _current.pageCount : null;
+  bool get _hasPrevPage => _current.isPdf && _page > 1;
+
+  /// Число страниц неизвестно — листать можно, пока страница рисуется:
+  /// несуществующая покажет отказ, и дальше идти незачем.
+  bool get _hasNextPage {
+    if (!_current.isPdf) return false;
+    final count = _pageCount;
+    return count == null ? true : _page < count;
+  }
+
+  void _turnPage(int delta) {
+    final next = _page + delta;
+    if (next < 1) return;
+    final count = _pageCount;
+    if (count != null && next > count) return;
+    setState(() {
+      _page = next;
+      _transform.value = Matrix4.identity();
+    });
+  }
+
   static const double _maxScale = 6;
 
   MediaItem get _current => widget.items[_index];
@@ -51,6 +77,7 @@ class _MediaViewerState extends State<MediaViewer> {
     if (next < 0 || next >= widget.items.length) return;
     setState(() {
       _index = next;
+      _page = 1;
       // Масштаб сбрасывается при переходе: увеличенный угол предыдущего
       // снимка на новом кадре означает совсем другое место.
       _transform.value = Matrix4.identity();
@@ -79,6 +106,10 @@ class _MediaViewerState extends State<MediaViewer> {
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _go(-1),
         const SingleActivator(LogicalKeyboardKey.arrowRight): () => _go(1),
+        const SingleActivator(LogicalKeyboardKey.pageDown): () => _turnPage(1),
+        const SingleActivator(LogicalKeyboardKey.pageUp): () => _turnPage(-1),
+        // Esc своей привязки не требует: маршрут просмотра закрывается им
+        // сам (`barrierDismissible`) — проверено тестом (A1-22 спрашивал).
       },
       child: Focus(
         autofocus: true,
@@ -90,6 +121,9 @@ class _MediaViewerState extends State<MediaViewer> {
                 title: widget.title,
                 position: '${_index + 1} из ${widget.items.length}',
                 isPdf: _current.isPdf,
+                pageLabel: _current.isPdf ? pdfPageLabel(_page, _pageCount) : null,
+                onPrevPage: _hasPrevPage ? () => _turnPage(-1) : null,
+                onNextPage: _hasNextPage ? () => _turnPage(1) : null,
                 onOpenOriginal: _openOriginal,
                 onClose: () => Navigator.of(context).pop(),
               ),
@@ -109,8 +143,9 @@ class _MediaViewerState extends State<MediaViewer> {
                           maxScale: _maxScale,
                           child: Center(
                             child: _Frame(
-                              key: ValueKey(_current.id ?? _current.url),
+                              key: ValueKey('${_current.id ?? _current.url}#$_page'),
                               item: _current,
+                              page: _page,
                             ),
                           ),
                         ),
@@ -137,6 +172,11 @@ class _Chrome extends StatelessWidget {
   final String title;
   final String position;
   final bool isPdf;
+
+  /// «стр. 3 из 7» — у PDF; `null` у снимка.
+  final String? pageLabel;
+  final VoidCallback? onPrevPage;
+  final VoidCallback? onNextPage;
   final VoidCallback onOpenOriginal;
   final VoidCallback onClose;
 
@@ -144,6 +184,9 @@ class _Chrome extends StatelessWidget {
     required this.title,
     required this.position,
     required this.isPdf,
+    this.pageLabel,
+    this.onPrevPage,
+    this.onNextPage,
     required this.onOpenOriginal,
     required this.onClose,
   });
@@ -171,22 +214,39 @@ class _Chrome extends StatelessWidget {
               color: Colors.white.withValues(alpha: 0.65),
             ),
           ),
-          if (isPdf)
+          if (isPdf) ...<Widget>[
+            IconButton(
+              key: const ValueKey<String>('pdf-prev-page'),
+              onPressed: onPrevPage,
+              tooltip: 'Предыдущая страница',
+              icon: const Icon(Icons.keyboard_arrow_up),
+              color: Colors.white,
+              disabledColor: Colors.white24,
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: AppTheme.disclaimerBg,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
-              child: const Text(
-                'PDF — показана первая страница',
-                style: TextStyle(
+              child: Text(
+                'PDF · ${pageLabel ?? ''}',
+                style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.disclaimerText,
                 ),
               ),
             ),
+            IconButton(
+              key: const ValueKey<String>('pdf-next-page'),
+              onPressed: onNextPage,
+              tooltip: 'Следующая страница',
+              icon: const Icon(Icons.keyboard_arrow_down),
+              color: Colors.white,
+              disabledColor: Colors.white24,
+            ),
+          ],
           const Spacer(),
           TextButton.icon(
             onPressed: onOpenOriginal,
@@ -230,12 +290,15 @@ class _ArrowButton extends StatelessWidget {
 class _Frame extends StatelessWidget {
   final MediaItem item;
 
-  const _Frame({super.key, required this.item});
+  /// Страница PDF; у снимка не используется.
+  final int page;
+
+  const _Frame({super.key, required this.item, this.page = 1});
 
   @override
   Widget build(BuildContext context) {
     return Image.network(
-      item.viewableUrl,
+      item.isPdf ? item.pdfPageUrl(page) : item.viewableUrl,
       fit: BoxFit.contain,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
@@ -253,7 +316,8 @@ class _Frame extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             item.isPdf
-                ? 'Первая страница PDF не отрисовалась.\nОткройте оригинал.'
+                ? 'Страница $page PDF не отрисовалась — возможно, её нет.\n'
+                    'Откройте оригинал.'
                 : 'Снимок не загрузился.',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -276,7 +340,8 @@ class _Hint extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16, top: 4),
       child: Text(
         'Двойное нажатие — увеличить · колесо и перетаскивание — масштаб и '
-        'сдвиг · стрелки ← → — соседние снимки · Esc — закрыть',
+        'сдвиг · стрелки ← → — соседние снимки · PgUp/PgDn — страницы PDF · '
+        'Esc — закрыть',
         style: TextStyle(
           fontSize: 12,
           color: Colors.white.withValues(alpha: 0.45),
@@ -285,6 +350,10 @@ class _Hint extends StatelessWidget {
     );
   }
 }
+
+/// «стр. 3 из 7»; без известного числа страниц — «стр. 3».
+String pdfPageLabel(int page, int? count) =>
+    count == null ? 'стр. $page' : 'стр. $page из $count';
 
 /// Открывает просмотрщик поверх экрана.
 Future<void> showMediaViewer(
