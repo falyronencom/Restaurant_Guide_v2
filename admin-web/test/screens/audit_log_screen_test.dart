@@ -515,7 +515,7 @@ void main() {
       expect(find.text('Golden Coffee, Гродно'), findsOneWidget);
       // Изменение — словами, а не JSON (К-3, A3-04).
       expect(
-        find.text('Виден в приложении: да  →  нет', findRichText: true),
+        find.text('Виден в приложении: да\uFFFCнет', findRichText: true),
         findsOneWidget,
       );
       expect(find.textContaining('is_visible'), findsNothing);
@@ -537,7 +537,7 @@ void main() {
       await tester.pump();
 
       final line =
-          find.text('Статус: на модерации  →  в каталоге', findRichText: true);
+          find.text('Статус: на модерации\uFFFCв каталоге', findRichText: true);
       expect(line, findsOneWidget);
       final box = tester.widget<Container>(
         find.ancestor(of: line, matching: find.byType(Container)).first,
@@ -599,7 +599,7 @@ void main() {
       );
     });
 
-    testWidgets('ширины: дата 150, «Кто» 170, действие и объект поровну',
+    testWidgets('ширины: дата 150, «Кто» 190, действие и объект поровну',
         (tester) async {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
@@ -616,8 +616,8 @@ void main() {
         tester.getRect(find.byIcon(Icons.expand_more).last).center.dx,
         1440 - 24 - 36 / 2,
       );
-      // «Кто» — 170 перед шевроном (подпись — с отступом ячейки 14).
-      expect(left(find.text('КТО')) - 14, 1440 - 24 - 36 - 170);
+      // «Кто» — 190 перед шевроном (подпись — с отступом ячейки 14).
+      expect(left(find.text('КТО')) - 14, 1440 - 24 - 36 - 190);
       // Действие и объект делят остаток поровну: по кадру объекту доставалось
       // 260 из 727, и на 1150 имя резалось до восьми букв (Ч36, A3-13).
       final actionWidth =
@@ -797,7 +797,7 @@ void main() {
       // повторяется строкой изменения.
       expect(find.text('Кофейня у моста, Гродно'), findsOneWidget);
       expect(
-        find.text('Скрыта модератором: нет  →  да', findRichText: true),
+        find.text('Скрыта модератором: нет\uFFFCда', findRichText: true),
         findsOneWidget,
       );
       expect(find.text('Причина: цена ошибочная', findRichText: true),
@@ -966,6 +966,30 @@ void main() {
         );
         expect(name.didExceedMaxLines, isFalse,
             reason: 'имя объекта обрезано многоточием');
+      });
+
+      testWidgets('окно ${window.toInt()}: «Скрипт оператора» в «Кто» целиком',
+          (tester) async {
+        final fake = await pumpScreen(tester, width: window - 260);
+        await settle(tester, fake, entries: <AuditLogEntry>[
+          _entry(
+            action: 'change_email',
+            summary: 'Адрес e-mail учётной записи изменён',
+            entityType: 'user',
+            adminName: null,
+            adminEmail: null,
+            actorKind: 'operator_script',
+          ),
+        ]);
+
+        final who = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text('Скрипт оператора'),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(who.didExceedMaxLines, isFalse,
+            reason: '«Скрипт оператора» обрезан');
       });
     }
   });

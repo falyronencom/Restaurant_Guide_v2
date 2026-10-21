@@ -386,7 +386,9 @@ abstract final class _TableLayout {
   static const double dateWidth = 150;
   static const int actionFlex = 1;
   static const int objectFlex = 1;
-  static const double adminWidth = 170;
+  // 190: «Скрипт оператора» с кружком помещается целиком (на 170 резалось,
+  // осмотр на стенде 21.10).
+  static const double adminWidth = 190;
   static const double chevronWidth = 36;
 
   /// Уже этого ячейка «Объект» не показывает id рядом с именем: имя важнее, а
@@ -1107,9 +1109,19 @@ class _ChangeLineRow extends StatelessWidget {
           ),
           if (before != null && after != null) ...<InlineSpan>[
             TextSpan(text: before),
-            const TextSpan(
-              text: '  →  ',
-              style: TextStyle(color: AppTheme.textGrey),
+            // Стрелка — значком, а не знаком «→»: в шрифтах панели его нет, и
+            // браузер сначала рисовал пустой квадратик, пока догружал
+            // запасной шрифт (осмотр на стенде 21.10).
+            const WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(
+                  Icons.arrow_forward,
+                  size: 13,
+                  color: AppTheme.textGrey,
+                ),
+              ),
             ),
             TextSpan(
               text: after,
