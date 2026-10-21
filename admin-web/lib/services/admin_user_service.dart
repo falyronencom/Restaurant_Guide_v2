@@ -24,10 +24,12 @@ class AdminUserService {
     int perPage = 20,
     String? search,
     String? status,
+    String? role,
   }) async {
     final queryParams = <String, dynamic>{'page': page, 'per_page': perPage};
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (status != null && status.isNotEmpty) queryParams['status'] = status;
+    if (role != null && role.isNotEmpty) queryParams['role'] = role;
 
     final response = await _apiClient.get(
       '/api/v1/admin/users',
@@ -55,28 +57,41 @@ class AdminUserService {
     return AdminUser.fromJson(data['data'] as Map<String, dynamic>);
   }
 
-  /// POST /api/v1/admin/users/:id/block — `{ reason }`. `true` — заблокирован
-  /// этим запросом, `false` — уже был заблокирован.
-  Future<bool> block(String id, {required String reason}) =>
-      _act(id, 'block', reason);
+  /// POST /api/v1/admin/users/:id/block — `{ reason }`. `changed: false` —
+  /// уже был заблокирован; `hiddenReviews` — сколько видимых отзывов скрыто.
+  Future<AdminUserBlockResult> block(String id, {required String reason}) async {
+    final data = await _act(id, 'block', reason);
+    return AdminUserBlockResult(
+      changed: _changed(data),
+      hiddenReviews: data?['hidden_reviews'] as int?,
+    );
+  }
 
   /// POST /api/v1/admin/users/:id/unblock — `{ reason, restore_reviews }`.
   ///
   /// [restoreReviews] `false` — отзывы, скрытые блокировкой, остаются
   /// скрытыми: блокируют часто за сами отзывы.
-  Future<bool> unblock(
+  Future<AdminUserUnblockResult> unblock(
     String id, {
     required String reason,
     bool restoreReviews = true,
-  }) =>
-      _act(id, 'unblock', reason,
-          extra: <String, dynamic>{'restore_reviews': restoreReviews});
+  }) async {
+    final data = await _act(id, 'unblock', reason,
+        extra: <String, dynamic>{'restore_reviews': restoreReviews});
+    return data == null
+        ? const AdminUserUnblockResult(changed: true)
+        : AdminUserUnblockResult.fromJson(data);
+  }
 
   /// POST /api/v1/admin/users/:id/reset-name — `{ reason }`
-  Future<bool> resetName(String id, {required String reason}) =>
-      _act(id, 'reset-name', reason);
+  Future<bool> resetName(String id, {required String reason}) async =>
+      _changed(await _act(id, 'reset-name', reason));
 
-  Future<bool> _act(
+  // Флаг потерян — считаем, что изменилось: так говорит и сам ответ 200.
+  static bool _changed(Map<String, dynamic>? data) =>
+      data == null || data['changed'] != false;
+
+  Future<Map<String, dynamic>?> _act(
     String id,
     String action,
     String reason, {
@@ -88,7 +103,6 @@ class AdminUserService {
     );
     final body = response.data;
     final data = body is Map<String, dynamic> ? body['data'] : null;
-    // Флаг потерян — считаем, что изменилось: так говорит и сам ответ 200.
-    return data is Map<String, dynamic> ? data['changed'] != false : true;
+    return data is Map<String, dynamic> ? data : null;
   }
 }

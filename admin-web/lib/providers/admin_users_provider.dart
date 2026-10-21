@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_user_service.dart';
@@ -35,6 +38,7 @@ class AdminUsersProvider extends ChangeNotifier {
   int _totalCount = 0;
 
   String? _statusFilter;
+  String? _roleFilter;
   String _searchQuery = '';
 
   String? _selectedId;
@@ -55,6 +59,7 @@ class AdminUsersProvider extends ChangeNotifier {
   int get totalPages => _totalPages;
   int get totalCount => _totalCount;
   String? get statusFilter => _statusFilter;
+  String? get roleFilter => _roleFilter;
   String get searchQuery => _searchQuery;
   String? get selectedId => _selectedId;
   AdminUser? get selectedUser => _selectedUser;
@@ -63,7 +68,8 @@ class AdminUsersProvider extends ChangeNotifier {
   bool get isSubmitting => _isSubmitting;
   String? get submitError => _submitError;
   String? get lastResult => _lastResult;
-  bool get hasActiveFilters => _statusFilter != null || _searchQuery.isNotEmpty;
+  bool get hasActiveFilters =>
+      _statusFilter != null || _roleFilter != null || _searchQuery.isNotEmpty;
 
   Future<void> loadUsers({int page = 1}) async {
     final seq = ++_listSeq;
@@ -77,8 +83,16 @@ class AdminUsersProvider extends ChangeNotifier {
         perPage: perPage,
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         status: _statusFilter,
+        role: _roleFilter,
       );
       if (seq != _listSeq) return;
+      // Разблокировал последнего на странице «Заблокированных» — предыдущая
+      // страница, а не «никого не нашлось» (проход по панели 20.10, A2-08).
+      if (result.users.isEmpty && page > 1) {
+        final target = result.pages >= 1 ? math.min(result.pages, page - 1) : 1;
+        await loadUsers(page: target);
+        return;
+      }
       _users = result.users;
       _currentPage = result.page;
       _totalPages = result.pages;
@@ -131,26 +145,30 @@ class AdminUsersProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> block(String reason) => _act(
-        (id) => _service.block(id, reason: reason),
-        'Пользователь заблокирован, его отзывы скрыты',
-      );
+  /// Итог — со счётом сервера, а не обещанием (проход по панели 20.10,
+  /// A2-06): «скрыто отзывов: 3», а если скрывать было нечего — так и сказано.
+  Future<bool> block(String reason) => _act((id) async {
+        final result = await _service.block(id, reason: reason);
+        return (result.changed, blockResultText(result));
+      });
 
-  Future<bool> unblock(String reason, {bool restoreReviews = true}) => _act(
-        (id) => _service.unblock(
+  Future<bool> unblock(String reason, {bool restoreReviews = true}) =>
+      _act((id) async {
+        final result = await _service.unblock(
           id,
           reason: reason,
           restoreReviews: restoreReviews,
-        ),
-        restoreReviews
-            ? 'Пользователь разблокирован, отзывы, скрытые блокировкой, снова видны'
-            : 'Пользователь разблокирован, его отзывы остались скрытыми',
-      );
+        );
+        return (
+          result.changed,
+          unblockResultText(result, restoreReviews: restoreReviews),
+        );
+      });
 
-  Future<bool> resetName(String reason) => _act(
-        (id) => _service.resetName(id, reason: reason),
-        'Имя сброшено на «Пользователь»',
-      );
+  Future<bool> resetName(String reason) => _act((id) async {
+        final changed = await _service.resetName(id, reason: reason);
+        return (changed, 'Имя сброшено на «Пользователь»');
+      });
 
   /// Действие без оптимизма: блокировка трогает отзывы и рейтинг, и экран
   /// показывает то, что вернул сервер, а не догадку о нём.
@@ -158,7 +176,9 @@ class AdminUsersProvider extends ChangeNotifier {
   /// Итог — подпись под кнопками — пишется, только если на экране всё ещё
   /// тот, над кем действовали: строки списка кликабельны и во время запроса,
   /// и «Пользователь заблокирован» не должно встать под другим человеком.
-  Future<bool> _act(Future<bool> Function(String id) call, String done) async {
+  Future<bool> _act(
+    Future<(bool, String)> Function(String id) call,
+  ) async {
     final id = _selectedId;
     if (id == null || _isSubmitting) return false;
     final generation = _generation;
@@ -169,7 +189,7 @@ class AdminUsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final changed = await call(id);
+      final (changed, done) = await call(id);
       if (generation != _generation) return false;
       _isSubmitting = false;
       if (_selectedId == id) {
@@ -193,23 +213,47 @@ class AdminUsersProvider extends ChangeNotifier {
 
   void search(String query) {
     _searchQuery = query.trim();
+    _closeCard();
     loadUsers();
   }
 
   void clearSearch() {
     _searchQuery = '';
+    _closeCard();
     loadUsers();
   }
 
   void setStatusFilter(String? status) {
     _statusFilter = status;
+    _closeCard();
+    loadUsers();
+  }
+
+  void setRoleFilter(String? role) {
+    _roleFilter = role;
+    _closeCard();
     loadUsers();
   }
 
   void resetFilters() {
     _statusFilter = null;
+    _roleFilter = null;
     _searchQuery = '';
+    _closeCard();
     loadUsers();
+  }
+
+  /// Новый отбор — новый список: карточка прежнего человека справа от
+  /// списка, где его нет, читается как ошибка фильтра (осмотр панели 20.10,
+  /// п. 34). Ответ его карточки, если ещё в пути, уже ничего не пишет.
+  void _closeCard() {
+    _detailSeq++;
+    _selectedId = null;
+    _selectedUser = null;
+    _isLoadingDetail = false;
+    _detailError = null;
+    _submitError = null;
+    _lastResult = null;
   }
 
   void resetAccountScope() {
@@ -223,6 +267,7 @@ class AdminUsersProvider extends ChangeNotifier {
     _totalPages = 1;
     _totalCount = 0;
     _statusFilter = null;
+    _roleFilter = null;
     _searchQuery = '';
     _selectedId = null;
     _selectedUser = null;
@@ -233,6 +278,52 @@ class AdminUsersProvider extends ChangeNotifier {
     _lastResult = null;
     notifyListeners();
   }
+}
+
+/// Итог блокировки по ответу сервера.
+@visibleForTesting
+String blockResultText(AdminUserBlockResult result) {
+  final hidden = result.hiddenReviews;
+  if (hidden == null) return 'Пользователь заблокирован';
+  if (hidden == 0) {
+    return 'Пользователь заблокирован. Видимых отзывов у него не было — '
+        'скрывать было нечего';
+  }
+  return 'Пользователь заблокирован, скрыто отзывов: ${formatCount(hidden)}';
+}
+
+/// Итог разблокировки: сколько отзывов вернулось из скольких скрыла
+/// блокировка — и почему не все.
+@visibleForTesting
+String unblockResultText(
+  AdminUserUnblockResult result, {
+  required bool restoreReviews,
+}) {
+  if (!restoreReviews) {
+    return 'Пользователь разблокирован, его отзывы остались скрытыми';
+  }
+  if (!result.blockFound) {
+    return 'Пользователь разблокирован. Записи о блокировке в журнале нет — '
+        'скрытые отзывы остались как были';
+  }
+  if (result.blockByOperator) {
+    return 'Пользователь разблокирован. Блокировку ставил оператор скриптом, '
+        'без списка отзывов, — скрытые отзывы остались как были';
+  }
+  final restored = formatCount(result.restoredReviews);
+  final total = result.blockHiddenReviews;
+  if (total == null) {
+    return 'Пользователь разблокирован, возвращено отзывов: $restored';
+  }
+  if (total == 0) {
+    return 'Пользователь разблокирован. Блокировка не скрывала отзывов — '
+        'возвращать было нечего';
+  }
+  final head = 'Пользователь разблокирован, возвращено отзывов: $restored '
+      'из ${formatCount(total)}, скрытых блокировкой';
+  if (result.restoredReviews >= total) return head;
+  return '$head. Остальные с тех пор скрыли или показали вручную, '
+      'или они удалены';
 }
 
 /// Подпись, когда сервер ответил `changed: false`: так уже было.

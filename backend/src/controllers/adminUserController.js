@@ -27,6 +27,7 @@ export const listUsers = asyncHandler(async (req, res) => {
     perPage: parseInt(req.query.per_page, 10) || 20,
     search: req.query.search,
     status: req.query.status,
+    role: req.query.role,
     viewer: isViewer(req.user.role),
   });
 

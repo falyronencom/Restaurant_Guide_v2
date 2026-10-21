@@ -116,7 +116,7 @@ export const normalizeReason = (raw) => {
  * @param {Object} params
  * @returns {Promise<{users: Array, meta: Object}>}
  */
-export const getUsers = async ({ page = 1, perPage = 20, search, status, viewer = false } = {}) => {
+export const getUsers = async ({ page = 1, perPage = 20, search, status, role, viewer = false } = {}) => {
   const text = typeof search === 'string' ? search.trim() : '';
   if (viewer && text) {
     throw new AppError(
@@ -125,10 +125,11 @@ export const getUsers = async ({ page = 1, perPage = 20, search, status, viewer 
       'VIEWER_PERSON_SEARCH_FORBIDDEN',
     );
   }
-  const effectiveStatus = status === 'active' || status === 'blocked' ? status : undefined;
+  const effectiveStatus = ['active', 'blocked', 'deleted'].includes(status) ? status : undefined;
+  const effectiveRole = ['user', 'partner', 'panel'].includes(role) ? role : undefined;
   const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
   const currentPage = Math.max(page, 1);
-  const filters = { search: text || undefined, status: effectiveStatus, viewer };
+  const filters = { search: text || undefined, status: effectiveStatus, role: effectiveRole, viewer };
 
   const [users, total] = await Promise.all([
     AdminUserModel.getUsers(filters, effectivePerPage, (currentPage - 1) * effectivePerPage),
@@ -357,7 +358,14 @@ const normalizeRestoreFlag = (raw) => {
  * @param {*} rawReason
  * @param {string} actorId
  * @param {Object} [request] - { ipAddress, userAgent, restoreReviews }
- * @returns {Promise<{id: string, is_active: boolean, changed: boolean, restored_reviews: number}>}
+ * The answer says what the block in force was: block_hidden_reviews — how
+ * many reviews its entry lists, block_by_operator — the operator's script
+ * switched the account off (its entry lists none), block_found — there was a
+ * block entry at all. The panel tells the moderator «returned N of M» from
+ * these instead of promising every review back (walkthrough 20.10, A2-06).
+ *
+ * @returns {Promise<{id: string, is_active: boolean, changed: boolean, restored_reviews: number,
+ *   block_hidden_reviews: number, block_by_operator: boolean, block_found: boolean}>}
  */
 export const unblockUser = async (
   userId,
@@ -372,14 +380,23 @@ export const unblockUser = async (
   return inTransaction(userId, async (client) => {
     const target = await lockTarget(client, userId, actorId, { refusePartnerWithEstablishments: true });
     if (target.is_active) {
-      return { id: target.id, is_active: true, changed: false, restored_reviews: 0 };
+      return {
+        id: target.id,
+        is_active: true,
+        changed: false,
+        restored_reviews: 0,
+        block_hidden_reviews: 0,
+        block_by_operator: false,
+        block_found: false,
+      };
     }
 
     // The block in force: the latest of the block and unblock entries, if it
     // is a block. The entry is read under the lock of the account row, which
     // every block and unblock takes first.
     const latest = await client.query(
-      `SELECT id, action, new_data -> 'hidden_review_ids' AS hidden_review_ids
+      `SELECT id, action, new_data -> 'hidden_review_ids' AS hidden_review_ids,
+              (user_id IS NULL AND new_data ? 'actor') AS by_operator
        FROM audit_log
        WHERE entity_type = 'user' AND entity_id = $1 AND action IN ('user_block', 'user_unblock')
        ORDER BY created_at DESC, id DESC
@@ -436,7 +453,15 @@ export const unblockUser = async (
     });
 
     logger.info('Admin unblocked user', { adminId: actorId, userId, restoredReviews: restored.length });
-    return { id: target.id, is_active: true, changed: true, restored_reviews: restored.length };
+    return {
+      id: target.id,
+      is_active: true,
+      changed: true,
+      restored_reviews: restored.length,
+      block_hidden_reviews: hiddenIds.length,
+      block_by_operator: block?.by_operator === true,
+      block_found: block !== null,
+    };
   });
 };
 
