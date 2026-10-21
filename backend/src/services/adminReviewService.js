@@ -9,6 +9,7 @@
  * Segment E: Utility Screens
  */
 
+import { randomUUID } from 'crypto';
 import { getClient } from '../config/database.js';
 import * as AdminReviewModel from '../models/adminReviewModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
@@ -16,6 +17,95 @@ import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+
+/** A reason longer than this is refused: it is a note, not a letter (the limit of a block). */
+export const REASON_MAX_LENGTH = 500;
+
+/** How many reviews one «Скрыть выбранные» may carry. */
+export const HIDE_BATCH_MAX = 100;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What the moderator reads when the server refuses. Russian: the panel shows
+ * the server's text as it is (walkthrough 20.10, A2-02; the pattern of
+ * adminUserService.USER_ACTION_REFUSALS). Codes and statuses are the ones the
+ * panel has known before.
+ */
+export const REVIEW_REFUSALS = Object.freeze({
+  REVIEW_NOT_FOUND: 'Отзыв не найден или уже удалён',
+  REVIEW_ALREADY_DELETED: 'Отзыв уже удалён',
+  VISIBILITY_CONFLICT: 'Видимость отзыва только что изменил другой модератор — список обновлён',
+  VIEWER_PERSON_FILTER_FORBIDDEN: 'Отзывы одного человека недоступны в режиме просмотра',
+  RATING_FILTER_INVALID: 'Оценка в фильтре — целое число от 1 до 5',
+  AUTHOR_FILTER_INVALID: 'Автор в фильтре указан неверно — откройте отзывы автора из его карточки',
+  REASON_REQUIRED: 'Укажите причину',
+  REASON_TOO_LONG: `Причина длиннее ${REASON_MAX_LENGTH} символов — сократите её`,
+  BATCH_EMPTY: 'Не выбрано ни одного отзыва',
+  BATCH_TOO_LARGE: `За один раз можно скрыть не больше ${HIDE_BATCH_MAX} отзывов`,
+  BATCH_INVALID_ID: 'В списке отзывов есть неверный идентификатор — обновите страницу',
+  REVIEWS_FETCH_FAILED: 'Отзывы не загрузились: сбой на сервере. Попробуйте ещё раз',
+  VISIBILITY_UPDATE_FAILED: 'Видимость отзыва не изменилась: сбой на сервере. Попробуйте ещё раз',
+  REVIEW_DELETE_FAILED: 'Отзыв не удалён: сбой на сервере. Попробуйте ещё раз',
+  HIDE_BATCH_FAILED: 'Отзывы не скрыты: сбой на сервере. Попробуйте ещё раз',
+});
+
+const refuse = (code, status) => new AppError(REVIEW_REFUSALS[code], status, code);
+
+/**
+ * The moderator's reason as written to the journal: trimmed, bounded, and —
+ * where the action asks for one — required. An absent optional reason is null.
+ *
+ * @param {*} raw
+ * @param {Object} [options]
+ * @param {boolean} [options.required=false]
+ * @returns {string|null}
+ */
+export const normalizeReviewReason = (raw, { required = false } = {}) => {
+  if (raw !== undefined && raw !== null && typeof raw !== 'string') {
+    throw refuse('REASON_REQUIRED', 422);
+  }
+  const reason = typeof raw === 'string' ? raw.trim() : '';
+  if (!reason) {
+    if (required) throw refuse('REASON_REQUIRED', 422);
+    return null;
+  }
+  if (reason.length > REASON_MAX_LENGTH) throw refuse('REASON_TOO_LONG', 422);
+  return reason;
+};
+
+/**
+ * A rating filter value: absent, or a whole number 1–5. Anything else is
+ * refused — ignoring it would show the whole list under a filter the
+ * moderator believes is applied, and passing it on gave a 500.
+ *
+ * @param {*} raw
+ * @returns {number|undefined}
+ */
+const ratingParam = (raw) => {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const text = String(raw).trim();
+  if (!/^[1-5]$/.test(text)) throw refuse('RATING_FILTER_INVALID', 422);
+  return Number(text);
+};
+
+/**
+ * Why a hidden review is hidden, from the journal row the model found: by the
+ * moderator one by one (with their reason), or by the block of its author
+ * (with the block's reason). Nothing when no row says so.
+ *
+ * @param {Object} review - Row of AdminReviewModel.getAdminReviews
+ * @returns {Object} the row with hidden_by and hidden_reason, without hidden_action
+ */
+const withHiddenCause = (review) => {
+  const { hidden_action: action, ...rest } = review;
+  const hiddenBy = action === 'review_hide' ? 'moderator' : action === 'user_block' ? 'block' : null;
+  return {
+    ...rest,
+    hidden_by: hiddenBy,
+    hidden_reason: hiddenBy ? (review.hidden_reason || null) : null,
+  };
+};
 
 /**
  * A review as the viewer receives it: the way an outsider sees reviews.
@@ -41,11 +131,15 @@ import logger from '../utils/logger.js';
  * @returns {Object}
  */
 const toViewerReview = (review) => {
+  // Whether the author is blocked, and why a review was hidden, are facts
+  // about a person and the moderator's free text: not for a viewer.
+  const withheld = { author_is_active: null, hidden_by: null, hidden_reason: null };
   if (review.is_visible) {
-    return { ...review, author_id: null, author_email: null, viewer_redacted: false };
+    return { ...review, ...withheld, author_id: null, author_email: null, viewer_redacted: false };
   }
   return {
     ...review,
+    ...withheld,
     viewer_redacted: true,
     author_id: null,
     author_name: null,
@@ -75,6 +169,8 @@ export const getReviews = async ({
   establishment_id,
   user_id,
   rating,
+  rating_min,
+  rating_max,
   status,
   search,
   sort = 'newest',
@@ -82,13 +178,16 @@ export const getReviews = async ({
   to,
   viewer = false,
 } = {}) => {
-  if (viewer && user_id) {
-    throw new AppError(
-      'Reviews of one person are not available in view mode',
-      403,
-      'VIEWER_PERSON_FILTER_FORBIDDEN',
-    );
+  if (viewer && user_id) throw refuse('VIEWER_PERSON_FILTER_FORBIDDEN', 403);
+  // A person's id that is not a UUID would fail in the database as a 500.
+  if (user_id !== undefined && (typeof user_id !== 'string' || !UUID_PATTERN.test(user_id))) {
+    throw refuse('AUTHOR_FILTER_INVALID', 422);
   }
+  const ratings = {
+    rating: ratingParam(rating),
+    rating_min: ratingParam(rating_min),
+    rating_max: ratingParam(rating_max),
+  };
 
   try {
     const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
@@ -97,7 +196,7 @@ export const getReviews = async ({
     const filters = {
       establishment_id,
       user_id,
-      rating,
+      ...ratings,
       status,
       search,
       sort,
@@ -112,7 +211,9 @@ export const getReviews = async ({
     ]);
 
     return {
-      reviews: viewer ? reviews.map(toViewerReview) : reviews,
+      reviews: viewer
+        ? reviews.map(withHiddenCause).map(toViewerReview)
+        : reviews.map(withHiddenCause),
       meta: {
         total: stats.total,
         // Считаются по той же выборке, что и total: подпись экрана
@@ -129,11 +230,7 @@ export const getReviews = async ({
     logger.error('Error in getReviews service', {
       error: error.message,
     });
-    throw new AppError(
-      'Failed to fetch reviews',
-      500,
-      'REVIEWS_FETCH_FAILED',
-    );
+    throw refuse('REVIEWS_FETCH_FAILED', 500);
   }
 };
 
@@ -147,21 +244,22 @@ export const getReviews = async ({
  * nothing — no second audit row, no second notice to the author, no
  * recalculation (critics' pack 1, point 2 — Codex C-10).
  *
+ * The reason is optional — a panel build from before 21.10 sends none — and
+ * goes to the journal only: the author's notice does not quote it.
+ *
  * @param {string} reviewId
  * @param {boolean} isVisible - true: show, false: hide
  * @param {string} adminUserId - UUID of admin performing the action
+ * @param {Object} [request] - { ipAddress, userAgent, reason }
  * @returns {Promise<Object>} { id, is_visible, establishment_id, changed }
  */
-export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddress, userAgent } = {}) => {
+export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddress, userAgent, reason: rawReason } = {}) => {
+  const reason = normalizeReviewReason(rawReason);
   try {
     const review = await AdminReviewModel.getReviewForAdmin(reviewId);
 
     if (!review || review.is_deleted) {
-      throw new AppError(
-        'Review not found or already deleted',
-        404,
-        'REVIEW_NOT_FOUND',
-      );
+      throw refuse('REVIEW_NOT_FOUND', 404);
     }
 
     // A repeat (or a decision already in force) writes nothing — but the
@@ -199,7 +297,9 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
           action,
           entity_type: 'review',
           entity_id: reviewId,
-          new_data: { is_visible: result.is_visible },
+          new_data: reason
+            ? { is_visible: result.is_visible, reason }
+            : { is_visible: result.is_visible },
           ip_address: ipAddress,
           user_agent: userAgent,
         });
@@ -218,11 +318,7 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
       // a success, anything else is a conflict to show.
       const current = await AdminReviewModel.getReviewForAdmin(reviewId);
       if (!current || current.is_deleted) {
-        throw new AppError(
-          'Review not found or already deleted',
-          404,
-          'REVIEW_NOT_FOUND',
-        );
+        throw refuse('REVIEW_NOT_FOUND', 404);
       }
       if (current.is_visible === isVisible) {
         await ReviewModel.updateEstablishmentAggregates(current.establishment_id);
@@ -233,11 +329,7 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
           changed: false,
         };
       }
-      throw new AppError(
-        'Review visibility was changed concurrently',
-        409,
-        'VISIBILITY_CONFLICT',
-      );
+      throw refuse('VISIBILITY_CONFLICT', 409);
     }
 
     result = { ...result, changed: true };
@@ -257,11 +349,7 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
       error: error.message,
       reviewId,
     });
-    throw new AppError(
-      'Failed to set review visibility',
-      500,
-      'VISIBILITY_UPDATE_FAILED',
-    );
+    throw refuse('VISIBILITY_UPDATE_FAILED', 500);
   }
 };
 
@@ -270,39 +358,28 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
  *
  * @param {string} reviewId
  * @param {string} adminUserId
- * @param {string} [reason] - Optional reason for deletion
+ * @param {string} [rawReason] - Optional reason for deletion, up to REASON_MAX_LENGTH
  * @returns {Promise<Object>} { success: true }
  */
-export const deleteReview = async (reviewId, adminUserId, reason, { ipAddress, userAgent } = {}) => {
+export const deleteReview = async (reviewId, adminUserId, rawReason, { ipAddress, userAgent } = {}) => {
+  const reason = normalizeReviewReason(rawReason);
   try {
     // Get review info before deletion (for establishment_id)
     const review = await AdminReviewModel.getReviewForAdmin(reviewId);
 
     if (!review) {
-      throw new AppError(
-        'Review not found',
-        404,
-        'REVIEW_NOT_FOUND',
-      );
+      throw refuse('REVIEW_NOT_FOUND', 404);
     }
 
     if (review.is_deleted) {
-      throw new AppError(
-        'Review is already deleted',
-        400,
-        'REVIEW_ALREADY_DELETED',
-      );
+      throw refuse('REVIEW_ALREADY_DELETED', 400);
     }
 
     // Soft-delete the review
     const deleted = await ReviewModel.softDeleteReview(reviewId);
 
     if (!deleted) {
-      throw new AppError(
-        'Failed to delete review',
-        500,
-        'REVIEW_DELETE_FAILED',
-      );
+      throw refuse('REVIEW_DELETE_FAILED', 500);
     }
 
     // Recalculate establishment aggregates (rating/count)
@@ -327,7 +404,7 @@ export const deleteReview = async (reviewId, adminUserId, reason, { ipAddress, u
       },
       new_data: {
         is_deleted: true,
-        reason: reason || null,
+        reason,
       },
       ip_address: ipAddress,
       user_agent: userAgent,
@@ -340,10 +417,87 @@ export const deleteReview = async (reviewId, adminUserId, reason, { ipAddress, u
       error: error.message,
       reviewId,
     });
-    throw new AppError(
-      'Failed to delete review',
-      500,
-      'REVIEW_DELETE_FAILED',
-    );
+    throw refuse('REVIEW_DELETE_FAILED', 500);
   }
+};
+
+/**
+ * Hide the chosen reviews at once, with one reason — «Скрыть выбранные» on the
+ * «Отзывы» screen, made for the reviews of one person (the tester's test
+ * reviews; walkthrough 20.10, A2-09).
+ *
+ * One transaction: the reviews still visible are hidden, the rating of every
+ * establishment they belong to is recalculated, and the journal gets one
+ * review_hide entry per review — the same entry a single hide writes, so the
+ * unblock of an author leaves these reviews hidden as the moderator's
+ * decision (adminUserService.unblockUser reads exactly that action). The
+ * entries of one batch share new_data.batch_id and carry batch_size.
+ *
+ * A review already hidden, deleted or unknown is skipped, not refused: the
+ * batch may hold reviews another moderator has handled meanwhile, and a
+ * repeat of the same request must change nothing.
+ *
+ * @param {*} rawIds - body.review_ids
+ * @param {*} rawReason - body.reason, required
+ * @param {string} adminUserId
+ * @param {Object} [request] - { ipAddress, userAgent }
+ * @returns {Promise<{requested: number, hidden: number, skipped: number, changed: boolean, hidden_ids: string[]}>}
+ */
+export const hideReviewsBatch = async (rawIds, rawReason, adminUserId, { ipAddress, userAgent } = {}) => {
+  if (!Array.isArray(rawIds) || rawIds.length === 0) throw refuse('BATCH_EMPTY', 422);
+  if (!rawIds.every((id) => typeof id === 'string' && UUID_PATTERN.test(id))) {
+    throw refuse('BATCH_INVALID_ID', 422);
+  }
+  const ids = [...new Set(rawIds.map((id) => id.toLowerCase()))];
+  if (ids.length > HIDE_BATCH_MAX) throw refuse('BATCH_TOO_LARGE', 422);
+  const reason = normalizeReviewReason(rawReason, { required: true });
+
+  let hidden;
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    hidden = await AdminReviewModel.hideVisibleReviews(client, ids);
+    const establishments = [...new Set(hidden.map((row) => row.establishment_id))];
+    for (const establishmentId of establishments) {
+      await ReviewModel.updateEstablishmentAggregates(establishmentId, client);
+    }
+    const batchId = randomUUID();
+    for (const row of hidden) {
+      await AuditLogModel.writeAuditLogInTransaction(client, {
+        user_id: adminUserId,
+        action: 'review_hide',
+        entity_type: 'review',
+        entity_id: row.id,
+        new_data: { is_visible: false, reason, batch_id: batchId, batch_size: hidden.length },
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      });
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Error in hideReviewsBatch service', { error: error.message, count: ids.length });
+    throw refuse('HIDE_BATCH_FAILED', 500);
+  } finally {
+    client.release();
+  }
+
+  // The author learns of each hidden review the way a single hide tells them.
+  for (const row of hidden) {
+    NotificationService.notifyReviewModerated(row.id, 'hidden').catch(() => {});
+  }
+
+  logger.info('Admin hid reviews in a batch', {
+    adminId: adminUserId,
+    requested: ids.length,
+    hidden: hidden.length,
+  });
+
+  return {
+    requested: ids.length,
+    hidden: hidden.length,
+    skipped: ids.length - hidden.length,
+    changed: hidden.length > 0,
+    hidden_ids: hidden.map((row) => row.id),
+  };
 };

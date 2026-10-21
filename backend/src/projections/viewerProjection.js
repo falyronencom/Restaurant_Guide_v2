@@ -68,6 +68,9 @@ export const VIEWER_WITHHELD_KEYS = Object.freeze(new Set([
   // person. The journal model withholds them first; this is the floor.
   'hidden_review_ids',
   'restored_review_ids',
+  // Why a review was hidden — the moderator's free text about it, which may
+  // name the author (adminReviewService.getReviews withholds it first).
+  'hidden_reason',
 ]));
 
 /**

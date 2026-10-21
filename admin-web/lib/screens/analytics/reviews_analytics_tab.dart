@@ -215,10 +215,9 @@ class _RatingPanel extends StatelessWidget {
                   maxLines: 3,
                 ),
               ),
-              // Кнопка ведёт на экран, но не приносит туда отбор «1–2»:
-              // фильтр оценок принимает ОДНО значение, и пункт-диапазон
-              // обещал бы выборку, которой не существует.
-              _OpenInReviews(onTap: () => context.go('/settings/reviews')),
+              // С отбором «1–2»: сервер с 21.10 принимает диапазон оценок
+              // (осмотр панели 20.10, п. 31).
+              _OpenInReviews(onTap: () => context.go('/settings/reviews?rating=1-2')),
             ],
           ),
         ],

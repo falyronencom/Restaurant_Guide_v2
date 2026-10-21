@@ -50,6 +50,18 @@ class AdminReviewItem {
   /// бы «Аноним» и «отзыв без текста» — неправду об отзыве.
   final bool viewerRedacted;
 
+  /// Заблокирован ли автор: `false` — заблокирован. `null` — сервер не
+  /// сказал (просмотрщику не отдаёт, прежний сервер не знал).
+  final bool? authorIsActive;
+
+  /// Почему отзыв скрыт, по журналу: [ReviewHiddenBy.moderator] — модератор
+  /// скрыл его сам, [ReviewHiddenBy.block] — скрыт блокировкой автора.
+  /// `null` — записи нет (скрипт оператора, до журнала) или отзыв не скрыт.
+  final ReviewHiddenBy? hiddenBy;
+
+  /// Причина из той же записи — текст модератора.
+  final String? hiddenReason;
+
   const AdminReviewItem({
     required this.id,
     required this.rating,
@@ -72,7 +84,13 @@ class AdminReviewItem {
     this.authorReviewCount,
     this.authorAverageRating,
     this.viewerRedacted = false,
+    this.authorIsActive,
+    this.hiddenBy,
+    this.hiddenReason,
   });
+
+  /// Автор заблокирован — сказано сервером явно.
+  bool get authorBlocked => authorIsActive == false;
 
   /// Каким станет рейтинг заведения, если этот отзыв убрать.
   ///
@@ -126,6 +144,13 @@ class AdminReviewItem {
       authorReviewCount: json['author_review_count'] as int?,
       authorAverageRating: (json['author_average_rating'] as num?)?.toDouble(),
       viewerRedacted: json['viewer_redacted'] == true,
+      authorIsActive: json['author_is_active'] as bool?,
+      hiddenBy: switch (json['hidden_by']) {
+        'moderator' => ReviewHiddenBy.moderator,
+        'block' => ReviewHiddenBy.block,
+        _ => null,
+      },
+      hiddenReason: json['hidden_reason'] as String?,
     );
   }
 
@@ -160,11 +185,41 @@ class AdminReviewItem {
       authorReviewCount: authorReviewCount,
       authorAverageRating: authorAverageRating,
       viewerRedacted: viewerRedacted,
+      authorIsActive: authorIsActive,
+      // Причина скрытия — о прежнем состоянии: показанный оптимистично отзыв
+      // её больше не несёт, скрытый — получит при перечитке.
+      hiddenBy: (isVisible ?? this.isVisible) ? null : hiddenBy,
+      hiddenReason: (isVisible ?? this.isVisible) ? null : hiddenReason,
     );
   }
 }
 
+/// Кто скрыл отзыв — по записи журнала.
+enum ReviewHiddenBy { moderator, block }
+
 /// Paginated response wrapper
+/// Итог «Скрыть выбранные»: сколько просили, сколько скрыто сейчас.
+class AdminReviewBatchResult {
+  final int requested;
+  final int hidden;
+
+  /// Уже скрытые, удалённые или пропавшие — сервер их не трогал.
+  final int skipped;
+
+  const AdminReviewBatchResult({
+    required this.requested,
+    required this.hidden,
+    required this.skipped,
+  });
+
+  factory AdminReviewBatchResult.fromJson(Map<String, dynamic> json) =>
+      AdminReviewBatchResult(
+        requested: json['requested'] as int? ?? 0,
+        hidden: json['hidden'] as int? ?? 0,
+        skipped: json['skipped'] as int? ?? 0,
+      );
+}
+
 class AdminReviewListResponse {
   final List<AdminReviewItem> reviews;
   final int total;

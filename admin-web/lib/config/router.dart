@@ -163,9 +163,11 @@ GoRouter createRouter(AuthProvider authProvider) {
                 const AnalyticsContainerScreen(),
           ),
           GoRoute(
-            path: '/settings/reviews',
-            builder: (context, state) =>
-                const ReviewsManagementScreen(),
+            path: kReviewsPath,
+            builder: (context, state) => ReviewsManagementScreen(
+              initialAuthorId: state.uri.queryParameters['author'],
+              initialRating: state.uri.queryParameters['rating'],
+            ),
           ),
           GoRoute(
             path: kUsersPath,

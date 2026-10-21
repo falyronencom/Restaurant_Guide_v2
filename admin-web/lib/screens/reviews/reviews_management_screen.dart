@@ -16,13 +16,47 @@ import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
+/// Путь экрана. Ссылки несут отбор: `?author=<id>` — отзывы одного человека
+/// (кнопка «Отзывы автора» в его карточке), `?rating=1-2` — низкие оценки
+/// («Открыть в отзывах →» из аналитики).
+const String kReviewsPath = '/settings/reviews';
+
+/// Адрес отзывов одного человека.
+String authorReviewsLocation(String userId) =>
+    Uri(path: kReviewsPath, queryParameters: <String, String>{'author': userId})
+        .toString();
+
+/// Оценка из адреса: «3» — одна, «1-2» — диапазон. Неверное — `null`.
+(int, int)? parseRatingParam(String? raw) {
+  final text = raw?.trim();
+  if (text == null || text.isEmpty) return null;
+  final match = RegExp(r'^([1-5])(?:-([1-5]))?$').firstMatch(text);
+  if (match == null) return null;
+  final min = int.parse(match.group(1)!);
+  final max = int.parse(match.group(2) ?? match.group(1)!);
+  return min <= max ? (min, max) : null;
+}
+
+/// Ширина содержимого экрана (без меню слева), начиная с которой экран
+/// сжимает колонку и поиск. Окно 1150 даёт ≈ 890, 1024 — ≈ 764 (решение
+/// Координатора А: минимум окна 1024; обрезки видны уже на 1150).
+const double kReviewsNarrowWidth = 1000;
+
 /// «Отзывы» — кадр 07.
 ///
 /// Экран разбора, а не таблица: слева колонка 420 с карточками, справа панель
 /// с самим отзывом. Общее с кадром 06 — шапка, фильтры-пилюли и футер
 /// пагинации; различие в том, что здесь читают текст, а не сканируют строки.
 class ReviewsManagementScreen extends StatefulWidget {
-  const ReviewsManagementScreen({super.key});
+  /// Отбор из адреса — см. [kReviewsPath].
+  final String? initialAuthorId;
+  final String? initialRating;
+
+  const ReviewsManagementScreen({
+    super.key,
+    this.initialAuthorId,
+    this.initialRating,
+  });
 
   @override
   State<ReviewsManagementScreen> createState() =>
@@ -33,25 +67,46 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
   final _searchController = TextEditingController();
   late final AdminReviewsProvider _provider;
 
-  /// Ошибка, о которой уже сказали тостом: провайдер уведомляет много раз за
-  /// одну неудачу, а тост должен появиться один.
-  String? _reportedError;
-  VoidCallback? _dismissToast;
+  /// Один тост на одну неудачу — общее средство П1.
+  final _listFailure = AdminErrorToastReporter();
 
   @override
   void initState() {
     super.initState();
     _provider = context.read<AdminReviewsProvider>();
     _provider.addListener(_onProviderChanged);
+    // Провайдер переживает уход с экрана, и поиск с ним: поле показывает
+    // то, по чему отобран список, а не пустоту (проход по панели 20.10,
+    // A2-18).
+    _searchController.text = _provider.searchQuery;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _provider.loadReviews();
+      if (mounted) _applyRoute();
     });
+  }
+
+  @override
+  void didUpdateWidget(ReviewsManagementScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialAuthorId != oldWidget.initialAuthorId ||
+        widget.initialRating != oldWidget.initialRating) {
+      _applyRoute();
+    }
+  }
+
+  void _applyRoute() {
+    final rating = parseRatingParam(widget.initialRating);
+    final author = widget.initialAuthorId?.trim();
+    _provider.applyRoute(
+      authorId: author == null || author.isEmpty ? null : author,
+      ratingMin: rating?.$1,
+      ratingMax: rating?.$2,
+    );
   }
 
   @override
   void dispose() {
     _provider.removeListener(_onProviderChanged);
-    _dismissToast?.call();
+    _listFailure.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -64,30 +119,27 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
   /// Компактное сообщение показывается только при пустом списке, иначе оно
   /// снесло бы уже показанные строки.
   void _onProviderChanged() {
-    final message = _provider.listError;
-
-    if (message == null) {
-      _reportedError = null;
-      return;
-    }
-    if (_provider.reviews.isEmpty) return; // покажется сообщение в колонке
-    if (message == _reportedError) return;
-
-    _reportedError = message;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _dismissToast?.call();
-      _dismissToast = showAdminErrorToast(
-        context,
-        title: 'Список не обновился',
-        message: '${asSentence(message)} Отзывы на экране остались от прошлой загрузки.',
-        onRetry: () => _provider.loadReviews(page: _provider.currentPage),
-      );
-    });
+    // Пустой список — сообщение в колонке, не тост.
+    final message = _provider.reviews.isEmpty ? null : _provider.listError;
+    _listFailure.report(
+      this,
+      key: message,
+      title: 'Список не обновился',
+      message: '${asSentence(message ?? '')} Отзывы на экране остались от '
+          'прошлой загрузки.',
+      onRetry: () => _provider.loadReviews(page: _provider.currentPage),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _build(context, narrow: constraints.maxWidth < kReviewsNarrowWidth),
+    );
+  }
+
+  Widget _build(BuildContext context, {required bool narrow}) {
     final provider = context.watch<AdminReviewsProvider>();
     final reviews = context.read<AdminReviewsProvider>();
 
@@ -101,6 +153,7 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
           actions: <Widget>[
             _SearchField(
               controller: _searchController,
+              width: narrow ? 190 : 260,
               isSearchMode: provider.searchQuery.isNotEmpty,
               onSubmit: reviews.search,
               onClear: _clearSearch,
@@ -116,22 +169,27 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
               ],
               onChanged: reviews.setStatusFilter,
             ),
-            // Оценки перечислены поштучно, а не диапазонами вроде «1–2
-            // звезды» из макета: бэкенд принимает `rating` одним значением
-            // (`r.rating = $N`), и пункт-диапазон обещал бы отбор, которого
-            // нет. Правило то же, что у сортировки на кадре 05.
-            AdminFilterDropdown<int>(
-              value: provider.ratingFilter,
+            // Диапазон «1–2» — пункт настоящий: сервер с 21.10 принимает
+            // rating_min / rating_max, и ссылка из аналитики приходит с ним
+            // (осмотр панели 20.10, п. 31). Остальное — по одной оценке.
+            AdminFilterDropdown<String>(
+              value: _ratingKey(provider),
               emptyLabel: 'Любая оценка',
-              options: <AdminFilterOption<int>>[
-                const AdminFilterOption<int>(value: null, label: 'Любая оценка'),
+              options: <AdminFilterOption<String>>[
+                const AdminFilterOption<String>(
+                    value: null, label: 'Любая оценка'),
+                const AdminFilterOption<String>(
+                    value: '1-2', label: 'Низкие: 1–2 звезды'),
                 for (var star = 5; star >= 1; star--)
-                  AdminFilterOption<int>(
-                    value: star,
+                  AdminFilterOption<String>(
+                    value: '$star',
                     label: '$star ${plural(star, 'звезда', 'звезды', 'звёзд')}',
                   ),
               ],
-              onChanged: reviews.setRatingFilter,
+              onChanged: (key) {
+                final range = parseRatingParam(key);
+                reviews.setRatingRange(range?.$1, range?.$2);
+              },
             ),
           ],
         ),
@@ -140,6 +198,7 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _ReviewListColumn(
+                width: narrow ? 340 : 420,
                 onClearSearch: _clearSearch,
                 onResetFilters: _resetFilters,
               ),
@@ -149,6 +208,14 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
         ),
       ],
     );
+  }
+
+  /// Ключ пункта оценки: «1-2», «3» или `null`.
+  static String? _ratingKey(AdminReviewsProvider provider) {
+    final min = provider.ratingMin;
+    final max = provider.ratingMax;
+    if (min == null) return null;
+    return min == max ? '$min' : '$min-$max';
   }
 
   /// Снимает поиск целиком — и фильтр, и текст в поле.
@@ -193,12 +260,14 @@ class _ReviewsManagementScreenState extends State<ReviewsManagementScreen> {
 
 class _SearchField extends StatelessWidget {
   final TextEditingController controller;
+  final double width;
   final bool isSearchMode;
   final ValueChanged<String> onSubmit;
   final VoidCallback onClear;
 
   const _SearchField({
     required this.controller,
+    required this.width,
     required this.isSearchMode,
     required this.onSubmit,
     required this.onClear,
@@ -207,7 +276,7 @@ class _SearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 260,
+      width: width,
       height: AdminFilterDropdown.height,
       child: TextField(
         controller: controller,
@@ -262,16 +331,18 @@ class _SearchField extends StatelessWidget {
 // =============================================================================
 
 class _ReviewListColumn extends StatelessWidget {
+  /// 420 на широком окне, 340 — на узком (см. [kReviewsNarrowWidth]).
+  final double width;
+
   /// Сброс принадлежит экрану: текст поиска живёт в контроллере его шапки.
   final VoidCallback onClearSearch;
   final VoidCallback onResetFilters;
 
   const _ReviewListColumn({
+    required this.width,
     required this.onClearSearch,
     required this.onResetFilters,
   });
-
-  static const double width = 420;
 
   static const Map<String, String> _sortCaptions = <String, String>{
     'newest': 'сначала новые',
@@ -297,6 +368,7 @@ class _ReviewListColumn extends StatelessWidget {
             currentSort: provider.sort,
             onSortChanged: context.read<AdminReviewsProvider>().setSort,
           ),
+          if (provider.authorId != null) const _AuthorBar(),
           Expanded(child: _body(context, provider)),
           // Футер держится и на ошибке: строки от прошлой страницы на экране,
           // и убрать под ними полосу номеров значит отнять единственный
@@ -339,15 +411,26 @@ class _ReviewListColumn extends StatelessWidget {
 
     if (provider.reviews.isEmpty) return _empty(context, provider);
 
+    // Отметки — только под фильтром автора и только у того, кто действует:
+    // «Скрыть выбранные» сделано для отзывов одного человека (A2-09).
+    final canCheck = provider.authorId != null &&
+        context.watch<AuthProvider>().canModerate;
+
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       itemCount: provider.reviews.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final review = provider.reviews[index];
+        final hideable = review.isVisible && !review.isDeleted;
         return _ReviewCard(
           review: review,
           isSelected: provider.selectedId == review.id,
+          checked: canCheck && hideable
+              ? provider.checkedIds.contains(review.id)
+              : null,
+          onChecked: () =>
+              context.read<AdminReviewsProvider>().toggleChecked(review.id),
           onTap: () =>
               context.read<AdminReviewsProvider>().selectReview(review.id),
         );
@@ -368,11 +451,15 @@ class _ReviewListColumn extends StatelessWidget {
     // Перечисляем, что именно отсекло: пустой список под фильтром без этого
     // выглядит как пустой раздел.
     final active = <String>[
+      if (provider.authorId != null)
+        'автор ${provider.authorName ?? 'из карточки'}',
       if (provider.searchQuery.isNotEmpty) 'поиск «${provider.searchQuery}»',
       if (provider.statusFilter != null)
         _statusFilterLabel(provider.statusFilter!),
       if (provider.ratingFilter != null)
-        'оценка ${provider.ratingFilter}',
+        'оценка ${provider.ratingFilter}'
+      else if (provider.ratingMin != null)
+        'оценка ${provider.ratingMin}–${provider.ratingMax}',
     ];
 
     return AdminColumnMessage(
@@ -390,6 +477,139 @@ class _ReviewListColumn extends StatelessWidget {
         'deleted' => 'удалённые',
         _ => status,
       };
+}
+
+/// Полоса фильтра «отзывы одного человека»: чьи, снять отбор, а у того, кто
+/// действует, — отметить видимые и скрыть выбранные разом с одной причиной
+/// (проход по панели 20.10, A2-09: тестовые отзывы стороннего тестировщика).
+class _AuthorBar extends StatelessWidget {
+  const _AuthorBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AdminReviewsProvider>();
+    final canModerate = context.watch<AuthProvider>().canModerate;
+    final name = provider.authorName;
+    final checked = provider.checkedIds.length;
+    final hideable = provider.hideableOnPage;
+    final allChecked = hideable.isNotEmpty &&
+        hideable.every((r) => provider.checkedIds.contains(r.id));
+    final busy = provider.isSubmitting;
+
+    return Container(
+      key: const ValueKey<String>('reviews-author-bar'),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 10),
+      decoration: BoxDecoration(
+        color: AppTheme.brandTint(0.06),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 6,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.person_outline,
+                  size: 16, color: AppTheme.textSecondary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  name == null ? 'Отзывы одного автора' : 'Отзывы автора: $name',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                key: const ValueKey<String>('reviews-author-clear'),
+                tooltip: 'Показать отзывы всех авторов',
+                icon: const Icon(Icons.close, size: 17),
+                color: AppTheme.textSecondary,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => provider.setAuthor(null),
+              ),
+            ],
+          ),
+          if (canModerate)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                TextButton(
+                  key: const ValueKey<String>('reviews-check-all'),
+                  onPressed:
+                      hideable.isEmpty || busy ? null : provider.toggleAllOnPage,
+                  child: Text(allChecked
+                      ? 'Снять отметки на странице'
+                      : 'Отметить видимые на странице'),
+                ),
+                FilledButton.icon(
+                  key: const ValueKey<String>('reviews-hide-checked'),
+                  onPressed: checked == 0 || busy
+                      ? null
+                      : () => _confirmHideChecked(context, provider),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primaryOrangeDark,
+                  ),
+                  icon: const Icon(Icons.visibility_off, size: 17),
+                  label: Text(checked == 0
+                      ? 'Скрыть выбранные'
+                      : 'Скрыть выбранные ($checked)'),
+                ),
+              ],
+            ),
+          if (canModerate && provider.batchError != null)
+            Text(
+              provider.batchError!,
+              key: const ValueKey<String>('reviews-batch-error'),
+              style: const TextStyle(fontSize: 12, color: AppTheme.errorRed),
+            )
+          else if (canModerate && provider.batchResult != null)
+            Text(
+              provider.batchResult!,
+              key: const ValueKey<String>('reviews-batch-result'),
+              style:
+                  const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmHideChecked(
+    BuildContext context,
+    AdminReviewsProvider provider,
+  ) async {
+    final count = provider.checkedIds.length;
+    if (count > AdminReviewsProvider.batchMax) {
+      showAdminErrorToast(
+        context,
+        title: 'Слишком много сразу',
+        message: 'За один раз можно скрыть не больше '
+            '${AdminReviewsProvider.batchMax} отзывов — снимите часть отметок.',
+      );
+      return;
+    }
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => _ReasonDialog(
+        title:
+            'Скрыть ${countWithNoun(count, 'отзыв', 'отзыва', 'отзывов')}?',
+        body: '$kHideConsequences $kNoNewReviewNote Показать отзыв снова '
+            'можно по одному.',
+        confirm: 'Скрыть',
+        required: true,
+      ),
+    );
+    if (reason == null || reason.isEmpty) return;
+    await provider.hideChecked(reason);
+  }
 }
 
 /// Шапка секции: чем является список и в каком он порядке.
@@ -507,10 +727,16 @@ class _ReviewCard extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
+  /// Отметка для «Скрыть выбранные»; `null` — отметки у карточки нет.
+  final bool? checked;
+  final VoidCallback onChecked;
+
   const _ReviewCard({
     required this.review,
     required this.isSelected,
     required this.onTap,
+    required this.checked,
+    required this.onChecked,
   });
 
   @override
@@ -539,6 +765,10 @@ class _ReviewCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               _authorRow(state),
+              if (review.authorBlocked) ...<Widget>[
+                const SizedBox(height: 4),
+                const _AuthorBlockedChip(),
+              ],
               const SizedBox(height: 6),
               _placeRow(),
               const SizedBox(height: 8),
@@ -584,13 +814,28 @@ class _ReviewCard extends StatelessWidget {
     final name = review.authorName?.trim();
     final hasName = name != null && name.isNotEmpty;
 
+    final mark = checked;
+
     return Row(
       spacing: 8,
       children: <Widget>[
-        _Avatar(
-          label: hasName ? name : review.authorEmail,
-          muted: !hasName,
-        ),
+        if (mark != null)
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: Checkbox(
+              key: ValueKey<String>('review-check-${review.id}'),
+              value: mark,
+              onChanged: (_) => onChecked(),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+          )
+        else
+          _Avatar(
+            label: hasName ? name : review.authorEmail,
+            muted: !hasName,
+          ),
         Expanded(
           child: Text(
             hasName
@@ -655,6 +900,31 @@ String? _place(AdminReviewItem review) {
       review.establishmentCity!.trim(),
   ];
   return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// «автор заблокирован» — у карточки и в панели (проход по панели 20.10,
+/// A2-11): «Показать» на таком отзыве вернёт его гостям при выключенном авторе.
+class _AuthorBlockedChip extends StatelessWidget {
+  const _AuthorBlockedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.errorTint(0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: const Text(
+        'автор заблокирован',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.errorRed,
+        ),
+      ),
+    );
+  }
 }
 
 class _StateChip extends StatelessWidget {
@@ -821,7 +1091,11 @@ class _DetailPanel extends StatelessWidget {
                 spacing: 18,
                 children: <Widget>[
                   _Heading(review: review, state: state),
-                  _Quote(review: review),
+                  if (state == ReviewState.hidden && !review.viewerRedacted)
+                    _HiddenNote(review: review),
+                  // Ключ по id: раскрытый длинный текст не переезжает на
+                  // соседний отзыв при выборе другого.
+                  _Quote(key: ValueKey<String>('quote-${review.id}'), review: review),
                   // Карточка списка пишет «партнёр ответил»; у скрытого от
                   // просмотрщика ответ не пришёл — блок говорит, что он скрыт,
                   // а не пропадает молча.
@@ -835,15 +1109,30 @@ class _DetailPanel extends StatelessWidget {
                   // тестировщика 17.10, п. 8). У скрытого отзыва просмотрщику
                   // сервер автора не называет — и ссылки нет.
                   if (review.authorId != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        key: const ValueKey<String>('review-author-link'),
-                        onPressed: () =>
-                            context.go(userCardLocation(review.authorId!)),
-                        icon: const Icon(Icons.person_outline, size: 18),
-                        label: const Text('Открыть автора'),
-                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        TextButton.icon(
+                          key: const ValueKey<String>('review-author-link'),
+                          onPressed: () =>
+                              context.go(userCardLocation(review.authorId!)),
+                          icon: const Icon(Icons.person_outline, size: 18),
+                          label: const Text('Открыть автора'),
+                        ),
+                        // Все отзывы этого человека — здесь же, с отметками
+                        // для «Скрыть выбранные» (A2-09).
+                        if (provider.authorId != review.authorId)
+                          TextButton.icon(
+                            key: const ValueKey<String>('review-author-reviews'),
+                            onPressed: () => provider.setAuthor(
+                              review.authorId,
+                              name: review.authorName,
+                            ),
+                            icon: const Icon(Icons.filter_list, size: 18),
+                            label: const Text('Все отзывы автора'),
+                          ),
+                      ],
                     ),
                 ],
               ),
@@ -882,31 +1171,47 @@ class _Heading extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 8),
-        // Сегменты усекаются, а не переносятся: перенос ломает строку
-        // «город · дата · статус» пополам и читается как две разные.
-        Row(
+        // Сегменты переносятся целиком, а не усекаются: на окне 1150 усечение
+        // съедало дату и статус («отзыв от 9 октя…», «виден в прило…» —
+        // осмотр панели 20.10, п. 32). Каждый сегмент — неразрывный, так что
+        // строка ломается только между ними.
+        Wrap(
           spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            const Icon(Icons.storefront, size: 15, color: AppTheme.textGrey),
-            if (review.establishmentCity?.trim().isNotEmpty == true)
-              Flexible(child: _segment(review.establishmentCity!.trim())),
-            const _Dot(),
-            Flexible(
-              child: _segment(
-                'отзыв от ${formatDayMonthLocal(review.createdAt)}, '
-                '${formatTimeLocal(review.createdAt)}',
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: <Widget>[
+                const Icon(Icons.storefront,
+                    size: 15, color: AppTheme.textGrey),
+                if (review.establishmentCity?.trim().isNotEmpty == true)
+                  _segment(review.establishmentCity!.trim()),
+              ],
             ),
             const _Dot(),
-            Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: state.color,
-                shape: BoxShape.circle,
-              ),
+            _segment(
+              'отзыв от ${formatDayMonthLocal(review.createdAt)}, '
+              '${formatTimeLocal(review.createdAt)}',
             ),
-            Flexible(child: _segment(state.panelLabel)),
+            const _Dot(),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: <Widget>[
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: state.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                _segment(state.panelLabel),
+              ],
+            ),
+            if (review.authorBlocked) const _AuthorBlockedChip(),
           ],
         ),
       ],
@@ -916,9 +1221,57 @@ class _Heading extends StatelessWidget {
   Widget _segment(String text) => Text(
         text,
         style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        softWrap: false,
       );
+}
+
+/// Почему отзыв скрыт — по журналу (проход по панели 20.10, A2-11): сам
+/// модератор и его причина или блокировка автора и её причина. Записи нет —
+/// так и сказано, причина не выдумывается.
+class _HiddenNote extends StatelessWidget {
+  final AdminReviewItem review;
+
+  const _HiddenNote({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = review.hiddenReason?.trim();
+    final head = switch (review.hiddenBy) {
+      ReviewHiddenBy.moderator => 'Скрыт модератором',
+      ReviewHiddenBy.block => 'Скрыт блокировкой автора',
+      null => 'Скрыт — записи о том, кто и почему, в журнале нет',
+    };
+
+    return Container(
+      key: const ValueKey<String>('review-hidden-note'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.disclaimerBg,
+        borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 2,
+        children: <Widget>[
+          Text(
+            head,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.disclaimerText,
+            ),
+          ),
+          if (review.hiddenBy != null)
+            Text(
+              reason == null || reason.isEmpty
+                  ? 'Причина не указана'
+                  : 'Причина: $reason',
+              style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Dot extends StatelessWidget {
@@ -931,13 +1284,33 @@ class _Dot extends StatelessWidget {
       );
 }
 
-class _Quote extends StatelessWidget {
+/// Текст отзыва в панели: длинный — свёрнут до [_Quote.collapsedLines]
+/// строк с «…» и кнопкой «Показать полностью» (осмотр панели 20.10, п. 33).
+class _Quote extends StatefulWidget {
   final AdminReviewItem review;
 
-  const _Quote({required this.review});
+  const _Quote({super.key, required this.review});
+
+  static const int collapsedLines = 8;
+
+  @override
+  State<_Quote> createState() => _QuoteState();
+}
+
+class _QuoteState extends State<_Quote> {
+  bool _expanded = false;
+
+  static const TextStyle _textStyle = TextStyle(
+    fontFamily: AppTheme.fontCardTitleFamily,
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    height: 1.6,
+    color: AppTheme.textDark,
+  );
 
   @override
   Widget build(BuildContext context) {
+    final review = widget.review;
     final text = review.content?.trim();
 
     return Container(
@@ -973,24 +1346,54 @@ class _Quote extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            review.viewerRedacted
-                ? kRedactedForViewerLabel
-                : text?.isNotEmpty == true
-                    ? text!
-                    : 'Автор оставил только оценку, без текста',
-            style: TextStyle(
-              fontFamily: AppTheme.fontCardTitleFamily,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              height: 1.6,
-              color: text?.isNotEmpty == true
-                  ? AppTheme.textDark
-                  : AppTheme.textGrey,
+          if (review.viewerRedacted || text == null || text.isEmpty)
+            Text(
+              review.viewerRedacted
+                  ? kRedactedForViewerLabel
+                  : 'Автор оставил только оценку, без текста',
+              style: _textStyle.copyWith(color: AppTheme.textGrey),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) =>
+                  _text(context, text, constraints.maxWidth),
             ),
-          ),
         ],
       ),
+    );
+  }
+
+  /// Длинный ли текст, решает раскладка, а не число знаков: восемь строк на
+  /// узкой панели и на широкой — разное количество слов.
+  Widget _text(BuildContext context, String text, double width) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: _textStyle),
+      maxLines: _Quote.collapsedLines,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width);
+    final long = painter.didExceedMaxLines;
+    painter.dispose();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          text,
+          key: const ValueKey<String>('review-quote-text'),
+          style: _textStyle,
+          maxLines: long && !_expanded ? _Quote.collapsedLines : null,
+          overflow: long && !_expanded ? TextOverflow.ellipsis : null,
+        ),
+        if (long)
+          TextButton(
+            key: const ValueKey<String>('review-quote-toggle'),
+            onPressed: () => setState(() => _expanded = !_expanded),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            child: Text(_expanded ? 'Свернуть' : 'Показать полностью'),
+          ),
+      ],
     );
   }
 }
@@ -1064,19 +1467,36 @@ class _Facts extends StatelessWidget {
 
   const _Facts({required this.review});
 
+  /// Уже этой ширины три колонки не помещаются: на окне 1024 карточка ≈ 330,
+  /// по ≈ 90 на факт — текст шёл по буквам (A2-03). Тогда факты — друг под
+  /// другом во всю ширину.
+  static const double rowMinWidth = 520;
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: AppTheme.canonCardDecoration(),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 18,
-        children: <Widget>[
-          Expanded(child: _author()),
-          Expanded(child: _authorStats()),
-          Expanded(child: _establishmentStats()),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < rowMinWidth) {
+            return Column(
+              key: const ValueKey<String>('review-facts-column'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 14,
+              children: <Widget>[_author(), _authorStats(), _establishmentStats()],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 18,
+            children: <Widget>[
+              Expanded(child: _author()),
+              Expanded(child: _authorStats()),
+              Expanded(child: _establishmentStats()),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1269,6 +1689,18 @@ class _Actions extends StatelessWidget {
       spacing: 10,
       children: <Widget>[
         _buttons(context, reviews, isVisible),
+        // Подсказка — своей строкой под кнопками, а не столбиком рядом с
+        // ними: в остатке строки она получала ноль и ломалась по буквам
+        // («пересчитае/т» — осмотр панели 20.10, п. 32; F-02, A2-03).
+        const Text(
+          'Удаление пересчитает рейтинг заведения, и отменить его нельзя',
+          key: ValueKey<String>('review-delete-hint'),
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.45,
+            color: AppTheme.textTertiary,
+          ),
+        ),
         if (error != null)
           Text(
             error,
@@ -1284,17 +1716,20 @@ class _Actions extends StatelessWidget {
     AdminReviewsProvider reviews,
     bool isVisible,
   ) {
-    return Row(
+    return Wrap(
       spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
         OutlinedButton.icon(
+          key: const ValueKey<String>('review-visibility'),
           onPressed: provider.isSubmitting
               ? null
               : () {
                   if (isVisible) {
                     _confirmHide(context, reviews);
                   } else {
-                    reviews.setVisibility(visible: true);
+                    _confirmShow(context, reviews);
                   }
                 },
           style: AppTheme.canonCtaOutlined(),
@@ -1305,6 +1740,7 @@ class _Actions extends StatelessWidget {
           label: Text(isVisible ? 'Скрыть отзыв' : 'Показать отзыв'),
         ),
         ElevatedButton.icon(
+          key: const ValueKey<String>('review-delete'),
           onPressed: provider.isSubmitting
               ? null
               : () => _confirmDelete(context, reviews),
@@ -1320,51 +1756,71 @@ class _Actions extends StatelessWidget {
             height: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        const Expanded(
-          child: Text(
-            'Удаление пересчитает рейтинг заведения, и отменить его нельзя',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.45,
-              color: AppTheme.textTertiary,
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  void _confirmHide(BuildContext context, AdminReviewsProvider reviews) {
-    showDialog<void>(
+  Future<void> _confirmHide(
+    BuildContext context,
+    AdminReviewsProvider reviews,
+  ) async {
+    // Про оценку сказано намеренно. Скрытие исключает отзыв из рейтинга
+    // ровно так же, как удаление (`updateEstablishmentAggregates`
+    // фильтрует `is_visible = true`), то есть модератор, скрывающий
+    // единицу, поднимает публичную оценку заведения. Прежний текст
+    // обещал только исчезновение из приложения — о последствии для
+    // рейтинга модератор мог не знать.
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ReasonDialog(
+        title: 'Скрыть отзыв?',
+        body: '$kHideConsequences $kNoNewReviewNote Показать отзыв снова '
+            'можно в любой момент — оценка вернётся вместе с ним.',
+        confirm: 'Скрыть',
+        required: true,
+      ),
+    );
+    if (reason == null || reason.isEmpty) return;
+    reviews.setVisibility(visible: false, reason: reason);
+  }
+
+  /// «Показать» на отзыве заблокированного автора — с вопросом: отзыв
+  /// вернётся гостям при выключенном авторе, а разблокировка его потом уже не
+  /// тронет — это решение модератора (A2-11, `adminUserService.unblockUser`).
+  Future<void> _confirmShow(
+    BuildContext context,
+    AdminReviewsProvider reviews,
+  ) async {
+    if (!review.authorBlocked) {
+      reviews.setVisibility(visible: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Скрыть отзыв?'),
-        // Про оценку сказано намеренно. Скрытие исключает отзыв из рейтинга
-        // ровно так же, как удаление (`updateEstablishmentAggregates`
-        // фильтрует `is_visible = true`), то есть модератор, скрывающий
-        // единицу, поднимает публичную оценку заведения. Прежний текст
-        // обещал только исчезновение из приложения — о последствии для
-        // рейтинга модератор мог не знать.
-        content: const Text(
-          'Отзыв исчезнет из приложения, автор получит уведомление, '
-          'а оценка заведения будет пересчитана без него. Показать отзыв '
-          'снова можно в любой момент — оценка вернётся вместе с ним.',
+        key: const ValueKey<String>('review-show-blocked-dialog'),
+        title: const Text('Автор заблокирован. Показать отзыв?'),
+        content: const SizedBox(
+          width: 440,
+          child: Text(
+            'Отзыв вернётся в приложение и в оценку заведения, хотя автор '
+            'заблокирован. Разблокировка автора этот отзыв уже не тронет: '
+            'показать его — ваше решение.',
+          ),
         ),
         actions: <Widget>[
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Отмена'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              reviews.setVisibility(visible: false);
-            },
-            child: const Text('Скрыть'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Показать'),
           ),
         ],
       ),
     );
+    if (confirmed == true) reviews.setVisibility(visible: true);
   }
 
   Future<void> _confirmDelete(
@@ -1373,7 +1829,14 @@ class _Actions extends StatelessWidget {
   ) async {
     final reason = await showDialog<String>(
       context: context,
-      builder: (_) => const _DeleteReviewDialog(),
+      builder: (_) => const _ReasonDialog(
+        title: 'Удалить отзыв?',
+        body: 'Отзыв будет удалён, рейтинг заведения пересчитан. '
+            '$kNoNewReviewNote Это действие нельзя отменить.',
+        confirm: 'Удалить',
+        destructive: true,
+        required: false,
+      ),
     );
 
     // `null` — диалог закрыли, не подтвердив (крестик, барьер, Escape,
@@ -1383,7 +1846,20 @@ class _Actions extends StatelessWidget {
   }
 }
 
-/// Диалог удаления отдельным виджетом, потому что он владеет контроллером.
+/// Что делает скрытие — общая фраза одиночного и пакетного диалога.
+const String kHideConsequences =
+    'Отзыв исчезнет из приложения, автор получит уведомление, а оценка '
+    'заведения будет пересчитана без него.';
+
+/// Автор не напишет о том же месте снова: сервер считает и скрытый, и
+/// удалённый отзыв уже написанным (`reviewModel.findExistingReview` без
+/// `is_deleted`, UNIQUE(user_id, establishment_id)) — проход по панели 20.10,
+/// A2-10.
+const String kNoNewReviewNote =
+    'Автор не сможет написать новый отзыв об этом заведении.';
+
+/// Диалог действия над отзывом с причиной — скрыть, скрыть выбранные,
+/// удалить. Отдельным виджетом, потому что он владеет контроллером.
 ///
 /// Прежде контроллер жил в вызывающем и освобождался через
 /// `showDialog(...).whenComplete(dispose)`. Течи это не давало — `whenComplete`
@@ -1395,15 +1871,41 @@ class _Actions extends StatelessWidget {
 ///
 /// `State.dispose` вызывается после размонтирования маршрута, то есть тогда,
 /// когда поля уже нет. Причина возвращается через `Navigator.pop`.
-class _DeleteReviewDialog extends StatefulWidget {
-  const _DeleteReviewDialog();
+///
+/// Предел причины — как на сервере, 500 знаков (A2-12): длиннее сервер
+/// откажет. Причина — для журнала; автор её не видит, и диалог так и говорит.
+class _ReasonDialog extends StatefulWidget {
+  final String title;
+  final String body;
+  final String confirm;
+  final bool destructive;
+
+  /// Без причины подтвердить нельзя — у скрытия; у удаления причина по
+  /// желанию.
+  final bool required;
+
+  const _ReasonDialog({
+    required this.title,
+    required this.body,
+    required this.confirm,
+    this.destructive = false,
+    required this.required,
+  });
 
   @override
-  State<_DeleteReviewDialog> createState() => _DeleteReviewDialogState();
+  State<_ReasonDialog> createState() => _ReasonDialogState();
 }
 
-class _DeleteReviewDialogState extends State<_DeleteReviewDialog> {
+class _ReasonDialogState extends State<_ReasonDialog> {
   final _reasonController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.required) {
+      _reasonController.addListener(() => setState(() {}));
+    }
+  }
 
   @override
   void dispose() {
@@ -1413,25 +1915,33 @@ class _DeleteReviewDialogState extends State<_DeleteReviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final empty = _reasonController.text.trim().isEmpty;
+
     return AlertDialog(
-      title: const Text('Удалить отзыв?'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text(
-            'Отзыв будет удалён, рейтинг заведения пересчитан. '
-            'Это действие нельзя отменить.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _reasonController,
-            decoration: const InputDecoration(
-              labelText: 'Причина удаления (необязательно)',
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(widget.body),
+            const SizedBox(height: 16),
+            TextField(
+              key: const ValueKey<String>('review-reason'),
+              controller: _reasonController,
+              autofocus: widget.required,
+              maxLength: AdminReviewsProvider.reasonMaxLength,
+              decoration: InputDecoration(
+                labelText: widget.required
+                    ? 'Причина (обязательно)'
+                    : 'Причина (необязательно)',
+                helperText: 'Для журнала — автор её не увидит',
+              ),
+              maxLines: 2,
             ),
-            maxLines: 2,
-          ),
-        ],
+          ],
+        ),
       ),
       actions: <Widget>[
         TextButton(
@@ -1439,10 +1949,14 @@ class _DeleteReviewDialogState extends State<_DeleteReviewDialog> {
           child: const Text('Отмена'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: AppTheme.errorRed),
-          onPressed: () =>
-              Navigator.of(context).pop(_reasonController.text.trim()),
-          child: const Text('Удалить'),
+          key: const ValueKey<String>('review-reason-confirm'),
+          style: widget.destructive
+              ? FilledButton.styleFrom(backgroundColor: AppTheme.errorRed)
+              : null,
+          onPressed: widget.required && empty
+              ? null
+              : () => Navigator.of(context).pop(_reasonController.text.trim()),
+          child: Text(widget.confirm),
         ),
       ],
     );

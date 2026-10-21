@@ -664,6 +664,9 @@ class _GatedReviewService implements AdminReviewService {
     int perPage = 20,
     String? status,
     int? rating,
+    int? ratingMin,
+    int? ratingMax,
+    String? authorId,
     String? search,
     String? sort,
     DateTime? from,
@@ -672,7 +675,7 @@ class _GatedReviewService implements AdminReviewService {
       AdminReviewListResponse(reviews: next, total: next.length, page: 1, pages: 1);
 
   @override
-  Future<void> setVisibility(String id, {required bool isVisible}) =>
+  Future<void> setVisibility(String id, {required bool isVisible, String? reason}) =>
       actionGate!.future;
 
   @override

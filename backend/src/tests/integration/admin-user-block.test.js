@@ -295,7 +295,17 @@ describe('POST /admin/users/:id/block и /unblock', () => {
 
     const { body } = await asAdmin('post', `/users/${target.id}/unblock`, { reason: 'извинился' })
       .expect(200);
-    expect(body.data).toEqual({ id: target.id, is_active: true, changed: true, restored_reviews: 1 });
+    // block_hidden_reviews — сколько скрыла блокировка (2: A и B), чтобы
+    // панель сказала «возвращено 1 из 2» (проход по панели 20.10, A2-06).
+    expect(body.data).toEqual({
+      id: target.id,
+      is_active: true,
+      changed: true,
+      restored_reviews: 1,
+      block_hidden_reviews: 2,
+      block_by_operator: false,
+      block_found: true,
+    });
 
     expect(await reviewState(visibleA.id)).toEqual({ is_visible: true, is_deleted: false });
     expect(await reviewState(visibleB.id)).toEqual({ is_visible: false, is_deleted: false });
