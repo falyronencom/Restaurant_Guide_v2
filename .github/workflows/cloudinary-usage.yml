@@ -1,0 +1,95 @@
+name: Расход Cloudinary
+
+# Сторож расхода Cloudinary (нитка «Нагрузка и расходы поставщиков», директива
+# D3, 21.10.2026; логика и причины — backend/scripts/cloudinary-usage/watch.js).
+#
+# Зачем. Телеметрии нет; на бесплатном тарифе Cloudinary о расходе приходит
+# только месячный отчёт. Решение Координатора 21.10.2026 (SDL CAT-C-4.5 п. 6):
+# тариф Plus покупать по сигналу этого сторожа. Раз в неделю workflow читает
+# расход из Admin API (GET /usage) и краснеет, если израсходовано не меньше
+# порога (по умолчанию 70 %) кредитов тарифа или сторож ослеп (нет секретов,
+# API отказал, в ответе нет кредитов, данные устарели). Итог — одной строкой
+# на странице прогона: кредиты, хранение, трафик, преобразования. Красный
+# прогон по расписанию — уведомление GitHub тому, кто последним менял строку
+# cron.
+#
+# Почему только schedule и workflow_dispatch. Репозиторий публичный: на
+# pull_request секреты не должны доходить до чужих веток. И, как у сторожа
+# сроков моделей, «Wait for CI» у Railway смотрит на ВСЕ проверки коммита —
+# красный сторож на push сорвал бы выкатку. Тест
+# backend/src/tests/unit/cloudinaryUsageWatch.test.js валится, если сюда
+# добавят другое событие.
+#
+# Почему среда 02:17 UTC (05:17 Минска). Ночью push в main не бывает (замер
+# сторожа сроков, 24.08–28.09.2026: ни одного в 00–04 UTC). Не понедельник:
+# там в 02:17 идёт сторож сроков моделей, а защита выкатки каждого приняла бы
+# прогон соседа за CI свежего push и отложила бы свой провал. Время — не
+# гарантия: сам скрипт откладывает провал, если на коммите ещё идёт или
+# только что закончился другой прогон (поэтому actions: read).
+#
+# Секреты (добавляет Координатор) — в окружении cloudinary-watch, открытом
+# только ветке main (Settings → Environments): CLOUDINARY_WATCH_CLOUD_NAME,
+# CLOUDINARY_WATCH_API_KEY, CLOUDINARY_WATCH_API_SECRET. Не секреты
+# репозитория: те читает workflow любой ветки, а ключ Admin API на
+# бесплатном тарифе полный — им можно и удалить все медиа прода (ревью по
+# линзе SUPPLY-CHAIN-AND-RELEASE, 21.10.2026). Ключ отдельный, только для
+# сторожа: его отзывают при подозрении на утечку, не задевая прод, — это
+# защита отзывом, не правами. Порог по умолчанию меняет переменная
+# репозитория CLOUDINARY_ALARM_PERCENT (Secrets and variables → Actions →
+# Variables).
+#
+# Ручной запуск (Actions → «Расход Cloudinary» → Run workflow) принимает
+# порог; порог 1 даёт нарочно красный прогон — так проверяется, что
+# уведомление доходит. Уведомление о ручном запуске получает запустивший.
+#
+# В публичном репозитории GitHub выключает расписание после 60 дней без
+# активности — после долгой паузы включить его в Actions вручную.
+
+on:
+  schedule:
+    - cron: '17 2 * * 3'
+  workflow_dispatch:
+    inputs:
+      alarm_percent:
+        description: 'Порог тревоги, % кредитов тарифа (пусто — 70 или переменная CLOUDINARY_ALARM_PERCENT; 1 — нарочно красный прогон)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  usage:
+    name: Расход Cloudinary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Секреты окружения доходят только до прогонов на ветках, которые
+    # окружение разрешает (main): задание другой ветки GitHub в окружение
+    # не пустит, а без строки environment секретов окружения нет вовсе.
+    environment: cloudinary-watch
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Токен не нужен после checkout: git дальше не используется.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Сверить расход с тарифом
+        # Зависимости не нужны: скрипт зовёт API встроенным fetch. Ввод формы
+        # и секреты передаются переменными окружения, не подстановкой в
+        # команду; форма github.event.inputs, а не inputs — по расписанию
+        # полей формы нет, и строка пустая (как в model-expiry.yml).
+        working-directory: backend
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CLOUDINARY_WATCH_CLOUD_NAME: ${{ secrets.CLOUDINARY_WATCH_CLOUD_NAME }}
+          CLOUDINARY_WATCH_API_KEY: ${{ secrets.CLOUDINARY_WATCH_API_KEY }}
+          CLOUDINARY_WATCH_API_SECRET: ${{ secrets.CLOUDINARY_WATCH_API_SECRET }}
+          ALARM_PERCENT: ${{ github.event.inputs.alarm_percent || vars.CLOUDINARY_ALARM_PERCENT }}
+        run: node scripts/cloudinary-usage/check.js
