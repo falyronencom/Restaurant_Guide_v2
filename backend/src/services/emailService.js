@@ -7,10 +7,10 @@
  * which fails for Belarus phone numbers).
  *
  * Graceful fallback: if RESEND_API_KEY is unset, sendVerificationCodeEmail
- * logs a warning and returns { sent: false } instead of throwing. The
- * verification flow proceeds — code is created in DB and visible in logs,
- * just not actually emailed. This lets the backend run in dev / staging
- * without Resend setup.
+ * logs a warning and returns { sent: false } instead of throwing. Outside
+ * production the verification flow proceeds — code is created in DB, just
+ * not actually emailed (authService.sendEmailVerificationCode). This lets the
+ * backend run in dev / staging without Resend setup.
  *
  * Production setup (Coordinator action):
  *   1. Create Resend account (https://resend.com/signup — no SMS required)
@@ -33,6 +33,86 @@ const ensureConfigured = () => {
   }
   resendClient = new Resend(apiKey);
   return true;
+};
+
+/**
+ * How long a send waits for Resend before it counts as failed. The resend
+ * endpoint answers only after the provider does, and the clients give up
+ * after 10 s (site) and 30 s (app) — past this bound the answer is
+ * sent:false, by the same path as a refusal, instead of a request the client
+ * has already dropped (Н35). 8 s is the bound proposed by Trunk on 24.10;
+ * EMAIL_SEND_TIMEOUT_MS overrides it (tests).
+ */
+const DEFAULT_SEND_TIMEOUT_MS = 8000;
+const sendTimeoutMs = () => {
+  const configured = parseInt(process.env.EMAIL_SEND_TIMEOUT_MS, 10);
+  return configured > 0 ? configured : DEFAULT_SEND_TIMEOUT_MS;
+};
+
+const TIMED_OUT = Symbol('timed out');
+
+/**
+ * Hand a message to Resend, waiting at most sendTimeoutMs(). The signal also
+ * aborts the SDK's fetch (the SDK passes its request options on to fetch),
+ * but the race is what bounds the wait — it does not rely on that.
+ *
+ * A timeout is answered as a refusal, though the provider may still deliver
+ * the letter: its outcome is unknown, and the log line says so.
+ *
+ * Every failure is logged here, as one error line that carries the account
+ * (when the caller names it) next to the reason (Н33): during the mail
+ * incident of 22–23.10 the reason and the account sat in different lines.
+ *
+ * @param {Object} msg - Resend payload
+ * @param {Object} log
+ * @param {string} [log.userId]
+ * @param {string} log.failureMessage - Error line for a thrown send
+ * @param {string} log.sentMessage - Info line for a sent email
+ * @returns {Promise<{sent: boolean, reason?: string}>}
+ */
+const deliver = async (msg, { userId, failureMessage, sentMessage }) => {
+  const timeoutMs = sendTimeoutMs();
+  const signal = AbortSignal.timeout(timeoutMs);
+  let onAbort;
+  const timedOut = new Promise((resolve) => {
+    onAbort = () => resolve(TIMED_OUT);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  const failed = (message, reason, detail) => {
+    logger.error(message, { userId, reason, ...detail, toEmail: msg.to });
+    return { sent: false, reason };
+  };
+
+  try {
+    const result = await Promise.race([resendClient.emails.send(msg, { signal }), timedOut]);
+    if (result === TIMED_OUT) {
+      return failed('Resend did not answer in time — delivery unknown, treated as not sent', 'RESEND_TIMEOUT', { timeoutMs });
+    }
+    if (result?.error) {
+      return failed('Resend returned error in response', 'RESEND_ERROR', { error: result.error });
+    }
+    logger.info(sentMessage, { userId, toEmail: msg.to, id: result?.data?.id });
+    return { sent: true };
+  } catch (error) {
+    return failed(failureMessage, 'RESEND_ERROR', { error: error.message });
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+};
+
+/**
+ * Log a send skipped for want of RESEND_API_KEY. Outside production that is
+ * the expected dev / test setup — a warning; in production no email can go
+ * out at all — an error, with the account (Н33).
+ */
+const logNotConfigured = (message, toEmail, userId) => {
+  const level = process.env.NODE_ENV === 'production' ? 'error' : 'warn';
+  logger[level](message, {
+    userId,
+    reason: 'RESEND_NOT_CONFIGURED',
+    toEmail,
+    hint: 'Set RESEND_API_KEY env var to enable email delivery',
+  });
 };
 
 /**
@@ -87,22 +167,23 @@ const buildTextBody = (code, userName, expiryMinutes) =>
 /**
  * Send a verification code email via Resend.
  *
- * Resend API can surface failures two ways:
+ * Resend API can surface failures three ways:
  *   - response.error populated (no throw)
  *   - thrown exception (network / SDK bug)
- * Both are handled, returning { sent: false, reason: 'RESEND_ERROR' }.
+ *   - no answer within sendTimeoutMs()
+ * All are handled, returning { sent: false, reason: 'RESEND_ERROR' } — or
+ * 'RESEND_TIMEOUT' for the last — and one error line (see deliver).
  *
  * @param {string} toEmail
  * @param {string} code - 6-digit numeric
  * @param {string} userName - May be empty string
+ * @param {Object} [context]
+ * @param {string} [context.userId] - Named in the failure line
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
-export const sendVerificationCodeEmail = async (toEmail, code, userName) => {
+export const sendVerificationCodeEmail = async (toEmail, code, userName, { userId } = {}) => {
   if (!ensureConfigured()) {
-    logger.warn('Resend not configured — email verification code not sent', {
-      toEmail,
-      hint: 'Set RESEND_API_KEY env var to enable email delivery',
-    });
+    logNotConfigured('Resend not configured — email verification code not sent', toEmail, userId);
     return { sent: false, reason: 'RESEND_NOT_CONFIGURED' };
   }
 
@@ -117,24 +198,11 @@ export const sendVerificationCodeEmail = async (toEmail, code, userName) => {
     html: buildHtmlBody(code, userName, expiryMinutes),
   };
 
-  try {
-    const result = await resendClient.emails.send(msg);
-    if (result?.error) {
-      logger.error('Resend returned error in response', {
-        error: result.error,
-        toEmail,
-      });
-      return { sent: false, reason: 'RESEND_ERROR' };
-    }
-    logger.info('Verification email sent', { toEmail, id: result?.data?.id });
-    return { sent: true };
-  } catch (error) {
-    logger.error('Failed to send verification email via Resend', {
-      error: error.message,
-      toEmail,
-    });
-    return { sent: false, reason: 'RESEND_ERROR' };
-  }
+  return deliver(msg, {
+    userId,
+    failureMessage: 'Failed to send verification email via Resend',
+    sentMessage: 'Verification email sent',
+  });
 };
 
 /**
@@ -188,24 +256,24 @@ const buildResetTextBody = (resetUrl, userName, expiryMinutes) =>
  * (e.g. http://localhost:3001) to get clickable local links.
  *
  * Same graceful degradation contract as sendVerificationCodeEmail:
- * returns { sent: false, reason } instead of throwing.
+ * returns { sent: false, reason } instead of throwing, bounded wait, one
+ * error line with the account on failure.
  *
  * @param {string} toEmail
  * @param {string} rawToken - Unhashed reset token (hex string)
  * @param {string} userName - May be empty string
+ * @param {Object} [context]
+ * @param {string} [context.userId] - Named in the failure line
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
-export const sendPasswordResetEmail = async (toEmail, rawToken, userName) => {
+export const sendPasswordResetEmail = async (toEmail, rawToken, userName, { userId } = {}) => {
   const fromAddress = process.env.EMAIL_FROM_ADDRESS || 'noreply@nirivio.by';
   const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
   const siteUrl = (process.env.SITE_URL || 'https://nirivio.by').replace(/\/+$/, '');
   const resetUrl = `${siteUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
   if (!ensureConfigured()) {
-    logger.warn('Resend not configured — password reset email not sent', {
-      toEmail,
-      hint: 'Set RESEND_API_KEY env var to enable email delivery',
-    });
+    logNotConfigured('Resend not configured — password reset email not sent', toEmail, userId);
     if (process.env.NODE_ENV !== 'production') {
       // Dev interception: the raw token exists nowhere but the email, and the
       // DB stores only its hash — without Resend the local console is the only
@@ -224,24 +292,11 @@ export const sendPasswordResetEmail = async (toEmail, rawToken, userName) => {
     html: buildResetHtmlBody(resetUrl, userName, expiryMinutes),
   };
 
-  try {
-    const result = await resendClient.emails.send(msg);
-    if (result?.error) {
-      logger.error('Resend returned error in response', {
-        error: result.error,
-        toEmail,
-      });
-      return { sent: false, reason: 'RESEND_ERROR' };
-    }
-    logger.info('Password reset email sent', { toEmail, id: result?.data?.id });
-    return { sent: true };
-  } catch (error) {
-    logger.error('Failed to send password reset email via Resend', {
-      error: error.message,
-      toEmail,
-    });
-    return { sent: false, reason: 'RESEND_ERROR' };
-  }
+  return deliver(msg, {
+    userId,
+    failureMessage: 'Failed to send password reset email via Resend',
+    sentMessage: 'Password reset email sent',
+  });
 };
 
 /**
