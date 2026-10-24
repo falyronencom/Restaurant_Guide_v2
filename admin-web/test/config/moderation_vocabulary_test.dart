@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
@@ -31,40 +34,25 @@ void main() {
   });
 
   group('Действия журнала', () {
-    test('словарь фильтра знает действия, которые пишут панель и API', () {
-      // Набор — действия панели и API из списка WRITTEN_ACTIONS в
-      // admin-audit-log-summaries.test.js; там он сверяется с живым API.
-      // Всех действий журнала словарь НЕ покрывает: пять, которые пишут
-      // скрипты оператора (change_email, mark_service_account,
-      // operator_create_admin, operator_reset_admin, operator_promote_admin),
-      // в нём нет — по ним нельзя отфильтровать журнал (аудит честности
-      // тестов 18.10.2026: дефект продукта в списке отчёта; честная проверка
-      // «все действия журнала» красная, пока словарь их не получит). Раньше
-      // в фильтре было восемь из четырнадцати действий панели.
-      expect(
-        kAuditActions.keys.toSet(),
-        <String>{
-          'moderate_approve',
-          'moderate_reject',
-          'suspend',
-          'unsuspend',
-          'claim_establishment',
-          'partner_delete_establishment',
-          'admin_update_coordinates',
-          'admin_update_slug',
-          'review_hide',
-          'review_show',
-          'review_delete',
-          'hide_menu_item',
-          'unhide_menu_item',
-          'dismiss_sanity_flag',
-          'upgrade_user_to_partner',
-          // Блокировка из панели (проход тестировщика 17.10, п. 8).
-          'user_block',
-          'user_unblock',
-          'user_reset_name',
-        },
-      );
+    test('словарь фильтра знает каждое действие, которое пишет сервер', () {
+      // Список — общий для сервера и панели
+      // (backend/src/constants/auditLogActions.json); что он полон, сторож
+      // сервера сверяет с кодом писателей журнала (auditLogActionsGuard).
+      // Раньше набор здесь был ручной копией, и пяти действий скриптов
+      // оператора и удаления учётной записи в фильтре не было (проход по
+      // панели модератора, 20.10, A3-05, Ч38).
+      expect(kAuditActions.keys.toSet(), serverAuditActions());
+    });
+
+    test('подпись фильтра — по-русски, без кода и без «учётки»', () {
+      for (final entry in kAuditActions.entries) {
+        // Латиница — только в слове «e-mail».
+        expect(entry.value.replaceAll('e-mail', ''),
+            isNot(contains(RegExp(r'[A-Za-z]'))),
+            reason: '${entry.key}: подпись латиницей «${entry.value}»');
+        expect(entry.value.toLowerCase(), isNot(contains('учётк')),
+            reason: '${entry.key}: «учётка» — разговорное, нужно «учётная запись»');
+      }
     });
 
     test('у каждого действия есть направление', () {
@@ -242,4 +230,15 @@ void main() {
       expect(describeSanityFlag(<String, dynamic>{}), isNull);
     });
   });
+}
+
+/// Коды действий из общего списка сервера. Тест бежит из `admin-web/`, CI
+/// выкачивает репозиторий целиком — соседний каталог `backend/` на месте.
+Set<String> serverAuditActions() {
+  final file = File('../backend/src/constants/auditLogActions.json');
+  final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+  return <String>{
+    for (final action in json['actions'] as List<dynamic>)
+      (action as Map<String, dynamic>)['action'] as String,
+  };
 }
