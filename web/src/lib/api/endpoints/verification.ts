@@ -11,9 +11,8 @@ import { authedFetch } from '@/lib/auth/session';
 
 /**
  * `sent:false` means the code row WAS created but the email could not be
- * dispatched (Resend unconfigured — the dev-mode reality). The UI deliberately
- * does not distinguish: the difference is infrastructure state, not something
- * the user can act on.
+ * dispatched (the mail service refused it, or is not configured). The resend
+ * action tells the visitor so instead of «мы отправили» — they can try again.
  */
 export type SendVerificationCodeData = { sent: boolean; expiresAt: string };
 

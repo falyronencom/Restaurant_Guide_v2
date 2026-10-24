@@ -388,14 +388,21 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   /// Send (or re-send) an email verification code to the authenticated user.
-  /// Returns true on success, false if rate-limited or other server error.
+  /// Returns true when the email went out; false if rate-limited, on another
+  /// server error, or when the server issued the code but the mail service
+  /// refused the email (`sent: false` — [emailNotSentMessage]).
   /// Sets [errorMessage] with a localized message when false.
   Future<bool> sendEmailVerificationCode() async {
     _setLoading(true);
     _clearError();
 
     try {
-      await _authService.sendEmailVerificationCode();
+      final sent = await _authService.sendEmailVerificationCode();
+      if (!sent) {
+        _setError(emailNotSentMessage);
+        _setLoading(false);
+        return false;
+      }
       _setLoading(false);
       return true;
     } catch (e) {
@@ -404,6 +411,13 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
       return false;
     }
   }
+
+  /// Текст, когда код выдан, а письмо не ушло: почтовая служба его не
+  /// приняла (прежде экран писал «Код отправлен», и человек ждал письма,
+  /// которого не будет). Кнопка повтора остаётся. Текст предложен сессией
+  /// Trunk 24.10.2026; слово Координатора — при слиянии.
+  static const String emailNotSentMessage =
+      'Письмо не отправилось. Попробуйте ещё раз через минуту.';
 
   /// Verify a 6-digit email verification code submitted by the user.
   /// On success, refreshes the stored user (email_verified=true) and returns true.
