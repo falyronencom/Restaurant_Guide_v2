@@ -36,6 +36,9 @@ class PeriodSelector extends StatefulWidget {
 }
 
 class _PeriodSelectorState extends State<PeriodSelector> {
+  static const double _pickerMaxWidth = 420;
+  static const double _pickerMaxHeight = 620;
+
   static const _periods = <(String, String)>[
     ('7d', '7 дней'),
     ('30d', '30 дней'),
@@ -103,6 +106,23 @@ class _PeriodSelectorState extends State<PeriodSelector> {
             end: now,
           ),
       locale: const Locale('ru'),
+      // «Применить», а не «Сохранить»: ничего не сохраняется, меняется только
+      // то, за какой период показаны числа (Ч8).
+      saveText: 'Применить',
+      cancelText: 'Отмена',
+      helpText: 'Выберите период',
+      // Календарь — окном посреди экрана, а не на весь экран: на широком
+      // мониторе пикер во всю ширину закрывал раздел целиком, и «Сохранить»
+      // стояло ровно там, где был «Период» (Ч8).
+      builder: (context, child) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: _pickerMaxWidth,
+            maxHeight: _pickerMaxHeight,
+          ),
+          child: child,
+        ),
+      ),
     );
 
     // Пикер идёт по корневому навигатору и живёт дольше своего вызова: за это
@@ -118,8 +138,7 @@ class _PeriodSelectorState extends State<PeriodSelector> {
     ));
   }
 
-  String _formatDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}.'
+  String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.'
       '${d.month.toString().padLeft(2, '0')}.${d.year}';
 }
 

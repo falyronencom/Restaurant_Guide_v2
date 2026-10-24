@@ -49,6 +49,9 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   extractPublicIdFromUrl: jest.fn(() => 'test-promo-public-id'),
   // Named-imported by authController / pdfTextExtractor (loaded via server.js).
   ownCloudPublicId: jest.fn(() => 'test-promo-public-id'),
+  // Named-imported by services/establishmentService.js: null keeps a saved
+  // photo link in all three fields, as these suites expect.
+  photoVariantsOf: jest.fn(() => null),
   isOwnedAsset: jest.fn(() => false),
   // Named-imported by establishmentService / authController (loaded via server.js).
   hasPlainTransformations: jest.fn(() => false),

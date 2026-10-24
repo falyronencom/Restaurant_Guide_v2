@@ -61,6 +61,9 @@ jest.unstable_mockModule('../../config/cloudinary.js', () => ({
   deleteImage: jest.fn(async () => ({ result: 'ok' })),
   extractPublicIdFromUrl: jest.fn(() => 'test-public-id'),
   ownCloudPublicId: jest.fn(() => 'test-public-id'),
+  // Named-imported by services/establishmentService.js: null keeps a saved
+  // photo link in all three fields, as these suites expect.
+  photoVariantsOf: jest.fn(() => null),
   isOwnedAsset: jest.fn(() => false),
   assetHolder: jest.fn(() => null),
   // Named-imported by establishmentService and authController (loaded via server.js) — must exist

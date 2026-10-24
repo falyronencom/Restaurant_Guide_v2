@@ -21,14 +21,25 @@ class AnalyticsPanel extends StatelessWidget {
   /// Содержимое тянется на всю высоту карточки (график), а не по контенту.
   final bool expandChild;
 
+  /// Карточка-снимок: числа на сегодня, выбранный период на них не влияет.
+  ///
+  /// Под шапкой с «7 дней» распределение статусов или оценок читалось как
+  /// «за 7 дней», а сервер считает его по всей базе (A3-16). Приписка
+  /// «на сегодня» у заголовка разводит снимки и величины за период.
+  final bool asOfToday;
+
   const AnalyticsPanel({
     super.key,
     required this.title,
     this.titleTrailing = const <Widget>[],
     this.titleGap = 14,
     this.expandChild = false,
+    this.asOfToday = false,
     required this.child,
   });
+
+  /// Подпись снимка — одна на все карточки и метрики аналитики.
+  static const String asOfTodayLabel = 'на сегодня';
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +61,11 @@ class AnalyticsPanel extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (asOfToday)
+                const Text(
+                  asOfTodayLabel,
+                  style: TextStyle(fontSize: 12, color: AppTheme.textTertiary),
+                ),
               ...titleTrailing,
             ],
           ),

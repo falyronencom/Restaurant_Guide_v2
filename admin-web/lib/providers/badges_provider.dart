@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
@@ -15,6 +17,17 @@ class BadgesProvider with ChangeNotifier {
   AdminBadges? _badges;
   bool _isLoading = false;
 
+  /// Когда счётчики пришли в последний раз. По нему [refreshIfOlderThan]
+  /// решает, идти ли за свежими при переходе между экранами.
+  DateTime? _loadedAt;
+
+  /// Таймер фонового обновления, пока открыт каркас панели.
+  Timer? _timer;
+
+  /// Часы — подменяются в тестах.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
   /// Поколение аккаунта (пакет 2; решение Координатора 12.10.2026 — метка у
   /// каждого провайдера реестра). Счётчики одинаковы для обеих ролей, но
   /// ответ прежнего аккаунта не должен ни перекрыть свежий, ни снять флаг
@@ -31,7 +44,43 @@ class BadgesProvider with ChangeNotifier {
     _generation++;
     _badges = null;
     _isLoading = false;
+    _loadedAt = null;
     notifyListeners();
+  }
+
+  /// Как часто счётчики обновляются сами, пока панель открыта.
+  ///
+  /// Раньше их грузили один раз на сеанс: новые заявки партнёров не
+  /// прибавляли цифру в меню слева, пока модератор не сделает своё действие
+  /// (A3-21, F-20, A1-21). Сервер держит ответ 30 секунд, так что минута —
+  /// это не нагрузка, а свежесть.
+  static const Duration autoRefreshEvery = Duration(seconds: 60);
+
+  /// При переходе между экранами — свежие, если нынешним больше этого.
+  static const Duration refreshOnNavigationAfter = Duration(seconds: 15);
+
+  /// Запустить фоновое обновление (каркас панели, на всё время сеанса).
+  void startAutoRefresh({Duration every = autoRefreshEvery}) {
+    _timer?.cancel();
+    _timer = Timer.periodic(every, (_) => load());
+  }
+
+  void stopAutoRefresh() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// Обновить, если счётчикам больше [age] или их ещё нет.
+  Future<void> refreshIfOlderThan(Duration age) async {
+    final at = _loadedAt;
+    if (at != null && clock().difference(at) < age) return;
+    await load();
+  }
+
+  @override
+  void dispose() {
+    stopAutoRefresh();
+    super.dispose();
   }
 
   AdminBadges? get badges => _badges;
@@ -44,7 +93,10 @@ class BadgesProvider with ChangeNotifier {
 
     try {
       final badges = await _service.getBadges();
-      if (generation == _generation) _badges = badges;
+      if (generation == _generation) {
+        _badges = badges;
+        _loadedAt = clock();
+      }
     } catch (_) {
       // Молча: см. комментарий класса.
     } finally {
