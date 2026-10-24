@@ -4,7 +4,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/canon_combo_chart.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_bar_chart.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/ranked_bar_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/share_bar.dart';
@@ -410,9 +410,10 @@ void main() {
       // Четвёртый параметр коллбэка — `rodIndex`, а стержень в группе один,
       // поэтому он всегда ноль: тултип показывал первый день ряда, на какой
       // столбец ни наведись. Нужен второй параметр — индекс группы.
-      expect(build(group, 0, rod, 0)?.text, startsWith('40 отзывов'));
-      expect(build(group, 1, rod, 0)?.text, startsWith('60 отзывов'));
-      expect(build(group, 2, rod, 0)?.text, startsWith('20 отзывов'));
+      // Первая строка — день столбца (К-2, F-15), вторая — число.
+      expect(build(group, 0, rod, 0)?.text, '1 августа\n40 отзывов · средняя 4,2');
+      expect(build(group, 1, rod, 0)?.text, startsWith('2 августа\n60 отзывов'));
+      expect(build(group, 2, rod, 0)?.text, startsWith('3 августа\n20 отзывов'));
     });
 
     testWidgets('верх шкалы количества делится на четыре без остатка',
@@ -497,7 +498,7 @@ void main() {
   });
 
 
-  group('CanonLineChart', () {
+  group('CanonBarChart', () {
     // У одношкального графика не было ни одного теста, хотя он обслуживает
     // дашборд и кадры 08 и 10. Шкалу ему на этапе 6 поменяли — покрываем.
 
@@ -508,7 +509,7 @@ void main() {
         tester,
         const SizedBox(
           height: 200,
-          child: CanonLineChart(
+          child: CanonBarChart(
             data: <TimelinePoint>[
               TimelinePoint(date: '2026-08-01', count: 5),
               TimelinePoint(date: '2026-08-02', count: 3),
@@ -518,7 +519,7 @@ void main() {
         width: 500,
       );
 
-      final data = tester.widget<LineChart>(find.byType(LineChart)).data;
+      final data = tester.widget<BarChart>(find.byType(BarChart)).data;
       final step = data.gridData.horizontalInterval!;
 
       expect(data.maxY % 4, 0);
@@ -530,7 +531,7 @@ void main() {
         tester,
         const SizedBox(
           height: 200,
-          child: CanonLineChart(
+          child: CanonBarChart(
             data: <TimelinePoint>[],
             emptyMessage: 'За выбранный период заведений не создавали',
           ),
@@ -550,7 +551,7 @@ void main() {
         tester,
         const SizedBox(
           height: 200,
-          child: CanonLineChart(
+          child: CanonBarChart(
             aggregation: 'month',
             data: <TimelinePoint>[
               TimelinePoint(date: '2026-07-01', count: 4),

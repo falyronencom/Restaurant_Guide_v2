@@ -7,7 +7,8 @@ import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/establishments_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_tab_scaffold.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_bar_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/ranked_bar_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/share_bar.dart';
@@ -41,6 +42,9 @@ class EstablishmentsAnalyticsTab extends StatelessWidget {
   /// либо честная сноска о скрытых категориях, либо ряд впритык. Молчаливое
   /// усечение хуже прокрутки — оно читается как «в каталоге девять категорий».
   static const double _minPanelsHeight = 312;
+
+  /// Тело, от которого три карточки нижнего ряда стоят в одну линию.
+  static const double _threePanelsMinWidth = 780;
 
   @override
   Widget build(BuildContext context) {
@@ -79,82 +83,84 @@ class EstablishmentsAnalyticsTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: AnalyticsTabScaffold.gap,
       children: <Widget>[
-        SizedBox(
-          height: AnalyticsTabScaffold.metricsHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: AnalyticsTabScaffold.gap,
-            children: <Widget>[
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.storefront_outlined,
-                  label: 'Всего заведений',
-                  value: formatCount(data.total),
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.check_circle_outline,
-                  label: 'Активных',
-                  value: formatCount(data.active),
-                  valueNote: '${formatShare(data.active, data.total)} каталога',
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.add_business_outlined,
-                  label: 'Новых за период',
-                  value: formatCount(data.newInPeriod),
-                  changePercent: data.changePercent,
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.pending_actions_outlined,
-                  label: 'На модерации',
-                  value: formatCount(data.pending),
-                  // Дельты нет намеренно: очередь — остаток работы, а не рост.
-                  valueNote: 'очередь на просмотр',
-                ),
-              ),
-            ],
+        AnalyticsTabScaffold.metrics(<Widget>[
+          MetricCard(
+            icon: Icons.storefront_outlined,
+            label: 'Всего заведений',
+            value: formatCount(data.total),
           ),
-        ),
+          MetricCard(
+            icon: Icons.check_circle_outline,
+            label: 'Активных',
+            value: formatCount(data.active),
+            valueNote: '${formatShare(data.active, data.total)} каталога',
+          ),
+          MetricCard(
+            icon: Icons.add_business_outlined,
+            label: 'Новых за период',
+            value: formatCount(data.newInPeriod),
+            changePercent: data.changePercent,
+          ),
+          MetricCard(
+            icon: Icons.pending_actions_outlined,
+            label: 'На модерации',
+            value: formatCount(data.pending),
+            // Дельты нет намеренно: очередь — остаток работы, а не рост.
+            valueNote: 'очередь на просмотр',
+          ),
+        ]),
         SizedBox(
           height: chartHeight,
           child: AnalyticsPanel(
             title: 'Создание заведений',
             titleGap: 12,
             expandChild: true,
-            titleTrailing: const <Widget>[
+            titleTrailing: <Widget>[
               ChartLegend(
                 color: AppTheme.primaryOrange,
-                label: 'новые заведения, в день',
+                mark: LegendMark.bar,
+                label: 'новые заведения, ${perBucketLabel(data.aggregation)}',
               ),
             ],
-            child: CanonLineChart(
+            child: CanonBarChart(
               data: data.creationTimeline,
               aggregation: data.aggregation,
               emptyMessage: 'За выбранный период заведений не создавали',
+              noun: ('заведение', 'заведения', 'заведений'),
             ),
           ),
         ),
-        SizedBox(
-          height: panelsHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: AnalyticsTabScaffold.gap,
-            children: <Widget>[
-              Expanded(child: _StatusPanel(data: data)),
-              Expanded(child: _CityPanel(data: data, shown: _citiesShown)),
-              Expanded(
-                child: _CategoryPanel(
-                  data: data,
-                  shown: _categoriesShown,
-                ),
-              ),
-            ],
-          ),
+        // Три карточки в ряд — пока каждой достаётся от ~250 пикселей. Уже —
+        // «По категориям» уходит отдельным рядом под первые две: на окне 1024
+        // три колонки по 228 резали названия городов и категорий (A3-14).
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final status = _StatusPanel(data: data);
+            final city = _CityPanel(data: data, shown: _citiesShown);
+            final category =
+                _CategoryPanel(data: data, shown: _categoriesShown);
+            Widget row(List<Widget> panels) => SizedBox(
+                  height: panelsHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: AnalyticsTabScaffold.gap,
+                    children: <Widget>[
+                      for (final panel in panels) Expanded(child: panel),
+                    ],
+                  ),
+                );
+            if (constraints.maxWidth >= _threePanelsMinWidth) {
+              return row(<Widget>[status, city, category]);
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: AnalyticsTabScaffold.gap,
+              children: <Widget>[
+                row(<Widget>[status, city]),
+                row(<Widget>[category]),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -184,12 +190,16 @@ class _StatusPanel extends StatelessWidget {
     if (total == 0) {
       return const AnalyticsPanel(
         title: 'По статусу',
+        asOfToday: true,
         child: PanelEmpty('В каталоге пока нет заведений'),
       );
     }
 
+    final drafts = counts['draft'] ?? 0;
+
     return AnalyticsPanel(
       title: 'По статусу',
+      asOfToday: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -217,6 +227,16 @@ class _StatusPanel extends StatelessWidget {
                 ),
             ],
           ),
+          // Черновика нет ни в одном разделе панели — его видит только
+          // партнёр, пока не отправит на модерацию. Без пояснения «Черновики 2»
+          // звало искать их в меню слева (Ч30).
+          if (drafts > 0) ...<Widget>[
+            const SizedBox(height: 12),
+            const PanelFootnote(
+              'Черновики видит только партнёр в своём кабинете — '
+              'в панели они появятся, когда их отправят на модерацию',
+            ),
+          ],
         ],
       ),
     );
@@ -237,6 +257,7 @@ class _CityPanel extends StatelessWidget {
     if (cities.isEmpty) {
       return const AnalyticsPanel(
         title: 'По городу',
+        asOfToday: true,
         child: PanelEmpty('Ни у одного заведения не указан город'),
       );
     }
@@ -246,6 +267,7 @@ class _CityPanel extends StatelessWidget {
 
     return AnalyticsPanel(
       title: 'По городу',
+      asOfToday: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -288,14 +310,17 @@ class _CategoryPanel extends StatelessWidget {
     if (categories.isEmpty) {
       return const AnalyticsPanel(
         title: 'По категориям',
+        asOfToday: true,
         child: PanelEmpty('Ни у одного заведения не указана категория'),
       );
     }
 
     final hidden = categories.length - shown;
+    final sum = categories.fold<int>(0, (a, c) => a + c.count);
 
     return AnalyticsPanel(
       title: 'По категориям',
+      asOfToday: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -307,11 +332,19 @@ class _CategoryPanel extends StatelessWidget {
             ],
             maxItems: shown,
           ),
-          if (hidden > 0) ...<Widget>[
+          if (hidden > 0 || sum > data.total) ...<Widget>[
             const SizedBox(height: 12),
+            // Сумма по категориям больше числа заведений, и это не ошибка: у
+            // карточки бывает до нескольких категорий, и она считается в каждой
+            // (62 при 49 заведениях, Ч29). Без пояснения сумма читалась как сбой.
             PanelFootnote(
-              'и ещё ${countWithNoun(hidden, 'категория', 'категории', 'категорий')}',
-              maxLines: 1,
+              <String>[
+                if (hidden > 0)
+                  'и ещё ${countWithNoun(hidden, 'категория', 'категории', 'категорий')}',
+                if (sum > data.total)
+                  'У заведения бывает несколько категорий — оно считается в каждой',
+              ].join(' · '),
+              maxLines: 3,
             ),
           ],
         ],
