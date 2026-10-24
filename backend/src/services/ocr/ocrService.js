@@ -16,7 +16,10 @@
  *   7. Mark job done (with result_summary) or failed (with retry logic)
  *   8. Notify partner once per upload batch via notifyMenuParsed — when the job
  *      that just settled was the last active one for the establishment
- *      (awaited, errors logged only, Segment B; see notifyPartnerIfBatchFinished)
+ *      (awaited, errors logged only, Segment B; see notifyPartnerIfBatchFinished);
+ *      a job failed for good is told to the partner as well, after that
+ *      (notifyPartnerOfFailedJob, once per upload batch; not for a re-read
+ *      of a file recognised before)
  */
 
 import logger from '../../utils/logger.js';
@@ -29,6 +32,7 @@ import * as visionOcrAdapter from './visionOcrAdapter.js';
 import * as llmStructurer from './llmStructurer.js';
 import * as sanityChecker from './sanityChecker.js';
 import { PDF_PARSE_ABORTED, PDF_PARSE_LIMIT } from './pdfParseRunner.js';
+import { EMPTY_TEXT_MESSAGE, PAGES_BLANK_MESSAGE, UNSUPPORTED_FILE_MESSAGE } from './failureReason.js';
 import { generatePdfPageImageUrl } from '../../config/cloudinary.js';
 
 /**
@@ -170,7 +174,7 @@ const readPagesAsImages = async (pageUrls) => {
 
   const pageTexts = reads.map((read) => read.value.rawText);
   if (pageTexts.every(isBlank)) {
-    throw new Error('vision OCR returned empty text');
+    throw new Error(PAGES_BLANK_MESSAGE);
   }
   return pageTexts;
 };
@@ -289,7 +293,7 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal } = {})
     return { pageTexts: [visionResult.rawText], strategy: 'vision_image' };
   }
 
-  throw new Error(`Unsupported file_type for OCR: ${media.file_type}`);
+  throw new Error(`${UNSUPPORTED_FILE_MESSAGE}: ${media.file_type}`);
 };
 
 /** A section name the structurer gave an item; null or a blank string is none. */
@@ -438,7 +442,10 @@ const buildResultSummary = (items, strategy, { visionError = null, pagesCount, p
  * `failedJobId` marks the permanent-failure branch: the batch is reported only
  * if a batch mate was recognised while the failed job was alive (a 'done' job
  * completed after it was enqueued). A lone failed upload, or a batch that
- * failed entirely, stays silent — the retry flow covers it, as before.
+ * failed entirely, gets no «Меню распознано» — there is nothing recognised
+ * to report; the failure itself is told by notifyPartnerOfFailedJob (from
+ * 24.10.2026, under the same type menu_parsed with its own title; silent
+ * before).
  *
  * Known edge (accepted): deleting a menu file whose job is still pending
  * cascades the job away, so a sibling that already deferred never gets its
@@ -477,6 +484,40 @@ const notifyPartnerIfBatchFinished = async (establishmentId, { failedJobId = nul
 
   await NotificationService.notifyMenuParsed(establishmentId);
   return true;
+};
+
+/**
+ * Tell the partner that this job failed for good (finding 3 of the Railway
+ * incident, 24.10.2026: until then a failed recognition looked to the partner
+ * like a menu not uploaded yet). Every place that ends a job 'failed' calls
+ * it — processJob below, and ocrJobPoller for a zombie its sweep failed and
+ * for an attempt it settled — after notifyPartnerIfBatchFinished, which
+ * reports what the rest of the batch produced: the failure is the newest
+ * notice the partner sees. notificationService keeps it to one notice per
+ * upload batch.
+ *
+ * A file recognised before is not told: its failed job was a re-read — the
+ * partner's restart re-reads every menu file, the operator's
+ * scripts/reocr-menus.js re-reads recognised ones after a model change — and
+ * a failed re-read leaves the file's dishes as they were (replaceForMedia
+ * runs only on success). The menu screen counts such a file as recognised
+ * too (partnerMenuItemService.recognitionState), so the partner is not sent
+ * to replace a file that works (review of 24.10.2026, both passes).
+ *
+ * Errors reach the caller's .catch (the log) and never the job outcome.
+ *
+ * @param {Object} job - The ocr_jobs row, now 'failed'
+ * @returns {Promise<boolean>} Whether a notice was written
+ */
+const notifyPartnerOfFailedJob = async (job) => {
+  if (await ocrJobModel.hasCompletedJobForMedia(job.media_id)) {
+    logger.debug('failure notice skipped: the file was recognised before, its dishes stand', {
+      jobId: job.id,
+      mediaId: job.media_id,
+    });
+    return false;
+  }
+  return NotificationService.notifyMenuRecognitionFailed(job.establishment_id, { jobId: job.id });
 };
 
 /**
@@ -524,7 +565,7 @@ export const processJob = async (jobId, { signal } = {}) => {
     });
 
     if (pageTexts.every(isBlank)) {
-      throw new Error(`OCR produced empty text via strategy=${strategy}`);
+      throw new Error(`${EMPTY_TEXT_MESSAGE} via strategy=${strategy}`);
     }
 
     const { items: rawItems, categoriesCarried } = await structurePages(pageTexts);
@@ -604,13 +645,20 @@ export const processJob = async (jobId, { signal } = {}) => {
     }
 
     // A permanent failure settles this job too: if it was the last active one,
-    // the partner still hears what the rest of the batch produced. Awaited for
-    // the same shutdown reason as above; errors stay in the log.
+    // the partner still hears what the rest of the batch produced — and then
+    // that this file failed, the newest notice. Awaited for the same shutdown
+    // reason as above; errors stay in the log.
     if (failedJob && failedJob.status === 'failed') {
       await notifyPartnerIfBatchFinished(job.establishment_id, { failedJobId: jobId })
         .catch((err) => logger.error('notifyMenuParsed failed after permanent failure', {
           error: err.message,
           establishmentId: job.establishment_id,
+        }));
+      await notifyPartnerOfFailedJob(failedJob)
+        .catch((err) => logger.error('failure notice failed after permanent failure', {
+          error: err.message,
+          establishmentId: job.establishment_id,
+          jobId,
         }));
     }
 
@@ -623,6 +671,7 @@ export {
   buildResultSummary,
   carryCategoriesAcrossPages,
   notifyPartnerIfBatchFinished,
+  notifyPartnerOfFailedJob,
   JOB_DURATION_BOUND_MS,
   PDF_PAGE_LIMIT,
   TEXT_LAYER_CHAR_LIMIT,
