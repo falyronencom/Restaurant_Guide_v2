@@ -14,6 +14,11 @@ class AuditLogEntry {
   /// Роль исполнителя (`users.role`). Просмотрщику — единственное, что о нём
   /// известно: имя и e-mail сервер ему не отдаёт (пакет 2, пункт 2).
   final String? actorRole;
+
+  /// Кто действовал, когда автора-человека нет: `operator_script` — скрипт
+  /// оператора, `system` — сама система; `person` — человек (имя или роль
+  /// рядом). Старый сервер поля не присылает — тогда `null`.
+  final String? actorKind;
   final DateTime createdAt;
   final Map<String, dynamic>? oldData;
   final Map<String, dynamic>? newData;
@@ -30,6 +35,7 @@ class AuditLogEntry {
     this.adminName,
     this.adminEmail,
     this.actorRole,
+    this.actorKind,
     required this.createdAt,
     this.oldData,
     this.newData,
@@ -48,6 +54,7 @@ class AuditLogEntry {
       adminName: json['admin_name'] as String?,
       adminEmail: json['admin_email'] as String?,
       actorRole: json['actor_role'] as String?,
+      actorKind: json['actor_kind'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       oldData: json['old_data'] as Map<String, dynamic>?,
       newData: json['new_data'] as Map<String, dynamic>?,

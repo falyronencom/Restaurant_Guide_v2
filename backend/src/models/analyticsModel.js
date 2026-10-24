@@ -37,7 +37,13 @@ export const countUsersInPeriod = async (startDate, endDate) => {
  * Count total users
  */
 export const countTotalUsers = async () => {
-  const query = `SELECT COUNT(*)::int AS count FROM users`;
+  // Только действующие учётные записи. Удалённая остаётся в базе пустой
+  // оболочкой (accountDeletionService: id, роль, дата, is_active = false), а
+  // заблокированная — тоже is_active = false; в «Всего» и «Партнёров» они
+  // попадали, и удаление партнёра число не уменьшало (проход по панели
+  // модератора, 20.10, A3-20). Новые за период считаются по регистрациям, как
+  // прежде: человек зарегистрировался, даже если потом ушёл.
+  const query = `SELECT COUNT(*)::int AS count FROM users WHERE is_active = TRUE`;
   try {
     const result = await pool.query(query);
     return result.rows[0].count;
@@ -145,13 +151,24 @@ export const getModerationCounts = async (startDate, endDate) => {
   const query = `
     SELECT
       (SELECT COUNT(*)::int FROM establishments WHERE status = 'pending') AS pending_count,
+      -- От последней правки карточки, а не от создания черновика — так же,
+      -- как очередь «Ожидают просмотра» (решение Координатора 20.10, Б):
+      -- черновик мог пролежать 20 дней до отправки, и главная говорила
+      -- «старейшая ждёт 82 дня» о заявке, которая в очереди ждёт 21 (A3-19,
+      -- Ч2). Отдельной отметки «отправлено» нет: отправка ставит updated_at.
       (
-        SELECT MIN(created_at) AT TIME ZONE 'UTC'
+        SELECT MIN(updated_at) AT TIME ZONE 'UTC'
         FROM establishments WHERE status = 'pending'
       ) AS oldest_pending_at,
+      -- Решения модератора по заведениям. Коды — те, что пишутся в журнал
+      -- (adminService): 'suspend' и 'unsuspend'; прежние
+      -- 'suspend_establishment' не писал никто, и приостановки не считались
+      -- (A3-18). Без автора-человека 'suspend' пишет система (захват учётной
+      -- записи) — это не решение модератора; пауза партнёра — свой код.
       (
         SELECT COUNT(*)::int FROM audit_log
-        WHERE action IN ('moderate_approve', 'moderate_reject', 'suspend_establishment', 'unsuspend_establishment')
+        WHERE action IN ('moderate_approve', 'moderate_reject', 'suspend', 'unsuspend')
+          AND user_id IS NOT NULL
           AND created_at >= $1 AND created_at < $2
       ) AS actions_in_period
   `;
@@ -200,9 +217,12 @@ export const getUserRegistrationTimeline = async (startDate, endDate, truncTo = 
  * Current role distribution (snapshot, not period-filtered)
  */
 export const getRoleDistribution = async () => {
+  // Как «Всего пользователей»: только действующие учётные записи (A3-20),
+  // иначе доли ролей не сходились бы с итогом.
   const query = `
     SELECT role, COUNT(*)::int AS count
     FROM users
+    WHERE is_active = TRUE
     GROUP BY role
     ORDER BY count DESC
   `;

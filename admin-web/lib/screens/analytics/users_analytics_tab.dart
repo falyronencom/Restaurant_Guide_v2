@@ -9,7 +9,8 @@ import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
 import 'package:restaurant_guide_admin_web/providers/users_analytics_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/analytics/analytics_tab_scaffold.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_bar_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/share_bar.dart';
 
@@ -67,59 +68,49 @@ class UsersAnalyticsTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: AnalyticsTabScaffold.gap,
       children: <Widget>[
-        SizedBox(
-          height: AnalyticsTabScaffold.metricsHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: AnalyticsTabScaffold.gap,
-            children: <Widget>[
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.group_outlined,
-                  label: 'Всего пользователей',
-                  value: formatCount(data.total),
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.person_add_alt_outlined,
-                  label: 'Новых за период',
-                  value: formatCount(data.newInPeriod),
-                  changePercent: data.changePercent,
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.storefront_outlined,
-                  label: 'Партнёров',
-                  value: formatCount(partners),
-                  valueNote: '${formatShare(partners, data.total)} базы',
-                ),
-              ),
-              Expanded(
-                child: MetricCard(
-                  icon: Icons.shield_outlined,
-                  label: 'Администраторов',
-                  value: formatCount(admins),
-                  valueNote: 'доступ к админке',
-                ),
-              ),
-            ],
+        AnalyticsTabScaffold.metrics(<Widget>[
+          MetricCard(
+            icon: Icons.group_outlined,
+            label: 'Всего пользователей',
+            value: formatCount(data.total),
+            // Сервер считает только действующие учётные записи: удалённая
+            // остаётся в базе пустой оболочкой, и раньше её считали (A3-20).
+            valueNote: 'действующие',
           ),
-        ),
+          MetricCard(
+            icon: Icons.person_add_alt_outlined,
+            label: 'Новых за период',
+            value: formatCount(data.newInPeriod),
+            changePercent: data.changePercent,
+          ),
+          MetricCard(
+            icon: Icons.storefront_outlined,
+            label: 'Партнёров',
+            value: formatCount(partners),
+            valueNote: '${formatShare(partners, data.total)} базы',
+          ),
+          MetricCard(
+            icon: Icons.shield_outlined,
+            label: 'Администраторов',
+            value: formatCount(admins),
+            valueNote: 'доступ к панели',
+          ),
+        ]),
         SizedBox(
           height: chartHeight,
           child: AnalyticsPanel(
             title: 'Регистрация пользователей',
             titleGap: 12,
             expandChild: true,
-            titleTrailing: const <Widget>[
+            titleTrailing: <Widget>[
               ChartLegend(
                 color: AppTheme.primaryOrange,
-                label: 'новые пользователи, в день',
+                mark: LegendMark.bar,
+                label:
+                    'новые пользователи, ${perBucketLabel(data.aggregation)}',
               ),
             ],
-            child: CanonLineChart(
+            child: CanonBarChart(
               data: data.registrationTimeline,
               aggregation: data.aggregation,
               emptyMessage: 'За выбранный период регистраций не было',
@@ -163,12 +154,14 @@ class _RolesPanel extends StatelessWidget {
     if (total == 0) {
       return const AnalyticsPanel(
         title: 'По ролям',
+        asOfToday: true,
         child: PanelEmpty('В базе пока нет пользователей'),
       );
     }
 
     return AnalyticsPanel(
       title: 'По ролям',
+      asOfToday: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -183,30 +176,20 @@ class _RolesPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          // Переносом, а не одной строкой: с «Наблюдателями» четыре подписи
+          // не помещались в узкое тело (A3-14). Служебной заметки
+          // разработчика о ключах ролей здесь больше нет (Ч28, A3-26).
+          Wrap(
+            spacing: 28,
+            runSpacing: 8,
             children: <Widget>[
               for (final entry in counts.entries)
-                Padding(
-                  padding: const EdgeInsets.only(right: 28),
-                  child: ShareLegendChip(
-                    color: userRoleColor(entry.key),
-                    label: userRoleLabel(entry.key),
-                    value: entry.value,
-                    total: total,
-                  ),
+                ShareLegendChip(
+                  color: userRoleColor(entry.key),
+                  label: userRoleLabel(entry.key),
+                  value: entry.value,
+                  total: total,
                 ),
-              const Expanded(
-                child: Text(
-                  'Роли приходят из базы ключами — перевод на стороне клиента',
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-              ),
             ],
           ),
         ],
