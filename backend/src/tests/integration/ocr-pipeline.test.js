@@ -204,11 +204,27 @@ describe('OCR pipeline integration', () => {
     await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
   });
 
-  /** menu_parsed rows of the partner, oldest first. */
+  /**
+   * menu_parsed rows of the partner that report a recognised menu, oldest
+   * first. The failure notice goes out under the same type with its own
+   * title (notificationService.MENU_RECOGNITION_FAILED_TITLE) and is counted
+   * by failureNotices below.
+   */
   const partnerNotifications = async () => {
     const result = await pool.query(
       `SELECT message FROM notifications
-       WHERE user_id = $1 AND type = 'menu_parsed'
+       WHERE user_id = $1 AND type = 'menu_parsed' AND title = 'Меню распознано'
+       ORDER BY created_at ASC`,
+      [establishment.partner_id],
+    );
+    return result.rows;
+  };
+
+  /** The partner's notices that recognition failed, oldest first. */
+  const failureNotices = async () => {
+    const result = await pool.query(
+      `SELECT type, title, message, establishment_id FROM notifications
+       WHERE user_id = $1 AND title = 'Меню не распознано'
        ORDER BY created_at ASC`,
       [establishment.partner_id],
     );
@@ -1600,7 +1616,9 @@ describe('OCR pipeline integration', () => {
       expect(rows[0].message).toBe('Меню «Test Restaurant» распознано — 5 позиций');
     });
 
-    test('lone permanent failure with nothing recognised in its batch stays silent', async () => {
+    // No menu_parsed of «распознано»: nothing in this batch was recognised.
+    // The failure itself is told by its own notice (describe below).
+    test('lone permanent failure with nothing recognised in its batch gets no «распознано» notice', async () => {
       // An older batch already produced items — must not be mistaken for this one.
       const old = await insertTestMedia(establishment.id, 'pdf');
       await menuItemModel.createMany({
@@ -1910,6 +1928,180 @@ describe('OCR pipeline integration', () => {
 
       await settle();
       expect(await partnerNotifications()).toHaveLength(0);
+    });
+  });
+
+  // ── The partner hears that recognition failed ────────────────────────────
+  // Finding 3 of the Railway incident (directive of 24.10.2026): a job that
+  // failed for good used to leave the partner nothing — no notice, and the
+  // same empty menu screen as a menu not uploaded. Now every such job is told
+  // (ocrService.notifyPartnerOfFailedJob), once per upload batch, under the
+  // type menu_parsed with its own title.
+
+  describe('failure notice — recognition failed for good', () => {
+    const FAILURE_TEXT =
+      'Не удалось распознать меню «Test Restaurant». Попробуйте загрузить снова или другой файл.';
+
+    /** Queue a file on its last attempt and run it to a permanent failure. */
+    const failLastAttemptOf = async (mediaId) => {
+      const job = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      await pool.query('UPDATE ocr_jobs SET attempts = 3 WHERE id = $1', [job.id]);
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.id).toBe(job.id);
+      expect((await ocrService.processJob(picked.id)).success).toBe(false);
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('failed');
+      return job;
+    };
+
+    test('a lone file whose last attempt fails → one notice, in the feed under «Мои заведения»', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await failLastAttemptOf(mediaId);
+
+      // processJob awaits the notice: the row exists the moment it resolves.
+      expect(await failureNotices()).toEqual([{
+        type: 'menu_parsed',
+        title: 'Меню не распознано',
+        message: FAILURE_TEXT,
+        establishment_id: establishment.id,
+      }]);
+      expect(await partnerNotifications()).toHaveLength(0);
+    });
+
+    test('a failed attempt with attempts left is not told — the retry may still succeed', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const job = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.id).toBe(job.id);
+      expect((await ocrService.processJob(picked.id)).success).toBe(false);
+      expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('pending');
+
+      await settle();
+      expect(await failureNotices()).toHaveLength(0);
+    });
+
+    test('two files of one upload both fail → ONE notice, not one per file', async () => {
+      const first = await insertTestMedia(establishment.id, 'pdf');
+      const second = await insertTestMedia(establishment.id, 'pdf');
+      // Queued together, as an upload of two files is.
+      const firstJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: first.mediaId });
+      const secondJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: second.mediaId });
+      await pool.query('UPDATE ocr_jobs SET attempts = 3 WHERE id = ANY($1::uuid[])', [[firstJob.id, secondJob.id]]);
+
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      for (const expected of [firstJob.id, secondJob.id]) {
+        const picked = await ocrJobModel.pickNextPending();
+        expect(picked.id).toBe(expected);
+        expect((await ocrService.processJob(picked.id)).success).toBe(false);
+        expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('failed');
+      }
+
+      await settle();
+      expect(await failureNotices()).toHaveLength(1);
+    });
+
+    test('a later upload that fails again is told again', async () => {
+      const first = await insertTestMedia(establishment.id, 'pdf');
+      await failLastAttemptOf(first.mediaId);
+      expect(await failureNotices()).toHaveLength(1);
+
+      // The next upload is queued after that notice was written. The
+      // timestamps are the database's, compared inside it — the notice is
+      // moved an hour back so that the order does not hang on a millisecond.
+      await pool.query(
+        `UPDATE notifications SET created_at = created_at - INTERVAL '1 hour'
+         WHERE user_id = $1`,
+        [establishment.partner_id],
+      );
+      const second = await insertTestMedia(establishment.id, 'pdf');
+      await failLastAttemptOf(second.mediaId);
+
+      expect(await failureNotices()).toHaveLength(2);
+    });
+
+    // Both reviews of 24.10.2026: a restart or the operator's re-OCR re-reads
+    // recognised files; a failed re-read keeps the file's dishes, and a
+    // notice would send the partner to replace a file that works.
+    test('a re-read of a recognised file fails for good → not told: its dishes stand', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await menuItemModel.createMany({
+        establishmentId: establishment.id,
+        mediaId,
+        items: [{ item_name: 'Борщ', price_byn: 15, confidence: 0.9, position: 0 }],
+      });
+      await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, completed_at)
+         VALUES ($1, $2, 'done', 1, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day')`,
+        [establishment.id, mediaId],
+      );
+
+      await failLastAttemptOf(mediaId);
+
+      await settle();
+      expect(await failureNotices()).toHaveLength(0);
+      const dishes = await pool.query('SELECT item_name FROM menu_items WHERE media_id = $1', [mediaId]);
+      expect(dishes.rows.map((row) => row.item_name)).toEqual(['Борщ']);
+    });
+
+    test('a batch where one file is recognised and the last one fails: «распознано», then the failure — the newest', async () => {
+      const menuText = 'Борщ — 15 руб.\nСалат — 12 руб.';
+      const good = await insertTestMedia(establishment.id, 'pdf');
+      const bad = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: good.mediaId });
+      const badJob = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId: bad.mediaId });
+      await pool.query('UPDATE ocr_jobs SET attempts = 3 WHERE id = $1', [badJob.id]);
+
+      pdfParseModule.default.mockResolvedValue({ text: menuText, numpages: 1 });
+      global.fetch = buildFetchMock([
+        { item_name: 'Борщ', price_byn: 15, category_raw: 'Супы', confidence: 0.9 },
+      ]);
+      const first = await ocrJobModel.pickNextPending();
+      expect(first.media_id).toBe(good.mediaId);
+      expect((await ocrService.processJob(first.id)).success).toBe(true);
+
+      pdfParseModule.default.mockRejectedValue(new Error('parse error'));
+      global.fetch = failingFetch();
+      const last = await ocrJobModel.pickNextPending();
+      expect(last.id).toBe(badJob.id);
+      expect((await ocrService.processJob(last.id)).success).toBe(false);
+
+      const feed = await pool.query(
+        `SELECT title FROM notifications WHERE user_id = $1 ORDER BY created_at ASC`,
+        [establishment.partner_id],
+      );
+      expect(feed.rows.map((row) => row.title)).toEqual(['Меню распознано', 'Меню не распознано']);
+    });
+
+    test('a zombie the sweep fails for good is told; one returned to the queue is not', async () => {
+      const zombie = await insertTestMedia(establishment.id, 'pdf');
+      const failed = await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at)
+         VALUES ($1, $2, 'processing', 1, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours')
+         RETURNING id`,
+        [establishment.id, zombie.mediaId],
+      );
+
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(failed.rows[0].id)).status).toBe('failed');
+      expect((await failureNotices()).map((row) => row.message)).toEqual([FAILURE_TEXT]);
+
+      await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
+      const marked = await insertTestMedia(establishment.id, 'pdf');
+      const requeued = await pool.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, created_at, started_at, error_message)
+         VALUES ($1, $2, 'processing', 1, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours', $3)
+         RETURNING id`,
+        [establishment.id, marked.mediaId, ocrJobModel.SHUTDOWN_INTERRUPT_MARK],
+      );
+
+      await ocrJobPoller.sweepStaleJobs();
+      expect((await ocrJobModel.getJobStatus(requeued.rows[0].id)).status).toBe('pending');
+      await settle();
+      expect(await failureNotices()).toHaveLength(0);
     });
   });
 });

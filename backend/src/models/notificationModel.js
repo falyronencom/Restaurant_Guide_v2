@@ -91,6 +91,34 @@ export const create = async (data) => {
 };
 
 /**
+ * Whether the user already has a notification of this type and title about
+ * this establishment, created since the given OCR job was enqueued — the
+ * jobs of one upload batch are enqueued together, so a notice written for
+ * one of them is newer than the others' enqueue. Used by
+ * notificationService.notifyMenuRecognitionFailed to tell the partner once
+ * per batch, not once per failed file. Both timestamps are DB-generated naive
+ * TIMESTAMPs, compared inside the database.
+ *
+ * @param {Object} params
+ * @param {string} params.userId - Recipient UUID
+ * @param {string} params.establishmentId - UUID
+ * @param {string} params.type - Notification type
+ * @param {string} params.title - Notification title
+ * @param {string} params.jobId - UUID of the OCR job whose enqueue time bounds the search
+ * @returns {Promise<boolean>}
+ */
+export const existsSinceOcrJobEnqueued = async ({ userId, establishmentId, type, title, jobId }) => {
+  const result = await pool.query(
+    `SELECT 1 FROM notifications
+     WHERE user_id = $1 AND establishment_id = $2 AND type = $3 AND title = $4
+       AND created_at >= (SELECT created_at FROM ocr_jobs WHERE id = $5)
+     LIMIT 1`,
+    [userId, establishmentId, type, title, jobId],
+  );
+  return result.rowCount > 0;
+};
+
+/**
  * Get paginated notifications for a user
  *
  * @param {string} userId - User UUID

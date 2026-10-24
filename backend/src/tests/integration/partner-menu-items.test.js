@@ -137,6 +137,196 @@ describe('GET /api/v1/partner/establishments/:id/menu-items', () => {
   });
 });
 
+/**
+ * The newest OCR job of a file, written as the queue writes it. `ageMinutes`
+ * puts created_at (and completed_at of a settled job) that far back, so that
+ * which job of a file is the newest does not hang on milliseconds.
+ */
+async function seedJob(establishmentId, mediaId, { status, errorMessage = null, ageMinutes = 0 }) {
+  await query(
+    `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, error_message, created_at, completed_at)
+     VALUES ($1, $2, $3::text, 1, $4,
+             NOW() - make_interval(mins => $5::int),
+             CASE WHEN $3::text IN ('done', 'failed') THEN NOW() - make_interval(mins => $5::int) END)`,
+    [establishmentId, mediaId, status, errorMessage, ageMinutes],
+  );
+}
+
+describe('GET /api/v1/partner/establishments/:id/menu-items — recognition state', () => {
+  // Finding 3 of the Railway incident (directive of 24.10.2026): the partner's
+  // menu screen showed one empty screen for «not uploaded», «being read» and
+  // «failed». The answer now carries the state beside `data`.
+  const SERVICE_FAILURE = 'Сбой распознавания — попробуйте позже.';
+
+  const recognitionOf = async (partner, estId) => {
+    const res = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+    // The envelope is as it was: `data` — the list of items.
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    return res.body.recognition;
+  };
+
+  test('no menu files → none; interior and dish photos are not menu files', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
+
+    // A failed job on each: were the photos counted, the card would be
+    // «failed» — the filter of menu files is what keeps it «none».
+    const interior = await seedPhotoMedia(estId, 'interior');
+    const dishes = await seedPhotoMedia(estId, 'dishes');
+    await seedJob(estId, interior, { status: 'failed', errorMessage: 'parse error' });
+    await seedJob(estId, dishes, { status: 'failed', errorMessage: 'parse error' });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
+  });
+
+  test('a menu file never queued → none', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    await seedPdfMedia(estId);
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
+  });
+
+  test.each(['pending', 'processing'])('a %s job → processing', async (status) => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPhotoMedia(estId, 'menu');
+    await seedJob(estId, mediaId, { status });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'processing' });
+  });
+
+  test('a done job → done', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'done' });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'done' });
+  });
+
+  test.each([
+    ['PDF parse exceeded its memory limit (512 MB)', 'over_limit',
+      'Файл слишком большой или сложный — превышен предел распознавания.'],
+    // Every page of a PDF read blank, no text layer to fall back to
+    // (ocrService readPagesAsImages).
+    ['vision OCR returned empty text', 'unreadable',
+      'Не удалось прочитать файл: текста меню в нём не нашлось.'],
+    // A photo read blank (ocrService processJob).
+    ['OCR produced empty text via strategy=vision_image', 'unreadable',
+      'Не удалось прочитать файл: текста меню в нём не нашлось.'],
+    ['page 1 of 3: OpenRouter vision call failed: 401 {"error":"User not found"}', 'service_failure', SERVICE_FAILURE],
+    ['stale processing reaped after 1 hour', 'service_failure', SERVICE_FAILURE],
+  ])('a failed job (%s) → failed, cause %s, with the partner\'s text, not the internal one', async (errorMessage, cause, reason) => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage, ageMinutes: 5 });
+
+    const recognition = await recognitionOf(partner, estId);
+    expect(recognition).toEqual({ status: 'failed', cause, reason, failedAt: expect.any(String) });
+    // failedAt is the job's completed_at: five minutes ago.
+    const ago = Date.now() - Date.parse(recognition.failedAt);
+    expect(ago).toBeGreaterThan(4 * 60 * 1000);
+    expect(ago).toBeLessThan(6 * 60 * 1000);
+  });
+
+  test('one failed file among recognised ones → failed: the dishes of the others do not hide it', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const good = await seedPdfMedia(estId);
+    const bad = await seedPdfMedia(estId);
+    await seedMenuItem(estId, good, { itemName: 'Борщ' });
+    await seedJob(estId, good, { status: 'done' });
+    await seedJob(estId, bad, { status: 'failed', errorMessage: 'stale processing reaped after 1 hour' });
+
+    const res = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+    expect(res.body.data.map((item) => item.item_name)).toEqual(['Борщ']);
+    expect(res.body.recognition).toMatchObject({ status: 'failed', reason: SERVICE_FAILURE });
+  });
+
+  test('a restart of the failed file → processing at once (the newest job of the file counts)', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage: 'parse error', ageMinutes: 10 });
+    await seedJob(estId, mediaId, { status: 'pending' });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'processing' });
+  });
+
+  test('a file failed before and recognised since → done', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage: 'parse error', ageMinutes: 10 });
+    await seedJob(estId, mediaId, { status: 'done', ageMinutes: 1 });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'done' });
+  });
+
+  test('two failed files → the latest failure\'s reason', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const older = await seedPdfMedia(estId);
+    const newer = await seedPdfMedia(estId);
+    await seedJob(estId, older, { status: 'failed', errorMessage: 'vision OCR returned empty text', ageMinutes: 30 });
+    await seedJob(estId, newer, { status: 'failed', errorMessage: 'PDF parse exceeded its time limit (20 s)', ageMinutes: 2 });
+    expect(await recognitionOf(partner, estId)).toMatchObject({
+      status: 'failed',
+      reason: 'Файл слишком большой или сложный — превышен предел распознавания.',
+    });
+  });
+
+  // The partner's restart re-reads every menu file, the operator's
+  // scripts/reocr-menus.js re-reads recognised ones; a failed re-read keeps
+  // the file's dishes (replaceForMedia runs only on success). Shown as a
+  // failure, it would send the partner to replace a file that works.
+  test('a recognised file whose re-read failed → done: its dishes stand, nothing to fix', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Борщ' });
+    await seedJob(estId, mediaId, { status: 'done', ageMinutes: 60 });
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage: 'stale processing reaped after 1 hour', ageMinutes: 1 });
+
+    const res = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+    expect(res.body.data.map((item) => item.item_name)).toEqual(['Борщ']);
+    expect(res.body.recognition).toEqual({ status: 'done' });
+  });
+
+  test('a failed re-read beside a file never recognised → the never-recognised one is the failure told', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const reread = await seedPdfMedia(estId);
+    const fresh = await seedPdfMedia(estId);
+    await seedJob(estId, reread, { status: 'done', ageMinutes: 60 });
+    // The re-read failed last, but its file keeps its dishes; the fresh file never read.
+    await seedJob(estId, fresh, { status: 'failed', errorMessage: 'vision OCR returned empty text', ageMinutes: 10 });
+    await seedJob(estId, reread, { status: 'failed', errorMessage: 'stale processing reaped after 1 hour', ageMinutes: 1 });
+
+    expect(await recognitionOf(partner, estId)).toMatchObject({
+      status: 'failed',
+      cause: 'unreadable',
+      reason: 'Не удалось прочитать файл: текста меню в нём не нашлось.',
+    });
+  });
+
+  test('a deleted file takes its failure with it', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage: 'parse error' });
+    await query('DELETE FROM establishment_media WHERE id = $1', [mediaId]);
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
+  });
+});
+
 describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several files', () => {
   // The guest sees one line for a dish both files hold (public menu-items). An
   // edit of one copy reaches its copies, or the guest would see the old price
