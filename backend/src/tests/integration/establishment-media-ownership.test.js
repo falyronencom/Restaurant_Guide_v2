@@ -40,6 +40,7 @@ import logger from '../../utils/logger.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 import { testEstablishments } from '../fixtures/establishments.js';
+import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 
 const REFUSAL =
   'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.';
@@ -580,7 +581,7 @@ describe('Правка: обложку каталога из запроса не
     }).expect(200);
 
     expect((await cardRow(card.id)).primary_image_url).toBe(
-      `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partner.id}/interior/own0001?_a=BAMAMiRg0`,
+      `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partner.id}/interior/own0001${sdkAnalyticsQuery()}`,
     );
   });
 });

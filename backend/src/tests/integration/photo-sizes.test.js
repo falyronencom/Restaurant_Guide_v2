@@ -35,6 +35,7 @@ import app from '../../server.js';
 import { pool } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
+import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { testEstablishments } from '../fixtures/establishments.js';
 import {
   applyPlan,
@@ -47,9 +48,10 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, '../../../scripts/photo-sizes/index.js');
 
-// Ссылки доставки, как их строит generateImageUrl (облако test, SDK 2.x).
+// Ссылки доставки, как их строит generateImageUrl (облако test, SDK 2.x);
+// хвост ?_a= — от SDK этого процесса: он зависит от версии Node.
 const delivery = (publicId, size) =>
-  `https://res.cloudinary.com/test/image/upload/${size}/f_auto,fl_progressive,q_auto/v1/${publicId}?_a=BAMAMiRg0`;
+  `https://res.cloudinary.com/test/image/upload/${size}/f_auto,fl_progressive,q_auto/v1/${publicId}${sdkAnalyticsQuery()}`;
 const ORIGINAL = 'c_limit,w_1920';
 const PREVIEW = 'c_limit,w_1200';
 const THUMBNAIL = 'c_fill,h_300,w_400';

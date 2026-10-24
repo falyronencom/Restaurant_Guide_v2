@@ -16,6 +16,7 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
+import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import {
@@ -205,10 +206,11 @@ describe('Establishments System - Create Establishment', () => {
       { length: count },
       (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}?_a=BAMAMiRg0`,
     );
-    // Превью тех же файлов (w1200): его сервер пишет в preview_url и в обложку каталога.
+    // Превью тех же файлов (w1200): его сервер пишет в preview_url и в обложку
+    // каталога. Хвост ?_a= — от SDK этого процесса (зависит от версии Node).
     const previewUrls = (count, prefix) => Array.from(
       { length: count },
-      (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}?_a=BAMAMiRg0`,
+      (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}${sdkAnalyticsQuery()}`,
     );
 
     // Бюджет 8000, а не 2000: на медленном раннере двух секунд может не
