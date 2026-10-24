@@ -39,6 +39,7 @@ import {
   isOwnedAsset,
   ownCloudPublicId,
   ownedFolders,
+  photoVariantsOf,
 } from '../config/cloudinary.js';
 
 /**
@@ -162,17 +163,37 @@ const oneLinkPerFile = (links, keyOf) => {
 };
 
 /**
+ * The establishment_media fields of a photo saved with a card: the link as sent
+ * stays in `url` (the media sync and the cover choice match rows by it), and
+ * the preview and thumbnail are the sizes generateAllResolutions gives the
+ * same file — what POST /:id/media stores. Until 10.2026 the wizard and the
+ * cabinet wrote the 1920 px link into all three fields (250 of 437 photos on
+ * production, 18.10.2026), and lists loaded the full size where 1200 or 400 px
+ * do. A link in a shape our server did not issue keeps the link in all three
+ * (photoVariantsOf says which).
+ */
+function buildImageMediaFields(url) {
+  const variants = photoVariantsOf(url);
+  return {
+    file_type: 'image',
+    url,
+    thumbnail_url: variants ? variants.thumbnail_url : url,
+    preview_url: variants ? variants.preview_url : url,
+  };
+}
+
+/**
  * Build the establishment_media type/url triplet for a synced menu URL. Menu PDFs
  * (uploaded to menu_pdf/, url ends in .pdf) must carry file_type='pdf' and derived
  * pg_1 JPG preview/thumbnail URLs — Cloudinary blocks RAW .pdf delivery (401), so a
- * .pdf placed in an <img> renders broken. Plain image URLs pass through unchanged
- * (Cloudinary resizes them via URL params). Mirrors the create-path menu_pdfs branch
+ * .pdf placed in an <img> renders broken. Plain image URLs get the photo sizes
+ * (buildImageMediaFields). Mirrors the create-path menu_pdfs branch
  * so the two vehicles agree.
  */
 function buildMenuMediaFields(url) {
   const isPdf = isPdfLink(url);
   if (!isPdf) {
-    return { file_type: 'image', url, thumbnail_url: url, preview_url: url };
+    return buildImageMediaFields(url);
   }
   const publicId = extractPublicIdFromUrl(url);
   return {
@@ -462,7 +483,9 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       working_hours,
       special_hours,
       attributes,
-      primary_image_url: primary_photo,
+      // The catalog cover is the preview of the chosen photo — what
+      // setPrimaryPhoto writes on every later save (COALESCE(preview_url, url)).
+      primary_image_url: primary_photo ? buildImageMediaFields(primary_photo).preview_url : primary_photo,
     });
 
     // Save photos to establishment_media table
@@ -496,10 +519,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         MediaModel.createMedia({
           establishment_id: establishment.id,
           type: photo.type,
-          file_type: 'image',
-          url: photo.url,
-          thumbnail_url: photo.url, // Same URL for now, Cloudinary handles resizing via URL params
-          preview_url: photo.url,
+          ...buildImageMediaFields(photo.url),
           position: photo.position,
           is_primary: photo.is_primary,
         }),
@@ -1127,7 +1147,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           const url = toInsert[i];
           const mediaFields = type === 'menu'
             ? buildMenuMediaFields(url)
-            : { file_type: 'image', url, thumbnail_url: url, preview_url: url };
+            : buildImageMediaFields(url);
           const record = await MediaModel.createMedia({
             establishment_id: establishmentId,
             type,
