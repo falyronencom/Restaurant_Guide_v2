@@ -14,7 +14,10 @@
  *
  * Прод — только чтение: сессия базы READ ONLY, в Admin API Cloudinary —
  * только GET по списку чтения (cloudinaryReader.js). Адрес прода — только из
- * backend/.env.production, печатается маской в строке «Цель».
+ * backend/.env.production, печатается маской в строке «Цель». С базой прода
+ * обе дороги — сессия Node и pg_dump/psql в контейнере — говорят только с
+ * сервером, предъявившим закреплённый сертификат (DATABASE_TLS_CERT там же;
+ * env.js, database.js): чужой — отказ до отправки пароля.
  *
  * Коды выхода: 0 — готово; 1 — отказ предполётной проверки, ничего не
  * сделано; 2 — ошибка в команде; 3 — сбой (открытые данные убраны — см.
@@ -29,8 +32,10 @@ import { basename, dirname, join, resolve } from 'path';
 import { randomBytes } from 'crypto';
 
 import {
-  LEGACY_HOSTS, SetupError, loadCloudinaryCredentials, loadLocalPg, loadProdDatabaseUrl, maskDatabaseUrl, pgEnvFromUrl,
+  LEGACY_HOSTS, SetupError, explainContainerTlsFailure, loadCloudinaryCredentials, loadLocalPg, loadProdDatabaseUrl,
+  loadProdPinnedCertificate, maskDatabaseUrl, pgEnvFromUrl, pinMountFor,
 } from './env.js';
+import { PIN_VARIABLE } from '../lib/productionDb.js';
 import {
   CONTAINER_PREFIX, PG_IMAGE, VERIFY_CONTAINER, containerRunning, dockerRun, dockerServerVersion, imagePgVersion, imagePresent,
 } from './proc.js';
@@ -128,7 +133,7 @@ const listRunDirs = (root) => (existsSync(root)
 
 // ───────────────────────── состояние уборки ─────────────────────────
 
-const state = { runDirs: [], verifyDbs: [], localPg: null, cleaning: null, aborted: false };
+const state = { runDirs: [], verifyDbs: [], localPg: null, cleaning: null, aborted: false, pin: null };
 
 /**
  * Уборка — одно обещание на процесс: и обработчик Ctrl+C, и finally в main
@@ -161,13 +166,14 @@ process.once('SIGINT', async () => {
   try {
     await cleanupState();
   } finally {
+    state.pin?.remove();
     process.exit(EXIT.FAILED);
   }
 });
 
 // ───────────────────────── предполётная проверка ─────────────────────────
 
-const preflight = async ({ root, apply, runId, databaseUrl, cloud, localPg }) => {
+const preflight = async ({ root, apply, runId, databaseUrl, pinned, pin, cloud, localPg }) => {
   const problems = [];
   const bad = (t) => {
     console.log(`  ✗ ${t}`);
@@ -192,9 +198,11 @@ const preflight = async ({ root, apply, runId, databaseUrl, cloud, localPg }) =>
   const dumpVersion = await imagePgVersion('pg_dump');
   let client;
   try {
-    client = await openProdClient(databaseUrl);
+    client = await openProdClient(databaseUrl, pinned);
   } catch (err) {
-    bad(`прод не отвечает: ${err.message} — VPN не выключать; сообщить Координатору, не обходить`);
+    // Не тот сертификат, истёк, нет закрепления — текст productionDb.js, уже со «стоп»
+    if (String(err.code).startsWith('PRODUCTION_DB_')) bad(err.message);
+    else bad(`прод не отвечает: ${err.message} — VPN не выключать; сообщить Координатору, не обходить`);
     stopIfBad();
   }
   const info = await serverInfo(client);
@@ -208,11 +216,15 @@ const preflight = async ({ root, apply, runId, databaseUrl, cloud, localPg }) =>
   const probe = await dockerRun({
     name: `${CONTAINER_PREFIX}probe-${runId}`,
     env: pgEnv,
+    mounts: [pin.mount],
     command: ['psql', '-X', '-tA', '-c', 'SELECT 1, (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid())'],
     timeoutMs: 180000,
   });
-  if (probe.code === 0 && probe.stdout.trim() === '1|t') ok('прод из контейнера: SELECT 1 → 1, SSL: да (sslmode=require)');
-  else bad(`прод из контейнера не ответил как ждали: ${probe.stdout.trim() || lastLines(probe.stderr)}`);
+  if (probe.code === 0 && probe.stdout.trim() === '1|t') ok('прод из контейнера: SELECT 1 → 1, SSL: да (verify-ca, закреплённый сертификат)');
+  else {
+    bad(explainContainerTlsFailure(probe.stderr, pinned)
+      ?? `прод из контейнера не ответил как ждали: ${probe.stdout.trim() || lastLines(probe.stderr)}`);
+  }
 
   const reader = new CloudinaryReader(cloud);
   let usageInfo = null;
@@ -294,11 +306,13 @@ const snapshot = async ({ root, apply }) => {
   const runId = runIdFor(started);
   const runDir = join(root, runId);
   const databaseUrl = loadProdDatabaseUrl();
+  const pinned = loadProdPinnedCertificate();
   const cloud = loadCloudinaryCredentials();
   const localPg = loadLocalPg();
   state.localPg = localPg;
 
   console.log(`Цель: ПРОД — ${maskDatabaseUrl(databaseUrl)} (DATABASE_URL из backend/.env.production)`);
+  console.log(`      сертификат базы — только закреплённый: ${pinned.fingerprint256} (${PIN_VARIABLE} оттуда же)`);
   console.log(`      Cloudinary — облако ${cloud.cloudName} (ключи из backend/.env)`);
   console.log(apply
     ? `Режим: СНИМОК (--apply) → ${runDir}`
@@ -306,7 +320,9 @@ const snapshot = async ({ root, apply }) => {
 
   if (apply && existsSync(runDir)) throw new SetupError(`Папка прогона ${runDir} уже есть — подождите минуту или уберите её.`);
 
-  const pre = await preflight({ root, apply, runId, databaseUrl, cloud, localPg });
+  // Закреплённый сертификат — файлом для pg_dump/psql в контейнерах; убирается при выходе (main, Ctrl+C)
+  state.pin = pinMountFor(pinned);
+  const pre = await preflight({ root, apply, runId, databaseUrl, pinned, pin: state.pin, cloud, localPg });
   const { client, reader } = pre;
   const git = await gitState();
 
@@ -339,14 +355,14 @@ const snapshot = async ({ root, apply }) => {
       const r = await dockerRun({
         name: `${CONTAINER_PREFIX}dump-${runId}`,
         env: pre.pgEnv,
-        mounts: [{ source: join(runDir, 'build', 'db'), target: '/out' }],
+        mounts: [state.pin.mount, { source: join(runDir, 'build', 'db'), target: '/out' }],
         command: [
           'pg_dump', '-Fc', '--no-owner', '--no-privileges', `--snapshot=${snap.id}`,
           ...EXCLUDED_DATA_TABLES.map((x) => `--exclude-table-data=public.${x}`),
           '-f', '/out/prod.dump',
         ],
       });
-      if (r.code !== 0) throw new Error(`pg_dump завершился с кодом ${r.code}: ${lastLines(r.stderr)}`);
+      if (r.code !== 0) throw new Error(explainContainerTlsFailure(r.stderr, pinned) ?? `pg_dump завершился с кодом ${r.code}: ${lastLines(r.stderr)}`);
       const dumpPath = join(runDir, 'build', 'db', 'prod.dump');
       dump = { file: 'db/prod.dump', bytes: statSync(dumpPath).size, sha256: await sha256File(dumpPath), seconds: Math.round((Date.now() - t) / 1000) };
       ok(`дамп: ${fmtBytes(dump.bytes)} за ${dump.seconds} с (pg_dump ${pre.dumpVersion.full} в контейнере, --snapshot=${snap.id})`);
@@ -354,11 +370,12 @@ const snapshot = async ({ root, apply }) => {
       const r = await dockerRun({
         name: `${CONTAINER_PREFIX}snapcheck-${runId}`,
         env: pre.pgEnv,
+        mounts: [state.pin.mount],
         command: ['pg_dump', '--schema-only', `--snapshot=${snap.id}`, '-f', '/dev/null'],
         timeoutMs: 300000,
       });
       if (r.code === 0) ok('pg_dump принимает экспортированный снимок (проба: схема → /dev/null, на диск ничего)');
-      else throw new Error(`pg_dump не принял снимок ${snap.id}: ${lastLines(r.stderr)}`);
+      else throw new Error(explainContainerTlsFailure(r.stderr, pinned) ?? `pg_dump не принял снимок ${snap.id}: ${lastLines(r.stderr)}`);
     }
     await endTransaction(client);
     inTx = false;
@@ -899,6 +916,7 @@ const main = async () => {
   } finally {
     // Уже идущая уборка (Ctrl+C) дожидается здесь же — выход её не обрывает.
     if (state.cleaning || state.runDirs.length || state.verifyDbs.length) await cleanupState();
+    state.pin?.remove();
   }
   process.exit(code);
 };

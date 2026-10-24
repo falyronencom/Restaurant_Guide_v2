@@ -14,21 +14,102 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '4h';
 
 /**
- * Validates that JWT_SECRET is properly configured.
- * In production, JWT_SECRET must be at least 32 characters for adequate security.
- * This validation happens at startup to fail fast if misconfigured.
+ * The JWT_SECRET values the repository itself publishes — the root
+ * .env.example, backend/.env.example and the CI workflow — in lower case.
+ * Anyone who reads the repository can sign tokens with them. The test
+ * (jwt-secret-guard.test.js) reads those files and fails when one of them
+ * carries a value this check would let through.
+ */
+export const PUBLISHED_PLACEHOLDER_SECRETS = Object.freeze([
+  'your_jwt_secret_key_minimum_32_characters_long_please',
+  'change_this_to_random_32_char_string',
+  'ci-only-test-secret-at-least-32-characters-long',
+]);
+
+/** Below this many distinct characters a secret is not drawn at random. */
+export const MIN_DISTINCT_CHARACTERS = 8;
+/** A secret that repeats a piece this long or shorter is not drawn at random. */
+export const MAX_REPEATED_PIECE = 16;
+
+/**
+ * The shortest period of a string: the least p with s[i] === s[i + p] for
+ * every i — "abcabcab" has 3. A string with no period up to half its length
+ * gets its own length.
+ */
+const shortestPeriod = (text) => {
+  for (let p = 1; p <= text.length / 2; p += 1) {
+    let repeats = true;
+    for (let i = 0; i + p < text.length; i += 1) {
+      if (text[i] !== text[i + p]) {
+        repeats = false;
+        break;
+      }
+    }
+    if (repeats) return p;
+  }
+  return text.length;
+};
+
+/**
+ * Why JWT_SECRET is not fit to sign tokens outside the tests, or null. The
+ * reason never contains the value.
+ *
+ *   - shorter than 32 characters;
+ *   - a value the repository publishes (case aside);
+ *   - "test-…": the form of the test environments' secrets (.env.test);
+ *   - plainly not random: fewer than 8 distinct characters, or one piece of
+ *     up to 16 characters repeated ("abcabcabc…", "1234567890123…").
+ *
+ * Why these thresholds: a generated secret never trips them. 32 random hex
+ * characters — the poorest alphabet a generator gives (openssl rand -hex 16)
+ * — use fewer than 8 of the 16 digits with a chance of about 4·10⁻⁸; a period
+ * of 16 or less needs at least 16 characters to repeat the ones before them,
+ * 16⁻¹⁶ for hex. A secret typed by hand to pass the length — "aaaa…",
+ * "abababab…", "qwertyqwerty…" — trips them at once. A sentence of words
+ * would not, and no check of this kind can tell it from a random string;
+ * the published ones are named.
+ *
+ * @param {string|undefined} secret
+ * @returns {string|null}
+ */
+export const jwtSecretProblem = (secret) => {
+  if (!secret || secret.length < 32) {
+    return 'JWT_SECRET must be at least 32 characters long';
+  }
+  const lower = secret.trim().toLowerCase();
+  if (PUBLISHED_PLACEHOLDER_SECRETS.includes(lower)) {
+    return 'JWT_SECRET is a placeholder published in the repository (.env.example or the CI workflow)';
+  }
+  if (lower.startsWith('test-')) {
+    return 'JWT_SECRET starts with "test-", the form of the test environments\' secrets';
+  }
+  if (new Set(secret).size < MIN_DISTINCT_CHARACTERS || shortestPeriod(secret) <= MAX_REPEATED_PIECE) {
+    return 'JWT_SECRET is plainly not random (too few distinct characters or a short piece repeated)';
+  }
+  return null;
+};
+
+/**
+ * Validates that JWT_SECRET is fit to sign tokens (jwtSecretProblem). This
+ * validation happens at startup to fail fast if misconfigured: outside the
+ * tests the server does not start. Until 2026-10-24 the check was the length
+ * only, and the placeholder of the root .env.example (52 characters) passed
+ * it (Railway incident 21–24.10, finding 6).
  *
  * In test environment, this validation is more lenient as environment variables
- * are loaded by Jest setup files.
+ * are loaded by Jest setup files, and the test secrets are allowed.
  */
-if (!JWT_SECRET || JWT_SECRET.length < 32) {
+const secretProblem = jwtSecretProblem(JWT_SECRET);
+if (secretProblem) {
   if (process.env.NODE_ENV === 'test') {
-    // In test environment, log warning but allow continuation
-    // Jest setup will load .env.test before tests actually run
-    console.warn('⚠️  JWT_SECRET not yet loaded (will be loaded by Jest setup)');
+    if (!JWT_SECRET || JWT_SECRET.length < 32) {
+      // In test environment, log warning but allow continuation
+      // Jest setup will load .env.test before tests actually run
+      console.warn('⚠️  JWT_SECRET not yet loaded (will be loaded by Jest setup)');
+    }
   } else {
     // In production/development, this is a fatal error
-    logger.error('JWT_SECRET must be at least 32 characters long. Configure in .env file.');
+    logger.error(`${secretProblem}. Set a random secret, e.g. from: openssl rand -hex 32.`);
     process.exit(1);
   }
 }
