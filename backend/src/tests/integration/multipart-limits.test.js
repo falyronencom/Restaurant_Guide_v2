@@ -206,7 +206,7 @@ describe('временные загрузки: вложенные имена и 
 
   // Части без Content-Disposition busboy пропускает, не считая ни полем, ни
   // файлом: лимиты fields и files их не видят, их ограничивает только parts —
-  // «не больше 20 частей» (multer 2.4.0 передаёт busboy parts + 1). Граница
+  // «не больше 20 частей» (multer передаёт busboy parts + 1 — 2.4 и 2.5). Граница
   // закреплена с обеих сторон: тип, файл и 18 таких частей — 20, проходит;
   // ещё одна — отказ.
   const withBareParts = (bareCount) => {
@@ -248,6 +248,45 @@ describe('временные загрузки: вложенные имена и 
 
     expect(response.status).toBe(400);
     expect(response.body.message).toBe('Too many parts');
+    expect(upload).not.toHaveBeenCalled();
+    await waitUntil(() => newEntriesSince(before).length === 0);
+    expect(newEntriesSince(before)).toEqual([]);
+  });
+});
+
+// Длину текстового поля ограничивает умолчание — 1 МиБ (fieldSize в
+// MULTIPART_LIMITS не задан). multer 2.5 сам применяет его, как предел частей,
+// «максимумом разрешённого»: ровно 1 МиБ проходит, на байт больше — отказ;
+// multer 2.4 оставлял умолчание busboy, и тот отказывал уже на ровно 1 МиБ.
+// Клиенты шлют поля в сотни знаков — граница закреплена, чтобы её сдвиг
+// следующим обновлением был виден.
+describe('временные загрузки: текстовое поле — до 1 МиБ включительно', () => {
+  const MIB = 1024 * 1024;
+  const sendWithNote = async (noteLength) => {
+    const { token } = await newAccount('user');
+    return request(app)
+      .post('/api/v1/partner/media/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('fake-jpeg'), JPEG)
+      .field('type', 'interior')
+      .field('note', 'x'.repeat(noteLength));
+  };
+
+  test('ровно 1 МиБ — проходит', async () => {
+    const response = await sendWithNote(MIB);
+
+    expect(response.status).toBe(201);
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  test('на байт больше — 400, до облака не доходит, файл убран', async () => {
+    const before = new Set(fs.readdirSync(TEMP_UPLOAD_DIR));
+
+    const response = await sendWithNote(MIB + 1);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Field value too long');
+    expect(response.body.error.code).toBe('UPLOAD_ERROR');
     expect(upload).not.toHaveBeenCalled();
     await waitUntil(() => newEntriesSince(before).length === 0);
     expect(newEntriesSince(before)).toEqual([]);
