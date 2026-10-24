@@ -440,7 +440,10 @@ describe('dismiss-flag — one menu uploaded as several files', () => {
     );
     expect(audit.rows.map(r => r.entity_id).sort()).toEqual([photoSteak, pdfSteak].sort());
     const copyEntry = audit.rows.find(r => r.entity_id === pdfSteak);
-    expect(copyEntry.old_data).toEqual({ sanity_flag: flag });
+    // old_data — прежний флаг самой копии; рядом снимок названия, который
+    // журнал кладёт любой записи о позиции меню (#119, A3-03) — и он о копии,
+    // а не о строке, на которой нажали.
+    expect(copyEntry.old_data).toMatchObject({ sanity_flag: flag, item_name: 'СТЕЙК' });
     expect(copyEntry.new_data).toEqual({ sanity_flag: null, copy_of: photoSteak });
 
     const queue = await flagged();
