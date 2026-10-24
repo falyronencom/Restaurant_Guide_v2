@@ -13,6 +13,9 @@
  * guard-тест клиента (`moderation_vocabulary_test.dart`).
  */
 
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
@@ -21,48 +24,21 @@ import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
 const BASE_URL = '/api/v1/admin/audit-log';
 
 /**
- * Действия, которые пишутся в журнал. Источник — grep по `action:` (сервисы
- * через createAuditLog) и по `INSERT INTO audit_log` (SQL, пишущий журнал в том
- * же операторе, что и само действие: удаление карточки партнёром,
- * scripts/dismiss-menu-flags). Второй поиск первым не находится — такие
- * действия вписываются сюда руками.
+ * Действия, которые пишутся в журнал, — общий список сервера и панели
+ * (src/constants/auditLogActions.json). Что он полон, сверяет с кодом
+ * писателей unit/auditLogActionsGuard.test.js; здесь — что каждое действие
+ * подписано по-русски и подпись та, что в списке. Записи карты вставляются без
+ * автора, поэтому у действий с двумя подписями ожидается вариант «без автора».
  */
-const WRITTEN_ACTIONS = [
-  ['admin_update_coordinates', 'establishment', 'Координаты обновлены'],
-  ['admin_update_slug', 'establishment', 'Адрес страницы изменён'],
-  ['claim_establishment', 'establishment', 'Заведение передано партнёру'],
-  // Удаление карточки партнёром — с автором (проверено последним тестом);
-  // без автора её пишет скрипт оператора, удаляя незаконченные карточки
-  // вместе с учёткой (accountDeletionService.anonymiseAccount).
-  ['partner_delete_establishment', 'establishment', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
-  ['suspend', 'establishment', 'Приостановлено заведение'],
-  ['unsuspend', 'establishment', 'Возобновлено заведение'],
-  ['moderate_approve', 'establishment', 'Одобрено заведение'],
-  ['moderate_reject', 'establishment', 'Отклонено заведение'],
-  ['review_hide', 'review', 'Скрыт отзыв'],
-  ['review_show', 'review', 'Показан отзыв'],
-  ['review_delete', 'review', 'Удалён отзыв'],
-  ['hide_menu_item', 'menu_item', 'Скрыта позиция меню'],
-  ['unhide_menu_item', 'menu_item', 'Показана позиция меню'],
-  ['dismiss_sanity_flag', 'menu_item', 'Снят флаг с позиции меню'],
-  ['upgrade_user_to_partner', 'user', 'Пользователь повышен до партнёра'],
-  // adminUserService — SQL-вставкой в транзакции самого действия
-  ['user_block', 'user', 'Пользователь заблокирован'],
-  ['user_unblock', 'user', 'Пользователь разблокирован'],
-  ['user_reset_name', 'user', 'Имя пользователя сброшено'],
-  // accountDeletionService.anonymiseAccount — SQL-вставкой в транзакции
-  // самого удаления. Здесь запись без автора — так её пишет скрипт оператора
-  // (scripts/delete-account.js); запись самого человека — с автором, она
-  // проверена отдельно, последним тестом.
-  ['user_delete_account', 'user', 'Учётка удалена по заявке в поддержку'],
-  // scripts/change-account-email.js (lib/accountEmail.js), SQL-вставкой
-  ['change_email', 'user', 'Адрес e-mail учётки изменён'],
-  // scripts/mark-service-account.js и scripts/create-admin.js, SQL-вставкой
-  ['mark_service_account', 'user', 'Учётка отмечена служебной'],
-  ['operator_create_admin', 'user', 'Создан администратор'],
-  ['operator_reset_admin', 'user', 'Администратору задан пароль'],
-  ['operator_promote_admin', 'user', 'Учётка повышена до администратора'],
-];
+const catalogue = JSON.parse(readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'constants', 'auditLogActions.json'),
+  'utf8',
+));
+const WRITTEN_ACTIONS = catalogue.actions.map((a) => [
+  a.action,
+  a.entity_type,
+  a.summary_without_actor ?? a.summary,
+]);
 
 let adminToken;
 let adminId;
@@ -136,7 +112,7 @@ describe('GET /admin/audit-log — подписи действий', () => {
     expect(unknown.summary).toBe('totally_new_action (establishment)');
   });
 
-  it('удалил сам человек — запись с автором, своя подпись: учётка и карточка', async () => {
+  it('удалил сам человек — запись с автором, своя подпись: учётная запись и карточка', async () => {
     // Автор — любая учётка: подпись различает только «автор есть» (человек
     // из приложения или с сайта, партнёр в кабинете) и «автора нет» (скрипт
     // оператора).
@@ -154,13 +130,13 @@ describe('GET /admin/audit-log — подписи действий', () => {
       .map((e) => [e.entity_id === null ? 'без автора' : 'с автором', e.summary]);
 
     expect(signed('user_delete_account')).toEqual(expect.arrayContaining([
-      ['с автором', 'Пользователь удалил учётку'],
-      ['без автора', 'Учётка удалена по заявке в поддержку'],
+      ['с автором', 'Пользователь удалил учётную запись'],
+      ['без автора', 'Учётная запись удалена по заявке в поддержку'],
     ]));
     expect(signed('user_delete_account')).toHaveLength(2);
     expect(signed('partner_delete_establishment')).toEqual(expect.arrayContaining([
       ['с автором', 'Заведение удалено партнёром'],
-      ['без автора', 'Заведение удалено вместе с учёткой по заявке в поддержку'],
+      ['без автора', 'Заведение удалено вместе с учётной записью по заявке в поддержку'],
     ]));
     expect(signed('partner_delete_establishment')).toHaveLength(2);
   });

@@ -48,6 +48,20 @@ abstract class AnalyticsTabProvider<T> with ChangeNotifier {
   /// отстала, и [loadIfStale] честно идёт за новыми — которые уже едут.
   String? _inFlightKey;
 
+  /// Когда пришли лежащие данные.
+  DateTime? _loadedAt;
+
+  /// Часы — подменяются в тестах.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
+  /// Старше этого данные перечитываются при возврате в раздел.
+  ///
+  /// Провайдеры живут весь сеанс, и вернувшийся через час модератор видел те
+  /// же числа, что при первом заходе (A3-22). Перечитывать на каждый заход
+  /// незачем — вкладки переключают туда-сюда, — а через пять минут уже пора.
+  static const Duration maxAge = Duration(minutes: 5);
+
   T? get data => _data;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -70,10 +84,13 @@ abstract class AnalyticsTabProvider<T> with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Загрузить, если данных ещё нет или они за другой период.
+  /// Загрузить, если данных ещё нет, они за другой период или старше
+  /// [maxAge].
   Future<void> loadIfStale() async {
     if (_inFlightKey == _selection.key) return;
-    if (_data != null && !isStale) return;
+    final at = _loadedAt;
+    final fresh = at != null && clock().difference(at) < maxAge;
+    if (_data != null && !isStale && fresh) return;
     await load();
   }
 
@@ -93,6 +110,7 @@ abstract class AnalyticsTabProvider<T> with ChangeNotifier {
       if (generation != _generation) return;
       _data = result;
       _loadedSelection = requested;
+      _loadedAt = clock();
     } catch (e) {
       if (generation != _generation) return;
       _error = extractMessage(e);
@@ -114,6 +132,7 @@ abstract class AnalyticsTabProvider<T> with ChangeNotifier {
     _error = null;
     _selection = const PeriodSelection(period: '30d');
     _loadedSelection = null;
+    _loadedAt = null;
     _inFlightKey = null;
     notifyListeners();
   }

@@ -64,6 +64,17 @@ class QualitySignal {
   final String noteFew;
   final String noteMany;
 
+  /// Куда вести за списком того, что надо разобрать: экран панели, где этот
+  /// сигнал разбирают. `null` — такого экрана нет (ошибки распознавания
+  /// разбирает разработчик), и карточка не притворяется ссылкой.
+  ///
+  /// Раньше ни сигнал, ни карточка никуда не вели (К-6, A3-29): число было,
+  /// а что с ним делать — нет.
+  final String? listRoute;
+
+  /// Подпись ссылки [listRoute]: «Открыть позиции меню».
+  final String? listLabel;
+
   /// Предложный хвост подписи: «…без адреса в каталоге».
   ///
   /// Хвост намеренно предложный, без глаголов и согласуемых прилагательных.
@@ -86,13 +97,15 @@ class QualitySignal {
     required this.noteMany,
     required this.noteTail,
     this.scopeNote,
-  });
+    this.listRoute,
+    this.listLabel,
+  }) : assert((listRoute == null) == (listLabel == null),
+            'у ссылки на список есть и адрес, и подпись');
 
   /// Подпись для панели «Требует внимания»: «3 заведения без адреса в каталоге».
   String note(int count) =>
       '${countWithNoun(count, noteOne, noteFew, noteMany)} $noteTail';
 }
-
 
 /// Одиннадцать сигналов в каноническом порядке.
 ///
@@ -101,17 +114,17 @@ class QualitySignal {
 final List<QualitySignal> kQualitySignals = <QualitySignal>[
   QualitySignal(
     id: 'unreachable',
-    title: 'Недостижимы в sitemap',
-    subtitle: 'Категория или город вне канона — канонического адреса нет, '
-        'и в каталог заведение не попадает',
-    cleanLabel: 'достижимость',
+    title: 'Нет страницы на сайте',
+    subtitle: 'Категория или город не из справочника — у заведения нет '
+        'адреса страницы, и в каталог сайта оно не попадает',
+    cleanLabel: 'страницы на сайте',
     icon: Icons.link_off,
     countOf: (d) => d.unreachableCount,
     samplesOf: (d) => d.unreachableSamples,
     noteOne: 'заведение',
     noteFew: 'заведения',
     noteMany: 'заведений',
-    noteTail: 'без адреса в каталоге',
+    noteTail: 'без страницы на сайте',
   ),
   QualitySignal(
     id: 'hanging_flags',
@@ -128,6 +141,8 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
     cleanLabel: 'флаги',
     icon: Icons.flag_outlined,
     countOf: (d) => d.hangingFlagsCount,
+    listRoute: '/moderation/menu-items',
+    listLabel: 'Открыть позиции меню',
     noteOne: 'флаг',
     noteFew: 'флага',
     noteMany: 'флагов',
@@ -148,22 +163,23 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
   ),
   QualitySignal(
     id: 'hours_malformed',
-    title: 'Часы: битый формат',
-    subtitle: 'Время работы записано так, что его нельзя прочитать',
-    cleanLabel: 'формат часов',
+    title: 'Время работы не читается',
+    subtitle: 'Время работы записано так, что ни сайт, ни приложение не могут '
+        'его показать',
+    cleanLabel: 'время работы',
     icon: Icons.schedule,
     countOf: (d) => d.hoursMalformedCount,
     samplesOf: (d) => d.hoursMalformedSamples,
     noteOne: 'заведение',
     noteFew: 'заведения',
     noteMany: 'заведений',
-    noteTail: 'с битым временем работы',
+    noteTail: 'с нечитаемым временем работы',
   ),
   QualitySignal(
     id: 'hours_all_closed',
-    title: 'Часы: всё закрыто',
-    subtitle: 'Не открыто ни в один день недели',
-    cleanLabel: '«всё закрыто»',
+    title: 'Закрыто все дни недели',
+    subtitle: 'В расписании нет ни одного рабочего дня',
+    cleanLabel: 'рабочие дни',
     icon: Icons.lock_clock,
     countOf: (d) => d.hoursAllClosedCount,
     samplesOf: (d) => d.hoursAllClosedSamples,
@@ -174,56 +190,56 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
   ),
   QualitySignal(
     id: 'ocr_failed',
-    title: 'Ошибки распознавания',
-    subtitle: 'Задача распознавания меню завершилась ошибкой',
+    title: 'Меню не распозналось',
+    subtitle: 'Распознавание фото или PDF меню завершилось ошибкой',
     // Сужать до активных нельзя: самый срочный случай — карточка подана,
     // меню не распозналось, и она стоит в очереди модерации без меню. Такое
     // заведение ещё не активно.
     scopeNote: 'по всем заведениям, включая ждущие модерации',
-    cleanLabel: 'ошибки распознавания',
+    cleanLabel: 'распознавание меню',
     icon: Icons.error_outline,
     countOf: (d) => d.ocrFailedCount,
     noteOne: 'задача',
     noteFew: 'задачи',
     noteMany: 'задач',
-    noteTail: 'распознавания с ошибкой',
+    noteTail: 'распознавания меню с ошибкой',
   ),
   QualitySignal(
     id: 'ocr_stuck',
-    title: 'Зависшие распознавания',
-    subtitle: 'Задача ждёт повтора после неудачной попытки',
+    title: 'Распознавание ждёт повтора',
+    subtitle: 'Первая попытка распознать меню не удалась, повтор ещё впереди',
     scopeNote: 'по всем заведениям, включая ждущие модерации',
-    cleanLabel: 'зависшие распознавания',
+    cleanLabel: 'повторы распознавания',
     icon: Icons.hourglass_bottom,
     countOf: (d) => d.ocrStuckCount,
     noteOne: 'задача',
     noteFew: 'задачи',
     noteMany: 'задач',
-    noteTail: 'распознавания в ожидании',
+    noteTail: 'распознавания меню в ожидании повтора',
   ),
   QualitySignal(
     id: 'category_off_canon',
-    title: 'Категории вне канона',
-    subtitle: 'Значение категории не из 15 канонических',
-    cleanLabel: 'канон категорий',
+    title: 'Категория не из справочника',
+    subtitle: 'Категория — не одна из 15, которые знают сайт и приложение',
+    cleanLabel: 'категории',
     icon: Icons.category_outlined,
     countOf: (d) => d.categoryOffCanonCount,
     noteOne: 'заведение',
     noteFew: 'заведения',
     noteMany: 'заведений',
-    noteTail: 'с категорией вне канона',
+    noteTail: 'с категорией не из справочника',
   ),
   QualitySignal(
     id: 'cuisine_off_canon',
-    title: 'Кухни вне канона',
-    subtitle: 'Значение кухни не из 12 канонических',
-    cleanLabel: 'канон кухонь',
+    title: 'Кухня не из справочника',
+    subtitle: 'Кухня — не одна из 12, которые знают сайт и приложение',
+    cleanLabel: 'кухни',
     icon: Icons.restaurant_menu,
     countOf: (d) => d.cuisineOffCanonCount,
     noteOne: 'заведение',
     noteFew: 'заведения',
     noteMany: 'заведений',
-    noteTail: 'с кухней вне канона',
+    noteTail: 'с кухней не из справочника',
   ),
   QualitySignal(
     id: 'out_of_bounds',
@@ -240,15 +256,16 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
   ),
   QualitySignal(
     id: 'non_object_attributes',
-    title: 'Атрибуты: не объект',
-    subtitle: 'Вместо набора признаков лежит что-то другое',
-    cleanLabel: 'атрибуты',
+    title: 'Удобства записаны с ошибкой',
+    subtitle: 'Вместо списка удобств в карточке записано что-то другое — '
+        'ни одно удобство не покажется',
+    cleanLabel: 'удобства',
     icon: Icons.data_object,
     countOf: (d) => d.nonObjectAttributesCount,
     noteOne: 'заведение',
     noteFew: 'заведения',
     noteMany: 'заведений',
-    noteTail: 'с испорченными атрибутами',
+    noteTail: 'с испорченным списком удобств',
   ),
 ];
 

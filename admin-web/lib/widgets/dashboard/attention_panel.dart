@@ -35,8 +35,7 @@ class AttentionItem {
   });
 
   /// Ноль всегда читается как «разобрано», какой бы тон ни просили.
-  AttentionTone get effectiveTone =>
-      count == 0 ? AttentionTone.clear : tone;
+  AttentionTone get effectiveTone => count == 0 ? AttentionTone.clear : tone;
 }
 
 /// Панель «Требует внимания» — витринная, справа от графика.
@@ -131,6 +130,9 @@ class _Row extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    // До трёх строк: у сигналов здоровья данных уточнение
+                    // перечисляет все красные проверки (Ч7), и в одну строку
+                    // шириной 230 влезала только первая.
                     if (note != null)
                       Text(
                         note,
@@ -138,7 +140,7 @@ class _Row extends StatelessWidget {
                           fontSize: 11,
                           color: AppTheme.textTertiary,
                         ),
-                        maxLines: 1,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
                   ],

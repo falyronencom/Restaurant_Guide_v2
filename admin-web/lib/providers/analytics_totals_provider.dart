@@ -18,6 +18,15 @@ class AnalyticsTotalsProvider with ChangeNotifier {
 
   OverviewData? _overview;
   bool _isLoading = false;
+  DateTime? _loadedAt;
+
+  /// Часы — подменяются в тестах.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
+  /// Старше этого итоги перечитываются при входе в раздел — тот же срок,
+  /// что у вкладок (A3-22): раньше они не обновлялись за сеанс вовсе.
+  static const Duration maxAge = Duration(minutes: 5);
 
   /// Поколение аккаунта — как в BadgesProvider (решение Координатора
   /// 12.10.2026: метка у каждого провайдера реестра).
@@ -33,6 +42,7 @@ class AnalyticsTotalsProvider with ChangeNotifier {
     _generation++;
     _overview = null;
     _isLoading = false;
+    _loadedAt = null;
     notifyListeners();
   }
 
@@ -40,14 +50,22 @@ class AnalyticsTotalsProvider with ChangeNotifier {
   int? get users => _overview?.users.total;
   int? get reviews => _overview?.reviews.total;
 
+  /// Загрузить, если итогов нет или им больше [maxAge].
   Future<void> loadOnce() async {
-    if (_overview != null || _isLoading) return;
+    if (_isLoading) return;
+    final at = _loadedAt;
+    if (_overview != null && at != null && clock().difference(at) < maxAge) {
+      return;
+    }
     _isLoading = true;
     final generation = _generation;
 
     try {
       final overview = await _service.getOverview();
-      if (generation == _generation) _overview = overview;
+      if (generation == _generation) {
+        _overview = overview;
+        _loadedAt = clock();
+      }
     } catch (_) {
       // Молча. Итог в подписи вкладки — удобство, а не содержание экрана:
       // сообщать об ошибке дважды (здесь и в теле вкладки) значило бы

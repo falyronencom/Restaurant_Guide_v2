@@ -214,7 +214,7 @@ describe('scripts/change-account-email.js', () => {
         .set('Authorization', `Bearer ${fresh.body.data.accessToken}`)
         .expect(200);
       const entry = asAdmin.body.data.find((e) => e.entity_id === admin.id);
-      expect(entry.summary).toBe('Адрес e-mail учётки изменён');
+      expect(entry.summary).toBe('Адрес e-mail учётной записи изменён');
       expect(entry.old_data.user_email).toBe('admin@test.com');
       expect(entry.new_data.user_email).toBe('owner.box+admin@gmail.com');
       expect(entry.new_data.password_cleared).toBe(true);

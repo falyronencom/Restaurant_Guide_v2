@@ -164,10 +164,11 @@ void main() {
   Future<_FakeAnalyticsService> pumpDashboard(
     WidgetTester tester, {
     QualityHealthData? health,
+    double width = 1180,
   }) async {
     final fake = _FakeAnalyticsService();
 
-    tester.view.physicalSize = const Size(1180, 820);
+    tester.view.physicalSize = Size(width, 820);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -274,17 +275,23 @@ void main() {
     expect(find.byType(MetricCard), findsNWidgets(4));
     expect(find.text('ПОЛЬЗОВАТЕЛИ'), findsOneWidget);
     expect(find.text('742'), findsOneWidget);
-    expect(find.text('↑ 12,4%'), findsOneWidget);
+    // Процента на плитках нет (решение Координатора 20.10, В): под итогом —
+    // «+N за период», процент живёт в аналитике у числа новых.
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.text('+96 за период'), findsOneWidget);
+    // «Активные заведения» — то же слово, что в аналитике у того же числа (Ч3).
+    expect(find.text('АКТИВНЫЕ ЗАВЕДЕНИЯ'), findsOneWidget);
     expect(find.text('128'), findsOneWidget);
-    expect(find.text('↓ 2,3%'), findsOneWidget);
+    expect(find.text('+11 за период'), findsOneWidget);
     expect(find.text('906'), findsOneWidget);
-    expect(find.text('Средняя оценка 4,4'), findsOneWidget);
-    expect(find.text('3 ожидают модерации'), findsOneWidget);
+    expect(find.text('+74 за период · средняя 4,4'), findsOneWidget);
 
     // Карточка «Модерация» и строка панели показывают одну очередь.
     expect(find.text('5'), findsNWidgets(2));
     expect(find.text('в очереди'), findsOneWidget);
-    expect(find.text('23 действия'), findsOneWidget);
+    expect(find.text('23 решения за период'), findsOneWidget);
+    // Легенда графика — по шагу столбца, а не всегда «за день».
+    expect(find.text('новые в день'), findsOneWidget);
 
     expect(find.text('Регистрации пользователей'), findsOneWidget);
     expect(find.text('Требует внимания'), findsOneWidget);
@@ -306,13 +313,44 @@ void main() {
     );
   });
 
+  // Окна 1024 и 1150 телом, без рейла 260 (решение А; Chrome с панелью).
+  group('Узкое окно', () {
+    for (final window in <double>[1024, 1150]) {
+      testWidgets('окно ${window.toInt()}: ни подписи, ни числа не обрезаны',
+          (tester) async {
+        final fake = await pumpDashboard(
+          tester,
+          width: window - 260,
+          health: _health(unreachable: 3, hangingFlags: 12),
+        );
+        fake.overview.complete(_overview());
+        fake.users.complete(_users());
+        await settle(tester);
+
+        expect(tester.takeException(), isNull);
+        final clipped = tester
+            .renderObjectList<RenderParagraph>(find.descendant(
+              of: find.byType(MetricCard),
+              matching: find.byType(RichText),
+            ))
+            .where((p) => p.didExceedMaxLines)
+            .map((p) => p.text.toPlainText())
+            .toList();
+        expect(clipped, isEmpty);
+        // Панель «Требует внимания» рядом с графиком, а график не полоска.
+        final chart = tester.getRect(find.text('Регистрации пользователей'));
+        final attention = tester.getRect(find.text('Требует внимания'));
+        expect(attention.left, greaterThan(chart.left + 300));
+      });
+    }
+  });
+
   group('строка «Сигналов здоровья данных»', () {
-    testWidgets('считает красные проверки и называет первую по канону',
+    testWidgets('считает красные проверки и называет все по канону',
         (tester) async {
-      // Ровно случай кадра 02: недостижимых три, флагов двенадцать. Подпись
-      // обязана назвать недостижимых — правило «первая красная по канону», а
-      // не «самая крупная». Правило проверяется здесь, потому что расхождение
-      // между экраном и панелью иначе замечать некому.
+      // Недостижимых три, флагов двенадцать. Подпись называет ОБЕ красные
+      // проверки в каноническом порядке: прежде она брала одну первую, и
+      // главная молчала об «Ошибках распознавания 5» (Ч7).
       final fake = await pumpDashboard(
         tester,
         health: _health(unreachable: 3, hangingFlags: 12),
@@ -322,10 +360,10 @@ void main() {
       await settle(tester);
 
       expect(find.text('Сигналов здоровья данных'), findsOneWidget);
-      expect(find.text('3 заведения без адреса в каталоге'), findsOneWidget);
-      // Двенадцать флагов на экране есть — но как счётчик своей строки, не как
-      // подпись здоровья.
-      expect(find.textContaining('флагов без реакции'), findsNothing);
+      expect(
+        find.text('3 заведения без страницы на сайте · 12 флагов без реакции'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('первая красная меняется вместе с данными', (tester) async {
@@ -339,7 +377,10 @@ void main() {
       fake.users.complete(_users());
       await settle(tester);
 
-      expect(find.text('12 флагов без реакции'), findsOneWidget);
+      expect(
+        find.text('12 флагов без реакции · 5 заведений с пустым меню'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('снимок ещё не пришёл — строки нет вовсе, а не ноль',

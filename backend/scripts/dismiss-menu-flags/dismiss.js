@@ -252,16 +252,23 @@ const DISMISS_SQL = `
       FROM previous p
      WHERE mi.id = p.id
        AND mi.sanity_flag->>'reason' = $2
-    RETURNING mi.id, p.sanity_flag AS previous_flag
+    RETURNING mi.id, mi.item_name, mi.establishment_id, p.sanity_flag AS previous_flag
   )
   INSERT INTO audit_log (
     user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent
   )
+  -- Название позиции и заведения — снимком, как у писателей панели
+  -- (auditLogModel.createAuditLog): журнал называет позицию словами.
   SELECT $3, 'dismiss_sanity_flag', 'menu_item', c.id,
-         jsonb_build_object('sanity_flag', c.previous_flag),
+         jsonb_strip_nulls(jsonb_build_object(
+           'item_name', c.item_name,
+           'establishment_name', e.name,
+           'establishment_city', e.city
+         )) || jsonb_build_object('sanity_flag', c.previous_flag),
          jsonb_build_object('sanity_flag', NULL),
          NULL, $4
     FROM cleared c
+    LEFT JOIN establishments e ON e.id = c.establishment_id
   RETURNING entity_id`;
 
 /**
