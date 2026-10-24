@@ -1,3 +1,5 @@
+import 'package:restaurant_guide_admin_web/models/establishment.dart';
+
 /// Flagged menu item model for admin moderation dashboard.
 /// Backend: menuItemModel.getFlaggedItems (JOIN establishments).
 class FlaggedMenuItem {
@@ -27,6 +29,11 @@ class FlaggedMenuItem {
   final List<String> establishmentCategories;
   final List<String> establishmentCuisines;
 
+  /// Файл меню, из которого прочитана позиция (`media_*` очереди, с
+  /// 21.10.2026, пункт A1-08): модератор сверяет флаг с самим фото или PDF.
+  /// `null` — сервер файла не назвал (старый ответ, файл удалён).
+  final MediaItem? menuFile;
+
   FlaggedMenuItem({
     required this.id,
     required this.establishmentId,
@@ -44,6 +51,7 @@ class FlaggedMenuItem {
     required this.establishmentStatus,
     this.establishmentCategories = const <String>[],
     this.establishmentCuisines = const <String>[],
+    this.menuFile,
   });
 
   factory FlaggedMenuItem.fromJson(Map<String, dynamic> json) {
@@ -67,6 +75,19 @@ class FlaggedMenuItem {
       establishmentStatus: json['establishment_status'] as String?,
       establishmentCategories: _parseStringList(json['establishment_categories']),
       establishmentCuisines: _parseStringList(json['establishment_cuisines']),
+      menuFile: _parseMenuFile(json),
+    );
+  }
+
+  static MediaItem? _parseMenuFile(Map<String, dynamic> json) {
+    final url = json['media_url'];
+    if (url is! String || url.isEmpty) return null;
+    return MediaItem(
+      id: json['media_id'] as String?,
+      url: url,
+      fileType: json['media_file_type'] as String? ?? 'image',
+      previewUrl: json['media_preview_url'] as String?,
+      thumbnailUrl: json['media_thumbnail_url'] as String?,
     );
   }
 
@@ -122,6 +143,7 @@ class FlaggedMenuItem {
       establishmentStatus: establishmentStatus,
       establishmentCategories: establishmentCategories,
       establishmentCuisines: establishmentCuisines,
+      menuFile: menuFile,
     );
   }
 

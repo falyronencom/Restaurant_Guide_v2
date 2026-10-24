@@ -360,7 +360,14 @@ void main() {
 
       await tester.tap(find.widgetWithText(OutlinedButton, 'Отклонить заявку'));
       await tester.pumpAndSettle();
-      expect(find.text('Отклонить заведение?'), findsOneWidget);
+      // Диалог называет заведение и говорит, сколько причин уйдёт партнёру
+      // (пункты A1-18, A1-11).
+      expect(find.text('Отклонить заявку?'), findsOneWidget);
+      expect(find.text('«Кухмістр»'), findsOneWidget);
+      expect(
+        find.text('Партнёр получит 1 причину: Полное название.'),
+        findsOneWidget,
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Отклонить'));
       await tester.pumpAndSettle();
 

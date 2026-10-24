@@ -170,7 +170,9 @@ void main() {
         (tester) async {
       await pumpViewer(tester, [_pdf('menu')], title: 'Меню');
 
-      expect(find.text('PDF — показана первая страница'), findsOneWidget);
+      // С 21.10.2026 PDF листается (A1-22): пометка — номер страницы, а не
+      // «показана первая страница». Число страниц неизвестно — без «из».
+      expect(find.text('PDF · стр. 1'), findsOneWidget);
       expect(find.text('Открыть PDF'), findsOneWidget);
       expect(find.text('Открыть оригинал'), findsNothing);
     });
@@ -178,7 +180,8 @@ void main() {
     testWidgets('у картинки пометки PDF нет', (tester) async {
       await pumpViewer(tester, [_image('a')]);
 
-      expect(find.text('PDF — показана первая страница'), findsNothing);
+      expect(find.textContaining('PDF · стр.'), findsNothing);
+      expect(find.byKey(const ValueKey<String>('pdf-next-page')), findsNothing);
       expect(find.text('Открыть оригинал'), findsOneWidget);
     });
 

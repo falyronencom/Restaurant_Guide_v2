@@ -1060,9 +1060,36 @@ export const countActiveEstablishments = async (filters = {}) => {
 };
 
 /**
+ * A LIKE pattern that matches the text literally: `%` and `_` typed by the
+ * moderator are characters, not wildcards (the same way as the menu-items
+ * queue, menuItemModel.escapeLike, and the reviews search). Used with
+ * `ESCAPE '\\'`.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+const likeText = (value) => `%${String(value).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+
+/**
+ * What the panel's search across all statuses matches: the name, a category,
+ * a cuisine or the address (walkthrough of the moderator panel, 2026-10-20,
+ * Ч19: «кофе» found no coffee shop — the search looked at the name only).
+ *
+ * @param {string} param - The placeholder, e.g. `$1`
+ * @param {string} alias - Table alias with the dot, or '' for none
+ * @returns {string} SQL condition
+ */
+const searchMatchSql = (param, alias) => `(
+    ${alias}name ILIKE ${param} ESCAPE '\\'
+    OR array_to_string(${alias}categories, ' ') ILIKE ${param} ESCAPE '\\'
+    OR array_to_string(${alias}cuisines, ' ') ILIKE ${param} ESCAPE '\\'
+    OR ${alias}address ILIKE ${param} ESCAPE '\\'
+  )`;
+
+/**
  * Search establishments across ALL statuses
  *
- * @param {string} search - Name search (ILIKE, required)
+ * @param {string} search - Name, category, cuisine or address (ILIKE, required)
  * @param {Object} filters
  * @param {string} filters.status - Optional status filter
  * @param {string} filters.city - Optional city filter
@@ -1077,8 +1104,8 @@ export const searchAllEstablishments = async (search, filters = {}) => {
   let paramCount = 1;
 
   // Required search parameter
-  conditions.push(`e.name ILIKE $${paramCount}`);
-  values.push(`%${search}%`);
+  conditions.push(searchMatchSql(`$${paramCount}`, 'e.'));
+  values.push(likeText(search));
   paramCount++;
 
   if (status) {
@@ -1161,8 +1188,8 @@ export const countSearchResults = async (search, filters = {}) => {
   const values = [];
   let paramCount = 1;
 
-  conditions.push(`name ILIKE $${paramCount}`);
-  values.push(`%${search}%`);
+  conditions.push(searchMatchSql(`$${paramCount}`, ''));
+  values.push(likeText(search));
   paramCount++;
 
   if (status) {

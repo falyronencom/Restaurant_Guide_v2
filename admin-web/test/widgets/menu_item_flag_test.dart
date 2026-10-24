@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
@@ -52,6 +54,7 @@ FlaggedMenuItem _item({
   required Map<String, dynamic> flag,
   double? price = 1200,
   bool hidden = false,
+  MediaItem? menuFile,
 }) {
   return FlaggedMenuItem(
     id: id,
@@ -70,6 +73,7 @@ FlaggedMenuItem _item({
     establishmentStatus: 'active',
     establishmentCategories: const <String>['Ресторан'],
     establishmentCuisines: const <String>['Народная'],
+    menuFile: menuFile,
   );
 }
 
@@ -123,59 +127,113 @@ void main() {
   // LocaleDataException ещё до первой проверки.
   setUpAll(() => initializeDateFormatting('ru'));
 
-  testWidgets('фраза вместо кода и JSON', (tester) async {
+  testWidgets('фраза вместо кода; JSON на экране нет, есть «Скопировать код»',
+      (tester) async {
     await _pump(tester, _known);
 
     expect(find.text('Цена выше порога'), findsOneWidget);
     expect(find.textContaining('при пороге'), findsOneWidget);
-    // Сырая запись есть, но убрана: JSON на экране модератора честно
-    // показывает всё и ровно поэтому не сообщает ничего.
-    expect(find.text('Исходная запись'), findsOneWidget);
+    // Сырая запись на экран не выходит ни раскрытой, ни под спойлером (Ч26):
+    // она уходит в буфер кнопкой, как в `AdminErrorCard`.
+    expect(find.text('Исходная запись'), findsNothing);
     expect(find.textContaining('"reason"'), findsNothing);
+    expect(find.textContaining('threshold'), findsNothing);
+    expect(find.text('Скопировать код'), findsOneWidget);
   });
 
-  testWidgets('незнакомое правило раскрывает запись само', (tester) async {
-    await _pump(tester, _unknown);
-
-    // Фразы нет — значит показать нечего, кроме исходной записи.
-    expect(find.text('Скрыть исходную запись'), findsOneWidget);
-    expect(find.textContaining('quarantine'), findsWidgets);
-  });
-
-  testWidgets('раскрытая запись не переезжает на следующую позицию',
+  // Сторож на незнакомую причину (`feedback_machine_codes_leak_to_moderator`):
+  // правило, которого нет в словаре, не выводит JSON и не молчит — строка
+  // признаёт незнакомую причину и называет её код.
+  testWidgets('незнакомое правило: строка его называет, JSON на экране нет',
       (tester) async {
+    await _pump(
+      tester,
+      _item(
+        id: 'unknown-with-details',
+        flag: <String, dynamic>{
+          'reason': 'quarantine',
+          'details': <String, dynamic>{'threshold': 7},
+        },
+      ),
+    );
+
+    expect(
+      find.text('Причина флага «quarantine» панели незнакома — подробности '
+          'в коде записи.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('{'), findsNothing);
+    expect(find.textContaining('threshold'), findsNothing);
+    expect(find.text('Скопировать код'), findsOneWidget);
+  });
+
+  testWidgets('«Скопировать код» кладёт исходную запись в буфер',
+      (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+
+    await _pump(tester, _known);
+    await tester.tap(find.text('Скопировать код'));
+    await tester.pump();
+
+    expect(copied, contains('"reason": "price_above_threshold"'));
+    expect(copied, contains('"threshold": 1000'));
+    expect(find.text('Код скопирован'), findsOneWidget);
+  });
+
+  testWidgets('отметка «скопировано» не переезжает на следующую позицию',
+      (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
     final provider = await _pump(tester, _known);
 
-    await tester.tap(find.text('Исходная запись'));
+    await tester.tap(find.text('Скопировать код'));
     await tester.pump();
-    expect(find.text('Скрыть исходную запись'), findsOneWidget);
+    expect(find.text('Код скопирован'), findsOneWidget);
 
     provider.choose(_unknown);
     await tester.pump();
-
-    // Здесь спойлер раскрыт по своей причине — правило незнакомое.
-    expect(find.text('Скрыть исходную запись'), findsOneWidget);
-
-    provider.choose(_known);
-    await tester.pump();
-
-    // А вот теперь он обязан быть закрыт: у этой позиции есть фраза, и
-    // состояние прошлой позиции переезжать не должно.
-    expect(find.text('Исходная запись'), findsOneWidget);
-    expect(find.text('Скрыть исходную запись'), findsNothing);
+    expect(find.text('Скопировать код'), findsOneWidget);
   });
 
-  testWidgets('автораскрытие срабатывает и при переходе к незнакомому правилу',
-      (tester) async {
-    final provider = await _pump(tester, _known);
-    expect(find.text('Исходная запись'), findsOneWidget);
+  testWidgets('резкое изменение цены: прежняя цена и порог — словами', (tester) async {
+    await _pump(
+      tester,
+      _item(
+        id: 'delta',
+        price: 13,
+        flag: <String, dynamic>{
+          'reason': 'price_delta_anomaly',
+          'details': <String, dynamic>{
+            'previousPrice': 185,
+            'currentPrice': 13,
+            'ratio': 14.23,
+            'threshold': 3,
+          },
+        },
+      ),
+    );
 
-    provider.choose(_unknown);
-    await tester.pump();
-
-    // Без ключа состояние осталось бы от прошлой позиции, и модератор увидел
-    // бы код `quarantine` без фразы и без записи — то есть ничего.
-    expect(find.text('Скрыть исходную запись'), findsOneWidget);
+    expect(find.textContaining('с 185'), findsOneWidget);
+    expect(
+      find.text('Флаг ставится, когда цена меняется больше чем в 3 раза.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ratio'), findsNothing);
   });
 
   // ==========================================================================
@@ -193,13 +251,60 @@ void main() {
     // Разряды разделяет НЕРАЗРЫВНЫЙ пробел — так их ставит `NumberFormat` для
     // русской локали, и обычный пробел в ожидании тест бы не нашёл.
     expect(find.text('1${String.fromCharCode(0xA0)}200 BYN'), findsOneWidget);
-    expect(find.text('Категория из OCR'), findsOneWidget);
+    // «Раздел в меню», не «Категория из OCR» — слово разработчика (A1-20).
+    expect(find.text('Раздел в меню'), findsOneWidget);
+    expect(find.textContaining('OCR'), findsNothing);
     expect(find.text('Горячее'), findsOneWidget);
     expect(find.text('Уверенность распознавания'), findsOneWidget);
     expect(find.text('62%'), findsOneWidget);
     expect(find.text('Состояние заведения'), findsOneWidget);
     expect(find.text('опубликовано'), findsOneWidget);
     expect(find.text('Медиана категории'), findsNothing);
+  });
+
+  // A1-08: флаг сверяется с самим меню — файл, из которого прочитана строка.
+  testWidgets('«Открыть файл меню» — когда сервер назвал файл', (tester) async {
+    await _pump(
+      tester,
+      _item(
+        id: 'with-file',
+        flag: <String, dynamic>{'reason': 'low_confidence'},
+        menuFile: const MediaItem(
+          id: 'm-1',
+          url: 'https://res.cloudinary.com/t/image/upload/v1/menu/a.pdf',
+          fileType: 'pdf',
+        ),
+      ),
+    );
+    expect(find.text('Открыть файл меню (PDF)'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('open-menu-file')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('PDF · стр. 1'), findsOneWidget);
+  });
+
+  // A1-07: действия доходят до повторов строки в других файлах меню — и
+  // диалоги говорят об этом (правило копий, PR #107).
+  testWidgets('«Скрыть» и «Снять флаг» говорят о повторах строки',
+      (tester) async {
+    await _pump(tester, _known);
+
+    await tester.tap(find.text('Скрыть позицию'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('вместе с повторами этой строки'), findsOneWidget);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Снять флаг'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('с её повторов в других файлах меню'),
+        findsOneWidget);
+    expect(find.textContaining('«Драники»'), findsOneWidget);
+  });
+
+  testWidgets('без файла кнопки нет', (tester) async {
+    await _pump(tester, _known);
+    expect(find.byKey(const ValueKey<String>('open-menu-file')), findsNothing);
   });
 
   testWidgets('нераспознанная цена названа словом, а не нулём', (tester) async {

@@ -394,6 +394,131 @@ describe('hide / unhide — one menu uploaded as several files', () => {
   });
 });
 
+describe('dismiss-flag — one menu uploaded as several files', () => {
+  // The guest sees one line for a dish both files hold; «Снять флаг» on one
+  // copy left the flag on the others, and the same dish stayed in the queue —
+  // the button looked broken (walkthrough of the moderator panel, 2026-10-20,
+  // A1-07). The flag goes from the copies of the line, as «Скрыть» does.
+  const insertMedia = async (estId) => (await query(
+    `INSERT INTO establishment_media
+       (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+     VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png')
+     RETURNING id`,
+    [estId],
+  )).rows[0].id;
+  const flag = { reason: 'price_above_threshold', details: { price: 900, threshold: 500 } };
+  const insertItem = async (estId, mediaId, itemName, priceByn, { flagged = false, hiddenReason = null } = {}) => (await query(
+    `INSERT INTO menu_items
+       (establishment_id, media_id, item_name, price_byn, sanity_flag, is_hidden_by_admin, hidden_reason, position)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, 0)
+     RETURNING id`,
+    [estId, mediaId, itemName, priceByn, flagged ? JSON.stringify(flag) : null, hiddenReason !== null, hiddenReason],
+  )).rows[0].id;
+  const flagOf = async (id) => (await query('SELECT sanity_flag FROM menu_items WHERE id = $1', [id])).rows[0].sanity_flag;
+  const dismiss = (id) => request(app)
+    .post(`/api/v1/admin/menu-items/${id}/dismiss-flag`)
+    .set('Authorization', `Bearer ${adminToken}`);
+
+  test('the flag goes from every copy of the line, each with its own audit entry', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const photoSteak = await insertItem(establishment.id, photoId, 'Стейк', 900, { flagged: true });
+    await insertItem(establishment.id, photoId, 'Салат', 12);
+    const pdfSteak = await insertItem(establishment.id, pdfId, 'СТЕЙК', 900, { flagged: true });
+    await insertItem(establishment.id, pdfId, 'Салат', 12);
+
+    await dismiss(photoSteak).expect(200);
+
+    expect(await flagOf(photoSteak)).toBeNull();
+    expect(await flagOf(pdfSteak)).toBeNull();
+
+    const audit = await query(
+      `SELECT entity_id, old_data, new_data FROM audit_log
+        WHERE action = 'dismiss_sanity_flag' AND entity_id = ANY($1::uuid[])`,
+      [[photoSteak, pdfSteak]],
+    );
+    expect(audit.rows.map(r => r.entity_id).sort()).toEqual([photoSteak, pdfSteak].sort());
+    const copyEntry = audit.rows.find(r => r.entity_id === pdfSteak);
+    expect(copyEntry.old_data).toEqual({ sanity_flag: flag });
+    expect(copyEntry.new_data).toEqual({ sanity_flag: null, copy_of: photoSteak });
+
+    const queue = await flagged();
+    expect(queue.body.data.map(i => i.id)).not.toContain(pdfSteak);
+  });
+
+  test('a dish of another menu (breakfast vs lunch) keeps its flag', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const breakfastId = await insertMedia(establishment.id);
+    const lunchId = await insertMedia(establishment.id);
+    const breakfastMors = await insertItem(establishment.id, breakfastId, 'Морс', 400, { flagged: true });
+    for (const [name, price] of [['Каша', 5], ['Омлет', 7], ['Сырники', 8]]) {
+      await insertItem(establishment.id, breakfastId, name, price);
+    }
+    const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 400, { flagged: true });
+    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6]]) {
+      await insertItem(establishment.id, lunchId, name, price);
+    }
+
+    await dismiss(breakfastMors).expect(200);
+
+    expect(await flagOf(breakfastMors)).toBeNull();
+    expect(await flagOf(lunchMors)).toEqual(flag);
+  });
+
+  test('a hidden row takes the copies hidden with it, not a copy hidden for another reason', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const boardId = await insertMedia(establishment.id);
+    const photoSteak = await insertItem(establishment.id, photoId, 'Стейк', 900, { flagged: true, hiddenReason: 'нет в продаже' });
+    const pdfSteak = await insertItem(establishment.id, pdfId, 'Стейк', 900, { flagged: true, hiddenReason: 'нет в продаже' });
+    const boardSteak = await insertItem(establishment.id, boardId, 'Стейк', 900, { flagged: true, hiddenReason: 'другая причина' });
+
+    await dismiss(photoSteak).expect(200);
+
+    expect(await flagOf(pdfSteak)).toBeNull();
+    expect(await flagOf(boardSteak)).toEqual(flag);
+  });
+});
+
+describe('Refusals speak Russian — codes and statuses unchanged', () => {
+  // The panel shows the server's text first when it is Russian (admin-web
+  // utils/error_text.dart); an English one it drops for a phrase by code.
+  // Walkthrough of the moderator panel, 2026-10-20, P1 finding 1.
+  const cyrillic = /[А-Яа-яЁё]/;
+
+  test('hide, unhide, dismiss and the queue filters refuse in Russian', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const { menuItemId } = await seedMenuItem(establishment.id, {
+      isHiddenByAdmin: true,
+      hiddenReason: 'проверено',
+    });
+    const { menuItemId: plain } = await seedMenuItem(establishment.id, { itemName: 'Латте' });
+    const post = (path, body = {}) => request(app)
+      .post(`/api/v1/admin/menu-items/${path}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body);
+
+    const cases = [
+      [await post(`${menuItemId}/hide`, { reason: 'повтор' }), 400, 'MENU_ITEM_ALREADY_HIDDEN'],
+      [await post(`${plain}/hide`, {}), 400, 'REASON_REQUIRED'],
+      [await post(`${plain}/unhide`), 400, 'MENU_ITEM_NOT_HIDDEN'],
+      [await post(`${plain}/dismiss-flag`), 400, 'MENU_ITEM_NO_FLAG'],
+      [await post(`${randomUUID()}/dismiss-flag`), 404, 'MENU_ITEM_NOT_FOUND'],
+      [await flagged('?reason=nonsense'), 400, 'INVALID_SANITY_REASON'],
+      [await flagged('?visibility=nonsense'), 400, 'INVALID_VISIBILITY_MODE'],
+    ];
+
+    const seen = cases.map(([res]) => ({
+      status: res.status,
+      code: res.body.error?.code,
+      russian: cyrillic.test(res.body.message ?? ''),
+    }));
+    expect(seen).toEqual(cases.map(([, status, code]) => ({ status, code, russian: true })));
+  });
+});
+
 describe('POST /api/v1/admin/menu-items/:id/dismiss-flag', () => {
   test('clears sanity_flag without changing hide state', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
@@ -908,5 +1033,24 @@ describe('Auth + authorization', () => {
       .expect(401);
 
     expect(res.body.success).toBe(false);
+  });
+});
+
+describe('GET /api/v1/admin/menu-items/flagged — the menu file of the row (A1-08)', () => {
+  test('each row carries its file: link, type, preview, thumbnail', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const { mediaId } = await seedMenuItem(establishment.id, {
+      sanityFlag: { reason: 'low_confidence', details: {} },
+    });
+
+    const res = await flagged().expect(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      media_id: mediaId,
+      media_url: 'http://test/m.pdf',
+      media_file_type: 'pdf',
+      media_preview_url: 'http://test/p.png',
+      media_thumbnail_url: 'http://test/t.png',
+    });
   });
 });

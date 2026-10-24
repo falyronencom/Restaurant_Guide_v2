@@ -5,6 +5,7 @@ import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/network_thumbnail.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
 /// Вариант порядка для меню сортировки.
@@ -222,8 +223,12 @@ class _SectionHeader extends StatelessWidget {
 class ModerationCatalogCard extends StatelessWidget {
   final String name;
 
-  /// Дата в правом верхнем углу — моноширинным, как всякая табличная величина.
+  /// Дата — моноширинным, как всякая табличная величина.
   final DateTime? date;
+
+  /// Что это за дата: «опубликовано», «отклонено», «приостановлено» (Ч17,
+  /// 20.10: без подписи было непонятно, заявка это, одобрение или создание).
+  final String? dateLabel;
 
   /// «ресторан · Минск».
   final String? subtitle;
@@ -242,6 +247,7 @@ class ModerationCatalogCard extends StatelessWidget {
     super.key,
     required this.name,
     this.date,
+    this.dateLabel,
     this.subtitle,
     this.thumbnailUrl,
     this.categories = const <String>[],
@@ -257,13 +263,19 @@ class ModerationCatalogCard extends StatelessWidget {
   static const double thumbSide = 80;
   static const double padding = 12;
 
+  /// Высота содержимого — на 8 выше миниатюры: с 21.10.2026 у карточки
+  /// четыре строки (название, тип и город, подписанная дата, нижняя строка),
+  /// и в 80 нижний чип «Приостановленных» вылезал на 4 px (замер на 1024 и
+  /// 1150, Ч17). Миниатюра остаётся квадратом 80 у верхнего края.
+  static const double contentHeight = thumbSide + 8;
+
   /// Рамка есть у обеих карточек — у выбранной брендовая, у прочих
   /// прозрачная. Одинаковая ширина держит список на месте при выборе.
   static const double borderWidth = 1.5;
 
   /// Рамка входит в высоту: `Container` вжимает содержимое внутрь рамки,
   /// а не рисует её поверх.
-  static const double height = thumbSide + padding * 2 + borderWidth * 2;
+  static const double height = contentHeight + padding * 2 + borderWidth * 2;
 
   @override
   Widget build(BuildContext context) {
@@ -287,9 +299,9 @@ class ModerationCatalogCard extends StatelessWidget {
                   ),
                 ),
           child: SizedBox(
-            height: thumbSide,
+            height: contentHeight,
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _Thumbnail(
                   url: thumbnailUrl,
@@ -310,39 +322,48 @@ class ModerationCatalogCard extends StatelessWidget {
     final stamp = date;
     final caption = subtitle;
 
+    // Название — на всю ширину строки: дата раньше стояла справа от него и
+    // забирала место, которого названию не хватало (Ч16). Дата с подписью —
+    // своей строкой под типом и городом. Полное название — подсказкой.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Expanded(
-              child: Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+        Tooltip(
+          message: name,
+          waitDuration: const Duration(milliseconds: 400),
+          child: Text(
+            name,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
             ),
-            if (stamp != null) ...[
-              const SizedBox(width: 8),
-              Text(
-                formatDateLocal(stamp),
-                style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
-              ),
-            ],
-          ],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         if (caption != null) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             caption,
             style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        if (stamp != null) ...[
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                if (dateLabel != null) TextSpan(text: '$dateLabel '),
+                TextSpan(
+                  text: formatDateLocal(stamp),
+                  style: AppTheme.mono(fontSize: 11, color: AppTheme.textGrey),
+                ),
+              ],
+            ),
+            style: const TextStyle(fontSize: 11, color: AppTheme.textGrey),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -377,11 +398,7 @@ class _Thumbnail extends StatelessWidget {
         width: ModerationCatalogCard.thumbSide,
         height: ModerationCatalogCard.thumbSide,
         child: source != null && source.isNotEmpty
-            ? Image.network(
-                source,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _fallback(),
-              )
+            ? NetworkThumbnail(url: source, fallback: _fallback())
             : _fallback(),
       ),
     );

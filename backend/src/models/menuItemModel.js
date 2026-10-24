@@ -589,9 +589,17 @@ export const getFlaggedItems = async ({
       e.status       AS establishment_status,
       e.partner_id   AS establishment_partner_id,
       e.categories   AS establishment_categories,
-      e.cuisines     AS establishment_cuisines
+      e.cuisines     AS establishment_cuisines,
+      -- The menu file the row was read from: the moderator checks a flag
+      -- against the photo or PDF itself (walkthrough of the moderator panel,
+      -- 2026-10-20, A1-08). LEFT JOIN — a row is never dropped for its file.
+      m.url          AS media_url,
+      m.file_type    AS media_file_type,
+      m.preview_url  AS media_preview_url,
+      m.thumbnail_url AS media_thumbnail_url
     FROM menu_items mi
     JOIN establishments e ON e.id = mi.establishment_id
+    LEFT JOIN establishment_media m ON m.id = mi.media_id
     WHERE ${page.where}
     -- Ties are the norm here rather than the exception: every item of one parsed menu
     -- is inserted in a single transaction and shares the timestamp. Without further

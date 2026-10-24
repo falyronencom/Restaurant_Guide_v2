@@ -45,6 +45,17 @@ String? safeInternalPath(String? raw) {
   return raw;
 }
 
+/// «Одобренные» по адресу: `?q=` — запрос поиска, с которым экран
+/// открывается (К-6, Ч19). Вынесено из маршрута, чтобы адрес проверялся
+/// тестом без всего каркаса.
+Widget approvedScreenFor(Uri uri) {
+  final query = uri.queryParameters['q']?.trim();
+  return ApprovedScreen(
+    key: ValueKey<String>('approved:${query ?? ''}'),
+    initialQuery: query,
+  );
+}
+
 /// Create GoRouter with auth redirect guard
 ///
 /// Created once and uses [refreshListenable] to re-evaluate redirects
@@ -123,10 +134,13 @@ GoRouter createRouter(AuthProvider authProvider) {
             builder: (context, state) =>
                 const PendingModerationScreen(),
           ),
+          // `?q=<название>` открывает экран сразу с поиском по всем статусам —
+          // так на карточку ведут примеры сигналов «Здоровья данных» (К-6,
+          // 21.10.2026). Ключ по запросу: переход на другой `q` — новый поиск,
+          // а не прежний экран со старым текстом в поле.
           GoRoute(
             path: '/moderation/approved',
-            builder: (context, state) =>
-                const ApprovedScreen(),
+            builder: (context, state) => approvedScreenFor(state.uri),
           ),
           GoRoute(
             path: '/moderation/rejected',

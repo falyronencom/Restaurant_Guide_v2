@@ -63,9 +63,12 @@ class _RejectedScreenState extends State<RejectedScreen> {
                 onRetry: () => context
                     .read<RejectedProvider>()
                     .loadRejectedEstablishments(),
-                emptyTitle: 'Отказов не было',
-                emptyMessage: 'Ни одна заявка ещё не отклонялась — история '
-                    'пуста, и это хорошая новость.',
+                // Не «отказов не было»: список показывает заявки, которые
+                // СЕЙЧАС отклонены, — исправленные партнёром из него уходят,
+                // а запись об отказе остаётся в журнале (Ч23, 20.10).
+                emptyTitle: 'Сейчас отклонённых нет',
+                emptyMessage: 'Здесь видны заявки, которые сейчас ждут '
+                    'исправлений партнёра. Прошлые отказы — в журнале действий.',
                 page: provider.currentPage,
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
@@ -96,7 +99,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
     if (provider.isLoadingList && provider.totalCount == 0) return null;
 
     final total = provider.totalCount;
-    if (total == 0) return 'История пуста';
+    if (total == 0) return 'Сейчас отклонённых нет';
 
     final head = countWithNoun(
       total,
@@ -128,6 +131,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
     return ModerationCatalogCard(
       name: item.name,
       date: item.rejectionDate,
+      dateLabel: 'отклонено',
       subtitle: _typeAndCity(item),
       thumbnailUrl: item.thumbnailUrl,
       categories: item.categories,
@@ -173,6 +177,9 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      listIsEmpty: !provider.isLoadingList &&
+          provider.listError == null &&
+          provider.totalCount == 0,
       onRetryDetail: rejection == null
           ? null
           : () => context.read<RejectedProvider>().selectEstablishment(rejection),

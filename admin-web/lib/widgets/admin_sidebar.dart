@@ -5,6 +5,7 @@ import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 
 /// Навигационный рейл админки — 260px по редизайну (было 363).
 ///
@@ -414,7 +415,7 @@ class _RailFooter extends StatelessWidget {
               type: MaterialType.transparency,
               child: InkWell(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                onTap: () => context.read<AuthProvider>().logout(),
+                onTap: () => confirmLogout(context),
                 child: const Padding(
                   padding: EdgeInsets.all(4),
                   child: Icon(
@@ -430,4 +431,38 @@ class _RailFooter extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Выход из панели. Если по заявкам проставлены отметки, которые ещё не
+/// ушли решением, — сначала вопрос: выход их сотрёт (пункт A3-10; П5, 21.10).
+/// Без отметок — выход сразу, как прежде.
+Future<void> confirmLogout(BuildContext context) async {
+  final auth = context.read<AuthProvider>();
+  final moderation = context.read<ModerationProvider?>();
+  if (moderation == null || !moderation.hasUnsavedVerdicts) {
+    await auth.logout();
+    return;
+  }
+  final leave = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Выйти из панели?'),
+      content: const Text(
+        'Отметки по полям заявок, которые ещё не одобрены и не отклонены, '
+        'пропадут.',
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Остаться'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          style: FilledButton.styleFrom(backgroundColor: AppTheme.errorRed),
+          child: const Text('Выйти'),
+        ),
+      ],
+    ),
+  );
+  if (leave == true) await auth.logout();
 }
