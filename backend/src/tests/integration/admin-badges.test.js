@@ -78,9 +78,13 @@ beforeAll(async () => {
   await createPartnerWithEstablishment('pending');
   await createPartnerWithEstablishment('pending');
   oldestPendingId = pendingOne.establishment.id;
+  // Ожидание считается от последней правки карточки (решение Координатора
+  // 20.10, Б), поэтому стареет updated_at. Триггер ставит его в NOW() на любой
+  // UPDATE — на время правки он выключен.
   await query(
-    "UPDATE establishments SET created_at = NOW() - INTERVAL '9 days' WHERE id = $1",
-    [oldestPendingId],
+    `ALTER TABLE establishments DISABLE TRIGGER update_establishments_updated_at;
+     UPDATE establishments SET updated_at = NOW() - INTERVAL '9 days' WHERE id = '${oldestPendingId}';
+     ALTER TABLE establishments ENABLE TRIGGER update_establishments_updated_at;`,
   );
 
   await createPartnerWithEstablishment('suspended');
@@ -197,7 +201,7 @@ describe('GET /api/v1/admin/badges — счётчики', () => {
 // ===========================================================================
 
 describe('GET /api/v1/admin/analytics/overview — oldest_pending_at', () => {
-  it('отдаёт время создания старейшей заявки в очереди', async () => {
+  it('отдаёт время последней правки старейшей заявки в очереди', async () => {
     const res = await request(app)
       .get(OVERVIEW_URL)
       .set('Authorization', `Bearer ${adminToken}`);

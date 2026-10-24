@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -151,6 +152,13 @@ class _QualitySignalCardState extends State<QualitySignalCard> {
                 style: TextStyle(fontSize: 11, color: AppTheme.textTertiary),
               ),
             ],
+            if (signal.listRoute != null) ...[
+              const SizedBox(height: 10),
+              _ListLink(
+                label: signal.listLabel!,
+                onTap: () => context.go(signal.listRoute!),
+              ),
+            ],
             if (canExpand) ...[
               const SizedBox(height: 10),
               _ExpandToggle(
@@ -180,6 +188,42 @@ class _QualitySignalCardState extends State<QualitySignalCard> {
   }
 }
 
+/// Ссылка «к списку, который надо разобрать» — с карточки сигнала.
+class _ListLink extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _ListLink({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: <Widget>[
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.primaryOrangeDark,
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward,
+              size: 14,
+              color: AppTheme.primaryOrangeDark,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Переключатель раскрытия: «Показать заведения» / «Скрыть».
 class _ExpandToggle extends StatelessWidget {
@@ -220,10 +264,13 @@ class _ExpandToggle extends StatelessWidget {
 
 /// Список заведений под сигналом: имя, город, диагноз.
 ///
-/// Ссылками имена не сделаны намеренно: маршрута на отдельное заведение в
-/// админке не существует, карточка живёт панелью внутри списков очередей.
-/// Имя плюс город — рабочий адрес для поиска на «Одобренных» (он ищет по всем
-/// статусам). Диплинк в список с подставленным поиском — отдельная работа.
+/// Имя — ссылка: ведёт на «Одобренные» с поиском по названию (поиск там идёт
+/// по всем статусам). Поиск при входе по `?q=` делает экран «Одобренных»
+/// (пакет П5+П6, переделка поиска); до его слияния ссылка открывает
+/// «Одобренные» без поиска — безвредно. Отдельного маршрута на заведение в панели нет —
+/// карточка живёт панелью внутри списка, и поиск по имени её и открывает.
+/// Раньше имя было текстом, и карточку приходилось искать вручную (К-6,
+/// A3-29).
 class _SampleList extends StatelessWidget {
   final List<QualitySample> samples;
 
@@ -284,15 +331,20 @@ class _SampleRow extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: <Widget>[
               Flexible(
-                child: Text(
-                  sample.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                    color: AppTheme.textDark,
+                child: InkWell(
+                  onTap: () => context.go(approvedSearchPath(sample.name)),
+                  child: Text(
+                    sample.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                      color: AppTheme.primaryOrangeDark,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppTheme.primaryOrangeDark,
+                    ),
                   ),
                 ),
               ),
@@ -325,6 +377,13 @@ class _SampleRow extends StatelessWidget {
     );
   }
 }
+
+/// Адрес «Одобренных» с поиском по названию заведения.
+String approvedSearchPath(String name) => Uri(
+      path: '/moderation/approved',
+      queryParameters: <String, String>{'q': name},
+    ).toString();
+
 /// Скелетон карточки сигнала — та же коробка, та же геометрия.
 ///
 /// Обещает именно ту раскладку, которая придёт: иконка, заголовок, число.

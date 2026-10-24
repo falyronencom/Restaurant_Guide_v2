@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/analytics_models.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_bar_chart.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 
 /// Две величины на одном поле — количество столбцами, оценка линией.
@@ -89,7 +90,21 @@ class CanonComboChart extends StatelessWidget {
   Widget _bars(double maxY) {
     final step = maxY / 4;
 
+    return LayoutBuilder(
+      builder: (context, constraints) => _barChart(
+        maxY,
+        step,
+        labelStride(
+          data.length,
+          constraints.maxWidth - _leftReserve - _rightReserve,
+        ),
+      ),
+    );
+  }
+
+  Widget _barChart(double maxY, double step, int stride) {
     return BarChart(
+      duration: Duration.zero,
       BarChartData(
         minY: 0,
         maxY: maxY,
@@ -105,21 +120,9 @@ class CanonComboChart extends StatelessWidget {
         ),
         borderData: FlBorderData(show: false),
         barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => AppTheme.backgroundPrimary,
-            tooltipRoundedRadius: AppTheme.radiusSmall,
-            // Второй параметр — индекс ГРУППЫ. Четвёртый это `rodIndex`, а
-            // стержень в группе один, поэтому он всегда ноль: тултип показывал
-            // первый день ряда, на какой столбец ни наведись.
-            getTooltipItem: (_, groupIndex, __, ___) => BarTooltipItem(
-              _tooltipText(groupIndex),
-              const TextStyle(
-                color: AppTheme.primaryOrangeDark,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
+          // Откликается вся колонка над столбцом — см. CanonBarChart.
+          allowTouchBarBackDraw: true,
+          touchTooltipData: chartTooltip(_tooltipText),
         ),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(
@@ -138,7 +141,8 @@ class CanonComboChart extends StatelessWidget {
                 child: Text(
                   value.round().toString(),
                   textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textGrey),
+                  style:
+                      const TextStyle(fontSize: 11, color: AppTheme.textGrey),
                 ),
               ),
             ),
@@ -151,12 +155,15 @@ class CanonComboChart extends StatelessWidget {
               getTitlesWidget: (value, _) {
                 final i = value.round();
                 if (i < 0 || i >= data.length) return const SizedBox.shrink();
-                if (i % _xStride != 0) return const SizedBox.shrink();
+                if (i % stride != 0) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    _xLabel(data[i].date),
-                    style: const TextStyle(fontSize: 10, color: AppTheme.textGrey),
+                    axisLabel(data[i].date, aggregation),
+                    maxLines: 1,
+                    softWrap: false,
+                    style:
+                        const TextStyle(fontSize: 10, color: AppTheme.textGrey),
                   ),
                 );
               },
@@ -170,9 +177,14 @@ class CanonComboChart extends StatelessWidget {
               barRods: <BarChartRodData>[
                 BarChartRodData(
                   toY: data[i].count.toDouble(),
-                  width: _barWidth,
+                  width: barWidthFor(data.length),
                   borderRadius: BorderRadius.circular(2),
                   color: AppTheme.primaryOrange.withValues(alpha: 0.85),
+                  backDrawRodData: BackgroundBarChartRodData(
+                    show: true,
+                    toY: maxY,
+                    color: Colors.transparent,
+                  ),
                 ),
               ],
             ),
@@ -181,28 +193,14 @@ class CanonComboChart extends StatelessWidget {
     );
   }
 
-  /// Ширина столбца по числу точек: тридцать дней и семь дней требуют разной
-  /// толщины, иначе месяц превращается в частокол, а неделя — в редкие сваи.
-  double get _barWidth {
-    if (data.length <= 7) return 18;
-    if (data.length <= 14) return 12;
-    if (data.length <= 31) return 7;
-    return 4;
-  }
-
-  /// Через сколько точек ставить подпись оси X.
-  int get _xStride {
-    if (data.length <= 7) return 1;
-    if (data.length <= 16) return 2;
-    return (data.length / 7).ceil();
-  }
-
+  /// «14 октября» / «3 отзыва · средняя 4,3».
   String _tooltipText(int index) {
     final point = data[index];
     final rating = point.averageRating;
+    final when = bucketLabel(point.date, aggregation);
     final count = countWithNoun(point.count, 'отзыв', 'отзыва', 'отзывов');
-    if (rating == null) return count;
-    return '$count · ${formatDecimal(rating)}';
+    if (rating == null) return '$when\n$count';
+    return '$when\n$count · средняя ${formatDecimal(rating)}';
   }
 
   // ==========================================================================
@@ -212,6 +210,7 @@ class CanonComboChart extends StatelessWidget {
   Widget _ratingLine() {
     return IgnorePointer(
       child: LineChart(
+        duration: Duration.zero,
         LineChartData(
           // Домен на полслота шире ряда: так `x = i` попадает в центр
           // столбца `i` при `spaceAround`.
@@ -296,13 +295,6 @@ class CanonComboChart extends StatelessWidget {
         reservedSize: reserved,
         getTitlesWidget: (_, __) => const SizedBox.shrink(),
       );
-
-  String _xLabel(String raw) {
-    final date = DateTime.tryParse(raw);
-    if (date == null) return raw;
-    if (aggregation == 'month') return formatMonthShort(date);
-    return formatDayMonthShort(date);
-  }
 }
 
 class _NoData extends StatelessWidget {
