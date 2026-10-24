@@ -143,6 +143,27 @@ describe('VerifyEmailForm — resend flow', () => {
     expect(screen.getByLabelText('Код из письма')).toBeInTheDocument();
   });
 
+  it('email not sent: the failure reads as an error, the code form and the resend button stay', async () => {
+    mockResendAction.mockResolvedValue({
+      ok: false,
+      code: 'EMAIL_NOT_SENT',
+      message: 'Письмо не отправилось. Попробуйте ещё раз через минуту.',
+    });
+    const user = userEvent.setup();
+    render(<VerifyEmailForm />);
+
+    await user.click(screen.getByRole('button', { name: 'Отправить код повторно' }));
+
+    const note = await screen.findByText(
+      'Письмо не отправилось. Попробуйте ещё раз через минуту.',
+    );
+    expect(note).toHaveClass('text-destructive');
+    expect(screen.getByLabelText('Код из письма')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Отправить код повторно' }),
+    ).toBeEnabled();
+  });
+
   it('renders EMAIL_ALREADY_VERIFIED from resend as the same graceful terminal', async () => {
     mockResendAction.mockResolvedValue({
       ok: false,

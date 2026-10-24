@@ -19,6 +19,7 @@ jest.unstable_mockModule('../../models/notificationModel.js', () => ({
   markAsRead: jest.fn(),
   markAllAsRead: jest.fn(),
   deleteOld: jest.fn(),
+  existsSinceOcrJobEnqueued: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
@@ -79,6 +80,7 @@ const {
   notifyPromotionNew,
   notifyMenuParsed,
   buildMenuParsedMessage,
+  notifyMenuRecognitionFailed,
   notifyMenuItemHidden,
 } = await import('../../services/notificationService.js');
 
@@ -1156,6 +1158,81 @@ describe('notificationService', () => {
       await expect(notifyMenuParsed(establishmentId)).resolves.toBeUndefined();
       expect(NotificationModel.create).not.toHaveBeenCalled();
       expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+  });
+
+  // Находка 3 инцидента Railway (24.10.2026): окончательный отказ
+  // распознавания сообщается партнёру. Тип — menu_parsed: по нему каждая
+  // установленная сборка открывает экран меню партнёра (main_navigation —
+  // push, notification_list_screen — лента), поэтому и push несёт его.
+  describe('notifyMenuRecognitionFailed', () => {
+    const establishmentId = uuidv4();
+    const partnerId = uuidv4();
+    const jobId = uuidv4();
+    const TEXT = 'Не удалось распознать меню «Кофе Плюс». Попробуйте загрузить снова или другой файл.';
+
+    beforeEach(() => {
+      PushService.sendPush.mockResolvedValue(undefined);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId,
+        partner_id: partnerId,
+        name: 'Кофе Плюс',
+      });
+      NotificationModel.existsSinceOcrJobEnqueued.mockResolvedValue(false);
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+    });
+
+    test('in-app row and push: type menu_parsed, its own title, the card in the text', async () => {
+      await expect(notifyMenuRecognitionFailed(establishmentId, { jobId })).resolves.toBe(true);
+
+      expect(NotificationModel.existsSinceOcrJobEnqueued).toHaveBeenCalledWith({
+        userId: partnerId,
+        establishmentId,
+        type: 'menu_parsed',
+        title: 'Меню не распознано',
+        jobId,
+      });
+      expect(NotificationModel.create).toHaveBeenCalledWith({
+        userId: partnerId,
+        type: 'menu_parsed',
+        title: 'Меню не распознано',
+        message: TEXT,
+        establishmentId,
+      });
+      expect(PushService.sendPush).toHaveBeenCalledWith(partnerId, {
+        title: 'Меню не распознано',
+        message: TEXT,
+        data: { type: 'menu_parsed', establishmentId },
+      });
+    });
+
+    test('already told about this upload batch → nothing written, no push', async () => {
+      NotificationModel.existsSinceOcrJobEnqueued.mockResolvedValue(true);
+
+      await expect(notifyMenuRecognitionFailed(establishmentId, { jobId })).resolves.toBe(false);
+
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('a card without a partner → nothing', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        id: establishmentId, partner_id: null, name: 'Кофе Плюс',
+      });
+
+      await expect(notifyMenuRecognitionFailed(establishmentId, { jobId })).resolves.toBe(false);
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+    });
+
+    test('a database error is logged, not thrown — the job outcome never depends on it', async () => {
+      NotificationModel.create.mockRejectedValue(new Error('DB down'));
+
+      await expect(notifyMenuRecognitionFailed(establishmentId, { jobId })).resolves.toBe(false);
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to create menu recognition failed notification',
+        expect.objectContaining({ error: 'DB down', establishmentId, jobId }),
+      );
     });
   });
 

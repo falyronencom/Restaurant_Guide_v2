@@ -16,6 +16,7 @@
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
+import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import {
@@ -205,6 +206,12 @@ describe('Establishments System - Create Establishment', () => {
       { length: count },
       (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}?_a=BAMAMiRg0`,
     );
+    // Превью тех же файлов (w1200): его сервер пишет в preview_url и в обложку
+    // каталога. Хвост ?_a= — от SDK этого процесса (зависит от версии Node).
+    const previewUrls = (count, prefix) => Array.from(
+      { length: count },
+      (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}${sdkAnalyticsQuery()}`,
+    );
 
     // Бюджет 8000, а не 2000: на медленном раннере двух секунд может не
     // хватить. Держится под jest testTimeout (10000), поэтому глобальный
@@ -355,7 +362,7 @@ describe('Establishments System - Create Establishment', () => {
         .expect(200);
 
       const row = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
-      expect(row.rows[0].primary_image_url).toBe(interior[1]);
+      expect(row.rows[0].primary_image_url).toBe(previewUrls(3, 'interior')[1]);
     });
 
     test('PUT falls back to the first interior photo as primary when none named', async () => {
@@ -374,7 +381,7 @@ describe('Establishments System - Create Establishment', () => {
         .expect(200);
 
       const row = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
-      expect(row.rows[0].primary_image_url).toBe(interior[0]);
+      expect(row.rows[0].primary_image_url).toBe(previewUrls(1, 'interior')[0]);
     });
 
     test('removing all interior photos clears primary_image_url', async () => {
@@ -428,7 +435,7 @@ describe('Establishments System - Create Establishment', () => {
       expect(m.thumbnail_url).toContain('pg_1');
     });
 
-    test('PUT with a plain image menu url keeps file_type=image (unchanged url)', async () => {
+    test('PUT with a plain image menu url keeps file_type=image (unchanged url, w1200 preview)', async () => {
       const created = await request(app)
         .post('/api/v1/partner/establishments')
         .set('Authorization', `Bearer ${partnerToken}`)
@@ -448,7 +455,7 @@ describe('Establishments System - Create Establishment', () => {
         [estId],
       );
       expect(row.rows[0].file_type).toBe('image');
-      expect(row.rows[0].preview_url).toBe(menuImg);
+      expect(row.rows[0].preview_url).toBe(previewUrls(1, 'menu')[0]);
     });
 
     // Regression: cabinet menus arrive via the two-stage flow (POST without
@@ -582,7 +589,7 @@ describe('Establishments System - Create Establishment', () => {
         expect(card.rows[0].name).toBe(testEstablishments[0].name);
       });
 
-      test('PUT: interior photos still match by the link as sent — a photo in another spelling becomes the cover as sent', async () => {
+      test('PUT: interior photos still match by the link as sent — a photo in another spelling replaces the row, the cover is its preview', async () => {
         const estId = await createCard();
         const [hall] = photoUrls(1, 'interior');
         const hallRespelled = `https://res.cloudinary.com/test/image/upload/v2/establishments/temp/${partnerId}/interior/p0`;
@@ -604,7 +611,7 @@ describe('Establishments System - Create Establishment', () => {
         );
         expect(interior.rows).toEqual([{ url: hallRespelled }]);
         const card = await query('SELECT primary_image_url FROM establishments WHERE id = $1', [estId]);
-        expect(card.rows[0].primary_image_url).toBe(hallRespelled);
+        expect(card.rows[0].primary_image_url).toBe(previewUrls(1, 'interior')[0]);
       });
 
       test('a PDF\'s file linked without an extension is refused — as a photo it would be read whole (422 INVALID_FILE_TYPE)', async () => {

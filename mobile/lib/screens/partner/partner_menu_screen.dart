@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
@@ -28,19 +29,25 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   /// исключение при каждом уходе с экрана).
   late final PartnerMenuProvider _menu;
 
+  /// Экран записался в провайдер — значит, при уходе выписывается.
+  bool _attached = false;
+
   @override
   void initState() {
     super.initState();
     _menu = context.read<PartnerMenuProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _menu.loadForEstablishment(widget.establishmentId);
+      if (!mounted) return;
+      _menu.attachScreen(widget.establishmentId);
+      _attached = true;
     });
   }
 
   @override
   void dispose() {
-    // Stop polling when leaving the screen; next visit re-starts via initState.
-    _menu.stopPolling();
+    // Провайдер общий: последний экран останавливает опрос, верхний над
+    // другим — возвращает провайдер к карточке нижнего (detachScreen).
+    if (_attached) _menu.detachScreen(widget.establishmentId);
     super.dispose();
   }
 
@@ -65,7 +72,19 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
           }
 
           if (provider.items.isEmpty) {
-            return _buildEmptyState();
+            // Три случая одного пустого списка — по состоянию распознавания
+            // с сервера (находка 3 инцидента Railway, 24.10.2026). Нет поля
+            // (сервер до правки) или «ничего» / «распознано без позиций» —
+            // прежний пустой экран.
+            final recognition = provider.recognition;
+            switch (recognition?.status) {
+              case MenuRecognitionStatus.processing:
+                return _buildProcessingState();
+              case MenuRecognitionStatus.failed:
+                return _buildFailedState(recognition!);
+              default:
+                return _buildEmptyState();
+            }
           }
 
           return _buildList(provider);
@@ -146,17 +165,158 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     );
   }
 
+  /// Файлы приняты, распознавание идёт. Опрос провайдера (каждые 30 с)
+  /// сменит экран сам, когда оно закончится.
+  Widget _buildProcessingState() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: CircularProgressIndicator(color: _primary, strokeWidth: 3),
+            ),
+            SizedBox(height: 24),
+            Text(
+              'Распознаём меню…',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Обычно это занимает несколько минут. Позиции появятся '
+              'здесь сами.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppTheme.textGrey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Распознавание упало окончательно: причина — фраза сервера для партнёра,
+  /// выход — существующая кнопка внизу экрана или другой файл.
+  Widget _buildFailedState(MenuRecognition recognition) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline,
+                size: 72, color: AppTheme.textGrey.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            const Text(
+              'Не удалось распознать меню',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            if (recognition.reason != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                recognition.reason!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 15, color: AppTheme.textPrimary),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              _failedHint(recognition),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Совет — по причине отказа: перезапуск помогает при сбое сервиса (и когда
+  /// причина неизвестна — старый сервер, незнакомый код); пустой файл или
+  /// файл за пределом он прочтёт так же — нужен другой файл.
+  static String _failedHint(MenuRecognition recognition) =>
+      recognition.fileCannotBeRead
+          ? 'Загрузите другой файл в разделе «Медиа» — например, фото '
+              'страниц меню.'
+          : 'Нажмите «Перезапустить распознавание» внизу экрана или '
+              'загрузите другой файл в разделе «Медиа».';
+
+  /// Позиции есть, но файл меню не распознан — один из нескольких: список
+  /// его не покажет, поэтому о нём говорит плашка над списком.
+  Widget _buildFailedBanner(MenuRecognition recognition) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Часть меню не распознана',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                if (recognition.reason != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    recognition.reason!,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textPrimary),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  _failedHint(recognition),
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildList(PartnerMenuProvider provider) {
     final groups = provider.itemsByCategory;
     final categoryKeys = groups.keys.toList();
+    final recognition = provider.recognition;
+    final banner = recognition != null && recognition.isFailed ? 1 : 0;
 
     return RefreshIndicator(
       color: _primary,
       onRefresh: () => provider.fetchMenuItems(),
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        itemCount: categoryKeys.length,
-        itemBuilder: (context, idx) {
+        itemCount: banner + categoryKeys.length,
+        itemBuilder: (context, index) {
+          if (index < banner) return _buildFailedBanner(recognition!);
+          final idx = index - banner;
           final key = categoryKeys[idx];
           final categoryLabel = key.isEmpty ? 'Без категории' : key;
           final items = groups[key]!;

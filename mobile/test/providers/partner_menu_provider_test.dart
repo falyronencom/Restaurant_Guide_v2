@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/services/partner_menu_service.dart';
@@ -9,6 +10,7 @@ import 'package:restaurant_guide_mobile/services/partner_menu_service.dart';
 /// Uses `implements` to avoid depending on the service's private constructor.
 class _FakeMenuService implements PartnerMenuService {
   List<PartnerMenuItem> fetchResult = [];
+  MenuRecognition? recognitionResult;
   Exception? fetchThrow;
 
   PartnerMenuItem? updateResult;
@@ -21,10 +23,11 @@ class _FakeMenuService implements PartnerMenuService {
   int updateCalls = 0;
 
   @override
-  Future<List<PartnerMenuItem>> fetchMenuItems(String establishmentId) async {
+  Future<PartnerMenuSnapshot> fetchMenu(String establishmentId) async {
     fetchCalls++;
     if (fetchThrow != null) throw fetchThrow!;
-    return fetchResult;
+    return PartnerMenuSnapshot(
+        items: fetchResult, recognition: recognitionResult);
   }
 
   @override
@@ -73,6 +76,104 @@ void main() {
       expect(provider.items.length, 2);
       expect(provider.hasItems, true);
       expect(provider.error, isNull);
+    });
+
+    // Находка 3 инцидента Railway (24.10.2026): состояние распознавания —
+    // из ответа, и оно не переживает смену заведения и учётки.
+    test('recognition comes from the answer; a silent poll error keeps it',
+        () async {
+      final fake = _FakeMenuService();
+      fake.recognitionResult = const MenuRecognition(
+          status: MenuRecognitionStatus.failed, reason: 'Сбой распознавания — попробуйте позже.');
+
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+
+      expect(provider.recognition?.status, MenuRecognitionStatus.failed);
+      expect(provider.recognition?.reason,
+          'Сбой распознавания — попробуйте позже.');
+
+      fake.fetchThrow = Exception('network');
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.recognition?.status, MenuRecognitionStatus.failed,
+          reason: 'фоновый сбой опроса не стирает показанное');
+
+      fake.fetchThrow = null;
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.processing);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.recognition?.status, MenuRecognitionStatus.processing);
+    });
+
+    test('recognition is dropped on another establishment and on account reset',
+        () async {
+      final fake = _FakeMenuService();
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.failed);
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+      expect(provider.recognition, isNotNull);
+
+      // Другое заведение: до его ответа — ничего от прежнего.
+      final gate = Completer<void>();
+      final gated = _GatedMenuService(gate);
+      final switching = PartnerMenuProvider(service: gated);
+      gated.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.failed);
+      final first = switching.loadForEstablishment('est-1');
+      gate.complete();
+      await first;
+      switching.stopPolling();
+      expect(switching.recognition, isNotNull);
+      final gate2 = Completer<void>();
+      gated.gate = gate2;
+      final second = switching.loadForEstablishment('est-2');
+      expect(switching.recognition, isNull,
+          reason: 'отказ прежнего заведения на экране чужого');
+      gate2.complete();
+      await second;
+      switching.stopPolling();
+
+      provider.resetAccountScope();
+      expect(provider.recognition, isNull);
+    });
+
+    // Ревью 24.10.2026 (линза): поздний ответ прежней карточки ложился на
+    // экран новой — до следующего опроса.
+    test('a late answer of the previous card is dropped, not shown on the new one',
+        () async {
+      final slow = Completer<void>();
+      final fake = _PerCardMenuService({
+        'est-1': (
+          gate: slow,
+          snapshot: PartnerMenuSnapshot(
+            items: [_item('1', name: 'Борщ')],
+            recognition: const MenuRecognition(
+                status: MenuRecognitionStatus.failed,
+                reason: 'Сбой распознавания — попробуйте позже.'),
+          ),
+        ),
+        'est-2': (
+          gate: null,
+          snapshot: PartnerMenuSnapshot(
+            items: [_item('2', name: 'Хачапури')],
+            recognition:
+                const MenuRecognition(status: MenuRecognitionStatus.done),
+          ),
+        ),
+      });
+      final provider = PartnerMenuProvider(service: fake);
+
+      final first = provider.loadForEstablishment('est-1');
+      await provider.loadForEstablishment('est-2');
+      provider.stopPolling();
+      slow.complete();
+      await first;
+
+      expect(provider.items.map((item) => item.itemName), ['Хачапури']);
+      expect(provider.recognition?.status, MenuRecognitionStatus.done);
     });
 
     test('fetchMenuItems on network error sets error', () async {
@@ -211,15 +312,33 @@ void main() {
   });
 }
 
+/// Ответ по карточке: свой снимок и, если задан, свой замок.
+class _PerCardMenuService extends _FakeMenuService {
+  _PerCardMenuService(this.cards);
+  final Map<String, ({Completer<void>? gate, PartnerMenuSnapshot snapshot})>
+      cards;
+
+  @override
+  Future<PartnerMenuSnapshot> fetchMenu(String establishmentId) async {
+    fetchCalls++;
+    final card = cards[establishmentId]!;
+    await card.gate?.future;
+    return card.snapshot;
+  }
+}
+
 /// Загрузка, которая отвечает, когда тест откроет [gate].
 class _GatedMenuService extends _FakeMenuService {
   _GatedMenuService(this.gate);
-  final Completer<void> gate;
+
+  /// Не `final`: тест смены заведения открывает второй ответ другим замком.
+  Completer<void> gate;
 
   @override
-  Future<List<PartnerMenuItem>> fetchMenuItems(String establishmentId) async {
+  Future<PartnerMenuSnapshot> fetchMenu(String establishmentId) async {
     fetchCalls++;
     await gate.future;
-    return fetchResult;
+    return PartnerMenuSnapshot(
+        items: fetchResult, recognition: recognitionResult);
   }
 }

@@ -398,6 +398,40 @@ export const getPdfPageCounts = async (mediaIds) => {
 };
 
 /**
+ * Every menu file of an establishment the recognition reads — the files
+ * MediaModel.getOcrEligibleMedia lists: PDFs and menu photos — with its newest
+ * OCR job, or a null job for a file never queued (the daily allowance refused
+ * it at upload, or it predates the pipeline), and whether the file was ever
+ * recognised (`has_done_job`: a newest job that failed is then a failed
+ * re-read, and the file's dishes stand). The partner's menu screen reads the
+ * recognition state from this (partnerMenuItemService.recognitionState).
+ * A deleted file takes its jobs with it (ON DELETE CASCADE), so only the
+ * files the card has now are counted. completed_at goes to the client:
+ * the naive column (UTC by NOW()) is turned into an instant in SQL, or
+ * node-pg would read it as the process's local time.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<Array<{media_id: string, status: string|null, error_message: string|null, completed_at: Date|null, has_done_job: boolean}>>}
+ */
+export const getLatestJobPerMenuFile = async (establishmentId) => {
+  const result = await pool.query(
+    `SELECT DISTINCT ON (m.id)
+            m.id AS media_id, j.status, j.error_message,
+            j.completed_at AT TIME ZONE 'UTC' AS completed_at,
+            EXISTS (
+              SELECT 1 FROM ocr_jobs d WHERE d.media_id = m.id AND d.status = 'done'
+            ) AS has_done_job
+     FROM establishment_media m
+     LEFT JOIN ocr_jobs j ON j.media_id = m.id
+     WHERE m.establishment_id = $1
+       AND (m.file_type = 'pdf' OR (m.file_type = 'image' AND m.type = 'menu'))
+     ORDER BY m.id, j.created_at DESC NULLS LAST`,
+    [establishmentId],
+  );
+  return result.rows;
+};
+
+/**
  * A 'processing' row older than this is a zombie: the process died mid-job
  * (SIGKILL / OOM / redeploy without a graceful stop) and nothing else will
  * ever settle it. A legitimate job is minutes at most: its PDF download,
@@ -517,7 +551,9 @@ export const countActiveJobsForEstablishment = async (establishmentId) => {
  * Used when a permanent failure closes a batch: the partner is told what the
  * other files produced only if at least one of them was recognised while the
  * failed job was alive. A lone failed upload, or a batch that failed entirely,
- * stays silent (as it did before batch notifications existed).
+ * gets no «Меню распознано» (as before batch notifications existed); the
+ * failure itself is told apart (ocrService.notifyPartnerOfFailedJob, from
+ * 24.10.2026).
  *
  * The comparison runs inside the database on two DB-generated naive
  * timestamps — nothing crosses the driver's timezone boundary.

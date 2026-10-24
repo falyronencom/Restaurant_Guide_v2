@@ -115,3 +115,6 @@ web/out/
 web/node_modules/
 **/*.tsbuildinfo
 
+
+# Photo sizes backfill rollback files (scripts/photo-sizes)
+backend/photo-sizes-backup-*.json

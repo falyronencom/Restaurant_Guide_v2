@@ -172,14 +172,18 @@ describe('resendVerificationCodeAction', () => {
     });
   });
 
-  it('returns the SAME confirmation when the email transport is unconfigured (sent:false)', async () => {
+  // The mail service refused, the server answered 200 sent:false, and the
+  // screen still said «Мы отправили» — the visitor waited for an email that
+  // would never come.
+  it('says the email did not go out when the server answers sent:false', async () => {
     mockAuthedFetch.mockResolvedValue({ sent: false, expiresAt: '2026-07-10T12:00:00Z' });
 
     const result = await resendVerificationCodeAction(null, new FormData());
 
     expect(result).toEqual({
-      ok: true,
-      message: 'Мы отправили новый код на вашу почту.',
+      ok: false,
+      code: 'EMAIL_NOT_SENT',
+      message: 'Письмо не отправилось. Попробуйте ещё раз через минуту.',
     });
   });
 
