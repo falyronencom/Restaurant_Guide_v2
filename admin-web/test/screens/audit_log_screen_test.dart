@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
@@ -80,6 +81,7 @@ AuditLogEntry _entry({
   String? adminName = 'Всеволод',
   String? adminEmail = 'vsevolod@nirivio.by',
   String? actorRole,
+  String? actorKind,
   DateTime? createdAt,
   Map<String, dynamic>? entityContext,
   Map<String, dynamic>? oldData,
@@ -94,6 +96,7 @@ AuditLogEntry _entry({
       adminName: adminName,
       adminEmail: adminEmail,
       actorRole: actorRole,
+      actorKind: actorKind,
       createdAt: createdAt ?? DateTime.utc(2026, 7, 14, 6, 41),
       entityContext: entityContext,
       oldData: oldData,
@@ -112,10 +115,11 @@ void main() {
   Future<_FakeAuditLogService> pumpScreen(
     WidgetTester tester, {
     String? currentAdminEmail = 'vsevolod@nirivio.by',
+    double width = 1440,
   }) async {
     final fake = _FakeAuditLogService();
 
-    tester.view.physicalSize = const Size(1440, 820);
+    tester.view.physicalSize = Size(width, 820);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -509,11 +513,15 @@ void main() {
       expect(find.text('Ирина К.'), findsWidgets);
       expect(find.text('2 / 5'), findsOneWidget);
       expect(find.text('Golden Coffee, Гродно'), findsOneWidget);
-      expect(find.text('до'), findsOneWidget);
-      expect(find.text('после'), findsOneWidget);
+      // Изменение — словами, а не JSON (К-3, A3-04).
+      expect(
+        find.text('Виден в приложении: да\uFFFCнет', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('is_visible'), findsNothing);
     });
 
-    testWidgets('«после» берёт цвет действия, «до» остаётся нейтральным',
+    testWidgets('полоса изменения берёт цвет действия',
         (tester) async {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[
@@ -528,26 +536,18 @@ void main() {
       await tester.tap(find.text('Одобрено заведение'));
       await tester.pump();
 
-      Color edgeColor(String label) {
-        final box = tester.widget<Container>(
-          find
-              .ancestor(
-                of: find.text(label),
-                matching: find.byType(Container),
-              )
-              .first,
-        );
-        return ((box.decoration! as BoxDecoration).border! as Border)
-            .left
-            .color;
-      }
-
+      final line =
+          find.text('Статус: на модерации\uFFFCв каталоге', findRichText: true);
+      expect(line, findsOneWidget);
+      final box = tester.widget<Container>(
+        find.ancestor(of: line, matching: find.byType(Container)).first,
+      );
       // Постоянный красный, как в единственном примере кадра, у одобрения
       // читался бы как ошибка.
-      expect(edgeColor('после'), AppTheme.statusGreen);
-      // Прошлое состояние — уже история, красить её в цвет действия значило бы
-      // обвинять сами данные.
-      expect(edgeColor('до'), AppTheme.textGrey);
+      expect(
+        ((box.decoration! as BoxDecoration).border! as Border).left.color,
+        AppTheme.statusGreen,
+      );
     });
 
     testWidgets('запись без контекста и без данных не рисует пустых колонок',
@@ -592,14 +592,15 @@ void main() {
       expect(left(find.textContaining('14 июля')), left(find.text('ДАТА И ВРЕМЯ')));
       expect(left(dotFinder), left(find.text('ДЕЙСТВИЕ')));
       expect(left(find.text('Кухмістр')), left(find.text('ОБЪЕКТ')));
-      // У колонки администратора первым идёт кружок аватара.
+      // У колонки «Кто» первым идёт кружок аватара.
       expect(
         left(find.ancestor(of: find.text('В'), matching: find.byType(Container)).first),
-        left(find.text('АДМИНИСТРАТОР')),
+        left(find.text('КТО')),
       );
     });
 
-    testWidgets('ширины закреплены по кадру 06', (tester) async {
+    testWidgets('ширины: дата 150, «Кто» 190, действие и объект поровну',
+        (tester) async {
       final fake = await pumpScreen(tester);
       await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
 
@@ -608,23 +609,22 @@ void main() {
 
       // Отступ тела 24 плюс отступ ячейки 14.
       expect(dateLeft, 38);
-      // Колонка даты — 168 из `168px 467px 260px 200px 36px` кадра.
-      expect(left(dotFinder) - dateLeft, 168);
+      // Колонка даты — 150: столько занимает «14 июля 09:41» с отступами.
+      expect(left(dotFinder) - dateLeft, 150);
       // Колонка шеврона — 36, прижата к правому краю тела.
       expect(
         tester.getRect(find.byIcon(Icons.expand_more).last).center.dx,
         1440 - 24 - 36 / 2,
       );
-      // Остальные три ширины кадра. Администратор — 200 перед шевроном:
-      // колонка начинается за 236 от правого края тела (подпись — с отступом
-      // ячейки 14).
-      expect(left(find.text('АДМИНИСТРАТОР')) - 14, 1440 - 24 - 36 - 200);
-      // Действие и объект делят остаток в пропорции кадра 467:260.
+      // «Кто» — 190 перед шевроном (подпись — с отступом ячейки 14).
+      expect(left(find.text('КТО')) - 14, 1440 - 24 - 36 - 190);
+      // Действие и объект делят остаток поровну: по кадру объекту доставалось
+      // 260 из 727, и на 1150 имя резалось до восьми букв (Ч36, A3-13).
       final actionWidth =
           left(find.text('ОБЪЕКТ')) - left(find.text('ДЕЙСТВИЕ'));
       final objectWidth =
-          left(find.text('АДМИНИСТРАТОР')) - left(find.text('ОБЪЕКТ'));
-      expect(actionWidth / objectWidth, closeTo(467 / 260, 1e-6));
+          left(find.text('КТО')) - left(find.text('ОБЪЕКТ'));
+      expect(actionWidth, closeTo(objectWidth, 1e-6));
     });
 
     testWidgets('высоты шапки и строки — 40 и 52', (tester) async {
@@ -759,5 +759,238 @@ void main() {
       // ровно `null`: без обёртки пункт молча ничего бы не делал.
       expect(fake.lastAction, isNull);
     });
+  });
+
+  // Проход по панели модератора, 20.10, пакет П2.
+  group('Журнал читается человеком', () {
+    testWidgets('у позиции меню — её название, а не «Позиция меню» и id',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'hide_menu_item',
+          summary: 'Скрыта позиция меню',
+          entityType: 'menu_item',
+          entityId: '7f5534fa-0000-4000-8000-000000000000',
+          entityContext: <String, dynamic>{
+            'item_name': 'Сырники со сметаной',
+            'establishment_name': 'Кофейня у моста',
+            'establishment_city': 'Гродно',
+          },
+          oldData: <String, dynamic>{
+            'item_name': 'Сырники со сметаной',
+            'is_hidden_by_admin': false,
+          },
+          newData: <String, dynamic>{
+            'is_hidden_by_admin': true,
+            'reason': 'цена ошибочная',
+          },
+        ),
+      ]);
+
+      expect(find.text('Сырники со сметаной'), findsOneWidget);
+      expect(find.text('Позиция меню'), findsNothing);
+
+      await tester.tap(find.text('Скрыта позиция меню'));
+      await tester.pump();
+      // Контекст называет позицию и заведение; снимок названия в «до» не
+      // повторяется строкой изменения.
+      expect(find.text('Кофейня у моста, Гродно'), findsOneWidget);
+      expect(
+        find.text('Скрыта модератором: нет\uFFFCда', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.text('Причина: цена ошибочная', findRichText: true),
+          findsOneWidget);
+      expect(find.textContaining('Позиция: ', findRichText: true), findsNothing);
+    });
+
+    testWidgets('флаг проверки — фразой с числами, а не кодом причины',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'dismiss_sanity_flag',
+          summary: 'Снят флаг с позиции меню',
+          entityType: 'menu_item',
+          oldData: <String, dynamic>{
+            'sanity_flag': <String, dynamic>{
+              'reason': 'price_delta_anomaly',
+              'details': <String, dynamic>{
+                'previousPrice': 185,
+                'currentPrice': 13,
+                'ratio': 14.2,
+              },
+            },
+          },
+          newData: <String, dynamic>{'sanity_flag': null},
+        ),
+      ]);
+
+      await tester.tap(find.text('Снят флаг с позиции меню'));
+      await tester.pump();
+
+      expect(
+        find.textContaining('Цена упала с 185 до 13 BYN — в 14,2 раза',
+            findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('price_delta_anomaly', findRichText: true),
+          findsNothing);
+      expect(find.textContaining('sanity_flag', findRichText: true),
+          findsNothing);
+    });
+
+    testWidgets('исходник — под «Исходная запись», код копируется',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          oldData: <String, dynamic>{'status': 'pending'},
+          newData: <String, dynamic>{'status': 'active'},
+        ),
+      ]);
+
+      await tester.tap(find.text('Одобрено заведение'));
+      await tester.pump();
+      expect(find.textContaining('"status"', findRichText: true), findsNothing);
+      expect(find.text('Скопировать код'), findsOneWidget);
+
+      await tester.tap(find.text('Исходная запись'));
+      await tester.pump();
+      expect(find.textContaining('"status": "pending"', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets('незнакомое поле и незнакомое действие не пропадают молча',
+        (tester) async {
+      // Сторож дрейфа: сервер завёл код, о котором панель не знает. Он виден
+      // как есть — а не спрятан за вежливой подписью и не пропал.
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          action: 'brand_new_action',
+          summary: 'brand_new_action (establishment)',
+          newData: <String, dynamic>{'strange_key': 7},
+        ),
+      ]);
+
+      expect(find.text('brand_new_action (establishment)'), findsOneWidget);
+      await tester.tap(find.text('brand_new_action (establishment)'));
+      await tester.pump();
+      expect(find.text('поле «strange_key»: 7', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets('скрипт оператора и система названы, а не «не указан»',
+        (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[
+        _entry(
+          id: 'a',
+          action: 'change_email',
+          summary: 'Адрес e-mail учётной записи изменён',
+          entityType: 'user',
+          adminName: null,
+          adminEmail: null,
+          actorKind: 'operator_script',
+        ),
+        _entry(
+          id: 'b',
+          action: 'suspend',
+          summary: 'Приостановлено заведение',
+          adminName: null,
+          adminEmail: null,
+          actorKind: 'system',
+        ),
+      ]);
+
+      expect(find.text('КТО'), findsOneWidget);
+      expect(find.text('Скрипт оператора'), findsOneWidget);
+      expect(find.text('Система'), findsOneWidget);
+      expect(find.text('не указан'), findsNothing);
+      expect(find.text('?'), findsNothing);
+    });
+
+    testWidgets('«Обновить» перечитывает журнал', (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+      final before = fake.calls;
+
+      await tester.tap(find.text('Обновить'));
+      await tester.pump();
+
+      expect(fake.calls, before + 1);
+    });
+
+    testWidgets('произвольный период назван датами', (tester) async {
+      final fake = await pumpScreen(tester);
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+
+      tester
+          .element(find.byType(AuditLogScreen))
+          .read<AuditLogProvider>()
+          .setPeriod(
+            'custom',
+            from: DateTime(2026, 10, 1),
+            to: DateTime(2026, 10, 10),
+          );
+      await tester.pump();
+      await settle(tester, fake, entries: <AuditLogEntry>[_entry()]);
+
+      expect(find.textContaining('за 1 октября — 10 октября'), findsOneWidget);
+      expect(find.text('01.10.2026 — 10.10.2026'), findsOneWidget);
+    });
+
+    for (final window in <double>[1024, 1150]) {
+      testWidgets(
+          'окно ${window.toInt()}: имя объекта не режется до восьми букв',
+          (tester) async {
+        // Тело без рейла 260 — экран здесь пампится без каркаса.
+        final fake = await pumpScreen(tester, width: window - 260);
+        await settle(tester, fake, entries: <AuditLogEntry>[
+          _entry(
+            entityContext: <String, dynamic>{
+              'name': 'Кофейня у моста',
+              'city': 'Гродно',
+            },
+          ),
+        ]);
+
+        expect(tester.takeException(), isNull);
+        final name = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text('Кофейня у моста'),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(name.didExceedMaxLines, isFalse,
+            reason: 'имя объекта обрезано многоточием');
+      });
+
+      testWidgets('окно ${window.toInt()}: «Скрипт оператора» в «Кто» целиком',
+          (tester) async {
+        final fake = await pumpScreen(tester, width: window - 260);
+        await settle(tester, fake, entries: <AuditLogEntry>[
+          _entry(
+            action: 'change_email',
+            summary: 'Адрес e-mail учётной записи изменён',
+            entityType: 'user',
+            adminName: null,
+            adminEmail: null,
+            actorKind: 'operator_script',
+          ),
+        ]);
+
+        final who = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text('Скрипт оператора'),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(who.didExceedMaxLines, isFalse,
+            reason: '«Скрипт оператора» обрезан');
+      });
+    }
   });
 }

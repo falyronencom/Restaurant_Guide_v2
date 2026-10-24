@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
@@ -630,7 +632,8 @@ void main() {
 
       final bar = tester.getRect(find.byType(HealthSummaryBar));
       final note = tester.getRect(
-        find.text('Распределение цен подключается на импорте 500 заведений'),
+        find.text('Проверка цен включится, когда заведений станет '
+            'достаточно для сравнения'),
       );
       expect(
         bar.right - note.right,
@@ -693,5 +696,110 @@ void main() {
     // прочитано; на экране остаётся прежний снимок.
     expect(find.byType(AdminErrorCard), findsNothing);
     expect(find.byType(QualitySignalCard), findsWidgets);
+  });
+
+  // Проход по панели модератора, 20.10, пакет П3 (К-5, К-6).
+  group('Сводка на одной линии, сигналы ведут к спискам', () {
+    Future<_FakeHealthService> pumpRouted(WidgetTester tester,
+        {double width = 1440}) async {
+      final fake = _FakeHealthService();
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final router = GoRouter(routes: <RouteBase>[
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const Scaffold(body: QualityHealthScreen()),
+        ),
+        GoRoute(
+          path: '/moderation/menu-items',
+          builder: (_, __) => const Text('экран позиций меню'),
+        ),
+        GoRoute(
+          path: '/moderation/approved',
+          builder: (_, state) =>
+              Text('поиск: ${state.uri.queryParameters['q']}'),
+        ),
+      ]);
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<QualityHealthProvider>(
+          create: (_) => QualityHealthProvider(service: fake),
+          child: MaterialApp.router(
+            theme: AppTheme.lightTheme,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pump();
+      return fake;
+    }
+
+    for (final window in <double>[1024, 1150, 1440]) {
+      testWidgets(
+          'окно ${window.toInt()}: числа сводки на одной высоте, подпись целиком',
+          (tester) async {
+        // Без рейла 260 на 1024 и 1150 — экран здесь без каркаса.
+        final fake = await pumpRouted(
+          tester,
+          width: window == 1440 ? window : window - 260,
+        );
+        fake.next.complete(_data(unreachable: 2, hangingFlags: 3));
+        await tester.pump();
+
+        final bar = find.byType(HealthSummaryBar);
+        final red = tester.getRect(
+          find.descendant(of: bar, matching: find.text('2')),
+        );
+        final clean = tester.getRect(
+          find.descendant(of: bar, matching: find.text('9')),
+        );
+        expect(red.top, clean.top, reason: 'числа сводки на разной высоте');
+
+        final label = tester.renderObject<RenderParagraph>(find.descendant(
+          of: find.text('проверок чисты'),
+          matching: find.byType(RichText),
+        ));
+        expect(label.didExceedMaxLines, isFalse,
+            reason: '«проверок чисты» обрезано');
+      });
+    }
+
+    testWidgets('«Флаги без реакции» — к позициям меню', (tester) async {
+      final fake = await pumpRouted(tester);
+      fake.next.complete(_data(hangingFlags: 3));
+      await tester.pump();
+
+      await tester.tap(find.text('Открыть позиции меню'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('экран позиций меню'), findsOneWidget);
+    });
+
+    testWidgets('пример под сигналом — к карточке на «Одобренных»',
+        (tester) async {
+      final fake = await pumpRouted(tester);
+      fake.next.complete(_data(
+        unreachable: 1,
+        unreachableSamples: const <QualitySample>[
+          QualitySample(
+            id: '1',
+            name: 'Кофейня у моста',
+            city: 'Гродно',
+            detail: null,
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      await tester.tap(find.text('Показать заведения'));
+      await tester.pump();
+      await tester.tap(find.text('Кофейня у моста'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('поиск: Кофейня у моста'), findsOneWidget);
+    });
   });
 }

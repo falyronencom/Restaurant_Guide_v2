@@ -45,12 +45,17 @@ String auditEntityLabel(String entityType) =>
 /// Отличаются от подписей строк: в таблице стоит «Скрыта позиция меню»
 /// (собирает бэкенд), в фильтре — «Скрытие позиции меню». Набор обязан быть
 /// полным: модератор, прочитавший действие в таблице, должен уметь по нему
-/// отфильтровать. До этой правки в списке было восемь из четырнадцати.
+/// отфильтровать. Полноту сверяет тест с общим списком сервера
+/// `backend/src/constants/auditLogActions.json`, а тот — сторож сервера с
+/// кодом писателей журнала; ручной копии списка больше нет (проход по панели
+/// модератора, 20.10, A3-05: в фильтре не было шести действий, Ч38).
 const Map<String, String> kAuditActions = <String, String>{
   'moderate_approve': 'Одобрение',
   'moderate_reject': 'Отклонение',
   'suspend': 'Приостановка',
   'unsuspend': 'Возобновление',
+  'partner_pause': 'Пауза партнёром',
+  'partner_resume': 'Возобновление партнёром',
   'claim_establishment': 'Передача партнёру',
   'partner_delete_establishment': 'Удаление заведения партнёром',
   'admin_update_coordinates': 'Обновление координат',
@@ -65,6 +70,13 @@ const Map<String, String> kAuditActions = <String, String>{
   'user_block': 'Блокировка пользователя',
   'user_unblock': 'Разблокировка пользователя',
   'user_reset_name': 'Сброс имени пользователя',
+  'user_delete_account': 'Удаление учётной записи',
+  // Скрипты оператора.
+  'change_email': 'Смена адреса e-mail',
+  'mark_service_account': 'Отметка служебной учётной записи',
+  'operator_create_admin': 'Создание администратора',
+  'operator_reset_admin': 'Новый пароль администратора',
+  'operator_promote_admin': 'Повышение до администратора',
 };
 
 /// Что действие сделало с доступностью объекта.
@@ -95,6 +107,10 @@ const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>
   'moderate_reject': AuditActionTone.restricting,
   'suspend': AuditActionTone.restricting,
   'unsuspend': AuditActionTone.allowing,
+  // Пауза партнёра — та же шкала, что у модератора: карточка ушла из
+  // каталога и вернулась.
+  'partner_pause': AuditActionTone.restricting,
+  'partner_resume': AuditActionTone.allowing,
   'claim_establishment': AuditActionTone.neutral,
   // Партнёр удалил свою карточку — черновик или отклонённую; другие статусы
   // сервер удалить не даёт. Карточки больше нет — ограничивающее.
@@ -116,6 +132,14 @@ const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>
   'user_unblock': AuditActionTone.allowing,
   // Сброс имени переписывает данные, доступности не меняет.
   'user_reset_name': AuditActionTone.neutral,
+  // Учётной записи больше нет — ограничивающее.
+  'user_delete_account': AuditActionTone.restricting,
+  // Скрипты оператора меняют данные и права, не доступность объекта.
+  'change_email': AuditActionTone.neutral,
+  'mark_service_account': AuditActionTone.neutral,
+  'operator_create_admin': AuditActionTone.neutral,
+  'operator_reset_admin': AuditActionTone.neutral,
+  'operator_promote_admin': AuditActionTone.neutral,
 };
 
 /// Направление действия. Незнакомое — нейтральное: выдумывать ему цвет

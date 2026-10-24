@@ -14,7 +14,9 @@ import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
-import 'package:restaurant_guide_admin_web/widgets/analytics/canon_line_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/analytics_panel.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/canon_bar_chart.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/chart_scale.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
@@ -49,6 +51,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const double _bodyPadding = 24;
   static const double _rowGap = 20;
   static const double _attentionWidth = 320;
+
+  /// Уже этого тела график рядом с панелью «Требует внимания» сжимается в
+  /// полоску, и панель уходит под него. 760 — тело окна 1024 (минимум окна,
+  /// решение Координатора 20.10, А): график там ещё шириной около 380.
+  static const double _sideBySideMinWidth = 760;
+  static const double _stackedAttentionHeight = 300;
+
+  /// «+3 за период».
+  static String _newInPeriod(int count) => '+${formatCount(count)} за период';
 
   @override
   void initState() {
@@ -98,12 +109,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             AdminScreenHeader(
               title: 'Панель управления',
-              subtitle: refreshing
-                  ? 'обновляем'
-                  : _subtitle(provider),
-              subtitleLeading: refreshing
-                  ? const AdminInlineSpinner(size: 13)
-                  : null,
+              subtitle: refreshing ? 'обновляем' : _subtitle(provider),
+              subtitleLeading:
+                  refreshing ? const AdminInlineSpinner(size: 13) : null,
               busy: refreshing,
               actions: [
                 PeriodSelector(
@@ -176,29 +184,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
           constraints.maxHeight - _bodyPadding * 2 - _rowGap - metricsHeight,
         );
 
+        // Процента на плитках главной нет (решение Координатора 20.10, В):
+        // крупное число — итог, а процент считался от НОВЫХ за период, и
+        // «Пользователи 37 ↓100 %» читалось как обвал всей базы (Ч4, F-19,
+        // A3-17). Под числом — «+N за период»; процент остаётся в аналитике,
+        // где стоит у самого числа новых.
         final cards = <Widget>[
           MetricCard(
             icon: Icons.group_outlined,
             label: 'Пользователи',
             value: formatCount(ov.users.total),
-            changePercent: ov.users.changePercent,
-            footnote: '+${formatCount(ov.users.newInPeriod)} за период',
+            footnote: _newInPeriod(ov.users.newInPeriod),
           ),
           MetricCard(
             brandIcon: 'restaurant',
-            label: 'Заведения',
+            // «Активные», а не «Заведения»: число — опубликованные карточки;
+            // в аналитике оно стоит под тем же словом рядом со «Всего
+            // заведений» всех статусов (Ч3).
+            label: 'Активные заведения',
             value: formatCount(ov.establishments.active),
-            changePercent: ov.establishments.changePercent,
-            footnote: '${formatCount(ov.establishments.pending)} '
-                '${plural(ov.establishments.pending, 'ожидает', 'ожидают', 'ожидают')} модерации',
+            footnote: _newInPeriod(ov.establishments.newInPeriod),
           ),
           MetricCard(
             icon: Icons.star_outline,
             label: 'Отзывы',
             value: formatCount(ov.reviews.total),
-            changePercent: ov.reviews.changePercent,
-            footnote:
-                'Средняя оценка ${formatDecimal(ov.reviews.averageRating)}',
+            footnote: '${_newInPeriod(ov.reviews.newInPeriod)} · средняя '
+                '${formatDecimal(ov.reviews.averageRating)}',
           ),
           MetricCard(
             icon: Icons.shield_outlined,
@@ -207,14 +219,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // Дельты нет намеренно: очередь — это остаток работы, а не
             // показатель роста. Сравнивать её с прошлым периодом бессмысленно.
             valueNote: 'в очереди',
-            footnote: countWithNoun(
+            // Решения модератора по заведениям: одобрения, отклонения,
+            // приостановки и возобновления (A3-18). Пауза партнёра и
+            // приостановка системой решениями модератора не считаются.
+            footnote: '${countWithNoun(
               ov.moderation.actionsInPeriod,
-              'действие',
-              'действия',
-              'действий',
-            ),
+              'решение',
+              'решения',
+              'решений',
+            )} за период',
           ),
         ];
+
+        final chart = _ChartCard(
+          data: provider.registrationTimeline,
+          aggregation: provider.aggregation,
+        );
+        final attention = AttentionPanel(
+          items: _attention(
+            context,
+            ov,
+            context.watch<BadgesProvider>().badges,
+            context.watch<QualityHealthProvider>().data,
+          ),
+        );
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(_bodyPadding),
@@ -225,32 +253,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: wide ? _row(cards) : _grid2x2(cards),
               ),
               const SizedBox(height: _rowGap),
-              SizedBox(
-                height: chartRowHeight,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: 16,
-                  children: [
-                    Expanded(
-                      child: _ChartCard(
-                        data: provider.registrationTimeline,
-                        aggregation: provider.aggregation,
-                      ),
-                    ),
-                    SizedBox(
-                      width: _attentionWidth,
-                      child: AttentionPanel(
-                        items: _attention(
-                          context,
-                          ov,
-                          context.watch<BadgesProvider>().badges,
-                          context.watch<QualityHealthProvider>().data,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              if (constraints.maxWidth >= _sideBySideMinWidth)
+                SizedBox(
+                  height: chartRowHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 16,
+                    children: [
+                      Expanded(child: chart),
+                      SizedBox(width: _attentionWidth, child: attention),
+                    ],
+                  ),
+                )
+              else ...[
+                // Узко: график не ужимается в полоску рядом с панелью, а
+                // панель встаёт под ним во всю ширину (A3-12).
+                SizedBox(height: _minChartRowHeight, child: chart),
+                const SizedBox(height: _rowGap),
+                SizedBox(height: _stackedAttentionHeight, child: attention),
+              ],
             ],
           ),
         );
@@ -303,11 +324,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       // Снимок ещё не пришёл — строки нет вовсе. Ноль в ней читался бы как
       // «проверено, чисто», а проверено пока ничего.
+      // Подпись называет ВСЕ красные проверки, а не первую: главная молчала
+      // об «Ошибках распознавания 5», когда первыми шли флаги (Ч7).
       if (health != null)
         AttentionItem(
           count: red.length,
           title: 'Сигналов здоровья данных',
-          note: red.isEmpty ? null : red.first.note(red.first.countOf(health)),
+          note: red.isEmpty
+              ? null
+              : red.map((s) => s.note(s.countOf(health))).join(' · '),
           tone: AttentionTone.critical,
           onTap: () => context.go('/quality/health'),
         ),
@@ -358,34 +383,20 @@ class _ChartCard extends StatelessWidget {
                 child: Text(
                   'Регистрации пользователей',
                   style: AppTheme.canonSheetTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 6,
-                children: [
-                  Container(
-                    width: 9,
-                    height: 9,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.primaryOrange,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const Text(
-                    'новые за день',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
+              ChartLegend(
+                color: AppTheme.primaryOrange,
+                mark: LegendMark.bar,
+                label: 'новые ${perBucketLabel(aggregation)}',
               ),
             ],
           ),
           const SizedBox(height: 14),
           Expanded(
-            child: CanonLineChart(
+            child: CanonBarChart(
               data: data.cast(),
               aggregation: aggregation,
             ),
@@ -557,7 +568,8 @@ class _MetricSkeleton extends StatelessWidget {
             shade: SkeletonShade.strong,
           ),
           SizedBox(height: 8),
-          SkeletonBlock(widthFactor: 0.55, height: 11, shade: SkeletonShade.weak),
+          SkeletonBlock(
+              widthFactor: 0.55, height: 11, shade: SkeletonShade.weak),
         ],
       ),
     );

@@ -42,6 +42,14 @@ export const createAuditLog = async (data) => {
     user_agent = null,
   } = data;
 
+  // Позиция меню получает в old_data снимок своего названия и заведения на
+  // момент действия (проход по панели модератора, 20.10, пункт A3-03): журнал
+  // читает человек, а «Позиция меню 7f5534fa» ему ничего не говорит, и после
+  // повторного распознавания строки с этим id уже нет — присоединить её имя
+  // при чтении журнала будет не к чему. Снимок берётся здесь, одним
+  // оператором с самой записью, — поэтому его получают все писатели позиций
+  // меню, и копии одного клика тоже, без правки каждого из них. Ключи,
+  // переданные писателем, сильнее снимка.
   const query = `
     INSERT INTO audit_log (
       user_id,
@@ -53,7 +61,24 @@ export const createAuditLog = async (data) => {
       ip_address,
       user_agent
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    SELECT $1::uuid, $2::text, $3::text, $4::uuid,
+      CASE
+        WHEN $3::text = 'menu_item' THEN NULLIF(
+          COALESCE((
+            SELECT jsonb_strip_nulls(jsonb_build_object(
+              'item_name', mi.item_name,
+              'establishment_name', e.name,
+              'establishment_city', e.city
+            ))
+            FROM menu_items mi
+            LEFT JOIN establishments e ON e.id = mi.establishment_id
+            WHERE mi.id = $4::uuid
+          ), '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb),
+          '{}'::jsonb
+        )
+        ELSE $5::jsonb
+      END,
+      $6::jsonb, $7::inet, $8::text
     RETURNING id, created_at
   `;
 
@@ -397,29 +422,44 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
       ${actorColumns},
       -- Роль исполнителя: просмотрщику — вместо имени, администратору — рядом.
       u.role as actor_role,
+      -- Кто действовал, когда автора-человека у записи нет (user_id пуст):
+      -- скрипт оператора называет себя в new_data.actor или в user_agent
+      -- («operator_script:…», «scripts/…»), остальное — сама система (захват
+      -- учётной записи, удаление вместе с ней). Без этого поля панель писала
+      -- «не указан», будто журнал потерял автора (проход по панели, A3-06).
+      CASE
+        WHEN al.user_id IS NOT NULL THEN 'person'
+        WHEN COALESCE(al.new_data->>'actor', '') LIKE 'operator_script:%'
+          OR COALESCE(al.user_agent, '') LIKE 'operator_script:%'
+          OR COALESCE(al.user_agent, '') LIKE 'scripts/%'
+          THEN 'operator_script'
+        ELSE 'system'
+      END as actor_kind,
       CASE
         WHEN al.action = 'moderate_approve' AND al.entity_type = 'establishment' THEN 'Одобрено заведение'
         WHEN al.action = 'moderate_reject' AND al.entity_type = 'establishment' THEN 'Отклонено заведение'
         WHEN al.action = 'suspend' AND al.entity_type = 'establishment' THEN 'Приостановлено заведение'
         WHEN al.action = 'unsuspend' AND al.entity_type = 'establishment' THEN 'Возобновлено заведение'
+        WHEN al.action = 'partner_pause' AND al.entity_type = 'establishment' THEN 'Партнёр приостановил заведение'
+        WHEN al.action = 'partner_resume' AND al.entity_type = 'establishment' THEN 'Партнёр возобновил заведение'
         WHEN al.action = 'review_hide' AND al.entity_type = 'review' THEN 'Скрыт отзыв'
         WHEN al.action = 'review_show' AND al.entity_type = 'review' THEN 'Показан отзыв'
         WHEN al.action = 'review_delete' AND al.entity_type = 'review' THEN 'Удалён отзыв'
         WHEN al.action = 'admin_update_coordinates' AND al.entity_type = 'establishment' THEN 'Координаты обновлены'
         WHEN al.action = 'claim_establishment' AND al.entity_type = 'establishment' THEN 'Заведение передано партнёру'
-        WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' AND al.user_id IS NULL THEN 'Заведение удалено вместе с учёткой по заявке в поддержку'
+        WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' AND al.user_id IS NULL THEN 'Заведение удалено вместе с учётной записью по заявке в поддержку'
         WHEN al.action = 'partner_delete_establishment' AND al.entity_type = 'establishment' THEN 'Заведение удалено партнёром'
         WHEN al.action = 'upgrade_user_to_partner' AND al.entity_type = 'user' THEN 'Пользователь повышен до партнёра'
         WHEN al.action = 'user_block' AND al.entity_type = 'user' THEN 'Пользователь заблокирован'
         WHEN al.action = 'user_unblock' AND al.entity_type = 'user' THEN 'Пользователь разблокирован'
         WHEN al.action = 'user_reset_name' AND al.entity_type = 'user' THEN 'Имя пользователя сброшено'
-        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' AND al.user_id IS NULL THEN 'Учётка удалена по заявке в поддержку'
-        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' THEN 'Пользователь удалил учётку'
-        WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётки изменён'
-        WHEN al.action = 'mark_service_account' AND al.entity_type = 'user' THEN 'Учётка отмечена служебной'
+        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' AND al.user_id IS NULL THEN 'Учётная запись удалена по заявке в поддержку'
+        WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' THEN 'Пользователь удалил учётную запись'
+        WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётной записи изменён'
+        WHEN al.action = 'mark_service_account' AND al.entity_type = 'user' THEN 'Учётная запись отмечена служебной'
         WHEN al.action = 'operator_create_admin' AND al.entity_type = 'user' THEN 'Создан администратор'
         WHEN al.action = 'operator_reset_admin' AND al.entity_type = 'user' THEN 'Администратору задан пароль'
-        WHEN al.action = 'operator_promote_admin' AND al.entity_type = 'user' THEN 'Учётка повышена до администратора'
+        WHEN al.action = 'operator_promote_admin' AND al.entity_type = 'user' THEN 'Учётная запись повышена до администратора'
         WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
         WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
         WHEN al.action = 'unhide_menu_item' AND al.entity_type = 'menu_item' THEN 'Показана позиция меню'
@@ -451,6 +491,15 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
           )
         WHEN al.entity_type = 'user' THEN
           json_build_object('user_name', ${targetName})
+        -- Позиция меню: название и заведение из снимка на момент действия
+        -- (createAuditLog кладёт его в old_data), иначе — из нынешней строки:
+        -- так имя есть и у записей, сделанных до снимка, пока позиция жива.
+        WHEN al.entity_type = 'menu_item' THEN
+          json_build_object(
+            'item_name', COALESCE(al.old_data->>'item_name', mi.item_name),
+            'establishment_name', COALESCE(al.old_data->>'establishment_name', e_menu.name),
+            'establishment_city', COALESCE(al.old_data->>'establishment_city', e_menu.city)
+          )
         ELSE NULL
       END as entity_context
       ${metadataColumns}
@@ -466,6 +515,10 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
       ON al.entity_type = 'review' AND r.establishment_id = e_review.id
     LEFT JOIN users target
       ON al.entity_type = 'user' AND al.entity_id = target.id
+    LEFT JOIN menu_items mi
+      ON al.entity_type = 'menu_item' AND al.entity_id = mi.id
+    LEFT JOIN establishments e_menu
+      ON al.entity_type = 'menu_item' AND mi.establishment_id = e_menu.id
     ${whereClause}
     ORDER BY al.created_at ${sortOrder}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}

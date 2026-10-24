@@ -302,4 +302,24 @@ void main() {
       expect(service.calls, hasLength(2));
     });
   });
+
+  group('Возврат в раздел (A3-22)', () {
+    test('данные старше пяти минут перечитываются, свежие — нет', () async {
+      final service = _FakeAnalyticsService();
+      var now = DateTime(2026, 10, 21, 12);
+      final provider = EstablishmentsAnalyticsProvider(service: service)
+        ..clock = () => now;
+
+      await provider.loadIfStale();
+      expect(service.calls, hasLength(1));
+
+      now = now.add(const Duration(minutes: 4));
+      await provider.loadIfStale();
+      expect(service.calls, hasLength(1), reason: 'свежие — запроса нет');
+
+      now = now.add(const Duration(minutes: 2));
+      await provider.loadIfStale();
+      expect(service.calls, hasLength(2), reason: 'старше пяти минут');
+    });
+  });
 }

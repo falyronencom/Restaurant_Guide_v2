@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
@@ -564,7 +565,8 @@ void main() {
         ),
       );
       expect(card.value, '23,1%');
-      expect(card.valueNote, '287 отзывов');
+      // Доля по всем отзывам — и подписана так (A3-16).
+      expect(card.valueNote, '287 отзывов · за всё время');
     });
 
     testWidgets('оценки идут сверху вниз от пяти звёзд к одной',
@@ -1034,6 +1036,132 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  // Окна 1024 (минимум, решение Координатора 20.10, А) и 1150 (Chrome с
+  // боковой панелью) — телом, без рейла 260. Проверяется не «нет исключения»,
+  // а то, что видел осмотр 20.10: подписи и даже числа плиток резались
+  // многоточием («ВСЕГО ЗАВЕДЕН…», «0,…», Ч27, F-04, A3-14).
+  group('Узкое окно: подписи и числа плиток не обрезаны', () {
+    const bodies = <String, double>{'1024': 1024 - 260, '1150': 1150 - 260};
+
+    /// Тексты внутри [of], которые не уместились в отведённое место.
+    List<String> clipped(WidgetTester tester, Finder of) => tester
+        .renderObjectList<RenderParagraph>(
+          find.descendant(of: of, matching: find.byType(RichText)),
+        )
+        .where((p) => p.didExceedMaxLines)
+        .map((p) => p.text.toPlainText())
+        .toList();
+
+    for (final entry in bodies.entries) {
+      testWidgets('окно ${entry.key}: «Заведения»', (tester) async {
+        await pumpEstablishments(tester, width: entry.value);
+
+        expect(tester.takeException(), isNull);
+        expect(clipped(tester, find.byType(MetricCard)), isEmpty);
+        // Ряд метрик — сеткой 2×2: на обоих окнах четыре в ряд не помещаются.
+        final cards = find.byType(MetricCard);
+        expect(tester.getRect(cards.at(2)).top,
+            greaterThan(tester.getRect(cards.at(0)).bottom));
+      });
+
+      testWidgets('окно ${entry.key}: «Пользователи»', (tester) async {
+        await pumpEstablishments(tester, width: entry.value);
+        await tester.tap(find.text('Пользователи'));
+        await tester.pump();
+        service.answerUsers(_users());
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(clipped(tester, find.byType(MetricCard)), isEmpty);
+      });
+
+      testWidgets('окно ${entry.key}: «Отзывы и оценки»', (tester) async {
+        await pumpEstablishments(tester, width: entry.value);
+        await tester.tap(find.text('Отзывы и оценки'));
+        await tester.pump();
+        service.answerReviews(_reviews());
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(clipped(tester, find.byType(MetricCard)), isEmpty);
+      });
+    }
+
+    testWidgets('окно 1024: «По категориям» — отдельным рядом, не третьей колонкой',
+        (tester) async {
+      await pumpEstablishments(tester, width: bodies['1024']!);
+
+      final status = tester.getRect(find.text('По статусу'));
+      final category = tester.getRect(find.text('По категориям'));
+      expect(category.top, greaterThan(status.bottom));
+    });
+  });
+
+  group('Снимки и пояснения', () {
+    testWidgets('карточки-снимки подписаны «на сегодня»', (tester) async {
+      await pumpEstablishments(tester);
+
+      // По статусу, по городу, по категориям — три снимка на вкладке (A3-16).
+      expect(find.text('на сегодня'), findsNWidgets(3));
+    });
+
+    testWidgets('сумма по категориям больше каталога — сказано почему',
+        (tester) async {
+      await pumpEstablishments(
+        tester,
+        data: _establishments(
+          total: 49,
+          categories: const <DistributionItem>[
+            DistributionItem(label: 'Ресторан', count: 40),
+            DistributionItem(label: 'Бар', count: 22),
+          ],
+        ),
+      );
+
+      expect(
+        find.textContaining('У заведения бывает несколько категорий'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('черновики — с пояснением, где их видно', (tester) async {
+      await pumpEstablishments(tester);
+
+      expect(find.textContaining('Черновики видит только партнёр'),
+          findsOneWidget);
+    });
+
+    testWidgets('на вкладке «Пользователи» нет служебной заметки разработчика',
+        (tester) async {
+      await pumpEstablishments(tester);
+      await tester.tap(find.text('Пользователи'));
+      await tester.pump();
+      service.answerUsers(_users());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('ключами'), findsNothing);
+      expect(find.textContaining('на стороне клиента'), findsNothing);
+      expect(find.text('на сегодня'), findsOneWidget);
+    });
+
+    testWidgets('«минут» склоняется', (tester) async {
+      await pumpEstablishments(tester);
+      await tester.tap(find.text('Отзывы и оценки'));
+      await tester.pump();
+      service.answerReviews(_reviews(
+        response: const ResponseStats(
+          totalReviews: 100,
+          totalWithResponse: 25,
+          responseRate: 0.25,
+          avgResponseTimeHours: 21 / 60,
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('за 21 минуту'), findsOneWidget);
     });
   });
 

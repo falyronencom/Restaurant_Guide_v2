@@ -56,7 +56,12 @@ fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
  *   multer would build nested objects (LIMIT_FIELD_NESTING). An array index
  *   needs a bracket too, so fieldArrayIndexLimit adds nothing at depth 0.
  * `files` stays unset: every route takes .single(name), which already refuses a
- * second file (LIMIT_UNEXPECTED_FILE).
+ * second file (LIMIT_UNEXPECTED_FILE). So does `fieldSize`: a text field is
+ * bounded by the default, 1 MiB, far above any field a client sends. multer
+ * 2.5 applies that default itself as the maximum allowed — exactly 1 MiB
+ * passes, a byte more aborts the request (LIMIT_FIELD_VALUE); multer 2.4 left
+ * it to busboy, which refused exactly 1 MiB (integration/multipart-limits
+ * holds the edge).
  */
 export const MULTIPART_LIMITS = Object.freeze({
   fields: 10,
@@ -213,7 +218,7 @@ export const tempUploadStorage = multer.diskStorage({
  * every aborted form. The routes' own error handlers (media, temp media,
  * promotions, avatar) pass the refusal on to errorHandler.
  *
- * The route's chain goes on once per request. multer 2.4 can call back a
+ * The route's chain goes on once per request. multer (2.4, 2.5) can call back a
  * second time: when busboy's constructor refuses the form (a Content-Type it
  * cannot parse), multer calls back at once, but its listeners on the request,
  * set before the constructor, are still there — a connection that then closes
