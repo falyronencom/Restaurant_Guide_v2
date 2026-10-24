@@ -16,11 +16,14 @@ export const listMenuItems = asyncHandler(async (req, res) => {
   const establishmentId = req.params.id;
   const partnerId = req.user.userId;
 
-  const items = await partnerMenuItemService.listMenuItems(partnerId, establishmentId);
+  const { items, recognition } = await partnerMenuItemService.listMenuItems(partnerId, establishmentId);
 
+  // `recognition` sits beside `data`: `data` stays the list of items every
+  // client reads; a client that does not know the field ignores it.
   res.status(200).json({
     success: true,
     data: items,
+    recognition,
   });
 });
 

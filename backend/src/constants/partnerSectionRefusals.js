@@ -174,6 +174,29 @@ export const MEDIA_REFUSALS = Object.freeze({
 });
 
 /**
+ * Why recognition of a menu file failed for good, as the partner reads it on
+ * the menu screen — the `recognition.reason` of
+ * GET /api/v1/partner/establishments/:id/menu-items
+ * (services/partnerMenuItemService.js recognitionState). Not a refusal of an
+ * action: the outcome of a job the partner started by uploading. The job keeps
+ * its own English error_message for the log and the moderator; which of these
+ * the partner sees is decided by services/ocr/failureReason.js
+ * failureReasonOf, and the app gives its advice by the cause's code. Three causes, by
+ * the directive of 24.10.2026 (Trunk, finding 3 of the Railway incident);
+ * wording not yet approved by the Coordinator.
+ */
+export const MENU_RECOGNITION_FAILURES = Object.freeze({
+  // Nothing readable came out of the file: blank pages, a scan without text.
+  unreadable: 'Не удалось прочитать файл: текста меню в нём не нашлось.',
+  // The PDF's parse broke its time or memory limit — the same file breaks it
+  // on every attempt (pdfParseRunner PDF_PARSE_LIMIT).
+  overLimit: 'Файл слишком большой или сложный — превышен предел распознавания.',
+  // Everything else: the recognition service failed, timed out, or the
+  // attempt was cut short by the server — the file may well be fine.
+  serviceFailure: 'Сбой распознавания — попробуйте позже.',
+});
+
+/**
  * The avatar — POST /api/v1/auth/avatar (routes/v1/authRoutes.js,
  * controllers/authController.js uploadAvatar). Every account's, not only a
  * partner's; kept here with the other uploaders' texts under one guard. The
