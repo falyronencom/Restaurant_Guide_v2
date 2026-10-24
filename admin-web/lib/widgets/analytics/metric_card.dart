@@ -78,13 +78,14 @@ class MetricCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             spacing: 9,
             children: [
-              Flexible(
-                child: Text(
-                  value,
-                  style: AppTheme.canonMetricValue,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              // Число не ужимается: при Flexible оно делило место с припиской
+              // поровну и обрезалось первым («0,…» у «Партнёр ответил», Ч27,
+              // F-04). Число — содержание карточки, ужимается приписка.
+              Text(
+                value,
+                style: AppTheme.canonMetricValue,
+                maxLines: 1,
+                softWrap: false,
               ),
               _trailing(),
             ],

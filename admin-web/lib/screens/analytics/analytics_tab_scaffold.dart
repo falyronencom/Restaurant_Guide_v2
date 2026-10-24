@@ -25,6 +25,42 @@ class AnalyticsTabScaffold extends StatelessWidget {
   /// два — то есть на глаз почти незаметно, а в тесте падает.
   static const double metricsHeight = 114;
 
+  /// Уже этого тела четыре метрики в ряд не помещаются: на окне 1150 (Chrome с
+  /// боковой панелью) карточка выходила около 200 пикселей, и резались не
+  /// только подписи («ВСЕГО ЗАВЕДЕН…»), но и сами числа («0,…») — Ч27, F-04,
+  /// A3-14. Ниже порога ряд встаёт сеткой 2×2, как на главной.
+  static const double metricsRowMinWidth = 900;
+
+  /// Высота блока метрик при ширине тела [width] (без отступов).
+  static double metricsBlockHeight(double width) =>
+      width >= metricsRowMinWidth ? metricsHeight : metricsHeight * 2 + gap;
+
+  /// Четыре метрики: в ряд на широком теле, сеткой 2×2 на узком.
+  static Widget metrics(List<Widget> cards) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= metricsRowMinWidth;
+        Widget row(List<Widget> items) => Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: gap,
+              children: <Widget>[for (final c in items) Expanded(child: c)],
+            );
+        return SizedBox(
+          height: metricsBlockHeight(constraints.maxWidth),
+          child: wide
+              ? row(cards)
+              : Column(
+                  spacing: gap,
+                  children: <Widget>[
+                    Expanded(child: row(cards.sublist(0, 2))),
+                    Expanded(child: row(cards.sublist(2))),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
   final bool isLoading;
   final String? error;
   final bool hasData;
@@ -70,7 +106,10 @@ class AnalyticsTabScaffold extends StatelessWidget {
       opacity: isLoading ? 0.75 : 1,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final rest = constraints.maxHeight - padding * 2 - metricsHeight - gap;
+          final rest = constraints.maxHeight -
+              padding * 2 -
+              metricsBlockHeight(constraints.maxWidth - padding * 2) -
+              gap;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(padding),
@@ -118,24 +157,15 @@ class AnalyticsTabSkeleton extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: AnalyticsTabScaffold.gap,
       children: <Widget>[
-        SizedBox(
-          height: AnalyticsTabScaffold.metricsHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: AnalyticsTabScaffold.gap,
-            children: <Widget>[
-              for (var i = 0; i < 4; i++)
-                Expanded(
-                  child: Opacity(
-                    // Последняя карточка притушена — видно, что ряд
-                    // продолжается, а не обрывается.
-                    opacity: i == 3 ? 0.55 : 1,
-                    child: const MetricCardSkeleton(),
-                  ),
-                ),
-            ],
-          ),
-        ),
+        AnalyticsTabScaffold.metrics(<Widget>[
+          for (var i = 0; i < 4; i++)
+            Opacity(
+              // Последняя карточка притушена — видно, что ряд продолжается,
+              // а не обрывается.
+              opacity: i == 3 ? 0.55 : 1,
+              child: const MetricCardSkeleton(),
+            ),
+        ]),
         if (chartHeight != null)
           SizedBox(height: chartHeight, child: const _PanelSkeleton())
         else

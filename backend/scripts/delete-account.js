@@ -13,9 +13,9 @@
  * every session ends; the holder of cards is refused until the cards have
  * another holder. The journal entry user_delete_account has no actor
  * (user_id NULL) and names the script in new_data.actor, and so does the
- * entry of every unfinished card it deletes; the panel reads them as «Учётка
- * удалена по заявке в поддержку» and «Заведение удалено вместе с учёткой по
- * заявке в поддержку».
+ * entry of every unfinished card it deletes; the panel reads them as «Учётная
+ * запись удалена по заявке в поддержку» and «Заведение удалено вместе с
+ * учётной записью по заявке в поддержку».
  *
  * Before running it, support makes sure the request comes from the holder.
  * The script cannot tell who asked. A reply to the account's address proves

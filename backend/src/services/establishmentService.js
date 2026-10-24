@@ -10,6 +10,7 @@
  * Controllers call services, services call models.
  */
 
+import * as AuditLogModel from '../models/auditLogModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
@@ -1409,6 +1410,21 @@ export const suspendEstablishment = async (establishmentId, partnerId) => {
     throw new AppError(ESTABLISHMENT_REFUSALS.pauseNotPublished, 400, 'INVALID_STATUS_TRANSITION');
   }
 
+  // Пауза партнёра — в журнал, как и пауза модератора (проход по панели
+  // модератора, 20.10, пункт A3-30): на «Приостановленных» карточка есть, и
+  // журнал обязан сказать, кто и когда её снял. Свой код действия, а не
+  // 'suspend': паузы независимы (1b7f36f), и в счёт действий модератора на
+  // главной партнёрская не входит. Запись «мягкая» — сбой журнала паузу не
+  // отменяет (createAuditLog не бросает).
+  await AuditLogModel.createAuditLog({
+    user_id: partnerId,
+    action: 'partner_pause',
+    entity_type: 'establishment',
+    entity_id: establishmentId,
+    old_data: { status: 'active' },
+    new_data: { status: 'suspended' },
+  });
+
   logger.info('Establishment suspended by partner', { establishmentId, partnerId });
   return result;
 };
@@ -1461,6 +1477,15 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
     }
     throw new AppError(ESTABLISHMENT_REFUSALS.resumeNotPaused, 400, 'INVALID_STATUS_TRANSITION');
   }
+
+  await AuditLogModel.createAuditLog({
+    user_id: partnerId,
+    action: 'partner_resume',
+    entity_type: 'establishment',
+    entity_id: establishmentId,
+    old_data: { status: 'suspended' },
+    new_data: { status: 'active' },
+  });
 
   logger.info('Establishment resumed by partner (self-suspend)', { establishmentId, partnerId });
   return result;
