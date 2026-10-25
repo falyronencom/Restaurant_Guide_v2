@@ -364,10 +364,14 @@ class ModerationEntityActions extends StatelessWidget {
     required this.establishmentName,
   });
 
-  /// Ширина окна, ниже которой кнопки шапки — значками. Замер: подписи
-  /// «Приостановить» и «Назначить партнёра» с поиском 240 занимают ≈ 640 px,
-  /// и заголовку на 1150 оставалось меньше 120.
-  static const double compactBelowWindowWidth = 1280;
+  /// Ширина области экрана, ниже которой кнопки шапки — значками. Замер:
+  /// подписи «Приостановить» и «Назначить партнёра» с поиском 240 занимают
+  /// ≈ 640 px, и заголовку на окне 1150 (экран 890) оставалось меньше 120.
+  ///
+  /// Прежде порог стоял на окне — 1280 при меню 260; теперь он на области
+  /// экрана (`AdminContentArea`): свёрнутое меню отдаёт место подписям
+  /// кнопок, а не только пустоте (находка П5+П6 № 6).
+  static const double compactBelowContentWidth = 1280 - 260;
 
   /// Что скажет диалог подтверждения: «Возобновить» не всегда значит «на
   /// сайт» — карточка возвращается туда, где была до приостановки.
@@ -903,7 +907,7 @@ class _RejectionNotesBlock extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               const Text(
-                'Причины отказа',
+                'Причины отклонения',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -1146,11 +1150,10 @@ class _SuspensionBlock extends StatelessWidget {
     );
   }
 
-  static String _formatStamp(DateTime value) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(value.day)}.${two(value.month)}.${value.year}, '
-        '${two(value.hour)}:${two(value.minute)}';
-  }
+  /// «07.08.2026, 14:40» — общими форматтерами панели, а не своим: дат в
+  /// панели было три вида, и два из них собирались руками (F-09).
+  static String _formatStamp(DateTime value) =>
+      '${formatDateLocal(value)}, ${formatTimeLocal(value)}';
 }
 
 /// Пауза, которую партнёр поставил сам. Объясняет модератору, почему в
@@ -1232,36 +1235,39 @@ class _DataTab extends StatelessWidget {
       children: [
         ModerationFieldReview(
           fieldName: 'legal_name',
-          label: 'Полное название заведения',
+          label: fieldLabel('legal_name'),
           isRequired: true,
-          child: _FieldValue(detail.legalName ?? detail.name),
+          child:
+              _FieldValue.field('legal_name', detail.legalName ?? detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'unp',
-          label: 'УНП',
+          label: fieldLabel('unp'),
           isRequired: true,
-          child: _FieldValue(detail.unp),
+          child: _FieldValue.field('unp', detail.unp),
         ),
         ModerationFieldReview(
           fieldName: 'registration_doc',
-          label: 'Регистрация',
+          label: fieldLabel('registration_doc'),
           isRequired: true,
           child: detail.registrationDocUrl != null &&
                   detail.registrationDocUrl!.isNotEmpty
               ? _FileLink(detail.registrationDocUrl!)
-              : const _FieldValue(null),
+              : _FieldValue.field('registration_doc', null),
         ),
         ModerationFieldReview(
           fieldName: 'contact_person',
-          label: 'Номер контактного лица',
+          label: fieldLabel('contact_person'),
           isRequired: true,
-          child: _FieldValue(detail.contactPerson ?? detail.phone),
+          child: _FieldValue.field(
+              'contact_person', detail.contactPerson ?? detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'contact_email',
-          label: 'E-mail',
+          label: fieldLabel('contact_email'),
           isRequired: true,
-          child: _FieldValue(detail.contactEmail ?? detail.email),
+          child: _FieldValue.field(
+              'contact_email', detail.contactEmail ?? detail.email),
         ),
       ],
     );
@@ -1286,46 +1292,46 @@ class _DataTab extends StatelessWidget {
 extension _DataTabReadOnly on _DataTab {
   Widget _readOnly() => DefinitionGrid(
         items: <Definition>[
-          Definition(label: 'Название', value: detail.name),
+          Definition.field('name', value: detail.name),
           if ((detail.partnerLabel ?? partnerLabel) != null)
-            Definition(
-              label: 'Партнёр',
+            Definition.field(
+              'partner',
               // Сервер — источник истины (`partner` детали); подпись из
               // назначения в этой сессии — пока деталь не перечитана.
               value: detail.partnerLabel ?? partnerLabel,
               wide: true,
             )
           else if (detail.partnerDataRedacted)
-            const Definition(label: 'Партнёр', value: kRedactedForViewerLabel),
-          Definition(
-            label: 'Категории',
+            Definition.field('partner', value: kRedactedForViewerLabel),
+          Definition.field(
+            'categories',
             value: detail.categories.join(', '),
           ),
-          Definition(
-            label: 'Кухни',
+          Definition.field(
+            'cuisines',
             // Бару, клубу, кальянной кухня не нужна (В5) — пустота у них не
             // пропуск данных, и стиль «не указан» говорил бы об ошибке.
             value: detail.cuisines.isEmpty && !isCuisineRequired(detail.categories)
                 ? 'не требуется'
                 : detail.cuisines.join(', '),
           ),
-          Definition(
-            label: 'Ценовой диапазон',
+          Definition.field(
+            'price_range',
             value: priceRangeLabel(detail.priceRange),
           ),
-          Definition(label: 'Телефон', value: detail.phone),
-          Definition(
-            label: 'E-mail',
+          Definition.field('customer_phone', value: detail.phone),
+          Definition.field(
+            'contact_email',
             value: detail.email ?? _partnerField(detail, detail.contactEmail),
           ),
-          Definition(label: 'Сайт', value: detail.website),
-          Definition(label: 'УНП', value: detail.unp, mono: true),
-          Definition(
-            label: 'Юридическое название',
+          Definition.field('website', value: detail.website),
+          Definition.field('unp', value: detail.unp, mono: true),
+          Definition.field(
+            'legal_name',
             value: detail.legalName,
           ),
-          Definition(
-            label: 'Регистрация',
+          Definition.field(
+            'registration_doc',
             child: !detail.partnerDataRedacted &&
                     detail.registrationDocUrl != null &&
                     detail.registrationDocUrl!.isNotEmpty
@@ -1361,12 +1367,12 @@ class _AboutTab extends StatelessWidget {
         // Moderable fields
         ModerationFieldReview(
           fieldName: 'description',
-          label: 'Описание',
+          label: fieldLabel('description'),
           isRequired: true,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _FieldValue(detail.description),
+              _FieldValue.field('description', detail.description),
               if (detail.description != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -1383,32 +1389,34 @@ class _AboutTab extends StatelessWidget {
         ),
         ModerationFieldReview(
           fieldName: 'name',
-          label: 'Название',
+          label: fieldLabel('name'),
           isRequired: true,
-          child: _FieldValue(detail.name),
+          child: _FieldValue.field('name', detail.name),
         ),
         ModerationFieldReview(
           fieldName: 'customer_phone',
-          label: 'Номер для связи с клиентом',
+          label: fieldLabel('customer_phone'),
           isRequired: true,
-          child: _FieldValue(detail.phone),
+          child: _FieldValue.field('customer_phone', detail.phone),
         ),
         ModerationFieldReview(
           fieldName: 'website',
-          label: 'Ссылка на соц. сеть/сайт',
-          child: _FieldValue(detail.website),
+          label: fieldLabel('website'),
+          child: _FieldValue.field('website', detail.website),
         ),
         ModerationFieldReview(
           fieldName: 'working_hours',
-          label: 'Время работы',
+          label: fieldLabel('working_hours'),
           isRequired: true,
-          child: _WorkingHoursDisplay(detail.workingHours),
+          child: _WorkingHoursDisplay(detail.workingHours,
+              emptyText: fieldEmptyText('working_hours')),
         ),
         ModerationFieldReview(
           fieldName: 'price_range',
-          label: 'Средний чек',
+          label: fieldLabel('price_range'),
           isRequired: true,
-          child: _FieldValue(priceRangeLabel(detail.priceRange)),
+          child: _FieldValue.field(
+              'price_range', priceRangeLabel(detail.priceRange)),
         ),
 
         // Informational fields (no approve/reject buttons)
@@ -1426,11 +1434,12 @@ class _AboutTab extends StatelessWidget {
           ),
         ),
         _InfoField(
-          label: 'Время дополнительного меню',
-          child: _WorkingHoursDisplay(detail.specialHours),
+          label: fieldLabel('special_hours'),
+          child: _WorkingHoursDisplay(detail.specialHours,
+              emptyText: fieldEmptyText('special_hours')),
         ),
         _InfoField(
-          label: 'Атрибуты заведения',
+          label: fieldLabel('attributes'),
           child: _AttributesDisplay(detail.attributes),
         ),
         // Категории и кухни при модерации не показывались вовсе: проверить
@@ -1459,7 +1468,7 @@ class _CategoriesAndCuisines extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _FieldValue(detail.categories.join(', ')),
+        _FieldValue.field('categories', detail.categories.join(', ')),
         const SizedBox(height: 4),
         if (detail.cuisines.isNotEmpty)
           Text(
@@ -1489,32 +1498,33 @@ class _CategoriesAndCuisines extends StatelessWidget {
 extension _AboutTabReadOnly on _AboutTab {
   Widget _readOnlyAbout() => DefinitionGrid(
         items: <Definition>[
-          Definition(
-            label: 'Описание',
+          Definition.field(
+            'description',
             value: detail.description,
             wide: true,
           ),
-          Definition(
-            label: 'Часы работы',
+          Definition.field(
+            'working_hours',
             wide: true,
-            child: _WorkingHoursDisplay(detail.workingHours),
+            child: _WorkingHoursDisplay(detail.workingHours,
+                emptyText: fieldEmptyText('working_hours')),
           ),
-          Definition(
-            label: 'Удобства',
+          Definition.field(
+            'attributes',
             wide: true,
             child: _AttributesDisplay(detail.attributes),
           ),
-          Definition(
-            label: 'Время дополнительного меню',
+          Definition.field(
+            'special_hours',
             value: _specialHoursSummary(detail.specialHours),
             wide: true,
           ),
-          Definition(
-            label: 'Номер контактного лица',
+          Definition.field(
+            'contact_person',
             value: _partnerField(detail, detail.contactPerson),
           ),
-          Definition(
-            label: 'Ценовой диапазон',
+          Definition.field(
+            'price_range',
             value: priceRangeLabel(detail.priceRange),
           ),
         ],
@@ -1643,12 +1653,12 @@ class _AddressTab extends StatelessWidget {
       children: [
         ModerationFieldReview(
           fieldName: 'address',
-          label: 'Адрес',
+          label: fieldLabel('address'),
           isRequired: true,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _FieldValue(addressParts.isNotEmpty
+              _FieldValue.field('address', addressParts.isNotEmpty
                   ? addressParts.join(', ')
                   : null),
               if (detail.latitude != null && detail.longitude != null) ...[
@@ -1683,11 +1693,11 @@ extension _AddressTabReadOnly on _AddressTab {
 
     return DefinitionGrid(
       items: <Definition>[
-        Definition(label: 'Город', value: detail.city),
-        Definition(label: 'Адрес', value: detail.address),
+        Definition.field('city', value: detail.city),
+        Definition.field('address', value: detail.address),
         if (lat != null && lon != null)
-          Definition(
-            label: 'Координаты',
+          Definition.field(
+            'coordinates',
             value: '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
             mono: true,
           ),
@@ -2255,9 +2265,9 @@ class _StateHint extends StatelessWidget {
       spans.add(
         TextSpan(
           text: rejected == 1
-              ? 'Одно поле отклонено — доступен только отказ.'
+              ? 'Одно поле отклонено — заявку можно только отклонить.'
               : '${countWithNoun(rejected, 'поле', 'поля', 'полей')} '
-                  'отклонено — доступен только отказ.',
+                  'отклонены — заявку можно только отклонить.',
         ),
       );
     }
@@ -2295,7 +2305,14 @@ class _StateHint extends StatelessWidget {
 /// Displays a single field value in a bordered container (matching Figma input style)
 class _FieldValue extends StatelessWidget {
   final String? value;
-  const _FieldValue(this.value);
+
+  /// Пустое значение словом, согласованным с именем поля по роду (F-21).
+  final String emptyText;
+
+  const _FieldValue(this.value, {this.emptyText = 'не указано'});
+
+  /// Значение поля карточки по ключу словаря полей.
+  _FieldValue.field(String key, this.value) : emptyText = fieldEmptyText(key);
 
   @override
   Widget build(BuildContext context) {
@@ -2304,7 +2321,7 @@ class _FieldValue extends StatelessWidget {
     // Ни рамки, ни подложки: рамка означает поле ввода, а это значение для
     // чтения. Пустое называется словом, а не прочерком.
     return Text(
-      empty ? 'не указан' : value!,
+      empty ? emptyText : value!,
       style: empty ? AppTheme.canonFieldValueEmpty : AppTheme.canonFieldValue,
     );
   }
@@ -2344,7 +2361,12 @@ class _FileLink extends StatelessWidget {
 /// Displays working hours in a readable table: day name → time range or "Закрыто"
 class _WorkingHoursDisplay extends StatelessWidget {
   final Map<String, dynamic>? hours;
-  const _WorkingHoursDisplay(this.hours);
+
+  /// Пустое расписание словом: у часов работы — «не указаны», у времени
+  /// дополнительного меню — «не указано».
+  final String emptyText;
+
+  const _WorkingHoursDisplay(this.hours, {this.emptyText = 'не указано'});
 
   static const _dayOrder = [
     'monday', 'tuesday', 'wednesday', 'thursday',
@@ -2391,7 +2413,7 @@ class _WorkingHoursDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (hours == null || hours!.isEmpty) {
-      return const _FieldValue(null);
+      return _FieldValue(null, emptyText: emptyText);
     }
 
     return Container(
@@ -2458,7 +2480,7 @@ class _AttributesDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (attributes == null || attributes!.isEmpty) {
-      return const _FieldValue(null);
+      return _FieldValue.field('attributes', null);
     }
 
     final present = attributes!.entries.where((e) => e.value == true).toList();

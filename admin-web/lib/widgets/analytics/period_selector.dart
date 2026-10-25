@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 
 /// Сегмент-контрол периода: «7 дней · 30 дней · 90 дней · Период».
@@ -57,7 +58,7 @@ class _PeriodSelectorState extends State<PeriodSelector> {
       children: [
         if (showRange)
           Text(
-            '${_formatDate(range.start)} — ${_formatDate(range.end)}',
+            '${formatDateLocal(range.start)} — ${formatDateLocal(range.end)}',
             style: const TextStyle(
               fontSize: 12,
               color: AppTheme.textSecondary,
@@ -138,8 +139,6 @@ class _PeriodSelectorState extends State<PeriodSelector> {
     ));
   }
 
-  String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.'
-      '${d.month.toString().padLeft(2, '0')}.${d.year}';
 }
 
 class _Segment extends StatelessWidget {

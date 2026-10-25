@@ -9,6 +9,8 @@ import 'package:restaurant_guide_admin_web/providers/approved_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
@@ -378,17 +380,8 @@ class _SearchFieldState extends State<_SearchField> {
         textAlignVertical: TextAlignVertical.center,
         onChanged: _onChanged,
         onSubmitted: _run,
-        decoration: InputDecoration(
-          hintText: 'Название — во всех статусах',
-          hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-          prefixIcon: const Icon(
-            Icons.search,
-            size: 17,
-            color: AppTheme.textTertiary,
-          ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 38),
+        decoration: adminSearchDecoration(
+          hint: 'Название — во всех статусах',
           suffixIcon: isSearchMode || controller.text.isNotEmpty
               ? IconButton(
                   icon: const Icon(Icons.close, size: 17),
@@ -401,21 +394,10 @@ class _SearchFieldState extends State<_SearchField> {
                   tooltip: 'Сбросить поиск',
                 )
               : null,
-          // Компактное поле шапки: рамка r10 и высота 40, как у соседних
-          // контролов слота, а не общая форма поля ввода канона.
-          border: _border(AppTheme.strokeGrey),
-          enabledBorder: _border(AppTheme.strokeGrey),
-          focusedBorder: _border(AppTheme.primaryOrange, width: 1.5),
         ),
       ),
     );
   }
-
-  OutlineInputBorder _border(Color color, {double width = 1}) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-        borderSide: BorderSide(color: color, width: width),
-      );
 }
 
 /// Действия над выбранным заведением в слоте шапки.
@@ -445,8 +427,8 @@ class _EntityActions extends StatelessWidget {
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
       busy: provider.isSubmitting,
-      compact: MediaQuery.sizeOf(context).width <
-          ModerationEntityActions.compactBelowWindowWidth,
+      compact: AdminContentArea.widthOf(context) <
+          ModerationEntityActions.compactBelowContentWidth,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.canBeSuspendedByModerator
           ? (reason) => provider

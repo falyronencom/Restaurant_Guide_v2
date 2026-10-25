@@ -70,9 +70,9 @@ class _FakeAnalyticsService implements AnalyticsService {
       throw UnimplementedError('дашборд не запрашивает отзывы');
 }
 
-OverviewData _overview() => const OverviewData(
-      users: OverviewUsers(total: 742, newInPeriod: 96, changePercent: 12.4),
-      establishments: OverviewEstablishments(
+OverviewData _overview({int pending = 5}) => OverviewData(
+      users: const OverviewUsers(total: 742, newInPeriod: 96, changePercent: 12.4),
+      establishments: const OverviewEstablishments(
         total: 140,
         active: 128,
         pending: 3,
@@ -80,13 +80,14 @@ OverviewData _overview() => const OverviewData(
         newInPeriod: 11,
         changePercent: -2.3,
       ),
-      reviews: OverviewReviews(
+      reviews: const OverviewReviews(
         total: 906,
         newInPeriod: 74,
         changePercent: 4.0,
         averageRating: 4.4,
       ),
-      moderation: OverviewModeration(pendingCount: 5, actionsInPeriod: 23),
+      moderation:
+          OverviewModeration(pendingCount: pending, actionsInPeriod: 23),
     );
 
 UsersAnalyticsData _users({List<TimelinePoint>? timeline}) =>
@@ -359,11 +360,27 @@ void main() {
       fake.users.complete(_users());
       await settle(tester);
 
-      expect(find.text('Сигналов здоровья данных'), findsOneWidget);
+      expect(find.text('Сигнала здоровья данных'), findsOneWidget,
+          reason: 'две красные — «2 сигнала», а не «2 сигналов» (Ч1)');
       expect(
         find.text('3 заведения без страницы на сайте · 12 флагов без реакции'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('слово при числе склоняется: 1 заявка, 1 сигнал', (tester) async {
+      // «1 Заявок на модерации», «2 Флагов…» — проход по панели модератора,
+      // 20.10, Ч1, F-21.
+      final fake = await pumpDashboard(
+        tester,
+        health: _health(unreachable: 3),
+      );
+      fake.overview.complete(_overview(pending: 1));
+      fake.users.complete(_users());
+      await settle(tester);
+
+      expect(find.text('Заявка на модерации'), findsOneWidget);
+      expect(find.text('Сигнал здоровья данных'), findsOneWidget);
     });
 
     testWidgets('первая красная меняется вместе с данными', (tester) async {

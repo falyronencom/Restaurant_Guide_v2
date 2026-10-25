@@ -13,6 +13,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 /// Путь экрана. Ссылка из отзыва добавляет `?user=<id>`.
@@ -197,7 +198,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 AdminFilterOption<String>(value: 'user', label: 'Пользователи'),
                 AdminFilterOption<String>(value: 'partner', label: 'Партнёры'),
                 AdminFilterOption<String>(
-                    value: 'panel', label: 'Учётки панели'),
+                    value: 'panel', label: 'Учётные записи панели'),
               ],
               onChanged: provider.setRoleFilter,
             ),
@@ -251,12 +252,6 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    OutlineInputBorder border(Color color, {double width = 1}) =>
-        OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-          borderSide: BorderSide(color: color, width: width),
-        );
-
     return SizedBox(
       width: width,
       height: AdminFilterDropdown.height,
@@ -273,14 +268,8 @@ class _SearchField extends StatelessWidget {
             onSubmit(query);
           }
         },
-        decoration: InputDecoration(
-          hintText: 'Почта, телефон или имя',
-          hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-          prefixIcon: const Icon(Icons.search,
-              size: 17, color: AppTheme.textTertiary),
-          prefixIconConstraints: const BoxConstraints(minWidth: 38),
+        decoration: adminSearchDecoration(
+          hint: 'Почта, телефон или имя',
           suffixIcon: isSearchMode
               ? IconButton(
                   icon: const Icon(Icons.close, size: 17),
@@ -289,9 +278,6 @@ class _SearchField extends StatelessWidget {
                   tooltip: 'Сбросить поиск',
                 )
               : null,
-          border: border(AppTheme.strokeGrey),
-          enabledBorder: border(AppTheme.strokeGrey),
-          focusedBorder: border(AppTheme.primaryOrange, width: 1.5),
         ),
       ),
     );
@@ -484,7 +470,7 @@ class _StateChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Text(
-        deleted ? 'учётка удалена' : 'заблокирован',
+        deleted ? 'учётная запись удалена' : 'заблокирован',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -611,7 +597,7 @@ class _Facts extends StatelessWidget {
                 (user.viewerRedacted
                     ? kRedactedForViewerLabel
                     : user.isDeleted
-                        ? 'стёрты при удалении учётки'
+                        ? 'стёрты при удалении учётной записи'
                         : 'не указаны'),
             muted: user.contact == null,
           ),
@@ -619,7 +605,7 @@ class _Facts extends StatelessWidget {
           _Fact(
             label: 'Состояние',
             value: user.isDeleted
-                ? 'Учётка удалена'
+                ? 'Учётная запись удалена'
                 : user.isActive
                     ? 'Активен'
                     : 'Заблокирован',
@@ -773,9 +759,11 @@ class _BlockEntry extends StatelessWidget {
 /// сервера.
 String protectionText(AdminUserProtection protection) => switch (protection) {
       AdminUserProtection.panelAccount =>
-        'Это учётка панели. Её включает и отключает оператор, не эта кнопка.',
+        'Это учётная запись панели. Её включает и отключает оператор, '
+            'не эта кнопка.',
       AdminUserProtection.serviceAccount =>
-        'Это служебная учётка платформы — ей принадлежат карточки каталога. '
+        'Это служебная учётная запись платформы — ей принадлежат карточки '
+            'каталога. '
             'Её не блокируют и не переименовывают.',
       AdminUserProtection.partnerWithEstablishments =>
         'У этого партнёра есть карточки заведений в каталоге или на '
@@ -819,7 +807,8 @@ class _Actions extends StatelessWidget {
         spacing: 10,
         children: <Widget>[
           const Text(
-            'Учётку удалил её владелец. Удалённую учётку не блокируют, не '
+            'Учётную запись удалил её владелец. Удалённую учётную запись не '
+            'блокируют, не '
             'включают и не переименовывают: почта, телефон и имя стёрты, '
             'войти в неё нельзя.',
             key: ValueKey<String>('user-deleted-note'),

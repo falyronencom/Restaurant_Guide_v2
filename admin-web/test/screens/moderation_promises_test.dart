@@ -491,7 +491,7 @@ void main() {
     expect(find.text('Сейчас отклонённых нет'), findsNWidgets(2));
     expect(find.text('Отказов не было'), findsNothing);
     expect(find.textContaining('ещё не отклонялась'), findsNothing);
-    expect(find.textContaining('Прошлые отказы — в журнале действий'),
+    expect(find.textContaining('Прошлые отклонения — в журнале действий'),
         findsOneWidget);
     // Ч22: справа не приглашение выбрать из пустого списка.
     expect(find.text('Выберите заведение для просмотра'), findsNothing);
