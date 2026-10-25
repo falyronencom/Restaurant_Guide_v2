@@ -35,6 +35,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 }));
 
 const emailService = await import('../../services/emailService.js');
+const { default: logger } = await import('../../utils/logger.js');
 
 describe('emailService.sendVerificationCodeEmail', () => {
   const originalEnv = { ...process.env };
@@ -273,5 +274,112 @@ describe('emailService.sendPasswordResetEmail', () => {
 
     expect(result.sent).toBe(false);
     expect(result.reason).toBe('RESEND_ERROR');
+  });
+});
+
+// Н33, Н35 (24.10): during the mail incident of 22–23.10 the reason a letter
+// did not go out and the account it was for sat in different log lines, and a
+// provider that kept silent held the resend request past the clients' own
+// limits. Both senders: one error line with the account and the reason, and a
+// bounded wait that ends the same way as a refusal.
+describe.each([
+  ['sendVerificationCodeEmail', (ctx) => emailService.sendVerificationCodeEmail('user@test.com', '123456', 'Иван', ctx)],
+  ['sendPasswordResetEmail', (ctx) => emailService.sendPasswordResetEmail('user@test.com', 'a1b2c3', 'Иван', ctx)],
+])('emailService.%s — a letter that did not go out', (_name, send) => {
+  const originalEnv = { ...process.env };
+  const USER = { userId: 'user-7' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    emailService._resetForTests();
+    mockResendCtor.mockImplementation(() => ({
+      emails: { send: mockSend },
+    }));
+    process.env.RESEND_API_KEY = 're_test_key';
+    delete process.env.EMAIL_SEND_TIMEOUT_MS;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  test.each([
+    ['the provider answers with an error', () => mockSend.mockResolvedValue({ data: null, error: { name: 'application_error' } })],
+    ['the send throws', () => mockSend.mockRejectedValue(new Error('Network failure'))],
+  ])('%s: one error line naming the account and the reason', async (_case, arrange) => {
+    arrange();
+
+    const result = await send(USER);
+
+    expect(result).toEqual({ sent: false, reason: 'RESEND_ERROR' });
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ userId: 'user-7', reason: 'RESEND_ERROR' }),
+    );
+  });
+
+  test('a provider that does not answer in time: sent:false, the request aborted, one error line', async () => {
+    process.env.EMAIL_SEND_TIMEOUT_MS = '20';
+    mockSend.mockReturnValue(new Promise(() => {}));
+
+    const result = await send(USER);
+
+    expect(result).toEqual({ sent: false, reason: 'RESEND_TIMEOUT' });
+    const [, options] = mockSend.mock.calls[0];
+    expect(options.signal.aborted).toBe(true);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ userId: 'user-7', reason: 'RESEND_TIMEOUT' }),
+    );
+  });
+
+  test.each([
+    ['unset', undefined],
+    ['zero', '0'],
+    ['negative', '-5'],
+    ['not a number', 'soon'],
+  ])('the wait is bounded at 8 s by default (EMAIL_SEND_TIMEOUT_MS %s)', async (_case, value) => {
+    if (value !== undefined) process.env.EMAIL_SEND_TIMEOUT_MS = value;
+    mockSend.mockResolvedValue({ data: { id: 'msg' }, error: null });
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+
+    try {
+      const result = await send(USER);
+      expect(result.sent).toBe(true);
+      expect(timeout).toHaveBeenCalledWith(8000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  test('no mail provider in production: an error line with the account', async () => {
+    process.env.RESEND_API_KEY = '';
+    process.env.NODE_ENV = 'production';
+
+    try {
+      const result = await send(USER);
+      expect(result).toEqual({ sent: false, reason: 'RESEND_NOT_CONFIGURED' });
+    } finally {
+      process.env.NODE_ENV = originalEnv.NODE_ENV;
+    }
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ userId: 'user-7', reason: 'RESEND_NOT_CONFIGURED' }),
+    );
+  });
+
+  test('no mail provider outside production (dev, tests): a warning, not an error', async () => {
+    process.env.RESEND_API_KEY = '';
+
+    await send(USER);
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ userId: 'user-7', reason: 'RESEND_NOT_CONFIGURED' }),
+    );
   });
 });

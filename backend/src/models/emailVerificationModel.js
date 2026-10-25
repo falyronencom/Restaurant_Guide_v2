@@ -97,8 +97,9 @@ export const countRecentSends = async (userId, minutes) => {
 };
 
 /**
- * Invalidate all active codes for a user (called before issuing a new one
- * on resend, to ensure only the latest code is valid).
+ * Invalidate all active codes for a user (called before writing the first
+ * code at registration, so only the latest code is valid; a resend retires
+ * them through replaceActiveCodes, once its email has gone out).
  *
  * @param {string} userId
  * @returns {Promise<number>} Rows affected
@@ -115,6 +116,43 @@ export const invalidateActiveCodesForUser = async (userId) => {
     return result.rowCount;
   } catch (error) {
     logger.error('Error invalidating active codes for user', {
+      error: error.message,
+      userId,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Replace a user's active codes with a new one — in one statement, so the
+ * earlier codes are retired only together with the new code being written:
+ * if the insert fails, the codes the user already holds keep working.
+ * Called on resend once the email with the new code has gone out.
+ *
+ * @param {string} userId
+ * @param {string} code - 6-digit numeric string
+ * @param {Date} expiresAt
+ * @returns {Promise<Object>} Created row
+ */
+export const replaceActiveCodes = async (userId, code, expiresAt) => {
+  // The UPDATE runs on the statement's snapshot, which does not contain the
+  // row being inserted: only the earlier codes are retired.
+  const query = `
+    WITH retired AS (
+      UPDATE email_verification_codes
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE user_id = $1 AND used_at IS NULL
+    )
+    INSERT INTO email_verification_codes (user_id, code, expires_at)
+    VALUES ($1, $2, $3)
+    RETURNING id, user_id, code, expires_at, created_at, used_at, attempts
+  `;
+
+  try {
+    const result = await pool.query(query, [userId, code, expiresAt]);
+    return result.rows[0];
+  } catch (error) {
+    logger.error('Error replacing email verification codes', {
       error: error.message,
       userId,
     });

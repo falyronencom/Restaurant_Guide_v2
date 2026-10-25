@@ -42,6 +42,7 @@ import {
   findActiveCodeForUser,
   countRecentSends,
   invalidateActiveCodesForUser,
+  replaceActiveCodes,
   incrementAttempts,
   markAsUsed,
 } from '../models/emailVerificationModel.js';
@@ -1480,15 +1481,20 @@ function generateSixDigitCode() {
 }
 
 /**
- * Write a fresh email verification code for a user — steps 1–5 of the flow
- * documented on sendEmailVerificationCode, shared by both senders. Resolves
- * once the code row exists.
+ * The checks before a verification code is issued and a fresh code — steps
+ * 1–3 of the flow documented on sendEmailVerificationCode, shared by both
+ * senders. Writes nothing.
+ *
+ * The hourly limit counts the codes written in the last hour: the one written
+ * at registration (it may have been delivered — the send is not awaited
+ * there) and every resend whose email went out. A resend whose email did not
+ * go out writes no code, so it does not count (Н32).
  *
  * @param {string} userId
  * @returns {Promise<{user: Object, code: string, expiresAt: Date}>}
  * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
  */
-async function writeEmailVerificationCode(userId) {
+async function prepareEmailVerificationCode(userId) {
   const userQuery = `
     SELECT id, email, name, email_verified
     FROM users
@@ -1510,47 +1516,71 @@ async function writeEmailVerificationCode(userId) {
     throw new Error('NO_EMAIL');
   }
 
-  // Rate limit: max 5 sends in last hour
+  // Rate limit: max 5 codes written in the last hour
   const recentCount = await countRecentSends(userId, 60);
   if (recentCount >= 5) {
     logger.warn('Email verification send rate-limited', { userId, recentCount });
     throw new Error('RATE_LIMITED');
   }
 
-  // Invalidate prior active codes — only the latest one is valid
-  await invalidateActiveCodesForUser(userId);
-
   const code = generateSixDigitCode();
   const expiryMinutes = parseInt(process.env.EMAIL_VERIFICATION_EXPIRY_MINUTES, 10) || 15;
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
-
-  await createVerificationCode(userId, code, expiresAt);
 
   return { user, code, expiresAt };
 }
 
 /**
- * Issue (or re-issue) an email verification code for a user and email it,
- * waiting for the provider — the resend endpoint reports whether the email
- * went out.
+ * Whether a resent code reached the user — the condition for it to replace
+ * the codes they already hold.
+ *
+ * Outside production, without a mail provider (dev, tests), the database is
+ * the only place a code can be read from: such a code counts as delivered,
+ * as it always has. In production a missing key is a failure like any other.
+ *
+ * @param {{sent: boolean, reason?: string}} result - From sendVerificationCodeEmail
+ * @returns {boolean}
+ */
+function codeReachedUser(result) {
+  return result.sent
+    || (result.reason === 'RESEND_NOT_CONFIGURED' && process.env.NODE_ENV !== 'production');
+}
+
+/**
+ * Re-issue an email verification code and email it, waiting for the
+ * provider — the resend endpoint reports whether the email went out.
  *
  * Flow:
  *   1. Validate user exists, is active, has email, not already verified.
- *   2. Enforce rate limit: max 5 sends per hour per user.
- *   3. Invalidate any prior active codes (only latest is valid).
- *   4. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
- *   5. Persist code in email_verification_codes.
- *   6. Send email via Resend (degrades gracefully if not configured).
+ *   2. Enforce rate limit: max 5 codes written per hour per user.
+ *   3. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
+ *   4. Send email via Resend (bounded wait; degrades gracefully if not configured).
+ *   5. Email went out: in one statement, retire the prior active codes and
+ *      persist the new one (only the latest is valid).
+ *      Email did not go out: write nothing — the codes the user already holds
+ *      stay valid. Until 24.10 the prior codes were retired before the send,
+ *      and a refused resend left the user with no working code at all (Н31).
  *
  * @param {string} userId
  * @returns {Promise<{sent: boolean, expiresAt: Date}>}
  * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
  */
 export async function sendEmailVerificationCode(userId) {
-  const { user, code, expiresAt } = await writeEmailVerificationCode(userId);
+  const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
 
-  // Send email — failure here does not roll back code creation, user can resend
-  const result = await sendVerificationCodeEmail(user.email, code, user.name);
+  const result = await sendVerificationCodeEmail(user.email, code, user.name, { userId });
+
+  if (!codeReachedUser(result)) {
+    // The failure itself is logged by emailService — one error line with the
+    // account and the reason.
+    logger.info('Email verification code not issued: the email did not go out, earlier codes stay valid', {
+      userId,
+      reason: result.reason,
+    });
+    return { sent: false, expiresAt };
+  }
+
+  await replaceActiveCodes(userId, code, expiresAt);
 
   logger.info('Email verification code issued', {
     userId,
@@ -1562,9 +1592,9 @@ export async function sendEmailVerificationCode(userId) {
 }
 
 /**
- * Issue the first verification code at registration: steps 1–5 of
- * sendEmailVerificationCode are awaited, the email (step 6) goes out in the
- * background.
+ * Issue the first verification code at registration: steps 1–3 of
+ * sendEmailVerificationCode and the code write are awaited, the email goes
+ * out in the background.
  *
  * Registration must not wait for the mail provider, and the code write must
  * not outlive the response either. Written after the response, it could land
@@ -1577,12 +1607,16 @@ export async function sendEmailVerificationCode(userId) {
  * @throws {Error} as sendEmailVerificationCode — always before anything is sent
  */
 export async function issueEmailVerificationCode(userId) {
-  const { user, code, expiresAt } = await writeEmailVerificationCode(userId);
+  const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
+
+  // Invalidate prior active codes — only the latest one is valid
+  await invalidateActiveCodesForUser(userId);
+  await createVerificationCode(userId, code, expiresAt);
 
   // Fire-and-forget: the network send only. sendVerificationCodeEmail handles
   // provider failures itself; this .catch keeps anything else from becoming an
   // unhandled rejection, which shuts the server down (server.js).
-  sendVerificationCodeEmail(user.email, code, user.name)
+  sendVerificationCodeEmail(user.email, code, user.name, { userId })
     .then((result) => {
       logger.info('Email verification code issued', {
         userId,
@@ -1733,7 +1767,8 @@ export async function createPasswordResetToken(email) {
 
   // Fire-and-forget (timing-channel defense, see flow note above). Send
   // failure does not roll back token creation — the user can re-request.
-  sendPasswordResetEmail(user.email, rawToken, user.name).catch((err) => {
+  // emailService logs a failed send with the account, in the background.
+  sendPasswordResetEmail(user.email, rawToken, user.name, { userId: user.id }).catch((err) => {
     logger.error('Failed to send password reset email', {
       userId: user.id,
       error: err.message,
