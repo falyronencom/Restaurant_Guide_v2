@@ -1313,6 +1313,39 @@ describe('Reviews System - Public Projection on Legacy Listing Endpoints', () =>
       }
     });
 
+    test('«Мои отзывы»: фото — обложка заведения, кухня — первая кухня строкой', async () => {
+      // D4, finding 1: the app read the photo and the cuisine under names
+      // this answer never had — «Мои отзывы» showed a grey circle and no
+      // cuisine. Through the real model; the app reads
+      // `establishment.primary_image_url` and `establishment.cuisine`
+      // (mobile/lib/models/review.dart, UserReview.fromJson).
+      const cover = 'https://res.cloudinary.com/demo/image/upload/c_limit,w_1200/v1/establishments/reviews-test/cover';
+      const { rows: [before] } = await query(
+        'SELECT cuisines, primary_image_url FROM establishments WHERE id = $1',
+        [establishmentId],
+      );
+      await query(
+        'UPDATE establishments SET cuisines = ARRAY[\'Народная\', \'Европейская\'], primary_image_url = $2 WHERE id = $1',
+        [establishmentId, cover],
+      );
+      try {
+        const response = await request(app)
+          .get(`/api/v1/users/${userId}/reviews`)
+          .expect(200);
+
+        expect(response.body.data.reviews.length).toBeGreaterThan(0);
+        for (const r of response.body.data.reviews) {
+          expect(r.establishment.primary_image_url).toBe(cover);
+          expect(r.establishment.cuisine).toBe('Народная');
+        }
+      } finally {
+        await query(
+          'UPDATE establishments SET cuisines = $2, primary_image_url = $3 WHERE id = $1',
+          [establishmentId, before.cuisines, before.primary_image_url],
+        );
+      }
+    });
+
     test('preserves public fields (rating, content, partner_response text)', async () => {
       const response = await request(app)
         .get(`/api/v1/users/${userId}/reviews`)

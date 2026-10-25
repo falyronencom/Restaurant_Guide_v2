@@ -422,6 +422,17 @@ export const getUserReviews = async (userId, options = {}) => {
         && review.establishment_categories.length > 0
         ? review.establishment_categories[0]
         : null,
+      // Under the type the app shows one line of cuisine — a string, the
+      // first cuisine of the place, as with the category. The app read it
+      // and the place's photo under names this answer never had, so «Мои
+      // отзывы» showed no cuisine and a grey circle instead of the photo
+      // (D4, finding 1, 25.10.2026).
+      cuisine: Array.isArray(review.establishment_cuisines)
+        && review.establishment_cuisines.length > 0
+        ? review.establishment_cuisines[0]
+        : null,
+      // The place's cover — the same link the catalog lists give.
+      primary_image_url: review.establishment_primary_image_url || null,
     },
   }));
 

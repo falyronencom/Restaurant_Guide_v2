@@ -194,6 +194,8 @@ void main() {
   });
 
   group('Отзывы пользователя в профиле', () {
+    // Форма ответа GET /api/v1/users/:id/reviews (reviewService.getUserReviews):
+    // о заведении — только вложенный `establishment`.
     Map<String, dynamic> userReviewRow() => <String, dynamic>{
           'id': '77777777-7777-4777-8777-777777777777',
           'establishment_id': '11111111-1111-4111-8111-111111111111',
@@ -202,6 +204,9 @@ void main() {
             'name': 'Васильки',
             'city': 'Минск',
             'category': 'Ресторан',
+            'cuisine': 'Народная',
+            'primary_image_url': 'https://res.cloudinary.com/demo/image/upload/'
+                'c_limit,w_1200/v1/establishments/e1/interior/p1',
           },
           'rating': 4,
           'content': 'Хорошо',
@@ -213,6 +218,30 @@ void main() {
       expect(r.establishmentName, 'Васильки');
       expect(r.establishmentType, 'Ресторан');
       expect(r.rating, 4);
+    });
+
+    test('фото и кухня заведения берутся из вложенного объекта', () {
+      // До 25.10.2026 их читали из плоских `establishment_image` и
+      // `establishment_cuisine`, которых сервер не шлёт: в «Моих отзывах»
+      // всегда был серый кружок и не было кухни (D4, находка 1).
+      final r = UserReview.fromJson(userReviewRow());
+      expect(
+        r.establishmentImage,
+        'https://res.cloudinary.com/demo/image/upload/'
+        'c_limit,w_1200/v1/establishments/e1/interior/p1',
+      );
+      expect(r.establishmentCuisine, 'Народная');
+    });
+
+    test('заведение без обложки и кухни — пусто, а не подставлено', () {
+      final row = userReviewRow();
+      final est = row['establishment'] as Map<String, dynamic>;
+      est['primary_image_url'] = null;
+      est['cuisine'] = null;
+
+      final r = UserReview.fromJson(row);
+      expect(r.establishmentImage, isNull);
+      expect(r.establishmentCuisine, isNull);
     });
 
     test('плоское establishment_name тоже читается', () {
