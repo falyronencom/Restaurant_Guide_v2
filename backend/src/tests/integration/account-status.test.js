@@ -56,6 +56,7 @@ describe('switched off in the database — the token issued before stops working
     const response = await touch(account).expect(401);
     expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
+    expect(response.body.message).toBe('Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: support@nirivio.by');
 
     // The client's next step: one refresh — refused with the same code.
     const refresh = await request(app)

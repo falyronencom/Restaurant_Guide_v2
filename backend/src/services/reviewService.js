@@ -15,6 +15,7 @@ import { publicAuthorId } from '../projections/reviewProjections.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
 import { incrementWithExpiry, decrement, getCounter } from '../config/redis.js';
 import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 
@@ -54,6 +55,14 @@ export const REVIEW_REFUSALS = Object.freeze({
   NOT_OWN_ESTABLISHMENT_RESPONSE: 'Отвечать можно только на отзывы о своих заведениях',
   NOT_OWN_ESTABLISHMENT_RESPONSE_DELETION: 'Удалить ответ можно только у отзыва о своём заведении',
   RESPONSE_NOT_FOUND: 'У этого отзыва нет ответа — возможно, его уже удалили',
+  // Повторный отзыв о том же заведении (409 DUPLICATE_REVIEW). Проверка
+  // (ReviewModel.findExistingReview) ищет ЛЮБОЙ прежний отзыв человека об
+  // этом заведении — и видимый, и скрытый модератором, и удалённый: новый
+  // нельзя написать ни в одном из этих случаев. Изменить можно только
+  // видимый — скрытого и удалённого в «Моих отзывах» нет.
+  DUPLICATE_REVIEW: 'Вы уже оставляли отзыв об этом заведении — от одного человека принимается один отзыв. '
+    + 'Свой отзыв можно изменить в разделе «Мои отзывы». '
+    + 'Если прежний отзыв скрыт модератором или удалён, новый написать нельзя.',
 });
 
 /**
@@ -97,7 +106,7 @@ export const createReview = async (reviewData) => {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
   if (!user.is_active) {
-    throw new AppError('User account is inactive', 403, 'USER_INACTIVE');
+    throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
   }
 
   // Step 2: The establishment exists and the catalogue shows it — status
@@ -148,11 +157,7 @@ export const createReview = async (reviewData) => {
   const existingReview = await ReviewModel.findExistingReview(user_id, establishment_id);
   if (existingReview) {
     await decrement(rateLimitKey);
-    throw new AppError(
-      'You have already reviewed this establishment. Please update your existing review instead.',
-      409,
-      'DUPLICATE_REVIEW',
-    );
+    throw new AppError(REVIEW_REFUSALS.DUPLICATE_REVIEW, 409, 'DUPLICATE_REVIEW');
   }
 
   // Step 5: Create review and update aggregates in ONE transaction: either
@@ -177,7 +182,7 @@ export const createReview = async (reviewData) => {
         [user_id],
       );
       if (account.rows[0]?.is_active !== true) {
-        throw new AppError('User account is inactive', 403, 'USER_INACTIVE');
+        throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
       }
       const created = await ReviewModel.createReview({
         user_id,
@@ -217,11 +222,7 @@ export const createReview = async (reviewData) => {
     // Handle specific database errors with better messages
     if (error.code === '23505') {
       // Unique constraint violation - duplicate review
-      throw new AppError(
-        'You have already reviewed this establishment',
-        409,
-        'DUPLICATE_REVIEW',
-      );
+      throw new AppError(REVIEW_REFUSALS.DUPLICATE_REVIEW, 409, 'DUPLICATE_REVIEW');
     }
     if (error.code === '23503') {
       // Foreign key violation

@@ -252,9 +252,11 @@ export const CITY_BOUNDS = {
 /**
  * Validate that coordinates are within the selected city bounds
  *
- * `message` names the box in numbers — it is read by the moderator fixing a
- * point (adminService). A partner is refused with
- * ESTABLISHMENT_REFUSALS.coordinatesOutsideCity instead.
+ * `message` называет точку и рамку числами и уходит в журнал сервера
+ * (cityMismatchRefusal), где его находит поддержка. Человеку его не
+ * показывают: партнёр получает ESTABLISHMENT_REFUSALS.coordinatesOutsideCity,
+ * модератор — свой текст отказа (adminService.updateEstablishmentCoordinates).
+ * По-русски — на случай, если он всё же дойдёт до экрана.
  *
  * @param {string} city - City name
  * @param {number} latitude - Latitude coordinate
@@ -275,9 +277,9 @@ export function validateCityCoordinates(city, latitude, longitude) {
   if (!isWithinCity) {
     return {
       valid: false,
-      message: `Coordinates (${latitude}, ${longitude}) are outside ${city} city bounds. ` +
-        `Expected: lat ${bounds.latMin}-${bounds.latMax}, lon ${bounds.lonMin}-${bounds.lonMax}. ` +
-        `Please verify the address and coordinates match the selected city.`,
+      message: `Точка (${latitude}, ${longitude}) вне рамки города ${city}: `
+        + `широта ${bounds.latMin}–${bounds.latMax}, долгота ${bounds.lonMin}–${bounds.lonMax}. `
+        + 'Проверьте, что адрес и точка на карте относятся к выбранному городу.',
     };
   }
 

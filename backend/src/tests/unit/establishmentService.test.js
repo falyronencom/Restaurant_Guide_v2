@@ -65,6 +65,7 @@ const {
   updateEstablishment,
   submitEstablishmentForModeration,
   deleteEstablishment,
+  validateCityCoordinates,
 } = await import('../../services/establishmentService.js');
 
 import { createMockEstablishment } from '../mocks/helpers.js';
@@ -940,5 +941,24 @@ describe('establishmentService', () => {
         code: 'ESTABLISHMENT_NOT_FOUND',
       });
     });
+  });
+});
+
+describe('validateCityCoordinates — текст по-русски', () => {
+  // Текст уходит в журнал отказа партнёру (cityMismatchRefusal) и читается
+  // поддержкой; прежде был английским («Coordinates (…) are outside … city bounds»).
+  test('точка вне рамки города: русский текст с точкой и рамкой, без латиницы', () => {
+    const result = validateCityCoordinates('Минск', 53.9, 23.8);
+
+    expect(result.valid).toBe(false);
+    expect(result.message).toBe(
+      'Точка (53.9, 23.8) вне рамки города Минск: широта 53.75–54.1, долгота 27.3–27.85. '
+      + 'Проверьте, что адрес и точка на карте относятся к выбранному городу.',
+    );
+    expect(result.message).not.toMatch(/[A-Za-z]/);
+  });
+
+  test('точка в рамке — без текста', () => {
+    expect(validateCityCoordinates('Минск', 53.9, 27.56)).toEqual({ valid: true });
   });
 });

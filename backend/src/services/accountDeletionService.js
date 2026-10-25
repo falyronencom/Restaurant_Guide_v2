@@ -75,6 +75,7 @@ import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
 import logger from '../utils/logger.js';
+import { SUPPORT_EMAIL } from '../constants/accountRefusals.js';
 
 /** The author of a deleted account's reviews — decision 1. */
 export const DELETED_USER_NAME = 'Гость';
@@ -82,8 +83,8 @@ export const DELETED_USER_NAME = 'Гость';
 /** The word that confirms the deletion — decision 4. */
 export const DELETION_CONFIRMATION_WORD = 'УДАЛИТЬ';
 
-/** Where the refusals send the person. */
-export const SUPPORT_EMAIL = 'support@nirivio.by';
+/** Where the refusals send the person — one address for the whole server (constants/accountRefusals.js). */
+export { SUPPORT_EMAIL };
 
 /** The journal action that marks a deleted account. */
 export const ACCOUNT_DELETED_ACTION = 'user_delete_account';
