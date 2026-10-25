@@ -30,7 +30,17 @@ class AdminSidebar extends StatelessWidget {
   /// нет (стенды тестов, где меню рисуется отдельно от каркаса).
   final VoidCallback? onToggle;
 
-  const AdminSidebar({super.key, this.collapsed = false, this.onToggle});
+  /// Менять ширину плавно. Каркас выключает это, пока не прочитал выбор
+  /// модератора: иначе сохранённое «развёрнуто» въезжало бы анимацией при
+  /// каждой загрузке панели.
+  final bool animate;
+
+  const AdminSidebar({
+    super.key,
+    this.collapsed = false,
+    this.onToggle,
+    this.animate = true,
+  });
 
   /// Ширина вместе с правой границей (в макете `box-sizing: border-box`).
   static const double width = 260;
@@ -50,7 +60,7 @@ class AdminSidebar extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
 
     return AnimatedContainer(
-      duration: animation,
+      duration: animate ? animation : Duration.zero,
       curve: Curves.easeOut,
       width: collapsed ? collapsedWidth : width,
       decoration: const BoxDecoration(

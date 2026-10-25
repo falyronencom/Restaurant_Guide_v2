@@ -77,38 +77,82 @@ void main() {
     });
 
     // Волна 3 (A3-11): действия шире шапки прежде отнимали всё место, и
-    // заголовок исчезал целиком. Теперь заголовку обещано своё, а действия
-    // прокручиваются в остатке.
-    testWidgets('широкие действия не съедают заголовок и не наезжают на него',
-        (tester) async {
-      await pump(
-        tester,
-        SizedBox(
-          width: 700,
-          child: AdminScreenHeader(
-            title: 'Панель управления',
-            subtitle: 'данные за 30 дней · не удалось обновить',
-            actions: <Widget>[
-              for (var i = 0; i < 6; i++)
-                SizedBox(width: 150, child: Text('Кнопка $i')),
-            ],
+    // заголовок исчезал целиком. Теперь первым уступает заголовок — до
+    // `titleMinWidth`, с подсказкой, — а действия остаются целыми: обрезанное
+    // действие (начало своего периода у главной) мышью было бы не достать
+    // (ревью фазы 3.5).
+    Future<void> pumpHeader(WidgetTester tester, int actionCount) => pump(
+          tester,
+          SizedBox(
+            width: 700,
+            child: AdminScreenHeader(
+              title: 'Панель управления',
+              subtitle: 'данные за 30 дней · не удалось обновить',
+              actions: <Widget>[
+                for (var i = 0; i < actionCount; i++)
+                  SizedBox(width: 150, child: Text('Кнопка $i')),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+
+    testWidgets('действия целиком, уступает заголовок — с подсказкой',
+        (tester) async {
+      // Шапка 700: поля по 24 — 652 на содержимое. Три действия по 150 с
+      // зазорами 10 — 470; заголовку остаётся 652 − 16 − 470 = 166 из его 306.
+      await pumpHeader(tester, 3);
+
+      expect(tester.takeException(), isNull, reason: 'без переполнения');
+      final viewport = tester.getRect(
+          find.byKey(const ValueKey<String>('screen-header-actions')));
+      for (var i = 0; i < 3; i++) {
+        final action = tester.getRect(find.text('Кнопка $i'));
+        expect(action.left, greaterThanOrEqualTo(viewport.left - 0.5),
+            reason: '«Кнопка $i» не обрезана слева');
+        expect(action.right, lessThanOrEqualTo(viewport.right + 0.5),
+            reason: '«Кнопка $i» не обрезана справа');
+      }
+      final title = tester.renderObject<RenderParagraph>(
+          find.text('Панель управления'));
+      expect(title.didExceedMaxLines, isTrue, reason: 'предпосылка: тесно');
+      expect(title.size.width, closeTo(166, 1));
+      expect(find.byTooltip('Панель управления'), findsOneWidget,
+          reason: 'обрезанный заголовок — полным текстом в подсказке');
+      final titleRect = tester.getRect(find.text('Панель управления'));
+      expect(viewport.left, greaterThanOrEqualTo(titleRect.right),
+          reason: 'действия правее заголовка');
+    });
+
+    testWidgets('крайний случай: заголовок не уже titleMinWidth, действия '
+        'прокручиваются в остатке', (tester) async {
+      await pumpHeader(tester, 6);
 
       expect(tester.takeException(), isNull, reason: 'без переполнения');
       final title = tester.renderObject<RenderParagraph>(
           find.text('Панель управления'));
-      expect(title.size.width, greaterThan(150),
+      expect(title.size.width,
+          greaterThanOrEqualTo(AdminScreenHeader.titleMinWidth - 1),
           reason: 'заголовок виден, а не сжат в ноль');
-      expect(title.didExceedMaxLines, isFalse,
-          reason: 'короткому заголовку места хватает целиком');
       final titleRect = tester.getRect(find.text('Панель управления'));
-      final actions = tester.getRect(
+      final viewport = tester.getRect(
           find.byKey(const ValueKey<String>('screen-header-actions')));
-      expect(actions.left, greaterThanOrEqualTo(titleRect.right),
+      expect(viewport.left, greaterThanOrEqualTo(titleRect.right),
           reason: 'действия правее заголовка');
-      expect(actions.right, lessThanOrEqualTo(700));
+      expect(viewport.right, lessThanOrEqualTo(700));
+    });
+
+    testWidgets('всё влезло — раскладка как прежде, без подсказок',
+        (tester) async {
+      await pumpHeader(tester, 1);
+
+      final title = tester.renderObject<RenderParagraph>(
+          find.text('Панель управления'));
+      expect(title.didExceedMaxLines, isFalse);
+      expect(find.byTooltip('Панель управления'), findsNothing);
+      final viewport = tester.getRect(
+          find.byKey(const ValueKey<String>('screen-header-actions')));
+      expect(viewport.right, closeTo(700 - 24, 0.5),
+          reason: 'действия прижаты к правому полю');
     });
 
     testWidgets('обрезанная подпись — с подсказкой, целая — без',

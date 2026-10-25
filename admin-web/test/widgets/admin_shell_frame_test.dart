@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/models/admin_badges.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/services/panel_version.dart';
@@ -22,8 +23,14 @@ import '../helpers/stub_auth.dart';
 
 /// Счётчики без сети; считает, сколько раз каркас просил свежие.
 class _CountingBadges extends BadgesProvider {
+  final AdminBadges? stub;
   int navigationRefreshes = 0;
   int loads = 0;
+
+  _CountingBadges({this.stub});
+
+  @override
+  AdminBadges? get badges => stub;
 
   @override
   Future<void> load() async => loads++;
@@ -56,13 +63,15 @@ Future<_Stand> _pumpShell(
   WidgetTester tester, {
   required double width,
   PanelVersionWatcher? watcher,
+  AdminBadges? badges,
+  Duration settle = const Duration(milliseconds: 300),
 }) async {
   tester.view.physicalSize = Size(width, 820);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final badges = _CountingBadges();
-  addTearDown(badges.dispose);
+  final counters = _CountingBadges(stub: badges);
+  addTearDown(counters.dispose);
   final router = GoRouter(
     initialLocation: '/',
     routes: <RouteBase>[
@@ -86,7 +95,7 @@ Future<_Stand> _pumpShell(
       ChangeNotifierProvider<AuthProvider>(
         create: (_) => StubAuthProvider.admin(),
       ),
-      ChangeNotifierProvider<BadgesProvider>.value(value: badges),
+      ChangeNotifierProvider<BadgesProvider>.value(value: counters),
     ],
     child: MaterialApp.router(
       theme: AppTheme.lightTheme,
@@ -94,8 +103,8 @@ Future<_Stand> _pumpShell(
     ),
   ));
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-  return _Stand(router, badges);
+  await tester.pump(settle);
+  return _Stand(router, counters);
 }
 
 double _railWidth(WidgetTester tester) =>
@@ -183,11 +192,34 @@ void main() {
       expect(prefs.getBool(RailPreference.storageKey), isNull);
     });
 
+    testWidgets('сохранённый выбор встаёт сразу, без анимации при загрузке',
+        (tester) async {
+      // Ревью фазы 3.5: выбор приходит из браузера после первого кадра, и
+      // «развёрнуто» на узком окне въезжало анимацией при каждой загрузке.
+      SharedPreferences.setMockInitialValues(
+          <String, Object>{RailPreference.storageKey: false});
+      await _pumpShell(tester, width: 1024, settle: Duration.zero);
+      await tester.pump(); // выбор прочитан — кадр без хода времени
+
+      expect(_railWidth(tester), AdminSidebar.width,
+          reason: 'ширина выбора — сразу, а не с середины анимации');
+    });
+
     testWidgets('свёрнутое меню показывает очередь бейджем', (tester) async {
-      final stand = await _pumpShell(tester, width: 1024);
+      final stand = await _pumpShell(
+        tester,
+        width: 1024,
+        badges: const AdminBadges(establishmentsPending: 3, menuFlags: 0),
+      );
       expect(stand.badges.loads, greaterThan(0), reason: 'вход грузит счётчики');
-      // Счётчиков стенд не отдаёт — бейджей нет, и ничего не падает.
-      expect(find.byType(Badge), findsWidgets);
+
+      expect(find.text('3'), findsOneWidget,
+          reason: 'очередь заявок — числом на значке');
+      expect(find.text('0'), findsNothing,
+          reason: 'разобранная очередь бейджа не рисует');
+      expect(find.byTooltip('Ожидают просмотра · 3'), findsOneWidget,
+          reason: 'и в подсказке пункта');
+      expect(find.byTooltip('Позиции меню'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

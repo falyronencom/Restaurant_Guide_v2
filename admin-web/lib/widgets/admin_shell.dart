@@ -39,6 +39,12 @@ class _AdminShellState extends State<AdminShell> {
   /// Выбор модератора про меню слева; null — меню следует ширине окна.
   bool? _railStored;
 
+  /// Выбор прочитан из браузера — с этого момента меню меняет ширину плавно.
+  bool _railLoaded = false;
+
+  /// Модератор щёлкнул кнопку меню, пока выбор ещё читался: щелчок свежее.
+  bool _railToggled = false;
+
   /// Навигатор панели — его уведомление о переходе и есть «модератор открыл
   /// другой экран». Каркас переживает навигацию, поэтому слушать приходится
   /// роутер, а не собственную перестройку.
@@ -65,7 +71,12 @@ class _AdminShellState extends State<AdminShell> {
       _version.start();
     });
     RailPreference.load().then((stored) {
-      if (mounted && stored != null) setState(() => _railStored = stored);
+      if (!mounted) return;
+      if (!_railToggled) setState(() => _railStored = stored);
+      // Плавность — со следующего кадра: этот ставит выбор без анимации.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _railLoaded = true);
+      });
     });
   }
 
@@ -88,7 +99,10 @@ class _AdminShellState extends State<AdminShell> {
   void _toggleRail(double windowWidth) {
     final next =
         RailPreference.afterToggle(windowWidth: windowWidth, stored: _railStored);
-    setState(() => _railStored = next);
+    setState(() {
+      _railStored = next;
+      _railToggled = true;
+    });
     RailPreference.save(next);
   }
 
@@ -117,6 +131,7 @@ class _AdminShellState extends State<AdminShell> {
         children: [
           AdminSidebar(
             collapsed: collapsed,
+            animate: _railLoaded,
             onToggle: () => _toggleRail(windowWidth),
           ),
           Expanded(

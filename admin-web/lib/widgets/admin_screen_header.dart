@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 
@@ -40,7 +43,7 @@ class AdminScreenHeader extends StatelessWidget {
 
     return Stack(
       children: [
-        _bar(subtitleText),
+        _bar(context, subtitleText),
         if (busy)
           const Positioned(
             left: 0,
@@ -59,83 +62,87 @@ class AdminScreenHeader extends StatelessWidget {
     );
   }
 
-  /// Сколько места заголовку обещано при любых действиях справа: столько,
-  /// сколько ему нужно, но не больше этого. Раньше действия брали своё
+  /// Меньше этого заголовок не сжимается, сколько бы ни было действий
+  /// справа (короткий — не сжимается вовсе). Раньше действия брали своё
   /// целиком, и на узком окне заголовок сжимался до нуля — исчезал вовсе
   /// (проход по панели модератора, 20.10, A3-11).
   ///
-  /// 320 — заголовки панели шириной от 118 («Отзывы») до 383 («Статистика
-  /// и аналитика») px: все, кроме последнего, целы при любых действиях.
-  static const double titleReserve = 320;
+  /// Уступает место первым заголовок, а не действия: обрезанный заголовок
+  /// показывает себя подсказкой, а обрезанное действие — например, начало
+  /// своего периода у «Панели управления» — мышью было бы не достать
+  /// (ревью фазы 3.5, волна 3). 160 — около девяти букв заголовка.
+  static const double titleMinWidth = 160;
 
   static const double _padding = 24;
   static const double _gap = 16;
 
-  Widget _bar(String? subtitleText) {
+  Widget _bar(BuildContext context, String? subtitleText) {
+    final titleWidth = _textWidth(context, title, AppTheme.canonScreenTitle);
     return Container(
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: _padding),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.borderLight)),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final titleWidth = _textWidth(context, title, AppTheme.canonScreenTitle);
-          final reserve =
-              titleWidth < titleReserve ? titleWidth : titleReserve;
-          final actionsMax = constraints.maxWidth - _gap - reserve;
-          return Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _EllipsisWithHint(
-                      text: title,
-                      style: AppTheme.canonScreenTitle,
-                    ),
-                    if (subtitleText != null || subtitleLeading != null) ...[
-                      const SizedBox(height: 3),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 8,
-                        children: [
-                          if (subtitleLeading != null) subtitleLeading!,
-                          if (subtitleText != null)
-                            Flexible(
-                              child: _EllipsisWithHint(
-                                text: subtitleText,
-                                style: AppTheme.canonScreenSubtitle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
+      child: CustomMultiChildLayout(
+        delegate: _HeaderLayout(
+          titleKeep: math.min(titleWidth, titleMinWidth),
+          gap: _gap,
+        ),
+        children: <Widget>[
+          LayoutId(
+            id: _HeaderSlot.title,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _EllipsisWithHint(
+                  text: title,
+                  style: AppTheme.canonScreenTitle,
                 ),
-              ),
-              if (actions.isNotEmpty && actionsMax > 0) ...[
-                const SizedBox(width: _gap),
-                // Не помещаются — прокручиваются вбок под своим местом, а не
-                // наезжают на заголовок и не обрезаются краем окна.
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: actionsMax),
-                  child: SingleChildScrollView(
-                    key: const ValueKey<String>('screen-header-actions'),
-                    scrollDirection: Axis.horizontal,
-                    reverse: true,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 10,
-                      children: actions,
-                    ),
+                if (subtitleText != null || subtitleLeading != null) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 8,
+                    children: [
+                      if (subtitleLeading != null) subtitleLeading!,
+                      if (subtitleText != null)
+                        Flexible(
+                          child: _EllipsisWithHint(
+                            text: subtitleText,
+                            style: AppTheme.canonScreenSubtitle,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (actions.isNotEmpty)
+            LayoutId(
+              id: _HeaderSlot.actions,
+              // Обычно действия целиком. Прокрутка вбок — только когда и
+              // заголовок уже сжат до [titleMinWidth]; тогда её можно и
+              // протянуть мышью: колесо без Shift вбок не крутит.
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  dragDevices: PointerDeviceKind.values.toSet(),
+                ),
+                child: SingleChildScrollView(
+                  key: const ValueKey<String>('screen-header-actions'),
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 10,
+                    children: actions,
                   ),
                 ),
-              ],
-            ],
-          );
-        },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -154,6 +161,50 @@ class AdminScreenHeader extends StatelessWidget {
     painter.dispose();
     return width.ceilToDouble();
   }
+}
+
+enum _HeaderSlot { title, actions }
+
+/// Раскладка шапки: сначала действия — целиком, если рядом остаётся
+/// [titleKeep] заголовку, иначе в остатке (с прокруткой); заголовку — всё,
+/// что слева от них.
+class _HeaderLayout extends MultiChildLayoutDelegate {
+  final double titleKeep;
+  final double gap;
+
+  _HeaderLayout({required this.titleKeep, required this.gap});
+
+  @override
+  void performLayout(Size size) {
+    var actionsWidth = 0.0;
+    if (hasChild(_HeaderSlot.actions)) {
+      final room = math.max(0.0, size.width - gap - titleKeep);
+      final actions = layoutChild(
+        _HeaderSlot.actions,
+        BoxConstraints(maxWidth: room, maxHeight: size.height),
+      );
+      actionsWidth = actions.width;
+      positionChild(
+        _HeaderSlot.actions,
+        Offset(size.width - actions.width, (size.height - actions.height) / 2),
+      );
+    }
+    final titleRoom =
+        math.max(0.0, size.width - (actionsWidth > 0 ? actionsWidth + gap : 0));
+    layoutChild(
+      _HeaderSlot.title,
+      BoxConstraints(
+        maxWidth: titleRoom,
+        minHeight: size.height,
+        maxHeight: size.height,
+      ),
+    );
+    positionChild(_HeaderSlot.title, Offset.zero);
+  }
+
+  @override
+  bool shouldRelayout(_HeaderLayout oldDelegate) =>
+      oldDelegate.titleKeep != titleKeep || oldDelegate.gap != gap;
 }
 
 /// Строка с многоточием, которая при обрезке показывает полный текст

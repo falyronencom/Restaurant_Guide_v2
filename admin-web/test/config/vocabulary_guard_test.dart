@@ -108,8 +108,30 @@ void main() {
       for (final field in kModerationTabFields.expand((tab) => tab)) {
         expect(kEstablishmentFieldNames, contains(field),
             reason: 'поле проверки «$field» без имени');
-        expect(kModerationFieldLabels[field], fieldLabel(field),
-            reason: 'диалоги и заметки называют «$field» иначе, чем строка');
+      }
+      // Диалоги и заметки берут имена из kModerationFieldLabels — карта
+      // строится из того же словаря, сверять её с ним незачем. Сверяется
+      // то, что могло бы разъехаться: строка поля в панели разбора.
+      expect(kModerationFieldLabels.keys,
+          kModerationTabFields.expand((tab) => tab));
+    });
+
+    test('строка каждого поля в панели разбора — имя из словаря по её ключу',
+        () {
+      // Строка поля — вызов ModerationFieldReview(fieldName: 'ключ',
+      // label: …). Имя, набранное строкой, разъехалось бы со словарём молча
+      // (ревью фазы 3.5: «Фото» и «Меню» стояли строками).
+      final source = File('lib/widgets/moderation/moderation_detail_panel.dart')
+          .readAsStringSync();
+      final rows = RegExp(
+        r"ModerationFieldReview\(\s*fieldName:\s*'(\w+)',\s*label:\s*([^,\n]+),",
+      ).allMatches(source).toList();
+      final keys = rows.map((m) => m.group(1)!).toList();
+      // Якорь: каждое поле проверки найдено строкой, ни одно не пропущено.
+      expect(keys.toSet(), kModerationTabFields.expand((tab) => tab).toSet());
+      for (final row in rows) {
+        expect(row.group(2), "fieldLabel('${row.group(1)}')",
+            reason: 'строка поля «${row.group(1)}» называет его не по словарю');
       }
     });
 

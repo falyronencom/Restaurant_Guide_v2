@@ -13,7 +13,9 @@ import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
@@ -366,6 +368,44 @@ void main() {
         find.text('3 заведения без страницы на сайте · 12 флагов без реакции'),
         findsOneWidget,
       );
+    });
+
+    // Ревью фазы 3.5, волна 3: окно 1024 с меню, развёрнутым вручную, — экрану
+    // 764. Свой период в шапке — диапазон дат и четыре кнопки; прежняя
+    // раскладка шапки обрезала бы начало диапазона в прокрутке, которую
+    // мышью не прокрутить, а главная этих дат нигде больше не показывает.
+    testWidgets('свой период на экране 764: даты целиком, уступает заголовок',
+        (tester) async {
+      final fake = await pumpDashboard(tester, width: 764);
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      final provider = Provider.of<DashboardProvider>(
+        tester.element(find.byType(DashboardScreen)),
+        listen: false,
+      );
+      unawaited(provider.loadDashboard(PeriodSelection(
+        period: 'custom',
+        from: DateTime(2026, 9, 1),
+        to: DateTime(2026, 10, 20),
+      )));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final dates = find.text('01.09.2026 — 20.10.2026');
+      expect(dates, findsOneWidget, reason: 'предпосылка: свой период в шапке');
+      final viewport = tester.getRect(
+          find.byKey(const ValueKey<String>('screen-header-actions')));
+      final datesRect = tester.getRect(dates);
+      expect(datesRect.left, greaterThanOrEqualTo(viewport.left - 0.5),
+          reason: 'начало диапазона дат не обрезано');
+      expect(datesRect.right, lessThanOrEqualTo(viewport.right + 0.5));
+      final title = tester.renderObject<RenderParagraph>(
+          find.text('Панель управления'));
+      expect(title.size.width,
+          greaterThanOrEqualTo(AdminScreenHeader.titleMinWidth - 1),
+          reason: 'заголовок уступил, но не исчез');
     });
 
     testWidgets('слово при числе склоняется: 1 заявка, 1 сигнал', (tester) async {

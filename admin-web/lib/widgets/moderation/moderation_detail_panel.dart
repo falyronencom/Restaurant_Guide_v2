@@ -1569,7 +1569,7 @@ class _MediaTab extends StatelessWidget {
       children: [
         ModerationFieldReview(
           fieldName: 'photos',
-          label: 'Фото',
+          label: fieldLabel('photos'),
           isRequired: true,
           child: detail.interiorPhotos.isNotEmpty
               ? _PhotoGrid(photos: detail.interiorPhotos, title: 'Фото')
@@ -1580,7 +1580,7 @@ class _MediaTab extends StatelessWidget {
         ),
         ModerationFieldReview(
           fieldName: 'menu',
-          label: 'Меню',
+          label: fieldLabel('menu'),
           isRequired: true,
           child: detail.menuMedia.isNotEmpty
               ? _PhotoGrid(photos: detail.menuMedia, title: 'Меню')
