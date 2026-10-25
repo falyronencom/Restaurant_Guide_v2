@@ -15,6 +15,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { likeContains } from '../utils/likePattern.js';
 import { normalizeMenuItemName } from '../utils/menuItemName.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 import {
@@ -461,20 +462,12 @@ const flaggedFilters = ({ reason, visibility, city, search }) => {
     filters.push({
       kind: 'search',
       sql: (i) => `(mi.item_name ILIKE $${i} ESCAPE '\\' OR e.name ILIKE $${i} ESCAPE '\\')`,
-      value: `%${escapeLike(search)}%`,
+      value: likeContains(search),
     });
   }
 
   return filters;
 };
-
-/**
- * Neutralise LIKE wildcards inside user input.
- *
- * Without this a search for «100%» matches «1000 грамм», and a lone «%» returns the
- * whole queue while the field on screen claims to be filtering it.
- */
-const escapeLike = (value) => value.replace(/[\\%_]/g, (char) => `\\${char}`);
 
 /**
  * One spelling per city for the filter dropdown.
