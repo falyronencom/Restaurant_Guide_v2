@@ -286,7 +286,8 @@ export const findReviewsByUser = async (userId, options = {}) => {
       e.city as establishment_city,
       e.categories as establishment_categories,
       e.cuisines as establishment_cuisines,
-      e.primary_image_url as establishment_primary_image_url
+      CASE WHEN e.status = 'active' THEN e.primary_image_url END
+        as establishment_primary_image_url
     FROM reviews r
     JOIN establishments e ON r.establishment_id = e.id
     WHERE r.user_id = $1

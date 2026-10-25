@@ -687,7 +687,7 @@ describe('reviewService', () => {
       // so the null is pinned explicitly.
       ReviewModel.getUserById.mockResolvedValue(createMockUser({ id: userId }));
       ReviewModel.findReviewsByUser.mockResolvedValue([
-        { ...reviews[0], establishment_cuisines: [], establishment_primary_image_url: null },
+        { ...reviews[0], establishment_cuisines: [], establishment_primary_image_url: '' },
       ]);
       ReviewModel.countReviewsByUser.mockResolvedValue(1);
 

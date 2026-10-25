@@ -431,7 +431,10 @@ export const getUserReviews = async (userId, options = {}) => {
         && review.establishment_cuisines.length > 0
         ? review.establishment_cuisines[0]
         : null,
-      // The place's cover — the same link the catalog lists give.
+      // The place's cover — the same link the catalog lists give, and only
+      // while the catalog shows the place: the model drops it for a card that
+      // is not active (suspended, archived, on moderation). This list is
+      // public, and a suspended card's partner can still change its photos.
       primary_image_url: review.establishment_primary_image_url || null,
     },
   }));
