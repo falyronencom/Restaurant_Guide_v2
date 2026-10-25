@@ -1250,18 +1250,20 @@ export async function authenticateWithOAuth(providerData) {
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
       }
 
-      if (!existingUser.is_active) {
-        throw new Error('ACCOUNT_DEACTIVATED');
-      }
-
       // 2a. Email exists + provider email verified → link account
       if (!emailVerified) {
-        // 2b. Unverified email cannot claim existing account
+        // 2b. Unverified email cannot claim existing account. Refused before
+        // the switched-off answer below: an address the provider has not
+        // confirmed gets the same answer whatever the record behind it is.
         logger.warn('OAuth login: unverified email tried to claim existing account', {
           email,
           provider,
         });
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
+      }
+
+      if (!existingUser.is_active) {
+        throw new Error('ACCOUNT_DEACTIVATED');
       }
 
       // A panel account (admin, viewer) or a service account (the seed house)

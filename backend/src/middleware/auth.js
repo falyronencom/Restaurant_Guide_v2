@@ -110,8 +110,10 @@ export const authenticate = async (req, res, next) => {
       error: error.message,
       userId: decoded.userId,
     });
+    // Russian: errorHandler lets a 5xx out as written only when it is a
+    // sentence for a person, otherwise it sends the general failure text.
     return next(new AppError(
-      'Account check is temporarily unavailable. Please retry.',
+      'Не удалось проверить учётную запись. Повторите попытку через несколько секунд.',
       503,
       'AUTH_CHECK_UNAVAILABLE',
     ));

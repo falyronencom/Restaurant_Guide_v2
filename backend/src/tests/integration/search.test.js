@@ -998,3 +998,89 @@ describe('Search System - сортировка по цене: карточки �
     ]));
   });
 });
+
+describe('Search System - «%» и «_» в запросе ищутся буквально', () => {
+  // Проход по панели модератора, после волны 3 (находка 1): шаблон строился
+  // из ввода как есть, и «100%» находил «Бар 1000», а «_» — любую карточку.
+  // Тот же текстовый поиск идёт в приложении (/search/establishments, с
+  // координатами и без) и на сайте (каталог через searchWithoutLocation).
+  const seedCard = async (name, latitude = 53.9, longitude = 27.5) => {
+    const result = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'описание', 'Минск', 'Центр', $3, $4, ARRAY['Ресторан'], ARRAY['Европейская'], 'active', $5::jsonb, '$$', NOW(), NOW())
+      RETURNING id
+    `, [partnerId, name, latitude, longitude, defaultWorkingHours]);
+    return result.rows[0].id;
+  };
+  const names = (response) => response.body.data.establishments.map((e) => e.name).sort();
+
+  beforeEach(async () => {
+    await seedCard('Бар 100%');
+    await seedCard('Бар 1000');
+    await seedCard('Кафе_Дом');
+  });
+
+  test('«100%» находит только карточку со знаком процента — и счётчик тот же', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ search: '100%' })
+      .expect(200);
+
+    expect(names(response)).toEqual(['Бар 100%']);
+    expect(response.body.data.pagination.total).toBe(1);
+  });
+
+  test('«_» находит только карточку с подчёркиванием, а не все', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ search: '_' })
+      .expect(200);
+
+    expect(names(response)).toEqual(['Кафе_Дом']);
+  });
+
+  test('с координатами — то же правило', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ search: '100%', latitude: 53.9, longitude: 27.5 })
+      .expect(200);
+
+    expect(names(response)).toEqual(['Бар 100%']);
+  });
+
+  test('обычный запрос — как раньше: подстрока без учёта регистра', async () => {
+    const response = await request(app)
+      .get('/api/v1/search/establishments')
+      .query({ search: 'бар' })
+      .expect(200);
+
+    expect(names(response)).toEqual(['Бар 100%', 'Бар 1000']);
+  });
+
+  test('блюдо (строгое сопоставление с меню): «100%» — только позиция со знаком процента', async () => {
+    const withMenu = async (cardName, itemName) => {
+      const [card] = (await query('SELECT id FROM establishments WHERE name = $1', [cardName])).rows;
+      const media = await query(
+        `INSERT INTO establishment_media (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+         VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png') RETURNING id`,
+        [card.id],
+      );
+      await query(
+        `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, position)
+         VALUES ($1, $2, $3, 5.00, 0)`,
+        [card.id, media.rows[0].id, itemName],
+      );
+    };
+    await withMenu('Бар 100%', 'Сок 100%');
+    await withMenu('Бар 1000', 'Сок 1000 мл');
+
+    const { searchWithoutLocation } = await import('../../services/searchService.js');
+    const literal = await searchWithoutLocation({ dish: '100%' });
+    expect(literal.establishments.map((e) => e.name)).toEqual(['Бар 100%']);
+    // Позиции с подчёркиванием нет ни в одном меню — «_» не находит ничего.
+    const underscore = await searchWithoutLocation({ dish: '_' });
+    expect(underscore.establishments).toEqual([]);
+    const plain = await searchWithoutLocation({ dish: 'сок' });
+    expect(plain.establishments.map((e) => e.name).sort()).toEqual(['Бар 100%', 'Бар 1000']);
+  });
+});

@@ -21,6 +21,7 @@
  *     getRejectedEstablishments reads from audit_log via AuditLogModel.getRejectionHistory.
  */
 
+import { randomUUID } from 'crypto';
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
@@ -28,6 +29,7 @@ import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
 } from '../utils/adminTestHelpers.js';
+import { createUserAndGetTokens } from '../utils/auth.js';
 
 let adminToken;
 
@@ -492,5 +494,66 @@ describe('GET /api/v1/admin/establishments/search — category, cuisine, address
     expect((await search('%')).body.data.map(e => e.id)).toEqual([literal]);
     expect((await search('_')).body.data).toHaveLength(0);
     expect((await search('_')).body.meta.total).toBe(0);
+  });
+});
+
+// ============================================================================
+// «%» and «_» typed in the panel's searches are characters, not wildcards
+// (walkthrough of the moderator panel, after wave 3, finding 1)
+// ============================================================================
+
+describe('GET /api/v1/admin/establishments/active — % and _ are searched literally', () => {
+  const search = (q) => request(app)
+    .get(`/api/v1/admin/establishments/active?search=${encodeURIComponent(q)}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .expect(200);
+  const seed = async (name) => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await query('UPDATE establishments SET name = $1 WHERE id = $2', [name, establishment.id]);
+    return establishment.id;
+  };
+
+  test('the list and its counter find only the literal match', async () => {
+    const percent = await seed('Бар 100%');
+    const thousand = await seed('Бар 1000');
+    const underscore = await seed('Кафе_Дом');
+
+    const byPercent = await search('100%');
+    expect(byPercent.body.data.map(e => e.id)).toEqual([percent]);
+    expect(byPercent.body.meta.total).toBe(1);
+
+    const byUnderscore = await search('_');
+    expect(byUnderscore.body.data.map(e => e.id)).toEqual([underscore]);
+    expect(byUnderscore.body.meta.total).toBe(1);
+
+    // An ordinary search is as before: a substring, any case.
+    const plain = await search('бар');
+    expect(plain.body.data.map(e => e.id).sort()).toEqual([percent, thousand].sort());
+    expect(plain.body.meta.total).toBe(2);
+  });
+});
+
+describe('GET /api/v1/admin/users/search («Назначить партнёра») — % and _ are searched literally', () => {
+  const tag = randomUUID().slice(0, 8);
+  const person = (name, email) => createUserAndGetTokens({
+    email, phone: null, password: 'User123!@#', name, role: 'user', authMethod: 'email',
+  }).then(created => created.user.id);
+  const search = (q) => request(app)
+    .get(`/api/v1/admin/users/search?q=${encodeURIComponent(q)}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .expect(200);
+
+  test('a name with «%» and an e-mail with «_» find only themselves; ordinary text as before', async () => {
+    const percent = await person(`Скидка 100% ${tag}`, `percent-${tag}@test.com`);
+    const thousand = await person(`Скидка 1000 ${tag}`, `thousand-${tag}@test.com`);
+    const underscore = await person(`Подчёркивание ${tag}`, `under_score-${tag}@test.com`);
+    const lookalike = await person(`Похожий ${tag}`, `underXscore-${tag}@test.com`);
+    const ours = new Set([percent, thousand, underscore, lookalike]);
+    const found = async (q) => (await search(q)).body.data.map(u => u.id).filter(id => ours.has(id)).sort();
+
+    expect(await found('100%')).toEqual([percent]);
+    expect(await found('r_s')).toEqual([underscore]);
+    expect(await found(`Скидка`)).toEqual([percent, thousand].sort());
+    expect(await found(`score-${tag}`)).toEqual([underscore, lookalike].sort());
   });
 });
