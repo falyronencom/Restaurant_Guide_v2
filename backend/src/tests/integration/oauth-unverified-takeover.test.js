@@ -346,4 +346,18 @@ describe('провайдер не подтвердил e-mail: отказ, за�
     expect(inDb.email_verified).toBe(false);
     expect(inDb.auth_method).toBe('email');
   });
+
+  // Ответ на неподтверждённый провайдером адрес не зависит от того, какая
+  // запись за ним: включённая или отключённая — один и тот же отказ
+  // (проход по панели модератора, после волны 3, находка 5).
+  test('Google без email_verified: отключённая запись получает тот же отказ, что и включённая', async () => {
+    const { user } = await registeredWithoutProof({ emailVerified: true });
+
+    const active = await signInWith('google', { emailVerified: false }).expect(403);
+    await query('UPDATE users SET is_active = FALSE WHERE id = $1', [user.id]);
+    const switchedOff = await signInWith('google', { emailVerified: false }).expect(403);
+
+    expect(active.body.error.code).toBe('OAUTH_EMAIL_NOT_VERIFIED');
+    expect(switchedOff.body.error).toEqual(active.body.error);
+  });
 });

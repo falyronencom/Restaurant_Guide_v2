@@ -329,6 +329,12 @@ describe('POST /api/v1/auth/refresh', () => {
       .expect(403);
 
     expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+    // По-русски (прежде «Security alert: Token reuse detected…»); код и статус
+    // прежние. Литералом, и сторож: ни одной латинской буквы.
+    expect(response.body.error.message).toBe(
+      'В целях безопасности все сеансы этой учётной записи завершены. Войдите снова.',
+    );
+    expect(response.body.error.message).not.toMatch(/[A-Za-z]/);
 
     const { rows } = await query('SELECT used_at FROM refresh_tokens WHERE user_id = $1', [user.id]);
     expect(rows).toHaveLength(2);

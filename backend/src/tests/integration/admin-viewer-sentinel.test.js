@@ -57,6 +57,8 @@ const WITHHELD_KEYS = [
   'ip_address', 'user_agent',
   // A block from the panel: the reviews it hid and an unblock showed again.
   'hidden_review_ids', 'restored_review_ids',
+  // «Скрыть выбранные»: the batch mark of the journal entries.
+  'batch_id',
 ];
 
 const tag = randomUUID().slice(0, 8);
@@ -91,6 +93,7 @@ let cardPartnerAccountEmail; // the account e-mail of the card's partner — no 
 let hiddenAuthorEmail;
 let deletedAuthorEmail;
 let blockedEmail;
+let batchId; // new_data.batch_id of the reviews hidden by «Скрыть выбранные»
 
 /** Values a viewer must never receive and an admin receives somewhere. */
 const personalValues = () => ({
@@ -111,6 +114,7 @@ const personalValues = () => ({
   blockedName: P.blockedName,
   blockedEmail,
   blockedText: P.blockedText,
+  batchId,
 });
 
 /**
@@ -276,6 +280,24 @@ beforeAll(async () => {
   deletedAuthorEmail = deletedAuthor.email;
   const deleted = await createTestReview(deletedAuthor.id, ids.active, { rating: 2, content: P.deletedText });
   await act('post', `/reviews/${deleted.id}/delete`, { reason: `спам, автор ${P.deletedAuthor}` }).expect(200);
+  // Reviews hidden by «Скрыть выбранные»: the batch mark of their journal
+  // entries (new_data.batch_id) reaches an admin, not a viewer (after wave 3).
+  // Read back from the journal: the server makes the mark. Two cards: one
+  // review per author and card.
+  const batchAuthor = await author(`Автор Пачки ${tag}`, 'batch-author');
+  const batchReviews = [];
+  for (const establishmentId of [ids.active, ids.suspended]) {
+    batchReviews.push((await createTestReview(batchAuthor.id, establishmentId, { rating: 1 })).id);
+  }
+  await act('post', '/reviews/hide-batch', { review_ids: batchReviews, reason: 'тестовые отзывы' }).expect(200);
+  const batchEntries = await query(
+    `SELECT DISTINCT new_data ->> 'batch_id' AS batch_id FROM audit_log
+     WHERE action = 'review_hide' AND entity_id = ANY($1::uuid[])`,
+    [batchReviews],
+  );
+  expect(batchEntries.rows).toHaveLength(1);
+  batchId = batchEntries.rows[0].batch_id;
+  expect(batchId).toEqual(expect.any(String));
 
   // A flagged menu item, and a card deleted by its partner (journal entry in
   // the partner's name).

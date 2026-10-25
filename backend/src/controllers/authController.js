@@ -391,12 +391,14 @@ export async function refresh(req, res, next) {
     }
 
     if (error.message === 'REFRESH_TOKEN_REUSE_DETECTED') {
-      // This is a security incident - return 403 Forbidden
+      // This is a security incident - return 403 Forbidden. The text is the
+      // one the person reads (Russian, like the other refusals of the account);
+      // the code and status are what the clients act on.
       return res.status(403).json({
         success: false,
         error: {
           code: 'TOKEN_REUSE_DETECTED',
-          message: 'Security alert: Token reuse detected. All sessions have been invalidated. Please log in again.',
+          message: 'В целях безопасности все сеансы этой учётной записи завершены. Войдите снова.',
         },
       });
     }
