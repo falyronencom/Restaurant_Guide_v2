@@ -36,13 +36,17 @@ const String _previewUrl =
 /// то, что снимает телефон: 9 : 16, 3 : 4, квадрат, 4 : 3, 16 : 9.
 const List<double> _aspects = [1 / 2, 9 / 16, 3 / 4, 1, 4 / 3, 16 / 9, 2];
 
-/// Размер, в который ляжет фото формы [aspect] (ширина / высота), если
-/// декодировать его по [decode] — так считает `ResizeImage` с одной стороной.
+/// Размер в точках, в который ляжет фото формы [aspect] (ширина / высота),
+/// если декодировать его по [decode]: вторую сторону движок считает сам и
+/// отбрасывает дробь — высоту `~/`, ширину `round()` (`dart:ui`,
+/// `ImageDescriptor.instantiateCodec`).
 Size _decoded(({int? width, int? height}) decode, double aspect) {
   if (decode.width != null) {
-    return Size(decode.width!.toDouble(), decode.width! / aspect);
+    return Size(
+        decode.width!.toDouble(), (decode.width! ~/ aspect).toDouble());
   }
-  return Size(decode.height! * aspect, decode.height!.toDouble());
+  return Size(
+      (decode.height! * aspect).roundToDouble(), decode.height!.toDouble());
 }
 
 Establishment _establishment({String? thumbnailUrl}) => Establishment(
@@ -128,23 +132,31 @@ void main() {
   });
 
   group('decodeSize: ужимает', () {
-    test('карта ×3: ширина 600 вместо 1200', () {
-      // Рамка 300 × 300 точек; фото 2 : 1 при ширине 600 — 300 в высоту.
+    test('карта ×3: ширина 601 вместо 1200', () {
+      // Рамка 300 × 300 точек; фото 2 : 1 при ширине 601 — 300 в высоту
+      // (601 ~/ 2), при 600 было бы тоже 300, но в рамке 262,5 точки (×2,625)
+      // без лишней точки вышло бы 262 — см. следующий тест.
       expect(FrameCachedImage.decodeSize(const Size(100, 100), 3),
-          (width: 600, height: null));
+          (width: 601, height: null));
     });
 
-    test('прогулка ×3: ширина 336', () {
+    test('карта ×2,625: фото 2 : 1 не короче рамки в 262,5 точки', () {
+      // 262,5 × 2 = 525 → 526; 526 ~/ 2 = 263 ≥ 262,5.
+      expect(FrameCachedImage.decodeSize(const Size(100, 100), 2.625),
+          (width: 526, height: null));
+    });
+
+    test('прогулка ×3: ширина 337', () {
       expect(FrameCachedImage.decodeSize(const Size(56, 56), 3),
-          (width: 336, height: null));
+          (width: 337, height: null));
     });
 
-    test('статистика кабинета ×3: высота 642 вместо 2560 у полного размера',
+    test('статистика кабинета ×3: высота 643 вместо 2560 у полного размера',
         () {
       // Рамка 321 × 348 точек — выше, чем шире: задаётся высота; фото 1 : 2
-      // при высоте 642 — 321 в ширину.
+      // при высоте 643 — 322 в ширину (round(321,5)).
       expect(FrameCachedImage.decodeSize(const Size(107, 116), 3),
-          (width: null, height: 642));
+          (width: null, height: 643));
     });
 
     test('рамка без конечного размера — без ужатия', () {
@@ -173,7 +185,7 @@ void main() {
       final shown = _shown(tester);
       expect(shown.image.imageUrl, _previewUrl);
       expect(shown.image.fit, BoxFit.cover);
-      expect(shown.image.memCacheWidth, 600);
+      expect(shown.image.memCacheWidth, 601);
       expect(shown.image.memCacheHeight, isNull);
       // Ужатая копия на диск не кладётся.
       expect(shown.image.maxWidthDiskCache, isNull);
@@ -195,10 +207,60 @@ void main() {
       );
       final shown = _shown(tester);
       expect(shown.frame, const Size(107, 116));
-      // Рамка 214 × 232 точки: высота — не меньше 2 × 214 = 428.
+      // Рамка 214 × 232 точки: высота — 2 × 214 + 1 = 429.
       expect(shown.image.memCacheWidth, isNull);
-      expect(shown.image.memCacheHeight, 428);
+      expect(shown.image.memCacheHeight, 429);
       _expectCovers(shown.image, shown.frame, 2);
+    });
+  });
+
+  group('перестройка родителя', () {
+    testWidgets(
+        'та же картинка, пока адрес и рамка те же; новый адрес и новая рамка — '
+        'новая', (tester) async {
+      late StateSetter rebuild;
+      var url = _previewUrl;
+      var side = 100.0;
+      await _pump(
+        tester,
+        Center(
+          child: StatefulBuilder(builder: (context, setState) {
+            rebuild = setState;
+            return SizedBox(
+              width: side,
+              height: side,
+              // Заглушки — новые на каждой сборке, как на экранах приложения.
+              child: FrameCachedImage(
+                imageUrl: url,
+                placeholder: (_, __) => const ColoredBox(color: Colors.grey),
+                errorWidget: (_, __, ___) =>
+                    const ColoredBox(color: Colors.black),
+              ),
+            );
+          }),
+        ),
+      );
+      final image = tester.element(find.byType(Image));
+      for (var i = 0; i < 3; i++) {
+        rebuild(() {});
+        await tester.pump();
+      }
+      // `octo_image` ставит ключом внутреннего `Image` обёртку `ResizeImage`,
+      // которая не сравнивается по значению: пересобранная картинка — новый
+      // элемент, и неудавшееся фото скачивалось бы заново на каждом кадре.
+      expect(tester.element(find.byType(Image)), same(image),
+          reason: 'перестройка родителя пересоздала картинку');
+
+      CachedNetworkImage shown() =>
+          tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+      rebuild(() => url = '$_previewUrl-2');
+      await tester.pump();
+      expect(shown().imageUrl, '$_previewUrl-2');
+
+      rebuild(() => side = 120);
+      await tester.pump();
+      // 120 × 3 = 360 точек: 2 × 360 + 1.
+      expect(shown().memCacheWidth, 721);
     });
   });
 

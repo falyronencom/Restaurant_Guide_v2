@@ -33,7 +33,7 @@ import 'package:flutter/material.dart';
 ///
 /// Полноэкранная галерея этим виджетом не пользуется: там увеличение до ×4, ей
 /// нужен файл целиком.
-class FrameCachedImage extends StatelessWidget {
+class FrameCachedImage extends StatefulWidget {
   const FrameCachedImage({
     super.key,
     required this.imageUrl,
@@ -70,6 +70,11 @@ class FrameCachedImage extends StatelessWidget {
   /// в высокой высота — не меньше ширины рамки / [narrowestAspect]. Тогда фото
   /// любой формы между ними закрывает рамку по обеим сторонам.
   ///
+  /// Ещё одна точка сверх запаса — на округление: вторую сторону движок
+  /// считает сам и отбрасывает дробь (высоту — `~/`, ширину — `round()`,
+  /// `dart:ui` `ImageDescriptor.instantiateCodec`), и фото ровно 2 : 1 в рамке
+  /// в 262,5 точки получило бы 262.
+  ///
   /// Рамка без конечного размера — без ужатия.
   static ({int? width, int? height}) decodeSize(
     Size frame,
@@ -81,34 +86,77 @@ class FrameCachedImage extends StatelessWidget {
     final w = frame.width * devicePixelRatio;
     final h = frame.height * devicePixelRatio;
     if (w >= h) {
-      return (width: math.max(w, h * widestAspect).ceil(), height: null);
+      return (
+        width: math.max(w.ceil(), (h * widestAspect).ceil() + 1),
+        height: null,
+      );
     }
-    return (width: null, height: math.max(h, w / narrowestAspect).ceil());
+    return (
+      width: null,
+      height: math.max(h.ceil(), (w / narrowestAspect).ceil() + 1),
+    );
   }
 
   @override
+  State<FrameCachedImage> createState() => _FrameCachedImageState();
+}
+
+class _FrameCachedImageState extends State<FrameCachedImage> {
+  /// Построенная картинка: пока адрес, рамка и размер декодирования те же,
+  /// отдаётся этот же экземпляр, и при перестройке родителя
+  /// `CachedNetworkImage` не пересобирается.
+  ///
+  /// Иначе каждая перестройка (превью на карте перестраивается на каждое
+  /// движение пальца) меняла бы картинку целиком: `octo_image` 2.1.0 оборачивает
+  /// адрес в новый `ResizeImage` при каждой сборке и ставит его ключом
+  /// внутреннего `Image` (`ValueKey(image)`), а `ResizeImage` не сравнивается
+  /// по значению. Загруженное фото бралось бы из кеша заново, а неудавшееся
+  /// (нет сети, 404) — `ResizeImage` при ошибке вычищает себя из кеша —
+  /// скачивалось бы заново на каждом кадре, и заглушка ошибки мигала бы.
+  ///
+  /// Поэтому [FrameCachedImage.placeholder] и [FrameCachedImage.errorWidget]
+  /// берутся при первой сборке для этого адреса и размера: заглушки не должны
+  /// зависеть от состояния родителя.
+  CachedNetworkImage? _image;
+
+  @override
   Widget build(BuildContext context) {
-    final explicit = width != null && height != null;
-    if (explicit) return _image(context, Size(width!, height!));
+    final width = widget.width;
+    final height = widget.height;
+    if (width != null && height != null) {
+      return _imageFor(context, Size(width, height));
+    }
     return LayoutBuilder(
-      builder: (context, constraints) => _image(
+      builder: (context, constraints) => _imageFor(
         context,
         Size(width ?? constraints.maxWidth, height ?? constraints.maxHeight),
       ),
     );
   }
 
-  Widget _image(BuildContext context, Size frame) {
-    final decode = decodeSize(frame, MediaQuery.devicePixelRatioOf(context));
-    return CachedNetworkImage(
-      imageUrl: imageUrl,
-      width: width,
-      height: height,
+  Widget _imageFor(BuildContext context, Size frame) {
+    final decode = FrameCachedImage.decodeSize(
+      frame,
+      MediaQuery.devicePixelRatioOf(context),
+    );
+    final built = _image;
+    if (built != null &&
+        built.imageUrl == widget.imageUrl &&
+        built.width == widget.width &&
+        built.height == widget.height &&
+        built.memCacheWidth == decode.width &&
+        built.memCacheHeight == decode.height) {
+      return built;
+    }
+    return _image = CachedNetworkImage(
+      imageUrl: widget.imageUrl,
+      width: widget.width,
+      height: widget.height,
       fit: BoxFit.cover,
       memCacheWidth: decode.width,
       memCacheHeight: decode.height,
-      placeholder: placeholder,
-      errorWidget: errorWidget,
+      placeholder: widget.placeholder,
+      errorWidget: widget.errorWidget,
     );
   }
 }
