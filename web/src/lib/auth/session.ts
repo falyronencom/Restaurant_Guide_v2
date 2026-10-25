@@ -344,6 +344,37 @@ async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
 // Authenticated fetch
 // ---------------------------------------------------------------------------
 
+/**
+ * The 401 codes of the backend's sign-in check (`authenticate`,
+ * backend/src/middleware/auth.js:49-149; errorHandler.js:204-212 repeats
+ * INVALID_TOKEN and TOKEN_EXPIRED) — the verdicts on the ACCESS token, the
+ * only 401s a refresh can cure. Any other 401 is the endpoint's answer to the
+ * request itself: verify-email-code answers a wrong code with 401
+ * INVALID_CODE and counts one attempt per request, so replaying it burned two
+ * of the five attempts per wrong entry. A 401 with no code is not one of
+ * these either and is not replayed. An allow-list, not a list of exceptions:
+ * a future endpoint's own 401 stays a single request without anyone having to
+ * remember this list.
+ */
+const SESSION_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  'MISSING_TOKEN',
+  'INVALID_TOKEN_FORMAT',
+  'INVALID_TOKEN',
+  'TOKEN_EXPIRED',
+  'MALFORMED_TOKEN',
+  'ACCOUNT_INACTIVE',
+  'TOKEN_REVOKED',
+]);
+
+function isSessionRefusal(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.statusCode === 401 &&
+    err.errorCode !== undefined &&
+    SESSION_REFUSAL_CODES.has(err.errorCode)
+  );
+}
+
 async function fetchWithBearer<T>(
   path: string,
   init: RequestInit | undefined,
@@ -362,7 +393,10 @@ async function fetchWithBearer<T>(
  * Authenticated backend call. Reachable only from Server Actions or Route
  * Handlers (so the transparent refresh below can legally rotate cookies).
  * Missing/expired access
- * token → refresh once; a 401 from the backend → refresh once and retry.
+ * token → refresh once; a 401 from the backend's sign-in check (an expired,
+ * revoked or otherwise refused access token) → refresh once and retry. Any
+ * other 401 — an endpoint's own refusal, or one without a code — is thrown as
+ * is: the request is sent once.
  * Throws ApiError(401, …, 'NO_SESSION') when there is no recoverable session,
  * and ApiError(503, …, 'SESSION_REFRESH_UNAVAILABLE') when an access token
  * was missing and the refresh never reached the server's verdict.
@@ -386,8 +420,9 @@ export async function authedFetch<T>(
   } catch (err) {
     // Refresh AT MOST ONCE per call: if we already refreshed for a missing
     // access token, a follow-up 401 is not retried — avoids burning a second
-    // single-use rotation on one logical request.
-    if (err instanceof ApiError && err.statusCode === 401 && !didRefresh) {
+    // single-use rotation on one logical request. Only the sign-in check's
+    // own 401 is retried (SESSION_REFUSAL_CODES).
+    if (isSessionRefusal(err) && !didRefresh) {
       const refreshed = await refreshCycle();
       if (refreshed.kind === 'ok') {
         return fetchWithBearer<T>(path, init, refreshed.accessToken);

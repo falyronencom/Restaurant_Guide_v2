@@ -279,6 +279,69 @@ describe('authedFetch', () => {
     expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/reviews');
   });
 
+  // Every 401 code of the backend's sign-in check (`authenticate`,
+  // backend/src/middleware/auth.js — MISSING_TOKEN :53, INVALID_TOKEN_FORMAT
+  // :66, INVALID_TOKEN / TOKEN_EXPIRED / MALFORMED_TOKEN :76-84,
+  // ACCOUNT_INACTIVE :131, TOKEN_REVOKED :148) is a verdict on the access
+  // token: refresh once, replay with the fresh one — one by one, so dropping
+  // any of them from the allow-list is seen.
+  it.each([
+    'MISSING_TOKEN',
+    'INVALID_TOKEN_FORMAT',
+    'INVALID_TOKEN',
+    'TOKEN_EXPIRED',
+    'MALFORMED_TOKEN',
+    'ACCOUNT_INACTIVE',
+    'TOKEN_REVOKED',
+  ])('a backend 401 %s from the sign-in check refreshes and replays', async (code) => {
+    staleAccessWithRefresh();
+    mockFetch
+      .mockRejectedValueOnce(new ApiError(401, 'refused', code)) // authed call
+      .mockResolvedValueOnce({
+        user: { id: 'u1', email: 'a', phone: null, name: 'n', role: 'user' },
+        accessToken: 'fresh',
+        refreshToken: 'rt2',
+        tokenType: 'Bearer',
+        expiresIn: 14400,
+      }) // refresh
+      .mockResolvedValueOnce({ ok: 1 }); // replay
+
+    await expect(authedFetch('/api/v1/favorites')).resolves.toEqual({ ok: 1 });
+    expect(mockFetch.mock.calls.map(([p]) => p)).toEqual([
+      '/api/v1/favorites',
+      '/api/v1/auth/refresh',
+      '/api/v1/favorites',
+    ]);
+    const replayInit = mockFetch.mock.calls[2][1] as { headers: Record<string, string> };
+    expect(replayInit.headers.Authorization).toBe('Bearer fresh');
+  });
+
+  // A 401 that is the endpoint's own answer is not about the session: the
+  // email check answers a wrong code with 401 INVALID_CODE and counts one
+  // attempt per REQUEST (backend/src/controllers/authController.js:977-981,
+  // services/authService.js:1663-1666) — a replay burned two of the five
+  // attempts per wrong entry. A 401 without a code is not the sign-in check's
+  // either (all of its refusals carry one) and is sent once as well.
+  it.each([
+    ['INVALID_CODE', 'INVALID_CODE'],
+    ['no code', undefined],
+  ])('a backend 401 (%s) that is not the sign-in check is thrown as is: one request, no refresh', async (_label, code) => {
+    staleAccessWithRefresh();
+    const refusal = new ApiError(401, 'Verification code is incorrect', code);
+    mockFetch.mockRejectedValueOnce(refusal);
+
+    await expect(
+      authedFetch('/api/v1/auth/verify-email-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: '123456' }),
+      }),
+    ).rejects.toBe(refusal);
+    expect(mockFetch.mock.calls.map(([p]) => p)).toEqual(['/api/v1/auth/verify-email-code']);
+    expect(mockStore.set).not.toHaveBeenCalled();
+    expect(mockStore.delete).not.toHaveBeenCalled();
+  });
+
   /** Holds every refresh until released; answers the authed call by its Bearer. */
   function deferredRefresh(): { release: () => void; refreshCalls: () => number } {
     const waiting: Array<() => void> = [];
