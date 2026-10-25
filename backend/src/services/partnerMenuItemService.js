@@ -19,7 +19,79 @@ import { findCopies } from '../projections/menuItemProjections.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
+import { failureCauseOf, failureTextOf } from './ocr/failureReason.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
+
+/**
+ * The state of recognition of an establishment's menu, as the partner's menu
+ * screen shows it (finding 3 of the Railway incident, directive of
+ * 24.10.2026: until then a failed recognition looked like a menu not
+ * uploaded yet, or one still being read). Read from the newest job of every
+ * menu file the card has now (OcrJobModel.getLatestJobPerMenuFile); the
+ * file's state is its newest job's, and the menu's — the worst of the files':
+ *
+ *   processing — some file is queued or being read (a restart of a failed
+ *                file shows as this: its newest job is the new one);
+ *   failed     — otherwise, some file never recognised has a newest job
+ *                that failed for good: `cause` — the cause's code (the app
+ *                gives advice by it), `reason` — the partner's text
+ *                (failureReason.js), `failedAt` — when; with several such
+ *                files, the latest failure's;
+ *   done       — otherwise, some file was recognised — a file whose re-read
+ *                failed counts here: its dishes stand (replaceForMedia runs
+ *                only on success), and the partner is not to be sent to
+ *                replace a file that works (review of 24.10.2026);
+ *   none       — no menu files, or files never queued.
+ *
+ * `processing` outranks `failed` so that a restart answers at once, and
+ * `failed` outranks `done` so that one failed file among recognised ones is
+ * not hidden by the dishes the others gave.
+ *
+ * @param {Array<{status: string|null, error_message: string|null, completed_at: Date|null, has_done_job?: boolean}>} files
+ * @returns {{status: 'none'|'processing'|'failed'|'done', cause?: string, reason?: string, failedAt?: Date|null}}
+ */
+export const recognitionState = (files) => {
+  if (files.some((file) => file.status === 'pending' || file.status === 'processing')) {
+    return { status: 'processing' };
+  }
+  const failed = files.filter((file) => file.status === 'failed' && !file.has_done_job);
+  if (failed.length > 0) {
+    const latest = failed.reduce((a, b) => (
+      (b.completed_at?.getTime?.() ?? -Infinity) > (a.completed_at?.getTime?.() ?? -Infinity) ? b : a
+    ));
+    return {
+      status: 'failed',
+      cause: failureCauseOf(latest.error_message),
+      reason: failureTextOf(latest.error_message),
+      failedAt: latest.completed_at ?? null,
+    };
+  }
+  if (files.some((file) => file.status === 'done' || (file.status === 'failed' && file.has_done_job))) {
+    return { status: 'done' };
+  }
+  return { status: 'none' };
+};
+
+/**
+ * The recognition state of a card, or null when it cannot be read: the list
+ * of items is what the screen exists for, and a failure of this second query
+ * must not take it down (review of 24.10.2026). A client reads null as a
+ * server without the field — the screen it always had. Logged, not silent.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<Object|null>}
+ */
+const readRecognitionState = async (establishmentId) => {
+  try {
+    return recognitionState(await OcrJobModel.getLatestJobPerMenuFile(establishmentId));
+  } catch (error) {
+    logger.error('Recognition state of the partner menu could not be read — answered without it', {
+      establishmentId,
+      error: error.message,
+    });
+    return null;
+  }
+};
 
 /**
  * List parsed menu items for an establishment owned by the partner.
@@ -28,9 +100,14 @@ import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
  * Partners see only non-hidden items; no UI indication of hidden state.
  * Rationale: platform owns content quality; hiding is not the partner's concern.
  *
+ * With the items comes the state of the menu's recognition (recognitionState;
+ * null when it cannot be read); the controller sends it beside `data`, which
+ * stays the list it always was.
+ *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
- * @returns {Promise<Object[]>} Non-hidden menu items ordered by position
+ * @returns {Promise<{items: Object[], recognition: Object}>} Non-hidden menu
+ *   items ordered by position, and the recognition state
  */
 export const listMenuItems = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -42,7 +119,11 @@ export const listMenuItems = async (partnerId, establishmentId) => {
     );
   }
 
-  return MenuItemModel.getByEstablishmentId(establishmentId, { includeHidden: false });
+  const [items, recognition] = await Promise.all([
+    MenuItemModel.getByEstablishmentId(establishmentId, { includeHidden: false }),
+    readRecognitionState(establishmentId),
+  ]);
+  return { items, recognition };
 };
 
 /**

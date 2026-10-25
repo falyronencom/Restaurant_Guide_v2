@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
@@ -48,6 +49,15 @@ class RetryOcrResult {
         errorMessage = message;
 }
 
+/// The partner's menu as the list request answers it: the items, and the
+/// state of their recognition (`null` from a server that does not send it).
+class PartnerMenuSnapshot {
+  final List<PartnerMenuItem> items;
+  final MenuRecognition? recognition;
+
+  const PartnerMenuSnapshot({required this.items, this.recognition});
+}
+
 /// API service for partner-scoped menu item operations.
 ///   GET   /api/v1/partner/establishments/:id/menu-items
 ///   PATCH /api/v1/partner/menu-items/:id
@@ -60,7 +70,9 @@ class PartnerMenuService {
 
   PartnerMenuService._internal() : _apiClient = ApiClient();
 
-  Future<List<PartnerMenuItem>> fetchMenuItems(String establishmentId) async {
+  /// Items and recognition state; `recognition` sits beside `data` in the
+  /// answer (from 24.10.2026), `data` is the list it always was.
+  Future<PartnerMenuSnapshot> fetchMenu(String establishmentId) async {
     final response = await _apiClient
         .get('/api/v1/partner/establishments/$establishmentId/menu-items');
 
@@ -70,9 +82,12 @@ class PartnerMenuService {
 
     final data = response.data as Map<String, dynamic>;
     final list = data['data'] as List? ?? [];
-    return list
-        .map((e) => PartnerMenuItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return PartnerMenuSnapshot(
+      items: list
+          .map((e) => PartnerMenuItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      recognition: MenuRecognition.fromJson(data['recognition']),
+    );
   }
 
   /// Inline edit a single menu item. Returns updated item on success.

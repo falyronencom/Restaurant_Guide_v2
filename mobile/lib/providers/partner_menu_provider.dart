@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
 import 'package:restaurant_guide_mobile/services/partner_menu_service.dart';
@@ -9,15 +10,21 @@ const Duration _pollingInterval = Duration(seconds: 30);
 
 /// Partner-facing state for the "Меню" section of an establishment.
 ///
-/// States (see Segment C directive, Option A simplification):
+/// States:
 ///   - SUCCESS:   items present
-///   - EMPTY:     items empty (covers both "no PDF" and "OCR in progress" —
-///                retry button surfaces 400 NO_PDF_MENUS if applicable)
+///   - EMPTY:     items empty — told apart by [recognition] (from 24.10.2026,
+///                finding 3 of the Railway incident): not uploaded / being
+///                read / failed with the server's reason. A server without
+///                the field leaves [recognition] null, and the screen shows
+///                the one empty state it always did (Segment C directive,
+///                Option A) — retry button surfaces 400 NO_PDF_MENUS if
+///                applicable.
 class PartnerMenuProvider with ChangeNotifier {
   final PartnerMenuService _service;
 
   String? _currentEstablishmentId;
   List<PartnerMenuItem> _items = [];
+  MenuRecognition? _recognition;
   bool _isLoading = false;
   String? _error;
   Timer? _pollingTimer;
@@ -25,6 +32,15 @@ class PartnerMenuProvider with ChangeNotifier {
   /// Растёт на каждой загрузке и на каждой остановке опроса: загрузка,
   /// пережившая остановку, видит чужой номер и опрос не включает.
   int _pollingSession = 0;
+
+  /// Заведения открытых сейчас экранов «Меню», верхний — последним.
+  /// Провайдер один на приложение (main.dart), и рисуют его все экраны меню;
+  /// нажатие на push или на уведомление открывает экран меню поверх
+  /// открытого (main_navigation, notification_list_screen). Верхний
+  /// переключает провайдер на свою карточку — нижнему, когда он снова сверху,
+  /// нужна своя, и опрос тоже (ревью 24.10.2026, линза: иначе нижний экран
+  /// показывал чужую карточку или застывал без опроса).
+  final List<String> _openScreens = [];
 
   PartnerMenuProvider({PartnerMenuService? service})
       : _service = service ?? PartnerMenuService() {
@@ -42,8 +58,10 @@ class PartnerMenuProvider with ChangeNotifier {
   void resetAccountScope() {
     _generation++;
     stopPolling();
+    _openScreens.clear();
     _currentEstablishmentId = null;
     _items = [];
+    _recognition = null;
     _isLoading = false;
     _error = null;
     notifyListeners();
@@ -51,6 +69,10 @@ class PartnerMenuProvider with ChangeNotifier {
 
   // Getters
   List<PartnerMenuItem> get items => _items;
+
+  /// State of the menu's recognition from the last answer; `null` — not
+  /// loaded yet, or a server that does not send it.
+  MenuRecognition? get recognition => _recognition;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get hasItems => _items.isNotEmpty;
@@ -76,6 +98,7 @@ class PartnerMenuProvider with ChangeNotifier {
     if (_currentEstablishmentId != establishmentId) {
       _currentEstablishmentId = establishmentId;
       _items = [];
+      _recognition = null;
       _error = null;
     }
     // Two guards, one answer each: the account changed while the fetch was in
@@ -87,6 +110,39 @@ class PartnerMenuProvider with ChangeNotifier {
     await fetchMenuItems();
     if (generation != _generation || session != _pollingSession) return;
     _startPolling();
+  }
+
+  /// Экран «Меню» заведения [establishmentId] открылся: загрузить и опрашивать.
+  void attachScreen(String establishmentId) {
+    _openScreens.add(establishmentId);
+    loadForEstablishment(establishmentId);
+  }
+
+  /// Экран «Меню» заведения [establishmentId] закрылся. Последний — опрос
+  /// останавливается. Верхний, а под ним другой — провайдер возвращается к
+  /// карточке нижнего и опрашивает её. Зовётся из `dispose` экрана, поэтому
+  /// загрузка ждёт микрозадачи: дерево в это время собирается, перестраивать
+  /// его нельзя.
+  void detachScreen(String establishmentId) {
+    final index = _openScreens.lastIndexOf(establishmentId);
+    if (index == -1) return;
+    final wasTop = index == _openScreens.length - 1;
+    _openScreens.removeAt(index);
+    if (_openScreens.isEmpty) {
+      stopPolling();
+      return;
+    }
+    if (!wasTop) return;
+    final below = _openScreens.last;
+    final generation = _generation;
+    scheduleMicrotask(() {
+      if (generation != _generation ||
+          _openScreens.isEmpty ||
+          _openScreens.last != below) {
+        return;
+      }
+      loadForEstablishment(below);
+    });
   }
 
   void _startPolling() {
@@ -127,18 +183,21 @@ class PartnerMenuProvider with ChangeNotifier {
 
     final generation = _generation;
     try {
-      final fetched = await _service.fetchMenuItems(id);
-      if (generation != _generation) return; // account switched mid-flight
-      _items = fetched;
+      final fetched = await _service.fetchMenu(id);
+      // Account switched mid-flight, or the provider moved to another card
+      // (another menu screen opened): the answer is not this card's to show.
+      if (generation != _generation || id != _currentEstablishmentId) return;
+      _items = fetched.items;
+      _recognition = fetched.recognition;
       _error = null;
     } catch (e) {
-      if (generation != _generation) return;
+      if (generation != _generation || id != _currentEstablishmentId) return;
       if (!silent) {
         _error = 'Не удалось загрузить позиции меню';
       }
       // Silent poll errors are swallowed — existing items remain visible.
     } finally {
-      if (generation == _generation) {
+      if (generation == _generation && id == _currentEstablishmentId) {
         if (!silent) {
           _isLoading = false;
         }
