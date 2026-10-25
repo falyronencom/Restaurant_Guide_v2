@@ -127,16 +127,33 @@ void main() {
       expect(wide, greaterThan(normal * 1.8));
     });
 
-    testWidgets('пустое значение называется «не указан», а не прячется',
+    testWidgets('пустое значение называется словом, а не прячется',
         (tester) async {
-      await pumpGrid(tester, const <Definition>[
-        Definition(label: 'Сайт'),
-        Definition(label: 'Телефон', value: '   '),
+      await pumpGrid(tester, <Definition>[
+        Definition.field('website'),
+        Definition.field('customer_phone', value: '   '),
       ]);
 
       // Пустое поле у одобренного заведения — само по себе сведение.
-      expect(find.text('Сайт'), findsOneWidget);
+      expect(find.text('Сайт или соцсеть'), findsOneWidget);
       expect(find.text('не указан'), findsNWidgets(2));
+    });
+
+    // «не указан» стоял у всех полей подряд — и у «Регистрации», и у
+    // «Юридического названия» (проход по панели модератора, 20.10, F-21,
+    // Ч11). Теперь слово согласуется с именем поля по роду.
+    testWidgets('«не указан/а/о/ы» — по роду имени поля', (tester) async {
+      await pumpGrid(tester, <Definition>[
+        Definition.field('unp'),
+        Definition.field('registration_doc'),
+        Definition.field('legal_name'),
+        Definition.field('working_hours'),
+      ]);
+
+      expect(find.text('не указан'), findsOneWidget);
+      expect(find.text('не указана'), findsOneWidget);
+      expect(find.text('не указано'), findsOneWidget);
+      expect(find.text('не указаны'), findsOneWidget);
     });
 
     testWidgets('величина показывается моноширинным', (tester) async {
@@ -210,7 +227,7 @@ void main() {
         },
       );
 
-      expect(find.text('Причины отказа'), findsOneWidget);
+      expect(find.text('Причины отклонения'), findsOneWidget);
       // Пустая причина в счёт не идёт — иначе чип обещал бы работу,
       // которой в списке нет.
       expect(find.text('2 поля'), findsOneWidget);
@@ -219,7 +236,7 @@ void main() {
 
     testWidgets('без причин блок не появляется', (tester) async {
       await _pumpPanel(tester, mode: DetailPanelMode.readonly);
-      expect(find.text('Причины отказа'), findsNothing);
+      expect(find.text('Причины отклонения'), findsNothing);
     });
   });
 
@@ -323,7 +340,7 @@ void main() {
       // утверждение, которого сервер не делал.
       await tester.tap(find.text('О заведении'));
       await tester.pumpAndSettle();
-      expect(find.text('Номер контактного лица'), findsOneWidget);
+      expect(find.text('Телефон контактного лица'), findsOneWidget);
       expect(find.text('Скрыто в режиме просмотра'), findsOneWidget);
     });
 

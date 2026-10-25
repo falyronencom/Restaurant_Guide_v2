@@ -18,6 +18,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { likeContains } from '../utils/likePattern.js';
 
 /**
  * Calculate completeness score (base_score) for an establishment.
@@ -1060,17 +1061,6 @@ export const countActiveEstablishments = async (filters = {}) => {
 };
 
 /**
- * A LIKE pattern that matches the text literally: `%` and `_` typed by the
- * moderator are characters, not wildcards (the same way as the menu-items
- * queue, menuItemModel.escapeLike, and the reviews search). Used with
- * `ESCAPE '\\'`.
- *
- * @param {string} value
- * @returns {string}
- */
-const likeText = (value) => `%${String(value).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
-
-/**
  * What the panel's search across all statuses matches: the name, a category,
  * a cuisine or the address (walkthrough of the moderator panel, 2026-10-20,
  * Ч19: «кофе» found no coffee shop — the search looked at the name only).
@@ -1105,7 +1095,7 @@ export const searchAllEstablishments = async (search, filters = {}) => {
 
   // Required search parameter
   conditions.push(searchMatchSql(`$${paramCount}`, 'e.'));
-  values.push(likeText(search));
+  values.push(likeContains(search));
   paramCount++;
 
   if (status) {
@@ -1189,7 +1179,7 @@ export const countSearchResults = async (search, filters = {}) => {
   let paramCount = 1;
 
   conditions.push(searchMatchSql(`$${paramCount}`, ''));
-  values.push(likeText(search));
+  values.push(likeContains(search));
   paramCount++;
 
   if (status) {

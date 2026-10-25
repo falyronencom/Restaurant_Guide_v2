@@ -26,7 +26,18 @@ COPY . .
 # ENV=production — без Dio LogInterceptor (OSB-M P1: пароль и токены в
 # консоль). --pwa-strategy=none — без service worker: у админского
 # инструмента после редеплоя не должно быть «старой» сборки в кэше браузера.
-RUN flutter build web --release --dart-define=ENV=production --pwa-strategy=none
+#
+# PANEL_BUILD — номер этой сборки: вшивается в бандл и кладётся рядом в
+# build.json. Открытая вкладка раз в 5 минут и при возврате на неё сверяет
+# свой номер с файлом и при расхождении показывает плашку «Вышла новая версия
+# панели» (проход по панели модератора, 20.10, К-7: вкладка без перезагрузки
+# жила со сборкой 18.10). Номер — время сборки: `version` из pubspec между
+# сборками не меняется. Слой с этой командой Docker берёт из кэша, только
+# когда исходники те же, — тогда и бандл тот же, и номер прежний верно.
+RUN PANEL_BUILD="$(date -u +%Y%m%dT%H%M%SZ)" \
+ && flutter build web --release --dart-define=ENV=production \
+      --dart-define=PANEL_BUILD="$PANEL_BUILD" --pwa-strategy=none \
+ && printf '{"build":"%s"}\n' "$PANEL_BUILD" > build/web/build.json
 
 # Минор закреплён по той же причине, что и Flutter выше: `2-alpine` плавал бы
 # на следующий минор без единого коммита. Патчи внутри 2.11 приходят сами.

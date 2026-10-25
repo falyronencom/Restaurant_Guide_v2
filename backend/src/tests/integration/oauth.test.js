@@ -241,6 +241,8 @@ describe('POST /api/v1/auth/oauth — Google', () => {
 
     const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(403);
     expect(res.body.error.code).toBe('ACCOUNT_DEACTIVATED');
+    // Текст — литералом: его читает человек (прежде «This account has been deactivated»).
+    expect(res.body.error.message).toBe('Учётная запись отключена. Если это ошибка — напишите в поддержку: support@nirivio.by');
   });
 });
 

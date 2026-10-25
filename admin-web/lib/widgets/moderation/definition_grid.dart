@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/establishment_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 
 /// Одно определение: подпись и значение.
 ///
-/// [value] пустое или `null` — ячейка покажет «не указан» приглушённым. Это
+/// [value] пустое или `null` — ячейка покажет [emptyText] («не указан», «не
+/// указана»…) приглушённым. Это
 /// не то же самое, что отсутствие ячейки: пустое поле у одобренного заведения
 /// само по себе сведение, и прятать его нельзя.
 class Definition {
@@ -21,13 +23,28 @@ class Definition {
   /// Произвольное содержимое вместо строки значения.
   final Widget? child;
 
+  /// Пустое значение словом, согласованным с подписью по роду.
+  final String emptyText;
+
   const Definition({
     required this.label,
     this.value,
     this.mono = false,
     this.wide = false,
     this.child,
+    this.emptyText = 'не указано',
   });
+
+  /// Поле карточки по ключу словаря полей: имя и «не указан/а/о/ы» — те же,
+  /// что на остальных экранах панели (F-25, F-21).
+  Definition.field(
+    String key, {
+    this.value,
+    this.mono = false,
+    this.wide = false,
+    this.child,
+  })  : label = fieldLabel(key),
+        emptyText = fieldEmptyText(key);
 }
 
 /// Двухколоночная сетка определений — режим чтения панели разбора.
@@ -165,7 +182,7 @@ class _Cell extends StatelessWidget {
           if (item.child != null)
             item.child!
           else if (isEmpty)
-            const Text('не указан', style: AppTheme.canonFieldValueEmpty)
+            Text(item.emptyText, style: AppTheme.canonFieldValueEmpty)
           else if (item.mono)
             Text(
               value,

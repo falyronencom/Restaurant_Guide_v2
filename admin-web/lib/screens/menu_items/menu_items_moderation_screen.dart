@@ -9,6 +9,7 @@ import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provi
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
 import 'package:restaurant_guide_admin_web/widgets/menu_items/flagged_menu_items_list_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/menu_items/menu_item_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
@@ -285,12 +286,6 @@ class _QueueSearchField extends StatefulWidget {
   State<_QueueSearchField> createState() => _QueueSearchFieldState();
 }
 
-OutlineInputBorder _searchBorder(Color color, {double width = 1}) =>
-    OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-      borderSide: BorderSide(color: color, width: width),
-    );
-
 class _QueueSearchFieldState extends State<_QueueSearchField> {
   final TextEditingController _controller = TextEditingController();
   late final MenuItemsModerationProvider _provider;
@@ -356,23 +351,8 @@ class _QueueSearchFieldState extends State<_QueueSearchField> {
           setState(() {}); // крестик очистки появляется и исчезает
         },
         style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
-        decoration: InputDecoration(
-          hintText: 'Позиция или заведение',
-          hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          // Радиус задан явно всем состояниям: глобальная тема полей держит
-          // r12, а поле стоит в одном ряду с пилюлями фильтров на r10, и
-          // разница в два пикселя рядом читается как небрежность. Точечно
-          // перекрыть только `border` нельзя — остальные состояния наследуют
-          // тему и разъезжаются при фокусе.
-          border: _searchBorder(AppTheme.strokeGrey),
-          enabledBorder: _searchBorder(AppTheme.strokeGrey),
-          focusedBorder: _searchBorder(AppTheme.primaryOrange, width: 1.5),
-          disabledBorder: _searchBorder(AppTheme.strokeGrey),
-          prefixIcon:
-              const Icon(Icons.search, size: 17, color: AppTheme.gray500),
-          prefixIconConstraints: const BoxConstraints(minWidth: 38),
+        decoration: adminSearchDecoration(
+          hint: 'Позиция или заведение',
           suffixIcon: _controller.text.isEmpty
               ? null
               : IconButton(

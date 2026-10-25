@@ -265,11 +265,17 @@ beforeAll(async () => {
   ids.hiddenAuthor = hiddenAuthor.id;
   hiddenAuthorEmail = hiddenAuthor.email;
   const hidden = await createTestReview(hiddenAuthor.id, ids.active, { rating: 1, content: P.hiddenText });
-  await act('post', `/reviews/${hidden.id}/visibility`, { is_visible: false }).expect(200);
+  // Причины скрытия и удаления — с именем автора: модератор пишет их
+  // свободным текстом, и журнал не должен отдать их просмотрщику (волна 3,
+  // ревью 3.5 по линзе: прежде засевались без имени, и сторож молчал).
+  await act('post', `/reviews/${hidden.id}/visibility`, {
+    is_visible: false,
+    reason: `оскорбления, автор ${P.hiddenAuthor}`,
+  }).expect(200);
   const deletedAuthor = await author(P.deletedAuthor, 'deleted-author');
   deletedAuthorEmail = deletedAuthor.email;
   const deleted = await createTestReview(deletedAuthor.id, ids.active, { rating: 2, content: P.deletedText });
-  await act('post', `/reviews/${deleted.id}/delete`, { reason: 'спам' }).expect(200);
+  await act('post', `/reviews/${deleted.id}/delete`, { reason: `спам, автор ${P.deletedAuthor}` }).expect(200);
 
   // A flagged menu item, and a card deleted by its partner (journal entry in
   // the partner's name).

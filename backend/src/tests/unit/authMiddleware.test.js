@@ -72,6 +72,9 @@ describe('authenticate — the account behind the token', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json.mock.calls[0][0].error.code).toBe('ACCOUNT_INACTIVE');
+    // Текст — литералом (прежде «User account is inactive»); конверт прежний:
+    // message на верхнем уровне тела, не в error.
+    expect(res.json.mock.calls[0][0].message).toBe('Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: support@nirivio.by');
   });
 
   test('the role comes from the database, not from the token', async () => {

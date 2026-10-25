@@ -13,7 +13,6 @@
 import pool from '../config/database.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
-import { escapeLike } from './adminReviewModel.js';
 
 /**
  * The statuses as SQL literals — a fixed list from the code, never input: the
@@ -21,6 +20,7 @@ import { escapeLike } from './adminReviewModel.js';
  */
 const CATALOGUE_TRACK_SQL = CATALOGUE_TRACK_STATUSES.map((status) => `'${status}'`).join(', ');
 import logger from '../utils/logger.js';
+import { likeContains } from '../utils/likePattern.js';
 
 /**
  * Whether the holder deleted the account: its journal entry
@@ -32,11 +32,6 @@ const DELETED_SQL = `EXISTS (
     SELECT 1 FROM audit_log del
     WHERE del.entity_type = 'user' AND del.entity_id = u.id AND del.action = 'user_delete_account'
   )`;
-
-/**
- * A LIKE pattern that matches the text literally (adminReviewModel.escapeLike).
- */
-const likeText = (value) => `%${escapeLike(value)}%`;
 
 /** The role filter of the list: the words the panel sends. */
 const ROLE_CONDITIONS = Object.freeze({
@@ -127,7 +122,7 @@ const buildUserWhere = ({ search, status, role } = {}) => {
       `u.email ILIKE $${paramIndex} ESCAPE '\\'`,
       `u.name ILIKE $${paramIndex} ESCAPE '\\'`,
     ];
-    values.push(likeText(text));
+    values.push(likeContains(text));
     paramIndex += 1;
 
     const digits = text.replace(/\D/g, '');

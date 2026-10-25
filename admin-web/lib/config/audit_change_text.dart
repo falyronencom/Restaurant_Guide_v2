@@ -1,3 +1,4 @@
+import 'package:restaurant_guide_admin_web/config/establishment_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
@@ -125,24 +126,11 @@ const Map<String, String> _authMethods = <String, String>{
 };
 
 /// Поля карточки в замечаниях модератора — те же имена, что в панели разбора
-/// заявки (`moderation_detail_panel.dart`).
-const Map<String, String> _noteFields = <String, String>{
-  'legal_name': 'Полное название',
-  'unp': 'УНП',
-  'registration_doc': 'Регистрация',
-  'contact_person': 'Контактное лицо',
-  'contact_email': 'E-mail',
-  'description': 'Описание',
-  'name': 'Название',
-  'customer_phone': 'Номер для связи',
-  'website': 'Сайт',
-  'working_hours': 'Время работы',
-  'price_range': 'Средний чек',
-  'photos': 'Фото',
-  'menu': 'Меню',
-  'address': 'Адрес',
-  'suspend_reason': 'Причина приостановки',
-};
+/// заявки: общий словарь полей карточки (`kEstablishmentFieldNames`). Своё
+/// здесь — только причина приостановки: это не поле карточки.
+String? _noteField(String key) => key == 'suspend_reason'
+    ? 'Причина приостановки'
+    : kEstablishmentFieldNames[key]?.label;
 
 /// Кто действовал по полю `actor`: «operator_script:change-account-email» →
 /// «скрипт оператора (change-account-email)».
@@ -209,7 +197,7 @@ String describeAuditValue(String key, Object? value) {
         final notes = <String>[
           for (final entry in value.entries)
             if (entry.value != null && entry.value.toString().trim().isNotEmpty)
-              '${_noteFields[entry.key] ?? 'замечание'} — ${entry.value}',
+              '${_noteField(entry.key) ?? 'замечание'} — ${entry.value}',
         ];
         return notes.isEmpty ? 'нет' : notes.join('; ');
       }

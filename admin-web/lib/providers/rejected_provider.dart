@@ -4,7 +4,7 @@ import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 
-/// State management for the "Отказанные" (Rejected) screen.
+/// State management for the "Отклонённые" (Rejected) screen.
 ///
 /// Loads rejection history from audit log. Purely informational —
 /// no action buttons, read-only detail view.

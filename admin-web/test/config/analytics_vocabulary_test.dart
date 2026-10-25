@@ -85,7 +85,7 @@ void main() {
       expect(userRoleLabel('user'), 'Пользователи');
       expect(userRoleLabel('partner'), 'Партнёры');
       expect(userRoleLabel('admin'), 'Администраторы');
-      expect(userRoleLabel('viewer'), 'Наблюдатели');
+      expect(userRoleLabel('viewer'), 'Только просмотр');
     });
 
     test('незнакомая роль видна как есть', () {

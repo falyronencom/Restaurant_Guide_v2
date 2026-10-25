@@ -20,6 +20,9 @@ import 'package:restaurant_guide_admin_web/screens/moderation/suspended_screen.d
 import 'package:restaurant_guide_admin_web/services/admin_menu_item_service.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_sidebar.dart';
+import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 
 import '../helpers/stub_auth.dart';
 
@@ -248,10 +251,13 @@ class _StubBadges extends BadgesProvider {
   Future<void> load() async {}
 }
 
-/// Окно: меню слева 260 и экран справа.
+/// Окно: меню слева [rail] (260 — развёрнуто, 64 — свёрнуто) и экран
+/// справа. Экран узнаёт ширину своей области так же, как в каркасе, — через
+/// `AdminContentArea`.
 Future<void> _pumpWindow(
   WidgetTester tester, {
   required double width,
+  double rail = _rail,
   required List<ChangeNotifierProvider<ChangeNotifier>> providers,
   required Widget screen,
 }) async {
@@ -273,8 +279,10 @@ Future<void> _pumpWindow(
       home: Scaffold(
         body: Row(
           children: <Widget>[
-            const SizedBox(width: _rail),
-            Expanded(child: screen),
+            SizedBox(width: rail),
+            Expanded(
+              child: AdminContentArea(railWidth: rail, child: screen),
+            ),
           ],
         ),
       ),
@@ -319,8 +327,16 @@ void _expectClean(WidgetTester tester, String where) {
 }
 
 void main() {
-  for (final width in <double>[1024, 1150]) {
-    group('окно $width px', () {
+  // Волна 3: меню слева сворачивается само ниже 1280, и экран на том же окне
+  // получает на 196 px больше. Обе раскладки — и развёрнутое меню (его можно
+  // развернуть кнопкой), и свёрнутое.
+  for (final (width, rail) in <(double, double)>[
+    (1024, _rail),
+    (1150, _rail),
+    (1024, AdminSidebar.collapsedWidth),
+    (1150, AdminSidebar.collapsedWidth),
+  ]) {
+    group('окно $width px, меню ${rail.round()}', () {
       testWidgets('«Ожидают просмотра»: подвал заявки и вкладки',
           (tester) async {
         final provider = ModerationProvider(service: _Service('pending'));
@@ -328,6 +344,7 @@ void main() {
         await _pumpWindow(
           tester,
           width: width,
+          rail: rail,
           providers: <ChangeNotifierProvider<ChangeNotifier>>[
             ChangeNotifierProvider<ModerationProvider>.value(value: provider),
           ],
@@ -365,6 +382,7 @@ void main() {
         await _pumpWindow(
           tester,
           width: width,
+          rail: rail,
           providers: <ChangeNotifierProvider<ChangeNotifier>>[
             ChangeNotifierProvider<ApprovedProvider>.value(value: provider),
           ],
@@ -374,8 +392,15 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
-        expect(find.byTooltip('Приостановить'), findsOneWidget,
-            reason: 'на узком окне действия шапки — значками');
+        // Значками — только когда экрану не хватает места на подписи; порог
+        // считается от области экрана, а не от окна (находка П5+П6 № 6).
+        if (width - rail < ModerationEntityActions.compactBelowContentWidth) {
+          expect(find.byTooltip('Приостановить'), findsOneWidget,
+              reason: 'на узком экране действия шапки — значками');
+        } else {
+          expect(find.text('Приостановить'), findsOneWidget,
+              reason: 'свёрнутое меню отдало место — действия подписями');
+        }
         _expectClean(tester, 'Данные');
         _expectTitleWhole(tester, 'Одобренные');
 
@@ -397,6 +422,7 @@ void main() {
         await _pumpWindow(
           tester,
           width: width,
+          rail: rail,
           providers: <ChangeNotifierProvider<ChangeNotifier>>[
             ChangeNotifierProvider<SuspendedProvider>.value(value: provider),
           ],
@@ -410,12 +436,13 @@ void main() {
         _expectTitleWhole(tester, 'Приостановленные');
       });
 
-      testWidgets('«Отказанные»: причины отказа и карточка', (tester) async {
+      testWidgets('«Отклонённые»: причины отклонения и карточка', (tester) async {
         final provider = RejectedProvider(service: _Service('rejected'));
         addTearDown(provider.dispose);
         await _pumpWindow(
           tester,
           width: width,
+          rail: rail,
           providers: <ChangeNotifierProvider<ChangeNotifier>>[
             ChangeNotifierProvider<RejectedProvider>.value(value: provider),
           ],
@@ -425,10 +452,10 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
-        expect(find.text('Причины отказа'), findsOneWidget,
+        expect(find.text('Причины отклонения'), findsOneWidget,
             reason: 'предпосылка: блок причин на экране');
         _expectClean(tester, 'карточка');
-        _expectTitleWhole(tester, 'Отказанные');
+        _expectTitleWhole(tester, 'Отклонённые');
       });
 
       testWidgets('«Позиции меню»: заголовок, фильтры, разбор позиции',
@@ -438,6 +465,7 @@ void main() {
         await _pumpWindow(
           tester,
           width: width,
+          rail: rail,
           providers: <ChangeNotifierProvider<ChangeNotifier>>[
             ChangeNotifierProvider<MenuItemsModerationProvider>.value(
               value: provider,

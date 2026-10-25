@@ -916,8 +916,8 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
     // Validate coordinates match the establishment's city
     const cityValidation = validateCityCoordinates(existing.city, latitude, longitude);
     if (!cityValidation.valid) {
-      // The checker's own text is English and also feeds the partner's
-      // flow and the log; the moderator gets the same refusal in Russian.
+      // The checker's own text, with the numbers of the box, goes to the
+      // log of the partner's flow; the moderator gets a short refusal.
       throw new AppError(
         `Точка не в городе заведения (${existing.city}). Проверьте координаты или город в карточке`,
         422,
