@@ -2,8 +2,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/widgets/map/establishment_pins.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
+
+import '../support/wire_fixtures.dart';
 
 /// Картинки карты: пин и кружок группы.
 ///
@@ -40,6 +44,47 @@ void main() {
       expect((tipRow + 1 - anchorRow).abs(), lessThanOrEqualTo(3),
           reason: 'кончик нарисован на строке $tipRow, якорь — на '
               '${anchorRow.toStringAsFixed(1)} из ${image.height}');
+    });
+
+    test('пины заведений отдают MapKit этот якорь — открытый, закрытый, '
+        'выбранный', () async {
+      // Тест выше сверяет картинку с якорем, но место, где якорь уходит в
+      // MapKit, не исполнял никто: на картах и в «Избранном» пины строит
+      // `buildEstablishmentPins`. Без `ensureInitialized` картинки нет, и
+      // пины идут запасной веткой без якоря — поэтому генератор поднят.
+      await generator.ensureInitialized(3.0);
+      final rows = [
+        establishmentRow(id: 'a', name: 'Открыто', workingHours: null),
+        establishmentRow(id: 'b', name: 'Выбрано', workingHours: null),
+        establishmentRow(
+            id: 'c', name: 'Приостановлено', status: 'suspended',
+            workingHours: null),
+      ];
+      final pins = buildEstablishmentPins(
+        [
+          for (final row in rows)
+            Establishment.fromJson(row
+              ..['latitude'] = 53.9
+              ..['longitude'] = 27.56),
+        ],
+        selectedId: 'b',
+        markers: generator,
+        onTap: (_) {},
+      );
+
+      expect(pins, hasLength(3));
+      for (final pin in pins) {
+        final style = (pin.icon!.toJson()['style'] as Map)
+            .cast<String, dynamic>();
+        expect(style['scale'], 1.0,
+            reason: 'предусловие: пин нарисован генератором (масштаб 1), а не '
+                'запасной картинкой пакета (масштаб 2, якорь по умолчанию)');
+        expect(style['anchor'], <String, double>{
+          'dx': MapMarkerPainter.anchor.dx,
+          'dy': MapMarkerPainter.anchor.dy,
+        }, reason: '${pin.mapId.value}: якорь пина не тот, что сверен с '
+            'кончиком хвостика');
+      }
     });
   });
 
