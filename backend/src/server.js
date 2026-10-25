@@ -8,7 +8,7 @@ import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
 import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
-import { AppError, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { AppError, BODY_LIMIT_MB, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { INSUFFICIENT_ROLE_MESSAGE } from './middleware/auth.js';
 import { requestGuard } from './middleware/requestGuard.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
@@ -137,9 +137,17 @@ app.use(rateLimiter);
  * Request parsing middleware — after the limiter, before the request guard,
  * which reads the parsed body.
  * ...existing code...
+ *
+ * inflate: false — a compressed body (any Content-Encoding but identity) is
+ * refused with 415, not unpacked: until 25.10.2026 it was unpacked before
+ * parsing and the limit counted the unpacked bytes. No client of ours sends
+ * one (the app's and the panel's Dio, the site's fetch; checked that day).
+ * Their refusals of a body too large, compressed, in a foreign charset or
+ * unreadable as a form answer in Russian with codes of their own
+ * (errorHandler.js BODY_PARSER_REFUSALS); invalid JSON keeps INVALID_JSON.
  */
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
+app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
 
 /**
  * Serve uploaded files (avatars, images) as static assets.
