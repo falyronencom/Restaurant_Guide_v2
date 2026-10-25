@@ -23,6 +23,7 @@ const mockCodeModel = {
   findActiveCodeForUser: jest.fn(),
   countRecentSends: jest.fn(),
   invalidateActiveCodesForUser: jest.fn(),
+  replaceActiveCodes: jest.fn(),
   incrementAttempts: jest.fn(),
   markAsUsed: jest.fn(),
 };
@@ -123,6 +124,7 @@ const arrange = () => {
   mockCodeModel.countRecentSends.mockResolvedValue(0);
   mockCodeModel.invalidateActiveCodesForUser.mockResolvedValue(0);
   mockCodeModel.createCode.mockResolvedValue({ id: 'code-1' });
+  mockCodeModel.replaceActiveCodes.mockResolvedValue({ id: 'code-2' });
   mockEmailService.sendVerificationCodeEmail.mockResolvedValue({ sent: true });
 };
 
@@ -164,8 +166,9 @@ describe('register — the first verification code', () => {
     // Answered while the email is still in flight — carrying the code just written.
     expect(res.status).toHaveBeenCalledWith(201);
     const [, writtenCode] = mockCodeModel.createCode.mock.calls[0];
+    // The account rides along for the sender's failure line (Н33).
     expect(mockEmailService.sendVerificationCodeEmail)
-      .toHaveBeenCalledWith(EMAIL, writtenCode, NAME);
+      .toHaveBeenCalledWith(EMAIL, writtenCode, NAME, { userId: USER_ID });
 
     email.release({ sent: true });
     await done;
@@ -205,7 +208,9 @@ describe('register — the first verification code', () => {
 describe('resend — POST /auth/send-verification-code', () => {
   beforeEach(arrange);
 
-  test('waits for the email and reports whether it was sent', async () => {
+  // Until 24.10 the earlier codes were retired and the new one written before
+  // the send; a refused send left the person with no working code (Н31).
+  test('waits for the email; the code replaces the earlier ones only once it went out', async () => {
     const email = parked();
     mockEmailService.sendVerificationCodeEmail.mockReturnValue(email.promise);
     const res = createRes();
@@ -213,13 +218,68 @@ describe('resend — POST /auth/send-verification-code', () => {
     const done = sendVerificationCode({ user: { userId: USER_ID } }, res, jest.fn());
     await flushPromises();
 
-    // The code is written, the response waits for the provider's verdict.
-    expect(mockCodeModel.createCode).toHaveBeenCalledTimes(1);
+    // The response waits for the provider's verdict; nothing is written yet.
+    expect(mockEmailService.sendVerificationCodeEmail).toHaveBeenCalledWith(
+      EMAIL,
+      expect.stringMatching(/^\d{6}$/),
+      NAME,
+      { userId: USER_ID },
+    );
+    expect(mockCodeModel.replaceActiveCodes).not.toHaveBeenCalled();
+    expect(mockCodeModel.invalidateActiveCodesForUser).not.toHaveBeenCalled();
+    expect(mockCodeModel.createCode).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
 
-    email.release({ sent: false });
+    email.release({ sent: true });
     await done;
+    const [, mailedCode] = mockEmailService.sendVerificationCodeEmail.mock.calls[0];
+    expect(mockCodeModel.replaceActiveCodes)
+      .toHaveBeenCalledWith(USER_ID, mailedCode, expect.any(Date));
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.payload.data).toEqual({ sent: false, expiresAt: expect.any(Date) });
+    expect(res.payload.data).toEqual({ sent: true, expiresAt: expect.any(Date) });
+  });
+
+  test.each([
+    ['the provider refused', { sent: false, reason: 'RESEND_ERROR' }],
+    ['the provider did not answer in time', { sent: false, reason: 'RESEND_TIMEOUT' }],
+  ])('%s: nothing is written, the earlier codes stay, the answer is 200 sent:false', async (_case, outcome) => {
+    mockEmailService.sendVerificationCodeEmail.mockResolvedValue(outcome);
+    const res = createRes();
+
+    await sendVerificationCode({ user: { userId: USER_ID } }, res, jest.fn());
+
+    expect(mockCodeModel.replaceActiveCodes).not.toHaveBeenCalled();
+    expect(mockCodeModel.invalidateActiveCodesForUser).not.toHaveBeenCalled();
+    expect(mockCodeModel.createCode).not.toHaveBeenCalled();
+    // The sender has logged the failure (one error line with the account);
+    // the service adds no second one.
+    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.payload).toEqual({
+      success: true,
+      data: { sent: false, expiresAt: expect.any(Date) },
+    });
+  });
+
+  // Without a mail provider outside production the database is the only
+  // channel (dev, tests): the code is written as before. In production a
+  // missing key is a refusal like any other.
+  test.each([
+    ['test', 1],
+    ['production', 0],
+  ])('no mail provider, NODE_ENV=%s: the code is written %i time(s)', async (nodeEnv, writes) => {
+    mockEmailService.sendVerificationCodeEmail.mockResolvedValue({ sent: false, reason: 'RESEND_NOT_CONFIGURED' });
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = nodeEnv;
+    const res = createRes();
+
+    try {
+      await sendVerificationCode({ user: { userId: USER_ID } }, res, jest.fn());
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    expect(mockCodeModel.replaceActiveCodes).toHaveBeenCalledTimes(writes);
+    expect(res.payload.data.sent).toBe(false);
   });
 });

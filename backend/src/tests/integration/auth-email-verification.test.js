@@ -15,8 +15,13 @@
  *   - Already verified → EMAIL_ALREADY_VERIFIED
  *
  * Note: Resend is not configured in test env, so emailService logs a
- * warning and returns sent:false — the DB row is still created and the
- * verification flow can be tested without real email delivery.
+ * warning and returns sent:false — outside production that is the dev mail
+ * channel: the DB row is still created and the verification flow can be
+ * tested without real email delivery.
+ *
+ * The resend cases about a mail provider that answers, refuses or keeps
+ * silent configure one: the Resend SDK is the one boundary replaced, by a
+ * stand-in whose answer each such test sets (`provider`).
  *
  * Rate limiting: register keys by IP — one bucket for every test under
  * supertest; send and verify key by account. beforeEach clears all three, so
@@ -24,10 +29,43 @@
  * limit the test is not about.
  */
 
-import request from 'supertest';
-import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
-import redisClient, { connectRedis } from '../../config/redis.js';
+import { jest } from '@jest/globals';
+
+/** What the stand-in provider was handed, in order; and how it answers. */
+const mails = [];
+let provider = () => ({ data: { id: 'msg-1' }, error: null });
+// A plain class, not jest.fn: resetMocks would wipe it before every test.
+jest.unstable_mockModule('resend', () => ({
+  Resend: class {
+    constructor() {
+      this.emails = {
+        send: async (msg, options) => {
+          mails.push(msg);
+          return provider(msg, options);
+        },
+      };
+    }
+  },
+}));
+
+const request = (await import('supertest')).default;
+const { default: app } = await import('../../server.js');
+const { clearAllData, query } = await import('../utils/database.js');
+const { default: redisClient, connectRedis } = await import('../../config/redis.js');
+const { _resetForTests: resetMailClient } = await import('../../services/emailService.js');
+
+const ACCEPTED = () => ({ data: { id: 'msg-1' }, error: null });
+const REFUSED = () => ({ data: null, error: { name: 'application_error', message: 'Service unavailable' } });
+const SILENT = () => new Promise(() => {});
+
+/** Turn the mail provider on, answering as `answer` does. */
+const configureProvider = (answer) => {
+  process.env.RESEND_API_KEY = 're_test_key';
+  resetMailClient();
+  provider = answer;
+};
+
+const codeInMail = (msg) => msg.text.match(/\b(\d{6})\b/)[1];
 
 const registerUser = async (overrides = {}) => {
   const payload = {
@@ -78,13 +116,31 @@ beforeAll(async () => {
   await clearAllData();
 });
 
+const originalResendKey = process.env.RESEND_API_KEY;
+const originalSendTimeout = process.env.EMAIL_SEND_TIMEOUT_MS;
+
 beforeEach(async () => {
   await clearAllData();
   await clearRateLimitKeys();
+  // No mail provider unless a test configures one.
+  process.env.RESEND_API_KEY = '';
+  resetMailClient();
+  mails.length = 0;
 });
 
 afterAll(async () => {
   await clearAllData();
+  if (originalResendKey === undefined) {
+    delete process.env.RESEND_API_KEY;
+  } else {
+    process.env.RESEND_API_KEY = originalResendKey;
+  }
+  if (originalSendTimeout === undefined) {
+    delete process.env.EMAIL_SEND_TIMEOUT_MS;
+  } else {
+    process.env.EMAIL_SEND_TIMEOUT_MS = originalSendTimeout;
+  }
+  resetMailClient();
 });
 
 describe('POST /api/v1/auth/register', () => {
@@ -149,28 +205,119 @@ describe('POST /api/v1/auth/send-verification-code', () => {
     expect(response.body.error.code).toBe('EMAIL_ALREADY_VERIFIED');
   });
 
-  test('issuing new code invalidates previous active code', async () => {
+  // Until 24.10 this test pinned the old order — the previous code retired
+  // before the send, whatever the send's outcome (it ran with sent:false).
+  // Now a code replaces the earlier ones once its email has gone out.
+  test('a resent code whose email went out replaces the previous one', async () => {
     const { user, accessToken } = await registerUser();
-
-    // First call (also auto-fired during register, but explicit call ensures
-    // we can read its row)
-    await request(app)
-      .post('/api/v1/auth/send-verification-code')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
     const firstCode = await getLatestCodeForUser(user.id);
+    configureProvider(ACCEPTED);
 
-    // Second call — invalidates first
-    await request(app)
+    const response = await request(app)
       .post('/api/v1/auth/send-verification-code')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
 
+    expect(response.body.data.sent).toBe(true);
     const previousRow = await query(
       'SELECT used_at FROM email_verification_codes WHERE id = $1',
       [firstCode.id],
     );
     expect(previousRow.rows[0].used_at).not.toBeNull();
+    const latest = await getLatestCodeForUser(user.id);
+    expect(latest.code).toBe(codeInMail(mails[0]));
+    expect(latest.used_at).toBeNull();
+  });
+
+  // Н31: the person found the first letter in spam, pressed «send again», and
+  // the provider refused — the code they hold must still work.
+  test('when the provider refuses a resend, the previous code keeps working and the unsent one does not', async () => {
+    const { user, accessToken } = await registerUser();
+    const firstCode = await getLatestCodeForUser(user.id);
+    configureProvider(REFUSED);
+
+    const response = await request(app)
+      .post('/api/v1/auth/send-verification-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    // The envelope the clients read (PR #126) is unchanged.
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.sent).toBe(false);
+    expect(response.body.data).toHaveProperty('expiresAt');
+    const { rows } = await query(
+      'SELECT id, used_at FROM email_verification_codes WHERE user_id = $1',
+      [user.id],
+    );
+    expect(rows).toEqual([{ id: firstCode.id, used_at: null }]);
+
+    // The code in the letter that did not go out is not accepted…
+    const unsentCode = codeInMail(mails[0]);
+    if (unsentCode !== firstCode.code) {
+      const refusedAttempt = await request(app)
+        .post('/api/v1/auth/verify-email-code')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: unsentCode })
+        .expect(401);
+      expect(refusedAttempt.body.error.code).toBe('INVALID_CODE');
+    }
+
+    // …and the first one is.
+    const verified = await request(app)
+      .post('/api/v1/auth/verify-email-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code: firstCode.code })
+      .expect(200);
+    expect(verified.body.data.user.emailVerified).toBe(true);
+  });
+
+  // Н35: a provider that does not answer is a refusal after the bound — the
+  // request does not hang until the client drops it.
+  test('when the provider does not answer in time, the resend answers sent:false and the previous code keeps working', async () => {
+    const { user, accessToken } = await registerUser();
+    const firstCode = await getLatestCodeForUser(user.id);
+    process.env.EMAIL_SEND_TIMEOUT_MS = '200';
+    configureProvider(SILENT);
+
+    try {
+      const response = await request(app)
+        .post('/api/v1/auth/send-verification-code')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      expect(response.body.data.sent).toBe(false);
+    } finally {
+      delete process.env.EMAIL_SEND_TIMEOUT_MS;
+    }
+
+    const { rows } = await query(
+      'SELECT id, used_at FROM email_verification_codes WHERE user_id = $1',
+      [user.id],
+    );
+    expect(rows).toEqual([{ id: firstCode.id, used_at: null }]);
+    await request(app)
+      .post('/api/v1/auth/verify-email-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code: firstCode.code })
+      .expect(200);
+  }, 5000);
+
+  // Н32: resends refused by the provider do not use up the hour's five — once
+  // mail is back, the person gets their code.
+  test('resends whose email did not go out do not count toward the hourly limit', async () => {
+    const { accessToken } = await registerUser(); // its code is one of the five
+    const send = () => request(app)
+      .post('/api/v1/auth/send-verification-code')
+      .set('Authorization', `Bearer ${accessToken}`);
+    configureProvider(REFUSED);
+
+    for (let i = 0; i < 5; i += 1) {
+      const refused = await send().expect(200);
+      expect(refused.body.data.sent).toBe(false);
+    }
+
+    provider = ACCEPTED;
+    const delivered = await send().expect(200);
+    expect(delivered.body.data.sent).toBe(true);
   });
 
   // «The previous active code» — the requester's own: another account's live

@@ -41,8 +41,8 @@ const mailed = [];
 jest.unstable_mockModule('../../services/emailService.js', () => ({
   CODE_PROMPT: '',
   sendVerificationCodeEmail: async () => ({ sent: false, reason: 'RESEND_NOT_CONFIGURED' }),
-  sendPasswordResetEmail: async (toEmail, rawToken) => {
-    mailed.push({ toEmail, rawToken });
+  sendPasswordResetEmail: async (toEmail, rawToken, _userName, context) => {
+    mailed.push({ toEmail, rawToken, context });
     return { sent: false, reason: 'RESEND_NOT_CONFIGURED' };
   },
   _resetForTests: () => {},
@@ -195,8 +195,11 @@ describe('POST /api/v1/auth/forgot-password', () => {
     // The service hands the mail over before it answers (fire-and-forget is
     // the delivery, not the call); a queued mailer would need a wait here.
     expect(mailed).toHaveLength(1);
-    const { toEmail, rawToken } = mailed[0];
+    const { toEmail, rawToken, context } = mailed[0];
     expect(toEmail).toBe(user.email);
+    // The account rides along: a letter that does not go out is logged with
+    // it, in the background — the answer and its timing do not change (Н33).
+    expect(context).toEqual({ userId: user.id });
     const [row] = await getTokenRowsForUser(user.id);
     expect(row.token_hash).toBe(sha256Hex(rawToken));
     expect(row.token_hash).not.toBe(rawToken);
