@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
+import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 
 /// Partner Establishment Card widget
 /// Displays establishment info with stats and status for partner dashboard
@@ -226,9 +226,8 @@ class PartnerEstablishmentCard extends StatelessWidget {
   Widget _buildImage() {
     if (establishment.primaryImageUrl != null &&
         establishment.primaryImageUrl!.isNotEmpty) {
-      return CachedNetworkImage(
+      return FrameCachedImage(
         imageUrl: establishment.primaryImageUrl!,
-        fit: BoxFit.cover,
         placeholder: (context, url) => Container(
           color: _greyText.withValues(alpha: 0.3),
           child: const Center(

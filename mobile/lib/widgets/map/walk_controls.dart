@@ -1,10 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/dimensions.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/walk_reach.dart';
+import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 
 // Управление прогулкой над картой (README макета, экран 3): чипы над картой,
 // выбор минут и шторка «ближайшие». Ничего не знает ни про избранное, ни про
@@ -454,9 +454,8 @@ class WalkPlaceCard extends StatelessWidget {
                   width: photoSize,
                   height: photoSize,
                   child: thumbnail != null
-                      ? CachedNetworkImage(
+                      ? FrameCachedImage(
                           imageUrl: thumbnail,
-                          fit: BoxFit.cover,
                           placeholder: (context, url) => placeholder(),
                           errorWidget: (context, url, error) => placeholder(),
                         )
