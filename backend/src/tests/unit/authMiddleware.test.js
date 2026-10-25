@@ -32,6 +32,8 @@ jest.unstable_mockModule('../../services/accountStatus.js', () => ({
 
 const { authenticate, authorize } = await import('../../middleware/auth.js');
 const { generateAccessToken } = await import('../../utils/jwt.js');
+const { errorHandler } = await import('../../middleware/errorHandler.js');
+const logger = (await import('../../utils/logger.js')).default;
 
 const USER_ID = '7a1d2c3b-0000-4000-8000-000000000001';
 
@@ -59,6 +61,18 @@ describe('authenticate — the account behind the token', () => {
     const [error] = next.mock.calls[0];
     expect(error.statusCode).toBe(503);
     expect(error.code).toBe('AUTH_CHECK_UNAVAILABLE');
+    // По-русски (прежде «Account check is temporarily unavailable…» — наружу
+    // уходила общая фраза сбоя). Сторож: ни одной латинской буквы, и
+    // errorHandler отдаёт этот текст как написан.
+    const text = 'Не удалось проверить учётную запись. Повторите попытку через несколько секунд.';
+    expect(error.message).toBe(text);
+    expect(error.message).not.toMatch(/[A-Za-z]/);
+    const out = { status: jest.fn(function status() { return this; }), json: jest.fn() };
+    jest.spyOn(logger, 'error').mockImplementation(() => {});
+    errorHandler(error, { path: '/x', method: 'GET', ip: '127.0.0.1' }, out, () => {});
+    expect(out.status).toHaveBeenCalledWith(503);
+    expect(out.json.mock.calls[0][0].message).toBe(text);
+    expect(out.json.mock.calls[0][0].error.code).toBe('AUTH_CHECK_UNAVAILABLE');
   });
 
   test.each([
