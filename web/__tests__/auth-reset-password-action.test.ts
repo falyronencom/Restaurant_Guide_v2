@@ -117,17 +117,21 @@ describe('resetPasswordAction — backend error mapping', () => {
       }),
     );
 
+    // A password that passes the site's own check, so the request really goes
+    // out and the 422 below is the SERVER's answer (with 'NoDigitsPass' the
+    // site's pre-check answered the same text and the server was never asked).
     const result = await resetPasswordAction(
       null,
-      formDataOf({ token: TOKEN, password: 'NoDigitsPass' }),
+      formDataOf({ token: TOKEN, password: 'NewPass456' }),
     );
 
+    expect(serverFetchMock).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: false,
       code: 'VALIDATION_ERROR',
       fieldErrors: { password: expect.stringMatching(/8 символов/) },
     });
-    expect(JSON.stringify(result)).not.toContain('NoDigitsPass');
+    expect(JSON.stringify(result)).not.toContain('NewPass456');
   });
 
   it('maps 429 RATE_LIMIT_EXCEEDED to the Russian try-later message', async () => {

@@ -33,6 +33,10 @@ describe('reportClientError', () => {
     expect(payload.stack).toEqual(expect.stringContaining('boom'));
     expect(payload.path).toBe('/minsk/cafe-x');
     expect(payload.path).not.toContain('query');
+    // Pathname ONLY: the body carries these four fields and nothing that
+    // could hold the query string (href, search, referrer…).
+    expect(Object.keys(payload).sort()).toEqual(['digest', 'message', 'path', 'stack']);
+    expect(init.body).not.toContain('query');
   });
 
   it('falls back to a placeholder message when the error has none', () => {
@@ -50,6 +54,15 @@ describe('reportClientError', () => {
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(payload.message).toHaveLength(500);
     expect(payload.stack).toHaveLength(4000);
+  });
+
+  it('pre-slices digest and path too (100 and 200, the sink caps)', () => {
+    window.history.pushState({}, '', `/${'p'.repeat(1_000)}`);
+    reportClientError(Object.assign(new Error('boom'), { digest: 'd'.repeat(1_000) }));
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(payload.digest).toHaveLength(100);
+    expect(payload.path).toHaveLength(200);
   });
 
   it('never throws when fetch itself is broken', () => {

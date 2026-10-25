@@ -19,8 +19,17 @@ import nextConfig from '../next.config';
 
 const OUR_CLOUD = 'davrzdre8';
 
+// Оптимизатор Next 16 сверяет адрес с ДВУМЯ списками: устаревшим
+// images.domains и remotePatterns (next/dist/server/image-optimizer.js —
+// hasRemoteMatch(domains, remotePatterns, …)). Сопоставитель получает оба
+// списка из настоящего конфига, как в /_next/image, — иначе хост, вписанный в
+// domains, прошёл бы мимо всех проверок ниже.
 const allowed = (url: string) =>
-  hasRemoteMatch([], nextConfig.images?.remotePatterns ?? [], new URL(url));
+  hasRemoteMatch(
+    nextConfig.images?.domains ?? [],
+    nextConfig.images?.remotePatterns ?? [],
+    new URL(url),
+  );
 
 describe('images.remotePatterns — Cloudinary только нашего аккаунта', () => {
   it('картинка из нашего облака проходит, в том числе с меткой SDK ?_a=', () => {
@@ -45,6 +54,10 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
   it('чужой хост — нет, даже с путём нашего облака', () => {
     expect(allowed(`https://evil.example/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
     expect(allowed(`https://res.cloudinary.com.evil.example/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
+  });
+
+  it('устаревший список images.domains пуст: хосты задаёт только remotePatterns', () => {
+    expect(nextConfig.images?.domains ?? []).toEqual([]);
   });
 
   it('наше облако — только по https', () => {

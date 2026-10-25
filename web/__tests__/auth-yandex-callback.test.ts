@@ -113,6 +113,10 @@ describe('Yandex callback — happy path', () => {
       TOKEN_URL,
       expect.objectContaining({
         method: 'POST',
+        // OAuth 2.0 token request is a form post (RFC 6749 §4.1.3).
+        headers: expect.objectContaining({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }),
         body: expect.stringContaining('code=auth-code'),
       }),
     );
@@ -121,6 +125,8 @@ describe('Yandex callback — happy path', () => {
       '/api/v1/auth/oauth',
       expect.objectContaining({
         method: 'POST',
+        // JSON only under application/json (backend server.js, express.json).
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ provider: 'yandex', token: 'ya-token' }),
       }),
     );
