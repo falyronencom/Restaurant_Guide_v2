@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -498,6 +499,69 @@ void main() {
 
       expect(find.text('Отзыв из профиля'), findsOneWidget);
       expect(find.text(_failed), findsNothing);
+    });
+
+    testWidgets('карточка отзыва: фото и кухня заведения из ответа сервера',
+        (tester) async {
+      // Ответ в форме сервера (reviewService.getUserReviews): о заведении —
+      // только вложенный `establishment`. До 25.10.2026 фото и кухню читали
+      // из плоских ключей, которых сервер не шлёт: на месте фото был серый
+      // кружок, кухни не было (D4, находка 1).
+      const cover = 'https://res.cloudinary.com/demo/image/upload/'
+          'c_limit,w_1200/v1/establishments/e1/interior/p1';
+      installWireStand((options) {
+        if (options.uri.path == '/api/v1/users/u-1/reviews') {
+          return jsonBody({
+            'success': true,
+            'data': {
+              'reviews': [
+                {
+                  'id': '33333333-3333-4333-8333-000000000002',
+                  'establishment_id': _placeId,
+                  'establishment': {
+                    'id': _placeId,
+                    'name': 'Васильки',
+                    'city': 'Минск',
+                    'category': 'Ресторан',
+                    'cuisine': 'Народная',
+                    'primary_image_url': cover,
+                  },
+                  'rating': 5,
+                  'content': 'Отзыв с фото',
+                  'created_at': '2026-10-10T10:00:00.000Z',
+                },
+              ],
+              'pagination': {'page': 1, 'limit': 20, 'total': 1, 'pages': 1},
+            },
+          });
+        }
+        return jsonBody({'success': false}, status: 404);
+      });
+
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(400, 2000);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(create: (_) => _SignedIn()),
+          ChangeNotifierProvider<EstablishmentsProvider>(
+              create: (_) => _NoLocation()),
+          ChangeNotifierProvider(create: (_) => PartnerDashboardProvider()),
+          ChangeNotifierProvider(create: (_) => NotificationProvider()),
+          ChangeNotifierProvider(create: (_) => BookingProvider()),
+        ],
+        child: const MaterialApp(home: ProfileScreen()),
+      ));
+      await tester.pump();
+      await tester.tap(find.text('Показать профиль'));
+      await _pumpUntil(tester, find.text('Отзыв с фото'));
+
+      final photo = find.byWidgetPredicate(
+          (w) => w is CachedNetworkImage && w.imageUrl == cover);
+      expect(photo, findsOneWidget, reason: 'на месте фото — серый кружок');
+      // Фото декодируется под кружок 59 dp (вариант Б, PR #130).
+      expect(tester.widget<CachedNetworkImage>(photo).memCacheWidth, isNotNull);
+      expect(find.text('Народная'), findsOneWidget);
     });
   });
 }

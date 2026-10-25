@@ -191,7 +191,11 @@ class UserReview {
   });
 
   factory UserReview.fromJson(Map<String, dynamic> json) {
-    // Backend returns nested: { establishment: { id, name, city, category } }
+    // Backend returns nested:
+    // { establishment: { id, name, city, category, cuisine, primary_image_url } }
+    // Фото и кухню раньше читали только из плоских ключей, которых сервер
+    // не шлёт: в «Моих отзывах» всегда был серый кружок и не было кухни
+    // (D4, находка 1, 25.10.2026).
     final est = json['establishment'] as Map<String, dynamic>?;
 
     return UserReview(
@@ -200,10 +204,12 @@ class UserReview {
       establishmentName: est?['name'] as String? ??
           json['establishment_name'] as String? ??
           'Заведение',
-      establishmentImage: json['establishment_image'] as String?,
+      establishmentImage: est?['primary_image_url'] as String? ??
+          json['establishment_image'] as String?,
       establishmentType: est?['category'] as String? ??
           json['establishment_type'] as String?,
-      establishmentCuisine: json['establishment_cuisine'] as String?,
+      establishmentCuisine: est?['cuisine'] as String? ??
+          json['establishment_cuisine'] as String?,
       rating: json['rating'] as int,
       text: json['content'] as String? ?? json['text'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
