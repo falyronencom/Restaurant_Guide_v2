@@ -406,13 +406,15 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
   // its author. The «Reviews» screen withholds the same reason from a viewer
   // (adminReviewService.getReviews, PR #118); the journal handed it over
   // (walkthrough of the moderator panel, wave 3, Phase 3.5 lens review).
+  // `batch_id` — the panel's own mark of one «Скрыть выбранные» — stays with
+  // an admin too; a viewer keeps `batch_size` (walkthrough, after wave 3).
   const changeColumns = viewer
     ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
           THEN NULL ELSE al.old_data END as old_data,
       CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
           THEN NULL
         WHEN al.action IN ('review_hide', 'review_show', 'review_delete')
-          THEN al.new_data - 'reason'
+          THEN al.new_data - 'reason' - 'batch_id'
         ELSE al.new_data END as new_data`
     : 'al.old_data, al.new_data';
 
