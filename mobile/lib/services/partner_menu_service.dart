@@ -3,6 +3,16 @@ import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
+/// Код отказа перезапуска, у которого постановка упала у всех файлов
+/// (сервер — `OCR_RESTART_FAILED`, 500, с 25.10.2026, находка Н40). Тем же
+/// кодом приложение называет ответ прежнего сервера «поставлено 0»: это был
+/// тот же случай, отвеченный успехом.
+const String retryOcrNotQueuedCode = 'OCR_RESTART_FAILED';
+
+/// Фраза партнёру на этот отказ, если сервер не прислал свою.
+const String retryOcrNotQueuedMessage =
+    'Не удалось запустить распознавание. Попробуйте позже.';
+
 /// Outcome of a retry-OCR request. Captures both success and rate-limit
 /// cases without throwing, so the UI can render a friendly message using
 /// the backend-provided retry-after value.
@@ -55,7 +65,16 @@ class PartnerMenuSnapshot {
   final List<PartnerMenuItem> items;
   final MenuRecognition? recognition;
 
-  const PartnerMenuSnapshot({required this.items, this.recognition});
+  /// Сервер прислал `recognition: null` — состояние он прочитать не смог
+  /// (`partnerMenuItemService.readRecognitionState`), а не «поля нет»: сервер
+  /// до 24.10.2026 его не присылал вовсе, а незнакомое значение — не `null`.
+  final bool recognitionUnread;
+
+  const PartnerMenuSnapshot({
+    required this.items,
+    this.recognition,
+    this.recognitionUnread = false,
+  });
 }
 
 /// API service for partner-scoped menu item operations.
@@ -87,6 +106,8 @@ class PartnerMenuService {
           .map((e) => PartnerMenuItem.fromJson(e as Map<String, dynamic>))
           .toList(),
       recognition: MenuRecognition.fromJson(data['recognition']),
+      recognitionUnread:
+          data.containsKey('recognition') && data['recognition'] == null,
     );
   }
 
@@ -125,8 +146,19 @@ class PartnerMenuService {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         final result = data['data'] as Map<String, dynamic>? ?? {};
+        final enqueuedJobs = (result['enqueuedJobs'] as num?)?.toInt() ?? 0;
+        // Успех без единого поставленного файла — так прежний сервер отвечал,
+        // когда постановка упала у всех: файл с идущим заданием он считает
+        // поставленным. До 25.10.2026 экран показывал на это зелёное
+        // «Распознавание уже выполняется».
+        if (enqueuedJobs == 0) {
+          return RetryOcrResult.failure(
+            code: retryOcrNotQueuedCode,
+            message: retryOcrNotQueuedMessage,
+          );
+        }
         return RetryOcrResult.success(
-          enqueuedJobs: (result['enqueuedJobs'] as num?)?.toInt() ?? 0,
+          enqueuedJobs: enqueuedJobs,
           totalPdfs: (result['totalPdfs'] as num?)?.toInt() ?? 0,
         );
       }
@@ -145,12 +177,24 @@ class PartnerMenuService {
           message: 'Лимит перезапусков исчерпан',
         );
       }
-      if (status == 400 && e.response?.data is Map<String, dynamic>) {
+      if (e.response?.data is Map<String, dynamic>) {
         final data = e.response!.data as Map<String, dynamic>;
         final err = data['error'];
-        if (err is Map<String, dynamic>) {
+        final code = err is Map<String, dynamic> ? err['code'] : null;
+        if (status == 400 && err is Map<String, dynamic>) {
           return RetryOcrResult.failure(
-            code: err['code']?.toString() ?? 'BAD_REQUEST',
+            code: code?.toString() ?? 'BAD_REQUEST',
+          );
+        }
+        // Постановка упала у всех файлов: у этого отказа фраза сервера
+        // русская (MENU_RECOGNITION_REFUSALS).
+        if (code == retryOcrNotQueuedCode) {
+          final message = data['message'];
+          return RetryOcrResult.failure(
+            code: retryOcrNotQueuedCode,
+            message: message is String && message.trim().isNotEmpty
+                ? message
+                : retryOcrNotQueuedMessage,
           );
         }
       }

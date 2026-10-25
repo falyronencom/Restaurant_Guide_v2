@@ -29,6 +29,10 @@ class PartnerMenuProvider with ChangeNotifier {
   String? _error;
   Timer? _pollingTimer;
 
+  /// Фоновых обновлений подряд, которые не удались (опрос, обновление после
+  /// перезапуска); обнуляет любой удачный ответ.
+  int _failedRefreshes = 0;
+
   /// Растёт на каждой загрузке и на каждой остановке опроса: загрузка,
   /// пережившая остановку, видит чужой номер и опрос не включает.
   int _pollingSession = 0;
@@ -64,6 +68,7 @@ class PartnerMenuProvider with ChangeNotifier {
     _recognition = null;
     _isLoading = false;
     _error = null;
+    _failedRefreshes = 0;
     notifyListeners();
   }
 
@@ -76,6 +81,16 @@ class PartnerMenuProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get hasItems => _items.isNotEmpty;
+
+  /// Экран, возможно, устарел: фоновое обновление не удалось
+  /// [staleAfterFailedRefreshes] раза подряд (находка Н41, 25.10.2026: до
+  /// этого ошибка опроса терялась молча, и «Распознаём меню…» могло висеть,
+  /// когда всё уже кончилось). Одна неудача — ещё не пометка: опрос раз в 30 с
+  /// переживает короткий обрыв связи сам.
+  bool get isStale => _failedRefreshes >= staleAfterFailedRefreshes;
+
+  /// Сколько неудач фонового обновления подряд делают экран «устаревшим».
+  static const int staleAfterFailedRefreshes = 2;
 
   /// Items grouped by category_raw, preserving insertion order.
   /// Uncategorized items collected under the empty-string key.
@@ -101,6 +116,8 @@ class PartnerMenuProvider with ChangeNotifier {
       _recognition = null;
       _error = null;
     }
+    // Экран открылся заново — прежние неудачи к нему не относятся.
+    _failedRefreshes = 0;
     // Two guards, one answer each: the account changed while the fetch was in
     // flight (generation, pack 1 of the critics' findings, point 4) or the
     // screen was closed / polling stopped (session) — in both cases the timer
@@ -188,14 +205,31 @@ class PartnerMenuProvider with ChangeNotifier {
       // (another menu screen opened): the answer is not this card's to show.
       if (generation != _generation || id != _currentEstablishmentId) return;
       _items = fetched.items;
-      _recognition = fetched.recognition;
       _error = null;
+      if (fetched.recognitionUnread) {
+        // Список пришёл, а состояние сервер прочитать не смог: показанное
+        // состояние остаётся (ревью 25.10.2026, линза: иначе экран падал на
+        // прежний пустой «…выполняется автоматически» и снимал плашку), и это
+        // неудача обновления, как и сбой запроса.
+        _failedRefreshes++;
+      } else {
+        _recognition = fetched.recognition;
+        _failedRefreshes = 0;
+      }
     } catch (e) {
       if (generation != _generation || id != _currentEstablishmentId) return;
       if (!silent) {
         _error = 'Не удалось загрузить позиции меню';
       }
-      // Silent poll errors are swallowed — existing items remain visible.
+      // Что было на экране, остаётся, а неудача считается — и фоновая, и
+      // обновление потягиванием (его ошибка при непустом списке не видна):
+      // после второй подряд экран говорит, что мог устареть ([isStale]),
+      // без красной плашки на каждый обрыв связи.
+      _failedRefreshes++;
+      if (kDebugMode) {
+        debugPrint('PartnerMenuProvider: обновление не удалось '
+            '($_failedRefreshes подряд): $e');
+      }
     } finally {
       if (generation == _generation && id == _currentEstablishmentId) {
         if (!silent) {
