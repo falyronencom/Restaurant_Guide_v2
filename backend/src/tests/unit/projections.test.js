@@ -367,7 +367,14 @@ describe('toPublicUserReview — user review projection', () => {
     is_edited: true,
     created_at: '2025-01-30',
     updated_at: '2025-01-30',
-    establishment: { id: 'est-1', name: 'Test Restaurant', city: 'Минск', category: 'Ресторан' },
+    establishment: {
+      id: 'est-1',
+      name: 'Test Restaurant',
+      city: 'Минск',
+      category: 'Ресторан',
+      cuisine: 'Народная',
+      primary_image_url: 'https://res.cloudinary.com/demo/image/upload/v1/establishments/est-1/p1',
+    },
   };
 
   test('excludes partner_responder_id', () => {
@@ -382,12 +389,17 @@ describe('toPublicUserReview — user review projection', () => {
   });
 
   test('preserves establishment wrapper', () => {
+    // Whole, cuisine and cover included: «Мои отзывы» in the app read them
+    // from here (D4, finding 1) — a whitelist inside the wrapper would drop
+    // them silently.
     const result = toPublicUserReview(formattedUserReview);
     expect(result.establishment).toEqual({
       id: 'est-1',
       name: 'Test Restaurant',
       city: 'Минск',
       category: 'Ресторан',
+      cuisine: 'Народная',
+      primary_image_url: 'https://res.cloudinary.com/demo/image/upload/v1/establishments/est-1/p1',
     });
   });
 

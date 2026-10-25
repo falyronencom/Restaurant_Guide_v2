@@ -1343,6 +1343,69 @@ describe('Reviews System - Public Projection on Legacy Listing Endpoints', () =>
       }
     });
 
+    test('«Мои отзывы»: фото — обложка заведения, кухня — первая кухня строкой', async () => {
+      // D4, finding 1: the app read the photo and the cuisine under names
+      // this answer never had — «Мои отзывы» showed a grey circle and no
+      // cuisine. Through the real model; the app reads
+      // `establishment.primary_image_url` and `establishment.cuisine`
+      // (mobile/lib/models/review.dart, UserReview.fromJson).
+      const cover = 'https://res.cloudinary.com/demo/image/upload/c_limit,w_1200/v1/establishments/reviews-test/cover';
+      const { rows: [before] } = await query(
+        'SELECT cuisines, primary_image_url FROM establishments WHERE id = $1',
+        [establishmentId],
+      );
+      await query(
+        'UPDATE establishments SET cuisines = ARRAY[\'Народная\', \'Европейская\'], primary_image_url = $2 WHERE id = $1',
+        [establishmentId, cover],
+      );
+      try {
+        const response = await request(app)
+          .get(`/api/v1/users/${userId}/reviews`)
+          .expect(200);
+
+        expect(response.body.data.reviews.length).toBeGreaterThan(0);
+        for (const r of response.body.data.reviews) {
+          expect(r.establishment.primary_image_url).toBe(cover);
+          expect(r.establishment.cuisine).toBe('Народная');
+        }
+      } finally {
+        await query(
+          'UPDATE establishments SET cuisines = $2, primary_image_url = $3 WHERE id = $1',
+          [establishmentId, before.cuisines, before.primary_image_url],
+        );
+      }
+    });
+
+    test('«Мои отзывы»: обложку не активного заведения не отдаёт', async () => {
+      // The list is public, the catalog shows active cards only: a suspended
+      // card's cover (its partner can still change photos) must not surface
+      // here. The review itself stays in the list, with the grey circle.
+      const cover = 'https://res.cloudinary.com/demo/image/upload/c_limit,w_1200/v1/establishments/reviews-test/suspended';
+      const { rows: [before] } = await query(
+        'SELECT status, primary_image_url FROM establishments WHERE id = $1',
+        [establishmentId],
+      );
+      await query(
+        'UPDATE establishments SET status = \'suspended\', primary_image_url = $2 WHERE id = $1',
+        [establishmentId, cover],
+      );
+      try {
+        const response = await request(app)
+          .get(`/api/v1/users/${userId}/reviews`)
+          .expect(200);
+
+        expect(response.body.data.reviews.length).toBeGreaterThan(0);
+        for (const r of response.body.data.reviews) {
+          expect(r.establishment.primary_image_url).toBeNull();
+        }
+      } finally {
+        await query(
+          'UPDATE establishments SET status = $2, primary_image_url = $3 WHERE id = $1',
+          [establishmentId, before.status, before.primary_image_url],
+        );
+      }
+    });
+
     test('preserves public fields (rating, content, partner_response text)', async () => {
       const response = await request(app)
         .get(`/api/v1/users/${userId}/reviews`)

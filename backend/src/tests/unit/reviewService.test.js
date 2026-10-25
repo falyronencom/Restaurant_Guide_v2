@@ -657,6 +657,10 @@ describe('reviewService', () => {
         // service's own `establishment_category`, so it stayed green while
         // the live answer never had a type).
         establishment_categories: ['Ресторан', 'Бар'],
+        // Cuisines and cover — also as the model returns them (D4, finding 1).
+        establishment_cuisines: ['Народная', 'Европейская'],
+        establishment_primary_image_url:
+          'https://res.cloudinary.com/demo/image/upload/c_limit,w_1200/v1/establishments/e1/interior/p1',
       },
     ];
 
@@ -675,6 +679,9 @@ describe('reviewService', () => {
           name: 'Test Restaurant',
           city: 'Минск',
           category: 'Ресторан',
+          cuisine: 'Народная',
+          primary_image_url:
+            'https://res.cloudinary.com/demo/image/upload/c_limit,w_1200/v1/establishments/e1/interior/p1',
         },
       });
       expect(result.pagination).toEqual({
@@ -685,6 +692,22 @@ describe('reviewService', () => {
         hasNext: false,
         hasPrevious: false,
       });
+    });
+
+    test('a place without cuisines or cover gives null, not a missing key', async () => {
+      // The app draws the grey circle and no cuisine line for null — the
+      // same as before for such a place; an absent key would read the same,
+      // so the null is pinned explicitly.
+      ReviewModel.getUserById.mockResolvedValue(createMockUser({ id: userId }));
+      ReviewModel.findReviewsByUser.mockResolvedValue([
+        { ...reviews[0], establishment_cuisines: [], establishment_primary_image_url: '' },
+      ]);
+      ReviewModel.countReviewsByUser.mockResolvedValue(1);
+
+      const result = await getUserReviews(userId, { page: 1, limit: 10 });
+
+      expect(result.reviews[0].establishment).toHaveProperty('cuisine', null);
+      expect(result.reviews[0].establishment).toHaveProperty('primary_image_url', null);
     });
 
     test('should throw when user not found', async () => {
