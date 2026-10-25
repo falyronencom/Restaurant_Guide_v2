@@ -25,17 +25,34 @@ function withMondayOpen(f: WizardFormState): WizardFormState {
 
 describe('meetsValidatorMinimum', () => {
   /*
-   * Honesty-audit boundary (2026-09-07, narrowed 2026-09-08): the `street ||
-   * building` address rule (mutation M34) has left this list — the street-only
-   * case below falsifies it on its own, and `||` → `&&` in validation.ts turns
-   * that case red. The rest of the finding stands: apart from observed hours,
-   * no conjunct is ever the sole reason a fixture is false, so `hasCuisine`
-   * (mutation M59), `hasCategory`, `hasName` and `hasCity` can each still be
-   * dropped from validation.ts with this file green. Same shape in evaluateE1
-   * below: only `photos` and `menu` are individually falsified — `hours` and
-   * `classification` are not (M62) — and the photo threshold is probed with 2
-   * against 5, so 4 would pass as well (M60).
+   * Honesty audit (2026-09-07/08, closed 2026-10-25): every conjunct is now
+   * the SOLE reason some fixture is false — the «all but one» table below
+   * (name, city, address, category; cuisine — in the bar/club block at the
+   * end) and the hours case. Dropping any one of them from validation.ts
+   * turns its row red. The `street || building` rule is held by the
+   * street-only case. In evaluateE1 below the same holds for photos (4 vs 5),
+   * menu, hours and both halves of classification.
    */
+  const complete = withMondayOpen({
+    ...emptyForm(),
+    name: 'Кафе «Весна»',
+    city: 'Минск',
+    street: 'проспект Независимости',
+    building: '10',
+    categories: ['Кафе'],
+    cuisines: ['Народная'],
+  });
+
+  it.each<[string, Partial<WizardFormState>]>([
+    ['name', { name: '' }],
+    ['city', { city: '' }],
+    ['address (neither street nor building)', { street: '', building: '' }],
+    ['category (cuisine present)', { categories: [] }],
+  ])('is false when everything but the %s is filled', (_, missing) => {
+    expect(meetsValidatorMinimum(complete)).toBe(true); // fixture guard
+    expect(meetsValidatorMinimum({ ...complete, ...missing })).toBe(false);
+  });
+
   it('is false for an empty form', () => {
     expect(meetsValidatorMinimum(emptyForm())).toBe(false);
   });
@@ -109,6 +126,37 @@ describe('evaluateE1', () => {
     const e1 = evaluateE1(f);
     expect(e1.photos).toBe(false);
     expect(e1.passed).toBe(false);
+    // The boundary itself: 4 is not enough, 5 is (product rule «от 5 фото»;
+    // the server does not check media, so this gate is the only one).
+    const four = evaluateE1({
+      ...ready,
+      interiorPhotos: [photo(1), photo(2), photo(3), photo(4)],
+    });
+    expect(four.photos).toBe(false);
+    expect(four.passed).toBe(false);
+    expect(ready.interiorPhotos).toHaveLength(5);
+    expect(evaluateE1(ready).photos).toBe(true);
+  });
+
+  // Classification has two halves: a category, and a cuisine where the
+  // category needs one. The cuisine half is held by the bar/club block at the
+  // end; this is the category half — the cuisine is there, the category not.
+  it('fails classification (and overall) without a category — cuisine present', () => {
+    expect(ready.cuisines.length).toBeGreaterThan(0); // fixture guard
+    const e1 = evaluateE1({ ...ready, categories: [] });
+    expect(e1.classification).toBe(false);
+    expect(e1.passed).toBe(false);
+  });
+
+  it('fails hours (and overall) when no day is open — everything else ready', () => {
+    const e1 = evaluateE1({ ...ready, workingHours: emptyForm().workingHours });
+    expect(e1).toMatchObject({
+      photos: true,
+      menu: true,
+      classification: true,
+      hours: false,
+      passed: false,
+    });
   });
 
   it('menu is satisfied by a PDF alone', () => {
@@ -165,6 +213,12 @@ describe('clientCompleteness mirrors the base_score weights', () => {
     // Honesty audit 2026-09-07: the total alone cannot see a permutation of the
     // weights — swapping priceRange (25) with attributes (20) left every test
     // green. Each weight this file claims to mirror is now pinned on its own.
+    // description and phone too: their sum (40) and the total (100) cannot
+    // see the two swapped. Weights from the server's base_score
+    // (establishmentModel.calculateCompletenessScore): description 25,
+    // price 25, attributes 20, phone 15, email 10, website 5.
+    expect(clientCompleteness({ ...emptyForm(), description: 'x' })).toBe(25);
+    expect(clientCompleteness({ ...emptyForm(), phone: '+375291112233' })).toBe(15);
     expect(clientCompleteness({ ...emptyForm(), priceRange: '$$' })).toBe(25);
     expect(clientCompleteness({ ...emptyForm(), attributes: ['wifi'] })).toBe(20);
     expect(clientCompleteness({ ...emptyForm(), email: 'info@example.by' })).toBe(10);

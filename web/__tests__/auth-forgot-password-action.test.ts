@@ -112,6 +112,9 @@ describe('forgotPasswordAction — backend error mapping', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'RATE_LIMIT_EXCEEDED' });
     expect((result as { message: string }).message).toMatch(/Слишком много попыток/);
+    // React 19 resets the form after the action: the email comes back only
+    // through the echoed values, so the person does not retype it.
+    expect(result).toMatchObject({ values: { email: 'user@test.by' } });
   });
 
   it('maps a network failure to the generic offline message', async () => {

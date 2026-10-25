@@ -108,6 +108,42 @@ describe('startYandexLogin', () => {
     expect(redirectedUrl.searchParams.get('response_type')).toBe('code');
   });
 
+  // state is the login-CSRF binding for Yandex: it must not be predictable,
+  // so two starts never share one.
+  it('mints a fresh state on every start — two starts never share one', async () => {
+    const fd = new FormData();
+    fd.set('returnTo', '/minsk');
+
+    await startYandexLogin(fd);
+    await startYandexLogin(fd);
+
+    const states = mockStore.set.mock.calls
+      .filter((c) => c[0] === 'y_state')
+      .map((c) => (JSON.parse(c[1] as string) as { n: string }).n);
+    expect(states).toHaveLength(2);
+    expect(states[0]).not.toBe(states[1]);
+  });
+
+  // The real redirect() never returns: it throws NEXT_REDIRECT. Whatever the
+  // action does after it never happens, so the state cookie must already be
+  // written when it throws — the callback looks for it.
+  it('writes y_state BEFORE redirect() throws', async () => {
+    redirectMock.mockImplementationOnce(() => {
+      throw new Error('NEXT_REDIRECT');
+    });
+    const fd = new FormData();
+    fd.set('returnTo', '/minsk');
+
+    await expect(startYandexLogin(fd)).rejects.toThrow('NEXT_REDIRECT');
+
+    const yStateCall = mockStore.set.mock.calls.find((c) => c[0] === 'y_state');
+    expect(yStateCall).toBeDefined();
+    const stored = JSON.parse(yStateCall![1] as string) as { n: string };
+    expect(
+      new URL(redirectMock.mock.calls[0][0] as string).searchParams.get('state'),
+    ).toBe(stored.n);
+  });
+
   it('collapses an unsafe returnTo to / before storing it (open-redirect guard at the source)', async () => {
     const fd = new FormData();
     fd.set('returnTo', '//evil.com');

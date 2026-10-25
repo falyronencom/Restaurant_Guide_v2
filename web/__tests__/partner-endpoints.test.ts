@@ -66,6 +66,24 @@ describe('partner endpoints — data.establishment unwrapping', () => {
     );
   });
 
+  // The card body is parsed only under application/json (backend server.js,
+  // express.json): without the header the server sees an empty body and the
+  // card can be neither created nor saved.
+  it('create and update send the card as JSON (Content-Type: application/json)', async () => {
+    fetchMock.mockResolvedValue({ establishment: { id: 'e1', status: 'draft' } });
+
+    await createEstablishment({ name: 'Кафе' } as never);
+    await updateEstablishment('e1', { name: 'Кафе 2' } as never);
+
+    const [createInit, updateInit] = fetchMock.mock.calls.map(
+      ([, init]) => init as { headers: Record<string, string>; body: string },
+    );
+    expect(createInit.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(createInit.body)).toEqual({ name: 'Кафе' });
+    expect(updateInit.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(updateInit.body)).toEqual({ name: 'Кафе 2' });
+  });
+
   it('submitEstablishment unwraps and POSTs to /:id/submit', async () => {
     fetchMock.mockResolvedValue({
       establishment: { id: 'e1', status: 'pending' },

@@ -62,6 +62,12 @@ describe('verifyEmailCodeAction — success', () => {
       (mockAuthedFetch.mock.calls[0][1] as { body: string }).body,
     ) as Record<string, unknown>;
     expect(body).toEqual({ code: '123456' });
+    // The body is JSON only under application/json (backend server.js,
+    // express.json): without the header the server sees no code and answers
+    // 400 «Введите 6-значный код» to every try.
+    expect(
+      (mockAuthedFetch.mock.calls[0][1] as { headers: Record<string, string> }).headers,
+    ).toEqual(expect.objectContaining({ 'Content-Type': 'application/json' }));
 
     expect(result).toEqual({ ok: true });
     expect(serverFetchMock).not.toHaveBeenCalled();

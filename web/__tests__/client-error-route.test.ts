@@ -10,7 +10,13 @@
  * throttle caps a storm.
  *
  * NOTE: the handler keeps its throttle window in module state, so the 429
- * test must stay LAST in this file — it deliberately exhausts the window.
+ * test must stay LAST in the shared-module block — it deliberately exhausts
+ * the window. The window's own numbers (30 per minute, reset after 60 s) are
+ * pinned on a fresh copy of the module with a controlled clock, below.
+ *
+ * Expected numbers are the route's documented contract (header comments of
+ * route.ts): a 32 768-byte body cap, field caps message 500 / stack 4000 /
+ * digest 100 / path 200 / user-agent 200, 30 reports per 60-second window.
  */
 
 import { POST as clientErrorPost } from '@/app/api/client-error/route';
@@ -18,11 +24,13 @@ import { POST as clientErrorPost } from '@/app/api/client-error/route';
 const SAME = { origin: 'http://localhost:3000', host: 'localhost:3000' };
 const CROSS = { origin: 'http://evil.example', host: 'localhost:3000' };
 
+type FakeRequest = Request & { json: jest.Mock };
+
 function makeRequest(
   headers: Record<string, string>,
   body?: unknown,
   opts: { contentLength?: string | null } = {},
-): Request {
+): FakeRequest {
   const merged: Record<string, string> = { ...headers };
   // Mirror a real browser fetch: a string body always carries Content-Length.
   if (opts.contentLength === undefined) {
@@ -37,11 +45,13 @@ function makeRequest(
 
   return {
     headers: { get: (k: string) => merged[k.toLowerCase()] ?? null },
-    json: async () => {
+    // A mock, so "before buffering" is observable: reading the body is the
+    // buffering step, and the 413 cases assert it never happened.
+    json: jest.fn(async () => {
       if (body === undefined) throw new Error('no body');
       return body;
-    },
-  } as unknown as Request;
+    }),
+  } as unknown as FakeRequest;
 }
 
 let errorSpy: jest.SpyInstance;
@@ -63,23 +73,32 @@ describe('client-error beacon', () => {
   });
 
   it('rejects a request without Content-Length with 413 before buffering', async () => {
-    const res = await clientErrorPost(
-      makeRequest(SAME, { message: 'x' }, { contentLength: null }),
-    );
+    const req = makeRequest(SAME, { message: 'x' }, { contentLength: null });
+    const res = await clientErrorPost(req);
     expect(res.status).toBe(413);
+    expect(req.json).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('rejects an oversized or non-numeric declared body with 413', async () => {
-    const big = await clientErrorPost(
-      makeRequest(SAME, { message: 'x' }, { contentLength: '10000000' }),
-    );
-    const junk = await clientErrorPost(
-      makeRequest(SAME, { message: 'x' }, { contentLength: 'chunked' }),
-    );
+    const bigReq = makeRequest(SAME, { message: 'x' }, { contentLength: '10000000' });
+    const junkReq = makeRequest(SAME, { message: 'x' }, { contentLength: 'chunked' });
+    const big = await clientErrorPost(bigReq);
+    const junk = await clientErrorPost(junkReq);
     expect(big.status).toBe(413);
     expect(junk.status).toBe(413);
+    // Refused before buffering: the body was never read.
+    expect(bigReq.json).not.toHaveBeenCalled();
+    expect(junkReq.json).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('the body cap is 32 768 bytes: exactly the cap is read, one byte more is 413', async () => {
+    const atCapReq = makeRequest(SAME, { message: 'at cap' }, { contentLength: '32768' });
+    const overReq = makeRequest(SAME, { message: 'over' }, { contentLength: '32769' });
+    expect((await clientErrorPost(atCapReq)).status).toBe(204);
+    expect((await clientErrorPost(overReq)).status).toBe(413);
+    expect(overReq.json).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed JSON body with 400 without logging', async () => {
@@ -98,9 +117,16 @@ describe('client-error beacon', () => {
   });
 
   it('logs a capped single-line JSON report and returns 204', async () => {
+    // Proxy address headers are present, as behind Railway's edge: the
+    // record must not carry them (PII, 99-З).
     const res = await clientErrorPost(
       makeRequest(
-        { ...SAME, 'user-agent': 'TestBrowser/1.0' },
+        {
+          ...SAME,
+          'user-agent': 'TestBrowser/1.0',
+          'x-forwarded-for': '203.0.113.7',
+          'x-real-ip': '203.0.113.7',
+        },
         {
           message: 'boom',
           digest: 'd1',
@@ -121,20 +147,29 @@ describe('client-error beacon', () => {
       stack: 'Error: boom\n  at render',
       userAgent: 'TestBrowser/1.0',
     });
+    expect(json).not.toContain('203.0.113.7');
   });
 
   it('caps oversized fields instead of logging them verbatim', async () => {
     const res = await clientErrorPost(
-      makeRequest(SAME, {
-        message: 'm'.repeat(10_000),
-        stack: 's'.repeat(15_000),
-      }),
+      makeRequest(
+        { ...SAME, 'user-agent': 'u'.repeat(1_000) },
+        {
+          message: 'm'.repeat(10_000),
+          stack: 's'.repeat(15_000),
+          digest: 'd'.repeat(1_000),
+          path: `/${'p'.repeat(1_000)}`,
+        },
+      ),
     );
     expect(res.status).toBe(204);
 
     const logged = JSON.parse(errorSpy.mock.calls[0][1]);
     expect(logged.message).toHaveLength(500);
     expect(logged.stack).toHaveLength(4000);
+    expect(logged.digest).toHaveLength(100);
+    expect(logged.path).toHaveLength(200);
+    expect(logged.userAgent).toHaveLength(200);
   });
 
   it('drops non-string fields rather than logging junk', async () => {
@@ -160,5 +195,52 @@ describe('client-error beacon', () => {
     expect(sawTooMany).toBe(true);
     // The throttle must cut in at the 30/min window, not merely at loop end.
     expect(errorSpy.mock.calls.length).toBeLessThanOrEqual(30);
+  });
+});
+
+describe('client-error beacon — the throttle window on a fresh module', () => {
+  const T0 = 1_000_000_000;
+  let nowSpy: jest.SpyInstance;
+
+  /** A fresh copy of the handler: its window starts empty. */
+  function freshPost(): typeof clientErrorPost {
+    let post!: typeof clientErrorPost;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      post = require('@/app/api/client-error/route').POST;
+    });
+    return post;
+  }
+
+  async function statuses(post: typeof clientErrorPost, n: number): Promise<number[]> {
+    const out: number[] = [];
+    for (let i = 0; i < n; i += 1) {
+      out.push((await post(makeRequest(SAME, { message: `w${i}` }))).status);
+    }
+    return out;
+  }
+
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(T0);
+  });
+
+  afterEach(() => {
+    nowSpy.mockRestore();
+  });
+
+  it('lets exactly 30 reports through in one minute; the 31st is 429', async () => {
+    const post = freshPost();
+    const seen = await statuses(post, 31);
+    expect(seen.slice(0, 30)).toEqual(Array(30).fill(204));
+    expect(seen[30]).toBe(429);
+  });
+
+  it('the window resets after 60 s — not earlier, and not never', async () => {
+    const post = freshPost();
+    await statuses(post, 30);
+    nowSpy.mockReturnValue(T0 + 59_999);
+    expect(await statuses(post, 1)).toEqual([429]);
+    nowSpy.mockReturnValue(T0 + 60_000);
+    expect(await statuses(post, 1)).toEqual([204]);
   });
 });
