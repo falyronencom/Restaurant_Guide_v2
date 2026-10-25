@@ -43,7 +43,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
     return Column(
       children: [
         AdminScreenHeader(
-          title: 'Отказанные',
+          title: 'Отклонённые',
           subtitle: _subtitle(provider),
           busy: provider.isLoadingList && provider.rejections.isNotEmpty,
         ),
@@ -51,10 +51,10 @@ class _RejectedScreenState extends State<RejectedScreen> {
           child: Row(
             children: [
               ModerationCatalogList(
-                sectionTitle: 'История отказов',
+                sectionTitle: 'Отклонённые заявки',
                 // Порядок один и задан на бэкенде (`ORDER BY rejection_date
                 // DESC`), поэтому подпись остаётся подписью.
-                sortCaption: 'по дате отказа',
+                sortCaption: 'по дате отклонения',
                 itemCount: provider.rejections.length,
                 itemBuilder: (context, index) =>
                     _card(context, provider, provider.rejections[index]),
@@ -68,7 +68,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
                 // а запись об отказе остаётся в журнале (Ч23, 20.10).
                 emptyTitle: 'Сейчас отклонённых нет',
                 emptyMessage: 'Здесь видны заявки, которые сейчас ждут '
-                    'исправлений партнёра. Прошлые отказы — в журнале действий.',
+                    'исправлений партнёра. Прошлые отклонения — в журнале действий.',
                 page: provider.currentPage,
                 totalPages: provider.totalPages,
                 totalCount: provider.totalCount,
@@ -85,7 +85,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
     );
   }
 
-  /// «18 заведений с отказом · последний 09.08.2026».
+  /// «18 отклонённых заведений · последнее отклонение 09.08.2026».
   ///
   /// Не «18 отказов»: запрос отдаёт по одной строке на заведение
   /// (`DISTINCT ON (e.id)`), и повторные отказы одного и того же заведения в
@@ -103,9 +103,9 @@ class _RejectedScreenState extends State<RejectedScreen> {
 
     final head = countWithNoun(
       total,
-      'заведение с отказом',
-      'заведения с отказом',
-      'заведений с отказом',
+      'отклонённое заведение',
+      'отклонённых заведения',
+      'отклонённых заведений',
     );
 
     final latest = provider.rejections.isEmpty
@@ -113,7 +113,7 @@ class _RejectedScreenState extends State<RejectedScreen> {
         : provider.rejections.first.rejectionDate;
     if (latest == null || provider.currentPage != 1) return head;
 
-    return '$head · последний ${formatDateLocal(latest)}';
+    return '$head · последнее отклонение ${formatDateLocal(latest)}';
   }
 
   Widget _card(

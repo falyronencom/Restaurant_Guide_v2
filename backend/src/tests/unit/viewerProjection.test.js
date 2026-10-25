@@ -53,6 +53,27 @@ describe('projectForViewer', () => {
     expect(out).toEqual({ data: [{ id: 'x', [key]: null, inner: { [key]: null } }] });
   });
 
+  // hidden_reason — общий ключ отзыва и позиции меню (PR #118 гасил его везде).
+  test('hidden_reason: у отзыва и у любой другой строки гасится', () => {
+    const out = projectForViewer({
+      data: [
+        { id: 'r', rating: 1, is_visible: false, hidden_reason: 'автор — сосед владельца' },
+        { id: 'x', inner: { hidden_reason: 'неизвестно чья строка' } },
+      ],
+    });
+
+    expect(out.data[0].hidden_reason).toBeNull();
+    expect(out.data[1].inner.hidden_reason).toBeNull();
+  });
+
+  test('hidden_reason: у позиции меню остаётся — это заметка команды о блюде', () => {
+    const out = projectForViewer({
+      data: [{ id: 'm', item_name: 'Капучино', is_hidden_by_admin: true, hidden_reason: 'Ошибочная цена' }],
+    });
+
+    expect(out.data[0].hidden_reason).toBe('Ошибочная цена');
+  });
+
   test('a person object keeps its id and time, loses name and contacts', () => {
     const at = new Date('2026-10-12T10:00:00Z');
     const out = projectForViewer({

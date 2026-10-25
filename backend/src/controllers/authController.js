@@ -29,6 +29,7 @@ import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
 import { discardUnrecordedUpload } from '../services/unrecordedUpload.js';
 import logger from '../utils/logger.js';
 import { NAME_REFUSALS } from '../utils/userName.js';
+import { ACCOUNT_DEACTIVATED_TEXT, ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
@@ -405,7 +406,7 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_INACTIVE',
-          message: 'User account is inactive',
+          message: ACCOUNT_INACTIVE_TEXT,
         },
       });
     }
@@ -834,7 +835,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_DEACTIVATED',
-          message: 'This account has been deactivated',
+          message: ACCOUNT_DEACTIVATED_TEXT,
         },
       });
     }

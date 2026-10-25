@@ -23,7 +23,7 @@ const Map<String, StatusLabel> kEstablishmentStatuses = <String, StatusLabel>{
   'draft': StatusLabel('черновик', AppTheme.textGrey),
   'pending': StatusLabel('на модерации', AppTheme.primaryOrange),
   'active': StatusLabel('опубликовано', AppTheme.statusGreen),
-  'rejected': StatusLabel('отказано', AppTheme.errorRed),
+  'rejected': StatusLabel('отклонено', AppTheme.errorRed),
   // Приостановка — не ошибка и не успех: канон отдаёт ей disclaimer-пару.
   'suspended': StatusLabel('приостановлено', AppTheme.disclaimerText),
   'archived': StatusLabel('в архиве', AppTheme.textGrey),

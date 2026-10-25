@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:restaurant_guide_admin_web/config/establishment_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
@@ -61,23 +62,15 @@ const List<List<String>> kModerationTabFields = <List<String>>[
   <String>['address'],
 ];
 
-/// Подписи полей проверки — для диалогов и блока заметок. Тексты — те, что
-/// стоят у строк полей в панели разбора.
-const Map<String, String> kModerationFieldLabels = <String, String>{
-  'legal_name': 'Полное название',
-  'unp': 'УНП',
-  'registration_doc': 'Регистрация',
-  'contact_person': 'Контактное лицо',
-  'contact_email': 'E-mail',
-  'description': 'Описание',
-  'name': 'Название',
-  'customer_phone': 'Номер для связи',
-  'website': 'Сайт',
-  'working_hours': 'Время работы',
-  'price_range': 'Средний чек',
-  'photos': 'Фото',
-  'menu': 'Меню',
-  'address': 'Адрес',
+/// Подписи полей проверки — для диалогов и блока заметок, в порядке вкладок.
+/// Имена — из общего словаря полей карточки (`kEstablishmentFieldNames`):
+/// те же, что у строк полей в панели разбора, в карточке одобренного и в
+/// журнале (F-25, Ч13 — было «Полное название» здесь и «Полное название
+/// заведения» в строке поля, «Номер для связи» и «Номер для связи с
+/// клиентом»).
+final Map<String, String> kModerationFieldLabels = <String, String>{
+  for (final key in kModerationTabFields.expand((tab) => tab))
+    key: fieldLabel(key),
 };
 
 /// Поля, помеченные в панели звёздочкой. Необязательно только одно — сайт.

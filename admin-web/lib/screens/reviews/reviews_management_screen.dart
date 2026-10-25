@@ -13,6 +13,8 @@ import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/separated_wrap.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -290,17 +292,8 @@ class _SearchField extends StatelessWidget {
             onSubmit(query);
           }
         },
-        decoration: InputDecoration(
-          hintText: 'Текст отзыва',
-          hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-          prefixIcon: const Icon(
-            Icons.search,
-            size: 17,
-            color: AppTheme.textTertiary,
-          ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 38),
+        decoration: adminSearchDecoration(
+          hint: 'Текст отзыва',
           suffixIcon: isSearchMode
               ? IconButton(
                   icon: const Icon(Icons.close, size: 17),
@@ -309,21 +302,10 @@ class _SearchField extends StatelessWidget {
                   tooltip: 'Сбросить поиск',
                 )
               : null,
-          // Компактное поле шапки: r10 и высота 40, как у соседних контролов
-          // слота, а не общая форма поля ввода канона.
-          border: _border(AppTheme.strokeGrey),
-          enabledBorder: _border(AppTheme.strokeGrey),
-          focusedBorder: _border(AppTheme.primaryOrange, width: 1.5),
         ),
       ),
     );
   }
-
-  OutlineInputBorder _border(Color color, {double width = 1}) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusControl),
-        borderSide: BorderSide(color: color, width: width),
-      );
 }
 
 // =============================================================================
@@ -1174,41 +1156,48 @@ class _Heading extends StatelessWidget {
         // Сегменты переносятся целиком, а не усекаются: на окне 1150 усечение
         // съедало дату и статус («отзыв от 9 октя…», «виден в прило…» —
         // осмотр панели 20.10, п. 32). Каждый сегмент — неразрывный, так что
-        // строка ломается только между ними.
+        // строка ломается только между ними, и «·» на месте переноса не
+        // остаётся висеть в конце строки (находка П7 № 6).
         Wrap(
           spacing: 8,
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            Row(
-              mainAxisSize: MainAxisSize.min,
+            SeparatedWrap(
+              key: const ValueKey<String>('review-facts'),
               spacing: 8,
-              children: <Widget>[
-                const Icon(Icons.storefront,
-                    size: 15, color: AppTheme.textGrey),
-                if (review.establishmentCity?.trim().isNotEmpty == true)
-                  _segment(review.establishmentCity!.trim()),
-              ],
-            ),
-            const _Dot(),
-            _segment(
-              'отзыв от ${formatDayMonthLocal(review.createdAt)}, '
-              '${formatTimeLocal(review.createdAt)}',
-            ),
-            const _Dot(),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: <Widget>[
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: state.color,
-                    shape: BoxShape.circle,
-                  ),
+              runSpacing: 4,
+              separator: const _Dot(),
+              items: <Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 8,
+                  children: <Widget>[
+                    const Icon(Icons.storefront,
+                        size: 15, color: AppTheme.textGrey),
+                    if (review.establishmentCity?.trim().isNotEmpty == true)
+                      _segment(review.establishmentCity!.trim()),
+                  ],
                 ),
-                _segment(state.panelLabel),
+                _segment(
+                  'отзыв от ${formatDayMonthLocal(review.createdAt)}, '
+                  '${formatTimeLocal(review.createdAt)}',
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 8,
+                  children: <Widget>[
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: state.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    _segment(state.panelLabel),
+                  ],
+                ),
               ],
             ),
             if (review.authorBlocked) const _AuthorBlockedChip(),

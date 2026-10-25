@@ -67,3 +67,71 @@ const List<String> kCuisineOptionalCategories = <String>[
 bool isCuisineRequired(List<String> categories) =>
     categories.isEmpty ||
     !categories.every(kCuisineOptionalCategories.contains);
+
+// ============================================================================
+// Имена полей карточки
+// ============================================================================
+
+/// Род имени поля — по нему пустое значение говорит «не указан», «не
+/// указана», «не указано» или «не указаны».
+enum FieldGender { masculine, feminine, neuter, plural }
+
+/// Имя поля карточки и его род.
+class FieldName {
+  final String label;
+  final FieldGender gender;
+
+  const FieldName(this.label, this.gender);
+
+  /// Пустое значение словом, согласованным с именем поля: «Регистрация — не
+  /// указана», а не «не указан» у всех подряд (F-21, Ч11).
+  String get emptyText => switch (gender) {
+        FieldGender.masculine => 'не указан',
+        FieldGender.feminine => 'не указана',
+        FieldGender.neuter => 'не указано',
+        FieldGender.plural => 'не указаны',
+      };
+}
+
+/// Одно поле — одно имя на всех экранах панели: в разборе заявки, в
+/// карточке одобренного, в диалогах и заметках модерации, в журнале
+/// действий (проход по панели модератора, 20.10, F-25, Ч13 — было «Средний
+/// чек» и «Ценовой диапазон», «Время работы» и «Часы работы», «Атрибуты
+/// заведения» и «Удобства», «Номер для связи», «Номер для связи с клиентом»
+/// и «Телефон» у одного поля).
+///
+/// Ключи — имена полей проверки (`field_notes` заявки) и колонок карточки.
+/// Два телефона карточки — разные поля и потому разные имена: гостям
+/// звонят по одному, модератор — по другому.
+const Map<String, FieldName> kEstablishmentFieldNames = <String, FieldName>{
+  'name': FieldName('Название', FieldGender.neuter),
+  'legal_name': FieldName('Юридическое название', FieldGender.neuter),
+  'unp': FieldName('УНП', FieldGender.masculine),
+  'registration_doc': FieldName('Регистрация', FieldGender.feminine),
+  'contact_person': FieldName('Телефон контактного лица', FieldGender.masculine),
+  'contact_email': FieldName('E-mail', FieldGender.masculine),
+  'description': FieldName('Описание', FieldGender.neuter),
+  'customer_phone': FieldName('Телефон для гостей', FieldGender.masculine),
+  'website': FieldName('Сайт или соцсеть', FieldGender.masculine),
+  'working_hours': FieldName('Часы работы', FieldGender.plural),
+  'special_hours':
+      FieldName('Время дополнительного меню', FieldGender.neuter),
+  'price_range': FieldName('Средний чек', FieldGender.masculine),
+  'attributes': FieldName('Удобства', FieldGender.plural),
+  'categories': FieldName('Категории', FieldGender.plural),
+  'cuisines': FieldName('Кухни', FieldGender.plural),
+  'photos': FieldName('Фото', FieldGender.neuter),
+  'menu': FieldName('Меню', FieldGender.neuter),
+  'address': FieldName('Адрес', FieldGender.masculine),
+  'city': FieldName('Город', FieldGender.masculine),
+  'coordinates': FieldName('Координаты', FieldGender.plural),
+  'partner': FieldName('Партнёр', FieldGender.masculine),
+};
+
+/// Имя поля по ключу. Незнакомый ключ — как есть: расхождение видно.
+String fieldLabel(String key) => kEstablishmentFieldNames[key]?.label ?? key;
+
+/// «не указан/а/о/ы» для поля по ключу; незнакомый ключ — «не указано»,
+/// безличное «не указано» читается при любом имени.
+String fieldEmptyText(String key) =>
+    kEstablishmentFieldNames[key]?.emptyText ?? 'не указано';

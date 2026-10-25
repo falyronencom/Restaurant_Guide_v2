@@ -294,6 +294,36 @@ describe('Reviews System - One Review Per User Per Establishment', () => {
       .expect(409);
 
     expect(response.body.error.code).toBe('DUPLICATE_REVIEW');
+    // Текст — литералом: его читает гость (прежде английский «You have already reviewed…»).
+    // Конверт обработчика ошибок: message на верхнем уровне тела.
+    expect(response.body.message).toBe(
+      'Вы уже оставляли отзыв об этом заведении — от одного человека принимается один отзыв. '
+      + 'Свой отзыв можно изменить в разделе «Мои отзывы». '
+      + 'Если прежний отзыв скрыт модератором или удалён, новый написать нельзя.',
+    );
+  });
+
+  // Текст отказа обещает: прежний отзыв скрыт или удалён — новый всё равно не
+  // принимается. Это держит проверка ReviewModel.findExistingReview (ищет любой
+  // отзыв, и удалённый тоже); уникальный индекс базы удалённые не считает.
+  test.each([
+    ['скрыт модератором', 'UPDATE reviews SET is_visible = FALSE WHERE id = $1'],
+    ['удалён', 'UPDATE reviews SET is_deleted = TRUE WHERE id = $1'],
+  ])('прежний отзыв %s — новый всё равно 409 DUPLICATE_REVIEW', async (_label, sql) => {
+    const first = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 5, content: `${longContent} first` })
+      .expect(201);
+    await query(sql, [first.body.data.review.id]);
+
+    const response = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 4, content: `${longContent} again` })
+      .expect(409);
+
+    expect(response.body.error.code).toBe('DUPLICATE_REVIEW');
   });
 
   test('should allow different users to review same establishment', async () => {

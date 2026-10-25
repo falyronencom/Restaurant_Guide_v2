@@ -7,6 +7,7 @@ import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/suspended_provider.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_shell.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
@@ -80,7 +81,7 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
           child: Row(
             children: [
               ModerationCatalogList(
-                sectionTitle: 'Приостановлены',
+                sectionTitle: 'Приостановленные',
                 // `ORDER BY e.updated_at DESC` на бэкенде, параметра порядка
                 // нет — подпись без меню.
                 sortCaption: 'сначала новые',
@@ -242,8 +243,8 @@ class _EntityActions extends StatelessWidget {
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
       busy: provider.isSubmitting,
-      compact: MediaQuery.sizeOf(context).width <
-          ModerationEntityActions.compactBelowWindowWidth,
+      compact: AdminContentArea.widthOf(context) <
+          ModerationEntityActions.compactBelowContentWidth,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.isPausedByPartner
           ? (reason) => provider

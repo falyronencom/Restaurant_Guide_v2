@@ -2,6 +2,7 @@ import { verifyAccessToken, extractTokenFromHeader, accessTokenIssuedAtMs } from
 import { getAccountStatus, issuedBeforeRevocation } from '../services/accountStatus.js';
 import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
 
 /**
  * What a client reads when authorize refuses (403): the account's role is not
@@ -123,7 +124,7 @@ export const authenticate = async (req, res, next) => {
     });
     return res.status(401).json({
       success: false,
-      message: 'User account is inactive',
+      message: ACCOUNT_INACTIVE_TEXT,
       error: {
         code: 'ACCOUNT_INACTIVE',
       },

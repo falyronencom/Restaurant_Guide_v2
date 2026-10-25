@@ -34,6 +34,7 @@
 
 import { validationResult } from 'express-validator';
 import { validateForgotPassword, validateLogin } from '../../src/validators/authValidation.js';
+import { escapeLike } from '../../src/utils/likePattern.js';
 
 /** Domains the project owns (memory reference_production; DIRECTIVE 2026-10-15 p. 6). */
 export const OUR_DOMAINS = Object.freeze(['nirivio.by', 'nirivio.com', 'nirivio.ru']);
@@ -135,8 +136,6 @@ export function mailboxOf(email, mailboxes) {
   }
   return null;
 }
-
-const escapeLike = (text) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * The operator's addresses as SQL can match them — for a query that must find

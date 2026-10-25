@@ -205,7 +205,7 @@ class QualityHealthData {
       hoursAllClosedCount: hours['all_closed_count'] as int? ?? 0,
       hoursMalformedSamples: _samples(
         _pick(hours['samples'], 'malformed'),
-        detail: (_) => 'время работы не читается',
+        detail: (_) => 'часы работы не читаются',
       ),
       hoursAllClosedSamples: _samples(
         _pick(hours['samples'], 'all_closed'),

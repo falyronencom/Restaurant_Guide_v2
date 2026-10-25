@@ -687,10 +687,10 @@ void main() {
       final provider = await pumpUsers(tester, server, open: _authorId);
       addTearDown(provider.dispose);
 
-      expect(find.text('учётка удалена'), findsNWidgets(2)); // строка и шапка
+      expect(find.text('учётная запись удалена'), findsNWidgets(2)); // строка и шапка
       expect(find.text('заблокирован'), findsNothing);
-      expect(find.text('Учётка удалена'), findsOneWidget);
-      expect(find.text('стёрты при удалении учётки'), findsOneWidget);
+      expect(find.text('Учётная запись удалена'), findsOneWidget);
+      expect(find.text('стёрты при удалении учётной записи'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('user-deleted-note')),
           findsOneWidget);
       for (final key in <String>['user-block', 'user-unblock', 'user-reset-name']) {

@@ -13,7 +13,9 @@ import 'package:restaurant_guide_admin_web/providers/dashboard_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/quality_health_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/dashboard/dashboard_screen.dart';
 import 'package:restaurant_guide_admin_web/services/analytics_service.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/analytics/metric_card.dart';
+import 'package:restaurant_guide_admin_web/widgets/analytics/period_selector.dart';
 import 'package:restaurant_guide_admin_web/widgets/dashboard/attention_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_card.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
@@ -70,9 +72,9 @@ class _FakeAnalyticsService implements AnalyticsService {
       throw UnimplementedError('дашборд не запрашивает отзывы');
 }
 
-OverviewData _overview() => const OverviewData(
-      users: OverviewUsers(total: 742, newInPeriod: 96, changePercent: 12.4),
-      establishments: OverviewEstablishments(
+OverviewData _overview({int pending = 5}) => OverviewData(
+      users: const OverviewUsers(total: 742, newInPeriod: 96, changePercent: 12.4),
+      establishments: const OverviewEstablishments(
         total: 140,
         active: 128,
         pending: 3,
@@ -80,13 +82,14 @@ OverviewData _overview() => const OverviewData(
         newInPeriod: 11,
         changePercent: -2.3,
       ),
-      reviews: OverviewReviews(
+      reviews: const OverviewReviews(
         total: 906,
         newInPeriod: 74,
         changePercent: 4.0,
         averageRating: 4.4,
       ),
-      moderation: OverviewModeration(pendingCount: 5, actionsInPeriod: 23),
+      moderation:
+          OverviewModeration(pendingCount: pending, actionsInPeriod: 23),
     );
 
 UsersAnalyticsData _users({List<TimelinePoint>? timeline}) =>
@@ -359,11 +362,65 @@ void main() {
       fake.users.complete(_users());
       await settle(tester);
 
-      expect(find.text('Сигналов здоровья данных'), findsOneWidget);
+      expect(find.text('Сигнала здоровья данных'), findsOneWidget,
+          reason: 'две красные — «2 сигнала», а не «2 сигналов» (Ч1)');
       expect(
         find.text('3 заведения без страницы на сайте · 12 флагов без реакции'),
         findsOneWidget,
       );
+    });
+
+    // Ревью фазы 3.5, волна 3: окно 1024 с меню, развёрнутым вручную, — экрану
+    // 764. Свой период в шапке — диапазон дат и четыре кнопки; прежняя
+    // раскладка шапки обрезала бы начало диапазона в прокрутке, которую
+    // мышью не прокрутить, а главная этих дат нигде больше не показывает.
+    testWidgets('свой период на экране 764: даты целиком, уступает заголовок',
+        (tester) async {
+      final fake = await pumpDashboard(tester, width: 764);
+      fake.overview.complete(_overview());
+      fake.users.complete(_users());
+      await settle(tester);
+
+      final provider = Provider.of<DashboardProvider>(
+        tester.element(find.byType(DashboardScreen)),
+        listen: false,
+      );
+      unawaited(provider.loadDashboard(PeriodSelection(
+        period: 'custom',
+        from: DateTime(2026, 9, 1),
+        to: DateTime(2026, 10, 20),
+      )));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final dates = find.text('01.09.2026 — 20.10.2026');
+      expect(dates, findsOneWidget, reason: 'предпосылка: свой период в шапке');
+      final viewport = tester.getRect(
+          find.byKey(const ValueKey<String>('screen-header-actions')));
+      final datesRect = tester.getRect(dates);
+      expect(datesRect.left, greaterThanOrEqualTo(viewport.left - 0.5),
+          reason: 'начало диапазона дат не обрезано');
+      expect(datesRect.right, lessThanOrEqualTo(viewport.right + 0.5));
+      final title = tester.renderObject<RenderParagraph>(
+          find.text('Панель управления'));
+      expect(title.size.width,
+          greaterThanOrEqualTo(AdminScreenHeader.titleMinWidth - 1),
+          reason: 'заголовок уступил, но не исчез');
+    });
+
+    testWidgets('слово при числе склоняется: 1 заявка, 1 сигнал', (tester) async {
+      // «1 Заявок на модерации», «2 Флагов…» — проход по панели модератора,
+      // 20.10, Ч1, F-21.
+      final fake = await pumpDashboard(
+        tester,
+        health: _health(unreachable: 3),
+      );
+      fake.overview.complete(_overview(pending: 1));
+      fake.users.complete(_users());
+      await settle(tester);
+
+      expect(find.text('Заявка на модерации'), findsOneWidget);
+      expect(find.text('Сигнал здоровья данных'), findsOneWidget);
     });
 
     testWidgets('первая красная меняется вместе с данными', (tester) async {

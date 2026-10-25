@@ -68,10 +68,28 @@ export const VIEWER_WITHHELD_KEYS = Object.freeze(new Set([
   // person. The journal model withholds them first; this is the floor.
   'hidden_review_ids',
   'restored_review_ids',
-  // Why a review was hidden — the moderator's free text about it, which may
-  // name the author (adminReviewService.getReviews withholds it first).
-  'hidden_reason',
 ]));
+
+/**
+ * hidden_reason — общий ключ двух разных строк, и решение о нём зависит от
+ * того, чья это строка (PR #118 гасил его во всём ответе, и просмотрщик
+ * перестал видеть, почему скрыта позиция меню).
+ *
+ * - Почему скрыт ОТЗЫВ — свободный текст модератора об отзыве, который может
+ *   назвать автора (adminReviewService.getReviews гасит его первым; здесь пол).
+ * - Почему скрыта ПОЗИЦИЯ МЕНЮ — заметка команды о блюде и цене
+ *   (adminService.hideMenuItem), о людях в ней ничего: просмотрщику остаётся.
+ *
+ * Гасится везде, кроме строки позиции меню: новая строка с этим ключом под
+ * другим именем сущности закрыта по умолчанию, а не открыта.
+ */
+const HIDDEN_REASON_KEY = 'hidden_reason';
+
+/**
+ * Строка позиции меню: у неё и только у неё есть item_name (menu_items —
+ * listFlagged, ответы hide/unhide/dismiss-flag). У отзыва такого ключа нет.
+ */
+const isMenuItemRow = (row) => Object.prototype.hasOwnProperty.call(row, 'item_name');
 
 /**
  * Keys whose value is an object describing a person: inside it the name and
@@ -119,10 +137,11 @@ export const projectForViewer = (value) => {
   if (!isPlainObject(value)) return value;
 
   const out = {};
+  const menuItemRow = isMenuItemRow(value);
   for (const [key, inner] of Object.entries(value)) {
     if (VIEWER_OPAQUE_KEYS.has(key)) {
       out[key] = inner;
-    } else if (VIEWER_WITHHELD_KEYS.has(key)) {
+    } else if (VIEWER_WITHHELD_KEYS.has(key) || (key === HIDDEN_REASON_KEY && !menuItemRow)) {
       out[key] = inner === undefined ? undefined : null;
     } else if (VIEWER_PERSON_OBJECT_KEYS.has(key)) {
       out[key] = projectPerson(inner);

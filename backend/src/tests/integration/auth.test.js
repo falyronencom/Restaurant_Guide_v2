@@ -304,6 +304,11 @@ describe('POST /api/v1/auth/refresh', () => {
       .expect(401);
 
     expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
+    // По-русски, тем же текстом, что у middleware (волна 3 панели, П7 № 4);
+    // литералом — сверять текст с кодом, который его производит, бессмысленно.
+    expect(response.body.error.message).toBe(
+      'Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: support@nirivio.by',
+    );
   });
 
   test('detects refresh token reuse and invalidates user tokens', async () => {

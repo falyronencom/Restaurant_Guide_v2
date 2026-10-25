@@ -137,7 +137,7 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
     // Все три исключённых статуса названы: архив — живой статус, он есть и в
     // CHECK базы, и в словарях админки, и модератор, знающий про него, иначе
     // ждал бы архивные позиции в счёте и не нашёл бы объяснения.
-    scopeNote: 'черновики, отказанные и архив не в счёт',
+    scopeNote: 'черновики, отклонённые и архив не в счёт',
     cleanLabel: 'флаги',
     icon: Icons.flag_outlined,
     countOf: (d) => d.hangingFlagsCount,
@@ -163,10 +163,11 @@ final List<QualitySignal> kQualitySignals = <QualitySignal>[
   ),
   QualitySignal(
     id: 'hours_malformed',
-    title: 'Время работы не читается',
-    subtitle: 'Время работы записано так, что ни сайт, ни приложение не могут '
-        'его показать',
-    cleanLabel: 'время работы',
+    // «Часы работы» — как в карточке заведения (F-25: одно поле — одно имя).
+    title: 'Часы работы не читаются',
+    subtitle: 'Часы работы записаны так, что ни сайт, ни приложение не могут '
+        'их показать',
+    cleanLabel: 'часы работы',
     icon: Icons.schedule,
     countOf: (d) => d.hoursMalformedCount,
     samplesOf: (d) => d.hoursMalformedSamples,

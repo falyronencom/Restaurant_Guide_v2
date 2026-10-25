@@ -67,6 +67,13 @@ const {
 
 import { createMockUser, createMockReview } from '../mocks/helpers.js';
 
+// Утверждённый текст отказа — литералом, не из модуля: сверять текст с кодом,
+// который его же производит, значило бы ничего не проверить.
+const DUPLICATE_REVIEW_TEXT = 'Вы уже оставляли отзыв об этом заведении — от одного человека принимается один отзыв. '
+  + 'Свой отзыв можно изменить в разделе «Мои отзывы». '
+  + 'Если прежний отзыв скрыт модератором или удалён, новый написать нельзя.';
+const ACCOUNT_INACTIVE_TEXT = 'Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: support@nirivio.by';
+
 describe('reviewService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -157,6 +164,8 @@ describe('reviewService', () => {
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 403,
         code: 'USER_INACTIVE',
+        // По-русски (прежде «User account is inactive»).
+        message: ACCOUNT_INACTIVE_TEXT,
       });
 
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
@@ -238,6 +247,7 @@ describe('reviewService', () => {
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 409,
         code: 'DUPLICATE_REVIEW',
+        message: DUPLICATE_REVIEW_TEXT,
       });
 
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
@@ -253,6 +263,8 @@ describe('reviewService', () => {
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 409,
         code: 'DUPLICATE_REVIEW',
+        // Гонка двух запросов: тот же текст, что и у проверки до вставки.
+        message: DUPLICATE_REVIEW_TEXT,
       });
       expect(decrement).toHaveBeenCalledWith('reviews:ratelimit:user-123');
     });
@@ -294,6 +306,7 @@ describe('reviewService', () => {
       await expect(createReview(validReviewData)).rejects.toMatchObject({
         statusCode: 403,
         code: 'USER_INACTIVE',
+        message: ACCOUNT_INACTIVE_TEXT,
       });
 
       expect(TX_CLIENT.query).toHaveBeenCalledWith(

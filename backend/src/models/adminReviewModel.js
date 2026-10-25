@@ -10,16 +10,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
-
-/**
- * A LIKE pattern that matches the text literally: the backslash, «%» and «_»
- * are escaped with the backslash named in ESCAPE (the rule of
- * menuItemModel's search).
- *
- * @param {string} value
- * @returns {string}
- */
-export const escapeLike = (value) => String(value).replace(/[\\%_]/g, (char) => `\\${char}`);
+import { likeContains } from '../utils/likePattern.js';
 
 /**
  * Build dynamic WHERE clause for admin review queries
@@ -87,7 +78,7 @@ const buildReviewWhere = (filters) => {
     conditions.push(filters.viewer
       ? `(r.is_visible = true AND ${searchCondition})`
       : searchCondition);
-    values.push(`%${escapeLike(filters.search)}%`);
+    values.push(likeContains(filters.search));
   }
 
   if (filters.from) {

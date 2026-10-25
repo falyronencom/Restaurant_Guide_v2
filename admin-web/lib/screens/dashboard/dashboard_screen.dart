@@ -307,7 +307,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return <AttentionItem>[
       AttentionItem(
         count: ov.moderation.pendingCount,
-        title: 'Заявок на модерации',
+        // Слово — по числу рядом: «1 заявка», а не «1 заявок» (Ч1, F-21).
+        title: plural(ov.moderation.pendingCount, 'Заявка на модерации',
+            'Заявки на модерации', 'Заявок на модерации'),
         note: oldestDays == null
             ? null
             : 'старейшая ждёт ${countWithNoun(oldestDays, 'день', 'дня', 'дней')}',
@@ -316,7 +318,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (badges != null)
         AttentionItem(
           count: badges.menuFlags,
-          title: 'Флагов в позициях меню',
+          title: plural(badges.menuFlags, 'Флаг в позициях меню',
+              'Флага в позициях меню', 'Флагов в позициях меню'),
           note: badges.menuFlagsAgedOver7d > 0
               ? '${badges.menuFlagsAgedOver7d} старше 7 дней'
               : null,
@@ -329,7 +332,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (health != null)
         AttentionItem(
           count: red.length,
-          title: 'Сигналов здоровья данных',
+          title: plural(red.length, 'Сигнал здоровья данных',
+              'Сигнала здоровья данных', 'Сигналов здоровья данных'),
           note: red.isEmpty
               ? null
               : red.map((s) => s.note(s.countOf(health))).join(' · '),

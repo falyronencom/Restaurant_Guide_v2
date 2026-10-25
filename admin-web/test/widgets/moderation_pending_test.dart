@@ -365,7 +365,7 @@ void main() {
       expect(find.text('Отклонить заявку?'), findsOneWidget);
       expect(find.text('«Кухмістр»'), findsOneWidget);
       expect(
-        find.text('Партнёр получит 1 причину: Полное название.'),
+        find.text('Партнёр получит 1 причину: Юридическое название.'),
         findsOneWidget,
       );
       await tester.tap(find.widgetWithText(FilledButton, 'Отклонить'));

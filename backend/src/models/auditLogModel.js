@@ -400,11 +400,20 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
   // theirs: the ids would tie a hidden review to the person again (Phase 3.5
   // review: regular and lens). Other entries are as they were: their personal
   // keys go through the viewer projection. Fixed SQL chosen by a boolean.
+  //
+  // Hiding, showing and deleting a review keep their entry for a viewer but
+  // lose `reason`: the moderator's free text about the review, which may name
+  // its author. The «Reviews» screen withholds the same reason from a viewer
+  // (adminReviewService.getReviews, PR #118); the journal handed it over
+  // (walkthrough of the moderator panel, wave 3, Phase 3.5 lens review).
   const changeColumns = viewer
     ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
           THEN NULL ELSE al.old_data END as old_data,
       CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
-          THEN NULL ELSE al.new_data END as new_data`
+          THEN NULL
+        WHEN al.action IN ('review_hide', 'review_show', 'review_delete')
+          THEN al.new_data - 'reason'
+        ELSE al.new_data END as new_data`
     : 'al.old_data, al.new_data';
 
   const query = `

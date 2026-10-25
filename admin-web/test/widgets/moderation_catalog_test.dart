@@ -323,7 +323,7 @@ void main() {
 
   group('Статус человеческим языком', () {
     test('машинные коды переведены', () {
-      expect(StatusDot.labelFor('rejected'), 'отказано');
+      expect(StatusDot.labelFor('rejected'), 'отклонено');
       expect(StatusDot.labelFor('draft'), 'черновик');
       expect(StatusDot.labelFor('suspended'), 'приостановлено');
       expect(StatusDot.labelFor('active'), 'опубликовано');
