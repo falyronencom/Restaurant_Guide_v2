@@ -39,6 +39,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createTestUser } from '../utils/auth.js';
 import { createViewerAndGetToken } from '../utils/adminTestHelpers.js';
 import { invalidateAccountStatus } from '../../services/accountStatus.js';
+import { _settlePasswordResetIssuesForTests as settleResetIssues } from '../../services/authService.js';
 import { setActiveAccountPassword } from '../../../scripts/lib/operator-password.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -204,6 +205,7 @@ describe('scripts/change-account-email.js', () => {
 
     test('«forgot password» on the old address issues nothing', async () => {
       await request(app).post('/api/v1/auth/forgot-password').send({ email: 'admin@test.com' }).expect(200);
+      await settleResetIssues(); // a link would be issued after the answer
       expect((await counts(admin.id)).reset_links).toBe(0);
     });
 
