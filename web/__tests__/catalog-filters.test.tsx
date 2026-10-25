@@ -116,6 +116,7 @@ describe('CategoryPage — searchParam → getCatalog mapping', () => {
         priceRange: ['$', '$$'],
         hours_filter: 'until_22',
       }),
+      { visitor: null },
     );
   });
 
@@ -124,6 +125,7 @@ describe('CategoryPage — searchParam → getCatalog mapping', () => {
 
     expect(getCatalog).toHaveBeenCalledWith(
       expect.objectContaining({ hours_filter: undefined }),
+      { visitor: null },
     );
   });
 
@@ -157,6 +159,7 @@ describe('CategoryPage — searchParam → getCatalog mapping', () => {
         categories: ['Рестораны'],
         features: ['terrace'],
       }),
+      { visitor: null },
     );
   });
 

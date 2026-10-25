@@ -11,7 +11,14 @@ jest.unstable_mockModule('../../services/searchService.js', () => ({
   checkSearchHealth: jest.fn()
 }));
 
+// The smart search's budget block of the health answer (D5, 25.10.2026) —
+// its own module; here only its place in the answer is checked.
+jest.unstable_mockModule('../../services/smartSearchBudget.js', () => ({
+  getBudgetHealth: jest.fn(),
+}));
+
 const searchService = await import('../../services/searchService.js');
+const smartSearchBudget = await import('../../services/smartSearchBudget.js');
 const {
   searchEstablishments,
   searchMap,
@@ -172,17 +179,40 @@ describe('searchController', () => {
         healthy: false,
         postgis: 'unhealthy'
       });
+      smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: true });
 
       await searchHealth(req, res, next);
 
+      // Changed on purpose (D5, 25.10.2026): the answer carries `smart` beside
+      // PostGIS's fields, and its `degraded` does not decide the status code.
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         data: {
           healthy: false,
-          postgis: 'unhealthy'
+          postgis: 'unhealthy',
+          smart: {
+            degraded: true,
+            site_requests: {
+              since: expect.any(String),
+              accepted: expect.any(Number),
+              without_visitor: expect.any(Number),
+              rejected_secret: expect.any(Number),
+            },
+          },
         }
       });
+    });
+
+    test('a degraded smart search leaves a healthy PostGIS at 200', async () => {
+      const res = createRes();
+      searchService.checkSearchHealth.mockResolvedValue({ healthy: true, postgis: 'healthy' });
+      smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: true });
+
+      await searchHealth({}, res, jest.fn());
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json.mock.calls[0][0].data.smart.degraded).toBe(true);
     });
   });
 });

@@ -12,13 +12,25 @@ import { createRateLimiter } from '../../middleware/rateLimiter.js';
 const router = express.Router();
 
 /**
- * Smart search rate limiter: 30 requests per minute per IP.
- * Tighter than global limit because each request may call external AI API.
+ * Smart search rate limiter: 120 requests a minute per person — a signed-in
+ * user by account (a genuine token is enough, the route has no authenticate),
+ * a visitor of the site by the address the site vouched for, anyone else by
+ * address (rateLimiter.js requesterOf).
+ *
+ * The money is not held here any more: a request is a cache read and SQL, and
+ * the model's calls are capped by services/smartSearchBudget.js — an hour's
+ * and a day's calls for all, and new phrases an hour per person (SDL
+ * CAT-C-2.2, amendment 07.09.2026). Until 25.10.2026 this was 30 a minute per
+ * address, the only brake on the model. 429 stays as a guard against a flood:
+ * every request still reads all the active names for the name match.
  */
+export const SMART_SEARCH_REQUESTS_PER_MINUTE = 120;
+
 const smartSearchLimiter = createRateLimiter({
-  limit: 30,
+  limit: SMART_SEARCH_REQUESTS_PER_MINUTE,
   windowSeconds: 60,
   keyPrefix: 'smart_search',
+  byToken: true,
 });
 
 /**

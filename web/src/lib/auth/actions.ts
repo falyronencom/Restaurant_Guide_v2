@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
+import { currentVisitor } from '@/lib/api/visitor';
 import { isRuleName, personText } from '@/lib/api/person-text';
 import {
   sendVerificationCode,
@@ -159,7 +160,7 @@ export async function establishGoogleSession(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'google', token: idToken }),
-    });
+    }, { visitor: await currentVisitor() });
   } catch (err) {
     return mapAuthError(err);
   }
@@ -230,7 +231,7 @@ export async function registerAction(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name, authMethod: 'email' }),
-    });
+    }, { visitor: await currentVisitor() });
   } catch (err) {
     return mapFormError(err, { name, email });
   }
@@ -279,7 +280,7 @@ export async function loginAction(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
-    });
+    }, { visitor: await currentVisitor() });
   } catch (err) {
     return mapFormError(err, { email });
   }
@@ -316,7 +317,7 @@ export async function forgotPasswordAction(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
-    });
+    }, { visitor: await currentVisitor() });
   } catch (err) {
     return mapFormError(err, { email });
   }
@@ -360,7 +361,7 @@ export async function resetPasswordAction(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, password }),
-    });
+    }, { visitor: await currentVisitor() });
   } catch (err) {
     return mapFormError(err, {});
   }

@@ -49,11 +49,15 @@ export type CatalogResponse = {
   pagination: PaginationMeta;
 };
 
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts). */
 export async function getCatalog(
   params: CatalogParams = {},
+  { visitor }: { visitor?: string | null } = {},
 ): Promise<CatalogResponse> {
   return serverFetch<CatalogResponse>(
     `/api/v1/public/establishments${buildQuery(params)}`,
+    undefined,
+    { visitor },
   );
 }
 
@@ -85,9 +89,15 @@ export type MapResponse = {
   establishments: PublicEstablishmentMapMarker[];
 };
 
-export async function getMap(params: MapParams = {}): Promise<MapResponse> {
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts). */
+export async function getMap(
+  params: MapParams = {},
+  { visitor }: { visitor?: string | null } = {},
+): Promise<MapResponse> {
   return serverFetch<MapResponse>(
     `/api/v1/public/establishments/map${buildQuery(params)}`,
+    undefined,
+    { visitor },
   );
 }
 

@@ -3,6 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 import { serverFetch } from '@/lib/api/client';
+import { currentVisitor } from '@/lib/api/visitor';
 import {
   ApiError,
   type OAuthLoginData,
@@ -303,11 +304,14 @@ async function doRefresh(refreshToken: string): Promise<RefreshAttempt> {
 /** One presentation of the refresh token. Classifies, never clears cookies. */
 async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
   try {
+    // The refresh carries no Bearer, so the API counts it by whom it is made
+    // for — the visitor (registry v4.44). attemptRefresh runs only inside a
+    // visitor's request (Server Actions, Route Handlers: it writes cookies).
     const data = await serverFetch<RefreshData>('/api/v1/auth/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
-    });
+    }, { visitor: await currentVisitor() });
     await writeTokens(data.accessToken, data.refreshToken, data.expiresIn);
     // Re-stamp the display-user cookie so its 30-day window tracks activity in
     // lockstep with rg_rt — otherwise rg_user would die at 30d-from-login while

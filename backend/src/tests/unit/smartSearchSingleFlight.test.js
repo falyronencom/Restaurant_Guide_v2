@@ -13,6 +13,10 @@
  * Модель подменена (global.fetch), база — тоже (searchService): здесь
  * считаются вызовы модели, выдача не важна. Redis в unit-окружении не
  * подключён — кэш разборов молчит, как при промахе.
+ *
+ * Бюджет модели (smartSearchBudget.js, D5 25.10.2026) без Redis модель не
+ * пускает — здесь он подменён на «разрешено» (сам бюджет — в своём наборе), а
+ * его решение и расчёт по вызовам проверяются у лидера общего разбора.
  */
 
 import { jest } from '@jest/globals';
@@ -31,6 +35,15 @@ jest.unstable_mockModule('../../services/searchService.js', () => ({
   listActiveEstablishmentNames: jest.fn(async () => []),
   searchWithoutLocation: jest.fn(emptyPage),
   searchByRadius: jest.fn(emptyPage),
+}));
+
+const settle = jest.fn(async () => {});
+const reserveModelCalls = jest.fn(async () => ({ allowed: true, settle }));
+jest.unstable_mockModule('../../services/smartSearchBudget.js', () => ({
+  isJunkPhrase: jest.fn(() => false),
+  recordDenial: jest.fn(async () => {}),
+  recordCacheHit: jest.fn(async () => {}),
+  reserveModelCalls,
 }));
 
 const { executeSmartSearch } = await import('../../services/smartSearchService.js');
@@ -69,6 +82,9 @@ beforeEach(() => {
   process.env.OPENROUTER_API_KEY = 'test-key';
   originalFetch = global.fetch;
   logger.info.mockClear();
+  // resetMocks wipes implementations between tests — re-arm them here.
+  settle.mockImplementation(async () => {});
+  reserveModelCalls.mockImplementation(async () => ({ allowed: true, settle }));
 });
 
 test('предпосылка: кэш разборов в unit-окружении молчит (Redis не подключён)', () => {
@@ -139,5 +155,88 @@ describe('одна фраза — один вызов модели', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(a.fallback).toBe(true);
     expect(b.fallback).toBe(true);
+  });
+});
+
+describe('бюджет модели у лидера общего разбора (D5)', () => {
+  test('один резерв на общий разбор; расчёт — по вызовам, которые были', async () => {
+    global.fetch = jest.fn(slowAnswer({ dish: 'пицца' }));
+
+    await Promise.all([
+      executeSmartSearch('суши', { city: 'Минск' }),
+      executeSmartSearch('суши', { city: 'Минск' }),
+    ]);
+
+    expect(reserveModelCalls).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledWith(['ok']);
+  });
+
+  test('повтор негодного ответа — второй платный вызов, и он в расчёте', async () => {
+    let call = 0;
+    global.fetch = jest.fn(async () => {
+      call += 1;
+      const content = call === 1 ? 'не JSON' : JSON.stringify({ ...P1_EMPTY, dish: 'пицца' });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ model: 'm', choices: [{ finish_reason: 'stop', message: { content } }] }),
+      };
+    });
+
+    const result = await executeSmartSearch('пицца рядом', {});
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(result.fallback).toBe(false);
+    expect(settle).toHaveBeenCalledWith(['no_json_object', 'ok']);
+  });
+
+  test('402 — потолок трат ключа — виден в расчёте своим именем', async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false, status: 402, statusText: 'Payment Required', text: async () => 'limit',
+    }));
+
+    const result = await executeSmartSearch('паста', {});
+
+    expect(result.fallback).toBe(true);
+    expect(settle).toHaveBeenCalledWith(['http_402']);
+  });
+
+  test('отказ бюджета — модель не зовётся, ждущий получает отказ лидера, оба на классике', async () => {
+    global.fetch = jest.fn(slowAnswer({ dish: 'пицца' }));
+    reserveModelCalls.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { allowed: false, reason: 'hourly_cap' };
+    });
+
+    const [a, b] = await Promise.all([
+      executeSmartSearch('бургер', {}),
+      executeSmartSearch('Бургер ', {}),
+    ]);
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(reserveModelCalls).toHaveBeenCalledTimes(1);
+    expect([a.fallback, b.fallback]).toEqual([true, true]);
+    expect(queryLogLines().map((line) => line.budgetDenied)).toEqual(['hourly_cap', 'hourly_cap']);
+  });
+
+  test('кто спрашивает — доходит до резерва', async () => {
+    global.fetch = jest.fn(slowAnswer({ dish: 'пицца' }));
+    const requester = { tier: 'ip', identifier: '203.0.113.5' };
+
+    await executeSmartSearch('шаурма', { requester });
+
+    expect(reserveModelCalls).toHaveBeenCalledWith({ requester });
+  });
+
+  test('без ключа модели — бюджет не спрашивают', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    global.fetch = jest.fn();
+
+    const result = await executeSmartSearch('плов', {});
+
+    expect(result.fallback).toBe(true);
+    expect(reserveModelCalls).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,9 @@
  */
 
 import * as searchService from '../services/searchService.js';
+import * as smartSearchBudget from '../services/smartSearchBudget.js';
+import { isAvailable } from '../config/openrouter.js';
+import { siteRequestTallies } from '../middleware/siteVisitor.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { parseSearchFilterParams, presentFilters } from '../utils/searchFilterParams.js';
 
@@ -242,16 +245,26 @@ export async function getEstablishmentById(req, res, next) {
 /**
  * Search system health check
  * GET /api/v1/search/health
+ *
+ * `smart` (D5, 25.10.2026): the smart search's model budget — calls, cache
+ * hits, refusals by reason, the caps — and whether the site's requests are
+ * recognised (middleware/siteVisitor.js). Aggregates only. Its `degraded`
+ * does not change the status code: 200/503 stays PostGIS's
+ * (searchService.checkSearchHealth, whose shape is pinned by tests).
  */
 export async function searchHealth(req, res, next) {
   try {
     const health = await searchService.checkSearchHealth();
+    const smart = {
+      ...await smartSearchBudget.getBudgetHealth({ modelAvailable: isAvailable() }),
+      site_requests: siteRequestTallies(),
+    };
 
     const statusCode = health.healthy ? 200 : 503;
 
     res.status(statusCode).json({
       success: health.healthy,
-      data: health,
+      data: { ...health, smart },
     });
   } catch (error) {
     next(error);

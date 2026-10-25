@@ -134,7 +134,7 @@ describe('getCatalogResults — which endpoint answers', () => {
 
     expect(smartSearch).not.toHaveBeenCalled();
     expect(getCatalog).toHaveBeenCalledTimes(1);
-    expect(getCatalog).toHaveBeenCalledWith(params);
+    expect(getCatalog).toHaveBeenCalledWith(params, { visitor: null });
     expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null, matchedTotal: null });
   });
 
@@ -231,6 +231,7 @@ describe('getCatalogResults — the smart body on the wire', () => {
     expect(smartSearch).not.toHaveBeenCalled();
     expect(getCatalog).toHaveBeenCalledWith(
       expect.objectContaining({ cuisines: ['atlantean'], search: 'кофе' }),
+      { visitor: null },
     );
   });
 
@@ -258,7 +259,7 @@ describe('getCatalogResults — fallback', () => {
     const res = await getCatalogResults(params, META);
 
     expect(getCatalog).toHaveBeenCalledTimes(1);
-    expect(getCatalog).toHaveBeenCalledWith(params);
+    expect(getCatalog).toHaveBeenCalledWith(params, { visitor: null });
     expect(res).toEqual({ ...CLASSIC, understood: null, sortFromPhrase: null, matchedTotal: null });
   });
 

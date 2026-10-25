@@ -87,6 +87,7 @@ describe('establishGoogleSession', () => {
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ provider: 'google', token: idToken }),
       }),
+      { visitor: null },
     );
     // httpOnly session cookies set (access maxAge = expiresIn; refresh + user).
     expect(mockStore.set).toHaveBeenCalledWith(

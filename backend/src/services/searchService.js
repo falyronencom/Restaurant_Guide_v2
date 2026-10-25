@@ -1416,6 +1416,8 @@ export async function getEstablishmentById(id) {
  * healthy or not — `postgis: 'healthy' | 'unhealthy'`. The failure's own text
  * (it can name the database's address and user) goes to the log. Until
  * 20.10.2026 the result carried that text, and PostGIS's version when healthy.
+ * The endpoint adds the smart search's budget beside it, as `smart`
+ * (searchController.searchHealth) — counters, no text.
  *
  * @returns {Promise<{ healthy: boolean, postgis: 'healthy'|'unhealthy', timestamp: string }>}
  */

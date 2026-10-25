@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { getConfig, isAvailable } from '../config/openrouter.js';
 import redisClient, { setWithExpiry, withRedisDeadline } from '../config/redis.js';
 import * as searchService from './searchService.js';
+import * as smartSearchBudget from './smartSearchBudget.js';
 import logger from '../utils/logger.js';
 import { nameSkeleton, pickNameMatches, textSkeletons } from '../utils/establishmentNameMatch.js';
 // Canon shared with the write-path + DB CHECK (CAT-C-2.9). DB stores Cyrillic
@@ -464,10 +465,18 @@ async function requestIntent(query, config, signal) {
  * Call OpenRouter API to parse user intent: one attempt plus one retry for an
  * unusable answer, both inside one 20 s budget.
  *
+ * `onAttempt` (D5, 25.10.2026) only watches: it is told how each paid call
+ * ended — `'ok'`, the unusable answer's reason, `http_<status>` (402: the
+ * key's spending limit), `timeout` or `network` — so the budget counts calls,
+ * not phrases, and the health block tells an exhausted key from a quiet
+ * fallback. It changes nothing in what is asked or returned; a throw inside it
+ * is swallowed.
+ *
  * @param {string} query - User's natural language search query
+ * @param {{ onAttempt?: (attempt: { attempt: number, outcome: string }) => void }} [observer]
  * @returns {Promise<object|null>} Normalized intent or null on failure
  */
-export async function parseIntent(query) {
+export async function parseIntent(query, { onAttempt } = {}) {
   if (!isAvailable()) {
     logger.debug('OpenRouter not available, skipping AI parsing');
     return null;
@@ -476,10 +485,24 @@ export async function parseIntent(query) {
   const config = getConfig();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const tell = (attempt, outcome) => {
+    try {
+      onAttempt?.({ attempt, outcome });
+    } catch {
+      // A watcher must not change the parse.
+    }
+  };
 
   try {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const outcome = await requestIntent(query, config, controller.signal);
+      let outcome;
+      try {
+        outcome = await requestIntent(query, config, controller.signal);
+      } catch (error) {
+        tell(attempt, error.name === 'AbortError' ? 'timeout' : 'network');
+        throw error;
+      }
+      tell(attempt, outcome.intent ? 'ok' : outcome.reason);
 
       if (outcome.intent) {
         // Фраза и разбор отсюда убраны: их несла аналитическая строка
@@ -928,36 +951,74 @@ async function findNameMatches(query) {
 const pendingParses = new Map();
 
 /**
+ * Разбор фразы лидером общего разбора — после промаха кэша, с разрешения
+ * бюджета модели (smartSearchBudget.js, D5 25.10.2026). Порядок: ключа нет —
+ * модель не зовётся, бюджет и счётчики не трогаются (parseIntent вернёт null);
+ * мусорная фраза — отказ без резерва; иначе резерв вызовов, разбор, расчёт по
+ * тому, сколько вызовов было на деле. Отказ — `intent: null` с причиной:
+ * поиск идёт классикой, как без ключа.
+ * @returns {Promise<{ intent: object|null, denied: string|null }>}
+ */
+async function parseWithinBudget(query, normalized, requester) {
+  if (!isAvailable()) {
+    return { intent: await parseIntent(query), denied: null };
+  }
+  if (smartSearchBudget.isJunkPhrase(normalized)) {
+    await smartSearchBudget.recordDenial('junk');
+    return { intent: null, denied: 'junk' };
+  }
+  const reservation = await smartSearchBudget.reserveModelCalls({ requester });
+  if (!reservation.allowed) {
+    return { intent: null, denied: reservation.reason };
+  }
+  const outcomes = [];
+  try {
+    const intent = await parseIntent(query, {
+      onAttempt: ({ outcome }) => outcomes.push(outcome),
+    });
+    return { intent, denied: null };
+  } finally {
+    await reservation.settle(outcomes);
+  }
+}
+
+/**
  * Разбор фразы: кэш, иначе модель (и в кэш). Разбор из кэша проходит ту же
  * нормализацию, что и свежий: разборы прежнего промпта живут там до часа после
  * выкатки. Негодная форма считается промахом — фразу разберёт модель заново.
- * @returns {Promise<{ intent: object|null, fromCache: boolean }>}
+ * Ждущие общего разбора получают решение лидера — и разбор, и причину отказа.
+ * `requester` — кто спрашивает (rateLimiter.requesterOf): по нему считается
+ * лимит новых фраз.
+ * @returns {Promise<{ intent: object|null, fromCache: boolean, denied: string|null }>}
  */
-async function resolveIntent(query, queryHash) {
+async function resolveIntent(query, queryHash, normalized, requester) {
   const cached = normalizeIntent(await getCachedIntent(queryHash));
   if (cached) {
     logger.debug('Smart search cache hit', { queryHash });
-    return { intent: cached, fromCache: true };
+    await smartSearchBudget.recordCacheHit();
+    return { intent: cached, fromCache: true, denied: null };
   }
   // Разбор этой фразы уже идёт — ждать его: модель второй раз не зовём, и для
   // аналитики это то же, что попадание в кэш (fromCache: вызова не было).
   const shared = pendingParses.get(queryHash);
   if (shared) {
-    return { intent: await shared, fromCache: true };
+    const { intent, denied } = await shared;
+    return { intent, fromCache: true, denied };
   }
   const pending = (async () => {
     try {
-      const intent = await parseIntent(query);
-      if (intent) {
-        await cacheIntent(queryHash, intent);
+      const decision = await parseWithinBudget(query, normalized, requester);
+      if (decision.intent) {
+        await cacheIntent(queryHash, decision.intent);
       }
-      return intent;
+      return decision;
     } finally {
       pendingParses.delete(queryHash);
     }
   })();
   pendingParses.set(queryHash, pending);
-  return { intent: await pending, fromCache: false };
+  const { intent, denied } = await pending;
+  return { intent, fromCache: false, denied };
 }
 
 /**
@@ -1124,8 +1185,8 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
   // 1–2. Разбор фразы (кэш → модель) и сверка с названиями заведений не
   // зависят друг от друга и идут параллельно; сверка — один запрос к базе,
   // вызовов модели она не добавляет.
-  const [{ intent, fromCache }, nameMatch] = await Promise.all([
-    resolveIntent(query, queryHash),
+  const [{ intent, fromCache, denied }, nameMatch] = await Promise.all([
+    resolveIntent(query, queryHash, normalized, context.requester ?? null),
     findNameMatches(query),
   ]);
 
@@ -1152,6 +1213,7 @@ export async function executeSmartSearch(query, context = {}, pagination = {}, e
     resultCount: searchResult.pagination?.total || 0,
     isFallback,
     fromCache,
+    budgetDenied: denied,
     hasExplicitFilters: Object.keys(explicitFilters).length > 0,
     nameMatch: nameMatch ? { level: nameMatch.level, mode, shown: searchResult.shown } : null,
   });
@@ -1213,6 +1275,7 @@ export function buildSearchQueryLog({
   fromCache,
   hasExplicitFilters = false,
   nameMatch = null,
+  budgetDenied = null,
 }) {
   const foundNothing = resultCount === 0;
 
@@ -1221,6 +1284,9 @@ export function buildSearchQueryLog({
     resultCount,
     fallback: isFallback,
     fromCache,
+    // Почему модель не звали (smartSearchBudget.js): junk, no_redis,
+    // new_phrases, hourly_cap, daily_cap; null — звали или кэш.
+    budgetDenied,
     explicitFilters: hasExplicitFilters,
     intentShape: intent
       ? {

@@ -26,6 +26,8 @@ const NAMES = [
   'RATE_LIMIT_WINDOW_AUTHENTICATED',
   'RATE_LIMIT_UNAUTHENTICATED',
   'RATE_LIMIT_WINDOW_UNAUTHENTICATED',
+  'RATE_LIMIT_SITE',
+  'RATE_LIMIT_WINDOW_SITE',
 ];
 
 /** Пределы, которые увидит лимитер, когда в рабочем каталоге лежит такой .env. */
@@ -56,11 +58,15 @@ test('.env разработчика с другими пределами — т�
     'RATE_LIMIT_WINDOW_AUTHENTICATED=120',
     'RATE_LIMIT_UNAUTHENTICATED=3000',
     'RATE_LIMIT_WINDOW_UNAUTHENTICATED=60',
+    'RATE_LIMIT_SITE=9000',
+    'RATE_LIMIT_WINDOW_SITE=60',
     '',
   ].join('\n'));
 
   expect(tiers).toEqual({
     user: { limit: 100, windowSeconds: 60 },
     ip: { limit: 300, windowSeconds: 3600 },
+    // Ступень запросов самого сайта (D5, 25.10.2026) — так же на умолчаниях.
+    site: { limit: 6000, windowSeconds: 3600 },
   });
 });
