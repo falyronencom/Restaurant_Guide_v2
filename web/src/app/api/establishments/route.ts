@@ -4,6 +4,7 @@ import {
   getCatalog,
   type CatalogParams,
 } from '@/lib/api/endpoints/establishments';
+import { visitorAddressFrom } from '@/lib/api/visitor';
 import { ApiError } from '@/lib/api/types';
 
 /*
@@ -38,7 +39,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   };
 
   try {
-    const data = await getCatalog(params);
+    const data = await getCatalog(params, { visitor: visitorAddressFrom(request.headers) });
     return NextResponse.json(data);
   } catch (err) {
     if (err instanceof ApiError) {

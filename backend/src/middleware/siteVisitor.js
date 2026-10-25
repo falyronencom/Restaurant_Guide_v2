@@ -91,14 +91,23 @@ const tallies = {
   since: new Date().toISOString(),
   accepted: 0,
   withoutVisitor: 0,
+  visitorUnusable: 0,
   rejectedSecret: 0,
 };
 
-/** @returns {{ since: string, accepted: number, without_visitor: number, rejected_secret: number }} */
+/**
+ * `without_visitor` — the site named no visitor (pre-rendering, background);
+ * `visitor_unusable` — it named one the server could not read: those
+ * visitors share the site's budgets again, sign-in included.
+ *
+ * @returns {{ since: string, accepted: number, without_visitor: number,
+ *   visitor_unusable: number, rejected_secret: number }}
+ */
 export const siteRequestTallies = () => ({
   since: tallies.since,
   accepted: tallies.accepted,
   without_visitor: tallies.withoutVisitor,
+  visitor_unusable: tallies.visitorUnusable,
   rejected_secret: tallies.rejectedSecret,
 });
 
@@ -106,11 +115,13 @@ export const siteRequestTallies = () => ({
 export const resetSiteRequestTallies = () => {
   tallies.accepted = 0;
   tallies.withoutVisitor = 0;
+  tallies.visitorUnusable = 0;
   tallies.rejectedSecret = 0;
 };
 
 const WARN_EVERY_MS = 5 * 60 * 1000;
 let lastRejectionWarnAt = 0;
+let lastUnusableWarnAt = 0;
 
 /**
  * The visitor's key from the header, or null.
@@ -163,8 +174,18 @@ export const createSiteVisitor = (env = process.env) => (req, res, next) => {
   const visitorKey = visitorKeyOf(visitor);
   if (visitorKey) {
     tallies.accepted += 1;
-  } else {
+  } else if (visitor === undefined) {
     tallies.withoutVisitor += 1;
+  } else {
+    tallies.visitorUnusable += 1;
+    const now = Date.now();
+    if (now - lastUnusableWarnAt >= WARN_EVERY_MS) {
+      lastUnusableWarnAt = now;
+      // Not the value: it is a visitor's address, or close to one.
+      logger.warn('Site named a visitor the server cannot read; counted as the site itself', {
+        unusableSinceStart: tallies.visitorUnusable,
+      });
+    }
   }
   req.siteRequest = { visitorKey };
   return next();

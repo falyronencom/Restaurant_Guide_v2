@@ -166,6 +166,15 @@ describe('serverFetch', () => {
     expect(sentHeaders(fetchMock)['X-Site-Visitor']).toBeUndefined();
   });
 
+  it('the metadata is held in the data cache for an hour — no API call per results view', async () => {
+    const fetchMock = fetchOk();
+    const { getMetadata } = await import('@/lib/api/endpoints/metadata');
+
+    await getMetadata();
+
+    expect(fetchMock.mock.calls[0][1].next).toEqual({ revalidate: 3600 });
+  });
+
   it('without a secret — what it sent before: Accept only', async () => {
     delete process.env.SITE_REQUEST_SECRET;
     const fetchMock = fetchOk();

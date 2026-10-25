@@ -47,7 +47,11 @@ import logger from '../utils/logger.js';
  * anything else that is not a whole number: the default, with a warning.
  */
 
-/** A phrase's calls at most: the first and one retry (smartSearchService MAX_ATTEMPTS). */
+/**
+ * A phrase's calls at most: the first and one retry — smartSearchService's
+ * MAX_ATTEMPTS. Pinned equal by smartSearchParseIntent.test.js: a third
+ * attempt would be a call nobody reserved.
+ */
 export const MAX_CALLS_PER_PHRASE = 2;
 
 export const BUDGET_DEFAULTS = Object.freeze({
@@ -145,9 +149,10 @@ const keysAt = (now, requester) => {
       : null,
     hourStats: `${KEY_PREFIX}:stat:h:${hour}`,
     dayStats: `${KEY_PREFIX}:stat:d:${day}`,
-    // The stats outlive their bucket by an hour: the hourly log line reads
-    // the hour that has just ended.
-    hourTtl: secondsLeftInHour(now) + 3600,
+    // The hour's stats outlive it by a day: the hourly log line reads the
+    // last hour a decision was made in, which after a quiet night is hours
+    // ago (review 26.10.2026).
+    hourTtl: secondsLeftInHour(now) + 86400,
     dayTtl: secondsUntilMinskMidnight(now) + 3600,
     phrasesTtl: secondsLeftInHour(now),
   };
@@ -325,7 +330,10 @@ export const reserveModelCalls = async ({ requester = null, now = new Date() } =
   }
 
   const giveBack = async (calls, phrase) => {
-    if (calls <= 0 && phrase <= 0) return;
+    // Not ready: the MULTI would wait in the client's queue (offline queue
+    // does not cover MULTI) and land on whatever Redis comes back. A count
+    // left too high is the safe side.
+    if ((calls <= 0 && phrase <= 0) || !redisClient.isReady) return;
     try {
       const multi = redisClient.multi();
       if (calls > 0) {
@@ -416,6 +424,9 @@ export const getBudgetHealth = async ({ modelAvailable, now = new Date() }) => {
     },
     hour,
     day,
+    // Calls held right now — made and in flight. Above llm_calls by what is in
+    // flight; far above it, a reservation that timed out and landed late.
+    calls_reserved: callsReserved,
     denied_no_redis_since_start: processTallies.deniedNoRedis,
     since: processTallies.since,
     degraded: modelAvailable && (!redisReady || hour === null || capReached),

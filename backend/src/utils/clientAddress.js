@@ -63,5 +63,10 @@ export const addressKey = (value) => {
     return null;
   }
   const groups = ipv6Groups(address);
+  // Any spelling of an IPv4-mapped address (`0:0:0:0:0:ffff:1.2.3.4`,
+  // `::ffff:102:304`) is that IPv4.
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+    return [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join('.');
+  }
   return `${groups.slice(0, 4).map((group) => group.toString(16)).join(':')}::/64`;
 };

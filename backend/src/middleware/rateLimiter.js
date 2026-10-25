@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { decrement, incrementWithExpiry, getTTL } from '../config/redis.js';
 import { RATE_LIMIT_MESSAGE } from '../constants/rateLimitRefusal.js';
 import { decodeAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
@@ -175,7 +176,7 @@ export const SITE_IDENTIFIER = 'site';
  *
  * @param {Object} req - Express request
  * @param {{ byToken?: boolean }} [options]
- * @returns {{ tier: 'user'|'ip'|'site', identifier: string }}
+ * @returns {{ tier: 'user'|'ip'|'site', identifier: string, viaSite?: true }}
  */
 export const requesterOf = (req, { byToken = false } = {}) => {
   const userId = req.user?.userId;
@@ -197,11 +198,26 @@ export const requesterOf = (req, { byToken = false } = {}) => {
   }
   if (req.siteRequest) {
     return req.siteRequest.visitorKey
-      ? { tier: 'ip', identifier: req.siteRequest.visitorKey }
+      ? { tier: 'ip', identifier: req.siteRequest.visitorKey, viaSite: true }
       : { tier: 'site', identifier: SITE_IDENTIFIER };
   }
   return { tier: 'ip', identifier: addressKey(req.ip) ?? String(req.ip) };
 };
+
+/**
+ * The requester as a log line names it. A visitor of the site is not written
+ * by address: the site deliberately keeps no visitors' addresses
+ * (web client-error route, avatar-source), and its secret must not turn the
+ * API's logs into a register of them — a short digest still tells one
+ * visitor's refusals from another's. Accounts and direct clients are written
+ * as before.
+ *
+ * @param {{ identifier: string, viaSite?: true }} requester
+ * @returns {string}
+ */
+export const loggedRequester = (requester) => (requester.viaSite
+  ? `site-visitor:${crypto.createHash('sha256').update(requester.identifier).digest('hex').slice(0, 12)}`
+  : requester.identifier);
 
 /**
  * The window as a 429 body names it: '1 minute' and '1 hour' as always for the
@@ -263,9 +279,11 @@ const setRetryAfter = (res, ttl) => {
  */
 export const createGlobalRateLimiter = (tiers) => async (req, res, next) => {
   let identifier;
+  let logged;
   try {
     const counted = requesterOf(req, { byToken: true });
     identifier = counted.identifier;
+    logged = loggedRequester(counted);
     const isAuthenticated = counted.tier === 'user';
     const { limit, windowSeconds } = tiers[counted.tier];
 
@@ -289,7 +307,7 @@ export const createGlobalRateLimiter = (tiers) => async (req, res, next) => {
     // Check if limit exceeded
     if (currentCount > limit) {
       logger.warn('Rate limit exceeded', {
-        identifier,
+        identifier: logged,
         isAuthenticated,
         currentCount,
         limit,
@@ -323,7 +341,7 @@ export const createGlobalRateLimiter = (tiers) => async (req, res, next) => {
     logger.error('Rate limiting check failed - allowing request', {
       error: error.message,
       path: req.path,
-      identifier: identifier ?? req.ip,
+      identifier: logged ?? (req.siteRequest ? 'site-request' : req.ip),
     });
 
     // Allow request to proceed despite rate limiting failure
@@ -377,7 +395,8 @@ export const createRateLimiter = ({
 }) => {
   return async (req, res, next) => {
     try {
-      const { identifier } = requesterOf(req, { byToken });
+      const requester = requesterOf(req, { byToken });
+      const { identifier } = requester;
       // The counter of the current bucket expires when the bucket ends, as the
       // global limiter's does: its time to live is what retry_after and
       // Retry-After name. Until 20.10.2026 it lived a whole window from the
@@ -399,7 +418,7 @@ export const createRateLimiter = ({
 
       if (currentCount > limit) {
         logger.warn(`Custom rate limit exceeded (${keyPrefix})`, {
-          identifier,
+          identifier: loggedRequester(requester),
           currentCount,
           limit,
           path: req.path,

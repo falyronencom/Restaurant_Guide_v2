@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { getMenuItems } from '@/lib/api/endpoints/establishments';
+import { currentVisitor } from '@/lib/api/visitor';
 import type { PublicMenuItem } from '@/lib/api/types';
 import { isDetailPathOf } from '@/lib/detail-path';
 
@@ -29,7 +30,9 @@ export async function reloadMenuAction(input: {
 }): Promise<ReloadMenuResult> {
   let result;
   try {
-    result = await getMenuItems(input.slug);
+    // Any browser may call this action: it counts against its visitor, not
+    // the site's own budget (lib/api/visitor.ts).
+    result = await getMenuItems(input.slug, { visitor: await currentVisitor() });
   } catch {
     return { ok: false };
   }

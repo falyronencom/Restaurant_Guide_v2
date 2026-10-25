@@ -1793,6 +1793,17 @@ describe('Smart Search - Бюджет модели', () => {
     expect(health.degraded).toBe(true);
   });
 
+  test('ключи бюджета живут ограниченно: у каждого есть срок', async () => {
+    await smart(PHRASES[0]);
+    await smart(PHRASES[0]);
+    const keys = await redisClient.keys('llmbudget:*');
+    expect(keys.length).toBeGreaterThanOrEqual(4);
+    for (const key of keys) {
+      const ttl = await redisClient.ttl(key);
+      expect({ key, ttl: ttl > 0 && ttl <= 2 * 86400 + 3600 }).toEqual({ key, ttl: true });
+    }
+  });
+
   test('конверт ответа на отказе — прежний, без новых полей', async () => {
     process.env.SMART_SEARCH_LLM_HOURLY_CAP = '1';
     const refused = await smart(PHRASES[0]);

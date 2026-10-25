@@ -34,7 +34,7 @@ it('returns the items and busts the literal detail path', async () => {
     detailPath: '/minsk/restorany/some-slug',
   });
 
-  expect(getMenuItemsMock).toHaveBeenCalledWith('some-slug');
+  expect(getMenuItemsMock).toHaveBeenCalledWith('some-slug', { visitor: null });
   expect(result).toEqual({ ok: true, menuItems: [ITEM] });
   expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
 });

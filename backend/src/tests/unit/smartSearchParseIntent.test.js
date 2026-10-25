@@ -380,3 +380,117 @@ describe('normalizeIntent', () => {
     });
   });
 });
+
+// ─── Наблюдатель попыток (D5, 25.10.2026) ────────────────────────────────────
+//
+// onAttempt только смотрит: бюджет модели считает по нему платные вызовы и
+// отличает потолок трат ключа (402) от тихого отката. Без параметра разбор —
+// прежний (все случаи выше); с ним — тот же результат и столько же вызовов.
+
+describe('parseIntent — наблюдатель попыток', () => {
+  const watch = () => {
+    const seen = [];
+    return { seen, onAttempt: (attempt) => seen.push(attempt) };
+  };
+
+  test('успех с первой попытки — одна попытка, ok', async () => {
+    global.fetch = jest.fn().mockResolvedValue(answer({ dish: 'кофе' }));
+    const { seen, onAttempt } = watch();
+
+    const intent = await parseIntent('кофе', { onAttempt });
+
+    expect(intent.dish).toBe('кофе');
+    expect(seen).toEqual([{ attempt: 1, outcome: 'ok' }]);
+  });
+
+  test('повтор на негодный ответ — две попытки, причина первой названа', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(rawAnswer('не JSON'))
+      .mockResolvedValueOnce(answer({ dish: 'пицца' }));
+    const { seen, onAttempt } = watch();
+
+    await parseIntent('пицца', { onAttempt });
+
+    expect(seen).toEqual([
+      { attempt: 1, outcome: 'no_json_object' },
+      { attempt: 2, outcome: 'ok' },
+    ]);
+  });
+
+  test('два негодных ответа — две попытки, обе с причиной', async () => {
+    global.fetch = jest.fn().mockResolvedValue(rawAnswer(''));
+    const { seen, onAttempt } = watch();
+
+    expect(await parseIntent('пицца', { onAttempt })).toBeNull();
+
+    expect(seen.map(({ outcome }) => outcome)).toEqual(['empty_content', 'empty_content']);
+  });
+
+  test.each([
+    ['402 — потолок трат ключа', () => jest.fn().mockResolvedValue(httpError(402, 'limit')), 'http_402'],
+    ['500', () => jest.fn().mockResolvedValue(httpError(500, 'oops')), 'http_500'],
+    ['таймаут', () => jest.fn().mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' })), 'timeout'],
+    ['отказ сети', () => jest.fn().mockRejectedValue(new TypeError('fetch failed')), 'network'],
+  ])('%s — одна попытка, исход своим именем', async (_label, makeFetch, outcome) => {
+    global.fetch = makeFetch();
+    const { seen, onAttempt } = watch();
+
+    expect(await parseIntent('пицца', { onAttempt })).toBeNull();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ attempt: 1, outcome }]);
+  });
+
+  test('попыток не больше, чем бюджет резервирует на фразу (MAX_CALLS_PER_PHRASE)', async () => {
+    const { MAX_CALLS_PER_PHRASE } = await import('../../services/smartSearchBudget.js');
+    global.fetch = jest.fn().mockResolvedValue(rawAnswer(''));
+
+    await parseIntent('пицца');
+
+    expect(global.fetch).toHaveBeenCalledTimes(MAX_CALLS_PER_PHRASE);
+  });
+
+  test('без ключа — ни одной попытки', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    global.fetch = jest.fn();
+    const { seen, onAttempt } = watch();
+
+    expect(await parseIntent('пицца', { onAttempt })).toBeNull();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(seen).toEqual([]);
+  });
+
+  test('исход — только класс: ни фразы, ни ответа модели', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(rawAnswer('секретная фраза пользователя'))
+      .mockResolvedValueOnce(answer({ dish: 'пицца' }));
+    const { seen, onAttempt } = watch();
+
+    await parseIntent('секретная фраза', { onAttempt });
+
+    expect(JSON.stringify(seen)).not.toMatch(/секретн/);
+    for (const { outcome } of seen) expect(outcome).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  test('сбой наблюдателя — не сбой разбора: тот же результат, тот же повтор', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(rawAnswer('не JSON'))
+      .mockResolvedValueOnce(answer({ dish: 'пицца' }));
+    const onAttempt = jest.fn(() => { throw new Error('watcher broke'); });
+
+    const intent = await parseIntent('пицца', { onAttempt });
+
+    expect(intent.dish).toBe('пицца');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(onAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  test('сбой наблюдателя на отказе сети — разбор по-прежнему null, без исключения наружу', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const onAttempt = () => { throw new Error('watcher broke'); };
+
+    await expect(parseIntent('пицца', { onAttempt })).resolves.toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});

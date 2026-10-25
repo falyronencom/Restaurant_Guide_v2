@@ -197,6 +197,7 @@ describe('searchController', () => {
               since: expect.any(String),
               accepted: expect.any(Number),
               without_visitor: expect.any(Number),
+              visitor_unusable: expect.any(Number),
               rejected_secret: expect.any(Number),
             },
           },

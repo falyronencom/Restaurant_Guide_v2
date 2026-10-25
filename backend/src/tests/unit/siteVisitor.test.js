@@ -216,6 +216,29 @@ describe('the global limiter', () => {
     await send(ROUTES.global, { 'X-Site-Visitor': VISITOR_A });
     expect(siteRequestTallies()).toMatchObject({ accepted: 1, without_visitor: 1, rejected_secret: 1 });
   });
+
+  test('a visitor named but unreadable is counted apart from «no visitor»', async () => {
+    await send(ROUTES.global, siteHeaders('example.com'));
+    await send(ROUTES.global, siteHeaders(undefined));
+    expect(siteRequestTallies()).toMatchObject({ visitor_unusable: 1, without_visitor: 1, accepted: 0 });
+  });
+
+  test('a repeated header (Node joins repeats with «, ») — no secret match, no visitor', async () => {
+    const plain = await routeKey(ROUTES.global, {});
+    incrementWithExpiry.mockClear();
+    await request(app).get('/rate-limit-probe')
+      .set('X-Forwarded-For', SITE_CHAIN)
+      .set('X-Site-Secret', [SECRET, SECRET])
+      .set('X-Site-Visitor', VISITOR_A);
+    expect(incrementWithExpiry.mock.calls[0][0]).toBe(plain);
+
+    incrementWithExpiry.mockClear();
+    await request(app).get('/rate-limit-probe')
+      .set('X-Forwarded-For', SITE_CHAIN)
+      .set('X-Site-Secret', SECRET)
+      .set('X-Site-Visitor', [VISITOR_A, VISITOR_B]);
+    expect(incrementWithExpiry.mock.calls[0][0]).toMatch(/^ratelimit:site:site:\d+$/);
+  });
 });
 
 describe('v4.44 — visitors of the site do not share the sign-in limit', () => {
@@ -239,6 +262,16 @@ describe('v4.44 — visitors of the site do not share the sign-in limit', () => 
     }
     expect(keys[0]).toBe(keys[1]);
     expect(keys[0]).toContain(':198.51.100.200:');
+  });
+
+  test('sign-in attempts from one address with genuine tokens of different accounts share one budget', async () => {
+    const tokenOf = (userId) => generateAccessToken({ userId, email: `${userId}@b.c`, role: 'user' });
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      const response = await send(ROUTES.login, { Authorization: `Bearer ${tokenOf(`throwaway-${attempt}`)}` });
+      expect(response.status).not.toBe(429);
+    }
+    const eleventh = await send(ROUTES.login, { Authorization: `Bearer ${tokenOf('throwaway-11')}` });
+    expect(eleventh.status).toBe(429);
   });
 });
 
@@ -271,6 +304,8 @@ describe('addressKey', () => {
     ['::', '0:0:0:0::/64'],
     ['fe80::1%eth0', 'fe80:0:0:0::/64'],
     ['64:ff9b::198.51.100.1', '64:ff9b:0:0::/64'],
+    ['0:0:0:0:0:ffff:203.0.113.10', '203.0.113.10'],
+    ['::ffff:cb00:710a', '203.0.113.10'],
     ['1:2:3:4:5:6:7:8', '1:2:3:4::/64'],
     ['example.com', null],
     ['203.0.113.10:443', null],
@@ -280,6 +315,18 @@ describe('addressKey', () => {
   ])('%p → %p', async (value, key) => {
     const { addressKey } = await import('../../utils/clientAddress.js');
     expect(addressKey(value)).toBe(key);
+  });
+});
+
+describe('what the log keeps', () => {
+  test('a site visitor is written as a digest, never by address; an account and a direct client as before', async () => {
+    const { loggedRequester } = await import('../../middleware/rateLimiter.js');
+    const visitor = loggedRequester({ tier: 'ip', identifier: VISITOR_A, viaSite: true });
+    expect(visitor).toMatch(/^site-visitor:[0-9a-f]{12}$/);
+    expect(visitor).not.toContain(VISITOR_A);
+    expect(loggedRequester({ tier: 'ip', identifier: VISITOR_B, viaSite: true })).not.toBe(visitor);
+    expect(loggedRequester({ tier: 'ip', identifier: '198.51.100.200' })).toBe('198.51.100.200');
+    expect(loggedRequester({ tier: 'user', identifier: 'user-1' })).toBe('user-1');
   });
 });
 

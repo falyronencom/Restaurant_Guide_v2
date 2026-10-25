@@ -3,6 +3,7 @@ import 'server-only';
 import { isIP } from 'node:net';
 
 import { headers } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 
 /*
  * Who the site's request to the API is made for (registry v4.35, v4.44;
@@ -88,7 +89,12 @@ export function visitorAddressFrom(
 export async function currentVisitor(): Promise<string | null> {
   try {
     return visitorAddressFrom(await headers());
-  } catch {
+  } catch (err) {
+    // Next's own signals (a static render bailing out to dynamic) are not
+    // «no visitor»: swallowed, an ISR page calling this by mistake would
+    // render without the signal instead of failing the build loudly. The
+    // optional call: test files that mock next/navigation leave it out.
+    unstable_rethrow?.(err);
     return null;
   }
 }

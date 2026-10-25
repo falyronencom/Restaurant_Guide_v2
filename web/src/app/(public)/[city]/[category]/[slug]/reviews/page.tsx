@@ -5,6 +5,7 @@ import { cache } from 'react';
 
 import { ApiError } from '@/lib/api/types';
 import { getBySlug, getReviews } from '@/lib/api/endpoints/establishments';
+import { currentVisitor } from '@/lib/api/visitor';
 import {
   getMetadata,
   validateCategorySlug,
@@ -57,7 +58,9 @@ const REVIEWS_PER_PAGE = 10;
 type Params = { city: string; category: string; slug: string };
 type SearchParams = { [key: string]: string | string[] | undefined };
 
-const getCachedBySlug = cache((slug: string) => getBySlug(slug));
+// force-dynamic: the visitor's request is here (lib/api/visitor.ts).
+const getCachedBySlug = cache(async (slug: string) =>
+  getBySlug(slug, { visitor: await currentVisitor() }));
 
 export async function generateMetadata({
   params,
@@ -174,7 +177,8 @@ export default async function ReviewsPage({
   //    an empty list: an empty list is a valid state («Пока нет отзывов»),
   //    while a failed fetch must say so (ReviewsRetry), not look like it.
   const [reviewsResult, meta] = await Promise.all([
-    getReviews(slug, { page, limit: REVIEWS_PER_PAGE }).catch(() => null),
+    getReviews(slug, { page, limit: REVIEWS_PER_PAGE }, { visitor: await currentVisitor() })
+      .catch(() => null),
     getMetadata(),
   ]);
 
