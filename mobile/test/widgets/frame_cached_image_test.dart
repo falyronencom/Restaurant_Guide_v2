@@ -1,26 +1,31 @@
-// Фото, декодированное под рамку (`FrameCachedImage`).
+// Фото в мелкой рамке, декодированное под рамку (`FrameCachedImage`).
 //
 // Что утверждается: (1) декодированное фото закрывает рамку × плотность по
-// обеим сторонам при любом соотношении сторон от 1 : 2 до 2 : 1 — то есть
-// вид не мягче, чем при декодировании файла целиком; (2) в ленте и на карте
-// фото действительно декодируется под рамку, а не в полный размер
-// (до 25.10.2026 — без ужатия: `memCacheWidth`/`memCacheHeight` не задавались
-// нигде в `mobile/lib`); (3) ужатую копию на диск не кладём
-// (`maxWidthDiskCache` — см. комментарий виджета).
+// обеим сторонам при любом соотношении сторон от 1 : 2 до 2 : 1 — его не
+// растягивают; (2) на карте и в прогулке фото действительно декодируется под
+// рамку (до 25.10.2026 — без ужатия: `memCacheWidth`/`memCacheHeight` не
+// задавались нигде в `mobile/lib`); (3) карточка ленты — нет: там ужатие
+// делает фото мягче, и вид Координатор оставил прежним (25.10.2026);
+// (4) ужатую копию на диск не кладём (`maxWidthDiskCache` — см. комментарий
+// виджета). Статистика кабинета и отзывы в профиле берут тот же виджет с
+// рамкой, заданной самой картинкой, — этот путь проверен на виджете; экраны
+// целиком здесь не поднимаются.
 //
-// Чего эти тесты НЕ утверждают: что фото на экране выглядит так же — это
-// снимки экрана на устройстве; какой из трёх адресов выбран — адреса здесь не
-// менялись. Само фото в тесте не грузится: сети и диска нет, проверяются
-// параметры, с которыми построен `CachedNetworkImage`.
+// Чего эти тесты НЕ утверждают: как фото выглядит — это сравнение «до/после»
+// на фото с прода (отчёт D4, 25.10.2026), не тест; какой из трёх адресов
+// выбран — адреса здесь не менялись. Само фото в тесте не грузится: сети и
+// диска нет, проверяются параметры, с которыми построен `CachedNetworkImage`.
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/utils/walk_reach.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_card.dart';
 import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 import 'package:restaurant_guide_mobile/widgets/map/establishment_map_preview.dart';
+import 'package:restaurant_guide_mobile/widgets/map/walk_controls.dart';
 
 /// Превью ленты в форме сервера (PR #123): 1200 в ширину, пропорции файла.
 const String _previewUrl =
@@ -91,16 +96,16 @@ void _expectCovers(CachedNetworkImage image, Size frame, double dpr) {
 
 void main() {
   group('decodeSize: фото закрывает рамку', () {
-    // Рамки приложения: лента, карта, прогулка, герой карточки (393 dp),
-    // меню, акция, кабинет — и пара крайних.
+    // Мелкие рамки приложения (карта, прогулка, отзыв в профиле, статистика
+    // кабинета), крупные — на случай, если виджет возьмут туда, — и крайние.
     const frames = [
-      Size(172, 291),
       Size(100, 100),
       Size(56, 56),
-      Size(393, 657),
-      Size(165, 275),
-      Size(350, 200),
+      Size(59, 59),
       Size(107, 116),
+      Size(172, 291),
+      Size(393, 657),
+      Size(350, 200),
       Size(430, 120),
       Size(40, 400),
     ];
@@ -123,16 +128,23 @@ void main() {
   });
 
   group('decodeSize: ужимает', () {
-    test('лента ×3: высота 1032 вместо 1600 у вертикального превью', () {
-      // 291 × 3 = 873 по высоте рамки; ширина 172 × 3 = 516 у фото 1 : 2
-      // требует 1032 по высоте.
-      expect(FrameCachedImage.decodeSize(const Size(172, 291), 3),
-          (width: null, height: 1032));
-    });
-
     test('карта ×3: ширина 600 вместо 1200', () {
+      // Рамка 300 × 300 точек; фото 2 : 1 при ширине 600 — 300 в высоту.
       expect(FrameCachedImage.decodeSize(const Size(100, 100), 3),
           (width: 600, height: null));
+    });
+
+    test('прогулка ×3: ширина 336', () {
+      expect(FrameCachedImage.decodeSize(const Size(56, 56), 3),
+          (width: 336, height: null));
+    });
+
+    test('статистика кабинета ×3: высота 642 вместо 2560 у полного размера',
+        () {
+      // Рамка 321 × 348 точек — выше, чем шире: задаётся высота; фото 1 : 2
+      // при высоте 642 — 321 в ширину.
+      expect(FrameCachedImage.decodeSize(const Size(107, 116), 3),
+          (width: null, height: 642));
     });
 
     test('рамка без конечного размера — без ужатия', () {
@@ -152,8 +164,8 @@ void main() {
         tester,
         const Center(
           child: SizedBox(
-            width: 172,
-            height: 291,
+            width: 100,
+            height: 100,
             child: FrameCachedImage(imageUrl: _previewUrl),
           ),
         ),
@@ -161,59 +173,37 @@ void main() {
       final shown = _shown(tester);
       expect(shown.image.imageUrl, _previewUrl);
       expect(shown.image.fit, BoxFit.cover);
-      expect(shown.image.memCacheWidth, isNull);
-      expect(shown.image.memCacheHeight, 1032);
+      expect(shown.image.memCacheWidth, 600);
+      expect(shown.image.memCacheHeight, isNull);
       // Ужатая копия на диск не кладётся.
       expect(shown.image.maxWidthDiskCache, isNull);
       expect(shown.image.maxHeightDiskCache, isNull);
     });
 
-    testWidgets('рамка задана самой картинкой', (tester) async {
+    testWidgets('рамка задана самой картинкой (статистика кабинета, ×2)',
+        (tester) async {
       await _pump(
         tester,
         const Center(
           child: FrameCachedImage(
             imageUrl: _previewUrl,
-            width: 76,
-            height: 76,
+            width: 107,
+            height: 116,
           ),
         ),
         dpr: 2,
       );
       final shown = _shown(tester);
-      expect(shown.frame, const Size(76, 76));
-      expect(shown.image.memCacheWidth, 304);
-      expect(shown.image.memCacheHeight, isNull);
+      expect(shown.frame, const Size(107, 116));
+      // Рамка 214 × 232 точки: высота — не меньше 2 × 214 = 428.
+      expect(shown.image.memCacheWidth, isNull);
+      expect(shown.image.memCacheHeight, 428);
+      _expectCovers(shown.image, shown.frame, 2);
     });
   });
 
-  group('экраны приложения декодируют фото под рамку', () {
-    testWidgets('карточка ленты и избранного', (tester) async {
-      // Как в выдаче и избранном: список, высоту карточки задаёт её текст.
-      await _pump(
-        tester,
-        ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          children: [
-            EstablishmentCard(
-              establishment: _establishment(thumbnailUrl: _previewUrl),
-            ),
-          ],
-        ),
-      );
-      final shown = _shown(tester);
-      expect(shown.image.imageUrl, _previewUrl);
-      // Рамка ленты: 172 dp в ширину, по высоте — карточка, не ниже макета.
-      expect(shown.frame.width, 172);
-      expect(shown.frame.height, inInclusiveRange(291, 400));
-      expect(shown.image.memCacheHeight, isNotNull,
-          reason: 'без ужатия превью держится в памяти 1200 × 1600');
-      _expectCovers(shown.image, shown.frame, 3);
-      // Вертикальное превью (1200 × 1600) действительно ужимается.
-      expect(shown.image.memCacheHeight, lessThan(1600));
-    });
-
-    testWidgets('превью заведения на карте', (tester) async {
+  group('экраны приложения', () {
+    testWidgets('превью заведения на карте — ужато под рамку', (tester) async {
       await _pump(
         tester,
         Stack(children: [
@@ -236,6 +226,47 @@ void main() {
           reason: 'без ужатия превью держится в памяти 1200 × 1600');
       _expectCovers(shown.image, shown.frame, 3);
       expect(shown.image.memCacheWidth, lessThan(1200));
+    });
+
+    testWidgets('карточка места в прогулке — ужато под рамку', (tester) async {
+      await _pump(
+        tester,
+        Center(
+          child: WalkPlaceCard(
+            place: WalkPlace(_establishment(thumbnailUrl: _previewUrl), 550),
+          ),
+        ),
+      );
+      final shown = _shown(tester);
+      expect(shown.image.imageUrl, _previewUrl);
+      expect(shown.frame, const Size(56, 56));
+      expect(shown.image.memCacheWidth, isNotNull,
+          reason: 'без ужатия превью держится в памяти 1200 × 1600');
+      _expectCovers(shown.image, shown.frame, 3);
+      expect(shown.image.memCacheWidth, lessThan(1200));
+    });
+
+    testWidgets('карточка ленты и избранного — фото декодируется целиком',
+        (tester) async {
+      // Как в выдаче и избранном: список, высоту карточки задаёт её текст.
+      await _pump(
+        tester,
+        ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            EstablishmentCard(
+              establishment: _establishment(thumbnailUrl: _previewUrl),
+            ),
+          ],
+        ),
+      );
+      final shown = _shown(tester);
+      expect(shown.image.imageUrl, _previewUrl);
+      expect(shown.frame.width, 172);
+      // Превью крупнее рамки лишь в ≈ 2,3 раза: ужатие сделало бы фото
+      // мягче, вид ленты Координатор оставил прежним (25.10.2026).
+      expect(shown.image.memCacheWidth, isNull);
+      expect(shown.image.memCacheHeight, isNull);
     });
   });
 }

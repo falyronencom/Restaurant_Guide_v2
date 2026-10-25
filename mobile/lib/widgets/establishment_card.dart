@@ -2,12 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
-import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 
 /// Reusable card component for displaying establishment information
 /// Figma design implementation with image on left, content on right
@@ -190,8 +190,9 @@ class EstablishmentCard extends StatelessWidget {
       clipper: _ImageClipper(),
       child: SizedBox.expand(
         child: establishment.thumbnailUrl != null
-            ? FrameCachedImage(
+            ? CachedNetworkImage(
                 imageUrl: establishment.thumbnailUrl!,
+                fit: BoxFit.cover,
                 placeholder: (context, url) => Container(
                   color: Colors.grey[300],
                   child: const Center(

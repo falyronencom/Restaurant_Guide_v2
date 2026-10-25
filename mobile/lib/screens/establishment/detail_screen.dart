@@ -31,7 +31,6 @@ import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/action_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
-import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
 import 'package:restaurant_guide_mobile/widgets/hero_scrim.dart';
 import 'package:restaurant_guide_mobile/widgets/menu/menu_text.dart';
@@ -545,6 +544,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       },
       itemBuilder: (context, index) {
         final photo = photos[index];
+        // Полный размер, не превью: рамка героя — 657 dp в высоту, и фото,
+        // заполняя её, требует ≈ 1 970 точек по высоте на телефоне ×3 —
+        // больше, чем есть у превью (1200 в ширину) даже у вертикального.
         final imageUrl = photo.url ?? photo.previewUrl ?? photo.thumbnailUrl;
 
         if (imageUrl == null) {
@@ -553,11 +555,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
         return GestureDetector(
           onTap: () => _openFullscreenGallery(index),
-          // Полный размер, не превью: рамка героя — 657 dp в высоту, и фото,
-          // заполняя её, требует ≈ 1 970 точек по высоте на телефоне ×3 —
-          // больше, чем есть у превью (1200 в ширину) даже у вертикального.
-          child: FrameCachedImage(
+          child: CachedNetworkImage(
             imageUrl: imageUrl,
+            fit: BoxFit.cover,
             placeholder: (context, url) => Container(
               color: Colors.grey[300],
               child: const Center(
@@ -590,8 +590,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build primary image fallback when no media array but has thumbnailUrl
   Widget _buildPrimaryImageFallback() {
-    return FrameCachedImage(
+    return CachedNetworkImage(
       imageUrl: _establishment!.thumbnailUrl!,
+      fit: BoxFit.cover,
       placeholder: (context, url) => Container(
         color: Colors.grey[300],
         child: const Center(
@@ -1408,8 +1409,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
                       : const Radius.circular(10),
                 ),
                 child: imageUrl != null
-                    ? FrameCachedImage(
+                    ? CachedNetworkImage(
                         imageUrl: imageUrl,
+                        fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
                           color: Colors.grey[200],
                         ),
@@ -2399,8 +2401,9 @@ class _PromotionCarouselSheetState extends State<_PromotionCarouselSheet> {
               height: 200,
               width: double.infinity,
               child: promotion.hasImage
-                  ? FrameCachedImage(
+                  ? CachedNetworkImage(
                       imageUrl: promotion.previewUrl ?? promotion.imageUrl!,
+                      fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         color: Colors.grey[200],
                         child: const Center(
@@ -2862,10 +2865,11 @@ class _PdfMenuCard extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               child: thumbUrl != null
-                  ? FrameCachedImage(
+                  ? CachedNetworkImage(
                       imageUrl: thumbUrl,
                       width: 76,
                       height: 76,
+                      fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         width: 76,
                         height: 76,
