@@ -354,9 +354,10 @@ async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
  * of the five attempts per wrong entry. A 401 with no code is not one of
  * these either and is not replayed. An allow-list, not a list of exceptions:
  * a future endpoint's own 401 stays a single request without anyone having to
- * remember this list.
+ * remember this list. Kept equal to the backend's codes by
+ * __tests__/session-refusal-codes-guard.test.ts.
  */
-const SESSION_REFUSAL_CODES: ReadonlySet<string> = new Set([
+export const SESSION_REFUSAL_CODES: ReadonlySet<string> = new Set([
   'MISSING_TOKEN',
   'INVALID_TOKEN_FORMAT',
   'INVALID_TOKEN',

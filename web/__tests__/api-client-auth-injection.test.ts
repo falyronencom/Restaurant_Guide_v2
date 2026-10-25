@@ -1,5 +1,6 @@
 /**
- * authedFetch (session.ts) — Bearer injection + transparent refresh-on-401.
+ * authedFetch (session.ts) — Bearer injection + transparent refresh on the
+ * backend sign-in check's 401 (SESSION_REFUSAL_CODES); any other 401 is sent once.
  * The negative invariant (public reads stay anonymous) lives in
  * api-client-transport.test.ts against the real serverFetch.
  */
