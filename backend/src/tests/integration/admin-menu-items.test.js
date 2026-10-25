@@ -20,6 +20,7 @@ import { clearAllData, query } from '../utils/database.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
+  createViewerAndGetToken,
 } from '../utils/adminTestHelpers.js';
 import * as qualityHealthModel from '../../models/qualityHealthModel.js';
 import { SANITY_FLAG_REASONS } from '../../services/ocr/sanityChecker.js';
@@ -1054,6 +1055,30 @@ describe('GET /api/v1/admin/menu-items/flagged — the menu file of the row (A1-
       media_file_type: 'pdf',
       media_preview_url: 'http://test/p.png',
       media_thumbnail_url: 'http://test/t.png',
+    });
+  });
+});
+
+describe('GET /api/v1/admin/menu-items/flagged — просмотрщик видит, почему скрыта позиция', () => {
+  // PR #118 гасил hidden_reason просмотрщику во всём ответе панели: ключ общий
+  // с отзывами, и пропала причина скрытия позиции меню. Причина позиции —
+  // заметка команды о блюде, о людях в ней ничего; причина скрытия отзыва
+  // по-прежнему гасится (review-batch-hide-and-people-filters.test.js,
+  // «просмотрщику ни причины, ни состояния автора»).
+  test('скрытая позиция приходит просмотрщику с причиной', async () => {
+    const viewer = await createViewerAndGetToken();
+    await seedFlagged('active', { hidden: true, itemName: 'Скрытая позиция' });
+
+    const res = await request(app)
+      .get('/api/v1/admin/menu-items/flagged?visibility=hidden')
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .expect(200);
+
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      item_name: 'Скрытая позиция',
+      is_hidden_by_admin: true,
+      hidden_reason: 'проверено вручную, цена настоящая',
     });
   });
 });
