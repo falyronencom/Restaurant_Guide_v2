@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/screens/notifications/notifications_screen.dart';
@@ -73,6 +74,63 @@ void main() {
       final title = tester.getRect(find.text('Аналитика'));
       final action = tester.getRect(find.text('30 дней'));
       expect(action.left, greaterThan(title.right));
+    });
+
+    // Волна 3 (A3-11): действия шире шапки прежде отнимали всё место, и
+    // заголовок исчезал целиком. Теперь заголовку обещано своё, а действия
+    // прокручиваются в остатке.
+    testWidgets('широкие действия не съедают заголовок и не наезжают на него',
+        (tester) async {
+      await pump(
+        tester,
+        SizedBox(
+          width: 700,
+          child: AdminScreenHeader(
+            title: 'Панель управления',
+            subtitle: 'данные за 30 дней · не удалось обновить',
+            actions: <Widget>[
+              for (var i = 0; i < 6; i++)
+                SizedBox(width: 150, child: Text('Кнопка $i')),
+            ],
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull, reason: 'без переполнения');
+      final title = tester.renderObject<RenderParagraph>(
+          find.text('Панель управления'));
+      expect(title.size.width, greaterThan(150),
+          reason: 'заголовок виден, а не сжат в ноль');
+      expect(title.didExceedMaxLines, isFalse,
+          reason: 'короткому заголовку места хватает целиком');
+      final titleRect = tester.getRect(find.text('Панель управления'));
+      final actions = tester.getRect(
+          find.byKey(const ValueKey<String>('screen-header-actions')));
+      expect(actions.left, greaterThanOrEqualTo(titleRect.right),
+          reason: 'действия правее заголовка');
+      expect(actions.right, lessThanOrEqualTo(700));
+    });
+
+    testWidgets('обрезанная подпись — с подсказкой, целая — без',
+        (tester) async {
+      const long = 'данные за 30 дней · обновлено в 14:05 · не удалось '
+          'обновить — показаны числа прошлой загрузки';
+      await pump(
+        tester,
+        const SizedBox(
+          width: 420,
+          child: AdminScreenHeader(title: 'Отзывы', subtitle: long),
+        ),
+      );
+      expect(find.byTooltip(long), findsOneWidget);
+      expect(find.byTooltip('Отзывы'), findsNothing,
+          reason: 'заголовок влез — подсказка не нужна');
+
+      await pump(
+        tester,
+        const AdminScreenHeader(title: 'Отзывы', subtitle: 'всего 5'),
+      );
+      expect(find.byType(Tooltip), findsNothing);
     });
   });
 

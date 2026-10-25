@@ -154,7 +154,7 @@ void main() {
 
     expect(find.text('СКОРО'), findsNWidgets(2));
 
-    // Обе пометки — в секции «Настройки», рядом со своими подписями.
+    // Обе пометки — в секции «Сообщество», рядом со своими подписями.
     for (final title in const <String>['История платежей', 'Уведомления']) {
       final row = find.ancestor(of: find.text(title), matching: find.byType(Row));
       expect(
@@ -215,7 +215,7 @@ void main() {
 
     for (final section in const <String>[
       'МОДЕРАЦИЯ',
-      'НАСТРОЙКИ',
+      'СООБЩЕСТВО',
       'АУДИТ',
       'КАЧЕСТВО',
     ]) {
