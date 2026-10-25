@@ -91,8 +91,11 @@ let stopRequested = false;
  * notifyPartnerIfBatchFinished with failedJobId, awaited, errors logged only.
  * When several permanently failed rows of one establishment are reaped in the
  * same pass, the batch is closed once, from the oldest of them (the widest
- * "recognised since enqueue" window). Rows reaped back to 'pending' keep the
- * batch open — the retry settles it, as with markFailed.
+ * "recognised since enqueue" window). Then every such job is told to its
+ * partner (ocrService.notifyPartnerOfFailedJob: one notice per upload batch,
+ * none for a re-read of a file recognised before) — after the batch notice,
+ * as in processJob. Rows reaped back to 'pending' keep the batch open — the
+ * retry settles it, as with markFailed.
  *
  * Exported for tests and diagnostics; the poller schedules it itself.
  *
@@ -121,6 +124,19 @@ export const sweepStaleJobs = async () => {
     closedBatches.add(job.establishment_id);
     await ocrService.notifyPartnerIfBatchFinished(job.establishment_id, { failedJobId: job.id })
       .catch((error) => logger.error('notifyMenuParsed failed after stale job reaped', {
+        error: error.message,
+        establishmentId: job.establishment_id,
+        jobId: job.id,
+      }));
+  }
+
+  // Every job failed here is told to its partner (notificationService keeps
+  // it to one notice per upload batch) — after the batch notice, as in
+  // processJob: the failure is the newest notice.
+  for (const job of reaped) {
+    if (job.status !== 'failed') continue;
+    await ocrService.notifyPartnerOfFailedJob(job)
+      .catch((error) => logger.error('failure notice failed after stale job reaped', {
         error: error.message,
         establishmentId: job.establishment_id,
         jobId: job.id,
@@ -161,6 +177,12 @@ const settleUnsettledAttempts = async () => {
     if (row?.status === 'failed') {
       await ocrService.notifyPartnerIfBatchFinished(row.establishment_id, { failedJobId: jobId })
         .catch((error) => logger.error('notifyMenuParsed failed after an abandoned attempt was settled', {
+          error: error.message,
+          establishmentId: row.establishment_id,
+          jobId,
+        }));
+      await ocrService.notifyPartnerOfFailedJob(row)
+        .catch((error) => logger.error('failure notice failed after an abandoned attempt was settled', {
           error: error.message,
           establishmentId: row.establishment_id,
           jobId,

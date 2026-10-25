@@ -6,6 +6,7 @@ import { serverFetch } from '@/lib/api/client';
 import { isRuleName, personText } from '@/lib/api/person-text';
 import {
   sendVerificationCode,
+  type SendVerificationCodeData,
   verifyEmailCode,
 } from '@/lib/api/endpoints/verification';
 import {
@@ -402,9 +403,11 @@ export async function verifyEmailCodeAction(
 
 /**
  * Re-send the verification code (email-channel Slice 2, useActionState
- * signature — no fields). `sent:false` (Resend unconfigured) deliberately gets
- * the same confirmation: the code row exists either way, and the difference is
- * infrastructure state the user cannot act on. Backend throttles: 5/hour/user
+ * signature — no fields). `sent:false` — the code row exists but the mail
+ * service refused the email (or is not configured): the visitor is told the
+ * email did not go out, and the button stays for another try. The same
+ * confirmation as on success had them waiting for an email that would never
+ * come. Backend throttles: 5/hour/user
  * service-side (RATE_LIMITED) + 10/hour route limiter (RATE_LIMIT_EXCEEDED);
  * a new code invalidates all prior active ones.
  */
@@ -412,10 +415,15 @@ export async function resendVerificationCodeAction(
   _prevState: ResendCodeState,
   _formData: FormData,
 ): Promise<ResendCodeState> {
+  let result: SendVerificationCodeData;
   try {
-    await sendVerificationCode();
+    result = await sendVerificationCode();
   } catch (err) {
     return mapVerifyError(err, undefined);
+  }
+
+  if (result.sent === false) {
+    return { ok: false, code: 'EMAIL_NOT_SENT', message: RESEND_NOT_SENT_RU };
   }
 
   return { ok: true, message: RESEND_SENT_RU };
@@ -530,6 +538,12 @@ const FORGOT_SENT_RU =
 const RESET_DONE_RU = 'Пароль изменён. Войдите с новым паролем.';
 
 const RESEND_SENT_RU = 'Мы отправили новый код на вашу почту.';
+
+/**
+ * The code is issued, the email is not (server: 200 sent:false). Proposed by
+ * the Trunk session 24.10.2026; the Coordinator's word comes with the merge.
+ */
+const RESEND_NOT_SENT_RU = 'Письмо не отправилось. Попробуйте ещё раз через минуту.';
 
 /** Light-touch shape check; the backend's isEmail stays the canon. */
 const EMAIL_RE = /^\S+@\S+\.\S+$/;

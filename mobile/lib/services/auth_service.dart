@@ -80,8 +80,10 @@ class AuthService {
   /// authenticated user's email.
   ///
   /// Throws on rate limit, missing email, etc. — caller handles via provider.
-  /// Returns the absolute expiration time of the issued code (informational).
-  Future<DateTime?> sendEmailVerificationCode() async {
+  /// Returns whether the email went out: the server issues the code either
+  /// way, but answers 200 with `sent: false` when the mail service refused
+  /// the email. Only an explicit `false` counts as not sent.
+  Future<bool> sendEmailVerificationCode() async {
     final response = await _apiClient.post(
       '/api/v1/auth/send-verification-code',
     );
@@ -89,8 +91,7 @@ class AuthService {
     if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
       final data = response.data as Map<String, dynamic>;
       final responseData = data['data'] as Map<String, dynamic>? ?? data;
-      final expiresAtStr = responseData['expiresAt'] as String?;
-      return expiresAtStr != null ? DateTime.tryParse(expiresAtStr) : null;
+      return responseData['sent'] != false;
     }
 
     throw Exception('Failed to send verification code');

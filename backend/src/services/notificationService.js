@@ -772,6 +772,92 @@ export const notifyMenuParsed = async (establishmentId) => {
 };
 
 /**
+ * Title of the notice that recognition of a menu file failed for good. The
+ * notice goes out as type `menu_parsed` — the nearest existing type (directive
+ * of 24.10.2026, finding 3 of the Railway incident): every installed build of
+ * the app already files it under «Мои заведения», opens the partner's menu
+ * screen on a tap (in-app list and push), and the push follows the partner's
+ * menu_push_enabled switch (pushService category `menu`). A new type would
+ * reach builds that do not know it as a «new review». The title tells the two
+ * notices apart.
+ */
+export const MENU_RECOGNITION_FAILED_TITLE = 'Меню не распознано';
+
+/**
+ * Message of that notice. The file has no name the partner gave it, so the
+ * card's name stands in. Wording proposed by Trunk on 24.10.2026; the
+ * Coordinator's word comes with the merge.
+ *
+ * @param {string} name - Establishment name
+ * @returns {string}
+ */
+export const buildMenuRecognitionFailedMessage = (name) =>
+  `Не удалось распознать меню «${name}». Попробуйте загрузить снова или другой файл.`;
+
+/**
+ * Tell the partner that recognition of a menu file failed for good — called
+ * by ocrService for every job that ends 'failed' (its last attempt spent, a
+ * PDF over its parse limit, a zombie the poller's sweep failed, an attempt its
+ * poller settled). The menu screen shows why (recognition.reason of the
+ * partner's menu-items list); the notice only sends the partner there.
+ *
+ * Once per upload batch, not once per file: when a notice of this kind about
+ * the establishment is already newer than this job's enqueue — another file
+ * of the same upload failed before — nothing is sent (the reasoning of the
+ * batch-level menu_parsed, Coordinator decision 2026-09-04, option «б»: N files,
+ * one notice). A later upload is enqueued after that notice and is told again.
+ *
+ * In-app + push, like menu_parsed. Non-blocking: errors are logged only.
+ *
+ * @param {string} establishmentId
+ * @param {Object} options
+ * @param {string} options.jobId - UUID of the job that failed
+ * @returns {Promise<boolean>} Whether a notice was written
+ */
+export const notifyMenuRecognitionFailed = async (establishmentId, { jobId }) => {
+  try {
+    const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
+    if (!establishment || !establishment.partner_id) return false;
+
+    const alreadyTold = await NotificationModel.existsSinceOcrJobEnqueued({
+      userId: establishment.partner_id,
+      establishmentId,
+      type: 'menu_parsed',
+      title: MENU_RECOGNITION_FAILED_TITLE,
+      jobId,
+    });
+    if (alreadyTold) return false;
+
+    const message = buildMenuRecognitionFailedMessage(establishment.name || 'Заведение');
+
+    await NotificationModel.create({
+      userId: establishment.partner_id,
+      type: 'menu_parsed',
+      title: MENU_RECOGNITION_FAILED_TITLE,
+      message,
+      establishmentId,
+    });
+
+    PushService.sendPush(establishment.partner_id, {
+      title: MENU_RECOGNITION_FAILED_TITLE,
+      message,
+      data: {
+        type: 'menu_parsed',
+        establishmentId,
+      },
+    }).catch((err) => logger.error('Push failed for menu recognition failed', { error: err.message }));
+    return true;
+  } catch (error) {
+    logger.error('Failed to create menu recognition failed notification', {
+      error: error.message,
+      establishmentId,
+      jobId,
+    });
+    return false;
+  }
+};
+
+/**
  * Notify partner that admin hid one of their menu items.
  * Called from adminService.hideMenuItem (call currently commented out — Phase 1).
  *

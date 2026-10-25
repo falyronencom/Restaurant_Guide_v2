@@ -21,6 +21,7 @@ const mockLogger = {
 const mockReap = jest.fn();
 const mockPickNextPending = jest.fn();
 const mockNotify = jest.fn();
+const mockNotifyFailed = jest.fn();
 const mockProcessJob = jest.fn();
 const mockMarkInterrupted = jest.fn();
 const mockSettleAbandoned = jest.fn();
@@ -42,6 +43,7 @@ jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({
 
 jest.unstable_mockModule('../../services/ocr/ocrService.js', () => ({
   notifyPartnerIfBatchFinished: mockNotify,
+  notifyPartnerOfFailedJob: mockNotifyFailed,
   processJob: mockProcessJob,
 }));
 
@@ -64,6 +66,7 @@ const row = (overrides = {}) => ({
 beforeEach(() => {
   mockReap.mockResolvedValue([]);
   mockNotify.mockResolvedValue(true);
+  mockNotifyFailed.mockResolvedValue(true);
   mockPickNextPending.mockResolvedValue(null);
   mockProcessJob.mockResolvedValue({ success: true });
   mockMarkInterrupted.mockResolvedValue({ status: 'processing' });
@@ -84,6 +87,44 @@ describe('sweepStaleJobs', () => {
     expect(mockReap).toHaveBeenCalledTimes(1);
     expect(mockLogger.warn).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
+    expect(mockNotifyFailed).not.toHaveBeenCalled();
+  });
+
+  // Finding 3 of the Railway incident (24.10.2026): the partner hears every
+  // job failed for good — not once per establishment like the batch notice.
+  // After the batch notice: the failure is the newest notice the partner sees
+  // (review of 24.10.2026 — «распознано» on top hid the failure).
+  test('tells the partner of every permanently failed row, after the batch notice; requeued rows are not told', async () => {
+    const requeued = row({ status: 'pending' });
+    const older = row({ status: 'failed', attempts: 3 });
+    const newer = row({ status: 'failed', attempts: 3 });
+    const other = row({ status: 'failed', attempts: 3, establishment_id: ESTABLISHMENT_B });
+    mockReap.mockResolvedValue([requeued, older, newer, other]);
+    const order = [];
+    mockNotifyFailed.mockImplementation(async (job) => { order.push(`failed:${job.id}`); return true; });
+    mockNotify.mockImplementation(async (establishmentId) => { order.push(`batch:${establishmentId}`); return true; });
+
+    await Poller.sweepStaleJobs();
+
+    expect(mockNotifyFailed.mock.calls.map(([job]) => job.id)).toEqual([older.id, newer.id, other.id]);
+    expect(order.indexOf(`failed:${older.id}`)).toBeGreaterThan(order.indexOf(`batch:${ESTABLISHMENT_A}`));
+    expect(order.indexOf(`failed:${other.id}`)).toBeGreaterThan(order.indexOf(`batch:${ESTABLISHMENT_B}`));
+  });
+
+  test('a failing failure notice is logged and does not stop the sweep or the batch notice', async () => {
+    const first = row({ status: 'failed', attempts: 3 });
+    const second = row({ status: 'failed', attempts: 3, establishment_id: ESTABLISHMENT_B });
+    mockReap.mockResolvedValue([first, second]);
+    mockNotifyFailed.mockRejectedValueOnce(new Error('db blip'));
+
+    await expect(Poller.sweepStaleJobs()).resolves.toEqual([first, second]);
+
+    expect(mockNotifyFailed).toHaveBeenCalledTimes(2);
+    expect(mockNotify).toHaveBeenCalledTimes(2);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'failure notice failed after stale job reaped',
+      expect.objectContaining({ error: 'db blip', establishmentId: ESTABLISHMENT_A, jobId: first.id }),
+    );
   });
 
   test('logs every reaped job at warn level with its outcome', async () => {
@@ -438,6 +479,7 @@ describe('an attempt left without an outcome is settled by the live poller, not 
       'attempt ended without a recorded outcome; settled by its poller',
     );
     expect(mockNotify).not.toHaveBeenCalled();
+    expect(mockNotifyFailed).not.toHaveBeenCalled();
 
     // Settled — forgotten: the next cycle does not try again.
     await Poller.tick();
@@ -472,6 +514,11 @@ describe('an attempt left without an outcome is settled by the live poller, not 
 
     expect(mockNotify).toHaveBeenCalledTimes(1);
     expect(mockNotify).toHaveBeenCalledWith(ESTABLISHMENT, { failedJobId: job.id });
+    // ...and then the partner hears the failure itself — the newest notice.
+    expect(mockNotifyFailed).toHaveBeenCalledTimes(1);
+    expect(mockNotifyFailed).toHaveBeenCalledWith({ ...job, status: 'failed' });
+    expect(mockNotifyFailed.mock.invocationCallOrder[0])
+      .toBeGreaterThan(mockNotify.mock.invocationCallOrder[0]);
   });
 
   test('stop() gives it one more try before the pool closes', async () => {

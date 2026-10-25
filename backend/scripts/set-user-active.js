@@ -42,13 +42,29 @@
  *     certificate only — scripts/lib/productionDb.js);
  *     without it, the DB_* variables of a local database.
  *   - Refuses to deactivate the last active admin: the panel must keep at
- *     least one account that can act.
+ *     least one account that can act — unless --emergency says that closing
+ *     the panel is the point (below).
  *   - Requires typing "yes" to confirm (skip with --yes).
+ *
+ * Emergency, since 2026-10-24 (Railway incident 21–24.10, finding 9): when the
+ * panel's accounts may be in the wrong hands, the panel is closed by switching
+ * off its accounts. On 22.10 the last admin could only be switched off by SQL
+ * past the journal. Now:
+ *   - --emergency lets the switch-off take the last active admin, by the same
+ *     path as any switch-off — sessions ended, user_block in the journal (its
+ *     reason says it was an emergency) — and prints how to open the panel
+ *     again;
+ *   - --all-panel-accounts --emergency switches off every active panel account
+ *     (admin and viewer) at once, in one transaction, each the same way.
+ * Opening it again is the ordinary switch-on of an admin by this script
+ * (create-admin.js would also do).
  *
  * Usage:
  *   node scripts/set-user-active.js --email=guest@example.com --active=false --production
  *   node scripts/set-user-active.js --email=guest@example.com --active=true --production
  *   node scripts/set-user-active.js --email=guest@example.com --active=true --keep-reviews-hidden --production
+ *   node scripts/set-user-active.js --email=admin@example.com --active=false --emergency --production
+ *   node scripts/set-user-active.js --all-panel-accounts --active=false --emergency --production
  */
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
@@ -57,7 +73,8 @@ import { createInterface } from 'readline';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { ProductionClient } from './lib/productionDb.js';
-import { reportEndedSessions, writePasswordEndingSessions } from './lib/operator-password.js';
+import { endAllSessions, reportEndedSessions, writePasswordEndingSessions } from './lib/operator-password.js';
+import { PANEL_ROLES } from '../src/config/panelRoles.js';
 
 const { Client } = pg;
 
@@ -73,6 +90,8 @@ const activeArg = option('active');
 const production = hasFlag('production');
 const skipConfirm = hasFlag('yes');
 const keepReviewsHidden = hasFlag('keep-reviews-hidden');
+const emergency = hasFlag('emergency');
+const allPanelAccounts = hasFlag('all-panel-accounts');
 
 /** Who the journal names as the actor — the form the other operator scripts use. */
 const ACTOR = 'operator_script:set-user-active';
@@ -80,13 +99,19 @@ const ACTOR = 'operator_script:set-user-active';
 const usage = (problem) => {
   console.error(`❌ ${problem}`);
   console.error('');
-  console.error('   node scripts/set-user-active.js --email=<email> --active=true|false [--keep-reviews-hidden] [--production] [--yes]');
+  console.error('   node scripts/set-user-active.js --email=<email> --active=true|false [--keep-reviews-hidden] [--emergency] [--production] [--yes]');
+  console.error('   node scripts/set-user-active.js --all-panel-accounts --active=false --emergency [--production] [--yes]');
   process.exit(1);
 };
 
-if (!email || !email.includes('@')) usage('--email=<email> is required');
+if (allPanelAccounts && email) usage('--all-panel-accounts takes no --email');
+if (!allPanelAccounts && (!email || !email.includes('@'))) usage('--email=<email> is required');
 if (activeArg !== 'true' && activeArg !== 'false') usage('--active=true or --active=false is required');
 const active = activeArg === 'true';
+if (emergency && active) usage('--emergency is for switching off (--active=false) only');
+if (allPanelAccounts && !emergency) {
+  usage('--all-panel-accounts closes the panel to everyone: add --emergency to say that is the point');
+}
 
 const buildClient = () => {
   if (production) {
@@ -146,7 +171,7 @@ const reviewsHiddenByBlock = async (client, userId) => {
 };
 
 /** The journal entry of the switch, in its transaction; fails it when it fails. */
-const journal = (tx, accountId) => tx.query(
+const journal = (tx, accountId, { emergencyClose = false } = {}) => tx.query(
   `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent, created_at)
    VALUES (NULL, $1, 'user', $2, $3, $4, NULL, $5, clock_timestamp())`,
   [
@@ -163,18 +188,92 @@ const journal = (tx, accountId) => tx.query(
       }
       : {
         is_active: false,
-        reason: 'Учётку выключил оператор скриптом',
+        reason: emergencyClose
+          ? 'Панель закрыта аварийно: учётку выключил оператор скриптом'
+          : 'Учётку выключил оператор скриптом',
         hidden_review_ids: [],
         actor: ACTOR,
+        ...(emergencyClose ? { emergency: true } : {}),
       }),
     ACTOR,
   ],
 );
 
+/** The switch-off of an account, inside the caller's transaction: the row under its lock, then its entry. */
+const switchOff = async (tx, accountId, journalOptions) => {
+  const row = (await tx.query(
+    `UPDATE users SET is_active = false, updated_at = NOW()
+     WHERE id = $1 AND is_active = true
+     RETURNING id, email, role, is_active`,
+    [accountId],
+  )).rows[0];
+  if (row) await journal(tx, row.id, journalOptions);
+  return row;
+};
+
+const reopenHint = () => {
+  console.log('   To open the panel again, switch an admin back on:');
+  console.log(`   node scripts/set-user-active.js --email=<admin e-mail> --active=true${production ? ' --production' : ''}`);
+};
+
+const printTarget = (client) => console.log(`Target: ${production
+  ? 'PRODUCTION (DATABASE_URL from backend/.env.production)'
+  : `local ${client.host}:${client.port}/${client.database}`}`);
+
+/**
+ * --all-panel-accounts --emergency: every active panel account off, in one
+ * transaction — each as the single switch-off does it (row lock, journal
+ * entry, sessions ended). A failure leaves them all as they were.
+ */
+const closePanel = async (client) => {
+  printTarget(client);
+  const { rows: accounts } = await client.query(
+    'SELECT id, email, name, role FROM users WHERE role = ANY($1::text[]) AND is_active = true ORDER BY role, email',
+    [PANEL_ROLES],
+  );
+  if (accounts.length === 0) {
+    console.log('Nothing to do: no panel account is active.');
+    return 0;
+  }
+  console.log(`Active panel accounts: ${accounts.length}`);
+  accounts.forEach((a) => console.log(`   ${a.email} (${a.name}), role ${a.role}`));
+  console.log('⚠️  EMERGENCY (--all-panel-accounts --emergency): every one of them is switched off; its sessions,');
+  console.log('   push devices and unused reset links end. No one can sign in to the panel after this.');
+  console.log('   The switches are written to the journal (user_block), as the panel writes a block.');
+
+  if (!skipConfirm && !(await confirm())) {
+    console.log('Aborted.');
+    return 1;
+  }
+
+  const ended = [];
+  await client.query('BEGIN');
+  try {
+    for (const account of accounts) {
+      const row = await switchOff(client, account.id, { emergencyClose: true });
+      // Switched off meanwhile: nothing of it left to end
+      if (row) ended.push({ row, sessions: await endAllSessions(client, row.id) });
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+  for (const { row, sessions } of ended) {
+    console.log(`✅ ${row.email} (${row.role}) is now inactive.`);
+    reportEndedSessions(sessions);
+  }
+  console.log(`The panel is closed: ${ended.length} account(s) switched off.`);
+  reopenHint();
+  return 0;
+};
+
 const main = async () => {
   const client = buildClient();
   await client.connect();
   try {
+    if (allPanelAccounts) return await closePanel(client);
+
     const found = await client.query(
       'SELECT id, email, name, role, is_active FROM users WHERE email = $1',
       [email],
@@ -186,21 +285,22 @@ const main = async () => {
     }
 
     console.log(`Account: ${account.email} (${account.name}), role ${account.role}, active ${account.is_active}`);
-    console.log(`Target: ${production
-      ? 'PRODUCTION (DATABASE_URL from backend/.env.production)'
-      : `local ${client.host}:${client.port}/${client.database}`}`);
+    printTarget(client);
 
     if (account.is_active === active) {
       console.log(`Nothing to do: the account is already ${active ? 'active' : 'inactive'}.`);
       return 0;
     }
 
+    let lastAdmin = false;
     if (!active && account.role === 'admin') {
       const admins = await client.query(
         "SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin' AND is_active = true",
       );
-      if (admins.rows[0].count <= 1) {
+      lastAdmin = admins.rows[0].count <= 1;
+      if (lastAdmin && !emergency) {
         console.error('❌ Refusing: this is the last active admin. Create another admin first (create-admin.js).');
+        console.error('   To close the panel on purpose (an emergency), add --emergency.');
         return 1;
       }
     }
@@ -223,6 +323,9 @@ const main = async () => {
     if (!active) {
       console.log('   Login and token refresh stop immediately; an access token already issued stops working within 10 seconds.');
     }
+    if (lastAdmin) {
+      console.log('⚠️  EMERGENCY (--emergency): this is the last active admin — after the switch no admin can sign in to the panel.');
+    }
 
     if (!skipConfirm && !(await confirm())) {
       console.log('Aborted.');
@@ -234,11 +337,12 @@ const main = async () => {
     // the write returns). The UPDATE takes the row lock the panel's actions
     // take first; the entry is written under it.
     const { account: updated, sessions } = await writePasswordEndingSessions(client, async (tx) => {
+      if (!active) return switchOff(tx, account.id, { emergencyClose: lastAdmin });
       const row = (await tx.query(
-        `UPDATE users SET is_active = $1, updated_at = NOW()
-         WHERE id = $2 AND is_active = $3
+        `UPDATE users SET is_active = true, updated_at = NOW()
+         WHERE id = $1 AND is_active = false
          RETURNING id, email, role, is_active`,
-        [active, account.id, !active],
+        [account.id],
       )).rows[0];
       if (row) await journal(tx, row.id);
       return row;
@@ -249,6 +353,7 @@ const main = async () => {
     }
     console.log(`✅ ${updated.email} (${updated.role}) is now ${updated.is_active ? 'active' : 'inactive'}.`);
     reportEndedSessions(sessions);
+    if (lastAdmin) reopenHint();
     return 0;
   } catch (error) {
     console.error('❌ Failed:', error.message);
