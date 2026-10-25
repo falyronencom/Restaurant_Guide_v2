@@ -954,8 +954,8 @@ export const getActiveEstablishments = async (limit = 20, offset = 0, filters = 
   }
 
   if (search) {
-    conditions.push(`e.name ILIKE $${paramCount}`);
-    values.push(`%${search}%`);
+    conditions.push(`e.name ILIKE $${paramCount} ESCAPE '\\'`);
+    values.push(likeContains(search));
     paramCount++;
   }
 
@@ -1038,8 +1038,8 @@ export const countActiveEstablishments = async (filters = {}) => {
   }
 
   if (search) {
-    conditions.push(`name ILIKE $${paramCount}`);
-    values.push(`%${search}%`);
+    conditions.push(`name ILIKE $${paramCount} ESCAPE '\\'`);
+    values.push(likeContains(search));
     paramCount++;
   }
 

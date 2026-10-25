@@ -11,6 +11,7 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as PromotionModel from '../models/promotionModel.js';
 import logger from '../utils/logger.js';
+import { likeContains } from '../utils/likePattern.js';
 import { expandCityForQuery } from '../constants/urlSlugs.js';
 import {
   toPublicEstablishment,
@@ -71,16 +72,16 @@ export const SEARCH_SYNONYM_TERMS = Object.freeze(Object.keys(SEARCH_SYNONYMS));
  */
 function buildSearchOrParts(search, params, paramIndex) {
   const searchLower = search.toLowerCase();
-  const likePattern = `%${search}%`;
 
-  // Base ILIKE conditions: name, description, categories text, cuisines text
+  // Base ILIKE conditions: name, description, categories text, cuisines text.
+  // «%» and «_» typed by a person are characters, not wildcards (likePattern).
   const orParts = [
-    `e.name ILIKE $${paramIndex}`,
-    `e.description ILIKE $${paramIndex}`,
-    `e.categories::text ILIKE $${paramIndex}`,
-    `e.cuisines::text ILIKE $${paramIndex}`,
+    `e.name ILIKE $${paramIndex} ESCAPE '\\'`,
+    `e.description ILIKE $${paramIndex} ESCAPE '\\'`,
+    `e.categories::text ILIKE $${paramIndex} ESCAPE '\\'`,
+    `e.cuisines::text ILIKE $${paramIndex} ESCAPE '\\'`,
   ];
-  params.push(likePattern);
+  params.push(likeContains(search));
   paramIndex++;
 
   // Check synonyms — expand search to related categories/cuisines
@@ -359,7 +360,7 @@ function addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishM
   const lenient = dishMatch === 'lenient';
   const dishParam = lenient ? null : paramIndex++;
   const priceParam = paramIndex++;
-  if (!lenient) params.push(dish);
+  if (!lenient) params.push(likeContains(dish));
   params.push(priceMaxByn);
 
   const budget = `(
@@ -396,8 +397,8 @@ function addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishM
       WHERE mi.establishment_id = e.id
         AND mi.is_hidden_by_admin = FALSE
         AND (
-          mi.item_name ILIKE '%' || $${dishParam} || '%'
-          OR mi.category_raw ILIKE '%' || $${dishParam} || '%'
+          mi.item_name ILIKE $${dishParam} ESCAPE '\\'
+          OR mi.category_raw ILIKE $${dishParam} ESCAPE '\\'
         )
         AND ${budget}
     )`;

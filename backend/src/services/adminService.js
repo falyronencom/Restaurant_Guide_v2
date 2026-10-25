@@ -26,6 +26,7 @@ import {
 } from '../utils/moderationNotes.js';
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
+import { likeContains } from '../utils/likePattern.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
@@ -1168,10 +1169,10 @@ export const searchUsers = async (query, limit = 10) => {
     `SELECT id, email, name, role
      FROM users
      WHERE is_active = true
-       AND (email ILIKE $1 OR name ILIKE $1)
+       AND (email ILIKE $1 ESCAPE '\\' OR name ILIKE $1 ESCAPE '\\')
      ORDER BY name ASC
      LIMIT $2`,
-    [`%${query.trim()}%`, limit],
+    [likeContains(query.trim()), limit],
   );
 
   return result.rows;
