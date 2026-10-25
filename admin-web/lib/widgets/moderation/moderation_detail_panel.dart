@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/establishment_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -10,6 +11,8 @@ import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
 import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
+import 'package:restaurant_guide_admin_web/utils/error_text.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/network_thumbnail.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/definition_grid.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
@@ -59,6 +62,14 @@ class ModerationDetailPanel extends StatefulWidget {
   // Rejection notes for per-field display (from audit log)
   final Map<String, dynamic>? rejectionNotes;
 
+  /// Список слева пуст: приглашать «выбрать заведение» не из чего (Ч22,
+  /// 20.10). В режиме провайдера модерации панель смотрит на очередь сама.
+  final bool listIsEmpty;
+
+  /// Владелец карточки словами — «Имя · почта». Ячейка «Партнёр» в режиме
+  /// чтения; `null` — показывать нечего (пункт A1-02).
+  final String? partnerLabel;
+
   const ModerationDetailPanel({
     super.key,
     this.mode = DetailPanelMode.moderation,
@@ -68,6 +79,8 @@ class ModerationDetailPanel extends StatefulWidget {
     this.selectedId,
     this.onRetryDetail,
     this.rejectionNotes,
+    this.listIsEmpty = false,
+    this.partnerLabel,
   });
 
   @override
@@ -99,6 +112,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
     final EstablishmentDetail? detail;
     final VoidCallback? onRetryDetail;
     final bool isReadOnly = widget.mode != DetailPanelMode.moderation;
+    var listIsEmpty = widget.listIsEmpty;
 
     if (widget.detail != null ||
         widget.selectedId != null ||
@@ -118,9 +132,13 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       detail = provider.selectedDetail;
       final id = provider.selectedId;
       onRetryDetail = id == null ? null : () => provider.selectEstablishment(id);
+      listIsEmpty = !provider.isLoadingList &&
+          provider.listError == null &&
+          provider.totalCount == 0;
     }
 
     if (selectedId == null) {
+      if (listIsEmpty) return const SizedBox.shrink();
       return const Center(
         child: Text(
           'Выберите заведение для просмотра',
@@ -150,7 +168,10 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       return const SizedBox.shrink();
     }
 
-    return Column(
+    // Текст панели выделяется и копируется — почта, телефон, УНП, id
+    // (F-31, Р6а). Кнопки и вкладки внутри области работают как прежде.
+    return SelectionArea(
+      child: Column(
       children: [
         // Шапка панели — только в режиме чтения. В модерации имя заведения
         // показывает выбранная карточка очереди (кадр 05), и второй заголовок
@@ -167,6 +188,12 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
             notes: detail.moderationNotes,
             authorName: detail.suspendedByName,
           ),
+
+        // Заметки прошлой проверки — то, что обещает 💬 «для модераторов»
+        // (пункт A1-12). На «Отклонённых» те же записи уже стоят блоком
+        // причин отказа, второй раз их не показываем.
+        if (widget.rejectionNotes == null || widget.rejectionNotes!.isEmpty)
+          _ModerationNotesBlock(notes: detail.moderationNotes),
 
         // Вкладки. Стили не задаются на месте: активная 15/600 тёмно-оранжевым
         // с подчёркиванием 2px и нижняя граница полосы приходят из
@@ -186,6 +213,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
               _DataTab(
                 detail: detail,
                 isReadOnly: isReadOnly,
+                partnerLabel: widget.partnerLabel,
               ),
               _AboutTab(
                 detail: detail,
@@ -210,6 +238,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
         if (widget.mode == DetailPanelMode.moderation)
           _ActionBar(provider: context.watch<ModerationProvider>()),
       ],
+      ),
     );
   }
 
@@ -299,8 +328,19 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
 class ModerationEntityActions extends StatelessWidget {
   final ValueChanged<String>? onSuspend;
   final VoidCallback? onUnsuspend;
-  final ValueChanged<String>? onClaim;
+  /// Назначить партнёра: id выбранного и его подпись («Имя · почта») —
+  /// подпись нужна экрану, чтобы сказать, кому передано.
+  final void Function(String userId, String userLabel)? onClaim;
   final String establishmentName;
+
+  /// Узкое окно: кнопки — значками с подсказкой, без подписей. На 1024 и
+  /// 1150 подписи вместе с поиском выдавливали заголовок экрана до «Одоб…»
+  /// (пункт A1-14, Ч-проход 20.10).
+  final bool compact;
+
+  /// Поиск людей для назначения. По умолчанию — сервис панели; стенд
+  /// подставляет свой, чтобы разыграть поздний ответ и сбой.
+  final Future<List<UserSearchResult>> Function(String query)? userSearch;
 
   /// Действие в пути: кнопки гаснут, рядом крутится индикатор (пункт A1-03).
   /// Повторный клик раньше открывал второе окно и слал второй запрос.
@@ -319,8 +359,15 @@ class ModerationEntityActions extends StatelessWidget {
     this.onClaim,
     this.unsuspendReturnsTo,
     this.busy = false,
+    this.compact = false,
+    this.userSearch,
     required this.establishmentName,
   });
+
+  /// Ширина окна, ниже которой кнопки шапки — значками. Замер: подписи
+  /// «Приостановить» и «Назначить партнёра» с поиском 240 занимают ≈ 640 px,
+  /// и заголовку на 1150 оставалось меньше 120.
+  static const double compactBelowWindowWidth = 1280;
 
   /// Что скажет диалог подтверждения: «Возобновить» не всегда значит «на
   /// сайт» — карточка возвращается туда, где была до приостановки.
@@ -362,7 +409,14 @@ class ModerationEntityActions extends StatelessWidget {
       children: [
           if (busy)
             const AdminInlineSpinner(key: ValueKey<String>('entity-action-busy')),
-          if (onSuspend != null)
+          if (onSuspend != null && compact)
+            _CompactAction(
+              tooltip: 'Приостановить',
+              icon: Icons.pause_circle_outline,
+              color: AppTheme.errorRed,
+              onPressed: busy ? null : () => _confirmSuspend(context),
+            )
+          else if (onSuspend != null)
             OutlinedButton.icon(
               onPressed: busy ? null : () => _confirmSuspend(context),
               icon: const Icon(Icons.pause_circle_outline, size: 18),
@@ -396,7 +450,14 @@ class ModerationEntityActions extends StatelessWidget {
                 ),
               ),
             ),
-          if (onClaim != null)
+          if (onClaim != null && compact)
+            _CompactAction(
+              tooltip: 'Назначить партнёра',
+              icon: Icons.person_add_outlined,
+              color: AppTheme.textSecondary,
+              onPressed: busy ? null : () => _showClaimDialog(context),
+            )
+          else if (onClaim != null)
             OutlinedButton.icon(
               onPressed: busy ? null : () => _showClaimDialog(context),
               icon: const Icon(
@@ -459,14 +520,65 @@ class ModerationEntityActions extends StatelessWidget {
       context: context,
       builder: (ctx) => _ClaimUserSearchDialog(
         establishmentName: establishmentName,
-        onUserSelected: (userId) {
+        search: userSearch ?? ModerationService().searchUsers,
+        onUserSelected: (user) {
           Navigator.pop(ctx);
-          onClaim?.call(userId);
+          onClaim?.call(user.id, claimUserLabel(user));
         },
       ),
     );
   }
+
+  /// «Имя · почта» — кому передано; без имени — почта.
+  static String claimUserLabel(UserSearchResult user) {
+    final name = user.name.trim();
+    return name.isEmpty ? user.email : '$name · ${user.email}';
+  }
 }
+
+/// Кнопка шапки значком — узкое окно. Подсказка называет действие.
+class _CompactAction extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  const _CompactAction({
+    required this.tooltip,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: const BorderSide(color: AppTheme.strokeGrey),
+          minimumSize: const Size(40, 40),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusControl),
+          ),
+        ),
+        child: Icon(icon, size: 18, semanticLabel: tooltip),
+      ),
+    );
+  }
+}
+
+/// Роль человека в выдаче поиска — словом (пункт A1-17).
+String claimRoleLabel(String role) => switch (role) {
+      'partner' => 'партнёр',
+      'user' => 'пользователь',
+      'admin' => 'администратор',
+      'viewer' => 'наблюдатель',
+      _ => role,
+    };
 
 // =============================================================================
 // Claim User Search Dialog
@@ -474,11 +586,13 @@ class ModerationEntityActions extends StatelessWidget {
 
 class _ClaimUserSearchDialog extends StatefulWidget {
   final String establishmentName;
-  final ValueChanged<String> onUserSelected;
+  final ValueChanged<UserSearchResult> onUserSelected;
+  final Future<List<UserSearchResult>> Function(String query) search;
 
   const _ClaimUserSearchDialog({
     required this.establishmentName,
     required this.onUserSelected,
+    required this.search,
   });
 
   @override
@@ -487,11 +601,14 @@ class _ClaimUserSearchDialog extends StatefulWidget {
 
 class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
   final _searchController = TextEditingController();
-  final _service = ModerationService();
   List<UserSearchResult> _results = [];
   bool _isLoading = false;
   String? _error;
   String? _selectedUserId;
+
+  /// Номер последнего запроса (пункт A1-17): при быстром наборе «ив» →
+  /// «иван» поздний ответ на короткий запрос перекрывал свежий.
+  int _request = 0;
 
   @override
   void dispose() {
@@ -500,10 +617,13 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
   }
 
   Future<void> _search(String query) async {
+    final request = ++_request;
     if (query.trim().length < 2) {
       setState(() {
         _results = [];
         _error = null;
+        _isLoading = false;
+        _selectedUserId = null;
       });
       return;
     }
@@ -514,16 +634,21 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
     });
 
     try {
-      final results = await _service.searchUsers(query);
+      final results = await widget.search(query);
+      // Окно закрыли или набрали дальше — ответ уже ни о чём.
+      if (!mounted || request != _request) return;
       setState(() {
         _results = results;
         _isLoading = false;
         _selectedUserId = null;
       });
     } catch (e) {
+      if (!mounted || request != _request) return;
       setState(() {
         _isLoading = false;
-        _error = 'Ошибка поиска';
+        // Причина — общим разбором панели (находка П1 № 3): «нет связи» и
+        // «нет прав» требуют разного, а «Ошибка поиска» не говорила ничего.
+        _error = describeError(e);
       });
     }
   }
@@ -567,7 +692,9 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
         ),
         FilledButton(
           onPressed: _selectedUserId != null
-              ? () => widget.onUserSelected(_selectedUserId!)
+              ? () => widget.onUserSelected(
+                    _results.firstWhere((u) => u.id == _selectedUserId),
+                  )
               : null,
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFFF06B32),
@@ -585,7 +712,26 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
 
     if (_error != null) {
       return Center(
-        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Text(
+              'Поиск не удался',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () => _search(_searchController.text),
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
       );
     }
 
@@ -626,7 +772,7 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
             ),
           ),
           title: Text(user.name),
-          subtitle: Text('${user.email} · ${user.role}'),
+          subtitle: Text('${user.email} · ${claimRoleLabel(user.role)}'),
           onTap: () => setState(() => _selectedUserId = user.id),
         );
       },
@@ -679,11 +825,18 @@ class _PanelHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            detail.name,
-            style: AppTheme.unbounded(fontSize: 30, height: 1.1),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          // Две строки, а не одна: длинное название раньше резалось
+          // многоточием и там, где места хватало на перенос (Ч16, 20.10).
+          // Полное — подсказкой, если не влезло и в две.
+          Tooltip(
+            message: detail.name,
+            waitDuration: const Duration(milliseconds: 400),
+            child: Text(
+              detail.name,
+              style: AppTheme.unbounded(fontSize: 30, height: 1.1),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -813,24 +966,77 @@ class _RejectionNotesBlock extends StatelessWidget {
     );
   }
 
-  String _fieldLabel(String key) {
-    const labels = {
-      'legal_name': 'Полное название',
-      'unp': 'УНП',
-      'registration_doc': 'Регистрация',
-      'contact_person': 'Контактное лицо',
-      'contact_email': 'E-mail',
-      'description': 'Описание',
-      'name': 'Название',
-      'customer_phone': 'Номер для связи',
-      'website': 'Сайт',
-      'working_hours': 'Время работы',
-      'price_range': 'Средний чек',
-      'photos': 'Фото',
-      'menu': 'Меню',
-      'address': 'Адрес',
-    };
-    return labels[key] ?? key;
+  String _fieldLabel(String key) => kModerationFieldLabels[key] ?? key;
+}
+
+/// Заметки прошлой проверки — то, что модератор написал 💬 к полям и что
+/// сохранилось вместе с решением (пункт A1-12). До 21.10.2026 заметки
+/// уходили в карточку, а показать их было негде: обещание «для следующего
+/// модератора» не сбывалось.
+///
+/// Служебные отметки приостановки (`suspend_reason` и соседи) — не заметки
+/// к полям: их показывает [_SuspensionBlock]. Ключи вне словаря полей тоже
+/// пропускаются.
+class _ModerationNotesBlock extends StatelessWidget {
+  final Map<String, dynamic>? notes;
+
+  const _ModerationNotesBlock({required this.notes});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = <MapEntry<String, String>>[
+      for (final field in kModerationFieldLabels.keys)
+        if (notes?[field] is String && (notes![field] as String).trim().isNotEmpty)
+          MapEntry(kModerationFieldLabels[field]!, (notes![field] as String).trim()),
+    ];
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      key: const ValueKey<String>('moderation-notes'),
+      margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundWarm,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Row(
+            children: <Widget>[
+              Icon(Icons.chat_bubble_outline, size: 16, color: AppTheme.textSecondary),
+              SizedBox(width: 8),
+              Text(
+                'Заметки прошлой проверки',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final entry in entries)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: '${entry.key}: ',
+                      style: const TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    TextSpan(text: entry.value),
+                  ],
+                ),
+                style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -879,23 +1085,33 @@ class _SuspensionBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
+          // Перенос, а не ряд со `Spacer`: на окне 1024 время не помещалось
+          // рядом с заголовком и вылезало на 33 px (замер 21.10.2026).
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 4,
             children: [
-              const Icon(
-                Icons.pause_circle_outline,
-                size: 18,
-                color: AppTheme.disclaimerText,
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.pause_circle_outline,
+                    size: 18,
+                    color: AppTheme.disclaimerText,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Причина приостановки',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.disclaimerText,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'Причина приостановки',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.disclaimerText,
-                ),
-              ),
-              const Spacer(),
               if (stamp != null)
                 Text(
                   _formatStamp(stamp),
@@ -999,10 +1215,12 @@ class _PartnerPauseNote extends StatelessWidget {
 class _DataTab extends StatelessWidget {
   final EstablishmentDetail detail;
   final bool isReadOnly;
+  final String? partnerLabel;
 
   const _DataTab({
     required this.detail,
     this.isReadOnly = false,
+    this.partnerLabel,
   });
 
   @override
@@ -1062,20 +1280,39 @@ class _DataTab extends StatelessWidget {
 /// читают. Поэтому сюда стянуто то, что модерация раскладывает по двум
 /// вкладкам.
 ///
-/// Ячейки «Партнёр» из макета здесь нет: проекция детали отдаёт только
-/// `partner_id`, а показывать UUID на экране модератора — тот самый дефект,
-/// ради которого заводится русификация машинных обозначений. Понадобится —
-/// добавлять join к `users` в проекцию, это отдельная работа.
+/// Ячейка «Партнёр» — только когда владелец известен словами: проекция
+/// отдаёт `partner_id`, а UUID на экране модератора — тот самый дефект, ради
+/// которого заводится русификация машинных обозначений (пункт A1-02).
 extension _DataTabReadOnly on _DataTab {
   Widget _readOnly() => DefinitionGrid(
         items: <Definition>[
           Definition(label: 'Название', value: detail.name),
+          if ((detail.partnerLabel ?? partnerLabel) != null)
+            Definition(
+              label: 'Партнёр',
+              // Сервер — источник истины (`partner` детали); подпись из
+              // назначения в этой сессии — пока деталь не перечитана.
+              value: detail.partnerLabel ?? partnerLabel,
+              wide: true,
+            )
+          else if (detail.partnerDataRedacted)
+            const Definition(label: 'Партнёр', value: kRedactedForViewerLabel),
           Definition(
             label: 'Категории',
             value: detail.categories.join(', '),
           ),
-          Definition(label: 'Кухни', value: detail.cuisines.join(', ')),
-          Definition(label: 'Ценовой диапазон', value: detail.priceRange),
+          Definition(
+            label: 'Кухни',
+            // Бару, клубу, кальянной кухня не нужна (В5) — пустота у них не
+            // пропуск данных, и стиль «не указан» говорил бы об ошибке.
+            value: detail.cuisines.isEmpty && !isCuisineRequired(detail.categories)
+                ? 'не требуется'
+                : detail.cuisines.join(', '),
+          ),
+          Definition(
+            label: 'Ценовой диапазон',
+            value: priceRangeLabel(detail.priceRange),
+          ),
           Definition(label: 'Телефон', value: detail.phone),
           Definition(
             label: 'E-mail',
@@ -1171,7 +1408,7 @@ class _AboutTab extends StatelessWidget {
           fieldName: 'price_range',
           label: 'Средний чек',
           isRequired: true,
-          child: _FieldValue(detail.priceRange),
+          child: _FieldValue(priceRangeLabel(detail.priceRange)),
         ),
 
         // Informational fields (no approve/reject buttons)
@@ -1196,6 +1433,46 @@ class _AboutTab extends StatelessWidget {
           label: 'Атрибуты заведения',
           child: _AttributesDisplay(detail.attributes),
         ),
+        // Категории и кухни при модерации не показывались вовсе: проверить
+        // «ресторан без кухни» было нечем (пункт A1-19).
+        _InfoField(
+          label: 'Категории и кухни',
+          child: _CategoriesAndCuisines(detail: detail),
+        ),
+      ],
+    );
+  }
+}
+
+/// «Ресторан, Кафе» и кухни строкой ниже. Пустая кухня у бара, клуба,
+/// кальянной, боулинга, караоке, бильярда — «кухню выбирать не нужно»
+/// обычным текстом, а не пропуском данных (решение В5).
+class _CategoriesAndCuisines extends StatelessWidget {
+  final EstablishmentDetail detail;
+
+  const _CategoriesAndCuisines({required this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    final cuisinesNeeded = isCuisineRequired(detail.categories);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _FieldValue(detail.categories.join(', ')),
+        const SizedBox(height: 4),
+        if (detail.cuisines.isNotEmpty)
+          Text(
+            'Кухни: ${detail.cuisines.join(', ')}',
+            style: AppTheme.canonFieldValue,
+          )
+        else if (!cuisinesNeeded)
+          const Text(
+            'Кухню выбирать не нужно',
+            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+          )
+        else
+          const Text('Кухня не указана', style: AppTheme.canonFieldValueEmpty),
       ],
     );
   }
@@ -1236,7 +1513,10 @@ extension _AboutTabReadOnly on _AboutTab {
             label: 'Номер контактного лица',
             value: _partnerField(detail, detail.contactPerson),
           ),
-          Definition(label: 'Ценовой диапазон', value: detail.priceRange),
+          Definition(
+            label: 'Ценовой диапазон',
+            value: priceRangeLabel(detail.priceRange),
+          ),
         ],
       );
 }
@@ -1411,11 +1691,12 @@ extension _AddressTabReadOnly on _AddressTab {
             value: '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
             mono: true,
           ),
+        // Только кнопка: блок «На карте» повторял те же координаты второй
+        // раз и обещал карту, которой не было (Ч18, 20.10).
         if (lat != null && lon != null)
           Definition(
             label: 'На карте',
-            wide: true,
-            child: _MapPreview(latitude: lat, longitude: lon),
+            child: _OpenMapButton(latitude: lat, longitude: lon),
           ),
       ],
     );
@@ -1507,10 +1788,7 @@ class _MapPreview extends StatelessWidget {
     );
   }
 
-  void _openInYandexMaps() {
-    final url = 'https://yandex.ru/maps/?pt=$longitude,$latitude&z=16&l=map';
-    openInNewTab(url);
-  }
+  void _openInYandexMaps() => openYandexMaps(latitude, longitude);
 
   Future<void> _showCoordinateDialog(BuildContext context) async {
     final result = await showDialog<(double, double)>(
@@ -1521,6 +1799,36 @@ class _MapPreview extends StatelessWidget {
       ),
     );
     if (result != null) onUpdateCoordinates?.call(result.$1, result.$2);
+  }
+}
+
+/// Точка на Яндекс Картах в новой вкладке.
+void openYandexMaps(double latitude, double longitude) => openInNewTab(
+      'https://yandex.ru/maps/?pt=$longitude,$latitude&z=16&l=map',
+    );
+
+/// Ссылка «Открыть в Яндекс Картах» — режим чтения вкладки «Адрес».
+class _OpenMapButton extends StatelessWidget {
+  final double latitude;
+  final double longitude;
+
+  const _OpenMapButton({required this.latitude, required this.longitude});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: () => openYandexMaps(latitude, longitude),
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: const Text('Открыть в Яндекс Картах'),
+        style: TextButton.styleFrom(
+          foregroundColor: AppTheme.primaryOrangeDark,
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(0, 32),
+        ),
+      ),
+    );
   }
 }
 
@@ -1641,82 +1949,166 @@ class _ActionBar extends StatelessWidget {
   final ModerationProvider provider;
   const _ActionBar({required this.provider});
 
+  /// Ширина подвала, от которой подсказка помещается в один ряд с кнопками.
+  /// Замер на 1150 (Ч9): в ряду подсказке оставалось 40–60 px, и «Осталось
+  /// проверить 14 полей» шло по 2–5 букв в строке.
+  static const double singleRowMinWidth = 760;
+
+  /// Ниже этой ширины обе кнопки не помещаются рядом — встают столбиком во
+  /// всю ширину.
+  static const double buttonsInRowMinWidth = 470;
+
   @override
   Widget build(BuildContext context) {
     final error = provider.submitError;
+
+    // Ход отправки показывается слева, а не внутри кнопки. Причина не
+    // косметическая: `isSubmitting` общий для обоих действий, и спиннер
+    // на кнопке одобрения загорался бы при отказе — то есть сообщал бы
+    // о противоположном действии. К тому же при отклонённом поле эта
+    // кнопка заблокирована и залита `strokeGrey`, на котором белый
+    // спиннер не виден вовсе, и отказ оставался бы вообще без отклика.
+    final hint = provider.isSubmitting
+        ? const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              AdminInlineSpinner(),
+              SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Сохраняем решение…',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          )
+        : error != null
+            ? Text(
+                error,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.errorRed,
+                ),
+              )
+            : _StateHint(provider: provider);
+
+    final reject = OutlinedButton(
+      key: const ValueKey<String>('reject-application'),
+      onPressed: provider.isSubmitting ? null : () => _confirmReject(context),
+      style: AppTheme.canonCtaOutlined(color: AppTheme.errorRed),
+      child: const Text('Отклонить заявку', maxLines: 1, softWrap: false),
+    );
+    // Причина блокировки объясняется слева, а не внутри кнопки:
+    // заблокированная кнопка без объяснения читается как поломка.
+    final approve = ElevatedButton(
+      key: const ValueKey<String>('approve-application'),
+      onPressed: provider.isSubmitting || !provider.canApprove
+          ? null
+          : () => _confirmApprove(context),
+      style: AppTheme.canonCtaL(),
+      child: const Text('Одобрить заведение', maxLines: 1, softWrap: false),
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppTheme.borderLight)),
       ),
-      child: Row(
-        children: [
-          // Ход отправки показывается слева, а не внутри кнопки. Причина не
-          // косметическая: `isSubmitting` общий для обоих действий, и спиннер
-          // на кнопке одобрения загорался бы при отказе — то есть сообщал бы
-          // о противоположном действии. К тому же при отклонённом поле эта
-          // кнопка заблокирована и залита `strokeGrey`, на котором белый
-          // спиннер не виден вовсе, и отказ оставался бы вообще без отклика.
-          Expanded(
-            child: provider.isSubmitting
-                ? const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      AdminInlineSpinner(),
-                      SizedBox(width: 8),
-                      Text(
-                        'Сохраняем решение…',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  )
-                : error != null
-                    ? Text(
-                        error,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.errorRed,
-                        ),
-                      )
-                    : _StateHint(provider: provider),
-          ),
-          const SizedBox(width: 14),
-          OutlinedButton(
-            onPressed:
-                provider.isSubmitting ? null : () => _confirmReject(context),
-            style: AppTheme.canonCtaOutlined(color: AppTheme.errorRed),
-            child: const Text('Отклонить заявку'),
-          ),
-          const SizedBox(width: 14),
-          // Причина блокировки объясняется слева, а не внутри кнопки:
-          // заблокированная кнопка без объяснения читается как поломка.
-          ElevatedButton(
-            onPressed: provider.isSubmitting || !provider.canApprove
-                ? null
-                : () => _confirmApprove(context),
-            style: AppTheme.canonCtaL(),
-            child: const Text('Одобрить заведение'),
-          ),
-        ],
+      // Три раскладки по ширине самого подвала, а не окна: ширину правой
+      // части задают рейл и колонка очереди (F-01, Ч9, A1-14).
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          if (width >= singleRowMinWidth) {
+            return Row(
+              children: <Widget>[
+                Expanded(child: hint),
+                const SizedBox(width: 14),
+                reject,
+                const SizedBox(width: 14),
+                approve,
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              hint,
+              const SizedBox(height: 10),
+              if (width >= buttonsInRowMinWidth)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[reject, const SizedBox(width: 14), approve],
+                )
+              else ...<Widget>[
+                approve,
+                const SizedBox(height: 8),
+                reject,
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
+  /// Одобрение спрашивает подтверждение, а при непроверенных полях и пустых
+  /// обязательных — называет их (Ч10, слово Координатора 20.10,
+  /// `DECISIONS_20261020.md` п. 3): «Проверено 0 из 14, пусты УНП и
+  /// Регистрация — одобрить всё равно?». Подтверждение, не запрет.
   void _confirmApprove(BuildContext context) {
     // Провайдер берём ДО показа диалога: после await обращаться к
     // context нельзя, а счётчики очередей обновить надо.
     final badges = context.read<BadgesProvider>();
+    final detail = provider.selectedDetail;
+    if (detail == null) return;
+
+    final missing = missingRequiredFieldLabels(detail);
+    final unchecked = provider.remainingFieldCount > 0;
+    final warn = unchecked || missing.isNotEmpty;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Одобрить заведение?'),
-        content: const Text(
-          'Заведение будет опубликовано и станет видимым в поиске.',
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _ConfirmTarget(detail.name),
+              if (warn)
+                Container(
+                  key: const ValueKey<String>('approve-warning'),
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.disclaimerBg,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                  ),
+                  child: Text(
+                    moderationApproveWarning(
+                      checked: provider.checkedFieldCount,
+                      total: provider.totalFieldCount,
+                      missing: missing,
+                    ),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.disclaimerText,
+                    ),
+                  ),
+                ),
+              const Text(
+                'Заведение будет опубликовано и станет видимым в поиске.',
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1735,24 +2127,68 @@ class _ActionBar extends StatelessWidget {
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.primaryOrange,
             ),
-            child: const Text('Одобрить'),
+            child: Text(warn ? 'Одобрить всё равно' : 'Одобрить'),
           ),
         ],
       ),
     );
   }
 
+
+  /// Отказ называет заведение и говорит, что будет на самом деле (пункт
+  /// A1-18): «вернётся в черновик» было неправдой — заявка получает статус
+  /// «отклонена» и уходит к отклонённым, в черновик её возвращает партнёр.
+  /// Без причин по полям — предупреждение (A1-11): партнёр не узнает, что
+  /// исправлять.
   void _confirmReject(BuildContext context) {
     // Провайдер берём ДО показа диалога: после await обращаться к
     // context нельзя, а счётчики очередей обновить надо.
     final badges = context.read<BadgesProvider>();
+    final detail = provider.selectedDetail;
+    if (detail == null) return;
+    final reasons = provider.rejectionReasonLabels;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Отклонить заведение?'),
-        content: const Text(
-          'Заведение вернётся в черновик. Партнёр сможет исправить и отправить повторно.',
+        title: const Text('Отклонить заявку?'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _ConfirmTarget(detail.name),
+              const Text(
+                'Заявка получит статус «отклонена». Партнёр увидит причины, '
+                'сможет исправить карточку и отправить её снова.',
+              ),
+              const SizedBox(height: 12),
+              if (reasons.isEmpty)
+                Container(
+                  key: const ValueKey<String>('reject-no-reasons'),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorTint(0.08),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                  ),
+                  child: const Text(
+                    'Ни одно поле не отклонено с причиной — партнёр не узнает, '
+                    'что исправлять. Отметьте ✗ у полей, которые нужно '
+                    'исправить, или отклоните без причин.',
+                    style: TextStyle(fontSize: 14, color: AppTheme.errorRed),
+                  ),
+                )
+              else
+                Text(
+                  'Партнёр получит '
+                  '${countWithNoun(reasons.length, 'причину', 'причины', 'причин')}: '
+                  '${reasons.join(', ')}.',
+                  key: const ValueKey<String>('reject-reasons'),
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1771,12 +2207,32 @@ class _ActionBar extends StatelessWidget {
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.errorRed,
             ),
-            child: const Text('Отклонить'),
+            child: Text(reasons.isEmpty ? 'Отклонить без причин' : 'Отклонить'),
           ),
         ],
       ),
     );
   }
+}
+
+/// «Проверено 0 из 14, пусты УНП и Регистрация — одобрить всё равно?» —
+/// строка подтверждения одобрения (Ч10). Хотя бы одно из двух условий
+/// должно быть: вызывающий спрашивает только тогда.
+String moderationApproveWarning({
+  required int checked,
+  required int total,
+  required List<String> missing,
+}) {
+  String joinAnd(List<String> items) => items.length == 1
+      ? items.first
+      : '${items.sublist(0, items.length - 1).join(', ')} и ${items.last}';
+  final parts = <String>[
+    if (checked < total) 'Проверено $checked из $total',
+    if (missing.length == 1) 'пусто поле «${missing.first}»',
+    if (missing.length > 1) 'пусты ${joinAnd(missing)}',
+  ];
+  final head = parts.join(', ');
+  return '${head[0].toUpperCase()}${head.substring(1)} — одобрить всё равно?';
 }
 
 /// Пояснение слева в нижней панели: почему кнопки выглядят именно так и
@@ -1988,7 +2444,13 @@ class _WorkingHoursDisplay extends StatelessWidget {
   }
 }
 
-/// Displays attributes as tags/chips
+/// Удобства чипами — словами, как у гостя (пункт A1-10).
+///
+/// До 21.10.2026 чипы несли ключи базы (`wifi`, `live_music`), а удобства,
+/// которых нет, стояли теми же словами серым и читались как «есть, но
+/// приглушено». Теперь чипы — только у того, что есть; чего нет — одной
+/// строкой «Нет: …». Ключ вне словаря показывается как есть, моноширинным:
+/// расхождение с каноном видно, а не спрятано.
 class _AttributesDisplay extends StatelessWidget {
   final Map<String, dynamic>? attributes;
   const _AttributesDisplay(this.attributes);
@@ -1999,26 +2461,43 @@ class _AttributesDisplay extends StatelessWidget {
       return const _FieldValue(null);
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: attributes!.entries.map((entry) {
-        final isActive = entry.value == true;
-        return Chip(
-          label: Text(
-            entry.key,
-            style: TextStyle(
-              fontSize: 13,
-              color: isActive ? Colors.black : const Color(0xFFABABAB),
-            ),
+    final present = attributes!.entries.where((e) => e.value == true).toList();
+    final absent = attributes!.entries
+        .where((e) => e.value != true)
+        .map((e) => attributeLabel(e.key) ?? e.key)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (present.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              for (final entry in present)
+                Chip(
+                  label: Text(
+                    attributeLabel(entry.key) ?? entry.key,
+                    style: attributeLabel(entry.key) == null
+                        ? AppTheme.mono(fontSize: 12, color: AppTheme.textDark)
+                        : const TextStyle(fontSize: 13, color: AppTheme.textDark),
+                  ),
+                  backgroundColor: AppTheme.successTint(0.10),
+                  side: BorderSide.none,
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
           ),
-          backgroundColor: isActive
-              ? const Color(0x1A3FD00D)
-              : const Color(0xFFF5F5F5),
-          side: BorderSide.none,
-          visualDensity: VisualDensity.compact,
-        );
-      }).toList(),
+        if (absent.isNotEmpty) ...<Widget>[
+          if (present.isNotEmpty) const SizedBox(height: 6),
+          Text(
+            'Нет: ${absent.join(', ')}',
+            style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -2090,10 +2569,9 @@ class _PhotoTileState extends State<_PhotoTile> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  item.thumbnailUrl ?? item.previewUrl ?? item.url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const ColoredBox(
+                NetworkThumbnail(
+                  url: item.thumbnailUrl ?? item.previewUrl ?? item.url,
+                  fallback: const ColoredBox(
                     color: AppTheme.gray100,
                     child: Icon(Icons.broken_image,
                         color: AppTheme.strokeGrey),
@@ -2113,9 +2591,13 @@ class _PhotoTileState extends State<_PhotoTile> {
                         borderRadius:
                             BorderRadius.circular(AppTheme.radiusXSmall),
                       ),
-                      child: const Text(
-                        'PDF',
-                        style: TextStyle(
+                      // Число страниц — на плитке: «PDF · 7 стр.» говорит,
+                      // сколько листать, ещё до открытия (A1-22).
+                      child: Text(
+                        item.pageCount == null
+                            ? 'PDF'
+                            : 'PDF · ${item.pageCount} стр.',
+                        style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.disclaimerText,

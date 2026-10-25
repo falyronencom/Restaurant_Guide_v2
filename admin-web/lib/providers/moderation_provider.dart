@@ -61,6 +61,59 @@ const List<List<String>> kModerationTabFields = <List<String>>[
   <String>['address'],
 ];
 
+/// Подписи полей проверки — для диалогов и блока заметок. Тексты — те, что
+/// стоят у строк полей в панели разбора.
+const Map<String, String> kModerationFieldLabels = <String, String>{
+  'legal_name': 'Полное название',
+  'unp': 'УНП',
+  'registration_doc': 'Регистрация',
+  'contact_person': 'Контактное лицо',
+  'contact_email': 'E-mail',
+  'description': 'Описание',
+  'name': 'Название',
+  'customer_phone': 'Номер для связи',
+  'website': 'Сайт',
+  'working_hours': 'Время работы',
+  'price_range': 'Средний чек',
+  'photos': 'Фото',
+  'menu': 'Меню',
+  'address': 'Адрес',
+};
+
+/// Поля, помеченные в панели звёздочкой. Необязательно только одно — сайт.
+const Set<String> kModerationOptionalFields = <String>{'website'};
+
+/// Обязательные поля заявки, которые пусты, — подписями, в порядке вкладок.
+///
+/// Пустота считается по тому же значению, что показывает строка поля (у
+/// юридического названия и контактов есть запасные значения карточки):
+/// модератор подтверждает ровно то, что видел как «не указано».
+List<String> missingRequiredFieldLabels(EstablishmentDetail detail) {
+  bool blank(String? value) => value == null || value.trim().isEmpty;
+  final hours = detail.workingHours;
+  final empty = <String, bool>{
+    'legal_name': blank(detail.legalName ?? detail.name),
+    'unp': blank(detail.unp),
+    'registration_doc': blank(detail.registrationDocUrl),
+    'contact_person': blank(detail.contactPerson ?? detail.phone),
+    'contact_email': blank(detail.contactEmail ?? detail.email),
+    'description': blank(detail.description),
+    'name': blank(detail.name),
+    'customer_phone': blank(detail.phone),
+    'working_hours': hours == null || hours.isEmpty,
+    'price_range': blank(detail.priceRange),
+    'photos': detail.interiorPhotos.isEmpty,
+    'menu': detail.menuMedia.isEmpty,
+    'address': blank(detail.city) && blank(detail.address),
+  };
+  return <String>[
+    for (final fields in kModerationTabFields)
+      for (final field in fields)
+        if (!kModerationOptionalFields.contains(field) && empty[field] == true)
+          kModerationFieldLabels[field] ?? field,
+  ];
+}
+
 /// Сколько полных суток заявка ждёт очереди.
 ///
 /// Отсчёт от `updated_at`, а не от `created_at`: партнёр может держать
@@ -101,6 +154,16 @@ class ModerationProvider with ChangeNotifier {
   // Per-field review state (field_name → state)
   Map<String, FieldReviewState> _fieldReviews = {};
 
+  /// Отметки по заявкам, которые модератор открывал и оставил неразобранными:
+  /// id заявки → отметки по полям (пункт A1-13).
+  ///
+  /// До 21.10.2026 переход на соседнюю заявку («только глянуть») молча стирал
+  /// всё: вернувшись, модератор видел «Проверено 0 из 14». Теперь отметки
+  /// уходят сюда и возвращаются, когда заявку открывают снова. Живут до
+  /// решения по заявке, до её ухода из очереди и до смены аккаунта.
+  final Map<String, Map<String, FieldReviewState>> _reviewsById =
+      <String, Map<String, FieldReviewState>>{};
+
   // Moderation action state
   bool _isSubmitting = false;
   String? _submitError;
@@ -140,10 +203,37 @@ class ModerationProvider with ChangeNotifier {
     _detailError = null;
     _selectedId = null;
     _fieldReviews = {};
+    _reviewsById.clear();
     _isSubmitting = false;
     _submitError = null;
     notifyListeners();
   }
+
+  /// Есть ли проставленные, но не отправленные отметки — по открытой заявке
+  /// или по оставленным. Выход из панели их сотрёт, и каркас спрашивает об
+  /// этом (пункт A3-10).
+  bool get hasUnsavedVerdicts =>
+      _hasMarks(_fieldReviews) || _reviewsById.values.any(_hasMarks);
+
+  static bool _hasMarks(Map<String, FieldReviewState> reviews) =>
+      reviews.values.any((r) =>
+          r.status != FieldReviewStatus.neutral ||
+          (r.comment != null && r.comment!.isNotEmpty));
+
+  /// Отложить отметки открытой заявки, чтобы вернуть их при следующем
+  /// открытии.
+  void _stashReviews() {
+    final id = _selectedId;
+    if (id == null) return;
+    if (_hasMarks(_fieldReviews)) {
+      _reviewsById[id] = _fieldReviews;
+    } else {
+      _reviewsById.remove(id);
+    }
+  }
+
+  /// Страница очереди. Совпадает с умолчанием сервиса и с подписью футера.
+  static const int perPage = 20;
 
   // ============================================================================
   // Getters
@@ -215,6 +305,17 @@ class ModerationProvider with ChangeNotifier {
   /// Хотя бы одно поле отклонено.
   bool get hasRejectedField => rejectedFieldCount > 0;
 
+  /// Причины, которые уйдут партнёру при отказе: отклонённые поля с текстом,
+  /// подписью поля, в порядке вкладок. Диалог отказа называет их число, а
+  /// при пустом списке предупреждает (пункт A1-11).
+  List<String> get rejectionReasonLabels => <String>[
+        for (final fields in kModerationTabFields)
+          for (final field in fields)
+            if (_fieldReviews[field]?.status == FieldReviewStatus.rejected &&
+                (_fieldReviews[field]?.comment?.trim().isNotEmpty ?? false))
+              kModerationFieldLabels[field] ?? field,
+      ];
+
   /// Одобрение запрещено ровно одним условием — есть отклонённое поле.
   ///
   /// Требовать вердикт по всем четырнадцати полям макет не просит, и вводить
@@ -261,9 +362,12 @@ class ModerationProvider with ChangeNotifier {
       _totalPages = response.pages;
       _totalCount = response.total;
 
-      // Clear stale selection if the selected item is no longer in the list
+      // Clear stale selection if the selected item is no longer in the list.
+      // Отметки уходят в отложенные, а не в никуда: заявка могла просто
+      // уехать на другую страницу очереди.
       if (_selectedId != null &&
           !_establishments.any((e) => e.id == _selectedId)) {
+        _stashReviews();
         _detailRequest++;
         _isLoadingDetail = false;
         _selectedId = null;
@@ -278,6 +382,38 @@ class ModerationProvider with ChangeNotifier {
     }
     _isLoadingList = false;
     notifyListeners();
+
+    // Страница за пределами очереди (её добрали другие модераторы, пока эта
+    // была открыта) — перейти на последнюю. Один шаг, без зацикливания.
+    if (request == _listRequest &&
+        _listError == null &&
+        _establishments.isEmpty &&
+        _totalCount > 0 &&
+        _currentPage > 1) {
+      final lastPage = (_totalCount + perPage - 1) ~/ perPage;
+      if (lastPage < _currentPage) {
+        await loadPendingEstablishments(page: lastPage);
+      }
+    }
+  }
+
+  /// Перелистнуть очередь (пункт A1-04). До 21.10.2026 запрашивалась только
+  /// первая страница: заявки после 20-й были недостижимы, а шапка говорила
+  /// «35 заявок в очереди» над списком из двадцати.
+  Future<void> goToPage(int page) {
+    if (page < 1 || page == _currentPage) return Future<void>.value();
+    return loadPendingEstablishments(page: page);
+  }
+
+  /// После решения очередь перечитывается: заявка ушла, и страницу добирают
+  /// следующие по очереди. Правка на месте оставляла бы на странице 19, 18,
+  /// … заявок, а после двадцатого решения — «Очередь пуста» при живой
+  /// очереди. Номер страницы зажимается в новые границы.
+  void _refillQueue() {
+    final lastPage = _totalCount == 0 ? 1 : (_totalCount + perPage - 1) ~/ perPage;
+    loadPendingEstablishments(
+      page: _currentPage > lastPage ? lastPage : _currentPage,
+    );
   }
 
   // ============================================================================
@@ -300,8 +436,11 @@ class ModerationProvider with ChangeNotifier {
     }
 
     if (_selectedId != id) {
-      // Другая заявка — вердикты предыдущей к ней не относятся.
-      _fieldReviews = {};
+      // Другая заявка — вердикты предыдущей к ней не относятся: они
+      // откладываются до её следующего открытия, а у открываемой
+      // возвращаются её собственные (пункт A1-13).
+      _stashReviews();
+      _fieldReviews = _reviewsById.remove(id) ?? <String, FieldReviewState>{};
     }
 
     _selectedId = id;
@@ -363,9 +502,12 @@ class ModerationProvider with ChangeNotifier {
   // Field review operations
   // ============================================================================
 
+  /// ✓ у поля. Заметка, написанная раньше, остаётся (пункт A1-12): до
+  /// 21.10.2026 ✓ после 💬 стирал её без предупреждения.
   void approveField(String fieldName) {
-    _fieldReviews[fieldName] = const FieldReviewState(
+    _fieldReviews[fieldName] = FieldReviewState(
       status: FieldReviewStatus.approved,
+      comment: _fieldReviews[fieldName]?.comment,
     );
     notifyListeners();
   }
@@ -384,8 +526,15 @@ class ModerationProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Снять вердикт повторным нажатием. Текст при этом не пропадает: снятый
+  /// вердикт — не стёртая заметка, она остаётся комментарием к полю.
   void resetField(String fieldName) {
-    _fieldReviews.remove(fieldName);
+    final comment = _fieldReviews[fieldName]?.comment;
+    if (comment != null && comment.isNotEmpty) {
+      _fieldReviews[fieldName] = FieldReviewState(comment: comment);
+    } else {
+      _fieldReviews.remove(fieldName);
+    }
     notifyListeners();
   }
 
@@ -428,12 +577,15 @@ class ModerationProvider with ChangeNotifier {
       );
       if (generation != _generation) return false; // аккаунт уже другой
 
-      // Remove from list and clear selection
+      // Убрать из списка сразу и добрать страницу из очереди: заявка ушла,
+      // и на её место встаёт следующая (пункт A1-04).
+      _reviewsById.remove(id);
       _establishments.removeWhere((e) => e.id == id);
       _totalCount = (_totalCount - 1).clamp(0, _totalCount);
       if (_selectedId == id) clearSelection();
       _isSubmitting = false;
       notifyListeners();
+      _refillQueue();
       return true;
     } catch (e) {
       if (generation != _generation) return false;
@@ -464,8 +616,8 @@ class ModerationProvider with ChangeNotifier {
       for (final entry in _fieldReviews.entries) {
         if (entry.value.status == FieldReviewStatus.rejected &&
             entry.value.comment != null &&
-            entry.value.comment!.isNotEmpty) {
-          notes[entry.key] = entry.value.comment!;
+            entry.value.comment!.trim().isNotEmpty) {
+          notes[entry.key] = entry.value.comment!.trim();
         }
       }
 
@@ -476,12 +628,15 @@ class ModerationProvider with ChangeNotifier {
       );
       if (generation != _generation) return false; // аккаунт уже другой
 
-      // Remove from list and clear selection
+      // Убрать из списка сразу и добрать страницу из очереди: заявка ушла,
+      // и на её место встаёт следующая (пункт A1-04).
+      _reviewsById.remove(id);
       _establishments.removeWhere((e) => e.id == id);
       _totalCount = (_totalCount - 1).clamp(0, _totalCount);
       if (_selectedId == id) clearSelection();
       _isSubmitting = false;
       notifyListeners();
+      _refillQueue();
       return true;
     } catch (e) {
       if (generation != _generation) return false;

@@ -47,15 +47,30 @@ class DefinitionGrid extends StatelessWidget {
   static const double columnGap = 40;
   static const EdgeInsets padding = EdgeInsets.fromLTRB(24, 20, 24, 20);
 
+  /// Уже этой ширины (вместе с полями) две колонки не ставятся: на окне 1024
+  /// правой части остаётся ≈ 344 px, колонка выходила по 128, и почта или
+  /// УНП рвались посреди слова (пункт A1-14, решение А — минимум 1024).
+  static const double twoColumnsMinWidth = 520;
+
   @override
   Widget build(BuildContext context) {
-    final rows = _rows();
+    return LayoutBuilder(
+      builder: (context, constraints) => _grid(
+        singleColumn: constraints.maxWidth < twoColumnsMinWidth,
+      ),
+    );
+  }
+
+  Widget _grid({required bool singleColumn}) {
+    final rows = singleColumn
+        ? <List<Definition>>[for (final item in items) <Definition>[item]]
+        : _rows();
 
     return ListView(
       padding: padding,
       children: <Widget>[
         for (var i = 0; i < rows.length; i++)
-          if (_isWideRow(rows[i]))
+          if (_isWideRow(rows[i], singleColumn: singleColumn))
             // Широкая ячейка ставится БЕЗ Row: обёртка из двух `Expanded`
             // отдала бы половину ширины пустышке во второй колонке, и ячейка
             // вышла бы ровно такой же, как обычная, — то есть широкой только
@@ -90,8 +105,10 @@ class DefinitionGrid extends StatelessWidget {
     );
   }
 
-  static bool _isWideRow(List<Definition> row) =>
-      row.length == 1 && row.first.wide;
+  /// Строка ставится без второй колонки — широкая ячейка и любая строка
+  /// одноколоночной раскладки.
+  static bool _isWideRow(List<Definition> row, {required bool singleColumn}) =>
+      row.length == 1 && (singleColumn || row.first.wide);
 
   /// Раскладка по строкам. Широкая ячейка занимает строку целиком, поэтому
   /// её нельзя просто сложить в поток по две.

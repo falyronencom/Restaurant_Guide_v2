@@ -63,7 +63,7 @@ export const getPendingEstablishments = async ({ page = 1, perPage = 20 } = {}) 
       error: error.message,
     });
     throw new AppError(
-      'Failed to fetch pending establishments',
+      'Не удалось загрузить очередь заявок',
       500,
       'PENDING_FETCH_FAILED',
     );
@@ -99,17 +99,29 @@ export const getEstablishmentForModeration = async (
 
     if (!establishment) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
     }
 
-    // Fetch media and partner documents in parallel
-    const [media, partnerDoc] = await Promise.all([
+    // Fetch media, partner documents and the owner in parallel. The owner is
+    // the person the card belongs to — after «Назначить партнёра» the
+    // moderator sees whom it went to (walkthrough 2026-10-20, A1-02). A viewer
+    // gets the key with name and e-mail withheld (viewerProjection, `partner`).
+    const [media, partnerDoc, owner] = await Promise.all([
       MediaModel.getEstablishmentMedia(establishmentId),
       PartnerDocumentsModel.findByEstablishmentId(establishmentId),
+      establishment.partner_id
+        ? (async () => (await dbQuery(
+          'SELECT id, name, email FROM users WHERE id = $1',
+          [establishment.partner_id],
+        ))?.rows?.[0] ?? null)()
+        : null,
     ]);
+    const pageCounts = await OcrJobModel.getPdfPageCounts(
+      (media ?? []).filter(m => m.type === 'menu' && m.file_type === 'pdf').map(m => m.id),
+    );
 
     // Who suspended it. moderation_notes carries the reason and the time but
     // no author (feedback_moderation_notes_text); the only carrier of
@@ -148,13 +160,21 @@ export const getEstablishmentForModeration = async (
       .filter(m => m.type === 'interior')
       .map(m => ({ ...projectMedia(m), is_primary: m.is_primary }));
 
-    const menuMedia = media.filter(m => m.type === 'menu').map(projectMedia);
+    // page_count: PDFs only, from the latest recognition job; null when no
+    // job knows it — the panel then writes «стр. 3» without «из» (A1-22).
+    const menuMedia = media.filter(m => m.type === 'menu').map(m => ({
+      ...projectMedia(m),
+      page_count: m.file_type === 'pdf' ? (pageCounts.get(m.id) ?? null) : null,
+    }));
 
     // Convert numeric types from PostgreSQL strings
     return {
       // Core fields
       id: establishment.id,
       partner_id: establishment.partner_id,
+      partner: owner
+        ? { id: owner.id, name: owner.name ?? null, email: owner.email ?? null }
+        : null,
       name: establishment.name,
       description: establishment.description,
       status: establishment.status,
@@ -222,7 +242,7 @@ export const getEstablishmentForModeration = async (
     });
 
     throw new AppError(
-      'Failed to fetch establishment details',
+      'Не удалось загрузить карточку заведения',
       500,
       'ESTABLISHMENT_DETAIL_FAILED',
     );
@@ -250,7 +270,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
   // Validate action
   if (!['approve', 'reject'].includes(action)) {
     throw new AppError(
-      'Invalid moderation action. Must be "approve" or "reject".',
+      'Неизвестное решение по заявке: допустимо только одобрить или отклонить',
       400,
       'INVALID_MODERATION_ACTION',
     );
@@ -265,7 +285,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
 
     if (!existing) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -273,7 +293,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
 
     if (existing.status !== 'pending') {
       throw new AppError(
-        `Cannot moderate establishment with status '${existing.status}'. Only pending establishments can be moderated.`,
+        'Заявку уже разобрали — она больше не ждёт проверки',
         400,
         'INVALID_STATUS_FOR_MODERATION',
       );
@@ -296,7 +316,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
 
     if (!moderated) {
       throw new AppError(
-        'Moderation failed — establishment may have been modified concurrently',
+        'Заявку только что изменили — обновите очередь и посмотрите снова',
         409,
         'MODERATION_CONFLICT',
       );
@@ -392,7 +412,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
     });
 
     throw new AppError(
-      'Failed to moderate establishment',
+      'Не удалось сохранить решение по заявке',
       500,
       'MODERATION_FAILED',
     );
@@ -439,7 +459,7 @@ export const getActiveEstablishments = async ({ page = 1, perPage = 20, sort, ci
       error: error.message,
     });
     throw new AppError(
-      'Failed to fetch active establishments',
+      'Не удалось загрузить список одобренных заведений',
       500,
       'ACTIVE_FETCH_FAILED',
     );
@@ -486,7 +506,7 @@ export const getRejectedEstablishments = async ({ page = 1, perPage = 20 } = {})
       error: error.message,
     });
     throw new AppError(
-      'Failed to fetch rejected establishments',
+      'Не удалось загрузить список отклонённых заявок',
       500,
       'REJECTED_FETCH_FAILED',
     );
@@ -531,7 +551,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
   if (!reason || !reason.trim()) {
     throw new AppError(
-      'Suspension reason is required',
+      'Укажите причину приостановки',
       400,
       'REASON_REQUIRED',
     );
@@ -545,7 +565,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
     if (!existing) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -555,7 +575,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
     if (isModeratorSuspension(existing.status, currentNotes)) {
       throw new AppError(
-        'Establishment is already suspended by a moderator.',
+        'Заведение уже приостановлено модератором',
         400,
         'INVALID_STATUS_FOR_SUSPEND',
       );
@@ -563,7 +583,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
     if (!SUSPENDABLE_STATUSES.includes(existing.status)) {
       throw new AppError(
-        `Cannot suspend establishment with status '${existing.status}'. Drafts and archived establishments cannot be suspended.`,
+        'Черновик и архивное заведение приостановить нельзя',
         400,
         'INVALID_STATUS_FOR_SUSPEND',
       );
@@ -593,7 +613,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
     if (!updated) {
       throw new AppError(
-        'Suspension failed — establishment may have been modified concurrently',
+        'Заведение только что изменили — обновите карточку и посмотрите снова',
         409,
         'SUSPEND_CONFLICT',
       );
@@ -648,7 +668,7 @@ export const suspendEstablishment = async (establishmentId, params) => {
     });
 
     throw new AppError(
-      'Failed to suspend establishment',
+      'Не удалось приостановить заведение',
       500,
       'SUSPEND_FAILED',
     );
@@ -685,7 +705,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
 
     if (!existing) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -693,7 +713,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
 
     if (existing.status !== 'suspended') {
       throw new AppError(
-        `Cannot unsuspend establishment with status '${existing.status}'. Only suspended establishments can be reactivated.`,
+        'Заведение уже не приостановлено — возможно, его уже возобновили',
         400,
         'INVALID_STATUS_FOR_UNSUSPEND',
       );
@@ -702,7 +722,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
     const notes = parseModerationNotes(existing.moderation_notes);
     if (!isModeratorSuspension(existing.status, notes)) {
       throw new AppError(
-        'The partner paused this establishment; only the partner can resume it.',
+        'Это пауза партнёра — включить заведение может только сам партнёр',
         400,
         'SUSPENDED_BY_PARTNER',
       );
@@ -726,7 +746,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
 
     if (!updated) {
       throw new AppError(
-        'Unsuspension failed — establishment may have been modified concurrently',
+        'Заведение только что изменили — обновите карточку и посмотрите снова',
         409,
         'UNSUSPEND_CONFLICT',
       );
@@ -783,7 +803,7 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
     });
 
     throw new AppError(
-      'Failed to unsuspend establishment',
+      'Не удалось возобновить заведение',
       500,
       'UNSUSPEND_FAILED',
     );
@@ -837,7 +857,7 @@ export const getSuspendedEstablishments = async ({ page = 1, perPage = 20 } = {}
       error: error.message,
     });
     throw new AppError(
-      'Failed to fetch suspended establishments',
+      'Не удалось загрузить список приостановленных заведений',
       500,
       'SUSPENDED_FETCH_FAILED',
     );
@@ -870,7 +890,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
 
     if (!existing) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -879,7 +899,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
     // Validate Belarus bounds
     if (latitude < BELARUS_BOUNDS.LAT_MIN || latitude > BELARUS_BOUNDS.LAT_MAX) {
       throw new AppError(
-        `Latitude must be between ${BELARUS_BOUNDS.LAT_MIN} and ${BELARUS_BOUNDS.LAT_MAX} (Belarus bounds)`,
+        `Широта вне Беларуси: допустимо от ${BELARUS_BOUNDS.LAT_MIN} до ${BELARUS_BOUNDS.LAT_MAX}`,
         422,
         'INVALID_LATITUDE',
       );
@@ -887,7 +907,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
 
     if (longitude < BELARUS_BOUNDS.LON_MIN || longitude > BELARUS_BOUNDS.LON_MAX) {
       throw new AppError(
-        `Longitude must be between ${BELARUS_BOUNDS.LON_MIN} and ${BELARUS_BOUNDS.LON_MAX} (Belarus bounds)`,
+        `Долгота вне Беларуси: допустимо от ${BELARUS_BOUNDS.LON_MIN} до ${BELARUS_BOUNDS.LON_MAX}`,
         422,
         'INVALID_LONGITUDE',
       );
@@ -896,8 +916,10 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
     // Validate coordinates match the establishment's city
     const cityValidation = validateCityCoordinates(existing.city, latitude, longitude);
     if (!cityValidation.valid) {
+      // The checker's own text is English and also feeds the partner's
+      // flow and the log; the moderator gets the same refusal in Russian.
       throw new AppError(
-        cityValidation.message,
+        `Точка не в городе заведения (${existing.city}). Проверьте координаты или город в карточке`,
         422,
         'COORDINATES_CITY_MISMATCH',
       );
@@ -940,7 +962,7 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
     });
 
     throw new AppError(
-      'Failed to update establishment coordinates',
+      'Не удалось сохранить координаты',
       500,
       'COORDINATES_UPDATE_FAILED',
     );
@@ -1006,7 +1028,7 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
 
     if (!existing) {
       throw new AppError(
-        'Establishment not found',
+        'Заведение не найдено — возможно, его уже удалили',
         404,
         'ESTABLISHMENT_NOT_FOUND',
       );
@@ -1085,7 +1107,7 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
 export const searchAllEstablishments = async ({ search, status, city, page = 1, perPage = 20 } = {}) => {
   if (!search || !search.trim()) {
     throw new AppError(
-      'Search query is required',
+      'Введите, что искать',
       400,
       'SEARCH_REQUIRED',
     );
@@ -1119,7 +1141,7 @@ export const searchAllEstablishments = async ({ search, status, city, page = 1, 
     });
 
     throw new AppError(
-      'Failed to search establishments',
+      'Поиск заведений не удался',
       500,
       'SEARCH_FAILED',
     );
@@ -1183,7 +1205,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
   if (!establishment) {
     throw new AppError(
-      'Establishment not found',
+      'Заведение не найдено — возможно, его уже удалили',
       404,
       'ESTABLISHMENT_NOT_FOUND',
     );
@@ -1191,7 +1213,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
   if (establishment.status === 'archived') {
     throw new AppError(
-      'Cannot claim an archived establishment',
+      'Заведение в архиве — передать его нельзя',
       400,
       'ESTABLISHMENT_ARCHIVED',
     );
@@ -1199,7 +1221,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
   if (establishment.partner_id === targetUserId) {
     throw new AppError(
-      'Establishment already belongs to this user',
+      'Заведение уже принадлежит этому пользователю',
       400,
       'ALREADY_OWNED',
     );
@@ -1230,7 +1252,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
     if (userResult.rows.length === 0) {
       throw new AppError(
-        'Target user not found',
+        'Пользователь не найден',
         404,
         'USER_NOT_FOUND',
       );
@@ -1240,7 +1262,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
     if (!targetUser.is_active) {
       throw new AppError(
-        'Target user account is inactive',
+        'Учётная запись пользователя отключена',
         400,
         'USER_INACTIVE',
       );
@@ -1278,7 +1300,7 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
       targetUserId,
     });
     throw new AppError(
-      'Failed to claim establishment',
+      'Не удалось передать заведение',
       500,
       'CLAIM_FAILED',
     );
@@ -1341,7 +1363,7 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 
   if (userResult.rows.length === 0) {
     throw new AppError(
-      'User not found',
+      'Пользователь не найден',
       404,
       'USER_NOT_FOUND',
     );
@@ -1351,7 +1373,7 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 
   if (!targetUser.is_active) {
     throw new AppError(
-      'User account is inactive',
+      'Учётная запись пользователя отключена',
       400,
       'USER_INACTIVE',
     );
@@ -1386,7 +1408,7 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 // ============================================================================
 
 /**
- * «Скрыть» and «Вернуть» on one row reach its copies. The guest sees one line
+ * «Скрыть», «Вернуть» and «Снять флаг» on one row reach its copies. The guest sees one line
  * for a dish the menu's files share (collapseMenuRepeats): hiding the photo's
  * copy would leave the dish on the card from the PDF. Each copy gets its own
  * audit entry, marked with the row the moderator acted on.
@@ -1404,7 +1426,8 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
  * @param {Object} existing - The row the moderator acted on, before the action
  * @param {Object} rule - { before, applies }: rows of the guest's view before
  *                        the action; which copies the action reaches
- * @param {Object} change - { updates, action, oldData, newData }
+ * @param {Object} change - { updates, action, oldData, newData }; oldData may be
+ *                          a function of the copy (the flag a copy carried)
  * @param {Object} params - { adminUserId, ipAddress, userAgent }
  * @returns {Promise<string[]>} Ids of the copies changed
  */
@@ -1428,7 +1451,7 @@ const applyToMenuItemCopies = async (existing, rule, change, params) => {
         action: change.action,
         entity_type: 'menu_item',
         entity_id: copy.id,
-        old_data: change.oldData,
+        old_data: typeof change.oldData === 'function' ? change.oldData(copy) : change.oldData,
         new_data: { ...change.newData, copy_of: existing.id },
         ip_address: params.ipAddress,
         user_agent: params.userAgent,
@@ -1458,17 +1481,17 @@ export const hideMenuItem = async (menuItemId, params) => {
   const { reason, adminUserId, ipAddress, userAgent } = params;
 
   if (!reason || !reason.trim()) {
-    throw new AppError('Hide reason is required', 400, 'REASON_REQUIRED');
+    throw new AppError('Укажите причину скрытия', 400, 'REASON_REQUIRED');
   }
 
   const existing = await MenuItemModel.findById(menuItemId);
   if (!existing) {
-    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+    throw new AppError('Позиция не найдена — возможно, меню распознали заново', 404, 'MENU_ITEM_NOT_FOUND');
   }
 
   if (existing.is_hidden_by_admin === true) {
     throw new AppError(
-      'Menu item is already hidden',
+      'Позиция уже скрыта',
       400,
       'MENU_ITEM_ALREADY_HIDDEN',
     );
@@ -1481,7 +1504,7 @@ export const hideMenuItem = async (menuItemId, params) => {
 
   if (!updated) {
     throw new AppError(
-      'Hide failed — menu item may have been removed concurrently',
+      'Позицию только что изменили или удалили — обновите список',
       409,
       'MENU_ITEM_HIDE_CONFLICT',
     );
@@ -1558,12 +1581,12 @@ export const unhideMenuItem = async (menuItemId, params) => {
 
   const existing = await MenuItemModel.findById(menuItemId);
   if (!existing) {
-    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+    throw new AppError('Позиция не найдена — возможно, меню распознали заново', 404, 'MENU_ITEM_NOT_FOUND');
   }
 
   if (existing.is_hidden_by_admin !== true) {
     throw new AppError(
-      'Menu item is not hidden',
+      'Позиция уже показана',
       400,
       'MENU_ITEM_NOT_HIDDEN',
     );
@@ -1576,7 +1599,7 @@ export const unhideMenuItem = async (menuItemId, params) => {
 
   if (!updated) {
     throw new AppError(
-      'Unhide failed — menu item may have been removed concurrently',
+      'Позицию только что изменили или удалили — обновите список',
       409,
       'MENU_ITEM_UNHIDE_CONFLICT',
     );
@@ -1635,6 +1658,13 @@ export const unhideMenuItem = async (menuItemId, params) => {
  * Dismiss a sanity_flag on a menu item (false positive).
  * Does NOT change is_hidden_by_admin — that is a separate action.
  *
+ * Reaches the copies of the row, as «Скрыть» and «Вернуть» do (walkthrough of
+ * the moderator panel, 2026-10-20, A1-07): the guest sees one line for a dish
+ * the menu's files share, and a flag left on a copy kept the same dish in the
+ * queue — the button looked broken. The copies are those of the line as the
+ * guest saw it: for a visible row, the visible rows; for a hidden row, also
+ * the rows hidden with the same reason (the line it was hidden as).
+ *
  * @param {string} menuItemId - UUID
  * @param {Object} params
  * @param {string} params.adminUserId
@@ -1647,12 +1677,12 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
 
   const existing = await MenuItemModel.findById(menuItemId);
   if (!existing) {
-    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+    throw new AppError('Позиция не найдена — возможно, меню распознали заново', 404, 'MENU_ITEM_NOT_FOUND');
   }
 
   if (existing.sanity_flag === null || existing.sanity_flag === undefined) {
     throw new AppError(
-      'Menu item has no sanity flag to dismiss',
+      'Флаг с позиции уже снят',
       400,
       'MENU_ITEM_NO_FLAG',
     );
@@ -1673,6 +1703,23 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
     user_agent: userAgent,
   });
 
+  const hiddenRow = existing.is_hidden_by_admin === true;
+  const copies = await applyToMenuItemCopies(
+    existing,
+    {
+      before: row => row.is_hidden_by_admin !== true
+        || (hiddenRow && row.hidden_reason === existing.hidden_reason),
+      applies: copy => copy.sanity_flag !== null && copy.sanity_flag !== undefined,
+    },
+    {
+      updates: { sanity_flag: null },
+      action: 'dismiss_sanity_flag',
+      oldData: copy => ({ sanity_flag: copy.sanity_flag }),
+      newData: { sanity_flag: null },
+    },
+    params,
+  );
+
   // Размер очереди изменился — счётчики рейла обязаны это увидеть
   // сразу, иначе бейдж до полминуты показывал бы число, которое
   // модератор только что сам и поменял.
@@ -1687,6 +1734,7 @@ export const dismissMenuItemFlag = async (menuItemId, params) => {
   logger.info('Menu item sanity flag dismissed', {
     menuItemId,
     adminUserId,
+    copies,
   });
 
   return updated;
@@ -1708,7 +1756,7 @@ const optionalFilter = (value, param) => {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') {
     throw new AppError(
-      `Parameter ${param} must be a single value`,
+      `Фильтр ${param} указан дважды — оставьте одно значение`,
       400,
       'INVALID_FILTER_VALUE',
       { param },
@@ -1752,7 +1800,7 @@ export const getFlaggedMenuItems = async ({
   // as "everything flagged by this rule" and count it as such.
   if (requestedReason && !SANITY_FLAG_REASONS.includes(requestedReason)) {
     throw new AppError(
-      `Unknown sanity flag reason: ${requestedReason}`,
+      `Неизвестная причина флага: ${requestedReason}`,
       400,
       'INVALID_SANITY_REASON',
       { allowed: SANITY_FLAG_REASONS },
@@ -1765,7 +1813,7 @@ export const getFlaggedMenuItems = async ({
   const requestedVisibility = optionalFilter(visibility, 'visibility') ?? 'all';
   if (!MenuItemModel.VISIBILITY_MODES.includes(requestedVisibility)) {
     throw new AppError(
-      `Unknown visibility mode: ${requestedVisibility}`,
+      `Неизвестный режим видимости: ${requestedVisibility}`,
       400,
       'INVALID_VISIBILITY_MODE',
       { allowed: MenuItemModel.VISIBILITY_MODES },

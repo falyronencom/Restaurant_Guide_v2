@@ -6,13 +6,18 @@ import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/network_thumbnail.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
 /// Очередь заявок — средняя колонка экрана «Ожидают просмотра».
 ///
-/// Ширина 360, без шапки секции и без пагинации: сортировка и счётчик очереди
-/// живут в шапке экрана, а не дублируются над списком. Карточка отвечает на
-/// три вопроса сразу — что за место, где оно и сколько уже ждёт.
+/// Ширина 360, без шапки секции: сортировка и счётчик очереди живут в шапке
+/// экрана, а не дублируются над списком. Карточка отвечает на три вопроса
+/// сразу — что за место, где оно и сколько уже ждёт.
+///
+/// Футер страниц — с 21.10.2026 (пункт A1-04): до того запрашивалась только
+/// первая страница, и заявки после 20-й были недостижимы.
 class ModerationListPanel extends StatelessWidget {
   const ModerationListPanel({super.key});
 
@@ -27,12 +32,34 @@ class ModerationListPanel extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: AppTheme.borderLight)),
       ),
-      child: _buildContent(context, provider),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(child: _buildContent(context, provider)),
+          // Шапка говорит «35 заявок в очереди» — футер показывает, какие из
+          // них на экране, и листает остальные.
+          if (provider.listError == null &&
+              provider.establishments.isNotEmpty &&
+              provider.totalCount > provider.establishments.length)
+            AdminPagination.narrow(
+              page: provider.currentPage,
+              totalPages: provider.totalPages,
+              totalCount: provider.totalCount,
+              perPage: ModerationProvider.perPage,
+              shownOnPage: provider.establishments.length,
+              onPageChanged: provider.goToPage,
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildContent(BuildContext context, ModerationProvider provider) {
-    if (provider.isLoadingList) return const _QueueSkeleton();
+    // Скелетон — только когда показывать нечего: после решения очередь
+    // перечитывается, и список не должен мигать на каждом шаге.
+    if (provider.isLoadingList && provider.establishments.isEmpty) {
+      return const _QueueSkeleton();
+    }
 
     final error = provider.listError;
     if (error != null) {
@@ -40,6 +67,18 @@ class ModerationListPanel extends StatelessWidget {
         icon: Icons.cloud_off_outlined,
         title: 'Очередь не загрузилась',
         message: error,
+        onRetry: () => provider.loadPendingEstablishments(),
+      );
+    }
+
+    // «Очередь пуста» — только когда пуста очередь, а не страница: опустевшая
+    // страница при живой очереди перечитывается сама (`_refillQueue`).
+    if (provider.establishments.isEmpty && provider.totalCount > 0) {
+      return _QueueMessage(
+        icon: Icons.refresh,
+        title: 'Страница опустела',
+        message: 'Заявки этой страницы разобраны. Остальные в очереди — '
+            '${countWithNoun(provider.totalCount, 'заявка', 'заявки', 'заявок')}.',
         onRetry: () => provider.loadPendingEstablishments(),
       );
     }
@@ -148,11 +187,7 @@ class _MediaStrip extends StatelessWidget {
           ? Stack(
               children: <Widget>[
                 Positioned.fill(
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _fallback(),
-                  ),
+                  child: NetworkThumbnail(url: url, fallback: _fallback()),
                 ),
               ],
             )
@@ -206,17 +241,23 @@ class _CardBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            item.name,
-            style: const TextStyle(
-              fontFamily: AppTheme.fontCardTitleFamily,
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-              height: 1.2,
+          // Полное название — подсказкой: в колонке 360 длинное режется
+          // многоточием (Ч16, 20.10).
+          Tooltip(
+            message: item.name,
+            waitDuration: const Duration(milliseconds: 400),
+            child: Text(
+              item.name,
+              style: const TextStyle(
+                fontFamily: AppTheme.fontCardTitleFamily,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+                height: 1.2,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
           if (category != null || cuisine != null) ...[
             const SizedBox(height: 4),

@@ -893,3 +893,113 @@ describe('two independent pauses — the partner\'s and the moderator\'s', () =>
     expect((await getEstablishmentFromDb(establishment.id)).status).toBe('active');
   });
 });
+
+// ============================================================================
+// Refusals speak Russian — codes and statuses unchanged
+// ============================================================================
+
+describe('refusals of moderation, suspension, coordinates and claim speak Russian', () => {
+  // The panel shows the server's text first when it is Russian (admin-web
+  // utils/error_text.dart); an English one it drops for a phrase by code.
+  // Walkthrough of the moderator panel, 2026-10-20, P1 finding 1.
+  const cyrillic = /[А-Яа-яЁё]/;
+  const post = (path, body = {}) => request(app)
+    .post(`/api/v1/admin/establishments/${path}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send(body);
+
+  test('each refusal: same status and code, a Russian message', async () => {
+    const { establishment: active } = await createPartnerWithEstablishment('active');
+    const { establishment: draft } = await createPartnerWithEstablishment('draft');
+    const { establishment: archived } = await createPartnerWithEstablishment('archived');
+    const unknown = '00000000-0000-4000-8000-000000000000';
+
+    const cases = [
+      [await post(`${active.id}/moderate`, { action: 'approve' }), 400, 'INVALID_STATUS_FOR_MODERATION'],
+      [await post(`${active.id}/moderate`, { action: 'maybe' }), 400, 'INVALID_MODERATION_ACTION'],
+      [await post(`${unknown}/moderate`, { action: 'approve' }), 404, 'ESTABLISHMENT_NOT_FOUND'],
+      [await post(`${active.id}/suspend`, {}), 400, 'REASON_REQUIRED'],
+      [await post(`${draft.id}/suspend`, { reason: 'проверка' }), 400, 'INVALID_STATUS_FOR_SUSPEND'],
+      [await post(`${active.id}/unsuspend`), 400, 'INVALID_STATUS_FOR_UNSUSPEND'],
+      [await post(`${archived.id}/claim`, { user_id: unknown }), 400, 'ESTABLISHMENT_ARCHIVED'],
+      [await post(`${active.id}/claim`, {}), 422, 'MISSING_USER_ID'],
+      [await post(`${active.id}/claim`, { user_id: unknown }), 404, 'USER_NOT_FOUND'],
+    ];
+    const patch = (body) => request(app)
+      .patch(`/api/v1/admin/establishments/${active.id}/coordinates`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body);
+    cases.push(
+      [await patch({ latitude: 40, longitude: 27.55 }), 422, 'INVALID_LATITUDE'],
+      [await patch({ latitude: 53.9, longitude: 40 }), 422, 'INVALID_LONGITUDE'],
+      [await patch({ latitude: 52.09, longitude: 23.69 }), 422, 'COORDINATES_CITY_MISMATCH'],
+      [await patch({ latitude: '53.9', longitude: 27.55 }), 422, 'INVALID_COORDINATES'],
+    );
+
+    const seen = cases.map(([res]) => ({
+      status: res.status,
+      code: res.body.error?.code,
+      russian: cyrillic.test(res.body.message ?? ''),
+    }));
+    expect(seen).toEqual(cases.map(([, status, code]) => ({ status, code, russian: true })));
+  });
+});
+
+// ============================================================================
+// The owner on the card and the PDF page count (walkthrough 2026-10-20)
+// ============================================================================
+
+describe('GET /api/v1/admin/establishments/:id — partner and page_count', () => {
+  test('A1-02: the owner by name and e-mail; a viewer gets the key without them', async () => {
+    const { partner, establishment } = await createPartnerWithEstablishment('active');
+    const owner = (await query('SELECT name, email FROM users WHERE id = $1', [partner.user.id])).rows[0];
+
+    const asAdmin = await request(app)
+      .get(`/api/v1/admin/establishments/${establishment.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(asAdmin.body.data.partner).toEqual({
+      id: partner.user.id,
+      name: owner.name,
+      email: owner.email,
+    });
+    // The old field stays: older clients read it.
+    expect(asAdmin.body.data.partner_id).toBe(partner.user.id);
+
+    const asViewer = await request(app)
+      .get(`/api/v1/admin/establishments/${establishment.id}`)
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .expect(200);
+    expect(asViewer.body.data.partner).toEqual({ id: partner.user.id, name: null, email: null });
+  });
+
+  test('A1-22: page_count of a PDF menu from its latest recognition; null when unknown', async () => {
+    const { establishment } = await createPartnerWithEstablishment('pending');
+    const insertPdf = async () => (await query(
+      `INSERT INTO establishment_media (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+       VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png')
+       RETURNING id`,
+      [establishment.id],
+    )).rows[0].id;
+    const read = await insertPdf();
+    const cut = await insertPdf();
+    const noMeta = await insertPdf();
+    const never = await insertPdf();
+    const job = (mediaId, summary, minutesAgo) => query(
+      `INSERT INTO ocr_jobs (establishment_id, media_id, status, result_summary, completed_at)
+       VALUES ($1, $2, 'done', $3::jsonb, NOW() - make_interval(mins => $4))`,
+      [establishment.id, mediaId, JSON.stringify(summary), minutesAgo],
+    );
+    await job(read, { strategy: 'vision_pdf', pages_count: 3 }, 60);
+    await job(read, { strategy: 'vision_pdf', pages_count: 7 }, 5); // the latest wins
+    await job(cut, { strategy: 'vision_pdf', pages_count: 20, pages_total: 31 }, 5);
+    await job(noMeta, { strategy: 'vision_pdf_no_metadata', pages_count: 5 }, 5);
+
+    const res = await request(app)
+      .get(`/api/v1/admin/establishments/${establishment.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const pages = Object.fromEntries(res.body.data.menu_media.map(m => [m.id, m.page_count]));
+    expect(pages).toEqual({ [read]: 7, [cut]: 31, [noMeta]: null, [never]: null });
+  });
+});

@@ -97,6 +97,22 @@ class EstablishmentDetail {
   final String? suspendedByName;
   final DateTime? suspendedByAt;
 
+  /// Владелец карточки (`partner` в детали, с 21.10.2026, пункт A1-02).
+  /// У просмотрщика сервер отдаёт ключ без имени и почты.
+  final String? partnerName;
+  final String? partnerEmail;
+
+  /// «Имя · почта» владельца; `null` — сервер не назвал (старый ответ или
+  /// просмотрщик).
+  String? get partnerLabel {
+    final name = partnerName?.trim() ?? '';
+    final email = partnerEmail?.trim() ?? '';
+    if (name.isEmpty && email.isEmpty) return null;
+    if (name.isEmpty) return email;
+    if (email.isEmpty) return name;
+    return '$name · $email';
+  }
+
   /// Сервер скрыл контакты партнёра и документ: вошедший — просмотрщик.
   /// Пустые `contactPerson` / `contactEmail` / `registrationDocUrl` при этом
   /// значат «скрыто», а не «не заполнено».
@@ -135,6 +151,8 @@ class EstablishmentDetail {
     this.moderationNotes,
     this.suspendedByName,
     this.suspendedByAt,
+    this.partnerName,
+    this.partnerEmail,
     this.partnerDataRedacted = false,
     this.createdAt,
     this.updatedAt,
@@ -169,6 +187,7 @@ class EstablishmentDetail {
 
   factory EstablishmentDetail.fromJson(Map<String, dynamic> json) {
     final suspendedBy = _parseJsonMap(json['suspended_by']);
+    final partner = _parseJsonMap(json['partner']);
     return EstablishmentDetail(
       id: json['id'] as String,
       partnerId: json['partner_id'] as String? ?? '',
@@ -198,6 +217,8 @@ class EstablishmentDetail {
       moderationNotes: _parseJsonMap(json['moderation_notes']),
       suspendedByName: suspendedBy?['name'] as String?,
       suspendedByAt: _parseDate(suspendedBy?['at']),
+      partnerName: partner?['name'] as String?,
+      partnerEmail: partner?['email'] as String?,
       partnerDataRedacted: json['partner_data_redacted'] == true,
       createdAt: _parseDate(json['created_at']),
       updatedAt: _parseDate(json['updated_at']),
@@ -225,6 +246,11 @@ class MediaItem {
 
   final bool isPrimary;
 
+  /// Сколько страниц в PDF — по последнему распознаванию меню (`page_count`,
+  /// с 21.10.2026, пункт A1-22). `null` — не известно: распознавания не было
+  /// или оно не прочло число страниц.
+  final int? pageCount;
+
   const MediaItem({
     this.id,
     required this.url,
@@ -232,7 +258,19 @@ class MediaItem {
     this.previewUrl,
     this.fileType = 'image',
     this.isPrimary = false,
+    this.pageCount,
   });
+
+  /// Растр страницы [page] PDF — тем же преобразованием Cloudinary, каким
+  /// сервер читает меню постранично (`generatePdfPageImageUrl`): `pg_N` в
+  /// пути и `.jpg` вместо `.pdf`. Для первой страницы — готовый растр
+  /// превью, если он есть.
+  String pdfPageUrl(int page) {
+    if (page <= 1 && (previewUrl ?? '').isNotEmpty) return previewUrl!;
+    return url
+        .replaceFirst('/upload/', '/upload/pg_$page/')
+        .replaceFirst(RegExp(r'\.pdf$', caseSensitive: false), '.jpg');
+  }
 
   bool get isPdf => fileType == 'pdf';
 
@@ -252,6 +290,7 @@ class MediaItem {
       previewUrl: json['preview_url'] as String?,
       fileType: json['file_type'] as String? ?? 'image',
       isPrimary: json['is_primary'] as bool? ?? false,
+      pageCount: (json['page_count'] as num?)?.toInt(),
     );
   }
 }

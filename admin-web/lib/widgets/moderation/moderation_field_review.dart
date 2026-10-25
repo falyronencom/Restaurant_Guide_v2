@@ -175,6 +175,10 @@ class _VerdictGroup extends StatelessWidget {
                   hint: 'Причина отклонения — уйдёт партнёру',
                   confirm: 'Отклонить',
                   danger: true,
+                  // Пустая причина партнёру не уходит (её отбрасывает отказ),
+                  // а поле при этом краснело: обещание «уйдёт партнёру» не
+                  // сбывалось (пункт A1-11).
+                  requireText: true,
                   onSave: (text) => provider.rejectField(fieldName, comment: text),
                 ),
         ),
@@ -187,7 +191,11 @@ class _VerdictGroup extends StatelessWidget {
             context,
             provider,
             title: 'Комментарий: $label',
-            hint: 'Заметка для себя и следующего модератора',
+            // Заметка сохраняется с одобрением и видна в карточке потом
+            // (блок «Заметки модерации»). С отказом уходят только причины
+            // отклонённых полей — их читает партнёр, и заметка для своих
+            // туда не попадает (пункт A1-12).
+            hint: 'Заметка для модераторов — сохранится при одобрении',
             confirm: 'Сохранить',
             danger: false,
             onSave: (text) => provider.commentField(fieldName, text),
@@ -204,6 +212,7 @@ class _VerdictGroup extends StatelessWidget {
     required String hint,
     required String confirm,
     required bool danger,
+    bool requireText = false,
     required ValueChanged<String> onSave,
   }) async {
     final text = await showDialog<String>(
@@ -213,6 +222,7 @@ class _VerdictGroup extends StatelessWidget {
         hint: hint,
         confirm: confirm,
         danger: danger,
+        requireText: requireText,
         initialText: provider.getFieldState(fieldName).comment ?? '',
       ),
     );
@@ -234,12 +244,17 @@ class _FieldNoteDialog extends StatefulWidget {
   final bool danger;
   final String initialText;
 
+  /// Без текста кнопка гаснет, а рядом сказано, чего не хватает — как в
+  /// окне приостановки.
+  final bool requireText;
+
   const _FieldNoteDialog({
     required this.title,
     required this.hint,
     required this.confirm,
     required this.danger,
     required this.initialText,
+    this.requireText = false,
   });
 
   @override
@@ -274,12 +289,34 @@ class _FieldNoteDialogState extends State<_FieldNoteDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Отмена'),
         ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, _controller.text),
-          style: AppTheme.canonCtaL(
-            backgroundColor: widget.danger ? AppTheme.errorRed : null,
-          ),
-          child: Text(widget.confirm),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _controller,
+          builder: (context, value, _) {
+            final missing = widget.requireText && value.text.trim().isEmpty;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 10,
+              children: <Widget>[
+                if (missing)
+                  const Text(
+                    'Нужна причина',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ElevatedButton(
+                  onPressed: missing
+                      ? null
+                      : () => Navigator.pop(context, _controller.text.trim()),
+                  style: AppTheme.canonCtaL(
+                    backgroundColor: widget.danger ? AppTheme.errorRed : null,
+                  ),
+                  child: Text(widget.confirm),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );

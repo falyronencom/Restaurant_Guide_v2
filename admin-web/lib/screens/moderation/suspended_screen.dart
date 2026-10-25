@@ -131,6 +131,9 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
     return ModerationCatalogCard(
       name: item.name,
       date: item.suspendedAt ?? item.updatedAt,
+      dateLabel: item.suspendedAt != null
+          ? (item.isPausedByPartner ? 'на паузе с' : 'приостановлено')
+          : 'изменено',
       subtitle: _typeAndCity(item),
       thumbnailUrl: item.thumbnailUrl,
       categories: item.categories,
@@ -239,6 +242,8 @@ class _EntityActions extends StatelessWidget {
     return ModerationEntityActions(
       establishmentName: detail?.name ?? '',
       busy: provider.isSubmitting,
+      compact: MediaQuery.sizeOf(context).width <
+          ModerationEntityActions.compactBelowWindowWidth,
       unsuspendReturnsTo: detail?.suspendedFrom,
       onSuspend: detail != null && detail.isPausedByPartner
           ? (reason) => provider
@@ -267,6 +272,9 @@ class _DetailPanel extends StatelessWidget {
       isLoadingDetail: provider.isLoadingDetail,
       detailError: provider.detailError,
       selectedId: provider.selectedId,
+      listIsEmpty: !provider.isLoadingList &&
+          provider.listError == null &&
+          provider.totalCount == 0,
       onRetryDetail: provider.selectedId == null
           ? null
           : () => context

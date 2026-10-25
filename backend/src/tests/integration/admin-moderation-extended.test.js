@@ -449,3 +449,48 @@ describe('GET /api/v1/admin/establishments/search (#5)', () => {
       .expect(401);
   });
 });
+
+// ============================================================================
+// Search beyond the name (walkthrough of the moderator panel, 2026-10-20, Ч19)
+// ============================================================================
+
+describe('GET /api/v1/admin/establishments/search — category, cuisine, address', () => {
+  const search = (q) => request(app)
+    .get(`/api/v1/admin/establishments/search?search=${encodeURIComponent(q)}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .expect(200);
+  const seed = async (fields) => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await query(
+      `UPDATE establishments
+          SET name = $1, categories = $2, cuisines = $3, address = $4
+        WHERE id = $5`,
+      [fields.name, fields.categories, fields.cuisines, fields.address, establishment.id],
+    );
+    return establishment.id;
+  };
+
+  test('«кофе» finds a coffee shop by its category, a word of the address finds by address', async () => {
+    const coffee = await seed({
+      name: 'Зерно', categories: ['Кофейня'], cuisines: ['Европейская'], address: 'ул. Ленина, 5',
+    });
+    const georgian = await seed({
+      name: 'Сулико', categories: ['Ресторан'], cuisines: ['Грузинская'], address: 'пр. Победителей, 9',
+    });
+
+    expect((await search('кофе')).body.data.map(e => e.id)).toEqual([coffee]);
+    expect((await search('грузин')).body.data.map(e => e.id)).toEqual([georgian]);
+    const byAddress = await search('Победителей');
+    expect(byAddress.body.data.map(e => e.id)).toEqual([georgian]);
+    expect(byAddress.body.meta.total).toBe(1);
+  });
+
+  test('% and _ are searched literally, not as wildcards', async () => {
+    await seed({ name: 'Зерно', categories: ['Кофейня'], cuisines: [], address: 'ул. Ленина, 5' });
+    const literal = await seed({ name: 'Бар 100%', categories: ['Бар'], cuisines: [], address: 'ул. Ленина, 7' });
+
+    expect((await search('%')).body.data.map(e => e.id)).toEqual([literal]);
+    expect((await search('_')).body.data).toHaveLength(0);
+    expect((await search('_')).body.meta.total).toBe(0);
+  });
+});

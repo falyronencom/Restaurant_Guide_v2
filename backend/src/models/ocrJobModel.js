@@ -367,6 +367,37 @@ export const getMediaIdsWithCompletedJob = async (establishmentId) => {
 };
 
 /**
+ * Page counts of PDF menu files, from the latest finished recognition job of
+ * each (walkthrough of the moderator panel, 2026-10-20, A1-22): the panel
+ * shows «стр. 3 из 7». The document's own count is `pages_total` when the job
+ * read only the first PDF_PAGE_LIMIT pages, otherwise `pages_count`. A job
+ * that could not read the PDF's metadata (`vision_pdf_no_metadata`) tried a
+ * fixed number of pages and knows no count — such a file, and a file never
+ * recognised, are absent from the map.
+ *
+ * @param {string[]} mediaIds - establishment_media ids
+ * @returns {Promise<Map<string, number>>} media id → page count
+ */
+export const getPdfPageCounts = async (mediaIds) => {
+  if (!Array.isArray(mediaIds) || mediaIds.length === 0) return new Map();
+  const result = await pool.query(
+    `SELECT DISTINCT ON (media_id) media_id, result_summary
+       FROM ocr_jobs
+      WHERE media_id = ANY($1::uuid[]) AND status = 'done'
+      ORDER BY media_id, completed_at DESC NULLS LAST, created_at DESC`,
+    [mediaIds],
+  );
+  const counts = new Map();
+  for (const row of result.rows) {
+    const summary = row.result_summary ?? {};
+    if (summary.strategy === 'vision_pdf_no_metadata') continue;
+    const count = Number(summary.pages_total ?? summary.pages_count);
+    if (Number.isInteger(count) && count > 0) counts.set(row.media_id, count);
+  }
+  return counts;
+};
+
+/**
  * Every menu file of an establishment the recognition reads — the files
  * MediaModel.getOcrEligibleMedia lists: PDFs and menu photos — with its newest
  * OCR job, or a null job for a file never queued (the daily allowance refused

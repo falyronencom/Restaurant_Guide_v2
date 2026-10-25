@@ -124,6 +124,32 @@ void main() {
     expect(provider.getFieldState('unp').status, FieldReviewStatus.neutral);
   });
 
+  // A1-11: подсказка обещает «уйдёт партнёру», а пустая причина партнёру
+  // не уходит — без текста кнопка погашена, рядом сказано, чего не хватает.
+  testWidgets('✗ без причины не отклоняет: кнопка погашена', (tester) async {
+    final provider = await _pumpRow(tester);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('Нужна причина'), findsOneWidget);
+    expect(
+      tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, 'Отклонить')).onPressed,
+      isNull,
+    );
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.pump();
+    expect(
+      tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, 'Отклонить')).onPressed,
+      isNull,
+      reason: 'пробелы — не причина',
+    );
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(provider.getFieldState('unp').status, FieldReviewStatus.neutral);
+  });
+
   testWidgets('✗ с причиной отклоняет поле — вердиктом, а не заметкой',
       (tester) async {
     final provider = await _pumpRow(tester);
@@ -131,6 +157,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'УНП не совпадает с реестром');
+    // Кнопка оживает вслед за полем (пункт A1-11: без причины она погашена).
+    await tester.pump();
     await tester.tap(find.widgetWithText(ElevatedButton, 'Отклонить'));
     await tester.pumpAndSettle();
 

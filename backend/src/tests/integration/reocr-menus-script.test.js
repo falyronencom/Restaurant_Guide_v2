@@ -442,6 +442,10 @@ describe('страж принципа: флаг живёт только на н�
     ['src/models/menuItemModel.js · столбец вставки', 'replaceForMedia: вставка распознавания в транзакции замены'],
     ['src/services/adminService.js · ключ объекта',
       'dismissMenuItemFlag: old_data записи журнала — пишется в audit_log, не в позицию'],
+    ['src/services/adminService.js · ключ объекта',
+      'dismissMenuItemFlag на копиях строки (П5+П6, 21.10, A1-07): old_data записи журнала '
+        + 'каждой копии — её прежний флаг, пишется в audit_log, не в позицию; сама копия '
+        + 'получает sanity_flag = null'],
   ];
 
   /**
@@ -459,7 +463,8 @@ describe('страж принципа: флаг живёт только на н�
     ['src/services/adminService.js · вызов updateById', 'unhideMenuItem: то же'],
     ['src/services/adminService.js · вызов updateById', 'dismissMenuItemFlag: sanity_flag = null'],
     ['src/services/adminService.js · вызов updateById',
-      'applyToMenuItemCopies: «Скрыть»/«Вернуть» на копиях — только is_hidden_by_admin и hidden_reason'],
+      'applyToMenuItemCopies: «Скрыть»/«Вернуть» на копиях — только is_hidden_by_admin и hidden_reason; '
+        + '«Снять флаг» на копиях — sanity_flag = null'],
     ['src/services/partnerMenuItemService.js · вызов updateById',
       'updateMenuItem: правка партнёра обнуляет флаг всегда (последний тест)'],
     ['src/services/partnerMenuItemService.js · вызов updateById',

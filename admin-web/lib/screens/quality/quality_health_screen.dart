@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_admin_web/config/establishment_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/quality_signals.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
@@ -313,10 +314,13 @@ class _CensusPanel extends StatelessWidget {
   }
 }
 
-/// Чип переписи: ключ моноширинным, счётчик жирным.
+/// Чип переписи: подпись удобства, ключ моноширинным, счётчик жирным.
 ///
 /// Ключ остаётся латиницей намеренно — это буквально то, что лежит в базе, и
-/// смысл переписи в сверке с каноном. Перевести его значило бы сверять перевод.
+/// смысл переписи в сверке с каноном. Перед ним — подпись из словаря карточки
+/// (`establishment_vocabulary.dart`, тот же, что в модерации): модератор
+/// читает «Wi-Fi», а не угадывает `wifi` (проход 20.10, К-4, Р6г). Ключ вне
+/// канона подписи не получает и стоит один — так он и выделяется.
 class _KeyChip extends StatelessWidget {
   final AttributeKeyCount entry;
 
@@ -324,6 +328,8 @@ class _KeyChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = attributeLabel(entry.key);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
@@ -334,6 +340,11 @@ class _KeyChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (label != null)
+            Text(
+              '$label  ',
+              style: const TextStyle(fontSize: 12, color: AppTheme.textDark),
+            ),
           // Ключ обязан ужиматься: длину его никто не ограничивает — ни SQL
           // переписи, ни путь записи атрибутов (канон ратифицирован, но в коде
           // не проверяется). Панель для того и есть, чтобы показывать чужие
@@ -343,7 +354,10 @@ class _KeyChip extends StatelessWidget {
               entry.key,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTheme.mono(fontSize: 12, color: AppTheme.textDark),
+              style: AppTheme.mono(
+                fontSize: 12,
+                color: label == null ? AppTheme.textDark : AppTheme.textSecondary,
+              ),
             ),
           ),
           const Text(

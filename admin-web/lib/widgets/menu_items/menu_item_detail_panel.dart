@@ -1,16 +1,19 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/category_icons.dart';
 import 'package:restaurant_guide_admin_web/config/formatters.dart';
 import 'package:restaurant_guide_admin_web/config/moderation_vocabulary.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
+import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/models/flagged_menu_item.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/menu_items_moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/media_viewer.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_inline_spinner.dart';
 
@@ -38,6 +41,31 @@ class MenuItemDetailPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _Heading(item: selected),
+          if (selected.menuFile != null) ...<Widget>[
+            const SizedBox(height: 12),
+            // Флаг сверяется с самим меню: ошибка распознавания или правда
+            // такая цена (A1-08).
+            OutlinedButton.icon(
+              key: const ValueKey<String>('open-menu-file'),
+              onPressed: () => showMediaViewer(
+                context,
+                items: <MediaItem>[selected.menuFile!],
+                title: 'Меню',
+              ),
+              icon: Icon(
+                selected.menuFile!.isPdf
+                    ? Icons.picture_as_pdf_outlined
+                    : Icons.image_outlined,
+                size: 18,
+              ),
+              label: Text(
+                selected.menuFile!.isPdf
+                    ? 'Открыть файл меню (PDF)'
+                    : 'Открыть фото меню',
+              ),
+              style: AppTheme.canonCtaOutlined(),
+            ),
+          ],
           const SizedBox(height: 20),
           _FactGrid(item: selected),
           const SizedBox(height: 20),
@@ -163,7 +191,9 @@ class _Heading extends StatelessWidget {
                 // «14 июля, 09:41» — как в кадре. Месяц берётся из ручного списка
                 // родительного падежа (`formatters.dart`): `DateFormat('MMMM')`
                 // дал бы «14 июль» и падал бы в виджет-тесте без делегатов локали.
-                'распарсено ${formatDayMonthLocal(item.createdAt)}, '
+                // «распознано», не «распарсено» — жаргон разработчика
+                // (A1-20, Ч25). Полная строка — подсказкой.
+                'распознано ${formatDayMonthLocal(item.createdAt)}, '
                 '${formatTimeLocal(item.createdAt)}',
                 style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
                 maxLines: 1,
@@ -207,69 +237,81 @@ class _FactGrid extends StatelessWidget {
     final confidence = item.confidence;
     final status = item.establishmentStatus;
 
+    final facts = <Widget>[
+      _Fact(
+        icon: Icons.payments_outlined,
+        label: 'Цена в меню',
+        value: price == null ? null : '${formatMoney(price)} BYN',
+        emptyValue: 'не распозналась',
+      ),
+      _Fact(
+        icon: Icons.category_outlined,
+        // Раздел меню так, как он прочитался в файле: «OCR» — слово
+        // разработчика (A1-20, Ч25).
+        label: 'Раздел в меню',
+        value: item.categoryRaw,
+        emptyValue: 'не распознан',
+      ),
+      _Fact(
+        icon: Icons.verified_outlined,
+        label: 'Уверенность распознавания',
+        value: confidence == null ? null : '${(confidence * 100).round()}%',
+        emptyValue: 'не сообщена',
+        // Цветом отмечается ровно то, из-за чего позиция в очереди.
+        // Зелёного здесь нет: порог живёт на сервере, и красить
+        // «хорошо» пришлось бы по выдуманной границе.
+        valueColor: item.sanityReason == 'low_confidence'
+            ? AppTheme.disclaimerText
+            : null,
+      ),
+      _Fact(
+        icon: Icons.storefront_outlined,
+        label: 'Состояние заведения',
+        value: status == null ? null : StatusDot.labelFor(status),
+        emptyValue: 'неизвестно',
+        valueColor: status == null ? null : StatusDot.colorFor(status),
+      ),
+    ];
+
+    // На окне 1024 правой части остаётся ≈ 344 px: в две колонки подпись
+    // «Уверенность распознавания» рвалась посреди слова (F-03, Ч-проход).
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: AppTheme.canonPanelDecoration(radius: AppTheme.radiusShowcase),
-      child: Column(
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < twoColumnsMinWidth) {
+            return Column(
+              children: <Widget>[
+                for (var i = 0; i < facts.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(height: 14),
+                  facts[i],
+                ],
+              ],
+            );
+          }
+          return Column(
             children: <Widget>[
-              Expanded(
-                child: _Fact(
-                  icon: Icons.payments_outlined,
-                  label: 'Цена в меню',
-                  value: price == null ? null : '${formatMoney(price)} BYN',
-                  emptyValue: 'не распозналась',
+              for (var row = 0; row < 2; row++) ...<Widget>[
+                if (row > 0) const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: facts[row * 2]),
+                    const SizedBox(width: 16),
+                    Expanded(child: facts[row * 2 + 1]),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _Fact(
-                  icon: Icons.category_outlined,
-                  label: 'Категория из OCR',
-                  value: item.categoryRaw,
-                  emptyValue: 'не распозналась',
-                ),
-              ),
+              ],
             ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: _Fact(
-                  icon: Icons.verified_outlined,
-                  label: 'Уверенность распознавания',
-                  value: confidence == null
-                      ? null
-                      : '${(confidence * 100).round()}%',
-                  emptyValue: 'не сообщена',
-                  // Цветом отмечается ровно то, из-за чего позиция в очереди.
-                  // Зелёного здесь нет: порог живёт на сервере, и красить
-                  // «хорошо» пришлось бы по выдуманной границе.
-                  valueColor: item.sanityReason == 'low_confidence'
-                      ? AppTheme.disclaimerText
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _Fact(
-                  icon: Icons.storefront_outlined,
-                  label: 'Состояние заведения',
-                  value: status == null ? null : StatusDot.labelFor(status),
-                  emptyValue: 'неизвестно',
-                  valueColor: status == null ? null : StatusDot.colorFor(status),
-                ),
-              ),
-            ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
+
+  /// Уже этой ширины факты стоят в одну колонку.
+  static const double twoColumnsMinWidth = 460;
 }
 
 class _Fact extends StatelessWidget {
@@ -359,9 +401,13 @@ class _FlagPanel extends StatelessWidget {
               ),
             ),
             SizedBox(width: 8),
+            // Прежде здесь стояло «остаётся в очереди до обновления списка»,
+            // но список перечитывается сразу после действия (A1-23). Сюда
+            // попадают, только если перечитка не прошла, — об этом и речь.
             Expanded(
               child: Text(
-                'Позиция остаётся в очереди до обновления списка.',
+                'Список не обновился — позиция уйдёт из очереди при '
+                'следующем обновлении.',
                 style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
               ),
             ),
@@ -561,7 +607,8 @@ class _Actions extends StatelessWidget {
       context: context,
       builder: (_) => _ConfirmDialog(
         title: 'Показать снова?',
-        message: 'Позиция «${item.itemName}» вернётся в результаты поиска.',
+        message: 'Позиция «${item.itemName}» вернётся в результаты поиска — '
+            '$kCopiesClause, скрытыми с той же причиной.',
         confirmLabel: 'Показать',
         confirmColor: AppTheme.statusGreen,
       ),
@@ -574,10 +621,12 @@ class _Actions extends StatelessWidget {
   Future<void> _dismiss(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => const _ConfirmDialog(
+      builder: (_) => _ConfirmDialog(
         title: 'Снять флаг?',
-        message: 'Позиция уйдёт из очереди. Скрытие и его причина, если они '
-            'есть, останутся без изменений.',
+        message: 'Флаг снимется с позиции «${item.itemName}» и с её повторов в других файлах '
+            'меню того же заведения — гость видит их одной строкой. Позиции '
+            'уйдут из очереди. Скрытие и его причина, если они есть, '
+            'останутся без изменений.',
         confirmLabel: 'Снять флаг',
         confirmColor: AppTheme.primaryOrangeDark,
       ),
@@ -611,6 +660,13 @@ class _Actions extends StatelessWidget {
     if (ok) badges.load();
   }
 }
+
+/// Действия над позицией доходят до её повторов: одно меню, загруженное
+/// фото и PDF, гость видит одной строкой (PR #107, правило копий). До
+/// 21.10.2026 диалоги об этом молчали, и в очереди пропадало сразу
+/// несколько строк (пункт A1-07).
+const String kCopiesClause =
+    'вместе с повторами этой строки в других файлах меню';
 
 /// Подтверждение без ввода.
 class _ConfirmDialog extends StatelessWidget {
@@ -693,8 +749,8 @@ class _HideDialogState extends State<_HideDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Позиция «${widget.itemName}» перестанет показываться в поиске. '
-              'Флаг проверки при этом останется.',
+              'Позиция «${widget.itemName}» перестанет показываться в поиске — '
+              '$kCopiesClause. Флаг проверки при этом останется.',
               style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
             ),
             const SizedBox(height: 12),
@@ -756,16 +812,18 @@ class _HideDialogState extends State<_HideDialog> {
   }
 }
 
-/// Флаг проверки человеческим языком, с исходной записью под спойлером.
+/// Флаг проверки человеческими строками; исходная запись — под «Скопировать
+/// код» (Ч26, проход 20.10; приём `AdminErrorCard`).
 ///
-/// Раньше здесь лежал `JsonEncoder.withIndent`, то есть сырой JSON на экране
-/// модератора — ровно так это нарисовано и в кадре 03. Он честно показывает
-/// всё и ровно поэтому не сообщает ничего: чтобы понять «price_above_threshold,
-/// threshold 1000», надо знать, что такое threshold и в чём он измеряется.
+/// До 21.10.2026 под спойлером «Исходная запись» лежал `JsonEncoder` — сырой
+/// JSON на экране модератора (`price_below_threshold`, `threshold`). Он честно
+/// показывает всё и ровно поэтому не сообщает ничего. Теперь на экране —
+/// фраза с числами и строка о пороге, а запись целиком уходит в буфер обмена
+/// кнопкой: разработчику она нужна, модератору — нет.
 ///
-/// Исходная запись не выброшена, а убрана под спойлер. Если правило окажется
-/// незнакомым и фразы для него не найдётся, спойлер раскрыт сразу: непонятное
-/// лучше невидимого.
+/// Правило, которого панель не знает, кодом на экран тоже не выходит: строка
+/// говорит, что причина незнакома, и называет её — расхождение словаря с
+/// каноном видно, а JSON по-прежнему только в буфере.
 class _FlagExplanation extends StatefulWidget {
   final Map<String, dynamic> flag;
 
@@ -776,43 +834,79 @@ class _FlagExplanation extends StatefulWidget {
 }
 
 class _FlagExplanationState extends State<_FlagExplanation> {
-  late bool _rawVisible = describeSanityFlag(widget.flag) == null;
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(
+      ClipboardData(text: const JsonEncoder.withIndent('  ').convert(widget.flag)),
+    );
+    if (mounted) setState(() => _copied = true);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final phrase = describeSanityFlag(widget.flag);
+    final lines = flagExplanationLines(widget.flag);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (phrase != null)
-          Text(
-            phrase,
-            style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
-          ),
-        const SizedBox(height: 6),
-        InkWell(
-          onTap: () => setState(() => _rawVisible = !_rawVisible),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+        for (var i = 0; i < lines.length; i++)
+          Padding(
+            padding: EdgeInsets.only(top: i == 0 ? 0 : 4),
             child: Text(
-              _rawVisible ? 'Скрыть исходную запись' : 'Исходная запись',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.primaryOrangeDark,
-                decoration: TextDecoration.underline,
+              lines[i],
+              style: TextStyle(
+                fontSize: i == 0 ? 14 : 13,
+                color: i == 0 ? AppTheme.textDark : AppTheme.textSecondary,
               ),
             ),
           ),
-        ),
-        if (_rawVisible) ...<Widget>[
-          const SizedBox(height: 4),
-          SelectableText(
-            const JsonEncoder.withIndent('  ').convert(widget.flag),
-            style: AppTheme.mono(fontSize: 12, color: AppTheme.textDark),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          key: const ValueKey<String>('flag-copy-code'),
+          onPressed: _copy,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppTheme.textDark,
+            side: const BorderSide(color: AppTheme.strokeGrey),
+            minimumSize: const Size(0, 32),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            textStyle: const TextStyle(
+              fontFamily: AppTheme.fontBodyFamily,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ],
+          child: Text(_copied ? 'Код скопирован' : 'Скопировать код'),
+        ),
       ],
     );
   }
+}
+
+/// Строки флага для модератора: фраза с числами и, где есть, строка о пороге.
+///
+/// Незнакомое правило — одна строка, которая это признаёт и называет код:
+/// пустота была бы хуже, а JSON — нечитаем (`feedback_machine_codes_leak_to_moderator`).
+List<String> flagExplanationLines(Map<String, dynamic> flag) {
+  final phrase = describeSanityFlag(flag);
+  final reason = flag['reason'];
+  if (phrase == null) {
+    final code = reason is String && reason.isNotEmpty ? ' «$reason»' : '';
+    return <String>[
+      'Причина флага$code панели незнакома — подробности в коде записи.',
+    ];
+  }
+  final details = flag['details'];
+  final threshold = details is Map ? details['threshold'] : null;
+  if (reason == 'price_delta_anomaly' && threshold is num) {
+    final times = threshold == threshold.roundToDouble()
+        ? formatCount(threshold.round())
+        : formatDecimal(threshold.toDouble(), digits: 1);
+    return <String>[
+      phrase,
+      'Флаг ставится, когда цена меняется больше чем в $times '
+          '${threshold == threshold.roundToDouble() ? plural(threshold.round(), 'раз', 'раза', 'раз') : 'раза'}.',
+    ];
+  }
+  return <String>[phrase];
 }
