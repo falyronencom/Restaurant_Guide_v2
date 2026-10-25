@@ -7,6 +7,7 @@ import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dar
 import 'package:restaurant_guide_mobile/models/review.dart';
 import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/services/reviews_service.dart';
+import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 import 'package:restaurant_guide_mobile/widgets/partner_establishment_card.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
@@ -1171,11 +1172,10 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                 // Establishment image
                 ClipOval(
                   child: review.establishmentImage != null
-                      ? CachedNetworkImage(
+                      ? FrameCachedImage(
                           imageUrl: review.establishmentImage!,
                           width: 59,
                           height: 59,
-                          fit: BoxFit.cover,
                           placeholder: (context, url) => Container(
                             width: 59,
                             height: 59,
