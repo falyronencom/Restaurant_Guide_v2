@@ -281,6 +281,126 @@ describe('set-user-active.js writes the journal as the panel does (проход 
   });
 });
 
+describe('set-user-active.js closes the panel in an emergency (инцидент Railway 21–24.10, находка 9)', () => {
+  const actor = 'operator_script:set-user-active';
+  const blocks = (id) => query(
+    `SELECT action, user_id, old_data, new_data, user_agent FROM audit_log
+     WHERE entity_type = 'user' AND entity_id = $1 ORDER BY created_at, id`,
+    [id],
+  ).then((result) => result.rows);
+  const emergencyBlock = {
+    action: 'user_block',
+    user_id: null,
+    old_data: { is_active: true },
+    new_data: {
+      is_active: false,
+      reason: 'Панель закрыта аварийно: учётку выключил оператор скриптом',
+      hidden_review_ids: [],
+      actor,
+      emergency: true,
+    },
+    user_agent: actor,
+  };
+  const sessionsLeft = async (id) => (await one(
+    'SELECT COUNT(*)::int AS n FROM refresh_tokens WHERE user_id = $1 AND used_at IS NULL',
+    [id],
+  )).n;
+  const active = async (id) => (await one('SELECT is_active FROM users WHERE id = $1', [id])).is_active;
+
+  test('the last admin without --emergency: refused, as before — nothing switched, nothing written', async () => {
+    const id = await user({ email: 'admin@example.com', role: 'admin' });
+    const refused = run('set-user-active.js', ['--email=admin@example.com', '--active=false', '--yes']);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('last active admin');
+    expect(refused.stderr).toContain('--emergency');
+    expect(await active(id)).toBe(true);
+    expect(await blocks(id)).toEqual([]);
+  });
+
+  test('the last admin with --emergency: switched off the ordinary way — session ended, user_block written — with a warning and the way back', async () => {
+    const id = await user({ email: 'admin@example.com', role: 'admin' });
+    await panelLogin('admin@example.com', PASSWORD).expect(200);
+    expect(await sessionsLeft(id)).toBe(1);
+
+    const closed = run('set-user-active.js', ['--email=admin@example.com', '--active=false', '--emergency', '--yes']);
+    expect(closed.status).toBe(0);
+    expect(closed.stdout).toContain('EMERGENCY');
+    expect(closed.stdout).toContain('last active admin');
+    expect(closed.stdout).toContain('--active=true');
+    expect(await active(id)).toBe(false);
+    expect(await sessionsLeft(id)).toBe(0);
+    expect(await blocks(id)).toEqual([emergencyBlock]);
+    expect((await panelLogin('admin@example.com', PASSWORD)).status).not.toBe(200);
+
+    // The way back the script prints: the ordinary switch-on
+    expect(run('set-user-active.js', ['--email=admin@example.com', '--active=true', '--yes']).status).toBe(0);
+    await panelLogin('admin@example.com', PASSWORD).expect(200);
+  });
+
+  test('--emergency with another admin still active is the ordinary switch-off', async () => {
+    const id = await user({ email: 'admin@example.com', role: 'admin' });
+    await user({ email: 'second@example.com', role: 'admin' });
+    const result = run('set-user-active.js', ['--email=admin@example.com', '--active=false', '--emergency', '--yes']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('EMERGENCY');
+    expect((await blocks(id)).map((entry) => entry.new_data.reason)).toEqual(['Учётку выключил оператор скриптом']);
+  });
+
+  test('--emergency is for switching off only; --all-panel-accounts needs --emergency and no --email', async () => {
+    const id = await user({ email: 'admin@example.com', role: 'admin' });
+    await query('UPDATE users SET is_active = false WHERE id = $1', [id]);
+    expect(run('set-user-active.js', ['--email=admin@example.com', '--active=true', '--emergency', '--yes']).status).toBe(1);
+    expect(await active(id)).toBe(false);
+
+    const viewer = await user({ email: 'viewer@example.com', role: 'viewer' });
+    const withoutWord = run('set-user-active.js', ['--all-panel-accounts', '--active=false', '--yes']);
+    expect(withoutWord.status).toBe(1);
+    expect(withoutWord.stderr).toContain('--emergency');
+    expect(run('set-user-active.js', ['--all-panel-accounts', '--active=true', '--emergency', '--yes']).status).toBe(1);
+    expect(run('set-user-active.js', ['--all-panel-accounts', '--email=viewer@example.com', '--active=false', '--emergency', '--yes']).status).toBe(1);
+    expect(await active(viewer)).toBe(true);
+    expect(await blocks(viewer)).toEqual([]);
+  });
+
+  test('--all-panel-accounts --emergency: every active admin and viewer off at once, each the ordinary way; no one else touched', async () => {
+    const admins = [await user({ email: 'admin@example.com', role: 'admin' }), await user({ email: 'second@example.com', role: 'admin' })];
+    const viewer = await user({ email: 'viewer@example.com', role: 'viewer' });
+    const offAlready = await user({ email: 'old@example.com', role: 'admin', active: false });
+    const partner = await user({ email: 'partner@example.com', role: 'partner' });
+    const guest = await user({ email: 'guest@example.com' });
+    const panel = [...admins, viewer];
+    await panelLogin('admin@example.com', PASSWORD).expect(200);
+    await panelLogin('viewer@example.com', PASSWORD).expect(200);
+    const guestLogin = await sharedLogin('guest@example.com').expect(200);
+
+    const closed = run('set-user-active.js', ['--all-panel-accounts', '--active=false', '--emergency', '--yes']);
+    expect(closed.status).toBe(0);
+    expect(closed.stdout).toContain('EMERGENCY');
+    expect(closed.stdout).toContain('3 account(s) switched off');
+    expect(closed.stdout).toContain('--active=true');
+
+    for (const id of panel) {
+      expect(await active(id)).toBe(false);
+      expect(await sessionsLeft(id)).toBe(0);
+      expect(await blocks(id)).toEqual([emergencyBlock]);
+    }
+    expect((await panelLogin('second@example.com', PASSWORD)).status).not.toBe(200);
+    expect(await blocks(offAlready)).toEqual([]);
+    for (const id of [partner, guest]) {
+      expect(await active(id)).toBe(true);
+      expect(await blocks(id)).toEqual([]);
+    }
+    expect(await sessionsLeft(guest)).toBe(1);
+    expect((await refresh(guestLogin.body.data.refreshToken)).status).toBe(200);
+
+    // Run again: nothing left to close, nothing written
+    const again = run('set-user-active.js', ['--all-panel-accounts', '--active=false', '--emergency', '--yes']);
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain('no panel account is active');
+    expect(await blocks(admins[0])).toHaveLength(1);
+  });
+});
+
 describe('Б5: create-admin.js', () => {
   test('without --email it does not run and creates nothing', async () => {
     const result = run('create-admin.js', ['--yes'], { ADMIN_PASSWORD: NEW_PASSWORD });

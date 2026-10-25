@@ -394,9 +394,15 @@ describe('секреты: маска адреса и переменные libpq'
     expect(maskDatabaseUrl('garbage with p@ss')).toBe('(неразборчивый DATABASE_URL)');
   });
 
-  test('PG* раскодированы из адреса; SSL обязателен', () => {
+  test('PG* раскодированы из адреса; сервер сверяется с закреплённым сертификатом (prodSnapshotTls.test.js)', () => {
     expect(pgEnvFromUrl('postgresql://us%40er:p%40ss%3Aw@db.example:5433/rail%20way')).toEqual({
-      PGHOST: 'db.example', PGPORT: '5433', PGUSER: 'us@er', PGPASSWORD: 'p@ss:w', PGDATABASE: 'rail way', PGSSLMODE: 'require',
+      PGHOST: 'db.example',
+      PGPORT: '5433',
+      PGUSER: 'us@er',
+      PGPASSWORD: 'p@ss:w',
+      PGDATABASE: 'rail way',
+      PGSSLMODE: 'verify-ca',
+      PGSSLROOTCERT: '/pin/root.crt',
     });
     expect(pgEnvFromUrl('postgres://u:p@h/db').PGPORT).toBe('5432');
   });

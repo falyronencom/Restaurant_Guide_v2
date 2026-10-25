@@ -299,17 +299,16 @@ describe('every script that connects to production checks the server', () => {
     // The pin tool's probe: nothing is pinned yet, and nothing about the
     // account is sent over it — only the SSLRequest.
     'lib/productionDb.js': 'fetchServerCertificate',
-    // The production snapshot runs pg_dump in a container over libpq; moving
-    // it to the pin is its own task (review EN3), not done here.
-    'prod-snapshot/database.js': 'snapshot (EN3)',
-    'prod-snapshot/env.js': 'snapshot (EN3)',
-    'prod-snapshot/index.js': 'snapshot (EN3)',
+    // The production snapshot was the last exception (review EN3) until
+    // 2026-10-24: its Node session and its pg_dump/psql in a container now
+    // take the pin too (Railway incident, finding 1; prodSnapshotTls.test.js).
   };
   const UNCHECKED = [
     /rejectUnauthorized['"]?\s*:\s*(?:false|0|!1|null|undefined)\b/,
     /no-verify/,
     /NODE_TLS_REJECT_UNAUTHORIZED/,
-    /PGSSLMODE\s*:\s*['"](?:require|prefer|allow)['"]/,
+    /PGSSLMODE\s*:\s*['"](?:require|prefer|allow|disable)['"]/,
+    /sslmode=(?:require|prefer|allow|disable)\b/,
   ];
   // Reading the production address obliges a script to take the pinned path.
   const PRODUCTION_ADDRESS = /\.env\.production/;
@@ -353,9 +352,10 @@ describe('every script that connects to production checks the server', () => {
   test('the guard can fail: it sees each way of switching the check off', () => {
     ['ssl: { rejectUnauthorized: false }', "'rejectUnauthorized': 0", 'rejectUnauthorized: !1',
       '?sslmode=no-verify', "ssl: 'no-verify'", "process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'",
-      "PGSSLMODE: 'require'"]
+      "PGSSLMODE: 'require'", "PGSSLMODE: 'disable'", "'psql', 'sslmode=require host=x'"]
       .forEach((line) => expect(UNCHECKED.some((pattern) => pattern.test(line))).toBe(true));
-    expect(UNCHECKED.some((pattern) => pattern.test('rejectUnauthorized: true'))).toBe(false);
+    ['rejectUnauthorized: true', "PGSSLMODE: 'verify-ca'", "PGSSLMODE: 'verify-full'", 'sslmode=verify-ca']
+      .forEach((line) => expect(UNCHECKED.some((pattern) => pattern.test(line))).toBe(false));
   });
 
   test('the migration script goes through the pin', () => {

@@ -10,10 +10,8 @@
  * данные вызывающему, печать решает он (только id, счётчики, public_id).
  */
 
-import pg from 'pg';
+import { PIN_VARIABLE, ProductionClient, pinValue } from '../lib/productionDb.js';
 import { scanMediaState } from './media.js';
-
-const { Client } = pg;
 
 /** Ссылка Cloudinary в тексте (jsonb::text и пр.): без групп захвата — regexp_matches вернёт совпадение целиком. */
 export const CLOUDINARY_URL_PG_REGEX = String.raw`https?://res(?:-[0-9]+)?\.cloudinary\.com/[^[:space:]"'<>\\]+`;
@@ -22,13 +20,21 @@ const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
 const qualified = (t) => `${ident(t.schema)}.${ident(t.name)}`;
 export const tableKey = (t) => `${t.schema}.${t.name}`;
 
-export const openProdClient = async (databaseUrl) => {
-  const client = new Client({
+/**
+ * Сессия с продом — только с сервером, который предъявил закреплённый
+ * сертификат (ProductionClient, scripts/lib/productionDb.js): чужой
+ * сертификат — отказ в рукопожатии TLS, до имени и пароля, текстом для
+ * оператора. До 24.10.2026 — ssl: { rejectUnauthorized: false }.
+ *
+ * @param {string} databaseUrl
+ * @param {import('crypto').X509Certificate} pinned - env.js loadProdPinnedCertificate
+ */
+export const openProdClient = async (databaseUrl, pinned) => {
+  const client = new ProductionClient({
     connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false },
     keepAlive: true,
     application_name: 'prod-snapshot (read-only)',
-  });
+  }, { env: { [PIN_VARIABLE]: pinValue(pinned.raw) }, envFile: null });
   await client.connect();
   await client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');
   await client.query("SET statement_timeout = '120s'");
