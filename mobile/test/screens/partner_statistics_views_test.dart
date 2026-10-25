@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,7 @@ void main() {
   late Map<String, dynamic> overviewViews;
   late List<Map<String, dynamic>> viewsTrend;
   late StubAdapter wire;
+  String? primaryImage;
 
   /// Ряд по дням, заканчивая вчерашним 10.10: [counts] по порядку.
   List<Map<String, dynamic>> daily(List<int> counts) {
@@ -41,6 +43,7 @@ void main() {
 
   setUp(() {
     allTimeViews = totalViews;
+    primaryImage = null;
     overviewViews = {
       'total': totalViews,
       'in_period': 0,
@@ -65,7 +68,7 @@ void main() {
               'favorite_count': 1,
               'review_count': 0,
               'average_rating': 0,
-              'primary_image_url': null,
+              'primary_image_url': primaryImage,
             },
           },
         });
@@ -252,5 +255,23 @@ void main() {
             reason: '«${choice.key}» — график');
       }
     });
+  });
+
+  // Фото заведения в карточке — рамка 107 × 116 в несколько раз мельче фото:
+  // декодируется под рамку, а не целиком (решение Координатора 25.10.2026,
+  // `FrameCachedImage`). Полный размер в кабинете — 1920 × 2560 (≈ 19,7 МБ).
+  testWidgets('фото заведения в карточке — ужато под рамку', (tester) async {
+    primaryImage = 'https://res.cloudinary.com/davrzdre8/image/upload/'
+        'c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/e1/'
+        'interior/photo';
+    await pumpStats(tester);
+
+    final image =
+        tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
+    expect(image.imageUrl, primaryImage);
+    // Экран ×1: рамка 107 × 116 точек — выше, чем шире, задаётся высота
+    // 2 × 107 + 1 (фото 1 : 2 закрывает и ширину).
+    expect(image.memCacheWidth, isNull);
+    expect(image.memCacheHeight, 215);
   });
 }

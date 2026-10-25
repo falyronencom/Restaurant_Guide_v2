@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,7 @@ import 'package:restaurant_guide_mobile/models/partner_establishment.dart';
 import 'package:restaurant_guide_mobile/models/partner_analytics.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 
 /// Partner Statistics Screen - detailed analytics for establishment
 /// Figma design: Statistics frame
@@ -222,9 +222,9 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
               child: establishment.primaryImageUrl != null
-                  ? CachedNetworkImage(
+                  ? FrameCachedImage(
                       imageUrl: establishment.primaryImageUrl!,
-                      width: 107, height: 116, fit: BoxFit.cover,
+                      width: 107, height: 116,
                       placeholder: (context, url) => Container(width: 107, height: 116, color: _greyText.withValues(alpha: 0.3)),
                       errorWidget: (context, url, error) => Container(width: 107, height: 116, color: _greyText.withValues(alpha: 0.3), child: const Icon(Icons.restaurant, size: 40)),
                     )

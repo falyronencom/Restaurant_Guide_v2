@@ -544,6 +544,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       },
       itemBuilder: (context, index) {
         final photo = photos[index];
+        // Полный размер, не превью: рамка героя — 657 dp в высоту, и фото,
+        // заполняя её, требует ≈ 1 970 точек по высоте на телефоне ×3, а у
+        // превью (1200 в ширину) их 1 600 у фото 3 : 4 и 900 у 4 : 3.
         final imageUrl = photo.url ?? photo.previewUrl ?? photo.thumbnailUrl;
 
         if (imageUrl == null) {

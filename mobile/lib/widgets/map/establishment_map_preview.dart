@@ -1,8 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+import 'package:restaurant_guide_mobile/widgets/frame_cached_image.dart';
 
 /// Карточка-превью заведения над картой: миниатюра, название, рейтинг,
 /// категория, адрес, «✕» и кнопка «Подробнее». Одна на все карты приложения
@@ -131,9 +131,8 @@ class _EstablishmentMapPreviewState extends State<EstablishmentMapPreview> {
                       width: 100,
                       height: 100,
                       child: establishment.thumbnailUrl != null
-                          ? CachedNetworkImage(
+                          ? FrameCachedImage(
                               imageUrl: establishment.thumbnailUrl!,
-                              fit: BoxFit.cover,
                               placeholder: (context, url) => Container(
                                 color: Colors.grey[200],
                                 child: const Icon(Icons.restaurant,
