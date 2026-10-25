@@ -82,6 +82,11 @@ for (const name of [
   process.env[name] = '';
 }
 
+// Число доверенных узлов края (config/trustProxy.js) — как в CI: пустая
+// строка = умолчание. Безусловно: значение из .env разработчика поменяло бы,
+// чей адрес становится req.ip, во всех наборах сразу.
+process.env.TRUST_PROXY_HOPS = '';
+
 // Verify we're in test environment
 if (process.env.NODE_ENV !== 'test') {
   console.error('ERROR: Tests must run in NODE_ENV=test environment!');
