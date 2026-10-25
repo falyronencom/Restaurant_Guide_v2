@@ -34,6 +34,17 @@ const { default: logger } = await import('../../utils/logger.js');
 
 import { createMockEstablishment } from '../mocks/helpers.js';
 
+/**
+ * The strict dish match (no dishMatch): the item name and the menu section
+ * against one parameter — the dish as a substring, «%» and «_» in it literal
+ * (likeContains; walkthrough of the moderator panel, after wave 3). Returns
+ * that parameter, or null when the query has no such match.
+ */
+const strictDishPattern = (query, params) => {
+  const match = query.match(/mi\.item_name ILIKE \$(\d+) ESCAPE '\\'\s+OR mi\.category_raw ILIKE \$\1 ESCAPE '\\'/);
+  return match ? params[Number(match[1]) - 1] : null;
+};
+
 describe('searchService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -406,18 +417,14 @@ describe('searchService', () => {
       await searchByRadius({ ...validParams, dish: 'пицца' });
 
       const [query, params] = pool.query.mock.calls[0];
-      expect(query).toContain("mi.item_name ILIKE '%' || $");
-      expect(query).toContain("mi.category_raw ILIKE '%' || $");
-      expect(params).toContain('пицца');
+      expect(strictDishPattern(query, params)).toBe('%пицца%');
     });
 
     test('searchWithoutLocation: dish matches the menu section (category_raw), not only item_name', async () => {
       await searchWithoutLocation({ dish: 'пицца' });
 
       const [query, params] = pool.query.mock.calls[0];
-      expect(query).toContain("mi.item_name ILIKE '%' || $");
-      expect(query).toContain("mi.category_raw ILIKE '%' || $");
-      expect(params).toContain('пицца');
+      expect(strictDishPattern(query, params)).toBe('%пицца%');
     });
 
     test('dish alone stays strict: no establishment-level ILIKE, no synonym expansion', async () => {
@@ -451,8 +458,10 @@ describe('searchService', () => {
         expect(q).toContain('e.categories && $');
         expect(q).toContain('e.cuisines && $');
       }
-      expect(params).toContain('пицца');
-      expect(params).toContain('%пицца%');
+      // The menu pattern and the card-level pattern: the same text, both
+      // substring patterns (likeContains).
+      expect(strictDishPattern(query, params)).toBe('%пицца%');
+      expect(params.filter((p) => p === '%пицца%')).toHaveLength(2);
       expect(params).toContainEqual(['Пиццерия']);
       expect(params).toContainEqual(['Итальянская']);
       // count query reuses the same WHERE params minus LIMIT/OFFSET
@@ -485,11 +494,10 @@ describe('searchService', () => {
       await searchWithoutLocation({ dish: 'суши', dishVariants: ['ролл'] });
 
       const [query, params] = pool.query.mock.calls[0];
-      expect(query).toContain("mi.item_name ILIKE '%' || $");
+      expect(strictDishPattern(query, params)).toBe('%суши%');
       expect(query).not.toContain('ts_lexize');
       expect(query).not.toContain('word_similarity');
-      expect(params).toContain('суши');
-      expect(params).not.toContain('ролл');
+      expect(params.some((p) => typeof p === 'string' && p.includes('ролл'))).toBe(false);
     });
 
     test('lenient: начало слова по основе в тексте позиции (название + раздел, нижний регистр, ё/і/ў → е/и/у), без ILIKE', async () => {
