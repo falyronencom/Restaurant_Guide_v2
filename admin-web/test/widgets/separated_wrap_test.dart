@@ -56,6 +56,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('скрытая точка не читается и экранным чтецом', (tester) async {
+    // Обработчик закрывается до проверки: flutter_test требует закрыть его
+    // до конца теста, а `addTearDown` срабатывает уже после.
+    final semantics = tester.ensureSemantics();
+    await _pump(tester, 300);
+    final dots = find.bySemanticsLabel('·').evaluate().length;
+    semantics.dispose();
+
+    expect(dots, 1, reason: 'в дереве доступности — только видимая точка');
+  });
+
   testWidgets('каждый факт своей строкой — точек нет вовсе', (tester) async {
     await _pump(tester, 150);
 

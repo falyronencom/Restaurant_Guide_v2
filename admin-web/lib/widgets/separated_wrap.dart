@@ -218,6 +218,18 @@ class RenderSeparatedWrap extends RenderBox
     }
   }
 
+  /// Скрытый разделитель не читается и экранным чтецом: «·» на месте
+  /// переноса не должна звучать там, где её не видно.
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    var child = firstChild;
+    while (child != null) {
+      final data = child.parentData! as _SeparatedWrapParentData;
+      if (!data.hidden) visitor(child);
+      child = data.nextSibling;
+    }
+  }
+
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
     var child = lastChild;
