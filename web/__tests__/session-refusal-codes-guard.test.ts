@@ -13,8 +13,8 @@ import { join } from 'path';
  *
  * Read from the backend source, the way the backend writes them: every
  * `code: '…'` and `errorCode = '…'` inside `authenticate`
- * (backend/src/middleware/auth.js; its only non-401 refusal is the 503
- * AppError, written positionally, so it does not match), and the 401 fallbacks
+ * (backend/src/middleware/auth.js) and every positional `AppError(…, 401,
+ * '…')` there (its 503 AppError does not match), and the 401 fallbacks
  * of errorHandler.js (`statusCode = 401; errorCode = '…'`), which must be
  * among them.
  */
@@ -33,8 +33,12 @@ function authenticateBody(): string {
   const source = readFileSync(join(BACKEND, 'auth.js'), 'utf8');
   const start = source.indexOf('export const authenticate =');
   expect(start).toBeGreaterThanOrEqual(0);
-  const end = source.indexOf('\nexport ', start + 1);
-  return source.slice(start, end === -1 ? undefined : end);
+  // Up to the next top-level declaration or doc comment, so the next
+  // function's JSDoc examples are not read as authenticate's codes.
+  const ends = ['\nexport ', '\n/**']
+    .map((marker) => source.indexOf(marker, start + 1))
+    .filter((at) => at !== -1);
+  return source.slice(start, ends.length ? Math.min(...ends) : undefined);
 }
 
 function codesIn(text: string, pattern: RegExp): string[] {
@@ -47,6 +51,8 @@ describe('SESSION_REFUSAL_CODES', () => {
     const backendCodes = new Set([
       ...codesIn(body, /\bcode:\s*'([A-Z_]+)'/g),
       ...codesIn(body, /\berrorCode\s*=\s*'([A-Z_]+)'/g),
+      // A 401 written positionally: next(new AppError('…', 401, 'CODE')).
+      ...codesIn(body, /AppError\([^;]*?,\s*401,\s*'([A-Z_]+)'/g),
     ]);
     // A parse that finds nothing would make the equality below vacuous.
     expect(backendCodes.size).toBeGreaterThanOrEqual(5);

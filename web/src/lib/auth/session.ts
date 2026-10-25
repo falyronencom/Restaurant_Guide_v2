@@ -346,7 +346,7 @@ async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
 
 /**
  * The 401 codes of the backend's sign-in check (`authenticate`,
- * backend/src/middleware/auth.js:49-149; errorHandler.js:204-212 repeats
+ * backend/src/middleware/auth.js:43-151; errorHandler.js:204-212 repeats
  * INVALID_TOKEN and TOKEN_EXPIRED) — the verdicts on the ACCESS token, the
  * only 401s a refresh can cure. Any other 401 is the endpoint's answer to the
  * request itself: verify-email-code answers a wrong code with 401
