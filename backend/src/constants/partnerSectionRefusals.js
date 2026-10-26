@@ -197,6 +197,20 @@ export const MENU_RECOGNITION_FAILURES = Object.freeze({
 });
 
 /**
+ * The partner's restart of the menu's recognition —
+ * POST /api/v1/partner/establishments/:id/retry-ocr
+ * (services/partnerMenuItemService.js retryOcr). Its other refusals keep
+ * their own: a spent daily allowance answers with the limiters' sentence
+ * (constants/rateLimitRefusal.js), a card without menu files with the code
+ * NO_PDF_MENUS the app has its own text for. Wording proposed by Trunk on
+ * 25.10.2026 (directive of session К, finding Н40).
+ */
+export const MENU_RECOGNITION_REFUSALS = Object.freeze({
+  // Every file's queuing failed: nothing was started.
+  restartNotQueued: 'Не удалось запустить распознавание. Попробуйте позже.',
+});
+
+/**
  * The avatar — POST /api/v1/auth/avatar (routes/v1/authRoutes.js,
  * controllers/authController.js uploadAvatar). Every account's, not only a
  * partner's; kept here with the other uploaders' texts under one guard. The

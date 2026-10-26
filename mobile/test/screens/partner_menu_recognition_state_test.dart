@@ -32,6 +32,14 @@ const _failedHint = 'Нажмите «Перезапустить распозн�
 const _otherFileHint =
     'Загрузите другой файл в разделе «Медиа» — например, фото страниц меню.';
 const _bannerTitle = 'Часть меню не распознана';
+const _notStartedTitle = 'Распознавание не запущено';
+const _notStartedHint = 'Файл загружен, но распознавание не началось. '
+    'Нажмите «Перезапустить распознавание».';
+const _staleText =
+    'Не удалось обновить — на экране может быть не последнее состояние.';
+const _nothingFoundTitle = 'Позиций не нашлось';
+const _nothingFoundHint = 'Файл прочитан, но блюд и цен в нём не нашлось. '
+    'Загрузите более чёткое фото или другой файл в разделе «Медиа».';
 const _retryButton = 'Перезапустить распознавание';
 
 /// Фраза сервера (`MENU_RECOGNITION_FAILURES.serviceFailure`).
@@ -56,12 +64,21 @@ void main() {
   Map<String, dynamic> Function(String path)? answerFor;
   late StubAdapter wire;
 
+  /// Связи нет: запрос меню падает, ответа сервера нет.
+  var offline = false;
+
   setUp(() {
     AccountScope.debugReset();
     answer = () => {'success': true, 'data': <dynamic>[]};
     answerFor = null;
-    wire = installWireStand((RequestOptions options) =>
-        jsonBody(answerFor?.call(options.path) ?? answer()));
+    offline = false;
+    wire = installWireStand((RequestOptions options) {
+      if (offline) {
+        throw DioException(
+            requestOptions: options, type: DioExceptionType.connectionError);
+      }
+      return jsonBody(answerFor?.call(options.path) ?? answer());
+    });
   });
 
   Future<PartnerMenuProvider> openMenu(WidgetTester tester) async {
@@ -163,20 +180,74 @@ void main() {
     expect(find.text(_otherFileHint), findsNothing);
   });
 
-  for (final status in ['none', 'done']) {
-    testWidgets('«$status» без позиций → прежний пустой экран', (tester) async {
-      answer = () => {
-            'success': true,
-            'data': <dynamic>[],
-            'recognition': {'status': status},
-          };
-      await openMenu(tester);
+  testWidgets('«none» без позиций → прежний пустой экран', (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'none'},
+        };
+    await openMenu(tester);
 
-      expect(find.text(_emptyTitle), findsOneWidget);
-      expect(find.text(_processingTitle), findsNothing);
-      expect(find.text(_failedTitle), findsNothing);
-    });
-  }
+    expect(find.text(_emptyTitle), findsOneWidget);
+    expect(find.text(_processingTitle), findsNothing);
+    expect(find.text(_failedTitle), findsNothing);
+    expect(find.text(_notStartedTitle), findsNothing);
+    expect(find.text(_nothingFoundTitle), findsNothing);
+  });
+
+  // Находка Н39 (25.10.2026): файл загружен, а задания нет (суточный предел
+  // отказал при загрузке, постановка упала). До правки сервер отдавал
+  // «none», и экран обещал «распознавание выполняется автоматически».
+  testWidgets('файл без задания → «Распознавание не запущено» и что нажать',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'not_started'},
+        };
+    await openMenu(tester);
+
+    expect(find.text(_notStartedTitle), findsOneWidget);
+    expect(find.text(_notStartedHint), findsOneWidget);
+    expect(find.text(_retryButton), findsOneWidget);
+    expect(find.text(_emptyTitle), findsNothing);
+    expect(find.textContaining('автоматически'), findsNothing);
+  });
+
+  testWidgets(
+      'позиции есть, а у одного файла распознавание не начиналось → список и '
+      'плашка над ним', (tester) async {
+    answer = () => {
+          'success': true,
+          'data': [_item('Борщ')],
+          'recognition': {'status': 'not_started'},
+        };
+    await openMenu(tester);
+
+    expect(find.text('Борщ'), findsOneWidget);
+    expect(find.text(_notStartedTitle), findsOneWidget);
+    expect(find.text(_notStartedHint), findsOneWidget);
+    expect(find.text(_bannerTitle), findsNothing);
+    expect(tester.getTopLeft(find.text(_notStartedTitle)).dy,
+        lessThan(tester.getTopLeft(find.text('Борщ')).dy));
+  });
+
+  // Находка Н38 (25.10.2026): текст прочитан, блюд нет — задание `done`,
+  // список пуст. До правки — тот же экран «…выполняется автоматически».
+  testWidgets('распознано, позиций ноль → «Позиций не нашлось» и что сделать',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'done'},
+        };
+    await openMenu(tester);
+
+    expect(find.text(_nothingFoundTitle), findsOneWidget);
+    expect(find.text(_nothingFoundHint), findsOneWidget);
+    expect(find.text(_emptyTitle), findsNothing);
+    expect(find.textContaining('автоматически'), findsNothing);
+  });
 
   testWidgets('сервер без поля (до правки) и статус, которого сборка не знает, '
       '→ прежний пустой экран', (tester) async {
@@ -289,6 +360,95 @@ void main() {
     await tester.pump(const Duration(seconds: 31));
     await tester.pump(const Duration(milliseconds: 100));
     expect(requestsOfA(), before + 1);
+  });
+
+  // Находка Н41 (25.10.2026): ошибка фонового обновления терялась молча — экран
+  // мог застыть на «Распознаём меню…», когда всё уже кончилось.
+  testWidgets(
+      'фоновое обновление не удалось дважды подряд → тихая строка «мог устареть»; '
+      'одна неудача — нет; удачный ответ её снимает', (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'processing'},
+        };
+    await openMenu(tester);
+
+    Future<void> nextPoll() async {
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    offline = true;
+    await nextPoll();
+    expect(find.text(_staleText), findsNothing,
+        reason: 'один обрыв связи опрос переживает сам');
+    expect(find.text(_processingTitle), findsOneWidget);
+
+    await nextPoll();
+    expect(find.text(_staleText), findsOneWidget);
+    // Что было на экране, остаётся; красной плашки нет.
+    expect(find.text(_processingTitle), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+
+    offline = false;
+    answer = () => {
+          'success': true,
+          'data': [_item('Борщ')],
+          'recognition': {'status': 'done'},
+        };
+    await tester.tap(find.text('Обновить'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text(_staleText), findsNothing);
+    expect(find.text('Борщ'), findsOneWidget);
+  });
+
+  // Ревью 25.10.2026: строка не должна пересоздавать список под собой.
+  testWidgets('строка «мог устареть» появляется — список остаётся на том же месте',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': [for (var i = 0; i < 40; i++) _item('Блюдо $i')],
+          'recognition': {'status': 'done'},
+        };
+    await openMenu(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pump();
+    final before = tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
+    expect(before, greaterThan(0));
+
+    offline = true;
+    for (var i = 0; i < 2; i++) {
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text(_staleText), findsOneWidget);
+    expect(tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
+        before);
+  });
+
+  // Ревью 25.10.2026 (линза): сервер не смог прочитать состояние —
+  // `recognition: null`. Это не «поля нет»: плашка и экран отказа остаются.
+  testWidgets('состояние не прочиталось на сервере → показанное остаётся',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': [_item('Борщ')],
+          'recognition': {'status': 'failed', 'reason': _serviceFailure},
+        };
+    await openMenu(tester);
+    expect(find.text(_bannerTitle), findsOneWidget);
+
+    answer = () => {
+          'success': true,
+          'data': [_item('Борщ')],
+          'recognition': null,
+        };
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text(_bannerTitle), findsOneWidget);
+    expect(find.text(_serviceFailure), findsOneWidget);
   });
 
   testWidgets('«распознаём» сменяется списком сам — опросом, без действий партнёра',

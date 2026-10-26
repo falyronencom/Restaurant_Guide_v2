@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
 import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/widgets/media/network_thumbnail.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/definition_grid.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_field_review.dart';
@@ -19,6 +20,7 @@ EstablishmentDetail _detail({
   Map<String, dynamic>? moderationNotes,
   String? suspendedByName,
   bool partnerDataRedacted = false,
+  bool keepDocUrl = false,
 }) {
   return EstablishmentDetail(
     id: 'a41f9c02-1234-5678-9abc-def012345678',
@@ -31,7 +33,7 @@ EstablishmentDetail _detail({
     phone: '+375 29 611-24-80',
     unp: '191482073',
     legalName: 'ООО «Кухмістр Плюс»',
-    registrationDocUrl: partnerDataRedacted
+    registrationDocUrl: partnerDataRedacted && !keepDocUrl
         ? null
         : 'https://res.cloudinary.com/test/raw/upload/registration.pdf',
     contactPerson: partnerDataRedacted ? null : 'Иван Контактов',
@@ -331,8 +333,9 @@ void main() {
         detail: _detail(partnerDataRedacted: true),
       );
 
-      // Вкладка «Данные»: строка «Регистрация».
-      expect(find.text('Скрыто в режиме просмотра'), findsWidgets);
+      // Вкладка «Данные»: строки «Партнёр», «Почта контакта» и
+      // «Регистрация» — каждая своей пометкой, а не хотя бы одна из трёх.
+      expect(find.text('Скрыто в режиме просмотра'), findsNWidgets(3));
       expect(find.text('registration.pdf'), findsNothing);
 
       // «Скрытое» — не только документ. Контактное лицо живёт на вкладке
@@ -342,6 +345,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Телефон контактного лица'), findsOneWidget);
       expect(find.text('Скрыто в режиме просмотра'), findsOneWidget);
+    });
+
+    testWidgets('флаг скрытия сильнее ссылки: документ просмотрщику не показан',
+        (tester) async {
+      // Сервер просмотрщику ссылку обнуляет, и тест выше этого флага от
+      // пустой ссылки не отличил бы. Здесь ссылка доехала вопреки флагу —
+      // панель обязана держаться флага.
+      await _pumpPanel(
+        tester,
+        mode: DetailPanelMode.readonly,
+        detail: _detail(partnerDataRedacted: true, keepDocUrl: true),
+      );
+
+      expect(find.text('registration.pdf'), findsNothing);
+      expect(find.text('Скрыто в режиме просмотра'), findsNWidgets(3));
     });
 
     testWidgets('администратору ячейки не подменяются', (tester) async {
@@ -423,6 +441,39 @@ void main() {
               'нет подписи в _fieldLabel',
         );
       }
+    });
+  });
+
+  group('Сетка медиа', () {
+    testWidgets('плитка открывает просмотр со своего снимка, а не с первого',
+        (tester) async {
+      // Просмотрщик сам по себе проверен (`media_viewer_test.dart`), но
+      // открывали его напрямую с нужным номером; плитку сетки не нажимал
+      // никто.
+      final detail = EstablishmentDetail(
+        id: 'a41f9c02-1234-5678-9abc-def012345678',
+        partnerId: 'p-1',
+        name: 'Кухмістр',
+        status: 'active',
+        interiorPhotos: <MediaItem>[
+          for (final name in <String>['hall', 'bar', 'terrace'])
+            MediaItem(
+              id: name,
+              url: 'https://example.test/$name-full',
+              thumbnailUrl: 'https://example.test/$name-thumb',
+            ),
+        ],
+      );
+      await _pumpPanel(tester, mode: DetailPanelMode.readonly, detail: detail);
+      await tester.tap(find.byType(Tab).at(2));
+      await tester.pumpAndSettle();
+      expect(find.byType(NetworkThumbnail), findsNWidgets(3),
+          reason: 'предпосылка: три плитки на вкладке');
+
+      await tester.tap(find.byType(NetworkThumbnail).at(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('3 из 3'), findsOneWidget);
     });
   });
 }

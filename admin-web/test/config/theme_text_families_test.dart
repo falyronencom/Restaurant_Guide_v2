@@ -234,7 +234,9 @@ String? _renderedFamily(WidgetTester tester, String label) =>
 /// 3.35.2: кнопки берут `textStyle` виджета, иначе темы, иначе умолчания —
 /// без слияния; AppBar, диалог, подсказка, снекбар и выпадающий список кладут
 /// стиль в `DefaultTextStyle(style: …)`; чип и вкладки берут стиль темы вместо
-/// умолчания. Параметры, которые СЛИВАЮТСЯ (`labelStyle` у самого чипа,
+/// умолчания; `ListTile` кладёт свои три стиля в `AnimatedDefaultTextStyle`
+/// (`list_tile.dart`: `titleTextStyle ?? tileTheme… ?? defaults…`), тоже без
+/// слияния. Параметры, которые СЛИВАЮТСЯ (`labelStyle` у самого чипа,
 /// стили поля ввода), сюда не входят: там семейство приходит от темы.
 /// `RichText` разобран отдельно: он не наследует ничего.
 const Map<String, Set<String>> _replacing = <String, Set<String>>{
@@ -256,6 +258,16 @@ const Map<String, Set<String>> _replacing = <String, Set<String>>{
   'SnackBarThemeData': <String>{'contentTextStyle'},
   'DropdownButton': <String>{'style'},
   'DropdownButtonFormField': <String>{'style'},
+  'ListTile': <String>{
+    'titleTextStyle',
+    'subtitleTextStyle',
+    'leadingAndTrailingTextStyle',
+  },
+  'ListTileThemeData': <String>{
+    'titleTextStyle',
+    'subtitleTextStyle',
+    'leadingAndTrailingTextStyle',
+  },
 };
 
 final RegExp _replacingCall = RegExp(

@@ -169,6 +169,74 @@ void main() {
         }
       }
     });
+
+    test('подпись каждого сигнала — своими словами, при 1, 2 и 5', () {
+      // Тест выше сверяет подпись с хвостом из того же словаря — чужой хвост
+      // у сигнала он принял бы. Здесь — литералы: две проверки, описанные
+      // одними словами, на главной были бы неотличимы.
+      final expected = <String, List<String>>{
+        'unreachable': <String>[
+          '1 заведение без страницы на сайте',
+          '2 заведения без страницы на сайте',
+          '5 заведений без страницы на сайте',
+        ],
+        'hanging_flags': <String>[
+          '1 флаг без реакции',
+          '2 флага без реакции',
+          '5 флагов без реакции',
+        ],
+        'empty_menus': <String>[
+          '1 заведение с пустым меню',
+          '2 заведения с пустым меню',
+          '5 заведений с пустым меню',
+        ],
+        'hours_malformed': <String>[
+          '1 заведение с нечитаемым временем работы',
+          '2 заведения с нечитаемым временем работы',
+          '5 заведений с нечитаемым временем работы',
+        ],
+        'hours_all_closed': <String>[
+          '1 заведение без единого рабочего дня',
+          '2 заведения без единого рабочего дня',
+          '5 заведений без единого рабочего дня',
+        ],
+        'ocr_failed': <String>[
+          '1 задача распознавания меню с ошибкой',
+          '2 задачи распознавания меню с ошибкой',
+          '5 задач распознавания меню с ошибкой',
+        ],
+        'ocr_stuck': <String>[
+          '1 задача распознавания меню в ожидании повтора',
+          '2 задачи распознавания меню в ожидании повтора',
+          '5 задач распознавания меню в ожидании повтора',
+        ],
+        'category_off_canon': <String>[
+          '1 заведение с категорией не из справочника',
+          '2 заведения с категорией не из справочника',
+          '5 заведений с категорией не из справочника',
+        ],
+        'cuisine_off_canon': <String>[
+          '1 заведение с кухней не из справочника',
+          '2 заведения с кухней не из справочника',
+          '5 заведений с кухней не из справочника',
+        ],
+        'out_of_bounds': <String>[
+          '1 заведение с координатами вне границ',
+          '2 заведения с координатами вне границ',
+          '5 заведений с координатами вне границ',
+        ],
+        'non_object_attributes': <String>[
+          '1 заведение с испорченным списком удобств',
+          '2 заведения с испорченным списком удобств',
+          '5 заведений с испорченным списком удобств',
+        ],
+      };
+      expect(kQualitySignals.map((s) => s.id).toSet(), expected.keys.toSet());
+      for (final signal in kQualitySignals) {
+        expect(<String>[signal.note(1), signal.note(2), signal.note(5)],
+            expected[signal.id], reason: signal.id);
+      }
+    });
   });
 
   group('область', () {
@@ -180,6 +248,71 @@ void main() {
       // Флаги — по решению этапа 7; обе задачи распознавания — потому что
       // сужение спрятало бы карточку, ждущую модерации без меню.
       expect(wider, <String>['hanging_flags', 'ocr_failed', 'ocr_stuck']);
+    });
+  });
+
+  group('разбор ответа сервера', () {
+    test('каждое число снимка — из своего ключа ответа', () {
+      // Тесты экранов строят снимок конструктором, и ключи ответа не читал
+      // никто: ключ под другим именем дал бы ноль — «0 флагов без реакции» на
+      // главной и в «Здоровье данных», тревога молчит. Форма — как её
+      // собирает бэкенд: `qualityHealthService.js` (блоки) и
+      // `qualityHealthModel.js` (имена полей). Числа РАЗНЫЕ — перестановка
+      // ключей не прошла бы.
+      final data = QualityHealthData.fromJson(<String, dynamic>{
+        'scope': 'active',
+        'generated_at': '2026-10-25T09:41:00.000Z',
+        'canon_reachability': <String, dynamic>{
+          'unreachable_count': 1,
+          'unreachable_samples': <dynamic>[],
+          'category_offcanon_count': 2,
+          'cuisine_offcanon_count': 3,
+        },
+        'menu_completeness': <String, dynamic>{
+          'empty_menus_count': 4,
+          'empty_menus_samples': <dynamic>[],
+          'ocr_failed_count': 5,
+          'ocr_stuck_count': 6,
+        },
+        'geo_bounds': <String, dynamic>{'count': 7, 'samples': <dynamic>[]},
+        'working_hours': <String, dynamic>{
+          'malformed_count': 8,
+          'all_closed_count': 9,
+          'samples': <dynamic>[],
+        },
+        'attribute_census': <String, dynamic>{
+          'keys': <dynamic>[
+            <String, dynamic>{'key': 'wifi', 'count': 10},
+          ],
+          'non_object_count': 11,
+        },
+        'hanging_flags': <String, dynamic>{
+          'hanging_count': 12,
+          'aged_over_7d': 13,
+          'aged_over_30d': 14,
+        },
+        'price_distribution': <String, dynamic>{'status': 'deferred'},
+      });
+
+      // `scope` и `price_distribution.status` не проверяются: сервер шлёт
+      // ровно умолчания разбора ('active', 'deferred'), и ключ под чужим
+      // именем дал бы то же самое — проверка ничего бы не сторожила.
+      expect(data.generatedAt, '2026-10-25T09:41:00.000Z');
+      expect(data.unreachableCount, 1);
+      expect(data.categoryOffCanonCount, 2);
+      expect(data.cuisineOffCanonCount, 3);
+      expect(data.emptyMenusCount, 4);
+      expect(data.ocrFailedCount, 5);
+      expect(data.ocrStuckCount, 6);
+      expect(data.outOfBoundsCount, 7);
+      expect(data.hoursMalformedCount, 8);
+      expect(data.hoursAllClosedCount, 9);
+      expect(data.attributeKeys.single.key, 'wifi');
+      expect(data.attributeKeys.single.count, 10);
+      expect(data.nonObjectAttributesCount, 11);
+      expect(data.hangingFlagsCount, 12);
+      expect(data.hangingAgedOver7d, 13);
+      expect(data.hangingAgedOver30d, 14);
     });
   });
 
@@ -318,6 +451,50 @@ void main() {
           'ни город, ни категория не в каноне',
         ],
       );
+    });
+
+    test('диагноз координат и часов — у каждой поломки свой', () {
+      // Имя теста выше обещает правило «своего сигнала» — у четырёх сигналов
+      // с диагнозом. Здесь остальные три. Причины геозоны — значения поля
+      // `reason` бэкенда (`qualityHealthModel.js`, getOutOfBoundsEstablishments).
+      final data = QualityHealthData.fromJson(<String, dynamic>{
+        'geo_bounds': <String, dynamic>{
+          'count': 2,
+          'samples': <dynamic>[
+            <String, dynamic>{
+              'id': '1',
+              'name': 'За границей',
+              'city': 'Брест',
+              'reason': 'outside_belarus',
+            },
+            <String, dynamic>{
+              'id': '2',
+              'name': 'В чужом городе',
+              'city': 'Гродно',
+              'reason': 'city_mismatch',
+            },
+          ],
+        },
+        'working_hours': <String, dynamic>{
+          'malformed_count': 1,
+          'all_closed_count': 1,
+          'samples': <dynamic>[
+            <String, dynamic>{'id': '3', 'name': 'Битые', 'malformed': true},
+            <String, dynamic>{'id': '4', 'name': 'Закрытые', 'all_closed': true},
+          ],
+        },
+      });
+
+      List<String?> details(String id) => kQualitySignals
+          .firstWhere((s) => s.id == id)
+          .samplesOf!(data)
+          .map((s) => s.detail)
+          .toList();
+
+      expect(details('out_of_bounds'),
+          <String>['точка вне Беларуси', 'точка не в своём городе']);
+      expect(details('hours_malformed'), <String>['часы работы не читаются']);
+      expect(details('hours_all_closed'), <String>['закрыто во все дни']);
     });
 
     test('пустой снимок не выдумывает примеров ни одному сигналу', () {

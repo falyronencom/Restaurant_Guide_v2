@@ -55,4 +55,45 @@ void main() {
     expect(request.uri.path, '/api/v1/admin/establishments/est-1/suspend');
     expect(request.data, <String, dynamic>{'reason': 'Жалобы посетителей'});
   });
+
+  // «Назначить партнёра» и «Исправить координаты» — тоже решения, у которых
+  // провод не видел никто: фейки провайдеров отдают готовый результат.
+  // Ожидание — со стороны бэкенда: `adminRoutes.js` (POST …/claim, PATCH
+  // …/coordinates), `adminModerationController` читает `user_id` (claim),
+  // `latitude` и `longitude` (coordinates).
+  test('«Назначить партнёра» уходит с id человека под ключом user_id',
+      () async {
+    final adapter = StubAdapter((_) => jsonBody(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{'id': 'est-1'},
+        }));
+    final service = ModerationService.withClient(stubClient(adapter));
+
+    await service.claimEstablishment(id: 'est-1', userId: 'u-77');
+
+    final request = adapter.requests.single;
+    expect(request.method, 'POST');
+    expect(request.uri.path, '/api/v1/admin/establishments/est-1/claim');
+    expect(request.data, <String, dynamic>{'user_id': 'u-77'});
+  });
+
+  test('«Исправить координаты» — PATCH с latitude и longitude', () async {
+    final adapter = StubAdapter((_) => jsonBody(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{'id': 'est-1'},
+        }));
+    final service = ModerationService.withClient(stubClient(adapter));
+
+    // Широта и долгота разные — перестановка ключей не прошла бы.
+    await service.updateCoordinates(
+        id: 'est-1', latitude: 53.9045, longitude: 27.5615);
+
+    final request = adapter.requests.single;
+    expect(request.method, 'PATCH');
+    expect(request.uri.path, '/api/v1/admin/establishments/est-1/coordinates');
+    expect(request.data, <String, dynamic>{
+      'latitude': 53.9045,
+      'longitude': 27.5615,
+    });
+  });
 }

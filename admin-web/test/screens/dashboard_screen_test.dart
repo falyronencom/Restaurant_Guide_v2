@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -298,6 +299,12 @@ void main() {
 
     expect(find.text('Регистрации пользователей'), findsOneWidget);
     expect(find.text('Требует внимания'), findsOneWidget);
+
+    // Заголовок и легенда — ещё не график: в столбцах обязан стоять ряд
+    // ответа, по столбцу на день, в его порядке.
+    expect(find.text('За выбранный период регистраций не было'), findsNothing);
+    final bars = tester.widget<BarChart>(find.byType(BarChart)).data.barGroups;
+    expect(bars.map((g) => g.barRods.single.toY).toList(), <double>[12, 19, 7]);
   });
 
   testWidgets('пустой график: содержимое на месте, вместо линии — подпись',
@@ -367,6 +374,16 @@ void main() {
       expect(
         find.text('3 заведения без страницы на сайте · 12 флагов без реакции'),
         findsOneWidget,
+      );
+      // `find.text` находит виджет по его полной строке, а не по нарисованной
+      // части: «называет» — значит видно, а не лежит в виджете под
+      // многоточием. Две красные в панели 320 укладываются.
+      expect(
+        tester
+            .renderObject<RenderParagraph>(find.text(
+                '3 заведения без страницы на сайте · 12 флагов без реакции'))
+            .didExceedMaxLines,
+        isFalse,
       );
     });
 
@@ -472,11 +489,10 @@ void main() {
       // Панель узкая, подпись длинная, а `Text` в ней стоит с
       // `overflow: ellipsis` — то есть слишком длинная строка не сломает
       // вёрстку, она молча превратится в многоточие. Мерим фактическую
-      // раскладку, а не смотрим глазами.
-      //
-      // Шрифт в тестах — Ahem, у него каждый глиф в полную ширину кегля, то
-      // есть строка ЗАВЕДОМО шире настоящей. Уложились под Ahem — уложимся и
-      // в бою; обратное неверно, и потому граница здесь с запасом.
+      // раскладку, а не смотрим глазами. Шрифты в наборе настоящие
+      // (`test/flutter_test_config.dart`), не Ahem: мера та же, что в бою.
+      // Подпись здесь самая короткая — одна красная; две держит тест «считает
+      // красные проверки…» выше.
       final fake = await pumpDashboard(
         tester,
         health: _health(hangingFlags: 12),

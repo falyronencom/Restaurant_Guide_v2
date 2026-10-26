@@ -4,7 +4,9 @@
  * Database access for email_verification_codes table (migration 026).
  * Manages 6-digit codes sent to users for email verification.
  *
- * Lifecycle: createCode → findActiveCodeForUser → markAsUsed (or expire).
+ * Lifecycle: createCode (registration) or reserveCodeWithinLimit → the email
+ * went out: activateReservedCode / did not: deleteReservedCode (resend) →
+ * findActiveCodeForUser → markAsUsed (or expire).
  * Anti-bruteforce: incrementAttempts increments per failed verification;
  * service layer enforces max 5 attempts before invalidating the code.
  */
@@ -99,7 +101,7 @@ export const countRecentSends = async (userId, minutes) => {
 /**
  * Invalidate all active codes for a user (called before writing the first
  * code at registration, so only the latest code is valid; a resend retires
- * them through replaceActiveCodes, once its email has gone out).
+ * them through activateReservedCode, once its email has gone out).
  *
  * @param {string} userId
  * @returns {Promise<number>} Rows affected
@@ -124,37 +126,148 @@ export const invalidateActiveCodesForUser = async (userId) => {
 };
 
 /**
- * Replace a user's active codes with a new one — in one statement, so the
- * earlier codes are retired only together with the new code being written:
- * if the insert fails, the codes the user already holds keep working.
- * Called on resend once the email with the new code has gone out.
+ * Take the account's code lock for the rest of the transaction on `client`.
+ * Resends of one account pass through the locked steps one at a time; other
+ * accounts are not held (an advisory lock — no row is locked, nothing else
+ * that writes these tables or `users` waits on it).
+ *
+ * @param {import('pg').PoolClient} client - Inside BEGIN
+ * @param {string} userId
+ */
+const lockAccountCodes = (client, userId) =>
+  client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`email_verification_codes:${userId}`]);
+
+/**
+ * Write a resend's code as a reservation, if the account is under its limit —
+ * the check and the write under the account's lock, so resends that arrive
+ * together are counted one after another and the limit holds (Н45). Until
+ * 25.10 the count was read, the email awaited and the code written after it:
+ * every resend in flight saw the same count.
+ *
+ * The reservation is born retired (used_at set): it counts toward the limit
+ * while its email is on the way, but no one can verify with it, and the codes
+ * the user already holds keep working. activateReservedCode makes it the
+ * user's code once the email has gone out; deleteReservedCode removes it when
+ * the email did not go out, so a resend that reached no one does not count.
  *
  * @param {string} userId
  * @param {string} code - 6-digit numeric string
  * @param {Date} expiresAt
- * @returns {Promise<Object>} Created row
+ * @param {Object} limit
+ * @param {number} limit.max - Codes allowed within the window
+ * @param {number} limit.minutes - The window
+ * @returns {Promise<{reserved: Object|null, recentCount: number}>} reserved is
+ *   null when the limit is reached; recentCount — codes in the window before this one
  */
-export const replaceActiveCodes = async (userId, code, expiresAt) => {
-  // The UPDATE runs on the statement's snapshot, which does not contain the
-  // row being inserted: only the earlier codes are retired.
+export const reserveCodeWithinLimit = async (userId, code, expiresAt, { max, minutes }) => {
+  const countQuery = `
+    SELECT COUNT(*)::int AS count
+    FROM email_verification_codes
+    WHERE user_id = $1
+      AND created_at > CURRENT_TIMESTAMP - ($2 || ' minutes')::interval
+  `;
+  const reserveQuery = `
+    INSERT INTO email_verification_codes (user_id, code, expires_at, used_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    RETURNING id, user_id, code, expires_at, created_at, used_at, attempts
+  `;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockAccountCodes(client, userId);
+    // A statement of its own, after the lock: under READ COMMITTED it sees
+    // every reservation committed by the resends that held the lock before.
+    const recentCount = (await client.query(countQuery, [userId, String(minutes)])).rows[0].count;
+    if (recentCount >= max) {
+      await client.query('ROLLBACK');
+      return { reserved: null, recentCount };
+    }
+    const result = await client.query(reserveQuery, [userId, code, expiresAt]);
+    await client.query('COMMIT');
+    return { reserved: result.rows[0], recentCount };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    logger.error('Error reserving email verification code', {
+      error: error.message,
+      userId,
+    });
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Make a reserved code the user's code, once its email has gone out: the
+ * codes active until now are retired and the reservation becomes active, in
+ * one statement under the account's lock — two resends finishing together
+ * leave one active code, the one activated last (the later letter).
+ *
+ * Reservations still in flight are not touched (they are not active), so a
+ * resend finishing first cannot retire a code whose letter is still on the way.
+ *
+ * @param {string} userId
+ * @param {string} codeId - From reserveCodeWithinLimit
+ * @returns {Promise<Object|null>} The activated row; null if it is gone
+ */
+export const activateReservedCode = async (userId, codeId) => {
+  // The two updates touch different rows: the reservation is not active, and
+  // `id <> $2` says so outright. Without the reservation (the account was
+  // deleted meanwhile) nothing is retired.
   const query = `
     WITH retired AS (
       UPDATE email_verification_codes
       SET used_at = CURRENT_TIMESTAMP
-      WHERE user_id = $1 AND used_at IS NULL
+      WHERE user_id = $1 AND used_at IS NULL AND id <> $2
+        AND EXISTS (SELECT 1 FROM email_verification_codes WHERE id = $2 AND user_id = $1)
     )
-    INSERT INTO email_verification_codes (user_id, code, expires_at)
-    VALUES ($1, $2, $3)
+    UPDATE email_verification_codes
+    SET used_at = NULL
+    WHERE id = $2 AND user_id = $1
     RETURNING id, user_id, code, expires_at, created_at, used_at, attempts
   `;
 
+  const client = await pool.connect();
   try {
-    const result = await pool.query(query, [userId, code, expiresAt]);
-    return result.rows[0];
+    await client.query('BEGIN');
+    await lockAccountCodes(client, userId);
+    const result = await client.query(query, [userId, codeId]);
+    await client.query('COMMIT');
+    return result.rows[0] || null;
   } catch (error) {
-    logger.error('Error replacing email verification codes', {
+    await client.query('ROLLBACK').catch(() => {});
+    logger.error('Error activating email verification code', {
       error: error.message,
       userId,
+      codeId,
+    });
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Remove a reservation whose email did not go out — it leaves the hourly
+ * count, and the codes the user holds were never touched.
+ *
+ * @param {string} codeId - From reserveCodeWithinLimit
+ * @returns {Promise<boolean>} True if the row was removed
+ */
+export const deleteReservedCode = async (codeId) => {
+  const query = `
+    DELETE FROM email_verification_codes
+    WHERE id = $1
+  `;
+
+  try {
+    const result = await pool.query(query, [codeId]);
+    return result.rowCount > 0;
+  } catch (error) {
+    logger.error('Error deleting reserved email verification code', {
+      error: error.message,
+      codeId,
     });
     throw error;
   }

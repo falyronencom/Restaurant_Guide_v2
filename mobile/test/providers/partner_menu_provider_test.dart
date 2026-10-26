@@ -11,6 +11,7 @@ import 'package:restaurant_guide_mobile/services/partner_menu_service.dart';
 class _FakeMenuService implements PartnerMenuService {
   List<PartnerMenuItem> fetchResult = [];
   MenuRecognition? recognitionResult;
+  bool recognitionUnread = false;
   Exception? fetchThrow;
 
   PartnerMenuItem? updateResult;
@@ -27,7 +28,9 @@ class _FakeMenuService implements PartnerMenuService {
     fetchCalls++;
     if (fetchThrow != null) throw fetchThrow!;
     return PartnerMenuSnapshot(
-        items: fetchResult, recognition: recognitionResult);
+        items: fetchResult,
+        recognition: recognitionResult,
+        recognitionUnread: recognitionUnread);
   }
 
   @override
@@ -104,6 +107,97 @@ void main() {
           const MenuRecognition(status: MenuRecognitionStatus.processing);
       await provider.fetchMenuItems(silent: true);
       expect(provider.recognition?.status, MenuRecognitionStatus.processing);
+    });
+
+    // Находка Н41 (25.10.2026): неудачи фонового обновления считаются, а не
+    // теряются; счёт не переходит на другую карточку и другую учётку.
+    test('silent refresh failures make the screen stale after two in a row; '
+        'any answer, another card or an account reset clears it', () async {
+      final fake = _FakeMenuService();
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+      expect(provider.isStale, isFalse);
+
+      fake.fetchThrow = Exception('network');
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isFalse, reason: 'одна неудача — ещё не пометка');
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isTrue);
+      expect(provider.error, isNull, reason: 'фоновая неудача — не красная ошибка');
+
+      fake.fetchThrow = null;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isFalse);
+
+      fake.fetchThrow = Exception('network');
+      await provider.fetchMenuItems(silent: true);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isTrue);
+      // Загрузка другой карточки тоже не удалась — снимает пометку смена
+      // карточки, а не удачный ответ.
+      await provider.loadForEstablishment('est-2');
+      provider.stopPolling();
+      expect(provider.isStale, isFalse, reason: 'другая карточка');
+
+      fake.fetchThrow = Exception('network');
+      await provider.fetchMenuItems(silent: true);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isTrue);
+      provider.resetAccountScope();
+      expect(provider.isStale, isFalse, reason: 'другая учётка');
+    });
+
+    // Ревью 25.10.2026 (линза): сервер отвечает `recognition: null`, когда
+    // состояние не прочиталось. Это не «поля нет»: показанное остаётся, а
+    // неудача считается.
+    test('state the server could not read keeps the shown one and counts as a failure',
+        () async {
+      final fake = _FakeMenuService();
+      fake.fetchResult = [_item('1')];
+      fake.recognitionResult = const MenuRecognition(
+          status: MenuRecognitionStatus.failed,
+          reason: 'Сбой распознавания — попробуйте позже.');
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+
+      fake.recognitionResult = null;
+      fake.recognitionUnread = true;
+      fake.fetchResult = [_item('1'), _item('2')];
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.items, hasLength(2), reason: 'список — свежий');
+      expect(provider.recognition?.status, MenuRecognitionStatus.failed);
+      expect(provider.isStale, isFalse);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isTrue);
+
+      fake.recognitionUnread = false;
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.done);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.recognition?.status, MenuRecognitionStatus.done);
+      expect(provider.isStale, isFalse);
+    });
+
+    test('a failed pull-to-refresh counts too; reopening the screen starts afresh',
+        () async {
+      final fake = _FakeMenuService();
+      fake.fetchResult = [_item('1')];
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+
+      fake.fetchThrow = Exception('network');
+      await provider.fetchMenuItems();
+      await provider.fetchMenuItems();
+      expect(provider.isStale, isTrue,
+          reason: 'ошибка потягивания при непустом списке иначе не видна');
+
+      // Тот же экран открыт заново (та же карточка).
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+      expect(provider.isStale, isFalse);
     });
 
     test('recognition is dropped on another establishment and on account reset',

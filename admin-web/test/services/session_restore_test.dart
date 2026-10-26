@@ -80,6 +80,13 @@ void main() {
         await service.login(email: 'admin@nirivio.by', password: 'secret');
 
     expect(adapter.requests.single.uri.path, '/api/v1/admin/auth/login');
+    // Тело — под ключами, которые читает сервер: `adminController.adminLogin`
+    // берёт `email` и `password` из `req.body`. Транспорт стенда отвечает 200
+    // на любое тело, и без этой строки вход под чужим ключом прошёл бы.
+    expect(adapter.requests.single.data, <String, dynamic>{
+      'email': 'admin@nirivio.by',
+      'password': 'secret',
+    });
     expect(result.user.id, 'u-admin');
     expect(result.user.role, 'admin');
     expect(storage['access_token'], 'access-from-login');
@@ -142,6 +149,30 @@ void main() {
     final auth = AuthProvider(
       authService: AuthService.withClient(
         stubClient(StubAdapter((_) => jsonBody(partnerEnvelope))),
+      ),
+    );
+    addTearDown(auth.dispose);
+
+    await pumpEventQueue();
+
+    expect(auth.isAuthenticated, isFalse);
+    expect(storage.containsKey('access_token'), isFalse);
+  });
+
+  test('ответ без роли — не администратор: сессия не принимается', () async {
+    // Все ответы выше несут `role`. Сервер отдаёт её всегда, но умолчание
+    // клиента решает, во что превратится сломанный контракт: роль, которой
+    // нет, не может открыть панель.
+    final storage = installSecureStorageStand(initial: {'access_token': 'a1'});
+    final noRoleEnvelope = <String, dynamic>{
+      'success': true,
+      'data': {
+        'user': {'id': 'u-1', 'email': 'who@nirivio.by'},
+      },
+    };
+    final auth = AuthProvider(
+      authService: AuthService.withClient(
+        stubClient(StubAdapter((_) => jsonBody(noRoleEnvelope))),
       ),
     );
     addTearDown(auth.dispose);

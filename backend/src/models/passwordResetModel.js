@@ -8,38 +8,13 @@
  * The raw token exists in the reset email and transiently in the service
  * layer — it is never persisted, so a database leak yields nothing usable.
  *
- * Lifecycle: createToken → findValidByTokenHash → markAsUsed (or expire).
+ * Lifecycle: createTokenWithinLimit → the letter went out:
+ * retireTokensIssuedBefore / did not: deleteToken → findValidByTokenHash →
+ * markAsUsed (or expire).
  */
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
-
-/**
- * Insert a new reset token for a user.
- *
- * @param {string} userId
- * @param {string} tokenHash - SHA-256 hex digest of the raw token
- * @param {Date} expiresAt
- * @returns {Promise<Object>} Created row
- */
-export const createToken = async (userId, tokenHash, expiresAt) => {
-  const query = `
-    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
-    VALUES ($1, $2, $3)
-    RETURNING id, user_id, token_hash, expires_at, created_at, used_at
-  `;
-
-  try {
-    const result = await pool.query(query, [userId, tokenHash, expiresAt]);
-    return result.rows[0];
-  } catch (error) {
-    logger.error('Error creating password reset token', {
-      error: error.message,
-      userId,
-    });
-    throw error;
-  }
-};
 
 /**
  * Find a valid (unused, unexpired) token row by its hash.
@@ -69,28 +44,99 @@ export const findValidByTokenHash = async (tokenHash) => {
   }
 };
 
+const COUNT_RECENT_QUERY = `
+  SELECT COUNT(*)::int AS count
+  FROM password_reset_tokens
+  WHERE user_id = $1
+    AND created_at > CURRENT_TIMESTAMP - ($2 || ' minutes')::interval
+`;
+
 /**
- * Count tokens created within the last N minutes for a user.
- * Service layer uses this as a per-user issue throttle (anti email-bombing),
- * mirroring countRecentSends in emailVerificationModel.
+ * Insert a reset token, if the account is under its hourly limit — the count
+ * and the insert under the account's lock, so requests that arrive together
+ * are counted one after another and the limit holds. Until 25.10 the count
+ * and the insert were separate statements: requests in flight together all
+ * saw the same count.
+ *
+ * The new token is active at once — a link in a letter that has gone out
+ * must work from the moment the letter can be opened — and the earlier ones
+ * stay active too, until the letter goes out (retireTokensIssuedBefore). A
+ * letter that did not go out takes its token away (deleteToken), so it does
+ * not count.
+ *
+ * created_at is the clock at the insert, not the transaction's start: a
+ * request that began first but waited for the lock is issued later, and its
+ * token must read as the later one.
  *
  * @param {string} userId
- * @param {number} minutes
- * @returns {Promise<number>}
+ * @param {string} tokenHash - SHA-256 hex digest of the raw token
+ * @param {Date} expiresAt
+ * @param {Object} limit
+ * @param {number} limit.max - Tokens allowed within the window
+ * @param {number} limit.minutes - The window
+ * @returns {Promise<{token: Object|null, recentCount: number}>} token is null
+ *   when the limit is reached; recentCount — tokens in the window before this one
  */
-export const countRecentRequests = async (userId, minutes) => {
+export const createTokenWithinLimit = async (userId, tokenHash, expiresAt, { max, minutes }) => {
+  const insertQuery = `
+    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_at)
+    VALUES ($1, $2, $3, clock_timestamp())
+    RETURNING id, user_id, token_hash, expires_at, created_at, used_at
+  `;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Advisory: no row is locked, other accounts and other writers of the
+    // table do not wait.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`password_reset_tokens:${userId}`]);
+    // A statement of its own, after the lock: under READ COMMITTED it sees
+    // every token committed by the requests that held the lock before.
+    const recentCount = (await client.query(COUNT_RECENT_QUERY, [userId, String(minutes)])).rows[0].count;
+    if (recentCount >= max) {
+      await client.query('ROLLBACK');
+      return { token: null, recentCount };
+    }
+    const result = await client.query(insertQuery, [userId, tokenHash, expiresAt]);
+    await client.query('COMMIT');
+    return { token: result.rows[0], recentCount };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    logger.error('Error creating password reset token within limit', {
+      error: error.message,
+      userId,
+    });
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Retire the user's active tokens issued before the given one — called once
+ * the letter with that token has gone out, so only the latest emailed link
+ * works. Tokens issued after it (their letters still on the way) are left
+ * alone: of two requests finishing in either order, the later-issued link
+ * survives, and the two never retire each other.
+ *
+ * @param {string} userId
+ * @param {string} tokenId - The token whose letter went out
+ * @returns {Promise<number>} Rows affected
+ */
+export const retireTokensIssuedBefore = async (userId, tokenId) => {
   const query = `
-    SELECT COUNT(*)::int AS count
-    FROM password_reset_tokens
+    UPDATE password_reset_tokens
+    SET used_at = CURRENT_TIMESTAMP
     WHERE user_id = $1
-      AND created_at > CURRENT_TIMESTAMP - ($2 || ' minutes')::interval
+      AND used_at IS NULL
+      AND created_at < (SELECT created_at FROM password_reset_tokens WHERE id = $2)
   `;
 
   try {
-    const result = await pool.query(query, [userId, String(minutes)]);
-    return result.rows[0].count;
+    const result = await pool.query(query, [userId, tokenId]);
+    return result.rowCount;
   } catch (error) {
-    logger.error('Error counting recent password reset requests', {
+    logger.error('Error retiring earlier reset tokens for user', {
       error: error.message,
       userId,
     });
@@ -99,26 +145,25 @@ export const countRecentRequests = async (userId, minutes) => {
 };
 
 /**
- * Invalidate all active tokens for a user (called before issuing a new one,
- * so only the latest emailed link works).
+ * Remove a token whose letter did not go out: no one holds its link, and it
+ * leaves the hourly count.
  *
- * @param {string} userId
- * @returns {Promise<number>} Rows affected
+ * @param {string} tokenId
+ * @returns {Promise<boolean>} True if the row was removed
  */
-export const invalidateActiveTokensForUser = async (userId) => {
+export const deleteToken = async (tokenId) => {
   const query = `
-    UPDATE password_reset_tokens
-    SET used_at = CURRENT_TIMESTAMP
-    WHERE user_id = $1 AND used_at IS NULL
+    DELETE FROM password_reset_tokens
+    WHERE id = $1
   `;
 
   try {
-    const result = await pool.query(query, [userId]);
-    return result.rowCount;
+    const result = await pool.query(query, [tokenId]);
+    return result.rowCount > 0;
   } catch (error) {
-    logger.error('Error invalidating active reset tokens for user', {
+    logger.error('Error deleting password reset token', {
       error: error.message,
-      userId,
+      tokenId,
     });
     throw error;
   }

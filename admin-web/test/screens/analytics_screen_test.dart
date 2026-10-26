@@ -425,6 +425,42 @@ void main() {
       expect(find.text('АДМИНИСТРАТОРОВ'), findsOneWidget);
       // 174 из 3 480.
       expect(find.text('5,0% базы'), findsOneWidget);
+      // Значения самих карточек: доля держит число партнёров, а у
+      // администраторов свидетеля нет — чужое число прошло бы.
+      final values = <String, String>{
+        for (final card in tester.widgetList<MetricCard>(find.byType(MetricCard)))
+          card.label: card.value,
+      };
+      expect(values['Партнёров'], '174');
+      expect(values['Администраторов'], '15');
+    });
+
+    testWidgets('порядок ролей — канонический, не порядок ответа и не по числу',
+        (tester) async {
+      // Фикстура выше уже в каноническом порядке и одновременно по убыванию —
+      // на ней «канонический» неотличим ни от порядка ответа, ни от
+      // сортировки по числу. Здесь администраторов больше, чем партнёров, и
+      // ответ перемешан.
+      await pumpEstablishments(tester);
+      await tester.tap(find.text('Пользователи'));
+      await tester.pump();
+      service.answerUsers(
+        _users(
+          roles: const <DistributionItem>[
+            DistributionItem(label: 'admin', count: 15),
+            DistributionItem(label: 'user', count: 3291),
+            DistributionItem(label: 'partner', count: 10),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final labels = tester
+          .widgetList<ShareLegendChip>(find.byType(ShareLegendChip))
+          .map((chip) => chip.label)
+          .toList();
+
+      expect(labels, <String>['Пользователи', 'Партнёры', 'Администраторы']);
     });
 
     testWidgets('роли переведены и стоят каноническим порядком',
@@ -696,6 +732,26 @@ void main() {
       // «1 отзыв … их разбирают» читалось бы как ошибка, а не как число.
       expect(
         find.textContaining('1 отзыв с оценкой 1–2 — его разбирают'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('одиннадцать низких отзывов — «их», а не «его»',
+        (tester) async {
+      // Граница правила с другой стороны: 11 оканчивается на 1, но
+      // «одиннадцать отзывов … его разбирают» — ошибка согласования.
+      await openReviews(
+        tester,
+        data: _reviews(
+          ratings: const <RatingDistributionItem>[
+            RatingDistributionItem(rating: 1, count: 11, percentage: 52.4),
+            RatingDistributionItem(rating: 5, count: 10, percentage: 47.6),
+          ],
+        ),
+      );
+
+      expect(
+        find.textContaining('11 отзывов с оценкой 1–2 — их разбирают'),
         findsOneWidget,
       );
     });
