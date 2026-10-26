@@ -42,15 +42,17 @@ import {
   findActiveCodeForUser,
   countRecentSends,
   invalidateActiveCodesForUser,
-  replaceActiveCodes,
+  reserveCodeWithinLimit,
+  activateReservedCode,
+  deleteReservedCode,
   incrementAttempts,
   markAsUsed,
 } from '../models/emailVerificationModel.js';
 import {
-  createToken as createResetToken,
+  createTokenWithinLimit as createResetTokenWithinLimit,
+  retireTokensIssuedBefore as retireResetTokensIssuedBefore,
+  deleteToken as deleteResetToken,
   findValidByTokenHash as findValidResetToken,
-  countRecentRequests as countRecentResetRequests,
-  invalidateActiveTokensForUser as invalidateActiveResetTokens,
   markAsUsed as markResetTokenUsed,
 } from '../models/passwordResetModel.js';
 import { sendVerificationCodeEmail, sendPasswordResetEmail } from './emailService.js';
@@ -1483,18 +1485,24 @@ function generateSixDigitCode() {
 }
 
 /**
- * The checks before a verification code is issued and a fresh code — steps
- * 1–3 of the flow documented on sendEmailVerificationCode, shared by both
- * senders. Writes nothing.
+ * Verification codes an account may be sent within an hour.
  *
- * The hourly limit counts the codes written in the last hour: the one written
- * at registration (it may have been delivered — the send is not awaited
- * there) and every resend whose email went out. A resend whose email did not
- * go out writes no code, so it does not count (Н32).
+ * The limit counts the codes written in the last hour: the one written at
+ * registration (it may have been delivered — the send is not awaited there),
+ * every resend whose email went out, and every resend whose email is still
+ * on the way. A resend whose email did not go out leaves no code, so it does
+ * not count (Н32).
+ */
+const VERIFICATION_CODE_LIMIT = { max: 5, minutes: 60 };
+
+/**
+ * The checks before a verification code is issued and a fresh code — steps
+ * 1 and 3 of the flow documented on sendEmailVerificationCode, shared by both
+ * senders. Writes nothing; each sender holds the hourly limit its own way.
  *
  * @param {string} userId
  * @returns {Promise<{user: Object, code: string, expiresAt: Date}>}
- * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL' | 'RATE_LIMITED'
+ * @throws {Error} 'USER_NOT_FOUND' | 'EMAIL_ALREADY_VERIFIED' | 'NO_EMAIL'
  */
 async function prepareEmailVerificationCode(userId) {
   const userQuery = `
@@ -1518,13 +1526,6 @@ async function prepareEmailVerificationCode(userId) {
     throw new Error('NO_EMAIL');
   }
 
-  // Rate limit: max 5 codes written in the last hour
-  const recentCount = await countRecentSends(userId, 60);
-  if (recentCount >= 5) {
-    logger.warn('Email verification send rate-limited', { userId, recentCount });
-    throw new Error('RATE_LIMITED');
-  }
-
   const code = generateSixDigitCode();
   const expiryMinutes = parseInt(process.env.EMAIL_VERIFICATION_EXPIRY_MINUTES, 10) || 15;
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
@@ -1533,17 +1534,18 @@ async function prepareEmailVerificationCode(userId) {
 }
 
 /**
- * Whether a resent code reached the user — the condition for it to replace
- * the codes they already hold.
+ * Whether a resent code or a reset link reached the user — the condition for
+ * it to replace the codes or links they already hold.
  *
- * Outside production, without a mail provider (dev, tests), the database is
- * the only place a code can be read from: such a code counts as delivered,
- * as it always has. In production a missing key is a failure like any other.
+ * Outside production, without a mail provider (dev, tests), the database
+ * (a code) or the console (a reset link — emailService prints it) is the only
+ * place it can be read from: it counts as delivered, as it always has. In
+ * production a missing key is a failure like any other.
  *
- * @param {{sent: boolean, reason?: string}} result - From sendVerificationCodeEmail
+ * @param {{sent: boolean, reason?: string}} result - From emailService
  * @returns {boolean}
  */
-function codeReachedUser(result) {
+function mailReachedUser(result) {
   return result.sent
     || (result.reason === 'RESEND_NOT_CONFIGURED' && process.env.NODE_ENV !== 'production');
 }
@@ -1554,14 +1556,23 @@ function codeReachedUser(result) {
  *
  * Flow:
  *   1. Validate user exists, is active, has email, not already verified.
- *   2. Enforce rate limit: max 5 codes written per hour per user.
- *   3. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
+ *   2. Generate fresh 6-digit code with TTL from EMAIL_VERIFICATION_EXPIRY_MINUTES.
+ *   3. Hold the limit: under the account's lock, count the hour's codes and,
+ *      below five, write the new code as a reservation — counted, but not
+ *      usable yet. Resends pressed together are counted one after another:
+ *      the one that would be the sixth gets RATE_LIMITED, as a lone sixth
+ *      does (Н45). Until 25.10 the count was read before the send and the
+ *      code written after it, and every resend in flight saw the same count.
  *   4. Send email via Resend (bounded wait; degrades gracefully if not configured).
  *   5. Email went out: in one statement, retire the prior active codes and
- *      persist the new one (only the latest is valid).
- *      Email did not go out: write nothing — the codes the user already holds
- *      stay valid. Until 24.10 the prior codes were retired before the send,
- *      and a refused resend left the user with no working code at all (Н31).
+ *      make the reservation the user's code (only the latest is valid).
+ *      Email did not go out: remove the reservation — the codes the user
+ *      already holds stay valid, and the resend does not count. Until 24.10
+ *      the prior codes were retired before the send, and a refused resend
+ *      left the user with no working code at all (Н31).
+ *
+ * The limit lives in the database: it holds whether or not Redis — where the
+ * route's own limiter counts — is reachable.
  *
  * @param {string} userId
  * @returns {Promise<{sent: boolean, expiresAt: Date}>}
@@ -1570,11 +1581,24 @@ function codeReachedUser(result) {
 export async function sendEmailVerificationCode(userId) {
   const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
 
+  const { reserved, recentCount } = await reserveCodeWithinLimit(userId, code, expiresAt, VERIFICATION_CODE_LIMIT);
+  if (!reserved) {
+    logger.warn('Email verification send rate-limited', { userId, recentCount });
+    throw new Error('RATE_LIMITED');
+  }
+
   const result = await sendVerificationCodeEmail(user.email, code, user.name, { userId });
 
-  if (!codeReachedUser(result)) {
+  if (!mailReachedUser(result)) {
     // The failure itself is logged by emailService — one error line with the
-    // account and the reason.
+    // account and the reason. A reservation that cannot be removed stays
+    // unusable and only counts toward the hour: the answer stays sent:false.
+    await deleteReservedCode(reserved.id).catch((error) => {
+      logger.error('Unsent verification code could not be removed; it counts toward the hourly limit', {
+        userId,
+        error: error.message,
+      });
+    });
     logger.info('Email verification code not issued: the email did not go out, earlier codes stay valid', {
       userId,
       reason: result.reason,
@@ -1582,7 +1606,7 @@ export async function sendEmailVerificationCode(userId) {
     return { sent: false, expiresAt };
   }
 
-  await replaceActiveCodes(userId, code, expiresAt);
+  await activateReservedCode(userId, reserved.id);
 
   logger.info('Email verification code issued', {
     userId,
@@ -1594,9 +1618,9 @@ export async function sendEmailVerificationCode(userId) {
 }
 
 /**
- * Issue the first verification code at registration: steps 1–3 of
- * sendEmailVerificationCode and the code write are awaited, the email goes
- * out in the background.
+ * Issue the first verification code at registration: steps 1–2 of
+ * sendEmailVerificationCode, the hourly limit and the code write are
+ * awaited, the email goes out in the background.
  *
  * Registration must not wait for the mail provider, and the code write must
  * not outlive the response either. Written after the response, it could land
@@ -1610,6 +1634,14 @@ export async function sendEmailVerificationCode(userId) {
  */
 export async function issueEmailVerificationCode(userId) {
   const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
+
+  // The account was created a moment ago and no resend can run before this
+  // answer carries its token: a plain count holds the limit here.
+  const recentCount = await countRecentSends(userId, VERIFICATION_CODE_LIMIT.minutes);
+  if (recentCount >= VERIFICATION_CODE_LIMIT.max) {
+    logger.warn('Email verification send rate-limited', { userId, recentCount });
+    throw new Error('RATE_LIMITED');
+  }
 
   // Invalidate prior active codes — only the latest one is valid
   await invalidateActiveCodesForUser(userId);
@@ -1713,15 +1745,13 @@ function hashResetToken(token) {
  *      no mail, the same answer at the same moment as for an unknown address,
  *      after the same single query (directive service_accounts 2026-10-15, B2;
  *      critic 2B S1).
- *   2. Per-user issue throttle: max 5 requests per hour (DB count), so an
- *      attacker cycling IPs still cannot bomb a victim's inbox.
- *   3. Invalidate prior active tokens (only the latest emailed link works).
- *   4. Generate 32-byte token, persist SHA-256 hash with TTL from
- *      PASSWORD_RESET_EXPIRY_MINUTES (default 30).
- *   5. Email the raw token as a deep link — FIRE-AND-FORGET (same pattern as
- *      the post-register verification send). Awaiting the Resend round-trip
- *      here would make registered-email responses measurably slower than
- *      unknown-email ones, reopening enumeration through timing.
+ *   2. Everything else — issuePasswordReset — runs in the BACKGROUND, after
+ *      the answer: the limit, the token, the letter and what the letter's
+ *      outcome decides. A known address is answered after the same single
+ *      query as an unknown one — awaiting the database writes or the Resend
+ *      round-trip here would make registered-email responses measurably
+ *      slower, reopening enumeration through timing. Until 25.10 the limit
+ *      and the token writes were awaited and only the letter ran on.
  *
  * @param {string} email
  * @returns {Promise<void>}
@@ -1748,8 +1778,65 @@ export async function createPasswordResetToken(email) {
     return;
   }
 
-  const recentCount = await countRecentResetRequests(user.id, 60);
-  if (recentCount >= 5) {
+  // Fire-and-forget (timing-channel defense, see flow note above). The
+  // .catch keeps a failure from becoming an unhandled rejection, which shuts
+  // the server down (server.js).
+  const issue = issuePasswordReset(user)
+    .catch((error) => {
+      logger.error('Password reset issue failed', {
+        userId: user.id,
+        error: error.message,
+      });
+    })
+    .finally(() => {
+      pendingResetIssues.delete(issue);
+    });
+  pendingResetIssues.add(issue);
+}
+
+/**
+ * Per-user reset links within an hour, so an attacker cycling IPs still
+ * cannot bomb a victim's inbox. Links whose letter went out and links whose
+ * letter is still on the way count; a link whose letter did not go out does not.
+ */
+const PASSWORD_RESET_LIMIT = { max: 5, minutes: 60 };
+
+/** Issues started by createPasswordResetToken and not finished yet. */
+const pendingResetIssues = new Set();
+
+/**
+ * Issue a reset link and mail it — the background part of
+ * createPasswordResetToken.
+ *
+ *   1. Under the account's lock, count the hour's links and, below five,
+ *      store the new one (SHA-256 hash, TTL from PASSWORD_RESET_EXPIRY_MINUTES,
+ *      default 30) — active at once, next to the earlier ones. Requests that
+ *      arrive together are counted one after another: the sixth gets nothing.
+ *   2. Email the raw token as a deep link, waiting for the provider (bounded).
+ *   3. The letter went out: retire the links issued before this one (only the
+ *      latest emailed link works). The letter did not go out: remove the new
+ *      token — the earlier links keep working, and the attempt does not count.
+ *      The provider did not answer in time (the letter may still arrive):
+ *      keep the new token and the earlier ones; the attempt counts.
+ *
+ * Until 25.10 the earlier links were retired before the letter was even
+ * handed over: when it did not go out, the person held no working link at
+ * all, and the failed attempt used up one of the hour's five (Н46).
+ *
+ * The limit lives in the database: it holds whether or not Redis — where the
+ * route's own limiter counts — is reachable.
+ *
+ * @param {{id: string, email: string, name: string}} user
+ * @returns {Promise<void>}
+ */
+async function issuePasswordReset(user) {
+  const rawToken = randomBytes(32).toString('hex');
+  const tokenHash = hashResetToken(rawToken);
+  const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
+  const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+  const { token, recentCount } = await createResetTokenWithinLimit(user.id, tokenHash, expiresAt, PASSWORD_RESET_LIMIT);
+  if (!token) {
     logger.warn('Password reset issue throttled (per-user)', {
       userId: user.id,
       recentCount,
@@ -1757,31 +1844,52 @@ export async function createPasswordResetToken(email) {
     return;
   }
 
-  // Only the latest emailed link is valid
-  await invalidateActiveResetTokens(user.id);
+  // emailService logs a failed send with the account and the reason.
+  const result = await sendPasswordResetEmail(user.email, rawToken, user.name, { userId: user.id });
 
-  const rawToken = randomBytes(32).toString('hex');
-  const tokenHash = hashResetToken(rawToken);
-  const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
-  const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
-
-  await createResetToken(user.id, tokenHash, expiresAt);
-
-  // Fire-and-forget (timing-channel defense, see flow note above). Send
-  // failure does not roll back token creation — the user can re-request.
-  // emailService logs a failed send with the account, in the background.
-  sendPasswordResetEmail(user.email, rawToken, user.name, { userId: user.id }).catch((err) => {
-    logger.error('Failed to send password reset email', {
+  if (result.reason === 'RESEND_TIMEOUT') {
+    // The provider did not answer in time: the letter may still arrive. Its
+    // link keeps working, and so do the earlier ones — the person learns
+    // nothing from the answer and may hold either. It counts toward the hour.
+    logger.info('Password reset letter outcome unknown: the new link and the earlier ones stay valid', {
       userId: user.id,
-      error: err.message,
     });
-  });
+    return;
+  }
+
+  if (!mailReachedUser(result)) {
+    // If the removal fails, the token stays: no one holds its link, and it
+    // counts toward the hour — the caller logs the error.
+    await deleteResetToken(token.id);
+    logger.info('Password reset link not issued: the letter did not go out, earlier links stay valid', {
+      userId: user.id,
+      reason: result.reason,
+    });
+    return;
+  }
+
+  // If this fails, the earlier links stay valid next to the new one.
+  await retireResetTokensIssuedBefore(user.id, token.id);
 
   logger.info('Password reset token issued', {
     userId: user.id,
     expiresAt,
+    sent: result.sent,
   });
 }
+
+/**
+ * Resolves once every reset issue started so far has finished. Test-only —
+ * exported so tests can read what an issue left behind; the answer to
+ * «forgot password» never waits for it.
+ *
+ * @returns {Promise<void>}
+ */
+export const _settlePasswordResetIssuesForTests = async () => {
+  while (pendingResetIssues.size > 0) {
+    await Promise.all([...pendingResetIssues]);
+  }
+};
 
 /**
  * Consume a password reset token: set the new password and revoke all
@@ -1797,7 +1905,8 @@ export async function createPasswordResetToken(email) {
  *      until now refused) — a password reset must terminate whoever held the
  *      old credentials, and a reset that changes the password but leaves the
  *      old sessions alive is the defect itself. No login sees the new
- *      password before the old sessions are gone.
+ *      password before the old sessions are gone. The account's other reset
+ *      links are retired in the same transaction.
  *
  * @param {string} token - Raw token from the emailed link
  * @param {string} newPassword - Already validated against register rules
@@ -1848,6 +1957,13 @@ export async function consumePasswordResetToken(token, newPassword) {
       // receiving the account's notices.
       revoked = await revokeAllSessions(client, resetToken.user_id);
       revoked.devices = await deactivateDevices(client, resetToken.user_id);
+      // The account's other links go too: the password they would set is
+      // already set. Several can be alive at once — while a newer letter is on
+      // the way, or after a letter whose outcome is unknown.
+      await client.query(
+        'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+        [resetToken.user_id],
+      );
     }
     await client.query(user ? 'COMMIT' : 'ROLLBACK');
   } catch (error) {

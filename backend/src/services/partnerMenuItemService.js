@@ -14,6 +14,7 @@ import * as MenuItemModel from '../models/menuItemModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
+import { MENU_RECOGNITION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { findCopies } from '../projections/menuItemProjections.js';
 import logger from '../utils/logger.js';
@@ -21,6 +22,12 @@ import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { failureCauseOf, failureTextOf } from './ocr/failureReason.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
+
+/**
+ * The code of a restart whose every queuing failed — the app shows the
+ * refusal by it.
+ */
+const OCR_RESTART_FAILED = 'OCR_RESTART_FAILED';
 
 /**
  * The state of recognition of an establishment's menu, as the partner's menu
@@ -37,18 +44,30 @@ import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
  *                gives advice by it), `reason` — the partner's text
  *                (failureReason.js), `failedAt` — when; with several such
  *                files, the latest failure's;
+ *   not_started — otherwise, some file has no job at all: it is on the card,
+ *                but nothing will read it until the partner restarts the
+ *                recognition — the daily allowance refused it at upload, or
+ *                its queuing failed (both answer the upload as a success;
+ *                ocrAllowance.js), or it predates the pipeline (finding Н39
+ *                of 25.10.2026: until then such a file read as «none», like
+ *                a menu not uploaded, and beside a recognised file it was not
+ *                seen at all);
  *   done       — otherwise, some file was recognised — a file whose re-read
  *                failed counts here: its dishes stand (replaceForMedia runs
  *                only on success), and the partner is not to be sent to
  *                replace a file that works (review of 24.10.2026);
- *   none       — no menu files, or files never queued.
+ *   none       — no menu files.
  *
  * `processing` outranks `failed` so that a restart answers at once, and
  * `failed` outranks `done` so that one failed file among recognised ones is
- * not hidden by the dishes the others gave.
+ * not hidden by the dishes the others gave; `not_started` stands between
+ * them for the same reason, below `failed`, whose advice (restart, or another
+ * file) the file without a job needs as well — a restart queues every file.
+ * A build of the app that does not know `not_started` reads it as no field
+ * at all — the screen it had (models/menu_recognition.dart, fromJson).
  *
  * @param {Array<{status: string|null, error_message: string|null, completed_at: Date|null, has_done_job?: boolean}>} files
- * @returns {{status: 'none'|'processing'|'failed'|'done', cause?: string, reason?: string, failedAt?: Date|null}}
+ * @returns {{status: 'none'|'processing'|'failed'|'not_started'|'done', cause?: string, reason?: string, failedAt?: Date|null}}
  */
 export const recognitionState = (files) => {
   if (files.some((file) => file.status === 'pending' || file.status === 'processing')) {
@@ -65,6 +84,10 @@ export const recognitionState = (files) => {
       reason: failureTextOf(latest.error_message),
       failedAt: latest.completed_at ?? null,
     };
+  }
+  // A file never queued: no job row, so the LEFT JOIN's status is null.
+  if (files.some((file) => file.status === null)) {
+    return { status: 'not_started' };
   }
   if (files.some((file) => file.status === 'done' || (file.status === 'failed' && file.has_done_job))) {
     return { status: 'done' };
@@ -239,7 +262,9 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
  * the route's own limit (five restarts a day) still holds. Files never
  * recognised are queued first. A restart that the spent allowance leaves with
  * nothing queued is refused — DailyOcrLimitError, 429 with Retry-After until
- * Minsk midnight; one that queued part of the files answers how many, as
+ * Minsk midnight; one whose every queuing failed — 500 OCR_RESTART_FAILED
+ * with the partner's text (the controller gives any 5xx restart back to its
+ * daily limit); one that queued part of the files answers how many, as
  * before («запущено N из M»). The files are queued one after another: a
  * reservation waits for Redis at most its deadline (config/redis.js), and
  * queuing them at once would take that many pool connections.
@@ -253,6 +278,7 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
  * @param {string} establishmentId - UUID
  * @returns {Promise<{enqueuedJobs: number, totalPdfs: number}>}
  * @throws {DailyOcrLimitError} When the allowance left nothing queued
+ * @throws {AppError} OCR_RESTART_FAILED when every file's queuing failed
  */
 export const retryOcr = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -312,6 +338,13 @@ export const retryOcr = async (partnerId, establishmentId) => {
 
   if (enqueuedJobs === 0 && refusal) {
     throw new DailyOcrLimitError(refusal);
+  }
+  // Every file's queuing failed (each is logged above): the restart did
+  // nothing, and an answer of success let the app say «already running»
+  // (finding Н40 of 25.10.2026). A file whose job is already active counts as
+  // queued, so this is the one way to get here with files to queue.
+  if (enqueuedJobs === 0) {
+    throw new AppError(MENU_RECOGNITION_REFUSALS.restartNotQueued, 500, OCR_RESTART_FAILED);
   }
 
   return { enqueuedJobs, totalPdfs: eligibleMedia.length };

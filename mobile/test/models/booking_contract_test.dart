@@ -188,21 +188,33 @@ void main() {
 
   group('Отображение даты и времени', () {
     test('день и месяц берутся из своих позиций, а не наоборот', () {
-      // 2026-04-07 — седьмое апреля. Перестановка даёт «4 июля»: столь же
-      // правдоподобную дату, по которой гость придёт не в тот день.
-      expect(Booking.fromJson(bookingRow(date: '2026-04-07')).formattedDate,
+      // 07.04 — седьмое апреля. Перестановка даёт «4 июля»: столь же
+      // правдоподобную дату, по которой гость придёт не в тот день. Год —
+      // текущий по часам машины: до 25.10.2026 здесь стоял литерал 2026, и
+      // с 01.01.2027 код честно дописал бы год («7 апреля 2026»), а тест
+      // покраснел бы у всех PR сразу.
+      final y = DateTime.now().year;
+      expect(Booking.fromJson(bookingRow(date: '$y-04-07')).formattedDate,
           '7 апреля');
-      expect(Booking.fromJson(bookingRow(date: '2026-12-31')).formattedDate,
+      expect(Booking.fromJson(bookingRow(date: '$y-12-31')).formattedDate,
           '31 декабря');
-      expect(Booking.fromJson(bookingRow(date: '2026-01-01')).formattedDate,
+      expect(Booking.fromJson(bookingRow(date: '$y-01-01')).formattedDate,
           '1 января');
     });
 
-    test('год показывается, только если он не текущий', () {
+    test('год показывается, только если он не текущий — и прошлый, и '
+        'следующий', () {
       final nextYear = DateTime.now().year + 1;
       expect(
         Booking.fromJson(bookingRow(date: '$nextYear-04-07')).formattedDate,
         '7 апреля $nextYear',
+      );
+
+      final lastYear = DateTime.now().year - 1;
+      expect(
+        Booking.fromJson(bookingRow(date: '$lastYear-04-07')).formattedDate,
+        '7 апреля $lastYear',
+        reason: 'бронь прошлого года в истории — с годом',
       );
 
       final thisYear = DateTime.now().year;

@@ -53,6 +53,7 @@ const { default: app } = await import('../../server.js');
 const { clearAllData, query } = await import('../utils/database.js');
 const { default: redisClient, connectRedis } = await import('../../config/redis.js');
 const { _resetForTests: resetMailClient } = await import('../../services/emailService.js');
+const { sendEmailVerificationCode } = await import('../../services/authService.js');
 
 const ACCEPTED = () => ({ data: { id: 'msg-1' }, error: null });
 const REFUSED = () => ({ data: null, error: { name: 'application_error', message: 'Service unavailable' } });
@@ -66,6 +67,21 @@ const configureProvider = (answer) => {
 };
 
 const codeInMail = (msg) => msg.text.match(/\b(\d{6})\b/)[1];
+
+/** A promise the test resolves by hand. */
+const parked = () => {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+  return { promise, release };
+};
+
+/** Wait (bounded) until the work in flight has got as far as `condition`. */
+const until = async (condition) => {
+  for (let i = 0; i < 300 && !condition(); i += 1) {
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+  }
+  expect(condition()).toBe(true);
+};
 
 const registerUser = async (overrides = {}) => {
   const payload = {
@@ -348,6 +364,110 @@ describe('POST /api/v1/auth/send-verification-code', () => {
       [user.id],
     );
     expect(mine.n).toBe(5);
+  });
+
+  // Н45: until 25.10 the count was read before the send and the code written
+  // after it — resends in flight together all read the same count. Called
+  // below HTTP: supertest requests reach the database one after another and
+  // would not race.
+  test('resends pressed together do not get past the hourly five', async () => {
+    const { user } = await registerUser(); // its code is one of the five
+    configureProvider(ACCEPTED);
+    for (let i = 0; i < 3; i += 1) {
+      await expect(sendEmailVerificationCode(user.id)).resolves.toMatchObject({ sent: true });
+    }
+    provider = () => new Promise((resolve) => { setTimeout(() => resolve(ACCEPTED()), 100); });
+
+    const outcomes = await Promise.allSettled([1, 2, 3].map(() => sendEmailVerificationCode(user.id)));
+
+    expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter(({ status }) => status === 'rejected').map(({ reason }) => reason.message))
+      .toEqual(['RATE_LIMITED', 'RATE_LIMITED']);
+    const { rows: [mine] } = await query(
+      'SELECT COUNT(*)::int AS n FROM email_verification_codes WHERE user_id = $1',
+      [user.id],
+    );
+    expect(mine.n).toBe(5);
+    expect(mails).toHaveLength(4);
+  });
+
+  // The resend's code is counted while its letter is on the way, but the code
+  // the person already holds stays theirs until the letter has gone out.
+  test("while a resend's letter is on the way, the code the person holds still works", async () => {
+    const { user, accessToken } = await registerUser();
+    const firstCode = await getLatestCodeForUser(user.id);
+    const letter = parked();
+    configureProvider(() => letter.promise);
+
+    const resend = sendEmailVerificationCode(user.id);
+    try {
+      await until(() => mails.length === 1);
+
+      await request(app)
+        .post('/api/v1/auth/verify-email-code')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: firstCode.code })
+        .expect(200);
+    } finally {
+      letter.release(ACCEPTED()); // a resend left in flight would outlive the test
+    }
+    await expect(resend).resolves.toMatchObject({ sent: true });
+  });
+
+  // The person pressed «send again» while the first letter was still going:
+  // each press gets the ordinary answer, and the code that works is the one
+  // in the letter that went out last — the one they will find on top.
+  test('two resends pressed together: both answered, one code works — from the letter that went out last', async () => {
+    const { user, accessToken } = await registerUser();
+    const firstLetter = parked();
+    configureProvider(() => (mails.length === 1 ? firstLetter.promise : ACCEPTED()));
+    const finished = [];
+
+    const both = Promise.all([1, 2].map(() => sendEmailVerificationCode(user.id).then((outcome) => {
+      finished.push(outcome);
+      return outcome;
+    })));
+    try {
+      await until(() => finished.length === 1); // the second letter went out, its code is active
+    } finally {
+      firstLetter.release(ACCEPTED());
+    }
+    const outcomes = await both;
+
+    expect(outcomes.map(({ sent }) => sent)).toEqual([true, true]);
+    const { rows: active } = await query(
+      'SELECT code FROM email_verification_codes WHERE user_id = $1 AND used_at IS NULL',
+      [user.id],
+    );
+    expect(active).toEqual([{ code: codeInMail(mails[0]) }]);
+    await request(app)
+      .post('/api/v1/auth/verify-email-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code: codeInMail(mails[0]) })
+      .expect(200);
+  });
+
+  // Both letters go out at the same moment: the two codes are activated one
+  // after the other, and one code stays active, not two.
+  test('two resends whose letters go out at the same moment leave one active code', async () => {
+    const { user } = await registerUser();
+    const letters = parked();
+    configureProvider(() => letters.promise);
+
+    const both = Promise.all([1, 2].map(() => sendEmailVerificationCode(user.id)));
+    try {
+      await until(() => mails.length === 2);
+    } finally {
+      letters.release(ACCEPTED());
+    }
+    await both;
+
+    const { rows: active } = await query(
+      'SELECT code FROM email_verification_codes WHERE user_id = $1 AND used_at IS NULL',
+      [user.id],
+    );
+    expect(active).toHaveLength(1);
+    expect(mails.map(codeInMail)).toContain(active[0].code);
   });
 });
 

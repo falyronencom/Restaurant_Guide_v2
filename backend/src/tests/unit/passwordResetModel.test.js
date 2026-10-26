@@ -38,39 +38,6 @@ describe('passwordResetModel', () => {
     jest.clearAllMocks();
   });
 
-  describe('createToken', () => {
-    test('inserts a row and returns it', async () => {
-      const userId = uuidv4();
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-      const inserted = {
-        id: uuidv4(),
-        user_id: userId,
-        token_hash: sampleHash,
-        expires_at: expiresAt,
-        created_at: new Date(),
-        used_at: null,
-      };
-
-      mockQuery.mockResolvedValue({ rows: [inserted] });
-
-      const result = await Model.createToken(userId, sampleHash, expiresAt);
-
-      expect(result).toEqual(inserted);
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO password_reset_tokens'),
-        [userId, sampleHash, expiresAt],
-      );
-    });
-
-    test('propagates database errors', async () => {
-      mockQuery.mockRejectedValue(new Error('boom'));
-
-      await expect(
-        Model.createToken(uuidv4(), sampleHash, new Date()),
-      ).rejects.toThrow('boom');
-    });
-  });
-
   describe('findValidByTokenHash', () => {
     test('looks up by hash, excluding used and expired rows', async () => {
       const row = {
@@ -100,33 +67,6 @@ describe('passwordResetModel', () => {
       const result = await Model.findValidByTokenHash(sampleHash);
 
       expect(result).toBeNull();
-    });
-  });
-
-  describe('countRecentRequests', () => {
-    test('returns count of tokens within interval', async () => {
-      mockQuery.mockResolvedValue({ rows: [{ count: 4 }] });
-
-      const result = await Model.countRecentRequests(uuidv4(), 60);
-
-      expect(result).toBe(4);
-      const sql = mockQuery.mock.calls[0][0];
-      expect(sql).toContain('COUNT(*)');
-      expect(sql).toContain("created_at > CURRENT_TIMESTAMP - ($2 || ' minutes')::interval");
-      expect(mockQuery.mock.calls[0][1][1]).toBe('60');
-    });
-  });
-
-  describe('invalidateActiveTokensForUser', () => {
-    test('marks all active tokens as used', async () => {
-      mockQuery.mockResolvedValue({ rowCount: 2 });
-
-      const result = await Model.invalidateActiveTokensForUser(uuidv4());
-
-      expect(result).toBe(2);
-      const sql = mockQuery.mock.calls[0][0];
-      expect(sql).toContain('UPDATE password_reset_tokens');
-      expect(sql).toContain('used_at IS NULL');
     });
   });
 
