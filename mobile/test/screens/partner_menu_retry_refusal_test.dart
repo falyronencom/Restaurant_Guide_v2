@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
 import 'package:restaurant_guide_mobile/screens/partner/partner_menu_screen.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
@@ -19,7 +20,9 @@ import '../support/wire_stand.dart';
 ///
 /// Тексты сервера по меню пока английские, поэтому их экран не показывает:
 /// нет ответа сервера (нет связи, таймаут) — русская фраза транспорта, всё
-/// прочее — фраза экрана «Не удалось запустить распознавание».
+/// прочее — фраза экрана «Не удалось запустить распознавание». Кроме одного
+/// отказа с русской фразой — перезапуск не поставил ни одного файла
+/// (`OCR_RESTART_FAILED`, 25.10.2026).
 ///
 /// Ответы — в форме `errorHandler` бэкенда в production; через стенд провода
 /// исполняется весь `ApiClient`, включая повторы 5xx.
@@ -142,6 +145,61 @@ void main() {
       expect(text, 'Сервер не отвечает. Проверьте подключение.');
     });
   }
+
+  /// Цвет плашки, что сейчас на экране.
+  Color? snackColor(WidgetTester tester) =>
+      tester.widget<SnackBar>(find.byType(SnackBar)).backgroundColor;
+
+  // Находка Н40 (25.10.2026): постановка упала у всех файлов. Сервер отвечал
+  // 202 «поставлено 0», экран — зелёным «Распознавание уже выполняется».
+  // Теперь сервер отказывает (500 OCR_RESTART_FAILED, фраза для партнёра).
+  testWidgets(
+      'перезапуск не поставил ни одного файла (отказ сервера) → его фраза, '
+      'красным, не «уже выполняется»', (tester) async {
+    retry = (_) => jsonBody(
+          _refusal('Не удалось запустить распознавание. Попробуйте позже.',
+              'OCR_RESTART_FAILED'),
+          status: 500,
+        );
+
+    final text = await pressRetry(tester);
+
+    expect(text, 'Не удалось запустить распознавание. Попробуйте позже.');
+    expect(snackColor(tester), Colors.red);
+    expect(find.text('Распознавание уже выполняется'), findsNothing);
+  });
+
+  testWidgets(
+      'прежний сервер: 202 «поставлено 0» → тот же отказ, не зелёное '
+      '«уже выполняется»', (tester) async {
+    retry = (_) => jsonBody({
+          'success': true,
+          'data': {'enqueuedJobs': 0, 'totalPdfs': 2},
+          'message': 'Enqueued 0 OCR job(s)',
+        }, status: 202);
+
+    final text = await pressRetry(tester);
+
+    expect(text, 'Не удалось запустить распознавание. Попробуйте позже.');
+    expect(snackColor(tester), Colors.red);
+  });
+
+  testWidgets('поставлен хотя бы один файл → зелёное «запущено N из M», как было',
+      (tester) async {
+    retry = (_) => jsonBody({
+          'success': true,
+          'data': {'enqueuedJobs': 1, 'totalPdfs': 2},
+          'message': 'Enqueued 1 OCR job(s)',
+        }, status: 202);
+
+    final text = await pressRetry(tester);
+
+    expect(text, 'Распознавание запущено (1 из 2)');
+    expect(snackColor(tester), AppTheme.statusGreen);
+    // Через 5 с экран сам обновляет список — дать этому таймеру сработать.
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 
   testWidgets('нет файлов меню: фраза экрана по коду отказа — фото тоже годятся',
       (tester) async {

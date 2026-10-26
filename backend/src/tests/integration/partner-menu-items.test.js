@@ -183,11 +183,42 @@ describe('GET /api/v1/partner/establishments/:id/menu-items — recognition stat
     expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
   });
 
-  test('a menu file never queued → none', async () => {
+  // Finding Н39 (25.10.2026): a file the daily allowance refused at upload, or
+  // whose queuing failed, has no job; until then it read as «none» — the
+  // screen of a menu not uploaded, which says recognition runs by itself.
+  test('a menu file never queued → not_started, not none', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     await seedPdfMedia(estId);
-    expect(await recognitionOf(partner, estId)).toEqual({ status: 'none' });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'not_started' });
+  });
+
+  test('a file never queued beside a recognised one → not_started; the dishes of the other stay', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const recognised = await seedPdfMedia(estId);
+    await seedMenuItem(estId, recognised, { itemName: 'Борщ' });
+    await seedJob(estId, recognised, { status: 'done' });
+    await seedPhotoMedia(estId, 'menu');
+
+    const res = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+    expect(res.body.data.map((item) => item.item_name)).toEqual(['Борщ']);
+    expect(res.body.recognition).toEqual({ status: 'not_started' });
+  });
+
+  test('a file never queued is outranked by one being read and by one that failed', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    await seedPdfMedia(estId);
+    const failing = await seedPdfMedia(estId);
+    await seedJob(estId, failing, { status: 'failed', errorMessage: 'vision OCR returned empty text', ageMinutes: 10 });
+    expect(await recognitionOf(partner, estId)).toMatchObject({ status: 'failed', cause: 'unreadable' });
+
+    await seedJob(estId, failing, { status: 'pending' });
+    expect(await recognitionOf(partner, estId)).toEqual({ status: 'processing' });
   });
 
   test.each(['pending', 'processing'])('a %s job → processing', async (status) => {

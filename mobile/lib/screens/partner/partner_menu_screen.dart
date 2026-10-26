@@ -61,42 +61,95 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
       appBar: const CanonAppBar(title: 'Меню'),
       body: Consumer<PartnerMenuProvider>(
         builder: (context, provider, _) {
-          if (provider.isLoading && provider.items.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(color: _primary),
-            );
-          }
-
-          if (provider.error != null && provider.items.isEmpty) {
-            return _buildErrorState(provider);
-          }
-
-          if (provider.items.isEmpty) {
-            // Три случая одного пустого списка — по состоянию распознавания
-            // с сервера (находка 3 инцидента Railway, 24.10.2026). Нет поля
-            // (сервер до правки) или «ничего» / «распознано без позиций» —
-            // прежний пустой экран.
-            final recognition = provider.recognition;
-            switch (recognition?.status) {
-              case MenuRecognitionStatus.processing:
-                return _buildProcessingState();
-              case MenuRecognitionStatus.failed:
-                return _buildFailedState(recognition!);
-              default:
-                return _buildEmptyState();
-            }
-          }
-
-          return _buildList(provider);
+          // Колонка — всегда: строка «мог устареть» появляется и уходит, не
+          // пересоздавая список под ней (прокрутка и раскрытые карточки
+          // остаются). Над экраном ошибки она не нужна — тот говорит сам.
+          final showsError = provider.error != null && provider.items.isEmpty;
+          return Column(
+            children: [
+              if (provider.isStale && !showsError) _buildStaleNote(provider),
+              Expanded(
+                key: const ValueKey('menu-content'),
+                child: _buildContent(provider),
+              ),
+            ],
+          );
         },
       ),
       bottomNavigationBar: _buildRetryBar(),
     );
   }
 
+  Widget _buildContent(PartnerMenuProvider provider) {
+    if (provider.isLoading && provider.items.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: _primary),
+      );
+    }
+
+    if (provider.error != null && provider.items.isEmpty) {
+      return _buildErrorState(provider);
+    }
+
+    if (provider.items.isEmpty) {
+      // Случаи одного пустого списка — по состоянию распознавания с сервера
+      // (находка 3 инцидента Railway, 24.10.2026; Н38 и Н39, 25.10.2026).
+      // Нет поля (сервер до правки) или «ничего» — прежний пустой экран.
+      final recognition = provider.recognition;
+      switch (recognition?.status) {
+        case MenuRecognitionStatus.processing:
+          return _buildProcessingState();
+        case MenuRecognitionStatus.failed:
+          return _buildFailedState(recognition!);
+        case MenuRecognitionStatus.notStarted:
+          return _buildNotStartedState();
+        case MenuRecognitionStatus.done:
+          return _buildNothingFoundState();
+        case MenuRecognitionStatus.none:
+        case null:
+          return _buildEmptyState();
+      }
+    }
+
+    return _buildList(provider);
+  }
+
   // ============================================================================
   // States
   // ============================================================================
+
+  /// Фоновое обновление не удалось несколько раз подряд: на экране может
+  /// быть не последнее состояние. Тихая строка над экраном, не красная
+  /// плашка; уходит сама с первым удачным ответом.
+  Widget _buildStaleNote(PartnerMenuProvider provider) {
+    return Material(
+      color: AppTheme.textGrey.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_outlined,
+                size: 18, color: AppTheme.textGrey),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                _staleText,
+                style: TextStyle(fontSize: 13, color: AppTheme.textGrey),
+              ),
+            ),
+            TextButton(
+              onPressed: () => provider.fetchMenuItems(silent: true),
+              style: TextButton.styleFrom(foregroundColor: _primary),
+              child: const Text('Обновить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const String _staleText =
+      'Не удалось обновить — на экране может быть не последнее состояние.';
 
   Widget _buildErrorState(PartnerMenuProvider provider) {
     return Center(
@@ -201,6 +254,67 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     );
   }
 
+  /// Файл загружен, а распознавание не начиналось: суточный предел отказал
+  /// при загрузке или постановка упала — само оно не начнётся. Выход —
+  /// кнопка внизу экрана; если предел исчерпан, её отказ скажет, когда можно.
+  Widget _buildNotStartedState() {
+    return _buildMessageState(
+      icon: Icons.hourglass_disabled_outlined,
+      title: _notStartedTitle,
+      hint: _notStartedHint,
+    );
+  }
+
+  /// Файл прочитан, а блюд и цен в нём не нашлось (задание распознавания
+  /// закончилось, позиций ноль). Уведомление партнёру об этом же говорит
+  /// «Меню «…» распознано — позиций не найдено» (notificationService).
+  Widget _buildNothingFoundState() {
+    return _buildMessageState(
+      icon: Icons.search_off_outlined,
+      title: 'Позиций не нашлось',
+      hint: 'Файл прочитан, но блюд и цен в нём не нашлось. Загрузите более '
+          'чёткое фото или другой файл в разделе «Медиа».',
+    );
+  }
+
+  static const String _notStartedTitle = 'Распознавание не запущено';
+  static const String _notStartedHint = 'Файл загружен, но распознавание не '
+      'началось. Нажмите «Перезапустить распознавание».';
+
+  Widget _buildMessageState({
+    required IconData icon,
+    required String title,
+    required String hint,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 72, color: AppTheme.textGrey.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: AppTheme.textGrey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Распознавание упало окончательно: причина — фраза сервера для партнёра,
   /// выход — существующая кнопка внизу экрана или другой файл.
   Widget _buildFailedState(MenuRecognition recognition) {
@@ -256,42 +370,69 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   /// Позиции есть, но файл меню не распознан — один из нескольких: список
   /// его не покажет, поэтому о нём говорит плашка над списком.
   Widget _buildFailedBanner(MenuRecognition recognition) {
+    return _buildBanner(
+      color: Colors.red,
+      icon: Icons.error_outline,
+      title: 'Часть меню не распознана',
+      reason: recognition.reason,
+      hint: _failedHint(recognition),
+    );
+  }
+
+  /// Позиции есть, а у одного из файлов распознавание не начиналось — тоже
+  /// плашкой над списком: сам файл в списке не виден.
+  Widget _buildNotStartedBanner() {
+    return _buildBanner(
+      color: Colors.orange,
+      icon: Icons.hourglass_disabled_outlined,
+      title: _notStartedTitle,
+      hint: _notStartedHint,
+    );
+  }
+
+  Widget _buildBanner({
+    required MaterialColor color,
+    required IconData icon,
+    required String title,
+    String? reason,
+    required String hint,
+  }) {
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.06),
+        color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
+          Icon(icon, size: 20, color: color.shade700),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Часть меню не распознана',
-                  style: TextStyle(
+                Text(
+                  title,
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary,
                   ),
                 ),
-                if (recognition.reason != null) ...[
+                if (reason != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    recognition.reason!,
+                    reason,
                     style: const TextStyle(
                         fontSize: 13, color: AppTheme.textPrimary),
                   ),
                 ],
                 const SizedBox(height: 4),
                 Text(
-                  _failedHint(recognition),
+                  hint,
                   style: const TextStyle(fontSize: 13, color: AppTheme.textGrey),
                 ),
               ],
@@ -306,7 +447,12 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     final groups = provider.itemsByCategory;
     final categoryKeys = groups.keys.toList();
     final recognition = provider.recognition;
-    final banner = recognition != null && recognition.isFailed ? 1 : 0;
+    final Widget? bannerWidget = switch (recognition?.status) {
+      MenuRecognitionStatus.failed => _buildFailedBanner(recognition!),
+      MenuRecognitionStatus.notStarted => _buildNotStartedBanner(),
+      _ => null,
+    };
+    final banner = bannerWidget == null ? 0 : 1;
 
     return RefreshIndicator(
       color: _primary,
@@ -315,7 +461,7 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: banner + categoryKeys.length,
         itemBuilder: (context, index) {
-          if (index < banner) return _buildFailedBanner(recognition!);
+          if (index < banner) return bannerWidget!;
           final idx = index - banner;
           final key = categoryKeys[idx];
           final categoryLabel = key.isEmpty ? 'Без категории' : key;
@@ -434,12 +580,12 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     if (!mounted) return;
 
     if (result.success) {
+      // Успех — всегда хотя бы один поставленный файл: «ни одного» сервис
+      // отдаёт отказом (retryOcrNotQueuedCode), он идёт в последнюю ветку.
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            result.enqueuedJobs > 0
-                ? 'Распознавание запущено (${result.enqueuedJobs} из ${result.totalPdfs})'
-                : 'Распознавание уже выполняется',
+            'Распознавание запущено (${result.enqueuedJobs} из ${result.totalPdfs})',
           ),
           backgroundColor: AppTheme.statusGreen,
           behavior: SnackBarBehavior.floating,
