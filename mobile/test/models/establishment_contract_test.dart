@@ -380,6 +380,38 @@ void main() {
           reason: 'вторник');
     });
 
+    test('день недели берётся из момента — все семь дней, выходные не '
+        'перепутаны', () {
+      // Тест выше смотрит понедельник и вторник. 7–13.09.2026 — с
+      // понедельника по воскресенье; слова дней — ключи `working_hours`
+      // сервера (`backend/src/utils/workingHoursSanity.js`). Закрыт ровно
+      // один день — по очереди каждый.
+      const keys = <String>[
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      for (var closed = 0; closed < keys.length; closed++) {
+        final hours = <String, dynamic>{
+          for (final k in keys) k: '10:00-22:00',
+          keys[closed]: {'is_open': false},
+        };
+        final e = Establishment.fromJson(establishmentRow(workingHours: hours));
+        for (var day = 0; day < keys.length; day++) {
+          expect(
+            e.isOpenAt(DateTime(2026, 9, 7 + day, 13, 0)),
+            day != closed,
+            reason: 'закрыт только ${keys[closed]}; '
+                '${7 + day}.09.2026 — ${keys[day]}',
+          );
+        }
+      }
+    });
+
     test('расписания нет вовсе — падаем на статус заведения', () {
       final active = Establishment.fromJson(
         without(establishmentRow(), 'working_hours'),

@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/config/cities.dart';
+import 'package:restaurant_guide_mobile/config/establishment_attributes.dart';
 import 'package:restaurant_guide_mobile/models/filter_options.dart';
 import 'package:restaurant_guide_mobile/models/notification_model.dart';
+import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 
 /// Сторож трёх словарей мобильного фильтра против канона бэкенда.
 ///
@@ -141,6 +145,37 @@ void main() {
       );
     });
 
+    test('каждый код бэкенда разбирается в свой тип — по имени, не только '
+        'без столкновений', () {
+      // Тест выше ловит только столкновения: два кода, перепутанные местами
+      // («одобрено» ↔ «отклонено»), столкновения не дают. Здесь — пара за
+      // парой: код бэкенда литералом и тип приложения, который он означает.
+      const expected = <String, NotificationType>{
+        'establishment_approved': NotificationType.establishmentApproved,
+        'establishment_rejected': NotificationType.establishmentRejected,
+        'establishment_suspended': NotificationType.establishmentSuspended,
+        'establishment_unsuspended': NotificationType.establishmentUnsuspended,
+        'establishment_claimed': NotificationType.establishmentClaimed,
+        'new_review': NotificationType.newReview,
+        'partner_response': NotificationType.partnerResponse,
+        'review_hidden': NotificationType.reviewHidden,
+        'review_deleted': NotificationType.reviewDeleted,
+        'booking_received': NotificationType.bookingReceived,
+        'booking_confirmed': NotificationType.bookingConfirmed,
+        'booking_declined': NotificationType.bookingDeclined,
+        'booking_expired': NotificationType.bookingExpired,
+        'booking_cancelled': NotificationType.bookingCancelled,
+        'promotion_new': NotificationType.promotionNew,
+        'menu_parsed': NotificationType.menuParsed,
+        'menu_item_hidden_by_admin': NotificationType.menuItemHiddenByAdmin,
+      };
+      expect(expected.keys.toSet(), canonNotificationTypes.toSet(),
+          reason: 'таблица пар обязана покрывать весь канон');
+      for (final MapEntry(key: code, value: type) in expected.entries) {
+        expect(NotificationType.fromString(code), type, reason: code);
+      }
+    });
+
     test('в приложении нет типов сверх канона бэкенда', () {
       // Обратное направление: тип, которого бэкенд не шлёт, — мёртвая ветка
       // в трёх switch подряд, и она переживёт удаление типа на бэкенде.
@@ -203,4 +238,105 @@ void main() {
       );
     });
   });
+
+  // ==========================================================================
+  // Копии канона выше — против самого исходника бэкенда.
+  // Шапка обещает, что при правке канона на бэкенде этот файл покраснеет
+  // первым, но копии сверяли приложение с собой: исходник бэкенда не читался.
+  // CI вынимает репозиторий целиком, `../backend` рядом есть всегда (так же
+  // читает канон `admin-web/test/config/establishment_vocabulary_test.dart`).
+  // ==========================================================================
+
+  group('Копии канона — против исходника бэкенда', () {
+    final vocab =
+        File('../backend/src/constants/establishmentVocab.js').readAsStringSync();
+    final service = File('../backend/src/services/establishmentService.js')
+        .readAsStringSync();
+
+    test('категории, кухни и удобства — те же, что в establishmentVocab.js', () {
+      expect(_jsArray(vocab, 'VALID_CATEGORIES').toSet(), canonCategories);
+      expect(_jsArray(vocab, 'VALID_CUISINES').toSet(), canonCuisines);
+      expect(_jsArray(vocab, 'ATTRIBUTE_CANON').toSet(), canonAttributes);
+    });
+
+    test('типы уведомлений — те же, что TITLES в notificationService.js', () {
+      final source = File('../backend/src/services/notificationService.js')
+          .readAsStringSync();
+      final start = source.indexOf('const TITLES = {');
+      expect(start, isNonNegative, reason: 'в исходнике нет TITLES');
+      final body = source.substring(start, source.indexOf('};', start));
+      final codes = RegExp(r'^\s*(\w+):', multiLine: true)
+          .allMatches(body)
+          .map((m) => m.group(1)!)
+          .toSet();
+      expect(codes, isNotEmpty, reason: 'TITLES разобрался пустым');
+      expect(codes, canonNotificationTypes.toSet());
+    });
+
+    test('города — те же, что VALID_CITIES в establishmentService.js', () {
+      expect(_jsArray(service, 'VALID_CITIES').toSet(), canonCities);
+    });
+  });
+
+  // ==========================================================================
+  // Словари вне фильтра: карточка гостя (читатель ключей удобств) и мастер
+  // партнёра (писатель категорий, кухонь и города). Ключ или название не из
+  // канона здесь отказывает молча: гость не видит удобство, которое заявлено,
+  // сервер отклоняет карточку партнёра. Ключи удобств мастера
+  // (`AttributeOptions`) сюда намеренно не входят: три из них не из канона
+  // (`banquets`, `kids`, `pets`) — известный дефект, отложен (SDL
+  // CAT-C-3.15.3); честная сверка красная и закрепляется вместе с правкой
+  // продукта.
+  // ==========================================================================
+
+  group('Словари карточки гостя и мастера партнёра против канона', () {
+    test('карточка гостя знает все удобства канона, кроме намеренно '
+        'отложенных, и ни одного сверх', () {
+      final keys = EstablishmentAttributes.canon.map((a) => a['key']!).toSet();
+      expect(keys, canonAttributes.difference(deliberatelyNotOffered));
+      expect(EstablishmentAttributes.canon, hasLength(keys.length),
+          reason: 'дубль в словаре карточки');
+    });
+
+    test('каждый город мастера партнёра принимается бэкендом', () {
+      expect(CityOptions.cities.toSet().difference(canonCities), isEmpty,
+          reason: 'сервер отклонит карточку с этим городом (INVALID_CITY)');
+    });
+
+    test('каждая категория и кухня мастера уходит на сервер названием из '
+        'канона — все 15 и все 12', () {
+      final sentCategories = <String>{
+        for (final item in CategoryOptions.items)
+          ...(PartnerRegistration(categories: [item.id]).toJson()['categories']
+              as List)
+              .cast<String>(),
+      };
+      final sentCuisines = <String>{
+        for (final item in CuisineOptions.items)
+          ...(PartnerRegistration(cuisineTypes: [item.id]).toJson()['cuisines']
+              as List)
+              .cast<String>(),
+      };
+
+      expect(sentCategories, canonCategories);
+      expect(sentCuisines, canonCuisines);
+    });
+  });
+}
+
+/// Строковые элементы массива `const NAME = …[ … ]` из исходника JS
+/// бэкенда — тот же разбор, что в
+/// `admin-web/test/config/establishment_vocabulary_test.dart`.
+List<String> _jsArray(String source, String name) {
+  final start = source.indexOf('const $name');
+  expect(start, isNonNegative, reason: 'в исходнике нет $name');
+  final open = source.indexOf('[', start);
+  final close = source.indexOf(']', open);
+  final items = RegExp(r"'([^']*)'")
+      .allMatches(source.substring(open, close))
+      .map((m) => m.group(1)!)
+      .toList();
+  // Якорь: пустой разбор выглядел бы как «расхождений нет».
+  expect(items, isNotEmpty, reason: '$name разобрался пустым');
+  return items;
 }
