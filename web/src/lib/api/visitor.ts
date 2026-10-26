@@ -99,10 +99,32 @@ export async function currentVisitor(): Promise<string | null> {
   }
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Whether the secret may travel to API_URL: only over https, or to this
+ * machine in development. Over plain http to anywhere else it would cross
+ * the network in the open (D5 review, 26.10.2026); the request then goes
+ * without it and the API counts it as the site itself, as before the secret.
+ */
+export function secretMayTravelTo(apiUrl: string | undefined): boolean {
+  if (!apiUrl) return false;
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  return url.protocol === 'http:'
+    && (LOCAL_HOSTS.has(url.hostname) || url.hostname.endsWith('.localhost'));
+}
+
 /**
  * The headers every request of the site to the API carries: the secret when
- * one is set, and the visitor when there is one. Without a usable secret, no
- * header at all — the API would ignore an unproven visitor anyway.
+ * one is set and API_URL may carry it, and the visitor when there is one.
+ * Without the secret, no header at all — the API would ignore an unproven
+ * visitor anyway.
  */
 export function siteRequestHeaders(
   visitor: string | null | undefined,
@@ -110,6 +132,7 @@ export function siteRequestHeaders(
 ): Record<string, string> {
   const secret = env.SITE_REQUEST_SECRET ?? '';
   if (secret.length < MIN_SECRET_LENGTH) return {};
+  if (!secretMayTravelTo(env.API_URL)) return {};
   return visitor
     ? { [SITE_SECRET_HEADER]: secret, [SITE_VISITOR_HEADER]: visitor }
     : { [SITE_SECRET_HEADER]: secret };

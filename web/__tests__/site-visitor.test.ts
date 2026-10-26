@@ -36,6 +36,7 @@ import { headers } from 'next/headers';
 import { serverFetch } from '@/lib/api/client';
 import {
   currentVisitor,
+  secretMayTravelTo,
   siteRequestHeaders,
   trustedHops,
   visitorAddressFrom,
@@ -111,18 +112,41 @@ describe('visitorAddressFrom', () => {
 
 describe('siteRequestHeaders', () => {
   it('with a secret and a visitor — both headers', () => {
-    expect(siteRequestHeaders('203.0.113.10', { SITE_REQUEST_SECRET: SECRET }))
+    expect(siteRequestHeaders('203.0.113.10', { SITE_REQUEST_SECRET: SECRET, API_URL: 'https://api.example' }))
       .toEqual({ 'X-Site-Secret': SECRET, 'X-Site-Visitor': '203.0.113.10' });
   });
 
   it('with a secret and no visitor — the secret alone: the site’s own request', () => {
-    expect(siteRequestHeaders(null, { SITE_REQUEST_SECRET: SECRET }))
+    expect(siteRequestHeaders(null, { SITE_REQUEST_SECRET: SECRET, API_URL: 'https://api.example' }))
       .toEqual({ 'X-Site-Secret': SECRET });
   });
 
   it.each([undefined, '', 'short'])('secret %p — no header at all, not even the visitor', (secret) => {
-    expect(siteRequestHeaders('203.0.113.10', { SITE_REQUEST_SECRET: secret }))
+    expect(siteRequestHeaders('203.0.113.10', { SITE_REQUEST_SECRET: secret, API_URL: 'https://api.example' }))
       .toEqual({});
+  });
+});
+
+describe('secretMayTravelTo — the secret only over https, or to this machine', () => {
+  it.each([
+    ['https://restaurantguidev2-production.up.railway.app', true],
+    ['http://localhost:3000', true],
+    ['http://127.0.0.1:3000', true],
+    ['http://[::1]:3000', true],
+    ['http://api.localhost:3000', true],
+    ['http://restaurantguidev2-production.up.railway.app', false],
+    ['http://backend.railway.internal:3000', false],
+    ['ftp://api.example', false],
+    ['not a url', false],
+    [undefined, false],
+  ])('%p → %p', (apiUrl, may) => {
+    expect(secretMayTravelTo(apiUrl)).toBe(may);
+  });
+
+  it('over plain http to a public host — no secret and no visitor in the headers', () => {
+    expect(siteRequestHeaders('203.0.113.10', {
+      SITE_REQUEST_SECRET: SECRET, API_URL: 'http://restaurantguidev2-production.up.railway.app',
+    })).toEqual({});
   });
 });
 
@@ -139,7 +163,7 @@ describe('serverFetch', () => {
     (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
 
   beforeEach(() => {
-    process.env.API_URL = 'http://api.test';
+    process.env.API_URL = 'https://api.test';
   });
 
   it('carries the secret on every call, and the visitor only when the caller passes one', async () => {
@@ -175,6 +199,17 @@ describe('serverFetch', () => {
     expect(fetchMock.mock.calls[0][1].next).toEqual({ revalidate: 3600 });
   });
 
+  it('API_URL over plain http to a public host — the secret is not sent, nor the visitor', async () => {
+    process.env.SITE_REQUEST_SECRET = SECRET;
+    process.env.API_URL = 'http://api.test';
+    const fetchMock = fetchOk();
+
+    await serverFetch('/api/v1/auth/login', { method: 'POST' }, { visitor: '203.0.113.10' });
+
+    expect(sentHeaders(fetchMock)['X-Site-Secret']).toBeUndefined();
+    expect(sentHeaders(fetchMock)['X-Site-Visitor']).toBeUndefined();
+  });
+
   it('without a secret — what it sent before: Accept only', async () => {
     delete process.env.SITE_REQUEST_SECRET;
     const fetchMock = fetchOk();
@@ -187,7 +222,7 @@ describe('serverFetch', () => {
 
 describe('the callers that serve a visitor pass the visitor', () => {
   beforeEach(() => {
-    process.env.API_URL = 'http://api.test';
+    process.env.API_URL = 'https://api.test';
     process.env.SITE_REQUEST_SECRET = SECRET;
   });
 
