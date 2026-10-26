@@ -45,6 +45,37 @@ void main() {
       expect(result.map((a) => a['name']), ['Доставка еды', 'Банкет', 'Курение']);
     });
 
+    test('порядок — как на сайте: все девять, в порядке ATTRIBUTE_ORDER', () {
+      // Тест выше держит три позиции из девяти. Здесь — все: на вход все
+      // девять ключей в обратном порядке, ожидание — литерал подписей в
+      // порядке `ATTRIBUTE_ORDER` / `ATTRIBUTE_LABELS` сайта
+      // (`web/src/lib/establishment-helpers.ts`), чтобы гость видел одну и
+      // ту же строку значков в приложении и на сайте.
+      final result = EstablishmentAttributes.active({
+        'smoking': true,
+        'pets_allowed': true,
+        'banquet': true,
+        'kids_zone': true,
+        'live_music': true,
+        'parking': true,
+        'terrace': true,
+        'wifi': true,
+        'delivery': true,
+      });
+      expect(result.map((a) => a['name']), [
+        'Доставка еды',
+        'Wi-Fi',
+        'Терраса',
+        'Парковка',
+        'Живая музыка',
+        'Детская зона',
+        'Банкет',
+        'Животные',
+        'Курение',
+      ]);
+    });
+
+
     test('неизвестный ключ игнорируется, а не рисуется', () {
       final result = EstablishmentAttributes.active({
         'karaoke': true, // не входит в канон бэкенда

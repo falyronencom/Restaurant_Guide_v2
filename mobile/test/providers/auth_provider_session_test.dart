@@ -61,11 +61,16 @@ class _FakeAuthService implements AuthService {
     return user;
   }
 
+  /// Задержка ответа входа: тест держит провайдер в «вход идёт».
+  Completer<AuthResponse>? loginGate;
+
   @override
   Future<AuthResponse> login({
     required String emailOrPhone,
     required String password,
   }) async {
+    final held = loginGate;
+    if (held != null) return held.future;
     if (loginError != null) throw loginError!;
     return const AuthResponse(
       accessToken: 'access',
@@ -84,6 +89,17 @@ class _FakeAuthService implements AuthService {
   Future<void> clearAuthData() async {
     clearCalls++;
   }
+
+  /// Регистрация без токенов в ответе: провайдер ждёт подтверждения почты.
+  @override
+  Future<RegisterResponse> register({
+    String? email,
+    String? phone,
+    required String password,
+    required String authMethod,
+    String? name,
+  }) async =>
+      const RegisterResponse();
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -203,6 +219,62 @@ void main() {
 
       expect(auth.status, AuthenticationStatus.unauthenticated);
       expect(notified, 0);
+      expect(resets, 0);
+      expect(service.clearCalls, 0);
+    });
+
+    // «Без входа» — не одно состояние, а три: гость, вход идёт, ждём
+    // подтверждения почты. Сигнал в двух последних сбросил бы кэши и стёр
+    // остаток сессии поверх только что записанного входа.
+    test('сигнал во время входа не трогает вход, который ещё идёт', () async {
+      final service = _FakeAuthService()..loginGate = Completer<AuthResponse>();
+      final auth = await provider(service);
+      var resets = 0;
+      AccountScope.register(() => resets++);
+
+      final pending = auth.login(
+        emailOrPhone: 'guest@example.com',
+        password: 'Secret123',
+      );
+      await pumpEventQueue();
+      expect(auth.status, AuthenticationStatus.authenticating,
+          reason: 'предусловие: вход идёт');
+
+      SessionEvents.reportExpired();
+      await pumpEventQueue();
+
+      expect(auth.status, AuthenticationStatus.authenticating);
+      expect(resets, 0);
+      expect(service.clearCalls, 0,
+          reason: 'остаток сессии стёрт поверх входа, который ещё идёт');
+
+      service.loginGate!.complete(const AuthResponse(
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        user: user,
+      ));
+      expect(await pending, isTrue);
+      expect(auth.status, AuthenticationStatus.authenticated);
+      expect(service.clearCalls, 0);
+    });
+
+    test('сигнал, пока ждём подтверждения почты, ничего не меняет', () async {
+      final service = _FakeAuthService();
+      final auth = await provider(service);
+      await auth.registerWithEmail(
+        email: 'new@example.com',
+        password: 'Secret123',
+        name: 'Анна',
+      );
+      expect(auth.status, AuthenticationStatus.verifying,
+          reason: 'предусловие: регистрация без токенов ждёт подтверждения');
+      var resets = 0;
+      AccountScope.register(() => resets++);
+
+      SessionEvents.reportExpired();
+      await pumpEventQueue();
+
+      expect(auth.status, AuthenticationStatus.verifying);
       expect(resets, 0);
       expect(service.clearCalls, 0);
     });

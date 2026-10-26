@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restaurant_guide_mobile/services/api_client.dart';
 
 /// Сторож единственной точки предъявления refresh-токена.
 ///
@@ -138,5 +139,37 @@ void main() {
             reason: 'в allowed числится несуществующий $path');
       }
     });
+  });
+
+  test('повторное предъявление после потерянного ответа уходит внутри '
+      'льготного окна сервера', () {
+    // Граница из шапки держится на таймаутах клиента: ответ ротации
+    // потерян — клиент ждёт его не дольше таймаута приёма, затем повтор
+    // соединяется не дольше таймаута соединения и предъявляет тот же
+    // токен. Это предъявление обязано попасть в льготное окно сервера,
+    // иначе — 403 `TOKEN_REUSE_DETECTED` и выход на всех устройствах.
+    // Таймауты — те, что получил транспорт приложения, а не константы
+    // `Environment`. Окно — умолчание из конфигурации бэкенда (CI вынимает
+    // репозиторий целиком, `../backend` рядом); переменная окружения
+    // `REFRESH_REUSE_GRACE_SECONDS` на сервере может его изменить, и этого
+    // тест не видит. Граница сегодня — на равенстве: 30 + 30 = 60.
+    final config = File('../backend/src/config/auth.js').readAsStringSync();
+    final match = RegExp(r'DEFAULT_REFRESH_REUSE_GRACE_SECONDS\s*=\s*(\d+)')
+        .firstMatch(config);
+    expect(match, isNotNull,
+        reason: 'в конфигурации бэкенда нет умолчания льготного окна — '
+            'разбор ослеп');
+    final graceSeconds = int.parse(match!.group(1)!);
+
+    final options = ApiClient().dio.options;
+    expect(options.receiveTimeout, isNotNull,
+        reason: 'без таймаута приёма ответ ротации можно ждать вечно');
+    expect(options.connectTimeout, isNotNull);
+    expect(
+      options.receiveTimeout! + options.connectTimeout!,
+      lessThanOrEqualTo(Duration(seconds: graceSeconds)),
+      reason: 'повтор обновления после потерянного ответа ротации уйдёт '
+          'позже льготного окна ($graceSeconds с)',
+    );
   });
 }

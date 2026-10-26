@@ -46,6 +46,30 @@ void main() {
       expect(adapter.requests.map((r) => r.queryParameters['page']), [1, 2]);
     });
 
+    test('у кого больше ста мест — список приходит целиком, все пять страниц',
+        () async {
+      // Предохранитель от вечного hasNext не должен резать реальный
+      // список: тесты выше читают не больше двух страниц, и потолок «2» их
+      // не красил бы — а у кого 101+ мест, список молча обрезался бы. Здесь
+      // проверено «не меньше пяти страниц» (250 мест), не сам потолок.
+      final adapter = installWireStand((options) {
+        final page = options.queryParameters['page'] as int;
+        return jsonBody(favoritesEnvelope(
+          favorites: rows((page - 1) * 50, page < 5 ? 50 : 7),
+          page: page,
+          total: 207,
+          hasNext: page < 5,
+        ));
+      });
+
+      final result = await EstablishmentsService().getFavorites();
+
+      expect(result, hasLength(207));
+      expect(result.last.name, 'Место 206');
+      expect(adapter.requests.map((r) => r.queryParameters['page']),
+          [1, 2, 3, 4, 5]);
+    });
+
     test('последняя страница — запрос ровно один', () async {
       final adapter = installWireStand(
           (_) => jsonBody(favoritesEnvelope(favorites: rows(0, 12))));

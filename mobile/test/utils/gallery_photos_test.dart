@@ -64,6 +64,20 @@ void main() {
     expect(ids(photos), ['dish', 'legacy']);
   });
 
+  test('PDF не идёт в галерею и тогда, когда его тип — не «меню»', () {
+    // В тесте выше PDF лежит под типом `menu`, и его отсекает условие по
+    // типу ещё до проверки формата: проверка «это PDF» не исполнялась.
+    // Сервер сегодня пишет PDF только с типом `menu`: тест держит защитную
+    // ветку, а не форму, которая приходит по проводу.
+    final photos = galleryPhotos([
+      media(id: 'hall', position: 0),
+      media(id: 'hall-pdf', type: 'interior', fileType: 'pdf', position: 1),
+      media(id: 'dish-pdf', type: 'dishes', fileType: 'pdf', position: 2),
+    ]);
+
+    expect(ids(photos), ['hall']);
+  });
+
   test('без флага обложка находится по primary_image_url — и по превью', () {
     // Обложку бэкенд синхронизирует в primary_image_url; у старых карточек
     // флага в ответе может не быть. Адрес бывает и полным, и превью.
