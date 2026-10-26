@@ -46,14 +46,18 @@ void main() {
   // Координаты места: без них карточка не предлагает маршрут и не строит
   // мини-карту (платформенный вид).
   var withCoords = false;
+  // Атрибуты карточки; null — ключ в ответе со значением null (по умолчанию).
+  Map<String, dynamic>? attributes;
 
   setUp(() {
     withCoords = false;
+    attributes = null;
     installWireStand((options) {
       final path = options.uri.path;
       if (path == '/api/v1/search/establishments/$id') {
         final row = establishmentRow(
           id: id,
+          attributes: attributes,
           workingHours: {
             for (final d in [
               'monday',
@@ -287,6 +291,81 @@ void main() {
 
     testWidgets('без координат: только «Скопировать адрес»', (tester) async {
       expect(await openSheet(tester), ['Скопировать адрес']);
+    });
+
+    testWidgets('кнопка «Как добраться» блока «Карта» открывает ту же шторку',
+        (tester) async {
+      // Тест выше открывает шторку тапом по адресу; кнопку блока, которую
+      // экран подключает своим обработчиком, не нажимал никто.
+      withCoords = true;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, (_) async => null);
+      addTearDown(() => messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views, null));
+      await pumpDetail(tester);
+
+      final route = find.text('Как добраться');
+      await tester.ensureVisible(route);
+      await tester.pumpAndSettle();
+      await tester.tap(route);
+      await tester.pumpAndSettle();
+
+      expect([
+        for (final tile in tester.widgetList<ListTile>(find.byType(ListTile)))
+          (tile.title! as Text).data!,
+      ], [
+        'Маршрут в Яндекс.Картах',
+        'Маршрут в Google Картах',
+        'Скопировать адрес',
+      ]);
+    });
+
+    testWidgets('без координат кнопки «Как добраться» нет — адрес остаётся',
+        (tester) async {
+      // Блок проверен своим тестом с готовым признаком; условие «есть
+      // координаты» живёт в экране.
+      await pumpDetail(tester);
+
+      expect(find.text('Как добраться'), findsNothing);
+      // Строка адреса самого блока «Карта» («адрес, город»), а не плашка
+      // адреса на фото: блок без координат остаётся, теряет только кнопку.
+      expect(find.text('пр. Независимости, 43, Минск'), findsOneWidget);
+    });
+  });
+
+  // Раздел «Атрибуты» карточки: показывает только заявленное. Модельный тест
+  // (`establishment_attributes_test`) проверяет помощника; подстановка же
+  // умолчаний в 07.09 жила в самом экране, и экран не проверял никто.
+  group('раздел «Атрибуты»', () {
+    for (final (what, value) in <(String, Map<String, dynamic>?)>[
+      ('нет вовсе (null)', null),
+      ('пустые ({})', <String, dynamic>{}),
+    ]) {
+      testWidgets('атрибуты $what — раздела нет, ничего не дорисовано',
+          (tester) async {
+        attributes = value;
+        await pumpDetail(tester);
+
+        expect(find.text('Атрибуты'), findsNothing);
+        for (final name in ['Доставка еды', 'Wi-Fi', 'Терраса']) {
+          expect(find.text(name), findsNothing,
+              reason: '«$name» не заявлено заведением');
+        }
+      });
+    }
+
+    testWidgets('заявленные атрибуты — раздел с ними, и только с ними',
+        (tester) async {
+      attributes = <String, dynamic>{'wifi': true, 'parking': true};
+      await pumpDetail(tester);
+
+      expect(find.text('Атрибуты'), findsOneWidget);
+      expect(find.text('Wi-Fi'), findsOneWidget);
+      expect(find.text('Парковка'), findsOneWidget);
+      expect(find.text('Доставка еды'), findsNothing);
+      expect(find.text('Терраса'), findsNothing);
     });
   });
 }

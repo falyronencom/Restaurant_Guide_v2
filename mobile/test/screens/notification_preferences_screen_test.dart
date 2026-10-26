@@ -10,14 +10,16 @@ import 'package:restaurant_guide_mobile/services/account_scope.dart';
 
 import '../support/fake_api_client.dart';
 
-Future<FakeApiClient> _pumpScreen(WidgetTester tester) async {
-  final fake = FakeApiClient()
-    ..prefsFromServer = <String, dynamic>{
-      'booking_push_enabled': true,
-      'reviews_push_enabled': true,
-      'promotions_push_enabled': true,
-      'menu_push_enabled': true,
-    };
+Future<FakeApiClient> _pumpScreen(
+  WidgetTester tester, {
+  Map<String, dynamic> server = const <String, dynamic>{
+    'booking_push_enabled': true,
+    'reviews_push_enabled': true,
+    'promotions_push_enabled': true,
+    'menu_push_enabled': true,
+  },
+}) async {
+  final fake = FakeApiClient()..prefsFromServer = server;
   final provider = NotificationPreferencesProvider(apiClient: fake);
   addTearDown(provider.dispose);
 
@@ -74,5 +76,61 @@ void main() {
         isTrue,
       );
     }
+  });
+
+  testWidgets('каждая строка показывает своё значение сервера и пишет свой '
+      'ключ', (tester) async {
+    // Значения сервера разные: при всех `true` перестановка показа или
+    // записи между строками не видна. Ключи — литералы колонок сервера
+    // (`backend/src/models/notificationPreferencesModel.js`).
+    final fake = await _pumpScreen(tester, server: <String, dynamic>{
+      'booking_push_enabled': true,
+      'reviews_push_enabled': false,
+      'promotions_push_enabled': true,
+      'menu_push_enabled': false,
+    });
+
+    Finder row(String title) => find.widgetWithText(SwitchListTile, title);
+    bool shown(String title) =>
+        tester.widget<SwitchListTile>(row(title)).value;
+
+    expect(
+      [
+        shown('Бронирование'),
+        shown('Отзывы и заведения'),
+        shown('Акции из избранного'),
+        shown('Меню'),
+      ],
+      [true, false, true, false],
+      reason: 'строка показывает значение чужой категории',
+    );
+
+    await tester.tap(row('Отзывы и заведения'));
+    await tester.pump();
+    expect(fake.putBodies.last, <String, dynamic>{'reviews_push_enabled': true});
+    expect(shown('Отзывы и заведения'), isTrue);
+
+    await tester.tap(row('Акции из избранного'));
+    await tester.pump();
+    expect(fake.putBodies.last,
+        <String, dynamic>{'promotions_push_enabled': false});
+    expect(shown('Акции из избранного'), isFalse);
+
+    // Брони выключаются только после подтверждения в диалоге.
+    await tester.tap(row('Бронирование'));
+    await tester.pumpAndSettle();
+    expect(fake.putBodies, hasLength(2),
+        reason: 'до подтверждения запрос не уходит');
+    await tester.tap(find.text('Отключить'));
+    await tester.pumpAndSettle();
+    expect(fake.putBodies.last,
+        <String, dynamic>{'booking_push_enabled': false});
+    expect(shown('Бронирование'), isFalse);
+
+    expect(fake.putBodies, hasLength(3));
+    // Чужие строки не тронуты.
+    expect(shown('Отзывы и заведения'), isTrue);
+    expect(shown('Акции из избранного'), isFalse);
+    expect(shown('Меню'), isFalse);
   });
 }

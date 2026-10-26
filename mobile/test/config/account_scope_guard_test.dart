@@ -100,6 +100,25 @@ void main() {
       expect(deliberatelyNotRegistered.keys.toSet().difference(wired), isEmpty);
     });
 
+    test('разбор main.dart видит каждую запись провайдера, а не только '
+        'привычную форму', () {
+      // Разбор выше знает одну запись — `create: (_) => XProvider(`.
+      // Провайдер, объявленный иначе (`(context)`, `.value(`, `<T>`), в
+      // `wired` не попал бы, и сторож молча пропустил бы его — ровно класс
+      // 30.07. Каждая запись провайдера — любого вида, в том числе
+      // `ChangeNotifierProxyProvider` — несёт `create:`; число таких мест в
+      // файле обязано совпасть с числом разобранных.
+      final main = File('lib/main.dart').readAsStringSync();
+      final declared = RegExp(r'\bcreate:').allMatches(main).length;
+      final parsed =
+          RegExp(r'create: \(_\) => (\w+Provider)\(').allMatches(main).length;
+
+      expect(parsed, isNonZero, reason: 'разбор ослеп');
+      expect(declared, parsed,
+          reason: 'в main.dart есть запись провайдера, которую разбор не '
+              'узнаёт: её сброс при смене аккаунта не проверяется');
+    });
+
     test('у каждого обязанного вызов register есть в его исходнике', () {
       // Проверка по тексту дополняет поведенческую ниже: она ловит случай,
       // когда провайдер вообще забыли, а не когда вызов оказался в стороне
