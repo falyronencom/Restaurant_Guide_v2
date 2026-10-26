@@ -35,12 +35,30 @@ const MOVED_SLICE1_CODES: Array<[string, number]> = [
   ['INVALID_OR_EXPIRED_TOKEN', 410],
 ];
 
+// Slice-1 OAuth codes (authController.oauthLogin) — the person sees these on
+// /login after a failed Google sign-in.
+const OAUTH_CODES: Array<[string, number]> = [
+  ['INVALID_TOKEN', 401],
+  ['OAUTH_NO_EMAIL', 400],
+  ['OAUTH_EMAIL_NOT_VERIFIED', 403],
+  ['ACCOUNT_CONFLICT', 409],
+];
+
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';
+
+/*
+ * «Specific» means: not what the switch's default would say for the same
+ * status. The default is not one text — for 429 it is «Слишком много попыток
+ * входа…», which is not FALLBACK — so «not FALLBACK» alone let a dropped
+ * 429 case (RATE_LIMIT_EXCEEDED, TOO_MANY_ATTEMPTS, RATE_LIMITED) pass.
+ */
+const statusDefault = (status: number) => messageForCode(undefined, status);
 
 describe('messageForCode — verify-email code coverage (anti-drift)', () => {
   it.each(VERIFY_CODES)('maps %s to a specific message', (code, status) => {
     const msg = messageForCode(code, status);
     expect(msg).not.toBe(FALLBACK);
+    expect(msg).not.toBe(statusDefault(status));
     expect(msg.length).toBeGreaterThan(0);
   });
 
@@ -54,8 +72,9 @@ describe('messageForCode — verify-email code coverage (anti-drift)', () => {
 });
 
 describe('messageForCode — extraction safety + fallback behaviour', () => {
-  it.each(MOVED_SLICE1_CODES)('still maps %s specifically', (code, status) => {
+  it.each([...MOVED_SLICE1_CODES, ...OAUTH_CODES])('still maps %s specifically', (code, status) => {
     expect(messageForCode(code, status)).not.toBe(FALLBACK);
+    expect(messageForCode(code, status)).not.toBe(statusDefault(status));
   });
 
   it('falls back to the neutral message for an unknown code', () => {

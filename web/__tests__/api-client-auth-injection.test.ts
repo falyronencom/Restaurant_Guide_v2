@@ -257,4 +257,89 @@ describe('authedFetch', () => {
     });
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  // Only the server's verdict on the ACCESS token (401) is worth a refresh.
+  // Any other refusal is the answer to the request itself: refreshing would
+  // spend a single-use refresh token for nothing, and replaying would send a
+  // write twice.
+  it.each([
+    [404, 'NOT_FOUND'],
+    [422, 'VALIDATION_ERROR'],
+    [429, 'RATE_LIMIT_EXCEEDED'],
+    [500, 'INTERNAL_ERROR'],
+  ])('a backend %i (%s) is thrown as is: no refresh, no replay', async (status, code) => {
+    staleAccessWithRefresh();
+    const refusal = new ApiError(status, 'refused', code);
+    mockFetch.mockRejectedValueOnce(refusal);
+
+    await expect(
+      authedFetch('/api/v1/reviews', { method: 'POST', body: '{}' }),
+    ).rejects.toBe(refusal);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/reviews');
+  });
+
+  /** Holds every refresh until released; answers the authed call by its Bearer. */
+  function deferredRefresh(): { release: () => void; refreshCalls: () => number } {
+    const waiting: Array<() => void> = [];
+    mockFetch.mockImplementation((path: string, init?: { headers?: Record<string, string> }) => {
+      if (path === '/api/v1/auth/refresh') {
+        return new Promise((resolve) => {
+          waiting.push(() =>
+            resolve({
+              user: { id: 'u1', email: 'a', phone: null, name: 'n', role: 'user' },
+              accessToken: 'fresh',
+              refreshToken: 'rt2',
+              tokenType: 'Bearer',
+              expiresIn: 14400,
+            }),
+          );
+        });
+      }
+      return init?.headers?.Authorization === 'Bearer fresh'
+        ? Promise.resolve({ ok: 1 })
+        : Promise.reject(new ApiError(401, 'expired', 'TOKEN_EXPIRED'));
+    });
+    return {
+      release: () => waiting.splice(0).forEach((go) => go()),
+      refreshCalls: () =>
+        mockFetch.mock.calls.filter(([p]) => p === '/api/v1/auth/refresh').length,
+    };
+  }
+
+  // Two actions of one visitor under one expired access token (e.g. two
+  // favourite toggles): the refresh token is single-use, so presenting it
+  // twice risks the server's reuse alarm outside its grace window, which
+  // revokes every session the visitor has.
+  it('two parallel calls refused 401 share ONE refresh, then both replay', async () => {
+    staleAccessWithRefresh();
+    const gate = deferredRefresh();
+
+    const calls = Promise.all([
+      authedFetch('/api/v1/favorites', { method: 'POST', body: '{"a":1}' }),
+      authedFetch('/api/v1/favorites', { method: 'POST', body: '{"a":2}' }),
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    gate.release();
+
+    await expect(calls).resolves.toEqual([{ ok: 1 }, { ok: 1 }]);
+    expect(gate.refreshCalls()).toBe(1);
+  });
+
+  it('two parallel calls with no access cookie share ONE up-front refresh', async () => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_rt' ? { value: 'rt' } : undefined,
+    );
+    const gate = deferredRefresh();
+
+    const calls = Promise.all([
+      authedFetch('/api/v1/favorites'),
+      authedFetch('/api/v1/favorites'),
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    gate.release();
+
+    await expect(calls).resolves.toEqual([{ ok: 1 }, { ok: 1 }]);
+    expect(gate.refreshCalls()).toBe(1);
+  });
 });

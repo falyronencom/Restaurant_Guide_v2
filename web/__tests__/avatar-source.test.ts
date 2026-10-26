@@ -42,8 +42,13 @@ const REFUSED: Array<[string, string]> = [
   ['не адрес', 'мусор'],
 ];
 
+// Оба списка оптимизатора, как в /_next/image (image-remote-patterns.test.ts).
 const optimizerAdmits = (url: string) =>
-  hasRemoteMatch([], nextConfig.images?.remotePatterns ?? [], new URL(url));
+  hasRemoteMatch(
+    nextConfig.images?.domains ?? [],
+    nextConfig.images?.remotePatterns ?? [],
+    new URL(url),
+  );
 
 describe('avatarSource — откуда грузится аватар автора отзыва', () => {
   it('фото входа через Google и Яндекс — напрямую', () => {

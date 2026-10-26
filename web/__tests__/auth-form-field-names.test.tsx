@@ -111,6 +111,26 @@ it('ResetPasswordForm posts exactly token and password', () => {
   expect(fieldNames(container)).toEqual(['token', 'password'].sort());
 });
 
+/*
+ * Names are half of the seam; for the HIDDEN fields the value is the other
+ * half — the person never types it, so a wrong value is invisible on screen.
+ * The reset token decides whether «сохранить пароль» works at all; the
+ * Yandex returnTo is the only way the page the person came from reaches
+ * y_state.
+ */
+// LoginForm/RegisterForm returnTo is left out on purpose: navigation there is
+// driven by the page prop, not the posted value (audit row WA10c, open).
+it('the reset token and the Yandex returnTo post the value the page passed in', () => {
+  const reset = render(<ResetPasswordForm token="reset-token-1" />);
+  expect(reset.container.querySelector('input[name="token"]')).toHaveValue('reset-token-1');
+  reset.unmount();
+
+  const oauth = render(<OAuthButtons returnTo="/minsk/restorany" />);
+  expect(oauth.container.querySelector('input[name="returnTo"]')).toHaveValue(
+    '/minsk/restorany',
+  );
+});
+
 it('VerifyEmailForm posts exactly code', () => {
   const { container } = render(<VerifyEmailForm />);
 

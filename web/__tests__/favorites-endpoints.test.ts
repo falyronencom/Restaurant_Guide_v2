@@ -38,6 +38,20 @@ describe('favorites endpoint encoders — casing/shape contract', () => {
     );
   });
 
+  // The batch answer is what paints the hearts after a page load: the map
+  // comes from data.favorites (backend favoriteService
+  // .checkMultipleFavoriteStatus returns { favorites: { <id>: boolean } }).
+  it('check-batch returns the server map of saved ids, and {} when the field is absent', async () => {
+    mockAuthedFetch.mockResolvedValueOnce({ favorites: { e1: true, e2: false } });
+    await expect(checkFavoritesBatch(['e1', 'e2'])).resolves.toEqual({
+      e1: true,
+      e2: false,
+    });
+
+    mockAuthedFetch.mockResolvedValueOnce({});
+    await expect(checkFavoritesBatch(['e3'])).resolves.toEqual({});
+  });
+
   it('check-batch short-circuits an empty id list with no backend call', async () => {
     await checkFavoritesBatch([]);
     expect(mockAuthedFetch).not.toHaveBeenCalled();

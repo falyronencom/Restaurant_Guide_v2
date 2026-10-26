@@ -21,8 +21,11 @@ describe('validateMediaFileName — photo bucket', () => {
     'rejects %s with a Russian message',
     (name) => {
       const msg = validateMediaFileName(name, 'photo');
-      expect(msg).not.toBeNull();
-      expect(msg).toContain(name);
+      // The partner reads this text in the wizard: Russian, naming the file
+      // and what is accepted instead.
+      expect(msg).toBe(
+        `Недопустимый формат файла «${name}». Допустимы фото JPG, PNG, WebP или HEIC.`,
+      );
     },
   );
 });
@@ -39,8 +42,9 @@ describe('validateMediaFileName — pdf bucket', () => {
     'rejects %s with a Russian message',
     (name) => {
       const msg = validateMediaFileName(name, 'pdf');
-      expect(msg).not.toBeNull();
-      expect(msg).toContain('PDF');
+      expect(msg).toBe(
+        `Файл «${name}» не является PDF. Меню можно загрузить как PDF или фото JPG/PNG/WebP.`,
+      );
     },
   );
 });

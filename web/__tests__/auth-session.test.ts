@@ -21,7 +21,11 @@ jest.mock('next/headers', () => ({
 jest.mock('@/lib/api/client', () => ({ serverFetch: jest.fn() }));
 
 import { serverFetch } from '@/lib/api/client';
-import { establishGoogleSession, getSessionSummary } from '@/lib/auth/actions';
+import {
+  establishGoogleSession,
+  getSessionSummary,
+  prepareLogin,
+} from '@/lib/auth/actions';
 
 const mockFetch = serverFetch as jest.Mock;
 
@@ -29,6 +33,11 @@ function makeIdToken(nonce: string): string {
   const payload = Buffer.from(JSON.stringify({ nonce, sub: '123' })).toString(
     'base64url',
   );
+  return `header.${payload}.signature`;
+}
+
+function makeIdTokenWithoutNonce(): string {
+  const payload = Buffer.from(JSON.stringify({ sub: '123' })).toString('base64url');
   return `header.${payload}.signature`;
 }
 
@@ -114,6 +123,26 @@ describe('establishGoogleSession', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  // The binding holds only when BOTH halves exist and agree. An id_token with
+  // no nonce claim and a jar with no g_nonce cookie are "equal" (both absent)
+  // — that must not read as a match.
+  it.each<[string, string | undefined, string | null]>([
+    ['no cookie, no claim', undefined, null],
+    ['no cookie, claim present', undefined, 'n-1'],
+    ['cookie present, no claim', 'n-1', null],
+    ['empty cookie, empty claim', '', ''],
+  ])('rejects without calling the backend: %s', async (_, cookieNonce, claimNonce) => {
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'g_nonce' && cookieNonce !== undefined ? { value: cookieNonce } : undefined,
+    );
+    const idToken = claimNonce === null ? makeIdTokenWithoutNonce() : makeIdToken(claimNonce);
+
+    const result = await establishGoogleSession(idToken);
+
+    expect(result).toMatchObject({ ok: false, code: 'NONCE_MISMATCH' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('maps a backend error code and sets no session cookie', async () => {
     const nonce = 'n1';
     mockStore.get.mockImplementation((name: string) =>
@@ -135,6 +164,21 @@ describe('establishGoogleSession', () => {
   });
 });
 
+describe('prepareLogin', () => {
+  // The nonce is the login-CSRF binding for Google: it must not be
+  // predictable, so two logins never share one.
+  it('mints a fresh nonce on every call and stores the one it returns', async () => {
+    const first = await prepareLogin();
+    const second = await prepareLogin();
+
+    expect(first.nonce).not.toBe(second.nonce);
+    const stored = mockStore.set.mock.calls
+      .filter((c) => c[0] === 'g_nonce')
+      .map((c) => c[1]);
+    expect(stored).toEqual([first.nonce, second.nonce]);
+  });
+});
+
 describe('getSessionSummary', () => {
   it('returns the display user from rg_user (read-only — no proactive refresh)', async () => {
     const user = {
@@ -145,10 +189,14 @@ describe('getSessionSummary', () => {
       avatarUrl: null,
     };
     // Access cookie absent: getSessionSummary must NOT refresh (refresh is lazy,
-    // in authedFetch). It returns the display user from rg_user.
-    mockStore.get.mockImplementation((name: string) =>
-      name === 'rg_user' ? { value: JSON.stringify(user) } : undefined,
-    );
+    // in authedFetch). It returns the display user from rg_user. The refresh
+    // token IS in the jar — without it a proactive refresh would have nothing
+    // to present, and «no backend call» below could not fail.
+    mockStore.get.mockImplementation((name: string) => {
+      if (name === 'rg_user') return { value: JSON.stringify(user) };
+      if (name === 'rg_rt') return { value: 'rt-live' };
+      return undefined;
+    });
 
     await expect(getSessionSummary()).resolves.toEqual(user);
     expect(mockFetch).not.toHaveBeenCalled();

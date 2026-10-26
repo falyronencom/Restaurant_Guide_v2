@@ -79,13 +79,15 @@ describe('getLiveCities', () => {
       .filter(([p]) => String(p).includes('/establishments?'))
       .map(([, init]) => init.next.revalidate);
     expect(windows).toHaveLength(3);
-    const floor = Math.min(
+    // «Not shorter than ANY window» = not shorter than the LONGEST one: the
+    // probe sits in the shared layout, so it would lower every route below it.
+    const longest = Math.max(
       PUBLIC_LAYOUT_REVALIDATE,
       HOME_REVALIDATE,
       DETAIL_REVALIDATE,
       SITEMAP_REVALIDATE,
     );
-    for (const w of windows) expect(w).toBeGreaterThanOrEqual(floor);
+    for (const w of windows) expect(w).toBeGreaterThanOrEqual(longest);
   });
 
   it('keeps a city whose probe FAILED — unknown is not empty', async () => {

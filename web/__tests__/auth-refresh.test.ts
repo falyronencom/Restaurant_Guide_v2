@@ -99,6 +99,43 @@ describe('refreshSession', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1); // single-flight dedup
   });
 
+  it('keeps two different refresh tokens apart: each is presented, each caller gets its own access token', async () => {
+    // Two visitors refreshing on one server instance at once. The in-flight
+    // map is shared by the process; the refresh token is the only thing that
+    // tells the two apart.
+    const reads = ['rt-anna', 'rt-boris'];
+    mockStore.get.mockImplementation((name: string) =>
+      name === 'rg_rt' ? { value: reads.shift() ?? 'rt-late' } : undefined,
+    );
+    const pending: Array<(v: unknown) => void> = [];
+    mockFetch.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+
+    const pAnna = refreshSession();
+    const pBoris = refreshSession();
+    // Let both callers reach the transport before anyone answers.
+    await new Promise((r) => setTimeout(r, 0));
+
+    try {
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const presented = mockFetch.mock.calls.map(
+        ([, init]) => JSON.parse((init as { body: string }).body).refreshToken,
+      );
+      expect(presented.sort()).toEqual(['rt-anna', 'rt-boris']);
+    } finally {
+      // Answer each presentation with that visitor's own pair — also when an
+      // assertion above failed, so no in-flight entry outlives this test.
+      mockFetch.mock.calls.forEach(([, init], i) => {
+        const token = JSON.parse((init as { body: string }).body).refreshToken;
+        const who = token === 'rt-anna' ? 'anna' : 'boris';
+        pending[i]({ ...REFRESH_DATA, accessToken: `at-${who}`, refreshToken: `rt2-${who}` });
+      });
+    }
+    expect(await pAnna).toBe('at-anna');
+    expect(await pBoris).toBe('at-boris');
+  });
+
   it('clears the session on reuse-detection (accept-and-recover)', async () => {
     mockFetch.mockRejectedValue(
       new ApiError(403, 'reuse', 'TOKEN_REUSE_DETECTED'),

@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { validationResult } from 'express-validator';
 
 /**
@@ -28,6 +29,67 @@ export class AppError extends Error {
  * stays in the log.
  */
 export const SERVER_FAILURE_MESSAGE = 'Сбой на сервере. Попробуйте ещё раз через минуту.';
+
+/**
+ * The most a JSON or urlencoded body may weigh, in MB (server.js,
+ * express.json and express.urlencoded); the refusal below names it.
+ */
+export const BODY_LIMIT_MB = 10;
+
+/**
+ * body-parser's refusals of a body (server.js), by err.type: the status the
+ * client gets, a code of the server's own and a sentence for a person. Until
+ * 25.10.2026 they went out with body-parser's status but its English text and
+ * the code INTERNAL_ERROR. A body the parser stops reading — a form over 1000
+ * fields or with a name nested deeper than 32, a body whose size does not
+ * match its Content-Length — answers as a multipart form busboy cannot read
+ * does (middleware/upload.js unreadableFormRefusal): 400 INVALID_FORMAT and
+ * the form's sentence (UPLOAD_REFUSALS.formNotRead, approved 16.10.2026);
+ * body-parser gave too many fields 413. The new texts and codes were proposed
+ * by Trunk on 25.10.2026, the Coordinator's word comes with the merge.
+ *
+ * Not here on purpose: entity.parse.failed (INVALID_JSON below, as before);
+ * request.aborted — the connection dropped mid-send, nobody reads the answer,
+ * and it stays as it was (decided with this list); stream.encoding.set and
+ * stream.not.readable — the server's own failures (500);
+ * entity.verify.failed — no parser here takes a verify.
+ */
+export const BODY_PARSER_REFUSALS = Object.freeze({
+  'entity.too.large': Object.freeze({
+    statusCode: 413,
+    code: 'PAYLOAD_TOO_LARGE',
+    message: `Запрос слишком большой — не больше ${BODY_LIMIT_MB} МБ.`,
+  }),
+  // server.js parses with inflate: false — any Content-Encoding but identity
+  'encoding.unsupported': Object.freeze({
+    statusCode: 415,
+    code: 'UNSUPPORTED_ENCODING',
+    message: 'Сжатые тела запросов не принимаются.',
+  }),
+  'charset.unsupported': Object.freeze({
+    statusCode: 415,
+    code: 'UNSUPPORTED_CHARSET',
+    message: 'Кодировка запроса не поддерживается.',
+  }),
+  'parameters.too.many': Object.freeze({
+    statusCode: 400,
+    code: 'INVALID_FORMAT',
+    message: UPLOAD_REFUSALS.formNotRead,
+  }),
+  'querystring.parse.rangeError': Object.freeze({
+    statusCode: 400,
+    code: 'INVALID_FORMAT',
+    message: UPLOAD_REFUSALS.formNotRead,
+  }),
+  'request.size.invalid': Object.freeze({
+    statusCode: 400,
+    code: 'INVALID_FORMAT',
+    message: UPLOAD_REFUSALS.formNotRead,
+  }),
+});
+
+/** How much of a client's header value a body refusal's log entry keeps. */
+const LOGGED_HEADER_TEXT_MAX = 100;
 
 /**
  * Centralized error handling middleware.
@@ -64,6 +126,19 @@ export const errorHandler = (err, req, res, _next) => {
     : (err.message || 'An unexpected error occurred');
   let details = err.details || null;
 
+  // body-parser's refusals of a body (BODY_PARSER_REFUSALS). Its own text goes
+  // to the log as `reason` — with the charset named in Content-Type, when that
+  // is refused — and the refused Content-Encoding as `encoding`, so a client
+  // that compresses its bodies shows in the log by the encoding it uses. Both
+  // come from a header the client writes, as long as it likes: cut to
+  // LOGGED_HEADER_TEXT_MAX.
+  const bodyRefusal = typeof err.type === 'string' && Object.hasOwn(BODY_PARSER_REFUSALS, err.type)
+    ? BODY_PARSER_REFUSALS[err.type]
+    : null;
+  if (bodyRefusal) {
+    ({ statusCode, code: errorCode, message } = bodyRefusal);
+  }
+
   // multer's own refusals — the limits in middleware/upload.js
   // (MULTIPART_LIMITS), a field it cannot store — are the client's: 413 for
   // an oversized file, 400 otherwise. Routes with their own multer handler
@@ -86,6 +161,10 @@ export const errorHandler = (err, req, res, _next) => {
     userId: req.user?.userId,
     ip: req.ip,
     correlationId: req.correlationId,
+    ...(bodyRefusal && {
+      reason: String(err.message).slice(0, LOGGED_HEADER_TEXT_MAX),
+      ...(typeof err.encoding === 'string' && { encoding: err.encoding.slice(0, LOGGED_HEADER_TEXT_MAX) }),
+    }),
   };
 
   // Operational errors (4xx) are warnings, programming errors (5xx) are errors

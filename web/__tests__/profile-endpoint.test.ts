@@ -44,6 +44,9 @@ describe('profile endpoints — the request the backend routes', () => {
     expect(path).toBe('/api/v1/auth/profile');
     expect(init.method).toBe('PUT');
     expect(JSON.parse(init.body)).toEqual({ name: 'Анна' });
+    // …and the server reads that body only under application/json (server.js,
+    // express.json): without the header the name never arrives.
+    expect(init.headers['Content-Type']).toBe('application/json');
   });
 
   it('the profile is GET /api/v1/auth/me, and the answer is data.user', async () => {
