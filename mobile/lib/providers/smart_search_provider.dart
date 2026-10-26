@@ -26,6 +26,15 @@ class SmartSearchProvider extends ChangeNotifier {
   /// typed it; the preview renders on the first screen after login.
   /// Bumped on every account-scope reset; a search started before the reset
   /// drops its answer (pack 1 of the critics' findings, point 4 — Codex C2).
+  ///
+  /// Тем же номером побеждает последний начатый поиск: номер растёт и на
+  /// каждый новый поиск, и в [clear]. Гость вправе передумать, пока ответ в
+  /// пути, — поле и подсказки не запираются, — и запоздавший ответ или
+  /// запоздавшая ошибка прежней фразы не должны лечь под поле с новой: под
+  /// «Суши» оставались карточки пасты и «Показать все (N)» с её N (сверка
+  /// «Честность тестов клиентов», 25.10.2026). Приём тот же, что `_searchSeq`
+  /// экрана результатов и `_fetchGeneration` карты. / Also bumped by every new
+  /// search and by [clear]: the latest search started wins.
   int _generation = 0;
 
   void resetAccountScope() {
@@ -93,7 +102,7 @@ class SmartSearchProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    final generation = _generation;
+    final generation = ++_generation;
     try {
       final result = await _service.searchSmart(
         query: _lastQuery,
@@ -111,7 +120,8 @@ class SmartSearchProvider extends ChangeNotifier {
         features: filters?.features,
         limit: 3,
       );
-      if (generation != _generation) return; // account switched mid-flight
+      // Сменился аккаунт, начат другой поиск или поле очищено.
+      if (generation != _generation) return;
 
       _smartResults = result.results;
       _totalResults = result.total;
@@ -134,6 +144,9 @@ class SmartSearchProvider extends ChangeNotifier {
 
   /// Clear state back to idle
   void clear() {
+    // Поиск, ушедший до очистки, своё отработал: его ответ не всплывёт
+    // под полем, где гость уже набирает новое.
+    _generation++;
     _state = SmartSearchState.idle;
     _smartResults = [];
     _totalResults = 0;

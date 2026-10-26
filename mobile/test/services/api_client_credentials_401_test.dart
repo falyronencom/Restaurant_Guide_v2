@@ -182,13 +182,23 @@ void main() {
   });
 
   group('401 на входе — ответ сервера как есть', () {
-    for (final path in const ['/api/v1/auth/login', '/api/v1/auth/oauth']) {
+    // Отказы — как у сервера (`backend/src/controllers/authController.js`):
+    // вход по паролю — INVALID_CREDENTIALS (:262-270), OAuth — INVALID_TOKEN
+    // (:805-813). Код OAuth — из списка сеанса клиента, поэтому от обновления
+    // и повтора его удерживает только исключение пути: тест обязан это
+    // видеть (ревью Phase 3.5, линза, 26.10.2026).
+    const refusals = <String, (String, String)>{
+      '/api/v1/auth/login': (
+        'INVALID_CREDENTIALS',
+        'Invalid email/phone or password',
+      ),
+      '/api/v1/auth/oauth': ('INVALID_TOKEN', 'Invalid or expired OAuth token'),
+    };
+    for (final MapEntry(key: path, value: (code, message))
+        in refusals.entries) {
       test('$path: без обновления и без сигнала', () async {
         final adapter = StubAdapter(
-          (_) => jsonBody(
-            rejected('INVALID_CREDENTIALS', 'Invalid email/phone or password'),
-            status: 401,
-          ),
+          (_) => jsonBody(rejected(code, message), status: 401),
           maxRequests: 8,
         );
         final api = client(adapter);
@@ -198,10 +208,10 @@ void main() {
           data: {'email': 'probe@example.com', 'password': 'typo'},
         )));
 
-        expect(error.error, 'Invalid email/phone or password',
-            reason: 'провайдер переводит именно эту фразу в «Неверный '
-                'email/телефон или пароль»; подмена текстом про истёкший '
-                'сеанс даёт общую ошибку');
+        expect(error.error, message,
+            reason: 'провайдер переводит фразу сервера (для входа — в '
+                '«Неверный email/телефон или пароль»); подмена текстом про '
+                'истёкший сеанс даёт общую ошибку');
         expect(error.response?.statusCode, 401);
         expect(paths(adapter), [path],
             reason: 'по отказу во входе обновлять токен нечем');
@@ -279,13 +289,93 @@ void main() {
       expect(expired, 0);
     });
 
-    test('401 по существу на повторе не запускает обновление снова',
-        () async {
-      // Неверный код подтверждения: бэкенд отвечает 401 INVALID_CODE на
-      // авторизованном эндпоинте. Старый перехватчик обновлял токен и
-      // повторял запрос с тем же кодом — каждый виток вращал refresh-токен
-      // и жёг попытку кода; после пяти бэкенд отвечает TOO_MANY_ATTEMPTS.
-      // Одна опечатка выжигала все попытки.
+    test('свежий токен тоже отвергнут — второго круга нет', () async {
+      // Отзыв между обновлением и повтором: повтор получает 401 проверки
+      // входа. Второй круг ничего бы не изменил, а каждый круг вращает
+      // refresh-токен.
+      storage['access_token'] = 'stale';
+      storage['refresh_token'] = 'valid';
+      final adapter = StubAdapter(
+        (options) => isRefresh(options)
+            ? jsonBody(rotated('fresh', 'fresh-r'))
+            : jsonBody(
+                middlewareRejected('TOKEN_REVOKED',
+                    'Access token has been revoked. Please log in again.'),
+                status: 401,
+              ),
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      final error = asDio(await failure(api.get('/api/v1/favorites')));
+
+      expect(error.response?.statusCode, 401,
+          reason: 'наружу уходит отказ повтора как есть');
+      expect(
+        paths(adapter),
+        ['/api/v1/favorites', '/api/v1/auth/refresh', '/api/v1/favorites'],
+        reason: 'одно обновление, один повтор — и стоп',
+      );
+    });
+  });
+
+  // ==========================================================================
+  // Какой 401 повторяется (сверка «Честность тестов клиентов», 25.10.2026).
+  //
+  // Обновление лечит только приговор ACCESS-токену — 401 проверки входа
+  // сервера. Коды ниже — литералы из `backend/src/middleware/auth.js`
+  // (`authenticate`): MISSING_TOKEN :53, INVALID_TOKEN_FORMAT :66,
+  // INVALID_TOKEN :76, TOKEN_EXPIRED :80, MALFORMED_TOKEN :83,
+  // ACCOUNT_INACTIVE :131, TOKEN_REVOKED :148. Равенство списка клиента этим
+  // кодам стережёт `session_refusal_codes_guard_test.dart`.
+  // ==========================================================================
+
+  group('401 проверки входа сервера — обновление и повтор', () {
+    const codes = <String>[
+      'MISSING_TOKEN',
+      'INVALID_TOKEN_FORMAT',
+      'INVALID_TOKEN',
+      'TOKEN_EXPIRED',
+      'MALFORMED_TOKEN',
+      'ACCOUNT_INACTIVE',
+      'TOKEN_REVOKED',
+    ];
+    for (final code in codes) {
+      test(code, () async {
+        storage['access_token'] = 'stale';
+        storage['refresh_token'] = 'valid';
+        final adapter = StubAdapter(
+          (options) {
+            if (isRefresh(options)) {
+              return jsonBody(rotated('fresh', 'fresh-r'));
+            }
+            return options.headers['Authorization'] == 'Bearer fresh'
+                ? jsonBody({'success': true, 'data': <String, dynamic>{}})
+                : jsonBody(middlewareRejected(code, 'refused'), status: 401);
+          },
+          maxRequests: 8,
+        );
+        final api = client(adapter);
+
+        final response = await api.get('/api/v1/favorites').timeout(limit);
+
+        expect(response.statusCode, 200);
+        expect(
+          paths(adapter),
+          ['/api/v1/favorites', '/api/v1/auth/refresh', '/api/v1/favorites'],
+          reason: '401 $code — приговор доступу: обновить и повторить',
+        );
+        expect(adapter.requests.last.headers['Authorization'], 'Bearer fresh');
+      });
+    }
+  });
+
+  group('прочие 401 — один запрос, ответ сервера как есть', () {
+    test('неверный код из письма: ни обновления, ни повтора', () async {
+      // Сервер считает попытку за каждый запрос
+      // (`backend/src/services/authService.js`, `verifyEmailCode`): повтор с
+      // тем же кодом сжигал вторую попытку за ввод, и код гас на третьем
+      // вводе вместо пятого.
       storage['access_token'] = 'valid';
       storage['refresh_token'] = 'valid-r';
       final adapter = StubAdapter(
@@ -305,21 +395,37 @@ void main() {
       )));
 
       expect(error.error, 'Verification code is incorrect',
-          reason: 'наружу уходит отказ повтора с текстом сервера, а не '
-              'исходный 401 без текста');
+          reason: 'провайдер переводит именно эту фразу в «Неверный код '
+              'подтверждения»');
       expect(error.response?.statusCode, 401);
-      expect(
-        paths(adapter),
-        [
-          '/api/v1/auth/verify-email-code',
-          '/api/v1/auth/refresh',
-          '/api/v1/auth/verify-email-code',
-        ],
-        reason: 'одно обновление, один повтор — и стоп',
-      );
-      expect(storage['access_token'], 'fresh',
-          reason: 'обновление удалось — сессия жива, токены новые');
+      expect(paths(adapter), ['/api/v1/auth/verify-email-code'],
+          reason: 'один ввод — один запрос: неверный код не лечится '
+              'обновлением');
+      expect(storage['access_token'], 'valid', reason: 'сеанс не тронут');
+      expect(storage['refresh_token'], 'valid-r');
       expect(expired, 0);
+    });
+
+    test('401 без кода: ни обновления, ни повтора, сеанс цел', () async {
+      // Все 401 сервера несут код; 401 без кода — ответ не той формы.
+      // Обновлять по нему значило бы тратить одноразовый refresh-токен.
+      storage['access_token'] = 'valid';
+      storage['refresh_token'] = 'valid-r';
+      final adapter = StubAdapter(
+        (options) => isRefresh(options)
+            ? jsonBody(rotated('fresh', 'fresh-r'))
+            : jsonBody(<String, dynamic>{'success': false}, status: 401),
+        maxRequests: 8,
+      );
+      final api = client(adapter);
+
+      final error = asDio(await failure(api.get('/api/v1/favorites')));
+
+      expect(error.response?.statusCode, 401);
+      expect(paths(adapter), ['/api/v1/favorites']);
+      expect(storage['access_token'], 'valid');
+      expect(storage['refresh_token'], 'valid-r');
+      expect(expired, 0, reason: '401 без кода — не приговор сеансу');
     });
   });
 }

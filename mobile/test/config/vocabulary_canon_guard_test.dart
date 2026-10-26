@@ -321,6 +321,42 @@ void main() {
       expect(sentCategories, canonCategories);
       expect(sentCuisines, canonCuisines);
     });
+
+    test('каждая категория и кухня канона, пришедшая с сервера, узнаётся '
+        'мастером — правка карточки отмечает выбранное', () {
+      // Карточка приходит с названиями (`['Клуб']`), мастер переводит их
+      // в id плиток (`categoryNameToId`). Название, которого нет в
+      // таблице, возвращается как есть — плитка не отмечена, снять её
+      // нельзя, а кухня становится обязательной.
+      final tileIds = CategoryOptions.items.map((i) => i.id).toSet();
+      final cuisineIds = CuisineOptions.items.map((i) => i.id).toSet();
+      for (final name in canonCategories) {
+        expect(tileIds, contains(PartnerRegistration.categoryNameToId(name)),
+            reason: 'категория «$name» с сервера не узнаётся мастером');
+      }
+      for (final name in canonCuisines) {
+        expect(cuisineIds, contains(PartnerRegistration.cuisineNameToId(name)),
+            reason: 'кухня «$name» с сервера не узнаётся мастером');
+      }
+    });
+
+    test('туда и обратно: название канона → плитка → то же название', () {
+      // Узнать мало: плитка обязана отправить на сервер то же название, что
+      // пришло, иначе правка карточки молча меняет её категорию.
+      for (final name in canonCategories) {
+        final id = PartnerRegistration.categoryNameToId(name);
+        expect(
+            PartnerRegistration(categories: [id]).toJson()['categories'],
+            [name],
+            reason: 'категория «$name» после правки уходит другим названием');
+      }
+      for (final name in canonCuisines) {
+        final id = PartnerRegistration.cuisineNameToId(name);
+        expect(PartnerRegistration(cuisineTypes: [id]).toJson()['cuisines'],
+            [name],
+            reason: 'кухня «$name» после правки уходит другим названием');
+      }
+    });
   });
 }
 
