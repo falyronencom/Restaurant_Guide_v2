@@ -17,6 +17,7 @@ import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
+import { resolveTrustProxyHops } from './config/trustProxy.js';
 import {
   createGracefulShutdown,
   installShutdownHandlers,
@@ -51,16 +52,19 @@ const shutdownBudget = resolveShutdownBudget(process.env, {
 const refreshReuseGrace = resolveRefreshReuseGraceSeconds(process.env);
 
 /**
- * Trust exactly ONE reverse-proxy hop (Railway's edge terminates TLS and
- * forwards X-Forwarded-For). Without this, req.ip is the proxy address and
- * every per-IP rate limit collapses into a single shared bucket (OSB-G1).
+ * Trust Railway's edge chain — TRUST_PROXY_HOPS entries of X-Forwarded-For
+ * counted from the right, 2 by default (config/trustProxy.js). req.ip is the
+ * direct client's address, the key of every per-address limit; with 1 it was
+ * the Railway hop the request came through, so clients sharing a hop shared
+ * every such limit (production probe 25.10.2026, directive D5 step 0).
  *
- * MUST stay the integer 1, never `true`: `true` trusts the entire
+ * MUST stay an integer, never `true`: `true` trusts the entire
  * client-supplied X-Forwarded-For chain, letting an attacker mint unlimited
- * per-IP buckets by spoofing the header. Revisit the hop count only if
- * another trusted proxy layer is ever added in front of the app.
+ * per-IP buckets by spoofing the header. Resolved once: a change of the
+ * variable takes effect on the next restart.
  */
-app.set('trust proxy', 1);
+const trustProxy = resolveTrustProxyHops(process.env);
+app.set('trust proxy', trustProxy.hops);
 
 /**
  * Security middleware (helmet) - MUST be first.
@@ -244,6 +248,14 @@ const startServer = async () => {
     });
     if (refreshReuseGrace.warning) {
       logger.warn(`Refresh reuse grace window: ${refreshReuseGrace.warning}`);
+    }
+
+    // Whose address req.ip is (config/trustProxy.js): said at startup because
+    // every per-address limit keys on it, and an override set in the Railway
+    // dashboard shows nowhere else.
+    logger.info('Trusted proxy hops resolved', { hops: trustProxy.hops });
+    if (trustProxy.warning) {
+      logger.warn(`Trusted proxy hops: ${trustProxy.warning}`);
     }
 
     // The global limiter's numbers as read from RATE_LIMIT_* (middleware/
