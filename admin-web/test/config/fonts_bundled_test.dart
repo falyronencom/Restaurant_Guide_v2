@@ -294,6 +294,19 @@ void main() {
         );
       }
     });
+
+    test('вес по умолчанию у дисплейного помощника тоже объявлен', () async {
+      // Сканер выше собирает только явные `FontWeight.wNNN` в вызовах; вызов
+      // `AppTheme.unbounded(...)` без веса он пропускает — а вес ему даёт
+      // умолчание помощника. Недостающее начертание браузер дорисовал бы
+      // синтетическим утолщением: имя заведения в шапке модерации, числа
+      // «Здоровья данных».
+      final faces = (await bundled())[AppTheme.fontDisplayFamily]!;
+      final weight = AppTheme.unbounded().fontWeight!;
+      expect(faces.keys, contains(weight.value),
+          reason: 'у ${AppTheme.fontDisplayFamily} объявлены ${faces.keys}, '
+              'а умолчание помощника — ${weight.value}');
+    });
   });
 }
 

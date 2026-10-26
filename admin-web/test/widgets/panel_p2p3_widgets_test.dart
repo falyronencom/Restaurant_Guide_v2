@@ -174,14 +174,21 @@ void main() {
   });
 
   group('Счётчики меню слева живут (A3-21, F-20)', () {
-    test('обновляются сами по таймеру', () async {
+    testWidgets('обновляются сами по таймеру', (tester) async {
+      // Поддельное время `testWidgets`, а не настоящее: на настоящих 75 мс
+      // под нагрузкой машины таймер успевал сработать один раз, и тест
+      // краснел без всякой поломки (25.10.2026, прогоны мутаций).
       final service = _CountingBadgesService();
       final badges = BadgesProvider(service: service);
+      addTearDown(badges.dispose);
       badges.startAutoRefresh(every: const Duration(milliseconds: 20));
-      await Future<void>.delayed(const Duration(milliseconds: 75));
+      await tester.pump(const Duration(milliseconds: 75));
       badges.stopAutoRefresh();
 
-      expect(service.calls, greaterThanOrEqualTo(2));
+      // 20, 40 и 60 мс — три срабатывания; после остановки — ни одного.
+      expect(service.calls, 3);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(service.calls, 3);
     });
 
     test('при переходе — свежие, если нынешние старше 15 секунд', () async {

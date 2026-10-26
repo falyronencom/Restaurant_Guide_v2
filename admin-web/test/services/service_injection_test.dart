@@ -182,6 +182,137 @@ void main() {
       expect(sent.queryParameters.containsKey('period'), isFalse);
     });
 
+    // Вкладки «Заведения» и «Отзывы» тестируются на фейке сервиса: адрес
+    // запроса и разбор ответа не видел никто. Форма ответа — как её собирает
+    // бэкенд: `analyticsService.js` (getEstablishmentsAnalytics,
+    // getReviewsAnalytics, periodBounds) и `analyticsModel.js` (поля строк
+    // распределений). Числа разные — перестановка ключей не прошла бы.
+    test('getEstablishmentsAnalytics: свой адрес и ответ в форме сервера',
+        () async {
+      final adapter = _StubAdapter(
+        (_) => _json({
+          'success': true,
+          'data': {
+            'creation_timeline': <dynamic>[
+              {'date': '2026-08-08', 'count': 3},
+              {'date': '2026-08-09', 'count': 5},
+            ],
+            'status_distribution': <dynamic>[
+              {'status': 'active', 'count': 365},
+              {'status': 'pending', 'count': 7},
+            ],
+            'city_distribution': <dynamic>[
+              {'city': 'Минск', 'count': 214},
+            ],
+            'category_distribution': <dynamic>[
+              {'category': 'Ресторан', 'count': 96},
+            ],
+            'total': 412,
+            'active': 360,
+            'pending': 9,
+            'new_in_period': 11,
+            'change_percent': 22.2,
+            'aggregation': 'week',
+            'period': {
+              'start': '2026-07-12T00:00:00.000Z',
+              'end': '2026-08-11T00:00:00.000Z',
+            },
+          },
+        }),
+      );
+
+      final service = AnalyticsService.withClient(stubClient(adapter));
+      final data = await service.getEstablishmentsAnalytics(period: '90d');
+
+      final sent = adapter.requests.single;
+      expect(sent.path, '/api/v1/admin/analytics/establishments');
+      expect(sent.queryParameters, <String, dynamic>{'period': '90d'});
+
+      expect(data.creationTimeline.map((p) => '${p.date}:${p.count}').toList(),
+          <String>['2026-08-08:3', '2026-08-09:5']);
+      expect(data.statusDistribution.map((d) => '${d.label}:${d.count}').toList(),
+          <String>['active:365', 'pending:7']);
+      expect(data.cityDistribution.single.label, 'Минск');
+      expect(data.cityDistribution.single.count, 214);
+      expect(data.categoryDistribution.single.label, 'Ресторан');
+      expect(data.categoryDistribution.single.count, 96);
+      expect(data.total, 412);
+      expect(data.active, 360);
+      expect(data.pending, 9);
+      expect(data.newInPeriod, 11);
+      expect(data.changePercent, 22.2);
+      expect(data.aggregation, 'week');
+      expect(data.period?.start, DateTime.utc(2026, 7, 12));
+      expect(data.period?.endExclusive, DateTime.utc(2026, 8, 11));
+    });
+
+    test('getReviewsAnalytics: свой адрес и ответ в форме сервера', () async {
+      final adapter = _StubAdapter(
+        (_) => _json({
+          'success': true,
+          'data': {
+            // Окно больше 90 суток — столбец месячный (`getAggregationType`).
+            'review_timeline': <dynamic>[
+              {'date': '2026-07-01', 'count': 12, 'average_rating': 4.4},
+              {'date': '2026-08-01', 'count': 7, 'average_rating': 3.9},
+            ],
+            'rating_distribution': <dynamic>[
+              {'rating': 1, 'count': 20, 'percentage': 2.0},
+              {'rating': 5, 'count': 980, 'percentage': 98.0},
+            ],
+            'response_stats': {
+              'total_reviews': 1240,
+              'total_with_response': 287,
+              // Доля, а не проценты: `ROUND(… / COUNT(*), 4)` в
+              // `analyticsModel.js` (getResponseStats).
+              'response_rate': 0.2315,
+              'avg_response_time_hours': 5.5,
+            },
+            'total': 1250,
+            'new_in_period': 74,
+            'change_percent': -4.0,
+            'average_rating': 4.6,
+            'aggregation': 'month',
+            'period': {
+              'start': '2026-05-01T00:00:00.000Z',
+              'end': '2026-08-20T00:00:00.000Z',
+            },
+          },
+        }),
+      );
+
+      final service = AnalyticsService.withClient(stubClient(adapter));
+      final data = await service.getReviewsAnalytics(
+          from: '2026-05-01', to: '2026-08-19');
+
+      final sent = adapter.requests.single;
+      expect(sent.path, '/api/v1/admin/analytics/reviews');
+      expect(sent.queryParameters,
+          <String, dynamic>{'from': '2026-05-01', 'to': '2026-08-19'});
+
+      expect(
+          data.reviewTimeline
+              .map((p) => '${p.date}:${p.count}:${p.averageRating}')
+              .toList(),
+          <String>['2026-07-01:12:4.4', '2026-08-01:7:3.9']);
+      expect(
+          data.ratingDistribution
+              .map((r) => '${r.rating}:${r.count}:${r.percentage}')
+              .toList(),
+          <String>['1:20:2.0', '5:980:98.0']);
+      expect(data.responseStats.totalReviews, 1240);
+      expect(data.responseStats.totalWithResponse, 287);
+      expect(data.responseStats.responseRate, 0.2315);
+      expect(data.responseStats.avgResponseTimeHours, 5.5);
+      expect(data.total, 1250);
+      expect(data.newInPeriod, 74);
+      expect(data.changePercent, -4.0);
+      expect(data.averageRating, 4.6);
+      expect(data.aggregation, 'month');
+      expect(data.period?.start, DateTime.utc(2026, 5, 1));
+      expect(data.period?.endExclusive, DateTime.utc(2026, 8, 20));
+    });
+
     test('ошибка сервера доходит до вызывающего человеческим текстом',
         () async {
       final adapter = _StubAdapter(

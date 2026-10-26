@@ -302,6 +302,44 @@ void main() {
           reason: 'иначе прямая ссылка на внутренний экран теряется');
     });
 
+    testWidgets('сессия есть, но адрес перехода чужой — дашборд, а не он',
+        (tester) async {
+      // Группа «адрес перехода разбирается как чужой ввод» проверяет сам
+      // фильтр; здесь — что гейт им пользуется: адрес из строки браузера
+      // (`?from=`) после ответа авторизации доходит до навигации только
+      // через [safeInternalPath].
+      final service = _HoldingAuthService();
+      final auth = AuthProvider(authService: service);
+      final router = createRouter(auth);
+      addTearDown(router.dispose);
+      addTearDown(auth.dispose);
+      tester.view.physicalSize = const Size(1500, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_app(auth, router,
+          badges: _CountingBadgesService(),
+          analytics: _CountingAnalyticsService(),
+          health: _CountingQualityHealthService()));
+      await tester.pump();
+
+      router.go(Uri(
+        path: splashPath,
+        queryParameters: <String, String>{'from': '//evil.example/path'},
+      ).toString());
+      await tester.pump();
+      expect(find.byType(SplashScreen), findsOneWidget, reason: 'предпосылка');
+
+      service.hasStoredSession.complete(true);
+      service.currentUser.complete(_admin);
+      await tester.pump(); // микрозадачи инициализации и пересчёт редиректа
+      await tester.pump(); // кадр нового маршрута
+      await tester.pump();
+
+      expect(_location(router), '/');
+      expect(find.byType(DashboardScreen), findsOneWidget);
+    });
+
     testWidgets('ожидание не бесконечно: потолок уводит на вход, '
         'но хранилище не чистит', (tester) async {
       final service = _HoldingAuthService();
@@ -318,7 +356,18 @@ void main() {
       await tester.pump();
       expect(find.byType(SplashScreen), findsOneWidget);
 
-      await tester.pump(AuthProvider.initializationTimeout);
+      // Мерки — литералами: двенадцать секунд обещаны в описании
+      // [AuthProvider.initializationTimeout]; константа в ожидании согласилась
+      // бы с любым своим значением, хоть с двумя минутами вордмарка.
+      await tester.pump(const Duration(seconds: 11));
+      expect(find.byType(SplashScreen), findsOneWidget,
+          reason: 'до потолка — ещё ждём ответа');
+      await tester.pump(const Duration(seconds: 1));
+      // Без `pumpAndSettle`: индикатор кадра крутится бесконечно, и «дождаться
+      // покоя» докрутило бы поддельное время до любого потолка — хоть до
+      // двух минут. Уход на вход — ровно на двенадцатой секунде.
+      await tester.pump();
+      expect(_location(router), '/login');
       await tester.pumpAndSettle();
 
       expect(_location(router), '/login');

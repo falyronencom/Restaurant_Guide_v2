@@ -11,7 +11,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_sidebar.dart';
 // Геометрия навигационного рейла.
 //
 // Смысл этих проверок — не «виджет отрисовался», а конкретное обещание
-// редизайна: на рабочем окне 1440×820 все 12 разделов видны без прокрутки.
+// редизайна: на рабочем окне 1440×820 все 13 разделов видны без прокрутки.
 // Раньше при ширине 363 и высоте пункта 44 «Здоровье данных» уходило под
 // нижний разделитель. Такие дефекты меряются числами, а не глазами.
 
@@ -38,6 +38,7 @@ void main() {
     '/moderation/menu-items',
     '/settings/analytics',
     '/settings/reviews',
+    '/settings/users',
     '/settings/payments',
     '/settings/notifications',
     '/audit-log',
@@ -117,7 +118,47 @@ void main() {
     }
   });
 
-  testWidgets('все 12 разделов помещаются без прокрутки на 820px',
+  testWidgets('состав рейла: 13 разделов в порядке макета, каждый ведёт к себе',
+      (tester) async {
+    // Тест ниже меряет живой рейл и потому сторожит место, а не состав:
+    // пропавший пункт лишь освободил бы место. Здесь — сам перечень.
+    await pumpRail(tester);
+
+    const titles = <String, String>{
+      'Панель управления': '/',
+      'Статистика и аналитика': '/settings/analytics',
+      'Ожидают просмотра': '/moderation/pending',
+      'Одобренные': '/moderation/approved',
+      'Отклонённые': '/moderation/rejected',
+      'Приостановленные': '/moderation/suspended',
+      'Позиции меню': '/moderation/menu-items',
+      'Отзывы': '/settings/reviews',
+      'Пользователи': '/settings/users',
+      'История платежей': '/settings/payments',
+      'Уведомления': '/settings/notifications',
+      'Журнал действий': '/audit-log',
+      'Здоровье данных': '/quality/health',
+    };
+    final tops = <double>[];
+    for (final title in titles.keys) {
+      expect(find.text(title), findsOneWidget, reason: 'пункт «$title»');
+      tops.add(tester.getRect(find.text(title)).top);
+    }
+    for (var i = 1; i < tops.length; i++) {
+      expect(tops[i], greaterThan(tops[i - 1]),
+          reason: '«${titles.keys.elementAt(i)}» ниже предыдущего');
+    }
+
+    final router = GoRouter.of(tester.element(find.byType(AdminSidebar)));
+    for (final MapEntry(key: title, value: path) in titles.entries) {
+      await tester.tap(find.text(title));
+      await tester.pump();
+      expect(router.routerDelegate.currentConfiguration.uri.toString(), path,
+          reason: 'пункт «$title»');
+    }
+  });
+
+  testWidgets('все 13 разделов помещаются без прокрутки на 820px',
       (tester) async {
     await pumpRail(tester);
 

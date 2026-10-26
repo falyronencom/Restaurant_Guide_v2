@@ -425,7 +425,56 @@ void main() {
         final maxY = niceMaxY(count);
         expect(maxY % 4, 0, reason: 'верх $maxY при $count не делится на 4');
         expect(maxY, greaterThanOrEqualTo(count.toDouble()));
+        // И не выше нужного: запас — пятая часть, округлённая вверх до
+        // кратного четырём, то есть меньше чем на 4 над `1,2 × счёт`.
+        // Лишний запас сплющил бы столбцы к низу графика.
+        expect(maxY, lessThan(count * 1.2 + 4),
+            reason: 'верх $maxY при $count — запас больше нужного');
       }
+    });
+
+    testWidgets('у самого графика верх шкалы — тот же, кратный четырём',
+        (tester) async {
+      // Тест выше проверяет функцию; здесь — что комбо-график ею и строит
+      // шкалу. Пять отзывов в сутки — малый трафик, где промах виден: запас
+      // 20 % даёт 6, ближайшее кратное четырём сверху — 8.
+      await pump(
+        tester,
+        const SizedBox(
+          height: 200,
+          child: CanonComboChart(data: <TimelinePoint>[
+            TimelinePoint(date: '2026-08-01', count: 5, averageRating: 4.0),
+            TimelinePoint(date: '2026-08-02', count: 2, averageRating: 4.5),
+          ]),
+        ),
+        width: 500,
+      );
+
+      expect(barData(tester).maxY, 8);
+    });
+
+    testWidgets('в столбцах и на линии — ряд ответа, по дню на точку',
+        (tester) async {
+      // Шкалы, поля и тултип читаются выше, а сам ряд — нет: график без
+      // столбцов или без линии средней оценки прошёл бы со всеми осями.
+      await pump(
+        tester,
+        SizedBox(height: 200, child: CanonComboChart(data: series())),
+        width: 500,
+      );
+
+      expect(
+        barData(tester).barGroups.map((g) => g.barRods.single.toY).toList(),
+        <double>[40, 60, 20],
+      );
+      expect(
+        lineData(tester)
+            .lineBarsData
+            .expand((bar) => bar.spots)
+            .map((s) => '${s.x}:${s.y}')
+            .toList(),
+        <String>['0.0:4.2', '1.0:4.6', '2.0:3.1'],
+      );
     });
 
     testWidgets('пустой ряд объясняется словами', (tester) async {

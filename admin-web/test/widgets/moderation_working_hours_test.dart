@@ -2,8 +2,12 @@ import 'dart:convert' show jsonDecode, jsonEncode;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/establishment.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/moderation_provider.dart';
+import 'package:restaurant_guide_admin_web/services/moderation_service.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_detail_panel.dart';
 
 // Часы работы в панели разбора — в обеих формах, в которых их хранит база.
@@ -31,10 +35,33 @@ const _days = <String>[
 /// Серый, которым панель гасит закрытый день.
 const _closedGrey = Color(0xFFABABAB);
 
+/// Деталь для режима модерации: панель берёт её у провайдера, а провайдер —
+/// у сервиса.
+class _DetailService implements ModerationService {
+  _DetailService(this.detail);
+
+  final EstablishmentDetail detail;
+
+  @override
+  Future<EstablishmentDetail> getEstablishmentDetails(String id) async =>
+      detail;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
+        'фейк не обслуживает ${invocation.memberName}',
+      );
+}
+
+class _StubBadges extends BadgesProvider {
+  @override
+  Future<void> load() async {}
+}
+
 Future<void> _pumpHours(
   WidgetTester tester,
-  Map<String, Object?> hours,
-) async {
+  Map<String, Object?> hours, {
+  DetailPanelMode mode = DetailPanelMode.readonly,
+}) async {
   tester.view.physicalSize = const Size(1440, 1200);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -51,20 +78,40 @@ Future<void> _pumpHours(
     })) as Map<String, dynamic>,
   );
 
-  await tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.lightTheme,
-      home: Scaffold(
-        body: ModerationDetailPanel(
-          mode: DetailPanelMode.readonly,
-          detail: detail,
-          selectedId: detail.id,
-          isLoadingDetail: false,
+  if (mode == DetailPanelMode.moderation) {
+    final provider = ModerationProvider(service: _DetailService(detail));
+    addTearDown(provider.dispose);
+    await provider.selectEstablishment(detail.id);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ModerationProvider>.value(value: provider),
+          ChangeNotifierProvider<BadgesProvider>(create: (_) => _StubBadges()),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const Scaffold(body: ModerationDetailPanel()),
         ),
       ),
-    ),
-  );
-  await tester.tap(find.text('О заведении'));
+    );
+  } else {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: ModerationDetailPanel(
+            mode: DetailPanelMode.readonly,
+            detail: detail,
+            selectedId: detail.id,
+            isLoadingDetail: false,
+          ),
+        ),
+      ),
+    );
+  }
+  // Вторая вкладка — «О заведении». В режиме модерации её подпись несёт
+  // счётчик («О заведении 0/6») и строится `Text.rich`, поэтому — по месту.
+  await tester.tap(find.byType(Tab).at(1));
   await tester.pumpAndSettle();
 }
 
@@ -88,10 +135,12 @@ void main() {
     testWidgets('строки импорта читаются как часы, а не как «Закрыто»',
         (tester) async {
       // Ровно то, что пишет sheet.js: рабочий день строкой, выходной объектом.
+      // У вторника и среды часы разные: на одинаковых значениях подписи
+      // дней, переставленные местами, были бы неотличимы.
       await _pumpHours(tester, <String, Object?>{
         'monday': <String, Object?>{'is_open': false},
         'tuesday': '08:00-22:00',
-        'wednesday': '08:00-22:00',
+        'wednesday': '09:00-21:00',
         'thursday': '08:00-22:00',
         'friday': '08:00-23:30',
         // Через полночь — законно для бара; панель это не судит.
@@ -102,12 +151,19 @@ void main() {
       expect(_week(tester), <String, String?>{
         'Понедельник': 'Закрыто',
         'Вторник': '08:00 – 22:00',
-        'Среда': '08:00 – 22:00',
+        'Среда': '09:00 – 21:00',
         'Четверг': '08:00 – 22:00',
         'Пятница': '08:00 – 23:30',
         'Суббота': '12:00 – 02:00',
         'Воскресенье': '12:00 – 22:00',
       });
+      // Порядок дней — с понедельника: карта выше порядка не видит.
+      final tops = <double>[
+        for (final day in _days) tester.getRect(find.text(day)).top,
+      ];
+      for (var i = 1; i < tops.length; i++) {
+        expect(tops[i], greaterThan(tops[i - 1]), reason: '${_days[i]} ниже');
+      }
       // Закрытым день делает и цвет: рабочий день, оставшийся серым,
       // читался бы выходным и при верном тексте.
       expect(_valueOf(tester, 'Вторник').style?.color, Colors.black);
@@ -155,6 +211,39 @@ void main() {
       });
       expect(_valueOf(tester, 'Пятница').style?.color, Colors.black);
       expect(_valueOf(tester, 'Суббота').style?.color, _closedGrey);
+    });
+
+    testWidgets('в режиме модерации — те же часы работы, а не другое расписание',
+        (tester) async {
+      // Модератор проверяет обязательное поле «Часы работы» в очереди, то
+      // есть в режиме модерации; там рядом стоит второе расписание — время
+      // дополнительного меню. Его здесь нет, и подставь панель его вместо
+      // часов, недели в карточке не было бы вовсе.
+      await _pumpHours(
+        tester,
+        <String, Object?>{
+          'monday': <String, Object?>{'is_open': false},
+          'tuesday': '08:00-22:00',
+          'wednesday': '09:00-21:00',
+          'thursday': '10:00-20:00',
+          'friday': '08:00-23:30',
+          'saturday': '12:00-02:00',
+          'sunday': '12:00-22:00',
+        },
+        mode: DetailPanelMode.moderation,
+      );
+
+      expect(find.text('Понедельник'), findsOneWidget,
+          reason: 'неделя часов работы на вкладке — ровно одна');
+      expect(_week(tester), <String, String?>{
+        'Понедельник': 'Закрыто',
+        'Вторник': '08:00 – 22:00',
+        'Среда': '09:00 – 21:00',
+        'Четверг': '10:00 – 20:00',
+        'Пятница': '08:00 – 23:30',
+        'Суббота': '12:00 – 02:00',
+        'Воскресенье': '12:00 – 22:00',
+      });
     });
 
     testWidgets('объект без is_open — рабочий день, как на сайте',
