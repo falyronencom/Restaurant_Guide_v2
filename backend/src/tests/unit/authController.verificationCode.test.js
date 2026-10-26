@@ -23,7 +23,9 @@ const mockCodeModel = {
   findActiveCodeForUser: jest.fn(),
   countRecentSends: jest.fn(),
   invalidateActiveCodesForUser: jest.fn(),
-  replaceActiveCodes: jest.fn(),
+  reserveCodeWithinLimit: jest.fn(),
+  activateReservedCode: jest.fn(),
+  deleteReservedCode: jest.fn(),
   incrementAttempts: jest.fn(),
   markAsUsed: jest.fn(),
 };
@@ -124,7 +126,9 @@ const arrange = () => {
   mockCodeModel.countRecentSends.mockResolvedValue(0);
   mockCodeModel.invalidateActiveCodesForUser.mockResolvedValue(0);
   mockCodeModel.createCode.mockResolvedValue({ id: 'code-1' });
-  mockCodeModel.replaceActiveCodes.mockResolvedValue({ id: 'code-2' });
+  mockCodeModel.reserveCodeWithinLimit.mockResolvedValue({ reserved: { id: 'code-2' }, recentCount: 1 });
+  mockCodeModel.activateReservedCode.mockResolvedValue({ id: 'code-2' });
+  mockCodeModel.deleteReservedCode.mockResolvedValue(true);
   mockEmailService.sendVerificationCodeEmail.mockResolvedValue({ sent: true });
 };
 
@@ -218,23 +222,26 @@ describe('resend — POST /auth/send-verification-code', () => {
     const done = sendVerificationCode({ user: { userId: USER_ID } }, res, jest.fn());
     await flushPromises();
 
-    // The response waits for the provider's verdict; nothing is written yet.
+    // The response waits for the provider's verdict. The code is reserved
+    // within the hourly limit (counted, not usable); nothing is replaced yet.
     expect(mockEmailService.sendVerificationCodeEmail).toHaveBeenCalledWith(
       EMAIL,
       expect.stringMatching(/^\d{6}$/),
       NAME,
       { userId: USER_ID },
     );
-    expect(mockCodeModel.replaceActiveCodes).not.toHaveBeenCalled();
+    const [, mailedCode] = mockEmailService.sendVerificationCodeEmail.mock.calls[0];
+    expect(mockCodeModel.reserveCodeWithinLimit)
+      .toHaveBeenCalledWith(USER_ID, mailedCode, expect.any(Date), { max: 5, minutes: 60 });
+    expect(mockCodeModel.activateReservedCode).not.toHaveBeenCalled();
     expect(mockCodeModel.invalidateActiveCodesForUser).not.toHaveBeenCalled();
     expect(mockCodeModel.createCode).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
 
     email.release({ sent: true });
     await done;
-    const [, mailedCode] = mockEmailService.sendVerificationCodeEmail.mock.calls[0];
-    expect(mockCodeModel.replaceActiveCodes)
-      .toHaveBeenCalledWith(USER_ID, mailedCode, expect.any(Date));
+    expect(mockCodeModel.activateReservedCode).toHaveBeenCalledWith(USER_ID, 'code-2');
+    expect(mockCodeModel.deleteReservedCode).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.payload.data).toEqual({ sent: true, expiresAt: expect.any(Date) });
   });
@@ -242,13 +249,14 @@ describe('resend — POST /auth/send-verification-code', () => {
   test.each([
     ['the provider refused', { sent: false, reason: 'RESEND_ERROR' }],
     ['the provider did not answer in time', { sent: false, reason: 'RESEND_TIMEOUT' }],
-  ])('%s: nothing is written, the earlier codes stay, the answer is 200 sent:false', async (_case, outcome) => {
+  ])('%s: the reservation is removed, the earlier codes stay, the answer is 200 sent:false', async (_case, outcome) => {
     mockEmailService.sendVerificationCodeEmail.mockResolvedValue(outcome);
     const res = createRes();
 
     await sendVerificationCode({ user: { userId: USER_ID } }, res, jest.fn());
 
-    expect(mockCodeModel.replaceActiveCodes).not.toHaveBeenCalled();
+    expect(mockCodeModel.deleteReservedCode).toHaveBeenCalledWith('code-2');
+    expect(mockCodeModel.activateReservedCode).not.toHaveBeenCalled();
     expect(mockCodeModel.invalidateActiveCodesForUser).not.toHaveBeenCalled();
     expect(mockCodeModel.createCode).not.toHaveBeenCalled();
     // The sender has logged the failure (one error line with the account);
@@ -279,7 +287,43 @@ describe('resend — POST /auth/send-verification-code', () => {
       process.env.NODE_ENV = originalNodeEnv;
     }
 
-    expect(mockCodeModel.replaceActiveCodes).toHaveBeenCalledTimes(writes);
+    expect(mockCodeModel.activateReservedCode).toHaveBeenCalledTimes(writes);
+    expect(mockCodeModel.deleteReservedCode).toHaveBeenCalledTimes(1 - writes);
     expect(res.payload.data.sent).toBe(false);
+  });
+
+  // The hourly limit is read and the code reserved in one locked step: at
+  // the limit nothing is sent, and the answer is the one a lone sixth gets.
+  test('at the limit: 429 RATE_LIMITED, no email', async () => {
+    mockCodeModel.reserveCodeWithinLimit.mockResolvedValue({ reserved: null, recentCount: 5 });
+    const res = createRes();
+    const next = jest.fn();
+
+    await sendVerificationCode({ user: { userId: USER_ID } }, res, next);
+
+    expect(mockEmailService.sendVerificationCodeEmail).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.payload.error.code).toBe('RATE_LIMITED');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // A reservation left behind only counts toward the hour — the person still
+  // hears that the letter did not go out, not a server error.
+  test('the unsent reservation cannot be removed: still 200 sent:false, one error line', async () => {
+    mockEmailService.sendVerificationCodeEmail.mockResolvedValue({ sent: false, reason: 'RESEND_ERROR' });
+    mockCodeModel.deleteReservedCode.mockRejectedValue(new Error('connection lost'));
+    const res = createRes();
+    const next = jest.fn();
+
+    await sendVerificationCode({ user: { userId: USER_ID } }, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.payload.data.sent).toBe(false);
+    expect(mockLogger.error).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Unsent verification code could not be removed; it counts toward the hourly limit',
+      expect.objectContaining({ userId: USER_ID, error: 'connection lost' }),
+    );
   });
 });

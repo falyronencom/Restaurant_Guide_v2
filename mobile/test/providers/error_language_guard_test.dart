@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/providers/establishments_provider.dart';
+import 'package:restaurant_guide_mobile/services/api_client.dart';
+import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
 import '../support/wire_stand.dart';
 
@@ -198,6 +200,53 @@ void main() {
       expect(smart, isNot(equals(classic)));
       expect(smart, contains('минуту'));
       expect(latinChunks(smart), isEmpty);
+    });
+  });
+
+  // Фразы транспорта по статусу и по типу отказа — тем, кто показывает их
+  // как есть (`userMessageOf`). Проверки выше идут через провайдер поиска,
+  // а он для части статусов говорит своё; фразы самого транспорта для 400,
+  // 409, отменённого и непонятного отказа не читал никто. Проверяется язык
+  // и то, что фразы разные, — не точный текст: общая фраза по коду статуса
+  // («Произошла ошибка (400).») тоже русская и тоже своя. 401 сюда не
+  // входит: на нём транспорт сначала обновляет сессию, у этого пути свои
+  // тесты (`api_client_refresh_*`).
+  group('Фразы транспорта — по-русски и у каждого случая своя', () {
+    Future<String> transportMessage(
+      ResponseBody Function(RequestOptions options) respond,
+    ) async {
+      installWireStand(respond);
+      try {
+        await ApiClient().get('/api/v1/establishments');
+      } catch (e) {
+        return userMessageOf(e, fallback: 'ЗАПАСНОЙ ТЕКСТ ЭКРАНА');
+      }
+      fail('запрос обязан был отказать');
+    }
+
+    test('400, 409, отмена, непонятный отказ', () async {
+      final messages = <String, String>{
+        '400': await transportMessage(
+            (_) => jsonBody(<String, dynamic>{}, status: 400)),
+        '409': await transportMessage(
+            (_) => jsonBody(<String, dynamic>{}, status: 409)),
+        'отмена': await transportMessage((options) => throw DioException(
+              requestOptions: options,
+              type: DioExceptionType.cancel,
+            )),
+        'непонятный': await transportMessage((options) => throw DioException(
+              requestOptions: options,
+              type: DioExceptionType.unknown,
+            )),
+      };
+
+      for (final MapEntry(key: what, value: message) in messages.entries) {
+        expect(message, isNot('ЗАПАСНОЙ ТЕКСТ ЭКРАНА'),
+            reason: '$what: транспорт не положил своей фразы');
+        expect(latinChunks(message), isEmpty, reason: '$what: $message');
+      }
+      expect(messages.values.toSet(), hasLength(messages.length),
+          reason: 'разные отказы обязаны говорить разное: $messages');
     });
   });
 }

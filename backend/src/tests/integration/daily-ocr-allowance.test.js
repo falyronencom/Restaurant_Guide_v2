@@ -47,6 +47,21 @@ const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const MINSK_NOON = Date.parse('2026-10-17T09:00:00.000Z');
 const realNow = Date.now;
 
+/**
+ * Сколько ждать исхода постановки, что идёт в фоне, — по настоящим часам.
+ * Находка Н43 (25.10.2026): в полном прогоне на загруженной машине файл падал
+ * на «исход не наступил за 5 с» и 500 на сохранении карточки, отдельно —
+ * зелёный. Подмена часов теста к этому отношения не имеет: пул базы и клиент
+ * Redis Date.now не читают, а сдвиг часов теста на годы назад и вперёд роняет
+ * только сверку полуночи с литералами. Ожидание — с запасом на медленную базу;
+ * что проверяется, не меняется: исход каждого файла, а не время.
+ */
+const OUTCOME_WAIT_MS = 15000;
+
+// Три ожидания исхода в одном тесте на загруженной машине не укладываются в
+// общий срок теста (10 с, jest.config.js).
+jest.setTimeout(3 * OUTCOME_WAIT_MS + 10000);
+
 /** С этого места Date.now идёт как обычно, но от момента `originMs`. */
 const startClockAt = (originMs) => {
   const realStart = realNow.call(Date);
@@ -54,6 +69,28 @@ const startClockAt = (originMs) => {
 };
 
 let warn;
+let errors;
+
+/**
+ * Что сервер записал в журнал ошибок за тест: его собственный текст. Ответ
+ * 500 его не несёт (errorHandler отдаёт общую фразу), а без него падение в
+ * полном прогоне не объяснить (Н43).
+ */
+const serverErrors = () => {
+  try {
+    return JSON.stringify(errors.mock.calls.map(([message, meta]) => ({ message, ...meta })));
+  } catch {
+    return errors.mock.calls.map(([message]) => message).join(' | ');
+  }
+};
+
+/** Ответ с ожидаемым кодом — иначе ошибка с телом ответа и журналом сервера. */
+const expectStatus = (res, status) => {
+  if (res.status !== status) {
+    throw new Error(`ожидался ${status}, пришёл ${res.status}: ${JSON.stringify(res.body)}; журнал сервера: ${serverErrors()}`);
+  }
+  return res;
+};
 
 const sweepKeys = async () => {
   const keys = [
@@ -79,6 +116,7 @@ beforeEach(async () => {
   startClockAt(MINSK_NOON);
   await sweepKeys();
   warn = jest.spyOn(logger, 'warn');
+  errors = jest.spyOn(logger, 'error');
   jest.spyOn(cloudinarySdk.uploader, 'upload').mockImplementation(async (_filePath, options) => {
     const id = randomUUID();
     return {
@@ -152,13 +190,13 @@ const refusalsFor = (account) =>
  * в журнале. Часы теста подменены — срок по настоящим.
  */
 const settled = async (account, establishmentId) => {
-  const deadline = realNow.call(Date) + 5000;
+  const deadline = realNow.call(Date) + OUTCOME_WAIT_MS;
   for (;;) {
     const files = (await menuMediaOf(establishmentId)).length;
     const outcomes = (await jobsOf(establishmentId)).length + refusalsFor(account).length;
     if (files > 0 && outcomes >= files) return;
     if (realNow.call(Date) > deadline) {
-      throw new Error(`исход постановки не наступил за 5 с: файлов ${files}, исходов ${outcomes}`);
+      throw new Error(`исход постановки не наступил за ${OUTCOME_WAIT_MS / 1000} с: файлов ${files}, исходов ${outcomes}; журнал сервера: ${serverErrors()}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -186,12 +224,41 @@ const insertMenuFile = async (account, name) => (await query(
   [account.establishmentId, menuLink(account, name)],
 )).rows[0].id;
 
+/** Сколько перезапусков учётка потратила сегодня (лимитер маршрута, 5 в сутки). */
+const restartsToday = async (account) => Number(await redisClient.get(
+  `ratelimit:ocr_restart:${account.id}:${Math.floor(Date.now() / 86400000)}`,
+));
+
+/**
+ * Постановка задания падает по-настоящему: база отвергает строку ocr_jobs
+ * (для файла `mediaId` или для всей карточки). Возвращает снятие.
+ */
+const failQueuing = async ({ establishmentId, mediaId }) => {
+  const column = mediaId ? 'media_id' : 'establishment_id';
+  const id = mediaId ?? establishmentId;
+  const name = `test_fail_queuing_${id.replace(/-/g, '')}`;
+  const restore = async () => {
+    await query(`DROP TRIGGER IF EXISTS ${name} ON ocr_jobs`);
+    await query(`DROP FUNCTION IF EXISTS ${name}()`);
+  };
+  try {
+    await query(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'queue refused by the test'; END $$`);
+    await query(`CREATE TRIGGER ${name} BEFORE INSERT ON ocr_jobs FOR EACH ROW
+      WHEN (NEW.${column} = '${id}'::uuid) EXECUTE FUNCTION ${name}()`);
+  } catch (error) {
+    await restore();
+    throw error;
+  }
+  return restore;
+};
+
 describe('правка карточки (PUT /partner/establishments/:id)', () => {
   test('100-е задание дня ставится; 101-е — нет: правка проходит, файл на месте, строка в журнал', async () => {
     const at99 = await newPartnerWithCard();
     await queuedToday(at99, 99);
 
-    await saveMenu(at99, [menuLink(at99, 'a')]).expect(200);
+    expectStatus(await saveMenu(at99, [menuLink(at99, 'a')]), 200);
     await settled(at99, at99.establishmentId);
 
     expect(await jobsOf(at99.establishmentId)).toHaveLength(1);
@@ -201,7 +268,7 @@ describe('правка карточки (PUT /partner/establishments/:id)', () =
     const at100 = await newPartnerWithCard();
     await queuedToday(at100, 100);
 
-    await saveMenu(at100, [menuLink(at100, 'a')]).expect(200);
+    expectStatus(await saveMenu(at100, [menuLink(at100, 'a')]), 200);
     await settled(at100, at100.establishmentId);
 
     expect(await menuMediaOf(at100.establishmentId)).toHaveLength(1);
@@ -220,7 +287,7 @@ describe('правка карточки (PUT /partner/establishments/:id)', () =
     const partner = await newPartnerWithCard();
     await queuedToday(partner, 99);
 
-    await saveMenu(partner, [menuLink(partner, 'a'), menuLink(partner, 'b')]).expect(200);
+    expectStatus(await saveMenu(partner, [menuLink(partner, 'a'), menuLink(partner, 'b')]), 200);
     await settled(partner, partner.establishmentId);
 
     expect(await menuMediaOf(partner.establishmentId)).toHaveLength(2);
@@ -236,22 +303,21 @@ describe('один счётчик на все двери учётки', () => {
     await queuedToday(partner, 98);
 
     // Создание карточки с фото меню — 99-е задание.
-    const created = await request(app)
+    const created = expectStatus(await request(app)
       .post('/api/v1/partner/establishments')
       .set('Authorization', `Bearer ${partner.token}`)
-      .send({ ...testEstablishments[0], menu_photos: [menuLink(partner, 'a')] })
-      .expect(201);
+      .send({ ...testEstablishments[0], menu_photos: [menuLink(partner, 'a')] }), 201);
     const card = { ...partner, establishmentId: created.body.data.establishment.id };
     await settled(card, card.establishmentId);
 
     // Правка добавляет файл — 100-е.
-    await saveMenu(card, [menuLink(partner, 'a'), menuLink(partner, 'b')]).expect(200);
+    expectStatus(await saveMenu(card, [menuLink(partner, 'a'), menuLink(partner, 'b')]), 200);
     await settled(card, card.establishmentId);
     expect(await jobsOf(card.establishmentId)).toHaveLength(2);
 
     // Загрузка фото меню в карточку: файл ложится (свой предел загрузок не
     // тронут), задания нет.
-    expect((await uploadMenuPhoto(card)).status).toBe(201);
+    expectStatus(await uploadMenuPhoto(card), 201);
     await settled(card, card.establishmentId);
 
     expect(await menuMediaOf(card.establishmentId)).toHaveLength(3);
@@ -269,11 +335,10 @@ describe('один счётчик на все двери учётки', () => {
     const pdfLink = (name) =>
       `https://res.cloudinary.com/test/image/upload/v1759600000/establishments/temp/${partner.id}/menu_pdf/${name}.pdf`;
 
-    const created = await request(app)
+    const created = expectStatus(await request(app)
       .post('/api/v1/partner/establishments')
       .set('Authorization', `Bearer ${partner.token}`)
-      .send({ ...testEstablishments[0], menu_pdfs: [{ url: pdfLink('a') }] })
-      .expect(201);
+      .send({ ...testEstablishments[0], menu_pdfs: [{ url: pdfLink('a') }] }), 201);
     const card = { ...partner, establishmentId: created.body.data.establishment.id };
     await settled(card, card.establishmentId);
     expect(await jobsOf(card.establishmentId)).toHaveLength(1);
@@ -294,7 +359,7 @@ describe('один счётчик на все двери учётки', () => {
       .set('Authorization', `Bearer ${card.token}`)
       .field('type', 'menu')
       .attach('file', Buffer.from('%PDF-1.4 fake'), { filename: 'menu.pdf', contentType: 'application/pdf' });
-    expect(uploadedPdf.status).toBe(201);
+    expectStatus(uploadedPdf, 201);
     await settled(card, card.establishmentId);
 
     expect(await jobsOf(card.establishmentId)).toHaveLength(2);
@@ -323,6 +388,56 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
     expect(res.headers['retry-after']).toBe('43200');
     expect(await jobsOf(partner.establishmentId)).toEqual([]);
     expect(await counter(partner)).toBe(100);
+    // Отказ по пределу — как был: перезапуск засчитан.
+    expect(await restartsToday(partner)).toBe(1);
+  });
+
+  // Находка Н40 (25.10.2026): у всех файлов постановка упала — сервер отвечал
+  // 202 «поставлено 0», приложение — зелёным «Распознавание уже выполняется»,
+  // и уходил один из пяти перезапусков дня.
+  test('постановка упала у всех файлов — 500 OCR_RESTART_FAILED с текстом для партнёра; перезапуск и места дня возвращены', async () => {
+    const partner = await newPartnerWithCard();
+    await insertMenuFile(partner, 'a');
+    await insertMenuFile(partner, 'b');
+    await queuedToday(partner, 10);
+    const restore = await failQueuing({ establishmentId: partner.establishmentId });
+    let res;
+    try {
+      res = await retryOcr(partner);
+    } finally {
+      await restore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('OCR_RESTART_FAILED');
+    expect(res.body.message).toBe('Не удалось запустить распознавание. Попробуйте позже.');
+    expect(await jobsOf(partner.establishmentId)).toEqual([]);
+    expect(await counter(partner)).toBe(10);
+    expect(await restartsToday(partner)).toBe(0);
+
+    // Следующий перезапуск — первый за день, и ставит оба файла.
+    const next = await retryOcr(partner).expect(202);
+    expect(next.body.data).toEqual({ enqueuedJobs: 2, totalPdfs: 2 });
+    expect(await restartsToday(partner)).toBe(1);
+  });
+
+  test('постановка упала у одного файла из двух — 202 «1 из 2», перезапуск засчитан', async () => {
+    const partner = await newPartnerWithCard();
+    const broken = await insertMenuFile(partner, 'a');
+    const fine = await insertMenuFile(partner, 'b');
+    const restore = await failQueuing({ mediaId: broken });
+    let res;
+    try {
+      res = await retryOcr(partner);
+    } finally {
+      await restore();
+    }
+
+    expect(res.status).toBe(202);
+    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 2 });
+    expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: fine }]);
+    expect(await restartsToday(partner)).toBe(1);
   });
 
   test('одно место на два файла — одно задание, ответ «1 из 2»', async () => {
@@ -380,13 +495,13 @@ describe('дом сида (служебная учётка): свой преде
   test('1000-е задание ставится, 1001-е — нет', async () => {
     const at999 = await newPartnerWithCard({ service: true });
     await queuedToday(at999, 999);
-    await saveMenu(at999, [menuLink(at999, 'a')]).expect(200);
+    expectStatus(await saveMenu(at999, [menuLink(at999, 'a')]), 200);
     await settled(at999, at999.establishmentId);
     expect(await jobsOf(at999.establishmentId)).toHaveLength(1);
 
     const at1000 = await newPartnerWithCard({ service: true });
     await queuedToday(at1000, 1000);
-    await saveMenu(at1000, [menuLink(at1000, 'a')]).expect(200);
+    expectStatus(await saveMenu(at1000, [menuLink(at1000, 'a')]), 200);
     await settled(at1000, at1000.establishmentId);
     expect(await jobsOf(at1000.establishmentId)).toEqual([]);
     expect(refusalsFor(at1000)).toEqual([[REFUSAL_LOG, expect.objectContaining({ jobs: 1001, jobsLimit: 1000 })]]);
@@ -403,7 +518,7 @@ describe('одобрение модератором — не дверь парт
 
     await adminService.moderateEstablishment(partner.establishmentId, { action: 'approve', adminUserId: admin.id });
 
-    const deadline = realNow.call(Date) + 5000;
+    const deadline = realNow.call(Date) + OUTCOME_WAIT_MS;
     while ((await jobsOf(partner.establishmentId)).length === 0 && realNow.call(Date) < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
@@ -429,7 +544,7 @@ describe('одобрение модератором — не дверь парт
 
     await adminService.moderateEstablishment(partner.establishmentId, { action: 'approve', adminUserId: admin.id });
 
-    const deadline = realNow.call(Date) + 5000;
+    const deadline = realNow.call(Date) + OUTCOME_WAIT_MS;
     while ((await jobsOf(partner.establishmentId)).length < 2 && realNow.call(Date) < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }

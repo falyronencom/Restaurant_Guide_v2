@@ -8,6 +8,7 @@ import 'package:restaurant_guide_mobile/models/notification_model.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 import 'package:restaurant_guide_mobile/providers/booking_settings_provider.dart';
 import 'package:restaurant_guide_mobile/providers/notification_provider.dart';
+import 'package:restaurant_guide_mobile/providers/notification_preferences_provider.dart';
 import 'package:restaurant_guide_mobile/providers/partner_dashboard_provider.dart';
 import 'package:restaurant_guide_mobile/providers/promotion_provider.dart';
 import 'package:restaurant_guide_mobile/services/account_scope.dart';
@@ -276,6 +277,21 @@ void main() {
 
       expect(provider.settings?.maxGuestsPerBooking, 12);
     });
+
+    test('настройки, загруженные до выхода, сброс стирает', () async {
+      final provider = BookingSettingsProvider();
+      addTearDown(provider.dispose);
+      adapter.release(path, settings);
+      await provider.loadSettings('est-1');
+      expect(provider.settings?.maxGuestsPerBooking, 12,
+          reason: 'предусловие: настройки прежнего партнёра загружены');
+
+      AccountScope.resetAll();
+
+      expect(provider.settings, isNull,
+          reason: 'настройки брони прежнего партнёра пережили выход');
+    });
+
   });
 
   group('PartnerDashboardProvider', () {
@@ -317,6 +333,169 @@ void main() {
       await inFlight;
 
       expect(provider.establishments.map((e) => e.id), ['est-prev']);
+    });
+
+    // Ответы карточки и статистики — литералами по форме, которую читает
+    // `PartnerService` (`data.establishment`, `data.establishments[]`,
+    // `data.*_trend`); числа обзора, тренда и карточки разные — по ним
+    // видно, чей ответ лёг. Звонков «всего» — 0, как всегда отдаёт сервер
+    // (`backend/src/services/partnerAnalyticsService.js`).
+    const estId = 'est-prev';
+    const detailsPath = '/api/v1/partner/establishments/$estId';
+    const overviewPath = '/api/v1/partner/analytics/overview';
+    const trendsPath = '/api/v1/partner/analytics/trends';
+    final details = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'establishment': <String, dynamic>{
+          'id': estId,
+          'name': 'Кухмістр',
+          'status': 'active',
+          'city': 'Минск',
+          'address': 'пр. Независимости, 43',
+          'view_count': 512,
+        },
+      },
+    };
+    final overview = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'establishments': [
+          <String, dynamic>{
+            'establishment_id': estId,
+            'establishment_name': 'Кухмістр',
+            'period': <String, dynamic>{'aggregation': 'day'},
+            'views': <String, dynamic>{'total': 410, 'in_period': 37},
+            'favorites': <String, dynamic>{'total': 12, 'in_period': 3},
+            'calls': <String, dynamic>{'total': 0, 'in_period': 2},
+            'reviews': <String, dynamic>{
+              'total': 5,
+              'in_period': 1,
+              'average_rating': 4.4,
+            },
+          },
+        ],
+      },
+    };
+    final trends = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'views_trend': [
+          <String, dynamic>{'date': '2026-10-10', 'count': 21},
+        ],
+        'favorites_trend': <dynamic>[],
+        'calls_trend': <dynamic>[],
+        'reviews_trend': <dynamic>[],
+        'aggregation': 'day',
+      },
+    };
+
+    test('кабинет, загруженный до выхода, сброс стирает целиком: заведения, '
+        'открытая карточка, статистика', () async {
+      // Сквозная проверка реестра (`account_scope_guard_test`) доводит сброс
+      // до состояния одного провайдера — избранного. Здесь — кабинет
+      // партнёра: следующий вошедший не видит ни его карточек со статусами
+      // модерации, ни открытой карточки, ни цифр статистики.
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+      adapter.release(path, establishments);
+      adapter.release(detailsPath, details);
+      adapter.release(overviewPath, overview);
+      adapter.release(trendsPath, trends);
+
+      await provider.loadEstablishments();
+      await provider.loadEstablishmentDetails(estId);
+      await provider.fetchAnalytics(estId, '30d');
+
+      // Страж фикстуры: до сброса всё заполнено, а период — не умолчание,
+      // иначе проверка ниже ничего не докажет.
+      expect(provider.establishments.map((e) => e.id), [estId]);
+      expect(provider.selectedEstablishment?.id, estId);
+      expect(provider.analyticsOverview?.views.inPeriod, 37);
+      expect(provider.analyticsTrends?.viewsTrend.single.count, 21);
+      expect(provider.analyticsPeriod, '30d');
+
+      AccountScope.resetAll();
+
+      expect(provider.establishments, isEmpty,
+          reason: 'карточки прежнего партнёра пережили выход');
+      expect(provider.selectedEstablishment, isNull,
+          reason: 'открытая карточка прежнего партнёра пережила выход');
+      expect(provider.analyticsOverview, isNull,
+          reason: 'цифры статистики прежнего партнёра пережили выход');
+      expect(provider.analyticsTrends, isNull);
+      expect(provider.analyticsPeriod, '7d',
+          reason: 'новый партнёр открывает статистику с периода по умолчанию');
+      expect(provider.isInitialized, isFalse);
+    });
+
+    test('статистика прежнего партнёра, пришедшая после смены, не '
+        'записывается', () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.fetchAnalytics(estId, '30d');
+      await pumpEventQueue();
+      expect(adapter.paths, [overviewPath]);
+      AccountScope.resetAll();
+      // Отпускаются оба ответа: и обзор, и тренды — иначе код, не
+      // отбросивший обзор, повис бы на трендах, и тест висел бы вместо того,
+      // чтобы покраснеть.
+      adapter.release(overviewPath, overview);
+      adapter.release(trendsPath, trends);
+      await inFlight;
+
+      expect(provider.analyticsOverview, isNull,
+          reason: 'обзор, запрошенный прежним партнёром, отброшен');
+      expect(provider.analyticsTrends, isNull);
+    });
+
+    test('тренды прежнего партнёра, пришедшие после смены, не записываются',
+        () async {
+      // Вторая половина статистики: обзор пришёл ещё до выхода, смена —
+      // пока идёт запрос трендов. У этого ответа своя проверка поколения.
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+      adapter.release(overviewPath, overview);
+
+      final inFlight = provider.fetchAnalytics(estId, '30d');
+      await pumpEventQueue();
+      expect(adapter.paths, [overviewPath, trendsPath],
+          reason: 'предусловие: обзор принят, тренды в пути');
+      AccountScope.resetAll();
+      adapter.release(trendsPath, trends);
+      await inFlight;
+
+      expect(provider.analyticsTrends, isNull,
+          reason: 'тренды, запрошенные прежним партнёром, отброшены');
+    });
+
+    test('без смены аккаунта статистика записывается — образец разбирается',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+      adapter.release(overviewPath, overview);
+      adapter.release(trendsPath, trends);
+
+      await provider.fetchAnalytics(estId, '30d');
+
+      expect(provider.analyticsOverview?.views.inPeriod, 37);
+      expect(provider.analyticsTrends?.viewsTrend.single.count, 21);
+    });
+
+    test('карточка прежнего партнёра, пришедшая после смены, не записывается',
+        () async {
+      final provider = PartnerDashboardProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.loadEstablishmentDetails(estId);
+      await pumpEventQueue();
+      expect(adapter.paths, [detailsPath]);
+      AccountScope.resetAll();
+      adapter.release(detailsPath, details);
+      await inFlight;
+
+      expect(provider.selectedEstablishment, isNull);
     });
   });
 
@@ -458,6 +637,106 @@ void main() {
 
       expect(provider.promotions.map((p) => p.id), ['p-1']);
       expect(provider.error, isNull);
+    });
+
+    test('акции, загруженные до выхода, сброс стирает', () async {
+      final provider = PromotionProvider();
+      addTearDown(provider.dispose);
+      adapter.release(
+        '/api/v1/partner/promotions/establishment/est-1',
+        <String, dynamic>{
+          'success': true,
+          'data': [
+            <String, dynamic>{
+              'id': 'p-1',
+              'establishment_id': 'est-1',
+              'title': 'Скидка',
+              'status': 'active',
+              'valid_from': '2026-10-01',
+              'created_at': '2026-10-01T10:00:00.000Z',
+            },
+          ],
+        },
+      );
+      await provider.fetchPromotions('est-1');
+      expect(provider.promotions.map((p) => p.id), ['p-1'],
+          reason: 'предусловие: акции прежнего партнёра загружены');
+
+      AccountScope.resetAll();
+
+      expect(provider.promotions, isEmpty,
+          reason: 'акции прежнего партнёра пережили выход');
+    });
+  });
+
+  group('NotificationPreferencesProvider', () {
+    const path = '/api/v1/notifications/preferences';
+
+    /// Переключатели прежнего аккаунта: все четыре выключены — умолчание
+    /// сервера и провайдера «включено», так что запись видна по каждому.
+    final previousAccountPrefs = <String, dynamic>{
+      'success': true,
+      'data': <String, dynamic>{
+        'booking_push_enabled': false,
+        'reviews_push_enabled': false,
+        'promotions_push_enabled': false,
+        'menu_push_enabled': false,
+      },
+    };
+
+    List<bool> toggles(NotificationPreferencesProvider p) => [
+          p.bookingPushEnabled,
+          p.reviewsPushEnabled,
+          p.promotionsPushEnabled,
+          p.menuPushEnabled,
+        ];
+
+    test('переключатели прежнего аккаунта, пришедшие после смены, не '
+        'записываются, и новый аккаунт перечитывает свои', () async {
+      final provider = NotificationPreferencesProvider();
+      addTearDown(provider.dispose);
+
+      final inFlight = provider.fetchPreferences();
+      await pumpEventQueue();
+      expect(adapter.paths, [path]);
+
+      AccountScope.resetAll();
+      adapter.release(path, previousAccountPrefs);
+      await inFlight;
+
+      expect(toggles(provider), [true, true, true, true],
+          reason: 'ответ, отправленный от прежнего аккаунта, отброшен');
+
+      // Поздний ответ не отметил настройки загруженными: экран нового
+      // аккаунта запрашивает их заново.
+      await provider.ensureLoaded();
+      expect(adapter.paths, [path, path],
+          reason: 'новый аккаунт не перечитал свои переключатели');
+    });
+
+    test('без смены аккаунта переключатели записываются — образец '
+        'разбирается', () async {
+      final provider = NotificationPreferencesProvider();
+      addTearDown(provider.dispose);
+      adapter.release(path, previousAccountPrefs);
+
+      await provider.fetchPreferences();
+
+      expect(toggles(provider), [false, false, false, false]);
+    });
+
+    test('загруженные до выхода переключатели сброс возвращает к умолчанию — '
+        'все четыре', () async {
+      final provider = NotificationPreferencesProvider();
+      addTearDown(provider.dispose);
+      adapter.release(path, previousAccountPrefs);
+      await provider.fetchPreferences();
+      expect(toggles(provider), [false, false, false, false],
+          reason: 'предусловие: загружены значения прежнего аккаунта');
+
+      AccountScope.resetAll();
+
+      expect(toggles(provider), [true, true, true, true]);
     });
   });
 

@@ -2,11 +2,16 @@
 /// `GET /api/v1/partner/establishments/:id/menu-items` (рядом с `data`).
 ///
 /// Сервер собирает его из последнего задания каждого файла меню и отдаёт
-/// худшее: идёт распознавание → не удалось → распознано → ничего
-/// (`partnerMenuItemService.recognitionState`). До 24.10.2026 (находка 3
-/// инцидента Railway) поля не было, и экран «Меню» показывал один пустой
-/// экран и для «не загружено», и для «распознаём», и для «не удалось».
-enum MenuRecognitionStatus { none, processing, failed, done }
+/// худшее: идёт распознавание → не удалось → не запущено → распознано →
+/// ничего (`partnerMenuItemService.recognitionState`). До 24.10.2026
+/// (находка 3 инцидента Railway) поля не было, и экран «Меню» показывал один
+/// пустой экран и для «не загружено», и для «распознаём», и для «не удалось».
+///
+/// [notStarted] — файл на карточке, а задания у него нет: суточный предел
+/// распознавания отказал при загрузке или постановка упала; само оно не
+/// начнётся (находка Н39, 25.10.2026). Сборки до этой правки такого значения
+/// не знают и читают его как «поля нет» — прежний пустой экран ([fromJson]).
+enum MenuRecognitionStatus { none, processing, failed, notStarted, done }
 
 /// Почему не удалось — по ней экран выбирает совет: перезапуск помогает при
 /// сбое сервиса, а не когда сам файл не читается.
@@ -40,6 +45,7 @@ class MenuRecognition {
       'none' => MenuRecognitionStatus.none,
       'processing' => MenuRecognitionStatus.processing,
       'failed' => MenuRecognitionStatus.failed,
+      'not_started' => MenuRecognitionStatus.notStarted,
       'done' => MenuRecognitionStatus.done,
       _ => null,
     };

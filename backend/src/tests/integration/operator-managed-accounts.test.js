@@ -36,6 +36,7 @@ const { clearAllData, query } = await import('../utils/database.js');
 const { createTestUser } = await import('../utils/auth.js');
 const { createAdminAndGetToken } = await import('../utils/adminTestHelpers.js');
 const { invalidateAccountStatus } = await import('../../services/accountStatus.js');
+const { _settlePasswordResetIssuesForTests: settleResetIssues } = await import('../../services/authService.js');
 const { oauthProviderResponses } = await import('../fixtures/users.js');
 
 const PASSWORD = 'Panel-Pass-123';
@@ -147,7 +148,11 @@ describe('Б1/Б2: Google/Yandex neither opens a session for nor links an operat
 
 describe('Б2: «forgot password» issues nothing for an operator-managed account', () => {
   const forgot = (email) => request(app).post('/api/v1/auth/forgot-password').send({ email });
-  const links = async (id) => (await query('SELECT COUNT(*)::int AS n FROM password_reset_tokens WHERE user_id = $1', [id])).rows[0].n;
+  // A link is issued after the answer: count once every issue has finished.
+  const links = async (id) => {
+    await settleResetIssues();
+    return (await query('SELECT COUNT(*)::int AS n FROM password_reset_tokens WHERE user_id = $1', [id])).rows[0].n;
+  };
 
   test.each([
     ['admin', 'admin', false],

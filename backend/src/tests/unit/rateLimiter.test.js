@@ -5,16 +5,19 @@ import { jest } from '@jest/globals';
 // Mock Redis helpers before importing middleware
 const incrementWithExpiry = jest.fn();
 const getTTL = jest.fn();
+const decrement = jest.fn();
 
 jest.unstable_mockModule('../../config/redis.js', () => ({
   incrementWithExpiry,
   getTTL,
+  decrement,
   default: {},
 }));
 
 const {
   createRateLimiter,
   createGlobalRateLimiter,
+  giveBackRateLimitSlots,
   rateLimiter,
   resolveRateLimitTiers,
 } = await import('../../middleware/rateLimiter.js');
@@ -124,6 +127,49 @@ describe('createRateLimiter: the counter expires when its bucket ends', () => {
       `ratelimit:test:1.1.1.1:${Math.floor(nowMs / (windowSeconds * 1000))}`,
       expiry,
     );
+  });
+});
+
+// The partner's restart of menu recognition whose every file failed to queue
+// gives its slot back (finding Н40, 25.10.2026): a failure of the server's
+// must not spend one of the five restarts of the day.
+describe('giveBackRateLimitSlots', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('gives back the slot the limiter counted, once', async () => {
+    const nowMs = Date.parse('2026-10-25T12:00:00.000Z');
+    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    incrementWithExpiry.mockResolvedValueOnce(3);
+    getTTL.mockResolvedValueOnce(43200);
+    decrement.mockResolvedValue(2);
+
+    const limiter = createRateLimiter({ limit: 5, windowSeconds: 86400, keyPrefix: 'ocr_restart' });
+    const req = { user: { userId: 'u-1' }, method: 'POST', path: '/x' };
+    await limiter(req, buildResponse(), jest.fn());
+    await giveBackRateLimitSlots(req);
+    await giveBackRateLimitSlots(req);
+
+    expect(decrement).toHaveBeenCalledTimes(1);
+    expect(decrement).toHaveBeenCalledWith(`ratelimit:ocr_restart:u-1:${Math.floor(nowMs / 86400000)}`);
+  });
+
+  test('a refused request counted nothing to give back; a request no limiter saw — nothing either', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(6);
+    getTTL.mockResolvedValueOnce(60);
+
+    const limiter = createRateLimiter({ limit: 5, windowSeconds: 60, keyPrefix: 'ocr_restart' });
+    const refused = { user: { userId: 'u-1' }, method: 'POST', path: '/x' };
+    await limiter(refused, buildResponse(), jest.fn());
+    await giveBackRateLimitSlots(refused);
+    await giveBackRateLimitSlots({});
+
+    expect(decrement).not.toHaveBeenCalled();
   });
 });
 
