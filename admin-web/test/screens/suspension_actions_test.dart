@@ -246,6 +246,30 @@ void main() {
       expect(find.text('Приостановить'), findsNothing);
     });
 
+    // Тот же диалог «Возобновить», что у «Приостановленных», — но поиском
+    // «Одобренных» карточку открывают отдельным экраном, и куда она вернётся,
+    // этот экран передаёт сам.
+    for (final (from, expected) in <(String?, String)>[
+      ('suspended', 'Заведение вернётся на паузу партнёра — включить его сможет только партнёр.'),
+      ('pending', 'Заведение вернётся в очередь проверки.'),
+      ('rejected', 'Заявка останется отклонённой — партнёр исправит замечания и отправит её снова.'),
+      ('active', 'Заведение снова появится в поиске и каталоге.'),
+      (null, 'Заведение снова появится в поиске и каталоге.'),
+    ]) {
+      testWidgets('диалог «Возобновить» говорит, куда вернётся карточка: $from',
+          (tester) async {
+        await pumpApproved(tester,
+            _detail(status: 'suspended', reason: _moderatorReason, from: from));
+
+        await tester.tap(find.text('Возобновить'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Возобновить заведение?'), findsOneWidget);
+        expect(find.text(expected), findsOneWidget);
+      });
+    }
+
     for (final status in <String>['draft', 'archived']) {
       testWidgets('$status: приостановить нельзя', (tester) async {
         await pumpApproved(tester, _detail(status: status));

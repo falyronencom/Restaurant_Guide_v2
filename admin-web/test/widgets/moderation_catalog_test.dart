@@ -4,6 +4,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/moderation_catalog_list.dart';
 import 'package:restaurant_guide_admin_web/widgets/moderation/status_dot.dart';
+import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
 // Каталог кадров 11–13: колонка 420, карточка с миниатюрой 80 и футер
 // пагинации. Проверяется то, что ломается молча — геометрия и раскладка
@@ -225,6 +226,9 @@ void main() {
 
       expect(find.byType(ModerationCatalogCard), findsNothing);
       expect(find.text('Пусто'), findsNothing);
+      // Имя обещает скелетон, а не только отсутствие карточек и пустоты:
+      // пустая колонка прошла бы оба утверждения выше.
+      expect(find.byType(SkeletonBlock), findsWidgets);
     });
   });
 
