@@ -260,12 +260,14 @@ describe('fetchCatalog', () => {
 });
 
 describe('защита выкатки', () => {
-  // Свой прогон создан 2026-10-05 02:20 UTC; запас — 15 минут.
+  // Свой прогон создан 2026-10-05 02:20 UTC; запас — 15 минут. workflow_id —
+  // настоящие id workflow репозитория (GET /actions/workflows, 28.10.2026).
   const OWN = {
-    id: 555, name: 'Сроки моделей OpenRouter', status: 'in_progress', conclusion: null,
-    created_at: '2026-10-05T02:20:00Z', updated_at: '2026-10-05T02:20:30Z',
+    id: 555, workflow_id: 369288064, name: 'Сроки моделей OpenRouter', status: 'in_progress', conclusion: null,
+    created_at: '2026-10-05T02:20:00Z', run_started_at: '2026-10-05T02:20:00Z', updated_at: '2026-10-05T02:20:30Z',
   };
-  const ci = (fields) => ({ id: 1, name: 'CI', status: 'completed', conclusion: 'success', created_at: '2026-10-05T01:00:00Z', ...fields });
+  const ci = (fields) => ({ id: 1, workflow_id: 341393655, name: 'CI', status: 'completed', conclusion: 'success', created_at: '2026-10-05T01:00:00Z', ...fields });
+  const ownBefore = (fields) => ({ ...OWN, status: 'completed', conclusion: 'failure', ...fields });
   const ACTIONS_ENV = {
     GITHUB_ACTIONS: 'true', GITHUB_TOKEN: 'tkn', GITHUB_REPOSITORY: 'o/r', GITHUB_SHA: 'abc123', GITHUB_RUN_ID: '555',
   };
@@ -282,6 +284,61 @@ describe('защита выкатки', () => {
 
   test('на коммите только свой прогон — выкатка не ждёт', () => {
     expect(deployMayWait({ runs: [OWN], ownRunId: '555' })).toEqual({ mayWait: false, blocking: [] });
+  });
+
+  test('прошлый прогон того же сторожа закончился за 3 минуты или ещё идёт — выкатку он не держит, провал не откладывается', () => {
+    const justFinished = ownBefore({ id: 554, created_at: '2026-10-05T02:16:00Z', run_started_at: '2026-10-05T02:16:00Z', updated_at: '2026-10-05T02:17:00Z' });
+    const stillRunning = ownBefore({ id: 553, status: 'in_progress', conclusion: null, updated_at: '2026-10-05T02:19:00Z' });
+    expect(deployMayWait({ runs: [OWN, justFinished, stillRunning], ownRunId: 555 })).toEqual({ mayWait: false, blocking: [] });
+    // CI того же коммита в окне по-прежнему держит — сторож свой прогон отличает от чужого.
+    const verdict = deployMayWait({ runs: [OWN, justFinished, ci({ updated_at: '2026-10-05T02:15:00Z' })], ownRunId: 555 });
+    expect(verdict).toEqual({ mayWait: true, blocking: ['CI (completed/success)'] });
+  });
+
+  test('сосед (другой сторож) в окне считается, как и раньше', () => {
+    const neighbour = { id: 7, workflow_id: 395098065, name: 'Расход Cloudinary', status: 'completed', conclusion: 'success', updated_at: '2026-10-05T02:18:00Z' };
+    expect(deployMayWait({ runs: [OWN, neighbour], ownRunId: 555 }).blocking).toEqual(['Расход Cloudinary (completed/success)']);
+  });
+
+  test('перезапуск (Re-run): окно отсчитывается от run_started_at, а не от исходного created_at', () => {
+    // Попытка 2 запущена через сутки; created_at у неё остаётся от попытки 1.
+    const rerun = { ...OWN, run_attempt: 2, created_at: '2026-10-04T02:20:00Z', run_started_at: '2026-10-05T02:20:00Z' };
+    // CI закончился через 3 часа после первой попытки, за 21 час до перезапуска — выкатку уже не держит.
+    expect(deployMayWait({ runs: [rerun, ci({ updated_at: '2026-10-04T05:20:00Z' })], ownRunId: 555 }).mayWait).toBe(false);
+    // CI закончился за 5 минут до перезапуска — держит.
+    expect(deployMayWait({ runs: [rerun, ci({ updated_at: '2026-10-05T02:15:00Z' })], ownRunId: 555 }).mayWait).toBe(true);
+  });
+
+  test('нет run_started_at — отсчёт от created_at; нет workflow_id у своего — чужие прогоны не отсеиваются', () => {
+    const { run_started_at: _omit, ...noStart } = OWN;
+    expect(deployMayWait({ runs: [noStart, ci({ updated_at: '2026-10-05T02:15:00Z' })], ownRunId: 555 }).mayWait).toBe(true);
+    expect(deployMayWait({ runs: [noStart, ci({ updated_at: '2026-10-05T01:50:00Z' })], ownRunId: 555 }).mayWait).toBe(false);
+    const { workflow_id: _drop, ...noWorkflow } = OWN;
+    const { workflow_id: _drop2, ...ciNoWorkflow } = ci({ updated_at: '2026-10-05T02:15:00Z' });
+    expect(deployMayWait({ runs: [noWorkflow, ciNoWorkflow], ownRunId: 555 }).mayWait).toBe(true);
+  });
+
+  test('сторож сроков целиком: 27.10 прошлый прогон того же сторожа закончился за 166 с — тревога красная (код 1)', async () => {
+    // Последовательность 27.10.2026 (журнал «Расход Cloudinary»), перенесённая на сторожа сроков.
+    const runs = [
+      { ...OWN, id: 40532559866, created_at: '2026-10-27T15:35:55Z', run_started_at: '2026-10-27T15:35:55Z', updated_at: '2026-10-27T15:36:00Z' },
+      ownBefore({ id: 40532044533, conclusion: 'success', created_at: '2026-10-27T15:32:49Z', run_started_at: '2026-10-27T15:32:49Z', updated_at: '2026-10-27T15:33:09Z' }),
+      ownBefore({ id: 40529862441, created_at: '2026-10-27T15:19:42Z', run_started_at: '2026-10-27T15:19:42Z', updated_at: '2026-10-27T15:20:09Z' }),
+      ci({ id: 40380382765, created_at: '2026-10-26T18:44:14Z', updated_at: '2026-10-26T18:51:51Z' }),
+    ];
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ workflow_runs: runs }) });
+    const { code, report } = await runWatch({
+      config: { getConfig: () => ({ model: 'google/gemini-3.8-flash' }), getOcrConfig: () => ({ model: 'google/gemini-3.8-flash' }) },
+      railway: { verifiedOn: '2026-09-28', variables: {} },
+      env: { ...ACTIONS_ENV, GITHUB_RUN_ID: '40532559866' },
+      today: TODAY,
+      argv: ['--models=google/gemini-2.5-flash'],
+      fetchCatalogImpl: async () => CATALOG,
+      checkDeployWindowImpl: ({ env }) => checkDeployWindow({ env, fetchImpl }),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(code).toBe(EXIT.ALARM);
+    expect(report.annotations[0]).toMatch(/^::error title=Модель OpenRouter google\/gemini-2\.5-flash::/);
   });
 
   test('вне GitHub Actions защита не применяется и в сеть не ходит', async () => {

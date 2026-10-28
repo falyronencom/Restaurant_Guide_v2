@@ -36,6 +36,7 @@ import {
   runWatch,
   usageLine,
 } from '../../../scripts/cloudinary-usage/watch.js';
+import { checkDeployWindow } from '../../../scripts/model-expiry/watch.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKFLOWS = resolve(__dirname, '../../../../.github/workflows');
@@ -358,6 +359,45 @@ describe('runWatch — прогон целиком', () => {
     expect(code).toBe(EXIT.OK);
     expect(report.annotations).toEqual([expect.stringMatching(/^::warning title=Расход Cloudinary у предела тарифа::/)]);
     expect(report.text).toContain('Итог: ТРЕВОГА — провал отложен защитой выкатки');
+  });
+
+  test('27.10: прошлый ручной прогон этого же сторожа закончился за 166 с — нарочно красный прогон краснеет (код 1), а не откладывается', async () => {
+    // Прогоны коммита 85ec5265, видимые на старте прогона 40532559866 (порог 1),
+    // — из GET /actions/runs?head_sha=, 28.10.2026, поля сокращены.
+    const runs = [
+      { id: 40532559866, workflow_id: 395098065, name: 'Расход Cloudinary', event: 'workflow_dispatch', status: 'in_progress', conclusion: null, created_at: '2026-10-27T15:35:55Z', run_started_at: '2026-10-27T15:35:55Z', updated_at: '2026-10-27T15:36:00Z' },
+      { id: 40532044533, workflow_id: 395098065, name: 'Расход Cloudinary', event: 'workflow_dispatch', status: 'completed', conclusion: 'success', created_at: '2026-10-27T15:32:49Z', run_started_at: '2026-10-27T15:32:49Z', updated_at: '2026-10-27T15:33:09Z' },
+      { id: 40529862441, workflow_id: 395098065, name: 'Расход Cloudinary', event: 'workflow_dispatch', status: 'completed', conclusion: 'failure', created_at: '2026-10-27T15:19:42Z', run_started_at: '2026-10-27T15:19:42Z', updated_at: '2026-10-27T15:20:09Z' },
+      { id: 40380382765, workflow_id: 341393655, name: 'CI', event: 'push', status: 'completed', conclusion: 'success', created_at: '2026-10-26T18:44:14Z', run_started_at: '2026-10-26T18:44:14Z', updated_at: '2026-10-26T18:51:51Z' },
+    ];
+    const actionsEnv = { GITHUB_ACTIONS: 'true', GITHUB_TOKEN: 'tkn', GITHUB_REPOSITORY: 'o/r', GITHUB_SHA: 'abc123' };
+    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ workflow_runs: runs }) }));
+    const realGuard = ({ env: e }) => checkDeployWindow({ env: e, fetchImpl });
+
+    const { code, report } = await runWatch({
+      ...base,
+      env: { ...env, ...actionsEnv, GITHUB_RUN_ID: '40532559866', ALARM_PERCENT: '1' },
+      fetchUsageImpl: async () => withCredits(8.87),
+      checkDeployWindowImpl: realGuard,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(code).toBe(EXIT.ALARM);
+    expect(report.annotations).toEqual([expect.stringMatching(/^::error title=Расход Cloudinary у предела тарифа::/)]);
+    expect(report.text).not.toContain('Провал отложен');
+
+    // CI того же коммита, закончившийся за 5 минут до старта, по-прежнему откладывает провал.
+    const ciInWindow = { ...runs[3], updated_at: '2026-10-27T15:30:55Z' };
+    fetchImpl.mockImplementation(async () => ({ ok: true, status: 200, json: async () => ({ workflow_runs: [...runs.slice(0, 3), ciInWindow] }) }));
+    const deferred = await runWatch({
+      ...base,
+      env: { ...env, ...actionsEnv, GITHUB_RUN_ID: '40532559866', ALARM_PERCENT: '1' },
+      fetchUsageImpl: async () => withCredits(8.87),
+      checkDeployWindowImpl: realGuard,
+    });
+    expect(deferred.code).toBe(EXIT.OK);
+    expect(deferred.report.text).toContain('Итог: ТРЕВОГА — провал отложен защитой выкатки');
+    expect(deferred.report.text).toContain('CI (completed/success)');
+    expect(deferred.report.text).not.toContain('Расход Cloudinary (completed');
   });
 
   test('нет секретов — код 2, API не зовётся', async () => {
