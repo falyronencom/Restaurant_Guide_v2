@@ -69,11 +69,12 @@ class _PickedPdf extends FilePicker {
 const _invalidTypeRefusal = 'Этот формат не подходит: фото — JPG, PNG, WebP '
     'или HEIC, меню — ещё и PDF.';
 
-/// Сбой сервера. Для программной ошибки бэкенд отдаёт в `message` текст
-/// исключения как есть — английский и внутренний; партнёру он не годится.
+/// Сбой сервера. С 13.10.2026 на любой сбой без готовой фразы бэкенд отдаёт
+/// в `message` одну общую (`SERVER_FAILURE_MESSAGE`, `errorHandler.js`), а
+/// текст исключения оставляет в журнале.
 ResponseBody _serverFailure(RequestOptions _) => jsonBody(<String, dynamic>{
       'success': false,
-      'message': "Cannot read properties of undefined (reading 'secure_url')",
+      'message': 'Сбой на сервере. Попробуйте ещё раз через минуту.',
       'error': <String, dynamic>{'code': 'INTERNAL_ERROR'},
       'timestamp': '2026-10-13T10:00:00.000Z',
     }, status: 500);
@@ -231,8 +232,7 @@ void main() {
       expect(await snackBarText(tester),
           'Не удалось загрузить фото. Попробуйте ещё раз.',
           reason: 'у исходного отказа dio после 5xx нет готовой фразы; '
-              'текст из ответа сервера — внутренний английский текст '
-              'бэкенда');
+              'текст из ответа сервера на плашку не идёт');
     });
   });
 

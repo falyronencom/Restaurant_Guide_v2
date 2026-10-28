@@ -46,7 +46,8 @@ export const BODY_LIMIT_MB = 10;
  * does (middleware/upload.js unreadableFormRefusal): 400 INVALID_FORMAT and
  * the form's sentence (UPLOAD_REFUSALS.formNotRead, approved 16.10.2026);
  * body-parser gave too many fields 413. The new texts and codes were proposed
- * by Trunk on 25.10.2026, the Coordinator's word comes with the merge.
+ * by Trunk on 25.10.2026; approved by the Coordinator on 25.10.2026
+ * (PR #134).
  *
  * Not here on purpose: entity.parse.failed (INVALID_JSON below, as before);
  * request.aborted — the connection dropped mid-send, nobody reads the answer,

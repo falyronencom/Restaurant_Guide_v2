@@ -785,8 +785,8 @@ export const MENU_RECOGNITION_FAILED_TITLE = 'Меню не распознано
 
 /**
  * Message of that notice. The file has no name the partner gave it, so the
- * card's name stands in. Wording proposed by Trunk on 24.10.2026; the
- * Coordinator's word comes with the merge.
+ * card's name stands in. Wording proposed by Trunk on 24.10.2026;
+ * approved by the Coordinator on 24.10.2026 (PR #128).
  *
  * @param {string} name - Establishment name
  * @returns {string}
