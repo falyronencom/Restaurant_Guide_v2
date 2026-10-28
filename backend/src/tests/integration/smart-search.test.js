@@ -21,6 +21,7 @@ import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import * as smartSearchService from '../../services/smartSearchService.js';
 import redisClient, { connectRedis, deleteKey, disconnectRedis } from '../../config/redis.js';
+import { resetKeyHealthState } from '../../services/openRouterKeyStatus.js';
 
 let partnerId;
 
@@ -1701,6 +1702,17 @@ describe('Smart Search - Бюджет модели', () => {
     }),
   });
 
+  // GET /key OpenRouter для блока model_key (D8, 28.10.2026): по умолчанию —
+  // ключ сервера 28.10 ($5, потрачено ≈ $0,003, без сброса), форма — по
+  // документации OpenRouter (limits), не живой ответ.
+  const keyStatus = (status, data) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => (status === 200 ? { data: { label: 'sk-or-v1-abc...6da', usage: 0.003, ...data } } : { error: { message: 'User not found.' } }),
+  });
+  let keyAnswer;
+  let keyRequests = [];
+
   const smart = (queryText, headers = {}) => {
     let call = request(app).post('/api/v1/search/smart');
     for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
@@ -1744,14 +1756,22 @@ describe('Smart Search - Бюджет модели', () => {
     process.env.SMART_SEARCH_NEW_PHRASES_PER_HOUR = '';
     process.env.SITE_REQUEST_SECRET = SITE_SECRET;
     modelCalls = 0;
-    // Только вызовы модели: supertest ходит через node:http, не через fetch.
+    keyAnswer = keyStatus(200, { limit: 5, limit_remaining: 4.997, limit_reset: null });
+    resetKeyHealthState();
+    // Только вызовы модели и остаток ключа (блок model_key проверки
+    // здоровья): supertest ходит через node:http, не через fetch.
     global.fetch = async (url, init) => {
       if (String(url).endsWith('/chat/completions')) {
         modelCalls += 1;
         return modelAnswer('пицца');
       }
+      if (String(url).endsWith('/key')) {
+        keyRequests.push(init?.headers?.Authorization);
+        return keyAnswer;
+      }
       return originalFetch(url, init);
     };
+    keyRequests = [];
   });
 
   afterAll(async () => {
@@ -1855,6 +1875,40 @@ describe('Smart Search - Бюджет модели', () => {
     const after = (await budgetHealth()).day;
     expect(after.llm_calls - before.llm_calls).toBe(1);
     expect(after.cache_hits - before.cache_hits).toBe(1);
+  });
+
+  // Директива D8 (28.10.2026): сторож расхода OpenRouter читает остаток ключа
+  // из публичной проверки здоровья — только проценты, без денег и ключа.
+  test('model_key: остаток ключа целым процентом, без денег и ключа; спрошено один раз на 10 минут', async () => {
+    const first = await request(app).get('/api/v1/search/health');
+    const second = await request(app).get('/api/v1/search/health');
+
+    expect(first.status).toBe(200);
+    expect(first.body.data.model_key).toEqual({
+      status: 'ok',
+      remaining_percent: 99,
+      limit_reset: null,
+      checked_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      unknown_reason: null,
+    });
+    expect(second.body.data.model_key).toEqual(first.body.data.model_key);
+    expect(keyRequests).toEqual(['Bearer test-key']);
+    const text = JSON.stringify(first.body);
+    for (const leak of ['test-key', '4.997', '0.003', '6da']) expect(text).not.toContain(leak);
+    // Прежние блоки на месте.
+    expect(first.body.data).toMatchObject({ healthy: true, postgis: 'healthy' });
+    expect(first.body.data.smart).toBeDefined();
+  });
+
+  test('model_key: OpenRouter отклонил ключ (401) — «неизвестно» с кодом, код ответа по-прежнему решает PostGIS', async () => {
+    keyAnswer = keyStatus(401, null);
+    const response = await request(app).get('/api/v1/search/health');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.model_key).toEqual({
+      status: 'unknown', remaining_percent: null, limit_reset: null, checked_at: null, unknown_reason: 'http_401',
+    });
+    expect(JSON.stringify(response.body)).not.toContain('User not found');
   });
 
   test('без Redis модель не зовётся: классика, health — «неизвестно» и degraded', async () => {
