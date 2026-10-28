@@ -50,8 +50,9 @@ const PDF_FETCH_TIMEOUT_MS = 60000;
  * without the page count, as after an ordinary parse failure): breaking a
  * limit is the file's doing, and the job ends with that reason.
  *
- * The numbers — proposed (Trunk session, 18.10.2026); the Coordinator's word
- * comes with the merge. Measured 18.10.2026 on synthetic menu-like PDFs (text
+ * The numbers — proposed (Trunk session, 18.10.2026), approved by the
+ * Coordinator on 18.10.2026 (PR #79). Measured 18.10.2026 on synthetic
+ * menu-like PDFs (text
  * pages and one large photo — files that ask little of a parser), the
  * child's start included: 1–100 pages, 0.1–58 MB — 0.15–0.22 s, peak
  * resident memory 46–219 MB (the 58 MB file, just under the 60 MB upload
