@@ -38,8 +38,9 @@ const CODE_RU: Record<string, string> = {
   COORDINATES_CITY_MISMATCH:
     'Координаты не попадают в границы выбранного города. Проверьте город или определите координаты по адресу заново.',
   MEDIA_LIMIT_EXCEEDED: 'Превышен лимит фотографий для заведения.',
-  // The card's PDF limit: the upload to a card (mediaService) answers it in
-  // English, the save (establishmentService) in Russian — the same words here.
+  // The card's PDF limit: the upload to a card (mediaService) and the save
+  // (establishmentService) answer it with the same sentence
+  // (ESTABLISHMENT_REFUSALS.pdfLimit) — the same words here.
   PDF_LIMIT_EXCEEDED: 'Можно добавить не больше 2 файлов меню в формате PDF.',
   // Save refused: a media link is not among the partner's own uploads (backend
   // create/update ownership gate). The cabinet uploads into the partner's own
