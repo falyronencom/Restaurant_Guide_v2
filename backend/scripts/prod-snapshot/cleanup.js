@@ -2,7 +2,7 @@
  * Снимок прода — уборка открытых данных. Бриф §3.1 шаг 9: открытые данные
  * могут остаться в четырёх местах, уборка проходит все четыре и при сбое:
  *   1) папка сборки (build/) и tar до шифрования;
- *   2) папка расшифровки (decrypt-tmp/);
+ *   2) папки расшифровки: проверочной (decrypt-tmp/) и основы «только нового» (base-tmp/);
  *   3) контейнеры снимка (prod-snapshot-*) и файлы внутри pg-test;
  *   4) базы prod_snapshot_verify_* в pg-test.
  * Итог проверяется отдельно (checkClean), а не выводится из того, что
@@ -15,7 +15,7 @@ import { join } from 'path';
 import { VERIFY_CONTAINER, listSnapshotContainers, removeContainer, run } from './proc.js';
 import { dropVerifyDb, listVerifyDbs } from './restore.js';
 
-export const PLAINTEXT_DIRS = Object.freeze(['build', 'decrypt-tmp']);
+export const PLAINTEXT_DIRS = Object.freeze(['build', 'decrypt-tmp', 'base-tmp']);
 /** tar до шифрования; .tar.gpg — не открытые данные. */
 export const isPlaintextFile = (name) => /\.tar(\.part)?$/.test(name);
 

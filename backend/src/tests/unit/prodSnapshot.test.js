@@ -290,7 +290,7 @@ describe('диф к прошлому прогону', () => {
     });
     expect(out.media_rows).toEqual([{ id: 'm1', establishment_id: 'e1', keys: ['image/upload/est/a'] }, { id: 'm2', establishment_id: 'e1', keys: [] }]);
     expect(out.establishments).toEqual([{ id: 'e1', name: 'Один', status: 'active' }]);
-    expect(out.files).toEqual([{ key: 'image/upload/est/a', bytes: 5, sha256: 's', status: 'referenced', original: 'original' }]);
+    expect(out.files).toEqual([{ key: 'image/upload/est/a', bytes: 5, sha256: 's', version: null, status: 'referenced', original: 'original' }]);
     expect(JSON.stringify(out)).not.toMatch(/https?:/);
   });
 });
