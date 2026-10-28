@@ -10,6 +10,7 @@
 
 import * as partnerMenuItemService from '../services/partnerMenuItemService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { giveBackRateLimitSlots } from '../middleware/rateLimiter.js';
 import logger from '../utils/logger.js';
 
 export const listMenuItems = asyncHandler(async (req, res) => {
@@ -55,7 +56,22 @@ export const retryOcr = asyncHandler(async (req, res) => {
   const establishmentId = req.params.id;
   const partnerId = req.user.userId;
 
-  const result = await partnerMenuItemService.retryOcr(partnerId, establishmentId);
+  let result;
+  try {
+    result = await partnerMenuItemService.retryOcr(partnerId, establishmentId);
+  } catch (error) {
+    // A failure of the server's — every queuing failed (OCR_RESTART_FAILED,
+    // finding Н40 of 25.10.2026) or the database failed before them — is not
+    // a restart the partner spent: the day's limit of five restarts
+    // (routes/v1/establishmentRoutes.js) gets this one back. The app repeats
+    // a request answered 5xx, and the repeats cost nothing either. A refusal
+    // (no menu files, the spent daily allowance's 429, not the partner's
+    // card) stays counted, as before.
+    if ((error.statusCode ?? 500) >= 500) {
+      await giveBackRateLimitSlots(req);
+    }
+    throw error;
+  }
 
   logger.info('Partner retried OCR', {
     partnerId,

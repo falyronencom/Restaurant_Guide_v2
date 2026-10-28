@@ -284,6 +284,49 @@ void main() {
       expect(provider.checkedFraction, closeTo(3 / 14, 1e-9));
     });
 
+    testWidgets('подпись вкладки — проверено из всего, а не всё из всего',
+        (tester) async {
+      // Тест выше читает геттеры; подпись вкладки, которую видит модератор,
+      // не читал никто.
+      tester.view.physicalSize = const Size(1440, 820);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final provider = ModerationProvider(service: _RecordingModerationService());
+      addTearDown(provider.dispose);
+      await provider.selectEstablishment('est-1');
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ModerationProvider>.value(value: provider),
+            ChangeNotifierProvider<BadgesProvider>(
+                create: (_) => _StubBadges()),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const Scaffold(body: ModerationDetailPanel()),
+          ),
+        ),
+      );
+      // Две отметки на «Данных» и одна на «О заведении»: у каждой вкладки —
+      // своё число, а не число первой.
+      provider
+        ..approveField('legal_name')
+        ..approveField('unp')
+        ..approveField('working_hours');
+      await tester.pump();
+
+      String tabLabel(int i) => tester
+          .widget<RichText>(find
+              .descendant(
+                  of: find.byType(Tab).at(i), matching: find.byType(RichText))
+              .first)
+          .text
+          .toPlainText();
+      expect(tabLabel(0), 'Данные 2/5');
+      expect(tabLabel(1), 'О заведении 1/6');
+    });
+
     // Что отказ при этом остаётся доступен — свойство кнопки, а не
     // провайдера; его держит группа «Нижняя панель решений» ниже.
     test('отклонённое поле закрывает одобрение; снятый вердикт открывает его',
@@ -390,10 +433,36 @@ void main() {
     test('свежая заявка — ноль, а не отрицательное', () {
       expect(moderationWaitingDays(DateTime(2026, 8, 20, 18), now: now), 0);
       expect(moderationWaitingDays(DateTime(2026, 8, 20, 11), now: now), 0);
+      // Отметки «вперёд» меньше суток дают ноль и без зажима. Разъезд часов
+      // сервера и браузера на сутки и больше — нет: бейдж «-1 день» или
+      // «-2 дня» читался бы абсурдом.
+      expect(moderationWaitingDays(DateTime(2026, 8, 21, 13), now: now), 0);
+      expect(moderationWaitingDays(DateTime(2026, 8, 22), now: now), 0);
     });
 
     test('пустая метка не выдумывает срок', () {
       expect(moderationWaitingDays(null, now: now), isNull);
+    });
+  });
+
+  group('Одобрение уносит заметки', () {
+    test('заметка 💬 доезжает до сервера и при одобрении', () async {
+      // Путь отказа с причинами держит «Нижняя панель решений»; путь
+      // одобрения собирает заметки отдельным циклом, и его не исполнял
+      // никто — «сохранится при одобрении» оставалось обещанием.
+      final service = _RecordingModerationService();
+      final provider = ModerationProvider(service: service);
+      addTearDown(provider.dispose);
+      await provider.selectEstablishment('est-1');
+
+      provider
+        ..approveField('legal_name')
+        ..commentField('unp', 'сверено по реестру');
+      await provider.approveEstablishment();
+
+      expect(service.decisions, <String>[
+        'est-1 approve {unp: сверено по реестру}',
+      ]);
     });
   });
 }

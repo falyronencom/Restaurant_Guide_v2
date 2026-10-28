@@ -246,6 +246,29 @@ void main() {
       // Раскрытая строка принадлежала прежней выборке.
       expect(provider.expandedEntryId, isNull);
     });
+
+    // Имя выше — «смена фильтра»; фильтров у журнала четыре пути, и у
+    // каждого своё закрытие строки.
+    for (final (name, change) in <(String, void Function(AuditLogProvider))>[
+      ('объект', (p) => p.setEntityTypeFilter('review')),
+      ('период', (p) => p.setPeriod('7d')),
+      ('свой период', (p) => p.setPeriod('custom',
+          from: DateTime(2026, 8, 1), to: DateTime(2026, 8, 25))),
+      ('«Сбросить»', (p) => p.clearFilters()),
+    ]) {
+      test('смена фильтра закрывает раскрытую строку: $name', () async {
+        fake.pages = <int, List<AuditLogEntry>>{
+          1: <AuditLogEntry>[_entry('a', DateTime.utc(2026, 8, 25, 9, 0))],
+        };
+        await provider.loadEntries();
+
+        provider.toggleExpanded('a');
+        expect(provider.expandedEntryId, 'a', reason: 'предпосылка');
+
+        change(provider);
+        expect(provider.expandedEntryId, isNull);
+      });
+    }
   });
 
   group('Сбой загрузки', () {

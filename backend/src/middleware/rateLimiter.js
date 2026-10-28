@@ -1,4 +1,4 @@
-import { incrementWithExpiry, getTTL } from '../config/redis.js';
+import { decrement, incrementWithExpiry, getTTL } from '../config/redis.js';
 import { RATE_LIMIT_MESSAGE } from '../constants/rateLimitRefusal.js';
 import { decodeAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
 import logger from '../utils/logger.js';
@@ -364,6 +364,9 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
         });
       }
 
+      // The request counted: the handler may give the slot back when it did
+      // nothing (giveBackRateLimitSlots).
+      req.rateLimitSlots = [...(req.rateLimitSlots ?? []), rateLimitKey];
       next();
     } catch (error) {
       logger.error(`Custom rate limiting check failed (${keyPrefix}) - allowing request`, {
@@ -373,4 +376,26 @@ export const createRateLimiter = ({ limit, windowSeconds, keyPrefix = 'custom' }
       next();
     }
   };
+};
+
+/**
+ * Give back the slots the limiters of createRateLimiter counted for this
+ * request — for a handler that did nothing for the caller and refused it as
+ * a server failure, so that the failure does not spend the caller's day: the
+ * partner's restart of menu recognition whose every file failed to queue
+ * (controllers/partnerMenuItemController.js; finding Н40 of 25.10.2026).
+ * Once per request; Redis unavailable — nothing is given back
+ * (config/redis.js decrement). Accepted: an increment that fell back
+ * (Redis not ready, or past its deadline — incrementWithExpiry answers «first
+ * increment») counted nothing, and if Redis is back by the give-back, the
+ * caller's counter loses one it never gained — one restart more that day, in
+ * a window of a Redis failure and a server failure at once.
+ *
+ * @param {import('express').Request} req
+ * @returns {Promise<void>}
+ */
+export const giveBackRateLimitSlots = async (req) => {
+  const slots = req.rateLimitSlots ?? [];
+  req.rateLimitSlots = [];
+  await Promise.all(slots.map((key) => decrement(key)));
 };
