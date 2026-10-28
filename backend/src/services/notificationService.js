@@ -788,11 +788,18 @@ export const MENU_RECOGNITION_FAILED_TITLE = 'Меню не распознано
  * card's name stands in. Wording proposed by Trunk on 24.10.2026;
  * approved by the Coordinator on 24.10.2026 (PR #128).
  *
+ * When OpenRouter refused the key (failureReason.js, unavailable), «another
+ * file» would send the partner after a fault that is not the file's: the
+ * message says recognition is down for a while instead (directive D8 of
+ * 28.10.2026; wording proposed by the executor, awaits the Coordinator).
+ *
  * @param {string} name - Establishment name
+ * @param {string} [reason] - failureReasonOf of the failed job
  * @returns {string}
  */
-export const buildMenuRecognitionFailedMessage = (name) =>
-  `Не удалось распознать меню «${name}». Попробуйте загрузить снова или другой файл.`;
+export const buildMenuRecognitionFailedMessage = (name, reason) => (reason === 'unavailable'
+  ? `Распознавание меню «${name}» временно недоступно. Попробуйте позже.`
+  : `Не удалось распознать меню «${name}». Попробуйте загрузить снова или другой файл.`);
 
 /**
  * Tell the partner that recognition of a menu file failed for good — called
@@ -812,9 +819,11 @@ export const buildMenuRecognitionFailedMessage = (name) =>
  * @param {string} establishmentId
  * @param {Object} options
  * @param {string} options.jobId - UUID of the job that failed
+ * @param {string} [options.reason] - failureReasonOf of its error_message:
+ *   picks the message (buildMenuRecognitionFailedMessage)
  * @returns {Promise<boolean>} Whether a notice was written
  */
-export const notifyMenuRecognitionFailed = async (establishmentId, { jobId }) => {
+export const notifyMenuRecognitionFailed = async (establishmentId, { jobId, reason }) => {
   try {
     const establishment = await EstablishmentModel.findEstablishmentById(establishmentId, true);
     if (!establishment || !establishment.partner_id) return false;
@@ -828,7 +837,7 @@ export const notifyMenuRecognitionFailed = async (establishmentId, { jobId }) =>
     });
     if (alreadyTold) return false;
 
-    const message = buildMenuRecognitionFailedMessage(establishment.name || 'Заведение');
+    const message = buildMenuRecognitionFailedMessage(establishment.name || 'Заведение', reason);
 
     await NotificationModel.create({
       userId: establishment.partner_id,

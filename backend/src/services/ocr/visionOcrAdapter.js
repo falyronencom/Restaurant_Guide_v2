@@ -10,6 +10,7 @@
 
 import logger from '../../utils/logger.js';
 import { getOcrConfig } from '../../config/openrouter.js';
+import { callError } from './openRouterRefusal.js';
 
 const VISION_SYSTEM_PROMPT =
   'You are an OCR engine. Extract all visible text from the provided image(s) ' +
@@ -27,7 +28,8 @@ const REQUEST_TIMEOUT_MS = 60000;
  * @param {string[]} cloudinaryUrls - Image URLs (PDF pages via pg_N or direct photos)
  * @returns {Promise<{ rawText: string, confidenceOverall: number }>}
  * @throws {Error} on network / API / missing API key, or an answer cut short
- *   (finish_reason other than 'stop')
+ *   (finish_reason other than 'stop'); OpenRouter's refusal of the key has the
+ *   code KEY_REFUSED (openRouterRefusal.js)
  */
 export const extractFromImages = async (cloudinaryUrls) => {
   if (!cloudinaryUrls || cloudinaryUrls.length === 0) {
@@ -74,8 +76,9 @@ export const extractFromImages = async (cloudinaryUrls) => {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter vision call failed: ${response.status} ${errorText.slice(0, 200)}`);
+      // The key's refusal (401, 402, 403 of a spent budget) comes out with the
+      // code KEY_REFUSED: the job fails at once (openRouterRefusal.js).
+      throw callError({ stage: 'vision', status: response.status, bodyText: await response.text() });
     }
 
     const data = await response.json();

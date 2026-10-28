@@ -32,7 +32,13 @@ import * as visionOcrAdapter from './visionOcrAdapter.js';
 import * as llmStructurer from './llmStructurer.js';
 import * as sanityChecker from './sanityChecker.js';
 import { PDF_PARSE_ABORTED, PDF_PARSE_LIMIT } from './pdfParseRunner.js';
-import { EMPTY_TEXT_MESSAGE, PAGES_BLANK_MESSAGE, UNSUPPORTED_FILE_MESSAGE } from './failureReason.js';
+import { KEY_REFUSED } from './openRouterRefusal.js';
+import {
+  EMPTY_TEXT_MESSAGE,
+  PAGES_BLANK_MESSAGE,
+  UNSUPPORTED_FILE_MESSAGE,
+  failureReasonOf,
+} from './failureReason.js';
 import { generatePdfPageImageUrl } from '../../config/cloudinary.js';
 
 /**
@@ -141,9 +147,13 @@ const firstPageFailure = (settled) => {
   if (index === -1) return null;
   const { reason } = settled[index];
   if (settled.length === 1) return reason;
-  return new Error(`page ${index + 1} of ${settled.length}: ${reason?.message ?? String(reason)}`, {
+  const failure = new Error(`page ${index + 1} of ${settled.length}: ${reason?.message ?? String(reason)}`, {
     cause: reason,
   });
+  // processJob settles the job by the code: the key's refusal on one page is
+  // the key's refusal of the job.
+  if (reason?.code) failure.code = reason.code;
+  return failure;
 };
 
 /**
@@ -264,7 +274,9 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal } = {})
         ...(cut && { pagesTotal: pageCount }),
       };
     } catch (error) {
-      if (!textLayerBackup || !parseResult?.hasTextLayer) throw error;
+      // The structurer of the text layer would ask OpenRouter with the same
+      // refused key: no fallback then.
+      if (!textLayerBackup || !parseResult?.hasTextLayer || error.code === KEY_REFUSED) throw error;
       logger.error('Reading PDF pages as images failed on the last attempt — falling back to the text layer', {
         mediaId: media.id,
         pageCount: parseResult.pageCount,
@@ -517,7 +529,10 @@ const notifyPartnerOfFailedJob = async (job) => {
     });
     return false;
   }
-  return NotificationService.notifyMenuRecognitionFailed(job.establishment_id, { jobId: job.id });
+  return NotificationService.notifyMenuRecognitionFailed(job.establishment_id, {
+    jobId: job.id,
+    reason: failureReasonOf(job.error_message),
+  });
 };
 
 /**
@@ -526,10 +541,16 @@ const notifyPartnerOfFailedJob = async (job) => {
  *
  * On success: marks job 'done' and persists menu_items.
  * On any exception: marks job 'failed' (with retry if attempts < max_attempts),
- * with two exceptions by the error's code:
+ * with three exceptions by the error's code:
  *   - PDF_PARSE_LIMIT — the parse of the file broke its time or memory limit
  *     (pdfTextExtractor): failed for good at once, no retry — the same file
  *     breaks it again; the batch is closed as for any permanent failure;
+ *   - KEY_REFUSED — OpenRouter refused the key: its limit or the account's
+ *     balance spent, or the key revoked (openRouterRefusal.js). Failed for
+ *     good at once, like PDF_PARSE_LIMIT: a retry minutes later meets the same
+ *     refusal (directive D8, 28.10.2026). Every job in the queue fails on its
+ *     own first attempt until the owner acts in OpenRouter's panel; the
+ *     partner restarts recognition after that;
  *   - PDF_PARSE_ABORTED — graceful shutdown cut the download or the parse
  *     (the poller's signal): the attempt is settled under the usual retry
  *     rule (markFailed), and the next process picks the job up. The attempt
@@ -626,6 +647,14 @@ export const processJob = async (jobId, { signal } = {}) => {
         reason: error.reason,
         error: error.message,
         childStderr: error.stderrHead?.slice(0, 500),
+      });
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+    } else if (error.code === KEY_REFUSED) {
+      logger.error('OCR job failed for good: OpenRouter refused the key — its limit or the balance is spent, or it was revoked', {
+        jobId,
+        mediaId: job.media_id,
+        attempts: job.attempts,
+        error: error.message,
       });
       failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
     } else if (error.code === PDF_PARSE_ABORTED) {
