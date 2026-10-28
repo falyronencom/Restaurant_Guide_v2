@@ -253,6 +253,9 @@ export const fileRecord = (entry, download) => ({
   sha256: download?.ok ? download.sha256 : null,
   md5: download?.md5 ?? null,
   checks: download?.checks ?? null,
+  // «base» — взят из архива прошлого проверенного снимка (incremental.js), иначе скачан.
+  source: download?.source ?? (download ? 'download' : null),
+  base_run_id: download?.base_run_id ?? null,
   path: archiveFilePath(entry.asset),
   status: fileStatus(entry),
   original: originalStatus(entry.asset),
@@ -262,7 +265,7 @@ export const fileRecord = (entry, download) => ({
 });
 
 /** index.json: без персональных данных — для дифа следующего прогона. */
-export const buildIndex = ({ runId, snapshotTimeUtc, cloudName, counts, establishments, mediaRows, fileRecords }) => {
+export const buildIndex = ({ runId, snapshotTimeUtc, cloudName, counts, establishments, mediaRows, fileRecords, media = null }) => {
   const keysByMedia = new Map();
   for (const f of fileRecords) {
     for (const p of f.refs) {
@@ -279,9 +282,14 @@ export const buildIndex = ({ runId, snapshotTimeUtc, cloudName, counts, establis
     counts,
     establishments: establishments.map((e) => ({ id: e.id, name: e.name, status: e.status })),
     media_rows: mediaRows.map((m) => ({ id: m.id, establishment_id: m.establishment_id, keys: [...(keysByMedia.get(m.id) || [])].sort() })),
-    files: fileRecords.map((f) => ({ key: f.key, bytes: f.bytes, sha256: f.sha256, status: f.status, original: f.original })),
+    // version — чтобы сухой прогон следующего снимка оценивал «только новое» точно, а не по размеру.
+    files: fileRecords.map((f) => ({ key: f.key, bytes: f.bytes, sha256: f.sha256, version: f.version ?? null, status: f.status, original: f.original })),
+    ...(media ? { media } : {}),
   };
 };
+
+/** Снимок «только база» несёт листинг облака без файлов: его файлы в диф не идут. */
+const isDbOnly = (index) => index?.media?.mode === 'db-only';
 
 /**
  * Диф к индексу прошлого прогона: новые и исчезнувшие карточки, новые и
@@ -314,7 +322,7 @@ export const diffIndexes = (prev, cur) => {
       added: added.map((e) => ({ id: e.id, name: e.name })),
       removed: removed.map((e) => ({ id: e.id, name: e.name })),
     },
-    files: {
+    files: isDbOnly(prev) || isDbOnly(cur) ? null : {
       added: [...curFiles.keys()].filter((k) => !prevFiles.has(k)).sort(),
       missing: [...prevFiles.keys()].filter((k) => !curFiles.has(k)).sort(),
       sha256_changed: [...curFiles.keys()].filter((k) => prevFiles.has(k) && prevFiles.get(k).sha256 !== curFiles.get(k).sha256).sort(),

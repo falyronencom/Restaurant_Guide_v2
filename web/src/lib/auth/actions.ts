@@ -542,7 +542,8 @@ const RESEND_SENT_RU = 'Мы отправили новый код на вашу 
 
 /**
  * The code is issued, the email is not (server: 200 sent:false). Proposed by
- * the Trunk session 24.10.2026; the Coordinator's word comes with the merge.
+ * the Trunk session 24.10.2026; approved by the Coordinator on 24.10.2026
+ * (PR #126).
  */
 const RESEND_NOT_SENT_RU = 'Письмо не отправилось. Попробуйте ещё раз через минуту.';
 

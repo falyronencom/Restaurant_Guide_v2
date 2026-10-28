@@ -192,6 +192,43 @@ class ApiClient {
   static const String refreshUnavailableMessage =
       'Сервер временно недоступен. Попробуйте ещё раз.';
 
+  /// 401-коды проверки входа сервера (`authenticate`,
+  /// `backend/src/middleware/auth.js`; запасные `INVALID_TOKEN` и
+  /// `TOKEN_EXPIRED` из `errorHandler.js` в нём уже есть) — приговоры
+  /// ACCESS-токену, единственные 401, которые лечит обновление.
+  ///
+  /// Любой другой 401 — ответ адреса на сам запрос: `verify-email-code` на
+  /// неверный код отвечает 401 `INVALID_CODE` и считает попытку за каждый
+  /// запрос, поэтому повтор после обновления сжигал две попытки из пяти за
+  /// один ввод, и код гас на третьем вводе (сверка «Честность тестов
+  /// клиентов», 25.10.2026). 401 без кода — тоже не отсюда (все 401 сервера
+  /// несут код; без кода — ответ не той формы) и не повторяется: обновлять
+  /// по нему значило бы тратить одноразовый refresh-токен впустую.
+  ///
+  /// Список разрешённых, а не исключений — то же правило, что у сайта
+  /// (PR #137: `SESSION_REFUSAL_CODES`, `web/src/lib/auth/session.ts`):
+  /// собственный 401 любого будущего адреса не повторится, и помнить об этом
+  /// списке никому не нужно. Равенство кодам сервера стережёт
+  /// `test/services/session_refusal_codes_guard_test.dart`.
+  static const Set<String> sessionRefusalCodes = <String>{
+    'MISSING_TOKEN',
+    'INVALID_TOKEN_FORMAT',
+    'INVALID_TOKEN',
+    'TOKEN_EXPIRED',
+    'MALFORMED_TOKEN',
+    'ACCOUNT_INACTIVE',
+    'TOKEN_REVOKED',
+  };
+
+  /// 401 проверки входа сервера: код ответа — из [sessionRefusalCodes].
+  static bool _isSessionRefusal(Response<dynamic>? response) {
+    if (response?.statusCode != 401) return false;
+    final data = response!.data;
+    final error = data is Map ? data['error'] : null;
+    final code = error is Map ? error['code'] : null;
+    return code is String && sessionRefusalCodes.contains(code);
+  }
+
   static bool _isCredentialRequest(RequestOptions options) =>
       _credentialPaths.any((path) => options.uri.path.endsWith(path));
 
@@ -203,7 +240,14 @@ class ApiClient {
       onError: (error, handler) async {
         // Handle 401 Unauthorized - try to refresh token.
         //
-        // Кроме двух случаев. Первый — запросы за учётными данными. 401 на
+        // Только 401 проверки входа сервера ([sessionRefusalCodes]): иначе
+        // 401 по существу — неверный код из письма — повторялся с тем же
+        // кодом и сжигал вторую попытку. Остальные 401 уходят наружу как
+        // есть, одним запросом.
+        //
+        // И даже его — кроме двух случаев. Первый — запросы за учётными
+        // данными (их собственный отказ — тоже из этих кодов: обновление
+        // отвечает `TOKEN_EXPIRED`, OAuth — `INVALID_TOKEN`). 401 на
         // вход значит «пароль не принят»: обновлять по нему нечем и незачем,
         // а раньше такой 401 уходил в эту же ветку и подменялся текстом про
         // истёкший сеанс. 401 на само обновление возвращался сюда же и ждал
@@ -212,14 +256,13 @@ class ApiClient {
         // после просроченного refresh-токена (30 дней без запуска) или
         // отключения аккаунта не завершался никогда, таймауты Dio не
         // помогали — ответ уже получен. Приложение висело на старте.
-        // Второй — запрос, уже повторённый после успешного обновления: его
-        // 401 — ответ по существу (неверный код подтверждения), а не
-        // просроченный токен; иначе каждый повтор запускал обновление
-        // заново, до потолка попыток на бэкенде. Таким запросам ответ
-        // сервера отдаётся как есть.
+        // Второй — запрос, уже повторённый после успешного обновления: если
+        // и свежий токен отвергнут (отозван или отключён между обновлением
+        // и повтором), второй круг ничего не изменит, а каждый круг вращает
+        // refresh-токен. Таким запросам ответ сервера отдаётся как есть.
         final alreadyRetried =
             error.requestOptions.extra[_retriedAfterRefreshKey] == true;
-        if (error.response?.statusCode == 401 &&
+        if (_isSessionRefusal(error.response) &&
             !_isCredentialRequest(error.requestOptions) &&
             !alreadyRetried) {
           final result = await _attemptTokenRefresh();

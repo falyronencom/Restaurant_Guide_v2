@@ -157,7 +157,8 @@ export const UPLOAD_REFUSALS = Object.freeze({
  * or a hand-made request, so the text sends the partner to reload; the
  * caption is the only free text. Wording by analogy with the approved texts (the upload
  * form's — the site's own text for INVALID_MEDIA_TYPE; the caption's — the
- * promotion's title), not yet approved as such.
+ * promotion's title); approved as such by the Coordinator on 20.10.2026
+ * (PR #114).
  */
 export const MEDIA_REFUSALS = Object.freeze({
   // A media id that names no file of this card: missing, deleted meanwhile,
@@ -183,7 +184,7 @@ export const MEDIA_REFUSALS = Object.freeze({
  * the partner sees is decided by services/ocr/failureReason.js
  * failureReasonOf, and the app gives its advice by the cause's code. Three causes, by
  * the directive of 24.10.2026 (Trunk, finding 3 of the Railway incident);
- * wording not yet approved by the Coordinator.
+ * wording approved by the Coordinator on 24.10.2026 (PR #128).
  */
 export const MENU_RECOGNITION_FAILURES = Object.freeze({
   // Nothing readable came out of the file: blank pages, a scan without text.

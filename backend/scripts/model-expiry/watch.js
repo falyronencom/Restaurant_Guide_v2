@@ -243,6 +243,11 @@ export function evaluateCatalog({ catalog, tracked, today, alarmDays = ALARM_DAY
  * застать наш прогон незавершённым и теперь ждёт его — провал её пропустит.
  * Прогон, закончившийся раньше, Railway учёл без нас.
  *
+ * Прогоны своего же workflow не считаются (D6, 28.10.2026): 27.10 прошлый
+ * ручной прогон сторожа, закончившийся за 166 с, отложил нарочно красный
+ * следующий. Окно отсчитывается от run_started_at: у перезапуска (Re-run)
+ * created_at остаётся от первой попытки.
+ *
  * @param {{ runs: object[], ownRunId: string|number, marginMs?: number }} input - runs из GET /actions/runs?head_sha=
  * @returns {{ mayWait: boolean, blocking: string[] }}
  * @throws {Error} если своего прогона нет в списке
@@ -250,10 +255,11 @@ export function evaluateCatalog({ catalog, tracked, today, alarmDays = ALARM_DAY
 export function deployMayWait({ runs, ownRunId, marginMs = DEPLOY_WAIT_MARGIN_MS }) {
   const own = runs.find((r) => String(r.id) === String(ownRunId));
   if (!own) throw new Error(`прогона ${ownRunId} нет среди прогонов коммита`);
-  const ownCreated = Date.parse(own.created_at);
+  const ownStarted = Date.parse(own.run_started_at ?? own.created_at);
+  const sameWorkflow = (r) => own.workflow_id != null && r.workflow_id === own.workflow_id;
   const blocking = runs
-    .filter((r) => String(r.id) !== String(ownRunId))
-    .filter((r) => r.status !== 'completed' || Date.parse(r.updated_at) > ownCreated - marginMs);
+    .filter((r) => String(r.id) !== String(ownRunId) && !sameWorkflow(r))
+    .filter((r) => r.status !== 'completed' || Date.parse(r.updated_at) > ownStarted - marginMs);
   return {
     mayWait: blocking.length > 0,
     blocking: blocking.map((r) => `${r.name} (${r.status}${r.conclusion ? `/${r.conclusion}` : ''})`),

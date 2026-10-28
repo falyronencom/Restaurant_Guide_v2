@@ -199,6 +199,30 @@ void main() {
       expect(fake.calls.last['page'], 1);
     });
 
+    // «Любой фильтр» — их пять путей, тест выше проходит через город.
+    for (final (name, change) in <(String, Future<void> Function(MenuItemsModerationProvider))>[
+      ('область', (p) => p.setVisibility(MenuItemVisibility.hidden)),
+      ('причина', (p) => p.setReasonFilter('low_confidence')),
+      ('поиск', (p) => p.setSearchFilter('драники')),
+      ('сброс сужающих', (p) => p.resetNarrowingFilters()),
+    ]) {
+      test('любой фильтр возвращает на первую страницу: $name', () async {
+        fake.responses = <FlaggedMenuItemsResponse>[
+          _response(), // вызов setUp
+          _response(page: 1, pages: 5, total: 90), // город — для сброса
+          _response(page: 3, pages: 5, total: 90),
+          _response(page: 1, pages: 5, total: 90),
+        ];
+        await provider.setCityFilter('Гродно');
+        await provider.goToPage(3);
+        expect(fake.calls.last['page'], 3, reason: 'предпосылка');
+
+        await change(provider);
+
+        expect(fake.calls.last['page'], 1);
+      });
+    }
+
     test('сброс сужающих фильтров не трогает выбранную область', () async {
       await provider.setVisibility(MenuItemVisibility.all);
       await provider.setCityFilter('Минск');

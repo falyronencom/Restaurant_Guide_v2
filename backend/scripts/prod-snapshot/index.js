@@ -4,9 +4,12 @@
  * Бриф: docs/handoffs/prod_snapshot_20260930/BRIEF.md; ранбук — README.md рядом.
  *
  *   cd backend
- *   node scripts/prod-snapshot                            # сухой прогон: план, ничего не пишется
+ *   node scripts/prod-snapshot                            # сухой прогон: план и цена в кредитах, ничего не пишется и не качается
  *   node scripts/prod-snapshot --pinentry-check           # окно pinentry на пробном файле и пробном пароле
  *   node scripts/prod-snapshot --apply                    # снимок → архив → шифрование → учебное восстановление
+ *   [--db-only]   только база: файлы облака не качаются (листинг — да, он трафика не стоит)
+ *   [--full]      все файлы облака заново; без флага — «только новое» (incremental.js):
+ *                 совпавшие с прошлым проверенным снимком берутся из его архива
  *   node scripts/prod-snapshot --verify=<архив.tar.gpg>   # учебное восстановление готового архива
  *   node scripts/prod-snapshot --check-copy=<папка копии> # копия цела: sha256 архива против index.json
  *   node scripts/prod-snapshot --cleanup                  # уборка открытых данных после оборванного прогона
@@ -18,6 +21,10 @@
  * обе дороги — сессия Node и pg_dump/psql в контейнере — говорят только с
  * сервером, предъявившим закреплённый сертификат (DATABASE_TLS_CERT там же;
  * env.js, database.js): чужой — отказ до отправки пароля.
+ *
+ * Пароль — до первого скачивания: при «только новом» и --full окно pinentry
+ * сначала открывает архив основы (прошлого проверенного снимка); не подошёл
+ * пароль — выход раньше, чем из облака скачан хоть байт.
  *
  * Коды выхода: 0 — готово; 1 — отказ предполётной проверки, ничего не
  * сделано; 2 — ошибка в команде; 3 — сбой (открытые данные убраны — см.
@@ -57,10 +64,14 @@ import {
 } from './restore.js';
 import { checkClean, cleanup } from './cleanup.js';
 import { checkSnapshotRoot, freeBytes, gitState } from './preflight.js';
+import {
+  FREE_PLAN_CREDITS, MEDIA_MODE, baseFilesByKey, checkMediaRefs, collectMedia, fmtCredits, hashArchiveFiles, listVerifiedRuns,
+  mediaModeOf, mediaReport, planReuse, resolveMediaPlan, reuseTotals, wholeDownload,
+} from './incremental.js';
 
 const EXIT = { OK: 0, REFUSED: 1, USAGE: 2, FAILED: 3, UNVERIFIED: 4 };
 const VALUE_OPTIONS = ['out', 'verify', 'check-copy'];
-const SWITCHES = ['apply', 'pinentry-check', 'cleanup'];
+const SWITCHES = ['apply', 'pinentry-check', 'cleanup', 'full', 'db-only'];
 const RUN_DIR_RE = /^\d{4}-\d{2}-\d{2}_\d{4}$/;
 
 // Мёртвый IPv6 этой машины вешает соединения (память npm/urllib) — сначала IPv4.
@@ -69,7 +80,7 @@ dns.setDefaultResultOrder('ipv4first');
 const usage = (problem) => {
   console.error(`❌ ${problem}`);
   console.error('');
-  console.error('   node scripts/prod-snapshot [--apply] [--out=<папка>]');
+  console.error('   node scripts/prod-snapshot [--apply] [--full | --db-only] [--out=<папка>]');
   console.error('   node scripts/prod-snapshot --pinentry-check | --cleanup [--out=<папка>]');
   console.error('   node scripts/prod-snapshot --verify=<архив.tar.gpg> | --check-copy=<папка копии>');
   process.exit(EXIT.USAGE);
@@ -90,6 +101,9 @@ const parseArgs = (argv) => {
   }
   const modes = ['apply', 'pinentry-check', 'cleanup', 'verify', 'check-copy'].filter((k) => args[k]);
   if (modes.length > 1) usage(`Режимы несовместимы: ${modes.map((k) => `--${k}`).join(' ')}`);
+  const media = ['full', 'db-only'].filter((k) => args[k]);
+  if (media.length > 1) usage('--full и --db-only несовместимы');
+  if (media.length && modes.some((k) => k !== 'apply')) usage(`--${media[0]} — только для снимка (сухого прогона или --apply)`);
   return args;
 };
 
@@ -273,35 +287,90 @@ const preflight = async ({ root, apply, runId, databaseUrl, pinned, pin, cloud, 
 
 // ───────────────────────── снимок ─────────────────────────
 
-/**
- * Прошлый прогон для дифа — последний, у которого есть index.json и хотя бы одна
- * успешная проверка: verify.json от --apply ИЛИ verify-<время>.json от --verify
- * (прогон 1 30.09.2026 прошёл проверку только повторной — после правки белого списка).
- */
-const findPreviousIndex = (root, runId) => {
-  const verified = (d) => readdirSync(d).filter((n) => /^verify(-.+)?\.json$/.test(n)).some((n) => {
-    try {
-      return JSON.parse(readFileSync(join(d, n), 'utf8')).ok === true;
-    } catch {
-      return false;
-    }
-  });
-  const candidates = listRunDirs(root)
-    .filter((d) => basename(d) < runId && existsSync(join(d, 'index.json')))
-    .sort()
-    .reverse();
-  for (const d of candidates) {
-    if (!verified(d)) continue;
-    try {
-      return JSON.parse(readFileSync(join(d, 'index.json'), 'utf8'));
-    } catch {
-      // битый индекс — ищем раньше
-    }
-  }
-  return null;
+const MODE_TITLE = {
+  [MEDIA_MODE.INCREMENTAL]: '«только новое»',
+  [MEDIA_MODE.FULL]: 'полный — все файлы облака заново',
+  [MEDIA_MODE.DB_ONLY]: '«только база» — файлы облака не качаются',
 };
 
-const snapshot = async ({ root, apply }) => {
+/** Две попытки ввода: опечатка или раскладка — ещё не повод бросать прогон. */
+const decryptWithRetry = async (gpgPath, archivePath, outPath) => {
+  let dr;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    attempts = attempt;
+    dr = await gpgDecrypt(gpgPath, archivePath, outPath);
+    if (dr.code === 0 || state.aborted) break;
+    if (attempt < 2) warn(`не расшифровалось (${lastLines(dr.stderr, 1)}) — вторая попытка: окно pinentry откроется снова`);
+  }
+  return { ...dr, attempts };
+};
+
+/**
+ * Пароль до первого скачивания: расшифровка архива основы. Ввод сорвался или
+ * пароль не тот — исключение раньше, чем из облака взят хоть байт (сорванное
+ * окно 30.09.2026 обошлось в 0,75 ГБ трафика). extract — распаковать для
+ * «только нового»; без него (--full) расшифровка — только проверка пароля.
+ */
+const openBase = async ({ gpg, base, runDir, extract }) => {
+  const tmp = join(runDir, 'base-tmp');
+  await rm(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  const tarName = basename(base.archivePath).replace(/\.gpg$/, '');
+  console.log(`\nПароль — до скачивания: расшифровка основы ${base.runId}`);
+  console.log('  → окно pinentry: пароль архивов из менеджера паролей (раскладка ENG/РУС). Не подойдёт — из облака ничего не скачается.');
+  const dr = await decryptWithRetry(gpg.path, base.archivePath, join(tmp, tarName));
+  if (dr.code !== 0) {
+    throw new Error(`основа ${base.runId} не расшифровалась (попыток ${dr.attempts}: ${lastLines(dr.stderr, 1)}) — из облака ничего не скачано. `
+      + 'Если у основы другой пароль или она повреждена — переложите её папку из папки снимков и запустите снова (тогда скачается всё).');
+  }
+  const sha = await sha256File(join(tmp, tarName));
+  if (sha !== base.index.archive.tar_sha256) {
+    throw new Error(`основа ${base.runId}: sha256 расшифрованного tar не совпал с её index.json — основа повреждена; из облака ничего не скачано`);
+  }
+  ok('пароль подошёл; основа цела — sha256 расшифрованного tar совпал с её index.json');
+  if (!extract) {
+    await rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    ok('--full: файлы основы не берутся — расшифровка была только проверкой пароля; открытая копия удалена');
+    return null;
+  }
+  const xr = await tarExtract(tmp, tarName);
+  if (xr.code !== 0) throw new Error(`основа ${base.runId}: tar — ${lastLines(xr.stderr)}`);
+  await rm(join(tmp, tarName), { force: true });
+  const buildDir = join(tmp, 'build');
+  return { buildDir, manifest: JSON.parse(readFileSync(join(buildDir, 'manifest.json'), 'utf8')) };
+};
+
+/** План медиа до скачивания: режим, основа, цена. Печатают и сухой прогон, и --apply. */
+const printMediaPlan = ({ mode, requested, base, baseSkipped, totals, listedBytes, listedFiles, usageInfo, exact }) => {
+  console.log(`\nФайлы облака: режим ${MODE_TITLE[mode]}`);
+  if (requested === MEDIA_MODE.INCREMENTAL && mode === MEDIA_MODE.FULL) {
+    warn('основы нет — скачается всё облако. Основа — проверенный снимок с файлами и архивом на диске.');
+  }
+  for (const s of baseSkipped) console.log(`    не основа: ${s.run_id} — ${s.why}`);
+  if (mode === MEDIA_MODE.DB_ONLY) {
+    console.log(`  в архив не идут: ${listedFiles} файлов, ${fmtBytes(listedBytes)} — их копии в прошлых снимках с файлами`);
+  }
+  if (base && mode === MEDIA_MODE.INCREMENTAL) {
+    console.log(`  основа: ${base.runId} (проверен, архив на диске)`);
+    console.log(`  из основы: ${totals.from_base.files} файлов, ${fmtBytes(totals.from_base.bytes)}`);
+  }
+  console.log(`  СКАЧАТЬ: ${totals.download.files} файлов, ${fmtBytes(totals.download.bytes)} ≈ ${fmtCredits(totals.download.bytes)} кредита Cloudinary (1 ГБ = 1 кредит; на Free — ${FREE_PLAN_CREDITS} в месяц)`);
+  if (Object.keys(totals.download_reasons).length && mode === MEDIA_MODE.INCREMENTAL) {
+    console.log('  почему скачиваются:');
+    printTally(totals.download_reasons, '      ');
+  }
+  if (mode === MEDIA_MODE.INCREMENTAL && !exact) {
+    console.log('  (оценка по index.json основы; точный выбор — по её манифесту после расшифровки: там и версии файлов)');
+  }
+  const used = Number(usageInfo?.credits?.usage);
+  if (Number.isFinite(used)) {
+    const after = (used + totals.download.bytes / 1024 ** 3).toFixed(2).replace('.', ',');
+    console.log(`  кредиты сейчас (окно 30 дней поставщика): ${String(used).replace('.', ',')} из ${usageInfo.credits.limit ?? FREE_PLAN_CREDITS} → после снимка ≈ ${after}`);
+  }
+};
+
+const snapshot = async ({ root, apply, requested }) => {
   const started = new Date();
   const runId = runIdFor(started);
   const runDir = join(root, runId);
@@ -317,6 +386,7 @@ const snapshot = async ({ root, apply }) => {
   console.log(apply
     ? `Режим: СНИМОК (--apply) → ${runDir}`
     : 'Режим: СУХОЙ ПРОГОН — ничего не скачивается и не записывается; запись — только с --apply');
+  console.log(`Файлы облака: ${MODE_TITLE[requested]}`);
 
   if (apply && existsSync(runDir)) throw new SetupError(`Папка прогона ${runDir} уже есть — подождите минуту или уберите её.`);
 
@@ -466,7 +536,7 @@ const snapshot = async ({ root, apply }) => {
   console.log('  вторичные носители (происхождение):');
   printTally(summary.refs.secondary_by_source);
 
-  console.log(`\nФайлы к скачиванию: ${summary.files.total}, ${fmtBytes(summary.files.bytes)}`);
+  console.log(`\nФайлы облака (весь листинг): ${summary.files.total}, ${fmtBytes(summary.files.bytes)}`);
   console.log('  по статусу:');
   printTally(summary.files.by_status);
   console.log('  сироты с происхождением — откуда:');
@@ -488,26 +558,48 @@ const snapshot = async ({ root, apply }) => {
   const rl = reader.rateLimit;
   console.log(`Бюджет Admin API: вызовов в этом прогоне ${reader.calls}; осталось ${rl ? `${rl.remaining} из ${rl.limit} (сброс ${rl.reset})` : '— (заголовков лимита нет)'}; скачивание идёт через ссылки доставки и бюджет Admin API не тратит`);
 
-  const previous = findPreviousIndex(root, runId);
+  // ── Основа «только нового» и прошлый прогон для дифа. Снимок «только база»
+  // основой не бывает (файлов в нём нет); диф медиа-снимка — к прошлому с файлами.
+  const entries = [...files.values()];
+  const verifiedRuns = listVerifiedRuns(root, runId);
+  const { mode, base, baseSkipped, previous, estimate, passwordFirst, lastSnapshotWithFiles } = resolveMediaPlan({ requested, verifiedRuns, entries });
+  printMediaPlan({
+    mode, requested, base, baseSkipped, totals: reuseTotals(estimate),
+    listedBytes: summary.files.bytes, listedFiles: summary.files.total, usageInfo: pre.usageInfo, exact: false,
+  });
 
   if (!apply) {
-    const media = summary.files.bytes;
+    const media = mode === MEDIA_MODE.DB_ONLY ? 0 : summary.files.bytes;
     const dbUpper = pre.info.databaseBytes;
     const archiveName = `nirivio-snapshot-${runId}.tar.gpg`;
     console.log('\nПлан --apply');
     console.log(`  папка прогона: ${runDir}\\ (время в имени — время запуска)`);
     console.log(`  архив: ${archiveName} ≈ ${fmtBytes(media)} медиа + дамп (≤ ${fmtBytes(dbUpper)}, -Fc сжимает)`);
     console.log(`  пик на диске ≈ 3 объёма архива ≈ ${fmtBytes(3 * (media + dbUpper))}; свободно ${fmtBytes(pre.free)}`);
-    console.log('  пароль: два окна pinentry — задать (один раз), проверочная расшифровка (--no-symkey-cache: агент не помнит); перед вводом — раскладка ENG/РУС');
+    if (passwordFirst) {
+      console.log(`  пароль: три окна pinentry, ВСЕ — после дампа базы; первое — ДО скачивания: расшифровка основы ${base.runId}; затем задать пароль нового архива (один раз) и проверочная расшифровка; раскладка ENG/РУС перед каждым`);
+    } else if (mode === MEDIA_MODE.DB_ONLY) {
+      console.log('  пароль: два окна pinentry сразу после дампа — задать (один раз) и проверочная расшифровка; из облака ничего не скачивается');
+    } else {
+      warn('пароль: два окна pinentry ПОСЛЕ скачивания — проверить его заранее нечем (основы нет); сорванный ввод = скачанное впустую');
+    }
     console.log(`  учебное восстановление: база ${verifyDbName()}… в ${VERIFY_CONTAINER}, после проверок удаляется`);
     console.log(`  диф к прошлому прогону: ${previous ? previous.run_id : 'прошлого прогона нет — это первый'}`);
     if (3 * (media + dbUpper) > pre.free) warn('места на диске может не хватить');
     return EXIT.OK;
   }
 
-  // ── 3. Скачивание
-  console.log(`\nСкачивание ${files.size} файлов (${fmtBytes(summary.files.bytes)})`);
-  const entries = [...files.values()];
+  // ── 3. Пароль — до первого скачивания (окно расшифровки основы)
+  const opened = passwordFirst ? await openBase({ gpg: pre.gpg, base, runDir, extract: mode === MEDIA_MODE.INCREMENTAL }) : null;
+  let plan = mode === MEDIA_MODE.DB_ONLY ? { reuse: [], download: [] } : wholeDownload(entries);
+  if (opened) {
+    plan = planReuse(entries, baseFilesByKey(opened.manifest.files), { requireVersion: true });
+    const t = reuseTotals(plan);
+    ok(`точный план по манифесту основы: из основы ${t.from_base.files} (${fmtBytes(t.from_base.bytes)}), скачать ${t.download.files} (${fmtBytes(t.download.bytes)}) ≈ ${fmtCredits(t.download.bytes)} кредита`);
+    if (Object.keys(t.download_reasons).length) printTally(t.download_reasons, '      ');
+  }
+
+  // ── 4. Файлы: из основы — переносом, остальное — скачиванием
   const pathByKey = new Map();
   const seenPaths = new Map();
   for (const e of entries) {
@@ -517,35 +609,49 @@ const snapshot = async ({ root, apply }) => {
     seenPaths.set(p.toLowerCase(), true);
     pathByKey.set(assetKey(e.asset), p);
   }
-  const downloads = new Map();
-  let done = 0;
-  let bytesDone = 0;
-  const tDl = Date.now();
-  await pool(entries, 4, async (e) => {
-    const key = assetKey(e.asset);
-    const rel = pathByKey.get(key);
-    const r = await downloadFile(e.asset.secure_url, join(runDir, 'build', ...rel.split('/')), {
-      expectedBytes: e.asset.bytes ?? null,
-      listingEtag: e.asset.etag ?? null,
-    });
-    downloads.set(key, { ...r, path: rel });
-    done += 1;
-    bytesDone += r.bytes || 0;
-    if (done % 50 === 0 || done === entries.length) console.log(`    ${done}/${entries.length}, ${fmtBytes(bytesDone)}`);
-  });
-  // Второй заход по сбойным — по одному: через VPN новое соединение иногда виснет,
-  // а повтор спустя минуту проходит (память reference_vpn_geo_blocked_sites).
-  const retry = entries.filter((e) => !downloads.get(assetKey(e.asset)).ok && downloads.get(assetKey(e.asset)).status !== 404);
-  if (retry.length) {
-    warn(`сбой у ${retry.length} файлов — второй заход по одному`);
-    for (const e of retry) {
+  // Скачивание тех, кого нет в основе: 4 потока, затем второй заход по сбойным.
+  const downloadAll = async (list) => {
+    const out = new Map();
+    const bytes = list.reduce((s, e) => s + (e.asset.bytes || 0), 0);
+    console.log(`\nСкачивание ${list.length} файлов (${fmtBytes(bytes)} ≈ ${fmtCredits(bytes)} кредита)`);
+    let done = 0;
+    let bytesDone = 0;
+    await pool(list, 4, async (e) => {
       const key = assetKey(e.asset);
       const rel = pathByKey.get(key);
       const r = await downloadFile(e.asset.secure_url, join(runDir, 'build', ...rel.split('/')), {
-        expectedBytes: e.asset.bytes ?? null, listingEtag: e.asset.etag ?? null, attempts: 2,
+        expectedBytes: e.asset.bytes ?? null,
+        listingEtag: e.asset.etag ?? null,
       });
-      downloads.set(key, { ...r, path: rel });
+      out.set(key, r);
+      done += 1;
+      bytesDone += r.bytes || 0;
+      if (done % 50 === 0 || done === list.length) console.log(`    ${done}/${list.length}, ${fmtBytes(bytesDone)}`);
+    });
+    // Второй заход по сбойным — по одному: через VPN новое соединение иногда виснет,
+    // а повтор спустя минуту проходит (память reference_vpn_geo_blocked_sites).
+    const retry = list.filter((e) => out.has(assetKey(e.asset)) && !out.get(assetKey(e.asset)).ok && out.get(assetKey(e.asset)).status !== 404);
+    if (retry.length) {
+      warn(`сбой у ${retry.length} файлов — второй заход по одному`);
+      for (const e of retry) {
+        const key = assetKey(e.asset);
+        const rel = pathByKey.get(key);
+        out.set(key, await downloadFile(e.asset.secure_url, join(runDir, 'build', ...rel.split('/')), {
+          expectedBytes: e.asset.bytes ?? null, listingEtag: e.asset.etag ?? null, attempts: 2,
+        }));
+      }
     }
+    return out;
+  };
+  if (plan.reuse.length) console.log(`\nИз основы ${base.runId}: ${plan.reuse.length} файлов — переносом из её архива`);
+  const tDl = Date.now();
+  const { downloads, toDownload } = await collectMedia({
+    plan, pathByKey, buildDir: join(runDir, 'build'), baseBuildDir: opened?.buildDir ?? null, baseRunId: base?.runId ?? null,
+    downloadAll, onWarn: warn,
+  });
+  if (opened) {
+    await rm(join(runDir, 'base-tmp'), { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    ok('открытая копия основы удалена');
   }
   const failed = [...downloads.entries()].filter(([, d]) => !d.ok);
   for (const [key, d] of failed) warn(`не скачан ${key}: ${d.error}`);
@@ -553,7 +659,15 @@ const snapshot = async ({ root, apply }) => {
   for (const d of downloads.values()) {
     for (const [k, v] of Object.entries(d.checks || {})) checkTally[`${k}: ${v}`] = (checkTally[`${k}: ${v}`] || 0) + 1;
   }
-  ok(`скачано ${downloads.size - failed.length} из ${downloads.size} за ${Math.round((Date.now() - tDl) / 1000)} с`);
+  const media = mediaReport({
+    mode, requested, base: mode === MEDIA_MODE.INCREMENTAL ? base : null, downloads,
+    skipped: mode === MEDIA_MODE.DB_ONLY ? {
+      files: summary.files.total,
+      bytes: summary.files.bytes,
+      last_snapshot_with_files: lastSnapshotWithFiles,
+    } : null,
+  });
+  ok(`скачано ${media.downloaded.files} из ${toDownload.length} за ${Math.round((Date.now() - tDl) / 1000)} с: ${fmtBytes(media.downloaded.bytes)} ≈ ${fmtCredits(media.downloaded.bytes)} кредита; из основы ${media.from_base.files} (${fmtBytes(media.from_base.bytes)})`);
   console.log('  сверки:');
   printTally(checkTally);
 
@@ -562,7 +676,7 @@ const snapshot = async ({ root, apply }) => {
   for (const f of fileRecords) f.path = downloads.get(f.key)?.path ?? f.path;
   const index = buildIndex({
     runId, snapshotTimeUtc: snap.at, cloudName: cloud.cloudName, counts,
-    establishments: inventory.establishments, mediaRows: inventory.mediaRows, fileRecords,
+    establishments: inventory.establishments, mediaRows: inventory.mediaRows, fileRecords, media,
   });
   const diff = previous ? diffIndexes(previous, index) : null;
   const manifest = {
@@ -595,6 +709,8 @@ const snapshot = async ({ root, apply }) => {
     carriers_scan: scan,
     summary,
     primary_image_check: primaryCheck,
+    // «только база»: files — листинг облака без sha256, файлов в архиве нет (media.not_in_archive)
+    media,
     files: fileRecords,
     failed_downloads: failed.map(([key, d]) => ({ key, error: d.error, status: d.status })),
     rows_without_file: rowsWithoutFile,
@@ -607,8 +723,7 @@ const snapshot = async ({ root, apply }) => {
   writeFileSync(join(runDir, 'build', 'manifest.json'), JSON.stringify(manifest, null, 2));
 
   // ── 5. Архив и шифрование: зашифровать → проверить расшифровку → удалить открытые данные
-  const base = `nirivio-snapshot-${runId}`;
-  const tarName = `${base}.tar`;
+  const tarName = `nirivio-snapshot-${runId}.tar`;
   const gpgName = `${tarName}.gpg`;
   console.log('\nАрхив и шифрование');
   const tr = await tarCreate(runDir, tarName, 'build');
@@ -616,7 +731,13 @@ const snapshot = async ({ root, apply }) => {
   const tarSha = await sha256File(join(runDir, tarName));
   ok(`tar: ${fmtBytes(statSync(join(runDir, tarName)).size)}`);
   console.log('  → сейчас откроется окно pinentry: введите пароль архива ОДИН раз (проверьте раскладку ENG/РУС); подтвердит его проверочная расшифровка.');
-  const er = await gpgEncrypt(pre.gpg.path, join(runDir, tarName), join(runDir, gpgName));
+  // Вторая попытка окна: сорванный ввод не должен выбрасывать уже собранное.
+  let er;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    er = await gpgEncrypt(pre.gpg.path, join(runDir, tarName), join(runDir, gpgName));
+    if (er.code === 0 || state.aborted) break;
+    if (attempt < 2) warn(`шифрование не удалось (${lastLines(er.stderr, 1)}) — вторая попытка: окно pinentry откроется снова, скачанное не пропало`);
+  }
   if (er.code !== 0) throw new Error(`gpg --symmetric: ${lastLines(er.stderr)}`);
   const format = describePacketFormat(await readPacketHeaders(join(runDir, gpgName)));
   if (!format.ok) throw new Error(`формат шифрования не годится: ${format.text}`);
@@ -645,7 +766,12 @@ const snapshot = async ({ root, apply }) => {
   if (diff) printDiff(diff);
   console.log(`\nИтог: ${verify.ok ? 'снимок записан и проверен' : 'снимок записан, но проверка НЕ прошла'} — ${runDir}`);
   console.log(`  ${gpgName} (${fmtBytes(gpgBytes)}), index.json, verify.json`);
-  console.log('  Снимок покрывает БД и медиа, не покрывает конфигурацию (переменные Railway, Redis); RPO = время этого снимка.');
+  console.log(`  Медиа: ${MODE_TITLE[mode]}; скачано ${media.downloaded.files} (${fmtBytes(media.downloaded.bytes)} ≈ ${fmtCredits(media.downloaded.bytes)} кредита), из основы ${media.from_base.files}${media.base_run_id ? ` (${media.base_run_id})` : ''}`);
+  if (mode === MEDIA_MODE.DB_ONLY) {
+    console.log(`  Снимок покрывает только БД: файлы облака — в прошлом снимке с файлами (${media.not_in_archive.last_snapshot_with_files ?? 'такого нет'}); не покрывает конфигурацию (переменные Railway, Redis).`);
+  } else {
+    console.log('  Снимок самодостаточен: все файлы — в этом архиве. Покрывает БД и медиа, не покрывает конфигурацию (переменные Railway, Redis); RPO = время этого снимка.');
+  }
   return verify.ok ? EXIT.OK : EXIT.UNVERIFIED;
 };
 
@@ -664,20 +790,13 @@ const verifyArchive = async ({ gpg, archivePath, workDir, localPg, runId, expect
   const t0 = Date.now();
   // Две попытки: опечатка или раскладка при проверке — ещё не повод выбрасывать
   // архив и качать всё заново. Вторая неудача — пароль архива не тот, что сохранён.
-  let dr;
-  let attempts = 0;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    attempts = attempt;
-    dr = await gpgDecrypt(gpg.path, archivePath, join(tmp, tarName));
-    if (dr.code === 0 || state.aborted) break;
-    if (attempt < 2) warn(`не расшифровалось (${lastLines(dr.stderr, 1)}) — вторая попытка: окно pinentry откроется снова`);
-  }
+  const dr = await decryptWithRetry(gpg.path, archivePath, join(tmp, tarName));
   if (dr.code !== 0) {
-    result.decryption = { ok: false, attempts, error: lastLines(dr.stderr) };
+    result.decryption = { ok: false, attempts: dr.attempts, error: lastLines(dr.stderr) };
     return result;
   }
   const sha = await sha256File(join(tmp, tarName));
-  result.decryption = { ok: expectedTarSha ? sha === expectedTarSha : true, attempts, tar_sha256: sha, expected_tar_sha256: expectedTarSha ?? null };
+  result.decryption = { ok: expectedTarSha ? sha === expectedTarSha : true, attempts: dr.attempts, tar_sha256: sha, expected_tar_sha256: expectedTarSha ?? null };
   if (!result.decryption.ok) return result;
   ok(expectedTarSha ? 'sha256 расшифрованного tar совпал с исходным' : 'расшифровано (эталона sha256 нет — сверка по манифесту ниже)');
   if (onDecrypted) await onDecrypted();
@@ -692,18 +811,11 @@ const verifyArchive = async ({ gpg, archivePath, workDir, localPg, runId, expect
   const buildDir = join(tmp, 'build');
   const manifest = JSON.parse(readFileSync(join(buildDir, 'manifest.json'), 'utf8'));
   result.run_id = manifest.run_id;
+  // Снимки до 28.10.2026 поля media не имеют — полные. «Только новое» проверяется как
+  // полный: все его файлы лежат в этом архиве, взятые из основы — тоже.
+  result.media = manifest.media ?? { mode: mediaModeOf(manifest) };
 
-  const disk = new Map();
-  for (const f of manifest.files) {
-    const p = join(buildDir, ...f.path.split('/'));
-    if (existsSync(p)) disk.set(f.path, await sha256File(p));
-  }
-  const filesOnDisk = {
-    in_manifest: manifest.files.length,
-    downloaded_in_manifest: manifest.files.filter((f) => f.sha256).length,
-    on_disk: disk.size,
-    sha256_match: manifest.files.filter((f) => f.sha256 && disk.get(f.path) === f.sha256).length,
-  };
+  const { disk, filesOnDisk } = await hashArchiveFiles(buildDir, manifest.files);
   // Нескачанную сироту не видят ни (б), ни сверка файлов на диске — поэтому сбои
   // скачивания — отдельная проверка вердикта (ревью Phase 3.5, 30.09.2026).
   const failedKeys = new Set(manifest.failed_downloads.map((f) => f.key));
@@ -739,7 +851,7 @@ const verifyArchive = async ({ gpg, archivePath, workDir, localPg, runId, expect
     inv.secondaryUrls = [];
     const refs = collectRefs(inv, { cloudName: manifest.target.cloud_name, legacyHosts: LEGACY_HOSTS });
     const manifestFiles = new Map(manifest.files.filter((f) => f.sha256).map((f) => [f.key, f]));
-    const b = checkRefsHaveFiles(refs, manifestFiles, disk, manifest.rows_without_file);
+    const b = checkMediaRefs(manifest, () => checkRefsHaveFiles(refs, manifestFiles, disk, manifest.rows_without_file));
     const cRestored = checkPrimaryImages(inv.establishments, inv.mediaRows);
     const cSame = JSON.stringify(cRestored) === JSON.stringify(manifest.primary_image_check);
     const t4 = Date.now();
@@ -780,7 +892,9 @@ const printVerify = (v) => {
   }
   const { a_counts: a, b_files: b, c_primary_images: c, files_on_disk: f } = v.checks;
   (a.ok ? ok : warn)(`(а) счётчики строк: таблиц ${a.tables}, расхождений ${a.mismatches.length}${a.mismatches.length ? ` ${JSON.stringify(a.mismatches)}` : ''}`);
-  (b.ok ? ok : warn)(`(б) живые ссылки cloudinary-*: ${b.checked}, файл найден и sha256 совпал ${b.found}, промах объяснён ${b.explained}, провал ${b.failed.length}`);
+  if (b.skipped) console.log(`  – (б) не проверялась: ${b.skipped}`);
+  else (b.ok ? ok : warn)(`(б) живые ссылки cloudinary-*: ${b.checked}, файл найден и sha256 совпал ${b.found}, промах объяснён ${b.explained}, провал ${b.failed.length}`);
+  if (v.media?.from_base) ok(`медиа: ${v.media.mode}; скачано ${v.media.downloaded.files}, из основы ${v.media.from_base.files}${v.media.base_run_id ? ` (${v.media.base_run_id})` : ''} — все лежат в этом архиве`);
   (c.ok ? ok : warn)(`(в) обложки: в восстановленной базе ${c.restored.checked} (расходятся ${c.restored.mismatched.length}) — ${c.ok ? 'то же, что в снимке' : 'НЕ то же, что в снимке'}`);
   (f.ok ? ok : warn)(`файлы после расшифровки: в манифесте ${f.in_manifest}, скачанных ${f.downloaded_in_manifest}, на диске ${f.on_disk}, sha256 совпал ${f.sha256_match}`);
   const d = v.checks.downloads;
@@ -793,6 +907,10 @@ const printDiff = (d) => {
   console.log(`  карточки: новых ${d.establishments.added.length}, исчезло ${d.establishments.removed.length}`);
   for (const c of d.new_cards) console.log(`    + ${c.name} (${c.id}): строк медиа ${c.media_rows}, со всеми файлами ${c.rows_with_all_files}`);
   for (const c of d.establishments.removed) console.log(`    − ${c.name} (${c.id})`);
+  if (!d.files) {
+    console.log('  файлы: не сравниваются — один из двух снимков только базы');
+    return;
+  }
   console.log(`  файлы: новых ${d.files.added.length}, пропало ${d.files.missing.length}, сменился sha256 ${d.files.sha256_changed.length}`);
   for (const k of d.files.missing) console.log(`    пропал: ${k}`);
   for (const k of d.files.sha256_changed) console.log(`    сменился sha256: ${k}`);
@@ -904,7 +1022,10 @@ const main = async () => {
     else if (args.verify) code = await verifyExisting(args.verify, root);
     else if (args['check-copy']) code = await checkCopy(args['check-copy']);
     else if (args.cleanup) code = await sweep(root);
-    else code = await snapshot({ root, apply: Boolean(args.apply) });
+    else {
+      const requested = args['db-only'] ? MEDIA_MODE.DB_ONLY : args.full ? MEDIA_MODE.FULL : MEDIA_MODE.INCREMENTAL;
+      code = await snapshot({ root, apply: Boolean(args.apply), requested });
+    }
   } catch (err) {
     if (err instanceof SetupError) {
       console.error(`\n❌ ${err.message}`);

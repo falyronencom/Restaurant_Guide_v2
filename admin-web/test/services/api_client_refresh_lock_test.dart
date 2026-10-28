@@ -195,6 +195,45 @@ void main() {
     expect(storage['access_token'], 'stale');
   });
 
+  test('429 на обновлении — предел частоты, а не приговор токену: сессия жива',
+      () async {
+    // 4xx на `/auth/refresh` — приговор самому токену, и сессия хоронится.
+    // 429 из этого ряда изъят: предел запросов говорит о частоте, а не о
+    // токене, и стирать живую сессию по нему — выкинуть оператора на вход.
+    var refreshCalls = 0;
+    final adapter = StubAdapter(
+      (o) {
+        if (o.uri.path == '/api/v1/auth/refresh') {
+          refreshCalls++;
+          return jsonBody(
+            rejectedBody('RATE_LIMIT_EXCEEDED', 'Too many requests'),
+            status: 429,
+          );
+        }
+        return jsonBody(
+          rejectedBody('TOKEN_EXPIRED', 'Token expired'),
+          status: 401,
+        );
+      },
+      maxRequests: 12,
+    );
+    final api = stubClient(adapter);
+
+    final error = await api
+        .get('/api/v1/admin/badges')
+        .timeout(const Duration(seconds: 20))
+        .then<Object?>((_) => null, onError: (Object e) => e);
+
+    expect(error, isA<DioException>());
+    expect((error! as DioException).error, isNot(kSessionExpiredPhrase),
+        reason: 'запросу — временная ошибка, а не «войдите снова»');
+    expect(refreshCalls, 2,
+        reason: 'итог «не дошло» — попытка и её единственный повтор');
+    expect(expired, 0, reason: 'сессия жива — уводить на вход нельзя');
+    expect(storage['refresh_token'], 'r1');
+    expect(storage['access_token'], 'stale');
+  });
+
   test('мёртвый refresh-токен при двух параллельных 401: одно обновление, один сигнал',
       () async {
     final adapter = StubAdapter((o) => jsonBody(

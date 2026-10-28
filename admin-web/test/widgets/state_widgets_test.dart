@@ -13,6 +13,14 @@ import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 /// Сквозные состояния интерфейса: шапка экрана, скелетон, ошибки, пустые
 /// панели. Проверяются величины, а не факт отрисовки — размеры панелей и
 /// шапки заданы каноном и легко уезжают незаметно.
+/// Плитка значка в шапке пустого состояния — ближайший `Container` 56×56.
+BoxDecoration _tileOf(WidgetTester tester, IconData icon) {
+  final tile = find
+      .ancestor(of: find.byIcon(icon), matching: find.byType(Container))
+      .first;
+  return tester.widget<Container>(tile).decoration! as BoxDecoration;
+}
+
 void main() {
   Future<void> pump(WidgetTester tester, Widget child) async {
     // Область контента при рейле 260px на окне 1440.
@@ -242,6 +250,15 @@ void main() {
       expect(find.byIcon(Icons.schedule), findsOneWidget);
       // У раздела крестиков не бывает — снимать нечего.
       expect(find.byIcon(Icons.close), findsNothing);
+
+      // «Брендовая плитка» — в имени теста: оранжевый бренда (#F06B32) с
+      // прозрачностью 12 % и глиф тем же оранжевым. Пустой фильтр рядом —
+      // белая плитка с серым глифом, и без этих строк их не отличить.
+      final tile = _tileOf(tester, Icons.notifications_outlined);
+      expect(tile.color, const Color(0xFFF06B32).withValues(alpha: 0.12));
+      expect(
+          tester.widget<Icon>(find.byIcon(Icons.notifications_outlined)).color,
+          const Color(0xFFF06B32));
     });
 
     testWidgets('пустой фильтр: крестики у строк и работающий сброс',

@@ -91,6 +91,26 @@ void main() {
       expect(find.textContaining('41–60'), findsOneWidget);
     });
 
+    testWidgets('верх — по строкам на странице, а не по её размеру',
+        (tester) async {
+      // Модератор скрыл отзыв на первой из трёх страниц: строк 19, а размер
+      // страницы и общее число этого ещё не сказали. «1–20» обещало бы
+      // строку, которой на экране нет. Тест выше этого не различает: там
+      // страница полная.
+      await pump(
+        tester,
+        const AdminPagination.wide(
+          page: 1,
+          totalPages: 3,
+          totalCount: 45,
+          perPage: 20,
+          shownOnPage: 19,
+        ),
+      );
+
+      expect(find.textContaining('1–19'), findsOneWidget);
+    });
+
     testWidgets('верх диапазона не перепрыгивает общее число', (tester) async {
       // Так выглядит страница, опустевшая от действия модератора: провайдер
       // уменьшил счётчик, а `page` ещё прежний. Без ограничения футер

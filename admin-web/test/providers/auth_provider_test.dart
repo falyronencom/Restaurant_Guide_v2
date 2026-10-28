@@ -24,6 +24,9 @@ class _FakeAuthService implements AuthService {
   User? storedUser;
   User? nextLoginUser;
   Object? loginError;
+
+  /// Ответ входа, который держит тест: вход «в пути».
+  Completer<void>? loginGate;
   int logoutCalls = 0;
   int clearCalls = 0;
 
@@ -47,6 +50,7 @@ class _FakeAuthService implements AuthService {
     required String email,
     required String password,
   }) async {
+    if (loginGate != null) await loginGate!.future;
     if (loginError != null) throw loginError!;
     return AuthResponse(
       accessToken: 'access',
@@ -180,6 +184,31 @@ void main() {
       expect(auth.isAuthenticated, isFalse);
       expect(auth.errorMessage, isNull);
       expect(resets, 0);
+    });
+
+    test('пока вход в пути, событие от другого запроса его не сбивает',
+        () async {
+      // Тест выше — только из «не вошёл». «Вход в пути» — третье состояние:
+      // 401 на сам вход сигнала не даёт (`_credentialPaths` транспорта), но
+      // сигнал от другого, ещё летящего запроса прежней сессии возможен.
+      // Сбрось он провайдеры и покажи «Сессия истекла» поверх входа —
+      // оператор увидел бы ошибку, которой не было.
+      final auth = await provider();
+      service
+        ..nextLoginUser = _admin
+        ..loginGate = Completer<void>();
+      final login = auth.login(email: 'admin@nirivio.by', password: 'x');
+      expect(auth.status, AuthStatus.authenticating, reason: 'предпосылка');
+
+      SessionEvents.reportExpired();
+
+      expect(auth.status, AuthStatus.authenticating);
+      expect(auth.errorMessage, isNull);
+      expect(resets, 0);
+
+      service.loginGate!.complete();
+      await login;
+      expect(auth.isAuthenticated, isTrue);
     });
 
     test('после dispose провайдер событие не слушает', () async {
@@ -420,7 +449,10 @@ void main() {
       await tester.pump();
       expect(auth.isLoading, isTrue, reason: 'выход идёт — кадр инициализации');
 
-      await tester.pump(AuthProvider.logoutTimeout - const Duration(seconds: 1));
+      // Мерки — литералами: потолок шесть секунд обещан в описании
+      // [AuthProvider.logoutTimeout] (A3-09); константа в ожидании согласилась
+      // бы с любым своим значением, хоть с минутой.
+      await tester.pump(const Duration(seconds: 5));
       expect(done, isFalse);
 
       await tester.pump(const Duration(seconds: 2));
