@@ -313,7 +313,7 @@ describe('reloadReviewsAction', () => {
       detailPath: '/minsk/restorany/some-slug',
     });
 
-    expect(getReviewsMock).toHaveBeenCalledWith('some-slug', { limit: 5 });
+    expect(getReviewsMock).toHaveBeenCalledWith('some-slug', { limit: 5 }, { visitor: null });
     expect(result).toEqual({ ok: true, reviews: PAGE.reviews, total: 12 });
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
   });

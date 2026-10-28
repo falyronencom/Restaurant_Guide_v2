@@ -213,7 +213,7 @@ describe('ReviewsPage — getReviews pagination params', () => {
 
     await ReviewsPage({ params: P('page-slug'), searchParams: SP({ page: '2' }) });
 
-    expect(getReviews).toHaveBeenCalledWith('page-slug', { page: 2, limit: 10 });
+    expect(getReviews).toHaveBeenCalledWith('page-slug', { page: 2, limit: 10 }, { visitor: null });
   });
 
   it('defaults to page 1 when no page searchParam is present', async () => {
@@ -230,7 +230,7 @@ describe('ReviewsPage — getReviews pagination params', () => {
     expect(getReviews).toHaveBeenCalledWith('default-page-slug', {
       page: 1,
       limit: 10,
-    });
+    }, { visitor: null });
   });
 
   // 12.10: ?page=100000000000000000000 — the backend's OFFSET outgrew the
@@ -252,7 +252,7 @@ describe('ReviewsPage — getReviews pagination params', () => {
     expect(getReviews).toHaveBeenCalledWith('huge-page-slug', {
       page: 1,
       limit: 10,
-    });
+    }, { visitor: null });
   });
 });
 

@@ -165,6 +165,7 @@ describe('CityPage — city-wide getCatalog mapping', () => {
         city: 'Минск',
         cuisines: ['Итальянская'],
       }),
+      { visitor: null },
     );
   });
 
@@ -262,6 +263,7 @@ describe('CityPage — a value the backend would reject is dropped, not a crash'
     expect(getCatalog).not.toHaveBeenCalled();
     expect(smartSearch).toHaveBeenCalledWith(
       expect.objectContaining({ cuisines: ['Итальянская'] }),
+      { visitor: null },
     );
   });
 });
@@ -326,6 +328,7 @@ describe('CityPage — a huge page number or a control character is not a crash'
 
       expect(smartSearch).toHaveBeenCalledWith(
         expect.objectContaining({ query: 'терраса' }),
+        { visitor: null },
       );
       expect((getCatalog as jest.Mock).mock.calls[0][0].search).toBe('терраса');
     } finally {

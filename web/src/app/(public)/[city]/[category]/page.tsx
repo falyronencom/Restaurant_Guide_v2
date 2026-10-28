@@ -26,6 +26,7 @@ import {
   parsePage,
   type SearchParams,
 } from '@/lib/catalog-params';
+import { currentVisitor } from '@/lib/api/visitor';
 import { getCatalogResults } from '@/lib/smart-search';
 
 /*
@@ -176,6 +177,8 @@ export default async function CategoryPage({
       search,
     },
     meta,
+    // force-dynamic: the visitor's request is here (lib/api/visitor.ts).
+    await currentVisitor(),
   );
 
   const cityName =

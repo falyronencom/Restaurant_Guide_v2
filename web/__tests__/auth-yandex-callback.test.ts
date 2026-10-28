@@ -129,6 +129,7 @@ describe('Yandex callback — happy path', () => {
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ provider: 'yandex', token: 'ya-token' }),
       }),
+      { visitor: null },
     );
     // (5) session cookies issued (P2: set then redirect).
     expect(mockStore.set).toHaveBeenCalledWith('rg_at', 'access-1', expect.objectContaining({ httpOnly: true, maxAge: 14400 }));

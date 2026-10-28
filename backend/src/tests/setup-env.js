@@ -78,6 +78,23 @@ for (const name of [
   'RATE_LIMIT_WINDOW_AUTHENTICATED',
   'RATE_LIMIT_UNAUTHENTICATED',
   'RATE_LIMIT_WINDOW_UNAUTHENTICATED',
+  'RATE_LIMIT_SITE',
+  'RATE_LIMIT_WINDOW_SITE',
+]) {
+  process.env[name] = '';
+}
+
+// Защита стоимости умного поиска и запросы сайта (D5): пороги бюджета модели
+// (services/smartSearchBudget.js) и общий секрет сайта
+// (middleware/siteVisitor.js) — как в CI, где их нет: пустая строка = умолчание
+// порогов и «секрета нет». Безусловно, по той же причине, что выше: значение
+// из .env разработчика поменяло бы, зовётся ли модель и чей это запрос.
+for (const name of [
+  'SMART_SEARCH_LLM_HOURLY_CAP',
+  'SMART_SEARCH_LLM_DAILY_CAP',
+  'SMART_SEARCH_NEW_PHRASES_PER_HOUR',
+  'SITE_REQUEST_SECRET',
+  'SITE_REQUEST_SECRET_PREVIOUS',
 ]) {
   process.env[name] = '';
 }

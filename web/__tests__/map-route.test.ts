@@ -113,7 +113,7 @@ describe('GET /api/map — without a phrase', () => {
       neLon: 27.7,
       swLat: 53.8,
       swLon: 27.4,
-    });
+    }, { visitor: null });
     expect(res.status).toBe(200);
   });
 });

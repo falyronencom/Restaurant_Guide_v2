@@ -7,6 +7,7 @@
 
 import * as smartSearchService from '../services/smartSearchService.js';
 import logger from '../utils/logger.js';
+import { requesterOf } from '../middleware/rateLimiter.js';
 import { parseSearchFilterParams, presentFilters } from '../utils/searchFilterParams.js';
 
 /** Maximum query length */
@@ -123,6 +124,10 @@ export async function smartSearch(req, res, next) {
     if (city && typeof city === 'string') {
       context.city = city.trim();
     }
+    // Кто спрашивает — для лимита новых фраз бюджета модели: вошедший — по
+    // учётке, посетитель сайта — по адресу, за который ручается сайт, прочие —
+    // по адресу (rateLimiter.requesterOf). В ответ не идёт.
+    context.requester = requesterOf(req, { byToken: true });
 
     const result = await smartSearchService.executeSmartSearch(
       sanitized,

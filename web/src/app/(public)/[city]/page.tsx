@@ -21,6 +21,7 @@ import {
   parsePage,
   type SearchParams,
 } from '@/lib/catalog-params';
+import { currentVisitor } from '@/lib/api/visitor';
 import { getCatalogResults } from '@/lib/smart-search';
 
 /*
@@ -151,6 +152,8 @@ export default async function CityPage({
       search,
     },
     meta,
+    // force-dynamic: the visitor's request is here (lib/api/visitor.ts).
+    await currentVisitor(),
   );
 
   const cityName = meta.cities.find((c) => c.slug === city)?.name ?? city;

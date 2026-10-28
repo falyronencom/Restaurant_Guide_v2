@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getMap, type MapParams } from '@/lib/api/endpoints/establishments';
 import { getMetadata } from '@/lib/api/endpoints/metadata';
 import { ApiError, type PublicMetadata } from '@/lib/api/types';
+import { visitorAddressFrom } from '@/lib/api/visitor';
 import { getPhraseMapMarkers, type PhraseMapMarkers } from '@/lib/smart-search';
 
 /*
@@ -39,6 +40,7 @@ export const dynamic = 'force-dynamic';
 async function phraseMarkers(
   params: MapParams,
   features: string[] | undefined,
+  visitor: string | null,
 ): Promise<PhraseMapMarkers | null> {
   let meta: PublicMetadata;
   try {
@@ -58,6 +60,7 @@ async function phraseMarkers(
       search: params.search,
     },
     meta,
+    visitor,
   );
 }
 
@@ -71,6 +74,9 @@ function num(sp: URLSearchParams, key: string): number | undefined {
 
 export async function GET(request: Request): Promise<NextResponse> {
   const sp = new URL(request.url).searchParams;
+  // The visitor whose camera moves (lib/api/visitor.ts): the map's calls
+  // count against that visitor on the API, not the whole site.
+  const visitor = visitorAddressFrom(request.headers);
 
   const params: MapParams = {
     city: sp.get('city') ?? undefined,
@@ -93,6 +99,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       const phrase = await phraseMarkers(
         params,
         sp.get('features')?.split(',').filter(Boolean),
+        visitor,
       );
       if (phrase) {
         return NextResponse.json({
@@ -106,11 +113,11 @@ export async function GET(request: Request): Promise<NextResponse> {
         neLon: undefined,
         swLat: undefined,
         swLon: undefined,
-      });
+      }, { visitor });
       return NextResponse.json(data);
     }
 
-    const data = await getMap(params);
+    const data = await getMap(params, { visitor });
     return NextResponse.json(data);
   } catch (err) {
     if (err instanceof ApiError) {

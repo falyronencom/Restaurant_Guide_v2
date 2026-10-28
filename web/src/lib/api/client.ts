@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { ApiError, type ApiResponse } from './types';
+import { siteRequestHeaders } from './visitor';
 
 /*
  * Server-only fetch wrapper for the Nirivio public API.
@@ -33,13 +34,19 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  * @param options.timeoutMs - Abort after this long (default 10 s). Only for a
  *               call whose backend legitimately takes longer — the smart
  *               search, whose AI parse is budgeted 20 s (endpoints/search.ts).
+ * @param options.visitor - The visitor's address, passed explicitly by a
+ *               caller that serves a visitor's request (lib/api/visitor.ts);
+ *               the API counts the request against that visitor. Every call
+ *               carries the site's secret when one is set — the site's own
+ *               budget for the calls without a visitor. Read nothing from the
+ *               request here: headers() would make ISR pages dynamic.
  * @returns The unwrapped `data` field of the success envelope.
  * @throws  ApiError on non-success envelope OR HTTP failure OR timeout.
  */
 export async function serverFetch<T>(
   path: string,
   init?: RequestInit,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; visitor?: string | null } = {},
 ): Promise<T> {
   const apiUrl = process.env.API_URL;
   if (!apiUrl) {
@@ -64,6 +71,7 @@ export async function serverFetch<T>(
       headers: {
         Accept: 'application/json',
         ...(init?.headers ?? {}),
+        ...siteRequestHeaders(options.visitor),
       },
     });
   } catch (err) {

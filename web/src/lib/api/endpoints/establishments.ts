@@ -49,11 +49,15 @@ export type CatalogResponse = {
   pagination: PaginationMeta;
 };
 
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts). */
 export async function getCatalog(
   params: CatalogParams = {},
+  { visitor }: { visitor?: string | null } = {},
 ): Promise<CatalogResponse> {
   return serverFetch<CatalogResponse>(
     `/api/v1/public/establishments${buildQuery(params)}`,
+    undefined,
+    { visitor },
   );
 }
 
@@ -85,9 +89,15 @@ export type MapResponse = {
   establishments: PublicEstablishmentMapMarker[];
 };
 
-export async function getMap(params: MapParams = {}): Promise<MapResponse> {
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts). */
+export async function getMap(
+  params: MapParams = {},
+  { visitor }: { visitor?: string | null } = {},
+): Promise<MapResponse> {
   return serverFetch<MapResponse>(
     `/api/v1/public/establishments/map${buildQuery(params)}`,
+    undefined,
+    { visitor },
   );
 }
 
@@ -99,9 +109,15 @@ export type DetailResponse = {
   establishment: PublicEstablishmentDetail;
 };
 
-export async function getBySlug(slug: string): Promise<DetailResponse> {
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts), never from the ISR detail. */
+export async function getBySlug(
+  slug: string,
+  { visitor }: { visitor?: string | null } = {},
+): Promise<DetailResponse> {
   return serverFetch<DetailResponse>(
     `/api/v1/public/establishments/by-slug/${encodeURIComponent(slug)}`,
+    undefined,
+    { visitor },
   );
 }
 
@@ -113,9 +129,15 @@ export type MenuItemsResponse = {
   menu_items: PublicMenuItem[];
 };
 
-export async function getMenuItems(slug: string): Promise<MenuItemsResponse> {
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts), never from the ISR detail. */
+export async function getMenuItems(
+  slug: string,
+  { visitor }: { visitor?: string | null } = {},
+): Promise<MenuItemsResponse> {
   return serverFetch<MenuItemsResponse>(
     `/api/v1/public/establishments/by-slug/${encodeURIComponent(slug)}/menu-items`,
+    undefined,
+    { visitor },
   );
 }
 
@@ -133,12 +155,16 @@ export type ReviewsResponse = {
   pagination: PaginationMeta;
 };
 
+/** `visitor` — only from a visitor's request (lib/api/visitor.ts), never from the ISR detail. */
 export async function getReviews(
   slug: string,
   params: ReviewsParams = {},
+  { visitor }: { visitor?: string | null } = {},
 ): Promise<ReviewsResponse> {
   return serverFetch<ReviewsResponse>(
     `/api/v1/public/establishments/by-slug/${encodeURIComponent(slug)}/reviews${buildQuery(params)}`,
+    undefined,
+    { visitor },
   );
 }
 

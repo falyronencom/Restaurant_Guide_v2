@@ -83,8 +83,13 @@ export type SmartSearchResponse = {
  */
 export const SMART_SEARCH_TIMEOUT_MS = 25_000;
 
+/**
+ * `visitor` — whom the phrase is asked for (lib/api/visitor.ts): the API
+ * counts its new phrases an hour against that visitor, not the whole site.
+ */
 export async function smartSearch(
   body: SmartSearchBody,
+  { visitor }: { visitor?: string | null } = {},
 ): Promise<SmartSearchResponse> {
   return serverFetch<SmartSearchResponse>(
     '/api/v1/search/smart',
@@ -93,6 +98,6 @@ export async function smartSearch(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { timeoutMs: SMART_SEARCH_TIMEOUT_MS },
+    { timeoutMs: SMART_SEARCH_TIMEOUT_MS, visitor },
   );
 }

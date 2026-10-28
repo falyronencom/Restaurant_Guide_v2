@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { getReviews } from '@/lib/api/endpoints/establishments';
+import { currentVisitor } from '@/lib/api/visitor';
 import {
   createReview,
   deleteReview,
@@ -146,7 +147,13 @@ export async function reloadReviewsAction(input: {
 }): Promise<ReloadReviewsResult> {
   let result;
   try {
-    result = await getReviews(input.slug, { limit: DETAIL_REVIEWS_LIMIT });
+    // Any browser may call this action: it counts against its visitor, not
+    // the site's own budget (lib/api/visitor.ts).
+    result = await getReviews(
+      input.slug,
+      { limit: DETAIL_REVIEWS_LIMIT },
+      { visitor: await currentVisitor() },
+    );
   } catch {
     return { ok: false };
   }

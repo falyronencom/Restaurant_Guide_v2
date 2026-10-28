@@ -62,16 +62,19 @@ export const SMART_SEARCH_MAX_LIMIT = 100;
 
 /**
  * List results for a results page. Takes the page's own catalog params (URL
- * slugs) and the request's metadata (already fetched for slug validation).
+ * slugs), the request's metadata (already fetched for slug validation) and
+ * the visitor the page is rendered for (lib/api/visitor.ts) — the API counts
+ * the phrase and the classic fallback against that visitor.
  */
 export async function getCatalogResults(
   params: CatalogParams,
   meta: PublicMetadata,
+  visitor: string | null = null,
 ): Promise<CatalogResults> {
   const body = toSmartSearchBody(params, meta);
   if (body) {
     try {
-      const smart = await smartSearch(body);
+      const smart = await smartSearch(body, { visitor });
       const matchedTotal =
         typeof smart.matchedTotal === 'number' ? smart.matchedTotal : null;
       return {
@@ -89,7 +92,7 @@ export async function getCatalogResults(
       logFallback('list', err);
     }
   }
-  const catalog = await getCatalog(params);
+  const catalog = await getCatalog(params, { visitor });
   return { ...catalog, understood: null, sortFromPhrase: null, matchedTotal: null };
 }
 
@@ -125,6 +128,7 @@ export type PhraseMapMarkers = {
 export async function getPhraseMapMarkers(
   params: CatalogParams,
   meta: PublicMetadata,
+  visitor: string | null = null,
 ): Promise<PhraseMapMarkers | null> {
   const body = toSmartSearchBody(
     { ...params, page: 1, limit: SMART_SEARCH_MAX_LIMIT },
@@ -132,7 +136,7 @@ export async function getPhraseMapMarkers(
   );
   if (!body) return null;
   try {
-    const smart = await smartSearch(body);
+    const smart = await smartSearch(body, { visitor });
     return {
       markers: smart.establishments.map(toMapMarker),
       matchedTotal:

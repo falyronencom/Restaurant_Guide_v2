@@ -352,14 +352,19 @@ describe('клиент открыт, но не готов: обращение п
     expect(ping).not.toHaveBeenCalled();
   });
 
-  test('умный поиск: два одновременных запроса одной фразы — оба сразу, модель один раз, кэш не трогается', async () => {
+  // Ожидание изменено сознательно (D5, 25.10.2026): до защиты стоимости модель
+  // звалась и без Redis — один раз на два запроса. Теперь без Redis бюджет не
+  // ведётся, и модель не зовётся вовсе (smartSearchBudget.js, `no_redis`):
+  // оба запроса сразу на классике.
+  test('умный поиск: два одновременных запроса одной фразы — оба сразу на классике, модель не зовётся, кэш не трогается', async () => {
     global.fetch = jest.fn(slowModelAnswer({ dish: 'пицца' }));
     const get = jest.spyOn(redisClient, 'get');
     const setEx = jest.spyOn(redisClient, 'setEx');
     const outcome = await settleWithin(twoSimultaneousSmartSearches(), NOT_READY_MS);
     expect(outcome.settled).toBe(true);
-    expect(outcome.value.map((result) => result.intent.dish)).toEqual(['пицца', 'пицца']);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(outcome.value.map((result) => result.intent)).toEqual([null, null]);
+    expect(outcome.value.map((result) => result.fallback)).toEqual([true, true]);
+    expect(global.fetch).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();
     expect(setEx).not.toHaveBeenCalled();
   });
@@ -420,12 +425,16 @@ describe('полуоткрытое соединение: клиент готов
     expect(outcome).toMatchObject({ settled: true, value: { status: 503, redis: 'unhealthy' } });
   });
 
-  test('умный поиск: запись кэша в общем ожидании разбора не держит ни один из двух запросов', async () => {
+  // Ожидание изменено сознательно (D5, 25.10.2026): прежде модель звалась —
+  // кэш молчит, и запросы ждали только чтение кэша и запись. Теперь резерв
+  // бюджета — свой MULTI под тем же потолком: он не отвечает, это `no_redis`,
+  // модель не зовётся. Чтение кэша + резерв — два потолка, не больше.
+  test('умный поиск: молчащий Redis держит оба запроса не дольше двух потолков, модель не зовётся', async () => {
     global.fetch = jest.fn(slowModelAnswer({ dish: 'пицца' }));
     const outcome = await settleWithin(twoSimultaneousSmartSearches(), TWO_CALLS_MS);
     expect(outcome.settled).toBe(true);
-    expect(outcome.value.map((result) => result.intent.dish)).toEqual(['пицца', 'пицца']);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(outcome.value.map((result) => result.fallback)).toEqual([true, true]);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test('остановка — не ждёт ответа на QUIT', async () => {

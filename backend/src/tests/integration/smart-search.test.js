@@ -20,7 +20,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import * as smartSearchService from '../../services/smartSearchService.js';
-import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
+import redisClient, { connectRedis, deleteKey, disconnectRedis } from '../../config/redis.js';
 
 let partnerId;
 
@@ -49,7 +49,7 @@ const defaultWorkingHours = JSON.stringify({
  */
 async function clearRateLimitKeys() {
   if (!redisClient.isReady) return;
-  for (const pattern of ['ratelimit:smart_search:*', 'ratelimit:ip:*']) {
+  for (const pattern of ['ratelimit:smart_search:*', 'ratelimit:ip:*', 'ratelimit:site:*']) {
     const keys = await redisClient.keys(pattern);
     if (keys.length > 0) {
       await redisClient.del(keys);
@@ -1665,5 +1665,211 @@ describe('Smart Search - удобства из фразы', () => {
 
     expect(await smartNames('с террасой', p1Intent({ tags: ['терраса'] })))
       .toEqual(['Итальяно', 'Кофе Тайм']);
+  });
+});
+
+// ─── Бюджет модели (D5, 25.10.2026) ─────────────────────────────────────────
+//
+// Через настоящее приложение и настоящий Redis: потолок вызовов в час, лимит
+// новых фраз на человека, мусор до модели, модель без Redis не зовётся, и всё
+// это видно в GET /search/health (блок smart). Модель подменена (global.fetch)
+// годным ответом P1; ключ — заглушка, чтобы isAvailable() пустил к бюджету.
+// Счётчики берутся из `day`: граница часа посреди теста раскидала бы их по
+// двум корзинам, граница дня Минска — раз в сутки.
+
+describe('Smart Search - Бюджет модели', () => {
+  const PHRASES = ['пицца на вынос', 'суши сет', 'борщ домашний', 'паста карбонара'];
+  const SITE_SECRET = 's'.repeat(48);
+  const saved = {};
+  let originalFetch;
+  let modelCalls = 0;
+
+  const modelAnswer = (dish) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      model: 'google/gemini-3.5-flash-lite',
+      choices: [{
+        finish_reason: 'stop',
+        message: {
+          content: JSON.stringify({
+            category: null, cuisine: null, dish, dish_variants: [], meal_type: null,
+            price_max: null, location: null, sort: null, tags: [], error: null,
+          }),
+        },
+      }],
+    }),
+  });
+
+  const smart = (queryText, headers = {}) => {
+    let call = request(app).post('/api/v1/search/smart');
+    for (const [name, value] of Object.entries(headers)) call = call.set(name, value);
+    return call.send({ query: queryText });
+  };
+
+  const budgetHealth = async () => {
+    const response = await request(app).get('/api/v1/search/health');
+    expect(response.status).toBe(200);
+    return response.body.data.smart;
+  };
+
+  const clearBudget = async () => {
+    for (const pattern of ['llmbudget:*', 'ratelimit:site:*']) {
+      const keys = await redisClient.keys(pattern);
+      if (keys.length > 0) await redisClient.del(keys);
+    }
+    for (const phrase of [...PHRASES, 'шаурма', 'плов']) {
+      await deleteKey(`smartsearch:${intentCacheHash(phrase)}`);
+    }
+  };
+
+  beforeAll(async () => {
+    if (!redisClient.isReady && !(await connectRedis())) {
+      throw new Error('Redis connection is required for the model budget tests');
+    }
+    for (const name of [
+      'OPENROUTER_API_KEY', 'SMART_SEARCH_LLM_HOURLY_CAP', 'SMART_SEARCH_LLM_DAILY_CAP',
+      'SMART_SEARCH_NEW_PHRASES_PER_HOUR', 'SITE_REQUEST_SECRET',
+    ]) {
+      saved[name] = process.env[name];
+    }
+    originalFetch = global.fetch;
+  });
+
+  beforeEach(async () => {
+    await clearBudget();
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    process.env.SMART_SEARCH_LLM_HOURLY_CAP = '';
+    process.env.SMART_SEARCH_LLM_DAILY_CAP = '';
+    process.env.SMART_SEARCH_NEW_PHRASES_PER_HOUR = '';
+    process.env.SITE_REQUEST_SECRET = SITE_SECRET;
+    modelCalls = 0;
+    // Только вызовы модели: supertest ходит через node:http, не через fetch.
+    global.fetch = async (url, init) => {
+      if (String(url).endsWith('/chat/completions')) {
+        modelCalls += 1;
+        return modelAnswer('пицца');
+      }
+      return originalFetch(url, init);
+    };
+  });
+
+  afterAll(async () => {
+    global.fetch = originalFetch;
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    if (redisClient.isReady) await clearBudget();
+  });
+
+  test('потолок в час держится в вызовах; отказ — классикой, повтор — из кэша', async () => {
+    // Фраза резервирует два вызова (первый и повтор) и возвращает неистраченный.
+    process.env.SMART_SEARCH_LLM_HOURLY_CAP = '4';
+
+    const first = await smart(PHRASES[0]);
+    const second = await smart(PHRASES[1]);
+    expect([first.body.data.fallback, second.body.data.fallback]).toEqual([false, false]);
+    expect(modelCalls).toBe(2);
+
+    // Две фразы потратили по одному вызову — двух свободных хватает третьей.
+    const third = await smart(PHRASES[2]);
+    expect(third.body.data.fallback).toBe(false);
+    expect(modelCalls).toBe(3);
+
+    const fourth = await smart(PHRASES[3]);
+    expect(fourth.status).toBe(200);
+    expect(fourth.body.data.fallback).toBe(true);
+    expect(fourth.body.data.intent).toBeNull();
+    expect(modelCalls).toBe(3);
+
+    const again = await smart(PHRASES[0]);
+    expect(again.body.data.fallback).toBe(false);
+    expect(modelCalls).toBe(3);
+
+    const health = await budgetHealth();
+    expect(health.day).toMatchObject({ llm_calls: 3, cache_hits: 1, denied_hourly_cap: 1 });
+    expect(health.caps.llm_calls_per_hour).toBe(4);
+    expect(health.degraded).toBe(true);
+  });
+
+  test('ключи бюджета живут ограниченно: у каждого есть срок', async () => {
+    await smart(PHRASES[0]);
+    await smart(PHRASES[0]);
+    const keys = await redisClient.keys('llmbudget:*');
+    expect(keys.length).toBeGreaterThanOrEqual(4);
+    for (const key of keys) {
+      const ttl = await redisClient.ttl(key);
+      expect({ key, ttl: ttl > 0 && ttl <= 2 * 86400 + 3600 }).toEqual({ key, ttl: true });
+    }
+  });
+
+  test('конверт ответа на отказе — прежний, без новых полей', async () => {
+    process.env.SMART_SEARCH_LLM_HOURLY_CAP = '1';
+    const refused = await smart(PHRASES[0]);
+    expect(refused.body.data.fallback).toBe(true);
+    expect(Object.keys(refused.body.data).sort())
+      .toEqual(['establishments', 'fallback', 'intent', 'matched', 'matchedTotal', 'pagination']);
+  });
+
+  test('новые фразы — по человеку: посетитель сайта со своим адресом — свой счёт, подделка без секрета — нет', async () => {
+    process.env.SMART_SEARCH_NEW_PHRASES_PER_HOUR = '1';
+
+    expect((await smart(PHRASES[0])).body.data.fallback).toBe(false);
+    expect((await smart(PHRASES[1])).body.data.fallback).toBe(true);
+    expect(modelCalls).toBe(1);
+
+    const visitor = await smart(PHRASES[1], {
+      'X-Site-Secret': SITE_SECRET, 'X-Site-Visitor': '203.0.113.77',
+    });
+    expect(visitor.body.data.fallback).toBe(false);
+    expect(modelCalls).toBe(2);
+
+    // Подделка без секрета — тот же человек, что без заголовка: отказ.
+    const forged = await smart(PHRASES[2], { 'X-Site-Visitor': '203.0.113.78' });
+    expect(forged.body.data.fallback).toBe(true);
+    expect(modelCalls).toBe(2);
+
+    const health = await budgetHealth();
+    expect(health.day).toMatchObject({ llm_calls: 2, denied_new_phrases: 2 });
+    expect(health.site_requests.accepted).toBeGreaterThanOrEqual(1);
+  });
+
+  test('мусор до модели не доходит и вызовов не тратит', async () => {
+    const thirteenWords = 'раз два три четыре пять шесть семь восемь девять десять одиннадцать двенадцать тринадцать';
+    for (const phrase of ['7', '!!!', thirteenWords]) {
+      const response = await smart(phrase);
+      expect(response.status).toBe(200);
+      expect(response.body.data.fallback).toBe(true);
+    }
+    expect(modelCalls).toBe(0);
+
+    const health = await budgetHealth();
+    expect(health.day).toMatchObject({ llm_calls: 0, denied_junk: 3 });
+  });
+
+  test('новая фраза — llm_calls +1, повтор — cache_hits +1 (наблюдаемые после выкатки)', async () => {
+    const before = (await budgetHealth()).day;
+    await smart('шаурма');
+    await smart('шаурма');
+    const after = (await budgetHealth()).day;
+    expect(after.llm_calls - before.llm_calls).toBe(1);
+    expect(after.cache_hits - before.cache_hits).toBe(1);
+  });
+
+  test('без Redis модель не зовётся: классика, health — «неизвестно» и degraded', async () => {
+    await disconnectRedis();
+    try {
+      const response = await smart('плов');
+      expect(response.status).toBe(200);
+      expect(response.body.data.fallback).toBe(true);
+      expect(modelCalls).toBe(0);
+
+      const health = await budgetHealth();
+      expect(health).toMatchObject({ redis_ready: false, hour: null, day: null, degraded: true });
+      expect(health.denied_no_redis_since_start).toBeGreaterThanOrEqual(1);
+    } finally {
+      await connectRedis();
+    }
   });
 });

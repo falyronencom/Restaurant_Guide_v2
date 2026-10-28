@@ -336,7 +336,11 @@ describe('global limiter: the window decides the bucket', () => {
 });
 
 describe('resolveRateLimitTiers', () => {
-  const DEFAULTS = { user: { limit: 100, windowSeconds: 60 }, ip: { limit: 300, windowSeconds: 3600 } };
+  // `site` — the site's own requests (D5, 25.10.2026): 6000 an hour.
+  const SITE = { limit: 6000, windowSeconds: 3600 };
+  const DEFAULTS = {
+    user: { limit: 100, windowSeconds: 60 }, ip: { limit: 300, windowSeconds: 3600 }, site: SITE,
+  };
 
   test('unset or empty: 100 a minute per account, 300 an hour per address', () => {
     expect(resolveRateLimitTiers({})).toEqual({ tiers: DEFAULTS, warnings: [] });
@@ -345,6 +349,8 @@ describe('resolveRateLimitTiers', () => {
       RATE_LIMIT_WINDOW_AUTHENTICATED: '',
       RATE_LIMIT_UNAUTHENTICATED: '',
       RATE_LIMIT_WINDOW_UNAUTHENTICATED: '',
+      RATE_LIMIT_SITE: '',
+      RATE_LIMIT_WINDOW_SITE: '',
     })).toEqual({ tiers: DEFAULTS, warnings: [] });
   });
 
@@ -354,8 +360,14 @@ describe('resolveRateLimitTiers', () => {
       RATE_LIMIT_WINDOW_AUTHENTICATED: '120',
       RATE_LIMIT_UNAUTHENTICATED: '1000000',
       RATE_LIMIT_WINDOW_UNAUTHENTICATED: '86400',
+      RATE_LIMIT_SITE: '20000',
+      RATE_LIMIT_WINDOW_SITE: '600',
     })).toEqual({
-      tiers: { user: { limit: 250, windowSeconds: 120 }, ip: { limit: 1000000, windowSeconds: 86400 } },
+      tiers: {
+        user: { limit: 250, windowSeconds: 120 },
+        ip: { limit: 1000000, windowSeconds: 86400 },
+        site: { limit: 20000, windowSeconds: 600 },
+      },
       warnings: [],
     });
   });
@@ -368,7 +380,7 @@ describe('resolveRateLimitTiers', () => {
       RATE_LIMIT_WINDOW_AUTHENTICATED: '60s',
       RATE_LIMIT_UNAUTHENTICATED: '3000 # prod',
     })).toEqual({
-      tiers: { user: { limit: 1, windowSeconds: 60 }, ip: { limit: 3000, windowSeconds: 3600 } },
+      tiers: { user: { limit: 1, windowSeconds: 60 }, ip: { limit: 3000, windowSeconds: 3600 }, site: SITE },
       warnings: [
         'RATE_LIMIT_AUTHENTICATED="1.5" is read as 1',
         'RATE_LIMIT_WINDOW_AUTHENTICATED="60s" is read as 60',
@@ -383,6 +395,7 @@ describe('resolveRateLimitTiers', () => {
       RATE_LIMIT_WINDOW_AUTHENTICATED: '0',
       RATE_LIMIT_UNAUTHENTICATED: 'abc',
       RATE_LIMIT_WINDOW_UNAUTHENTICATED: '3600000',
+      RATE_LIMIT_SITE: '0',
     })).toEqual({
       tiers: DEFAULTS,
       warnings: [
@@ -390,6 +403,7 @@ describe('resolveRateLimitTiers', () => {
         'RATE_LIMIT_WINDOW_AUTHENTICATED="0" is not a whole number above zero; 60 is used',
         'RATE_LIMIT_UNAUTHENTICATED="abc" is not a whole number above zero; 300 is used',
         'RATE_LIMIT_WINDOW_UNAUTHENTICATED="3600000" is above 86400; 3600 is used',
+        'RATE_LIMIT_SITE="0" is not a whole number above zero; 6000 is used',
       ],
     });
   });

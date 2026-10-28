@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { serverFetch } from '@/lib/api/client';
+import { visitorAddressFrom } from '@/lib/api/visitor';
 import { type OAuthLoginData } from '@/lib/api/types';
 import { loginWithAuthError, yandexErrorCode } from '@/lib/auth/oauth-error';
 import { consumeYState, persistOAuthSession } from '@/lib/auth/session';
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: 'yandex', token: accessToken }),
-      });
+      }, { visitor: visitorAddressFrom(request.headers) });
       // (5) Persist the backend-issued session (shared with Google flow).
       await persistOAuthSession(data);
       // (6) Success.

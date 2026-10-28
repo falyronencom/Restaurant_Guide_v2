@@ -68,6 +68,7 @@ describe('refreshSession', () => {
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ refreshToken: 'rt1' }),
       }),
+      { visitor: null },
     );
     const init = mockFetch.mock.calls[0][1] as RequestInit & {
       headers?: Record<string, string>;
@@ -219,6 +220,7 @@ describe('refreshSession', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1); // one presentation, no retry
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/v1/auth/refresh',
+        expect.anything(),
         expect.anything(),
       );
       expect(mockStore.delete).toHaveBeenCalledWith('rg_rt'); // session buried

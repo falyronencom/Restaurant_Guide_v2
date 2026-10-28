@@ -8,6 +8,7 @@ import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
 import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
+import { siteVisitor, MIN_SECRET_LENGTH } from './middleware/siteVisitor.js';
 import { AppError, BODY_LIMIT_MB, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { INSUFFICIENT_ROLE_MESSAGE } from './middleware/auth.js';
 import { requestGuard } from './middleware/requestGuard.js';
@@ -128,6 +129,11 @@ app.use((req, res, next) => {
 });
 
 /**
+ * The site's own requests and the visitor each is made for — read from two
+ * headers of our own, trusted only with the shared secret
+ * (middleware/siteVisitor.js), right before the limiter that counts by them.
+ * It sets req.siteRequest and never touches req.ip.
+ *
  * Global rate limiting middleware — ahead of every route, and so of every
  * route's authenticate: it verifies the access token itself to count a
  * signed-in request against its account, anything else against its address
@@ -135,6 +141,7 @@ app.use((req, res, next) => {
  * the body is read: a request it refuses with 429 is not parsed (until
  * 20.10.2026 every body was, up to 10 MB, refused or not).
  */
+app.use(siteVisitor);
 app.use(rateLimiter);
 
 /**
@@ -268,6 +275,23 @@ const startServer = async () => {
     });
     for (const warning of globalRateLimitTiers.warnings) {
       logger.warn(`Rate limiter: ${warning}`);
+    }
+
+    // Whether the site's requests can be recognised (middleware/siteVisitor.js):
+    // how many secrets are set, never a value. None — the site counts as one
+    // address, as before 25.10.2026, and the smart search's new phrases are
+    // the site's twenty an hour for all its visitors.
+    const siteSecrets = ['SITE_REQUEST_SECRET', 'SITE_REQUEST_SECRET_PREVIOUS']
+      .filter((name) => (process.env[name] ?? '').length >= MIN_SECRET_LENGTH);
+    logger.info('Site request secret resolved', {
+      secretsUsable: siteSecrets.length,
+      siteTier: globalRateLimitTiers.tiers.site,
+    });
+    for (const name of ['SITE_REQUEST_SECRET', 'SITE_REQUEST_SECRET_PREVIOUS']) {
+      const length = (process.env[name] ?? '').length;
+      if (length > 0 && length < MIN_SECRET_LENGTH) {
+        logger.warn(`${name} is shorter than ${MIN_SECRET_LENGTH} characters and is ignored`);
+      }
     }
 
     // Test database connection

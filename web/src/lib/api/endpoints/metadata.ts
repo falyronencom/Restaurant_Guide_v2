@@ -14,9 +14,19 @@ import type { MetadataSlug, PaginationMeta, PublicMetadata } from '../types';
  * Wrapped in `React.cache` so multiple call sites within the same request
  * (e.g. page + generateMetadata + validateCitySlug + validateCategorySlug)
  * share a single fetch — per Next docs §Metadata#memoizing-data-requests.
+ *
+ * Kept in the data cache for an hour, like the city probes below (D5,
+ * 26.10.2026): on the force-dynamic pages it went to the API on every view,
+ * without a visitor — the site's own budget there, which one visitor could
+ * spend for everyone by reloading a results page. The set changes when a city
+ * or a category is added; the ISR pages already held it that long.
  */
+export const METADATA_REVALIDATE_S = 3600;
+
 export const getMetadata = cache(async (): Promise<PublicMetadata> => {
-  return serverFetch<PublicMetadata>('/api/v1/public/metadata');
+  return serverFetch<PublicMetadata>('/api/v1/public/metadata', {
+    next: { revalidate: METADATA_REVALIDATE_S },
+  });
 });
 
 /**

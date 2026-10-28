@@ -72,6 +72,7 @@ describe('loginAction — success', () => {
         method: 'POST',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
+      { visitor: null },
     );
     const body = JSON.parse(
       (serverFetchMock.mock.calls[0][1] as { body: string }).body,
