@@ -385,8 +385,14 @@ describe('«Пользователи»: удалённая учётка, рол�
   });
 
   test('«_» в поиске людей ищет само себя (A2-20)', async () => {
-    const exact = await person({ name: `ivan_${randomUUID().slice(0, 6)}` });
-    await person({ name: `ivanX${exact.user.name.slice(5)}` });
+    // Хвост имени — только буквы. В запросе с тремя и больше цифрами поиск
+    // людей сверяет ещё и цифры телефона: хвост из randomUUID вроде «2bf3c4»
+    // давал «234» и находил администратора и просмотрщика этого файла
+    // (+375441234567 и …68) — гейт `main` краснел 26.10 (+1) и 28.10 (+2).
+    const tail = randomUUID().slice(0, 8).replace(/\d/g, (digit) => 'ghijklmnop'[digit]);
+    const exact = await person({ name: `ivan_${tail}` });
+    await person({ name: `ivanX${tail}` });
+    expect(exact.user.name).not.toMatch(/\d/);
     expect(await listIds(`search=${encodeURIComponent(exact.user.name)}`)).toEqual([exact.id]);
   });
 
