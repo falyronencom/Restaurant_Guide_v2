@@ -33,6 +33,8 @@ class NotificationPreferencesProvider extends ChangeNotifier {
     _reviewsPushEnabled = true;
     _promotionsPushEnabled = true;
     _menuPushEnabled = true;
+    _confirmed.addAll(_defaults());
+    _inFlight.clear();
     _isLoading = false;
     _isInitialized = false;
     notifyListeners();
@@ -74,6 +76,9 @@ class NotificationPreferencesProvider extends ChangeNotifier {
         _promotionsPushEnabled =
             prefs['promotions_push_enabled'] as bool? ?? true;
         _menuPushEnabled = prefs['menu_push_enabled'] as bool? ?? true;
+        for (final key in _confirmed.keys.toList()) {
+          _confirmed[key] = _shown(key);
+        }
       }
       _isInitialized = true;
     } catch (e) {
@@ -91,47 +96,117 @@ class NotificationPreferencesProvider extends ChangeNotifier {
   /// Update a preference category. Optimistic update with rollback on failure.
   ///
   /// Only the categories passed are sent — the backend keeps the rest as is.
+  ///
+  /// Откат — только своих полей и только к тому, что сервер подтвердил.
+  /// Раньше вызов снимал все четыре флага до запроса и при отказе возвращал
+  /// все четыре: гость выключал «Отзывы» и сразу «Акции», запрос по
+  /// «Отзывам» срывался, по «Акциям» проходил — и откат «Отзывов» возвращал
+  /// «Акции» во «вкл.» из своего снимка, хотя сервер их выключил (сверка
+  /// «Честность тестов клиентов», 25.10.2026). Сервер пишет по полям
+  /// (`COALESCE` по каждой колонке), поэтому и клиент ведёт каждое поле
+  /// отдельно:
+  ///  * удачная запись подтверждает присланные поля — сервер хранит именно их;
+  ///  * когда по полю не осталось запросов в пути, переключатель встаёт на
+  ///    подтверждённое значение; пока они есть, он показывает последнее
+  ///    нажатие — его судьбу решат их ответы, в каком бы порядке они ни
+  ///    пришли (повторное нажатие может отказать раньше, чем придёт успех
+  ///    первого).
+  /// «Подтверждённое» — значение последнего пришедшего удачного ответа: если
+  /// сеть переставит два удачных ответа одного поля, экран покажет то, что
+  /// сервер записал первым. Это — предел клиента без номера версии на
+  /// сервере.
+  /// Строка из ответа PUT для остальных полей не применяется: она снята в
+  /// момент этой записи, и ответ, пришедший позже ответа соседнего запроса,
+  /// вернул бы его поле назад.
   Future<void> updatePreferences({
     bool? booking,
     bool? reviews,
     bool? promotions,
     bool? menu,
   }) async {
-    // Save previous state for rollback
-    final prevBooking = _bookingPushEnabled;
-    final prevReviews = _reviewsPushEnabled;
-    final prevPromotions = _promotionsPushEnabled;
-    final prevMenu = _menuPushEnabled;
+    final changes = <String, bool>{
+      if (booking != null) _bookingKey: booking,
+      if (reviews != null) _reviewsKey: reviews,
+      if (promotions != null) _promotionsKey: promotions,
+      if (menu != null) _menuKey: menu,
+    };
+    if (changes.isEmpty) return;
 
     // Optimistic update
-    if (booking != null) _bookingPushEnabled = booking;
-    if (reviews != null) _reviewsPushEnabled = reviews;
-    if (promotions != null) _promotionsPushEnabled = promotions;
-    if (menu != null) _menuPushEnabled = menu;
+    changes.forEach((key, value) {
+      _inFlight[key] = (_inFlight[key] ?? 0) + 1;
+      _setShown(key, value);
+    });
     notifyListeners();
 
     final generation = _generation;
+    var stored = false;
     try {
-      final body = <String, dynamic>{};
-      if (booking != null) body['booking_push_enabled'] = booking;
-      if (reviews != null) body['reviews_push_enabled'] = reviews;
-      if (promotions != null) body['promotions_push_enabled'] = promotions;
-      if (menu != null) body['menu_push_enabled'] = menu;
-
       await _apiClient.put(
         '/api/v1/notifications/preferences',
-        data: body,
+        data: <String, dynamic>{...changes},
       );
+      stored = true;
     } catch (e) {
-      // Rollback on failure — unless the account changed meanwhile: the
-      // toggles being restored are the previous account's.
-      if (generation != _generation) return;
-      _bookingPushEnabled = prevBooking;
-      _reviewsPushEnabled = prevReviews;
-      _promotionsPushEnabled = prevPromotions;
-      _menuPushEnabled = prevMenu;
-      notifyListeners();
       debugPrint('Failed to update notification preferences: $e');
+    }
+
+    // The account changed meanwhile: these toggles are the previous
+    // account's.
+    if (generation != _generation) return;
+
+    var changed = false;
+    changes.forEach((key, value) {
+      if (stored) _confirmed[key] = value;
+      final pending = _inFlight[key]! - 1;
+      _inFlight[key] = pending;
+      if (pending > 0) return; // в пути ещё запрос по полю — решит его ответ
+      final confirmed = _confirmed[key]!;
+      if (_shown(key) != confirmed) {
+        _setShown(key, confirmed);
+        changed = true;
+      }
+    });
+    if (changed) notifyListeners();
+  }
+
+  static const String _bookingKey = 'booking_push_enabled';
+  static const String _reviewsKey = 'reviews_push_enabled';
+  static const String _promotionsKey = 'promotions_push_enabled';
+  static const String _menuKey = 'menu_push_enabled';
+
+  /// Последнее значение каждой колонки, которое подтвердил сервер: чтением
+  /// или удачной записью этого поля. К нему возвращается переключатель,
+  /// запрос которого отказал.
+  final Map<String, bool> _confirmed = _defaults();
+
+  /// Сколько запросов записи по каждой колонке ещё в пути.
+  final Map<String, int> _inFlight = {};
+
+  static Map<String, bool> _defaults() => {
+        _bookingKey: true,
+        _reviewsKey: true,
+        _promotionsKey: true,
+        _menuKey: true,
+      };
+
+  bool _shown(String key) => switch (key) {
+        _bookingKey => _bookingPushEnabled,
+        _reviewsKey => _reviewsPushEnabled,
+        _promotionsKey => _promotionsPushEnabled,
+        _ => _menuPushEnabled,
+      };
+
+  void _setShown(String key, bool value) {
+    switch (key) {
+      case _bookingKey:
+        _bookingPushEnabled = value;
+      case _reviewsKey:
+        _reviewsPushEnabled = value;
+      case _promotionsKey:
+        _promotionsPushEnabled = value;
+      default:
+        _menuPushEnabled = value;
     }
   }
 
