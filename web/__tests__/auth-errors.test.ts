@@ -41,6 +41,7 @@ const OAUTH_CODES: Array<[string, number]> = [
   ['INVALID_TOKEN', 401],
   ['OAUTH_NO_EMAIL', 400],
   ['OAUTH_EMAIL_NOT_VERIFIED', 403],
+  ['ACCOUNT_DEACTIVATED', 403],
   ['ACCOUNT_CONFLICT', 409],
 ];
 

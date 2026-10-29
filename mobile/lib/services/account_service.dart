@@ -1,7 +1,7 @@
 import 'package:restaurant_guide_mobile/models/account_deletion_check.dart';
 import 'package:restaurant_guide_mobile/services/api_client.dart';
 
-/// Удаление учётки самим человеком (бриф В1, 18.10.2026: App Store
+/// Удаление учётной записи самим человеком (бриф В1, 18.10.2026: App Store
 /// 5.1.1(v), Google Play, закон 99-З).
 ///
 /// Сервер удаляет обезличиванием (`backend/src/services/accountDeletionService.js`):
@@ -20,7 +20,7 @@ class AccountService {
   /// проверяет сервер.
   static const String confirmationWord = 'УДАЛИТЬ';
 
-  /// Можно ли удалить учётку сейчас. Бросает при сбое — экран показывает
+  /// Можно ли удалить учётную запись сейчас. Бросает при сбое — экран показывает
   /// «Повторить».
   Future<AccountDeletionCheck> getDeletionCheck() async {
     final response = await _apiClient.get('/api/v1/auth/account/deletion');
@@ -32,7 +32,7 @@ class AccountService {
     return AccountDeletionCheck.fromJson(data);
   }
 
-  /// Удалить учётку. Бросает при отказе или сбое: учётка тогда на месте.
+  /// Удалить учётную запись. Бросает при отказе или сбое: учётная запись тогда на месте.
   Future<void> deleteAccount({required String confirmation}) async {
     await _apiClient.delete(
       '/api/v1/auth/account',

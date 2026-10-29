@@ -281,7 +281,7 @@ void main() {
   });
 
   group('Текст отказа', () {
-    test('«Invalid email/phone or password» → «Неверный email/телефон или пароль»',
+    test('INVALID_CREDENTIALS с английской фразой → «Неверный email/телефон или пароль.»',
         () async {
       final service = _FakeAuthService()
         ..loginError = rejected(
@@ -298,7 +298,7 @@ void main() {
 
       expect(ok, isFalse);
       expect(auth.isAuthenticated, isFalse);
-      expect(auth.errorMessage, 'Неверный email/телефон или пароль');
+      expect(auth.errorMessage, 'Неверный email/телефон или пароль.');
     });
 
     test('подменённый текст про истёкший сеанс даёт общую ошибку', () async {
@@ -318,7 +318,7 @@ void main() {
       expect(auth.errorMessage, 'Произошла ошибка. Попробуйте снова.');
     });
 
-    test('«Verification code is incorrect» → «Неверный код подтверждения…»',
+    test('INVALID_CODE с английской фразой → «Неверный код…»',
         () async {
       // После правки перехватчика 401 INVALID_CODE доходит до провайдера как
       // ответ сервера (раньше — шторм «обновить и повторить» до
@@ -336,7 +336,7 @@ void main() {
 
       expect(ok, isFalse);
       expect(auth.errorMessage,
-          'Неверный код подтверждения. Проверьте и попробуйте снова.');
+          'Неверный код. Проверьте код из письма и попробуйте ещё раз.');
     });
   });
 

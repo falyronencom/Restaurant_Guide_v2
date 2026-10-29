@@ -119,7 +119,7 @@ describe('auth_error from the Yandex callback', () => {
     );
     expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
       'data-error',
-      'Этот аккаунт деактивирован.',
+      'Учётная запись отключена. Если это ошибка — напишите в поддержку: support@nirivio.by',
     );
   });
 

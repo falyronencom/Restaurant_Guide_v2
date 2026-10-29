@@ -26,7 +26,7 @@ import '../support/wire_stand.dart';
 /// отвечает, как `backend/src/controllers/authController.js`
 /// (`verifyEmailCode`: 401 `INVALID_CODE`, 410 `INVALID_OR_EXPIRED_CODE`).
 void main() {
-  const wrong = 'Неверный код подтверждения. Проверьте и попробуйте снова.';
+  const wrong = 'Неверный код. Проверьте код из письма и попробуйте ещё раз.';
   const expired = 'Код истёк или недействителен. Запросите новый.';
   const issued = '482915';
 

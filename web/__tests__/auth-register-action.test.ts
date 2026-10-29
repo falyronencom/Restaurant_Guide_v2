@@ -173,7 +173,7 @@ describe('registerAction — backend error mapping', () => {
     const result = await registerAction(null, formDataOf(VALID_FIELDS));
 
     expect(result).toMatchObject({ ok: false, code: 'EMAIL_EXISTS' });
-    expect((result as { message: string }).message).toMatch(/уже существует/);
+    expect((result as { message: string }).message).toMatch(/уже зарегистрирован/);
     expect(mockStore.set).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       values: { name: VALID_FIELDS.name, email: VALID_FIELDS.email },

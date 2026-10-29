@@ -30,6 +30,7 @@ import 'package:restaurant_guide_mobile/widgets/map/map_marker_painter.dart';
 import 'package:restaurant_guide_mobile/widgets/booking_bottom_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/action_sheet.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
+import 'package:restaurant_guide_mobile/widgets/average_check_line.dart';
 import 'package:restaurant_guide_mobile/widgets/establishment_location_block.dart';
 import 'package:restaurant_guide_mobile/widgets/glass_action_chip.dart';
 import 'package:restaurant_guide_mobile/widgets/hero_scrim.dart';
@@ -1117,6 +1118,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
           // Working hours
           _buildWorkingHours(),
+          AverageCheckLine(_establishment!.priceRange),
 
           const SizedBox(height: 30),
 

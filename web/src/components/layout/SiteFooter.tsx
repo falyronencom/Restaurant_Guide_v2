@@ -63,7 +63,7 @@ export function SiteFooter({ cities }: Props) {
             href="/udalenie-uchetki"
             className="text-body-m text-foreground transition-colors hover:text-brand-dark"
           >
-            Как удалить учётку
+            Как удалить учётную запись
           </Link>
           {/* Legal pages (о нас, контакты, правовая информация) are a separate
               pre-launch compliance item — wire real hrefs when those routes

@@ -842,11 +842,14 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Русская фраза для известного отказа, или `null`.
   ///
-  /// Сервер отдаёт большинство отказов входа по-английски с кодом в теле
-  /// (`INVALID_CREDENTIALS`, `EMAIL_EXISTS`). Таблица ищет код и фразы в
-  /// тексте исключения, в коде и фразах из тела ответа: у `DioException`,
-  /// пересобранного транспортом, в `toString()` нет ни кода статуса, ни кода
-  /// из тела — только фраза из `error`.
+  /// С 29.10.2026 сервер пишет отказы входа по-русски (словарь
+  /// `backend/src/constants/authRefusals.js`), и его текст выходит первым
+  /// ([_russianServerText]). Таблица — запасной путь, когда текста сервера
+  /// нет: она узнаёт отказ по коду из тела ответа (`INVALID_CREDENTIALS`,
+  /// `EMAIL_EXISTS`) и отвечает теми же словами, что сервер. Равенство
+  /// фраз словарю сервера стережёт `test/providers/auth_refusals_guard_test.dart`.
+  /// Английские фразы сервера таблица больше не сравнивает: сервер их не
+  /// присылает, а код в теле есть всегда.
   String? _knownErrorMessage(Object error, Response<dynamic>? response) {
     final body = response?.data;
     final bodyError = body is Map ? body['error'] : null;
@@ -869,15 +872,11 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // Common error patterns
-    // Фразы сервера здесь обязательны: у DioException, пересобранного
-    // транспортом, в toString() нет ни кода статуса, ни кода из тела ответа
-    // (INVALID_CREDENTIALS, INVALID_CODE) — только текст из `error`.
     if (errorStr.contains('401') ||
         errorStr.contains('Unauthorized') ||
         errorStr.contains('Authentication failed') ||
-        errorStr.contains('INVALID_CREDENTIALS') ||
-        errorStr.contains('Invalid email/phone or password')) {
-      return 'Неверный email/телефон или пароль';
+        errorStr.contains('INVALID_CREDENTIALS')) {
+      return 'Неверный email/телефон или пароль.';
     }
     if (errorStr.contains('Email already registered') ||
         errorStr.contains('EMAIL_TAKEN') ||
@@ -889,10 +888,8 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
         errorStr.contains('PHONE_EXISTS')) {
       return 'Этот номер телефона уже зарегистрирован. Попробуйте войти.';
     }
-    if (errorStr.contains('Invalid verification code') ||
-        errorStr.contains('Verification code is incorrect') ||
-        errorStr.contains('INVALID_CODE')) {
-      return 'Неверный код подтверждения. Проверьте и попробуйте снова.';
+    if (errorStr.contains('INVALID_CODE')) {
+      return 'Неверный код. Проверьте код из письма и попробуйте ещё раз.';
     }
     if (errorStr.contains('INVALID_OR_EXPIRED_CODE')) {
       return 'Код истёк или недействителен. Запросите новый.';
@@ -901,7 +898,7 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
       return 'Слишком много неверных попыток. Запросите новый код.';
     }
     if (errorStr.contains('EMAIL_ALREADY_VERIFIED')) {
-      return 'Email уже подтверждён.';
+      return 'Почта уже подтверждена.';
     }
     // Отказы входа через Google и Яндекс — раньше код из тела в таблицу не
     // попадал, и все три доходили общей фразой. Стоят до `NO_EMAIL`:
@@ -914,10 +911,11 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
           'войдите другим способом.';
     }
     if (errorStr.contains('ACCOUNT_DEACTIVATED')) {
-      return 'Аккаунт отключён. Напишите в поддержку.';
+      return 'Учётная запись отключена. Если это ошибка — напишите в '
+          'поддержку: support@nirivio.by';
     }
     if (errorStr.contains('NO_EMAIL')) {
-      return 'На аккаунте нет email-адреса.';
+      return 'В учётной записи не указана почта.';
     }
     if (errorStr.contains('Code expired') || errorStr.contains('CODE_EXPIRED')) {
       return 'Код подтверждения истёк. Запросите новый код.';

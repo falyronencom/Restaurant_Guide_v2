@@ -22,7 +22,7 @@ import {
 import { forgetWizardDraft } from '@/lib/partner/draft-storage';
 
 /*
- * «Удалить учётку» in the profile (brief В1, 18.10.2026; Google Play asks for
+ * «Удалить учётную запись» in the profile (brief В1, 18.10.2026; Google Play asks for
  * a way to delete the account without the app). The same steps as the app:
  * ask the backend first — a holder of cards reads its «напишите в поддержку»
  * before typing anything; otherwise a plain warning, the word УДАЛИТЬ and a
@@ -57,8 +57,8 @@ type Phase =
   | { kind: 'ready'; error: string | null }
   | { kind: 'deleting' };
 
-const FALLBACK_REFUSAL = `Сейчас учётку удалить нельзя. Напишите в поддержку: ${SUPPORT_EMAIL}`;
-const DELETE_FAILED = 'Не удалось удалить учётку. Проверьте соединение и попробуйте ещё раз.';
+const FALLBACK_REFUSAL = `Сейчас учётную запись удалить нельзя. Напишите в поддержку: ${SUPPORT_EMAIL}`;
+const DELETE_FAILED = 'Не удалось удалить учётную запись. Проверьте соединение и попробуйте ещё раз.';
 
 const REFUSAL_CODES = new Set(['ACCOUNT_OWNS_ESTABLISHMENTS', 'ACCOUNT_OPERATOR_MANAGED', 'ACCOUNT_INACTIVE']);
 
@@ -121,7 +121,7 @@ export function DeleteAccountSection({ onEnded }: Props) {
   return (
     <section className="flex flex-col gap-m rounded-card bg-figma-bg-warm p-l">
       <div className="flex items-center justify-between gap-m">
-        <span className="text-body-m text-foreground">Удалить учётку</span>
+        <span className="text-body-m text-foreground">Удалить учётную запись</span>
         {phase.kind === 'closed' && (
           <Button variant="destructive" onClick={() => void check()}>
             Удалить…
@@ -130,13 +130,13 @@ export function DeleteAccountSection({ onEnded }: Props) {
       </div>
 
       {phase.kind === 'checking' && (
-        <p className="text-body-s text-figma-text-dark">Проверяем учётку…</p>
+        <p className="text-body-s text-figma-text-dark">Проверяем учётную запись…</p>
       )}
 
       {phase.kind === 'checkFailed' && (
         <div className="flex flex-col items-start gap-s">
           <p className="text-body-s text-destructive">
-            Не удалось проверить учётку. Проверьте соединение.
+            Не удалось проверить учётную запись. Проверьте соединение.
           </p>
           <Button variant="outline" onClick={() => void check()}>
             Повторить
@@ -148,7 +148,7 @@ export function DeleteAccountSection({ onEnded }: Props) {
         <div className="flex flex-col items-start gap-s">
           <p className="text-body-m text-foreground">{phase.message}</p>
           <a
-            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Удаление учётки')}`}
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Удаление учётной записи')}`}
             className="text-body-m font-medium text-brand hover:text-brand-dark"
           >
             Написать в поддержку
@@ -173,7 +173,7 @@ export function DeleteAccountSection({ onEnded }: Props) {
             </ul>
           </div>
           <p className="text-body-m text-foreground">
-            Вернуть учётку будет нельзя. Новую можно завести на ту же почту или телефон.
+            Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту или телефон.
           </p>
           <div className="flex flex-col gap-2">
             <label htmlFor="delete-account-word" className="text-body-s text-figma-text-dark">
@@ -193,7 +193,7 @@ export function DeleteAccountSection({ onEnded }: Props) {
                 onClick={() => void remove()}
                 disabled={phase.kind === 'deleting' || !isDeletionWord(word)}
               >
-                {phase.kind === 'deleting' ? 'Удаление…' : 'Удалить учётку'}
+                {phase.kind === 'deleting' ? 'Удаление…' : 'Удалить учётную запись'}
               </Button>
             </div>
             {phase.kind === 'ready' && phase.error && (
@@ -214,12 +214,12 @@ export function DeletionEndedPanel({ outcome }: { outcome: DeletionOutcome }) {
       aria-live="polite"
     >
       {outcome === 'deleted' ? (
-        <p className="text-body-m font-medium text-foreground">Учётка удалена.</p>
+        <p className="text-body-m font-medium text-foreground">Учётная запись удалена.</p>
       ) : (
         <>
           <p className="text-body-m font-medium text-foreground">Сеанс завершён.</p>
           <p className="text-body-m text-foreground">
-            Если удаление успело пройти, учётки больше нет и войти в неё не получится.
+            Если удаление успело пройти, учётной записи больше нет и войти в неё не получится.
             Если нет — войдите и удалите её снова.
           </p>
           <Link

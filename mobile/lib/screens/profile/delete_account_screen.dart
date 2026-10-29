@@ -9,7 +9,7 @@ import 'package:restaurant_guide_mobile/services/auth_service.dart';
 import 'package:restaurant_guide_mobile/services/session_events.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// «Удалить учётку» — предупреждение и подтверждение словом (бриф В1,
+/// «Удалить учётную запись» — предупреждение и подтверждение словом (бриф В1,
 /// 18.10.2026; App Store 5.1.1(v), Google Play).
 ///
 /// Сначала экран спрашивает сервер, можно ли удалить: владельцу карточек
@@ -17,7 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// узнаёт это до того, как наберёт слово. Можно — предупреждение простыми
 /// словами: что исчезнет, что останется без имени (решения 1 и 2), что
 /// вернуть нельзя; кнопка доступна, когда набрано УДАЛИТЬ (решение 4).
-/// После удаления — главный экран гостем и «Учётка удалена».
+/// После удаления — главный экран гостем и «Учётная запись удалена».
 class DeleteAccountScreen extends StatelessWidget {
   const DeleteAccountScreen({
     super.key,
@@ -94,7 +94,7 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
       SnackBar(
         // «Удалена» — только когда это сказал сервер; иначе сеанс кончился по
         // дороге (AccountDeletionProvider.deletionConfirmed).
-        content: Text(deletion.deletionConfirmed ? 'Учётка удалена' : 'Сеанс завершён'),
+        content: Text(deletion.deletionConfirmed ? 'Учётная запись удалена' : 'Сеанс завершён'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -104,7 +104,7 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
     final uri = Uri(
       scheme: 'mailto',
       path: DeleteAccountScreen.supportEmail,
-      query: 'subject=${Uri.encodeComponent('Удаление учётки')}',
+      query: 'subject=${Uri.encodeComponent('Удаление учётной записи')}',
     );
     final messenger = ScaffoldMessenger.of(context);
     var opened = false;
@@ -131,11 +131,11 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
 
     return PopScope(
       // Пока запрос в пути, назад не уйти: иначе человек не узнает, удалена
-      // ли учётка.
+      // ли учётная запись.
       canPop: !busy,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Удалить учётку'),
+          title: const Text('Удалить учётную запись'),
           backgroundColor: Colors.white,
           foregroundColor: AppTheme.textPrimary,
           // Тема задаёт заголовку белый цвет — здесь он тёмный, со своим
@@ -180,7 +180,7 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
         const _SectionTitle('Что удалится'),
         const _Point('Имя, почта, телефон и фото профиля'),
         const _Point('Избранное, уведомления и их настройки'),
-        const _Point('Вход: в эту учётку больше не войти ни паролем, '
+        const _Point('Вход: в эту учётную запись больше не войти ни паролем, '
             'ни через Google или Яндекс'),
         if (widget.mentionDrafts)
           const _Point('Черновики карточек заведений, которые не публиковались'),
@@ -191,7 +191,7 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
             'Предстоящие брони отменятся, заведение получит уведомление'),
         const SizedBox(height: 16),
         const Text(
-          'Вернуть учётку будет нельзя. Новую можно завести на ту же почту '
+          'Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту '
           'или телефон.',
           style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, height: 1.35),
         ),
@@ -257,7 +257,7 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
                       color: Colors.white,
                     ),
                   )
-                : const Text('Удалить учётку'),
+                : const Text('Удалить учётную запись'),
           ),
         ),
       ],
@@ -323,7 +323,7 @@ class _Refused extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         const Text(
-          'Сейчас учётку удалить нельзя',
+          'Сейчас учётную запись удалить нельзя',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -375,7 +375,7 @@ class _CheckFailed extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Не удалось проверить учётку. Проверьте интернет.',
+              'Не удалось проверить учётную запись. Проверьте интернет.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: AppTheme.textSecondary),
             ),
