@@ -34,7 +34,7 @@ String? priceLabel(String? priceRange) {
 
 /// Средний чек словами для каждого значения сервера (`VALID_PRICE_RANGES`,
 /// `backend/src/validators/establishmentValidation.js`) — те же слова, что у
-/// сайта (`PRICE_DESCRIPTION`, `web/src/components/establishment/InfoCard.tsx`)
+/// сайта (`PRICE_DESCRIPTION`, `web/src/lib/price-range.ts`)
 /// и панели (`kPriceRangeLabels`). Равенство набору сервера и словам сайта
 /// стережёт `test/utils/price_description_test.dart`.
 ///

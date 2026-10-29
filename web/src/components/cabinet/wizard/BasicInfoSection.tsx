@@ -6,6 +6,7 @@ import {
   PRICE_RANGES,
 } from '@/lib/partner/constants';
 import { contactErrors } from '@/lib/partner/contacts';
+import { priceRangeLabel } from '@/lib/price-range';
 
 import { Chip, Field, SectionCard } from './primitives';
 import type { SectionProps } from './types';
@@ -13,7 +14,9 @@ import type { SectionProps } from './types';
 /*
  * Basic info: name, description, contacts, average check, amenities. Attributes
  * write the 10-key canon (Decision 4) — the keys readers consume. Price is a
- * single-select chip ($/$$/$$$ — the validator's exact set).
+ * single-select chip ($/$$/$$$ — the validator's exact set), labelled with the
+ * same words as the card and the filters («$$ · до 50 руб», lib/price-range.ts):
+ * a bare «$$» left the partner guessing. The value saved stays «$$».
  */
 export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
   const descLen = form.description.trim().length;
@@ -119,7 +122,8 @@ export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
       </Field>
 
       <Field label="Средний чек">
-        <div className="flex gap-2">
+        {/* Wraps: three «$$$ · более 50 руб» do not fit one narrow row. */}
+        <div className="flex flex-wrap gap-2" data-testid="price-range-chips">
           {PRICE_RANGES.map((p) => (
             <Chip
               key={p}
@@ -129,7 +133,7 @@ export function BasicInfoSection({ form, patch, disabled }: SectionProps) {
                 patch({ priceRange: form.priceRange === p ? '' : p })
               }
             >
-              {p}
+              {priceRangeLabel(p)}
             </Chip>
           ))}
         </div>

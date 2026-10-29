@@ -21,8 +21,11 @@
  * in the URL searchParam: price '$' / '$$' / '$$$' pass through unchanged;
  * hours buckets match the searchWithoutLocation bucket switch exactly; feature
  * keys pass through verbatim (single name `features` across URL/getCatalog/
- * backend). Labels are Russian.
+ * backend). Labels are Russian; the price words come from lib/price-range.ts,
+ * one source with the venue card and the partner wizard.
  */
+
+import { priceRangeLabel } from './price-range';
 
 export type FacetOption = {
   /** Raw value sent to the backend and persisted in the URL searchParam. */
@@ -32,11 +35,9 @@ export type FacetOption = {
 };
 
 /** Price-range buckets ($ / $$ / $$$). Multi-select, OR-within-group. */
-export const PRICE_OPTIONS: readonly FacetOption[] = [
-  { value: '$', label: '$ · до 20 руб' },
-  { value: '$$', label: '$$ · до 50 руб' },
-  { value: '$$$', label: '$$$ · более 50 руб' },
-] as const;
+export const PRICE_OPTIONS: readonly FacetOption[] = ['$', '$$', '$$$'].map(
+  (value) => ({ value, label: priceRangeLabel(value) }),
+);
 
 /**
  * Working-hours buckets. Single-select. Absolute/static — each bucket is

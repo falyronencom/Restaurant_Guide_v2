@@ -11,7 +11,7 @@ import 'package:restaurant_guide_mobile/widgets/average_check_line.dart';
 /// (находка нитки панели 25.10, слово Координатора 29.10.2026).
 ///
 /// Набор значений читается из проверки сервера (`VALID_PRICE_RANGES`), слова —
-/// из карточки сайта (`PRICE_DESCRIPTION` в `InfoCard.tsx`): сервер добавит
+/// из единого источника сайта (`PRICE_DESCRIPTION` в `web/src/lib/price-range.ts`): сервер добавит
 /// значение или сайт сменит слова — тест покраснеет, а не приложение молча
 /// разойдётся. CI вынимает репозиторий целиком, `../backend` и `../web` рядом.
 void main() {
@@ -31,11 +31,10 @@ void main() {
       expect(priceRangeDescriptions.keys.toSet(), values);
     });
 
-    test('слова — как в карточке сайта (PRICE_DESCRIPTION)', () {
-      final source =
-          File('../web/src/components/establishment/InfoCard.tsx').readAsStringSync();
+    test('слова — как у сайта (PRICE_DESCRIPTION, один источник сайта)', () {
+      final source = File('../web/src/lib/price-range.ts').readAsStringSync();
       final start = source.indexOf('const PRICE_DESCRIPTION');
-      expect(start, isNonNegative, reason: 'в карточке сайта нет PRICE_DESCRIPTION');
+      expect(start, isNonNegative, reason: 'у сайта нет PRICE_DESCRIPTION');
       final block = source.substring(start, source.indexOf('};', start));
       final site = {
         for (final m in RegExp(r"^\s*(\$+):\s*'([^']*)',", multiLine: true)

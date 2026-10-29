@@ -19,18 +19,13 @@ import {
   normalizeWorkingHours,
   type ParsedDayHours,
 } from '@/lib/establishment-helpers';
+// Price tier → check description: one source with the filters and the wizard.
+import { PRICE_DESCRIPTION } from '@/lib/price-range';
 
 const DAY_KEYS = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ] as const;
 const DAY_NAMES_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] as const;
-
-// Price tier → check description (data canon = $/$$/$$$, mirrors facets labels).
-const PRICE_DESCRIPTION: Record<string, string> = {
-  $: 'до 20 руб',
-  $$: 'до 50 руб',
-  $$$: 'более 50 руб',
-};
 
 export function InfoCard({
   establishment,
