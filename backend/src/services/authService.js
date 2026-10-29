@@ -34,7 +34,7 @@ import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { parseModerationNotes } from '../utils/moderationNotes.js';
-import { isPanelRole } from '../config/panelRoles.js';
+import { isPanelRole, panelSessionLapsed } from '../config/panelRoles.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
@@ -239,9 +239,14 @@ export async function createUser(userData) {
  *   after the same verification, with no write and no extra query, so neither
  *   the answer nor its timing nor last_login_at tells a right panel password
  *   from a wrong one (directive service_accounts 2026-10-15, B1; Phase 3.5)
+ * @param {boolean} [options.otherAccounts=true] - false on the panel's login:
+ *   an account outside the panel roles with a right password is returned
+ *   as is, without last_login_at written — the door refuses it
+ *   (adminController.adminLogin), and a refused login is not a login
+ *   (verify S1–S4 29.10.2026, «Вне меток» 3)
  * @returns {Promise<Object|null>} User object if credentials valid, null otherwise
  */
-export async function verifyCredentials(credentials, { panelAccounts = true } = {}) {
+export async function verifyCredentials(credentials, { panelAccounts = true, otherAccounts = true } = {}) {
   const { email, phone, password } = credentials;
   
   try {
@@ -289,6 +294,13 @@ export async function verifyCredentials(credentials, { panelAccounts = true } = 
         // Same path out as a wrong password below — nothing written.
         isValidPassword = false;
         failureReason = 'panel_account_on_shared_login';
+      }
+
+      if (isValidPassword && !otherAccounts && !isPanelRole(user.role)) {
+        // Another role at the panel's door: the caller refuses it with its
+        // own answer and logs the refusal; nothing is written here.
+        delete user.password_hash;
+        return user;
       }
 
       if (isValidPassword) {
@@ -502,6 +514,22 @@ export async function refreshAccessToken(refreshToken) {
         [tokenData.id],
       );
       throw new Error('USER_ACCOUNT_INACTIVE');
+    }
+
+    // A panel account (admin, viewer) that has not renewed for a day: answered
+    // as an expired token (config/panelRoles.js, S1 «а» 29.10.2026). After the
+    // reuse check on purpose, not next to the expiry above: a burned token is
+    // where theft shows — a thief who renewed the moderator's token first
+    // leaves the moderator holding it, and a moderator back after a weekend
+    // must still raise the alarm that ends the thief's chain, not a quiet
+    // "log in again" that leaves it alive. After the switched-off check too,
+    // so a disabled account keeps its own answer and its burned token.
+    if (panelSessionLapsed(tokenData.role, tokenData.created_at)) {
+      logger.warn('Panel refresh token past the panel idle limit', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+      });
+      throw new Error('REFRESH_TOKEN_EXPIRED');
     }
 
     // Generate new token pair for the user
